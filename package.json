@@ -1,6 +1,6 @@
 {
   "name": "@dyyz1993/xbrowser",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "A self-contained browser automation CLI tool — navigate, click, fill forms, extract data, record & replay sessions via YAML scripts",
   "type": "module",
   "bin": {

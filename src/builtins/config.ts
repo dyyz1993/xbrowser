@@ -1,4 +1,5 @@
 import type { BuiltinCommand, BuiltinContext } from './session.js';
+import { loadConfig, getConfigValue, setConfigValue } from '../config.js';
 
 export const configBuiltin: BuiltinCommand = {
   name: 'config',
@@ -21,12 +22,16 @@ export const configBuiltin: BuiltinCommand = {
     const [subcommand, ...rest] = args;
 
     if (!subcommand || subcommand === 'list') {
-      const keys = ['browser.executablePath', 'daemon.port', 'viewer.host'];
-      console.log('Configuration keys:');
+      const config = loadConfig();
+      const keys = Object.keys(config);
+      if (keys.length === 0) {
+        console.log('Configuration is empty');
+        return;
+      }
+      console.log('Configuration:');
       console.log('');
       for (const k of keys) {
-        const val = process.env[`XBROWSER_${k.toUpperCase().replace(/\./g, '_')}`] || '(not set)';
-        console.log(`  ${k} = ${val}`);
+        console.log(`  ${k} = ${config[k]}`);
       }
       return;
     }
@@ -37,9 +42,8 @@ export const configBuiltin: BuiltinCommand = {
         console.error('Usage: xbrowser config get <key>');
         process.exit(1);
       }
-      const envKey = `XBROWSER_${key.toUpperCase().replace(/\./g, '_')}`;
-      const val = process.env[envKey] || '(not set)';
-      console.log(val);
+      const val = getConfigValue(key);
+      console.log(val !== undefined ? String(val) : '(not set)');
       return;
     }
 
@@ -49,7 +53,8 @@ export const configBuiltin: BuiltinCommand = {
         console.error('Usage: xbrowser config set <key> <value>');
         process.exit(1);
       }
-      console.log(`Set ${key} = ${value} (restart required)`);
+      setConfigValue(key, value);
+      console.log(`Set ${key} = ${value}`);
       return;
     }
 

@@ -1,0 +1,133 @@
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
+
+const TMP = join(tmpdir(), 'xbrowser-config-test');
+
+describe('config persistence', () => {
+  let loadConfig: typeof import('../../src/config.js').loadConfig;
+  let saveConfig: typeof import('../../src/config.js').saveConfig;
+  let getConfigValue: typeof import('../../src/config.js').getConfigValue;
+  let setConfigValue: typeof import('../../src/config.js').setConfigValue;
+  let origHome: string | undefined;
+
+  beforeEach(async () => {
+    origHome = process.env.HOME;
+    process.env.HOME = TMP;
+    mkdirSync(TMP, { recursive: true });
+    const mod = await import('../../src/config.js');
+    loadConfig = mod.loadConfig;
+    saveConfig = mod.saveConfig;
+    getConfigValue = mod.getConfigValue;
+    setConfigValue = mod.setConfigValue;
+  });
+
+  afterEach(() => {
+    process.env.HOME = origHome;
+    rmSync(TMP, { recursive: true, force: true });
+  });
+
+  it('returns empty object when no config file exists', () => {
+    const config = loadConfig();
+    expect(config).toEqual({});
+  });
+
+  it('saves and loads config', () => {
+    saveConfig({ 'browser.executablePath': '/usr/bin/chromium' });
+    const config = loadConfig();
+    expect(config['browser.executablePath']).toBe('/usr/bin/chromium');
+  });
+
+  it('getConfigValue returns value for existing key', () => {
+    saveConfig({ port: 9222 });
+    expect(getConfigValue('port')).toBe(9222);
+  });
+
+  it('getConfigValue returns undefined for missing key', () => {
+    expect(getConfigValue('nonexistent')).toBeUndefined();
+  });
+
+  it('setConfigValue adds new key', () => {
+    saveConfig({ existing: 'value' });
+    setConfigValue('newKey', 'newValue');
+    const config = loadConfig();
+    expect(config.existing).toBe('value');
+    expect(config.newKey).toBe('newValue');
+  });
+
+  it('setConfigValue overwrites existing key', () => {
+    setConfigValue('key', 'old');
+    setConfigValue('key', 'new');
+    expect(getConfigValue('key')).toBe('new');
+  });
+
+  it('persists to disk as JSON', () => {
+    setConfigValue('daemon.port', 8080);
+    const file = join(TMP, '.xbrowser', 'config.json');
+    expect(existsSync(file)).toBe(true);
+    const data = JSON.parse(readFileSync(file, 'utf-8'));
+    expect(data['daemon.port']).toBe(8080);
+  });
+
+  it('preserves existing keys when setting new ones', () => {
+    setConfigValue('a', 1);
+    setConfigValue('b', 2);
+    const config = loadConfig();
+    expect(config.a).toBe(1);
+    expect(config.b).toBe(2);
+  });
+});
+
+describe('config builtin', () => {
+  let origHome: string | undefined;
+  const TMP2 = join(tmpdir(), 'xbrowser-config-builtin-test');
+
+  beforeEach(() => {
+    origHome = process.env.HOME;
+    process.env.HOME = TMP2;
+    mkdirSync(TMP2, { recursive: true });
+  });
+
+  afterEach(() => {
+    process.env.HOME = origHome;
+    rmSync(TMP2, { recursive: true, force: true });
+  });
+
+  it('config list shows empty when no config', async () => {
+    const { configBuiltin } = await import('../../src/builtins/config.js');
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => logs.push(args.join(' '));
+    await configBuiltin.execute(['list'], {}, { cwd: process.cwd() });
+    console.log = origLog;
+    expect(logs[0]).toContain('empty');
+  });
+
+  it('config set persists and config get retrieves', async () => {
+    const { configBuiltin } = await import('../../src/builtins/config.js');
+
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => logs.push(args.join(' '));
+    await configBuiltin.execute(['set', 'test.key', 'test-value'], {}, { cwd: process.cwd() });
+    console.log = origLog;
+    expect(logs[0]).toContain('test.key = test-value');
+
+    const getLogs: string[] = [];
+    console.log = (...args: unknown[]) => getLogs.push(args.join(' '));
+    await configBuiltin.execute(['get', 'test.key'], {}, { cwd: process.cwd() });
+    console.log = origLog;
+    expect(getLogs[0]).toContain('test-value');
+  });
+
+  it('config get shows (not set) for missing key', async () => {
+    const { configBuiltin } = await import('../../src/builtins/config.js');
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => logs.push(args.join(' '));
+    await configBuiltin.execute(['get', 'missing.key'], {}, { cwd: process.cwd() });
+    console.log = origLog;
+    expect(logs[0]).toContain('(not set)');
+  });
+});
