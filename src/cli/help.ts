@@ -43,6 +43,7 @@ Commands:
   plugin list                       List plugins
   plugin reload <name>              Reload plugin
   plugin publish [--dry-run]        Publish plugin to marketplace
+  plugin register                   Register developer account
   plugin login [--token <key>]      Login to marketplace
   plugin whoami                     Show current user
   plugin logout                     Logout from marketplace

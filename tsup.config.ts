@@ -6,13 +6,13 @@ export default defineConfig([
     format: ['esm'],
     dts: true,
     clean: true,
-    external: ['playwright', 'playwright-core'],
+    external: ['playwright', 'playwright-core', 'undici'],
   },
   {
     entry: ['bin/cli.ts'],
     format: ['esm'],
     dts: false,
     clean: false,
-    external: ['playwright', 'playwright-core'],
+    external: ['playwright', 'playwright-core', 'undici'],
   },
 ]);

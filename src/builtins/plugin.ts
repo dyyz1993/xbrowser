@@ -112,6 +112,13 @@ export const pluginInstallBuiltin: BuiltinCommand = {
       } else {
         console.warn('  ⚠️  Warning: No xbrowser metadata found in package.json');
       }
+
+      if (result.warnings && result.warnings.length > 0) {
+        console.warn('\n⚠ Verification warnings:');
+        for (const w of result.warnings) {
+          console.warn(`  - ${w}`);
+        }
+      }
     } catch (e: unknown) {
       console.error('Error:', e instanceof Error ? e.message : String(e));
       process.exit(1);

@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { routeCommand } from '../src/router.js';
 import { readStdin } from '../src/stdin.js';
+import { ensureProxyFetch } from '../src/utils/proxy-fetch.js';
 
 async function main() {
+  await ensureProxyFetch();
   const stdinCommands = await readStdin();
   await routeCommand(process.argv.slice(2), stdinCommands);
 }

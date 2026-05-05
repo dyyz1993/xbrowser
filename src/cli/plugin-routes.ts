@@ -8,6 +8,7 @@ import {
   handlePluginLogin,
   handlePluginWhoami,
   handlePluginLogout,
+  handleRegister,
 } from './publish-routes.js';
 
 let pluginLoader: XBrowserPluginLoader | null = null;
@@ -64,6 +65,9 @@ export async function handlePlugin(
     }
     case 'publish':
       await handlePublish(subArgs, options, mode);
+      break;
+    case 'register':
+      await handleRegister(subArgs, options, mode);
       break;
     case 'login':
       await handlePluginLogin(subArgs, options, mode);

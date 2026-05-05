@@ -8,10 +8,13 @@ export interface AuthConfig {
   registry: string;
 }
 
+export type StorageType = 'npm' | 'r2';
+
 export interface PublishOptions {
   registry: string;
   token: string;
   dryRun?: boolean;
+  storage?: StorageType;
 }
 
 export interface PublishResult {
@@ -85,9 +88,20 @@ function slugify(name: string): string {
     .replace(/^-|-$/g, '');
 }
 
+async function validateNpmPackageExists(packageName: string, version: string): Promise<void> {
+  const encodedName = encodeURIComponent(packageName);
+  const res = await fetch(`https://registry.npmjs.org/${encodedName}/${version}`);
+  if (!res.ok) {
+    throw new Error(
+      `Package ${packageName}@${version} not found on npm. ` +
+        `Publish to npm first, or use --storage r2 to upload directly.`
+    );
+  }
+}
+
 export async function createTarball(
   pluginDir: string,
-  _options: PublishOptions
+  options: PublishOptions
 ): Promise<PublishResult> {
   const indexPath = resolve(pluginDir, 'index.ts');
   const pkgPath = resolve(pluginDir, 'package.json');
@@ -122,46 +136,73 @@ export async function createTarball(
   const tags = (xbrowserMeta.tags as string[]) || [];
   const sites = (xbrowserMeta.sites as string[]) || [];
 
-  const files = collectFiles(pluginDir);
-  const totalSize = files.reduce((sum, f) => sum + f.content.length, 0);
+  const storage = options.storage || 'r2';
 
-  const hash = createHash('sha256');
-  for (const f of files) {
-    hash.update(f.content);
+  if (storage === 'npm') {
+    const packageName = (packageJson.name as string) || name;
+    await validateNpmPackageExists(packageName, version);
   }
-  const checksum = `sha256-${hash.digest('hex').slice(0, 16)}`;
 
   const formData = new FormData();
-  const metadataBlob = new Blob(
-    [
-      JSON.stringify({
-        name,
-        slug,
-        version,
-        description,
-        author,
-        commands,
-        tags,
-        sites,
-        license: (xbrowserMeta.license as string) || (packageJson.license as string) || 'MIT',
-        homepageUrl: (xbrowserMeta.homepage as string) || (packageJson.homepage as string) || null,
-        repositoryUrl:
-          (xbrowserMeta.repository as string) ||
-          ((packageJson.repository as { url?: string })?.url) ||
-          null,
-        npmPackage: (packageJson.name as string) || null,
-      }),
-    ],
-    { type: 'application/json' }
-  );
+  const metadata: Record<string, unknown> = {
+    name,
+    slug,
+    version,
+    description,
+    author,
+    commands,
+    tags,
+    sites,
+    license: (xbrowserMeta.license as string) || (packageJson.license as string) || 'MIT',
+    homepageUrl: (xbrowserMeta.homepage as string) || (packageJson.homepage as string) || null,
+    repositoryUrl:
+      (xbrowserMeta.repository as string) ||
+      ((packageJson.repository as { url?: string })?.url) ||
+      null,
+    npmPackage: (packageJson.name as string) || null,
+    storageType: storage,
+  };
+
+  const metadataBlob = new Blob([JSON.stringify(metadata)], { type: 'application/json' });
   formData.append('metadata', metadataBlob, 'metadata.json');
 
-  for (const file of files) {
-    const blob = new Blob([new Uint8Array(file.content)]);
-    formData.append('files', blob, file.path);
+  let totalSize = 0;
+  let checksum = '';
+
+  if (storage === 'r2') {
+    const files = collectFiles(pluginDir);
+    totalSize = files.reduce((sum, f) => sum + f.content.length, 0);
+
+    const hash = createHash('sha256');
+    for (const f of files) {
+      hash.update(f.content);
+    }
+    checksum = `sha256-${hash.digest('hex').slice(0, 16)}`;
+
+    for (const file of files) {
+      const blob = new Blob([new Uint8Array(file.content)]);
+      formData.append('files', blob, file.path);
+    }
+
+    formData.append('checksum', checksum);
+
+    return {
+      name,
+      version,
+      slug,
+      description,
+      author,
+      commands,
+      tags,
+      sites,
+      fileCount: files.length,
+      size: totalSize,
+      checksum,
+      formData,
+    };
   }
 
-  formData.append('checksum', checksum);
+  formData.append('checksum', 'npm-managed');
 
   return {
     name,
@@ -172,9 +213,9 @@ export async function createTarball(
     commands,
     tags,
     sites,
-    fileCount: files.length,
-    size: totalSize,
-    checksum,
+    fileCount: 0,
+    size: 0,
+    checksum: 'npm-managed',
     formData,
   };
 }
