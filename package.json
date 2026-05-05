@@ -44,6 +44,7 @@
     "start": "node dist/cli.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "vitest run tests/e2e/",
     "validate": "npm run typecheck && npm run lint && npm run build && npm test"
   },
   "dependencies": {
