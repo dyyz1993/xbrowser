@@ -21,6 +21,8 @@ export function checkBrowserScope(
       return ctx.page ? null : '需要活跃的页面，请先执行 xbrowser session open <url>';
     case 'element':
       return ctx.page ? null : '需要活跃的页面，请先执行 xbrowser session open <url>';
+    default:
+      return null;
   }
 }
 

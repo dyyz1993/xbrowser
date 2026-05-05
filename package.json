@@ -18,7 +18,7 @@
     "validate": "npm run typecheck && npm run lint && npm run build && npm test"
   },
   "dependencies": {
-    "@dyyz1993/xcli-core": "^0.1.0",
+    "@dyyz1993/xcli-core": "^0.5.0",
     "@dyyz1993/xpage": "file:../mpage",
     "playwright": "^1.59.0",
     "playwright-core": "^1.58.0",
