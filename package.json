@@ -1,6 +1,6 @@
 {
   "name": "@dyyz1993/xbrowser",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A self-contained browser automation CLI tool — navigate, click, fill forms, extract data, record & replay sessions via YAML scripts",
   "type": "module",
   "bin": {
@@ -58,6 +58,7 @@
     "@types/ws": "^8.18.1",
     "@typescript-eslint/eslint-plugin": "^8.59.2",
     "@typescript-eslint/parser": "^8.59.2",
+    "@vitest/coverage-v8": "^4.1.5",
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
     "tsup": "^8.0.0",
