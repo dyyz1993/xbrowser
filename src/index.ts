@@ -1,6 +1,17 @@
 export { version } from './version.js';
-export { BrowserWorker, routeWorkerCommand, getBrowser, findSession, getAllSessions } from './worker.js';
-export type { WorkerContext } from './worker.js';
+export { executeCommand, executeChain, isChainInput, type ExecutionResult, type ChainStepResult, type ChainExecutionResult } from './executor.js';
+export {
+  getBrowser,
+  findSession,
+  getAllSessions as getAllBrowserSessions,
+  createSession,
+  closeSessionByName,
+  closeAllSessions as closeAllBrowserSessions,
+  destroyBrowser,
+  resetForTesting,
+  type ManagedSession,
+  type BrowserLaunchOptions,
+} from './browser.js';
 export { BrowserCommandContext, checkBrowserScope, assertPageScope } from './context.js';
 export { BROWSER_SCOPE } from './scope.js';
 export type { ScopeDefinition, ScopeLevel } from './scope.js';
@@ -13,15 +24,16 @@ export {
 export type { RegisteredCommand, BrowserCommandDefinition } from './commands/index.js';
 export { routeCommand as cliRoute } from './router.js';
 export {
-  daemonRequest,
   openSession,
   closeSession,
   closeAllSessions,
   listSessions,
-  getSession,
-  saveSession,
-  requireSession,
+  getSessionPage,
+  findSession as findSessionInfo,
+  getAllSessions as listAllBrowserSessions,
+  destroyBrowser as destroySessionManager,
 } from './session/session-client.js';
+export type { ManagedSession as SessionInfo } from './session/session-client.js';
 export { allBuiltins, getBuiltin } from './builtins/index.js';
 export type { BuiltinCommand, BuiltinContext } from './builtins/index.js';
 export { XBrowserPluginLoader } from './plugin/loader.js';
@@ -34,3 +46,14 @@ export { PlaybackEngine } from './recorder/player.js';
 export type { PlaybackOptions, PlaybackResult } from './recorder/player.js';
 export { DaemonManager } from './daemon/daemon.js';
 export type { DaemonConfig } from './daemon/daemon.js';
+export {
+  parseCommandChain,
+  splitCommand,
+  parseCommandArgs,
+  registerCommandDefinition,
+  type ParsedPipeline,
+} from './chain-parser.js';
+export { generateJSScript, generatePythonScript, generateBashScript } from './commands/convert.js';
+export { extractRecording, extractAndSave, printExtractSummary } from './commands/extract.js';
+export { filterRecording, parseExcludeTypes } from './commands/filter.js';
+export type { Recording, RecordingEvent } from './commands/definitions.js';

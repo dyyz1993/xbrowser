@@ -1,0 +1,182 @@
+import { describe, it, expect } from 'vitest';
+import {
+  parseCommandChain,
+  splitCommand,
+  parseCommandArgs,
+} from '../src/chain-parser.js';
+
+describe('parseCommandChain', () => {
+  it('parses a simple single command', () => {
+    const result = parseCommandChain('goto https://example.com');
+    expect(result).toHaveLength(1);
+    expect(result[0].pipeline).toEqual(['goto https://example.com']);
+    expect(result[0].type).toBe('and');
+  });
+
+  it('parses commands joined with &&', () => {
+    const result = parseCommandChain('goto https://example.com && title');
+    expect(result).toHaveLength(1);
+    expect(result[0].pipeline).toEqual(['goto https://example.com', 'title']);
+    expect(result[0].type).toBe('and');
+  });
+
+  it('parses commands joined with ||', () => {
+    const result = parseCommandChain('goto https://a.com || goto https://b.com');
+    expect(result).toHaveLength(1);
+    expect(result[0].pipeline).toEqual(['goto https://a.com', 'goto https://b.com']);
+    expect(result[0].type).toBe('or');
+  });
+
+  it('parses commands joined with ;', () => {
+    const result = parseCommandChain('goto https://example.com ; title');
+    expect(result).toHaveLength(2);
+    expect(result[0].pipeline).toEqual(['goto https://example.com']);
+    expect(result[0].type).toBe('and');
+    expect(result[1].pipeline).toEqual(['title']);
+    expect(result[1].type).toBe('and');
+  });
+
+  it('handles mixed chain operators', () => {
+    const result = parseCommandChain('goto https://example.com && title ; screenshot');
+    expect(result).toHaveLength(2);
+    expect(result[0].pipeline).toEqual(['goto https://example.com', 'title']);
+    expect(result[0].type).toBe('and');
+    expect(result[1].pipeline).toEqual(['screenshot']);
+  });
+
+  it('handles quoted strings with && inside', () => {
+    const result = parseCommandChain("fill '#input' 'hello && world' && title");
+    expect(result).toHaveLength(1);
+    expect(result[0].pipeline).toHaveLength(2);
+    expect(result[0].pipeline[0]).toBe("fill '#input' 'hello && world'");
+    expect(result[0].pipeline[1]).toBe('title');
+  });
+
+  it('handles double quotes with special chars', () => {
+    const result = parseCommandChain('fill "#input" "hello world" && title');
+    expect(result).toHaveLength(1);
+    expect(result[0].pipeline).toHaveLength(2);
+    expect(result[0].pipeline[0]).toBe('fill "#input" "hello world"');
+  });
+
+  it('handles CSS selectors with special chars', () => {
+    const result = parseCommandChain("click '#btn.primary' && fill 'input[name=\"email\"]' 'test@test.com'");
+    expect(result).toHaveLength(1);
+    expect(result[0].pipeline).toHaveLength(2);
+    expect(result[0].pipeline[0]).toBe("click '#btn.primary'");
+    expect(result[0].pipeline[1]).toBe("fill 'input[name=\"email\"]' 'test@test.com'");
+  });
+
+  it('handles multiple ; separated commands', () => {
+    const result = parseCommandChain('goto https://a.com ; goto https://b.com ; title');
+    expect(result).toHaveLength(3);
+    expect(result[0].pipeline).toEqual(['goto https://a.com']);
+    expect(result[1].pipeline).toEqual(['goto https://b.com']);
+    expect(result[2].pipeline).toEqual(['title']);
+  });
+
+  it('handles empty input', () => {
+    const result = parseCommandChain('');
+    expect(result).toHaveLength(0);
+  });
+
+  it('handles trailing &&', () => {
+    const result = parseCommandChain('title &&');
+    expect(result).toHaveLength(1);
+    expect(result[0].pipeline).toEqual(['title']);
+  });
+});
+
+describe('splitCommand', () => {
+  it('splits a simple command', () => {
+    expect(splitCommand('goto https://example.com')).toEqual([
+      'goto',
+      'https://example.com',
+    ]);
+  });
+
+  it('respects single quotes', () => {
+    expect(splitCommand("click '#btn'")).toEqual(['click', "'#btn'"]);
+  });
+
+  it('respects double quotes', () => {
+    expect(splitCommand('fill "#input" "hello world"')).toEqual([
+      'fill',
+      '"#input"',
+      '"hello world"',
+    ]);
+  });
+
+  it('handles multiple spaces', () => {
+    expect(splitCommand('goto   https://example.com')).toEqual([
+      'goto',
+      'https://example.com',
+    ]);
+  });
+
+  it('handles selectors with special chars in quotes', () => {
+    expect(splitCommand("click 'div.class > span'")).toEqual([
+      'click',
+      "'div.class > span'",
+    ]);
+  });
+
+  it('handles named args', () => {
+    expect(splitCommand('goto --url https://example.com --waitUntil networkidle')).toEqual([
+      'goto',
+      '--url',
+      'https://example.com',
+      '--waitUntil',
+      'networkidle',
+    ]);
+  });
+});
+
+describe('parseCommandArgs', () => {
+  it('parses goto with positional url', () => {
+    const { command, params } = parseCommandArgs('goto', ['https://example.com']);
+    expect(command).toBe('goto');
+    expect(params.url).toBe('https://example.com');
+  });
+
+  it('parses goto with named args', () => {
+    const { command, params } = parseCommandArgs('goto', [
+      '--url',
+      'https://example.com',
+      '--waitUntil',
+      'networkidle',
+    ]);
+    expect(params.url).toBe('https://example.com');
+    expect(params.waitUntil).toBe('networkidle');
+  });
+
+  it('parses click with positional selector', () => {
+    const { command, params } = parseCommandArgs('click', ["'#btn'"]);
+    expect(command).toBe('click');
+    expect(params.selector).toBe('#btn');
+  });
+
+  it('parses fill with positional selector and value', () => {
+    const { command, params } = parseCommandArgs('fill', ["'#input'", "'hello world'"]);
+    expect(command).toBe('fill');
+    expect(params.selector).toBe('#input');
+    expect(params.value).toBe('hello world');
+  });
+
+  it('parses named args with boolean flags', () => {
+    const { params } = parseCommandArgs('screenshot', ['--full-page']);
+    expect(params['full-page']).toBe(true);
+  });
+
+  it('parses named args with numeric values', () => {
+    const { params } = parseCommandArgs('wait', ["'#btn'", '--timeout', '5000']);
+    expect(params.selector).toBe('#btn');
+    expect(params.timeout).toBe(5000);
+  });
+
+  it('handles unknown commands gracefully', () => {
+    const { command, params } = parseCommandArgs('custom', ['arg1', 'arg2']);
+    expect(command).toBe('custom');
+    expect(Object.keys(params)).toHaveLength(0);
+  });
+});

@@ -37,25 +37,6 @@ export const textCommand = registerCommand({
   },
 });
 
-export const titleQueryCommand = registerCommand({
-  name: 'queryTitle',
-  description: 'Get page title',
-  scope: 'page',
-  handler: async (_p, ctx: BrowserCommandContext) => {
-    const title = await ctx.page.title();
-    return ok({ title });
-  },
-});
-
-export const urlQueryCommand = registerCommand({
-  name: 'queryUrl',
-  description: 'Get current page URL',
-  scope: 'page',
-  handler: async (_p, ctx: BrowserCommandContext) => {
-    return ok({ url: ctx.page.url() });
-  },
-});
-
 export const getPropertyCommand = registerCommand({
   name: 'getProperty',
   description: 'Get element property or attribute',

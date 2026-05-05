@@ -1,14 +1,11 @@
 export {
-  daemonRequest,
-  requireSession,
-  getSession,
-  saveSession,
   openSession,
   closeSession,
   closeAllSessions,
   listSessions,
-  htmlSession,
-  gotoSession,
-  clickSession,
-  fillSession,
+  findSession,
+  getAllSessions,
+  getSessionPage,
+  destroyBrowser,
 } from './session-client.js';
+export type { ManagedSession } from './session-client.js';

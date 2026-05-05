@@ -1,191 +1,78 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('playwright', () => ({
+  chromium: {
+    launch: vi.fn().mockResolvedValue({
+      newContext: vi.fn().mockResolvedValue({
+        newPage: vi.fn().mockResolvedValue({
+          goto: vi.fn().mockResolvedValue({ status: () => 200 }),
+          url: vi.fn().mockReturnValue('https://example.com'),
+        }),
+        close: vi.fn().mockResolvedValue(undefined),
+        browser: vi.fn().mockReturnValue({ close: vi.fn().mockResolvedValue(undefined) }),
+      }),
+      close: vi.fn().mockResolvedValue(undefined),
+    }),
+  },
+}));
 
 vi.mock('fs', () => ({
   mkdirSync: vi.fn(),
-  readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
-  existsSync: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock('os', () => ({
   homedir: vi.fn().mockReturnValue('/home/test'),
 }));
 
-const mockFetch = vi.fn();
-vi.stubGlobal('fetch', mockFetch);
-
 describe('Session Client', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
-  });
-
-  describe('requireSession', () => {
-    it('should throw when session file does not exist', async () => {
-      const { existsSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(false);
-      const { requireSession } = await import('../../src/session/session-client.js');
-      expect(() => requireSession('nonexistent')).toThrow("Session 'nonexistent' not found");
-    });
-
-    it('should return session name when session exists', async () => {
-      const { existsSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
-      const { requireSession } = await import('../../src/session/session-client.js');
-      expect(requireSession('my-session')).toBe('my-session');
-    });
-
-    it('should default to "default" session name', async () => {
-      const { existsSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
-      const { requireSession } = await import('../../src/session/session-client.js');
-      expect(requireSession()).toBe('default');
-    });
-  });
-
-  describe('daemonRequest', () => {
-    it('should throw when daemon not running', async () => {
-      const { existsSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(false);
-      const { daemonRequest } = await import('../../src/session/session-client.js');
-      await expect(daemonRequest('session.list')).rejects.toThrow('Daemon not running');
-    });
-
-    it('should make HTTP request when daemon is running', async () => {
-      const { existsSync, readFileSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
-      (readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(JSON.stringify({ port: 9222 }));
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: vi.fn().mockResolvedValue({ result: 'data' }),
-      });
-
-      const { daemonRequest } = await import('../../src/session/session-client.js');
-      const result = await daemonRequest('session.list');
-      expect(result).toEqual({ result: 'data' });
-      expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:9222/rpc',
-        expect.objectContaining({
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-        })
-      );
-    });
-
-    it('should throw on non-ok response', async () => {
-      const { existsSync, readFileSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
-      (readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(JSON.stringify({ port: 9222 }));
-      mockFetch.mockResolvedValue({
-        ok: false,
-        status: 500,
-      });
-
-      const { daemonRequest } = await import('../../src/session/session-client.js');
-      await expect(daemonRequest('test')).rejects.toThrow('Request failed: 500');
-    });
-
-    it('should throw on error in response body', async () => {
-      const { existsSync, readFileSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
-      (readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(JSON.stringify({ port: 9222 }));
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: vi.fn().mockResolvedValue({ error: 'Something went wrong' }),
-      });
-
-      const { daemonRequest } = await import('../../src/session/session-client.js');
-      await expect(daemonRequest('test')).rejects.toThrow('Something went wrong');
-    });
+    const { resetForTesting } = await import('../../src/browser.js');
+    resetForTesting();
   });
 
   describe('openSession', () => {
-    it('should create session via daemon and save', async () => {
-      const { existsSync, readFileSync, writeFileSync, mkdirSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
-      (readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(JSON.stringify({ port: 9222 }));
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: vi.fn().mockResolvedValue({ id: 'sess-123' }),
-      });
-
+    it('should create a session and return info', async () => {
       const { openSession } = await import('../../src/session/session-client.js');
-      const session = await openSession('test', 'https://example.com');
-      expect(session.name).toBe('test');
-      expect(session.url).toBe('https://example.com');
-      expect(session.id).toBe('sess-123');
-      expect(writeFileSync).toHaveBeenCalled();
-    });
-  });
-
-  describe('closeSession', () => {
-    it('should send session.close to daemon', async () => {
-      const { existsSync, readFileSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
-      (readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(JSON.stringify({ port: 9222 }));
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: vi.fn().mockResolvedValue({ ok: true }),
-      });
-
-      const { closeSession } = await import('../../src/session/session-client.js');
-      await closeSession('test');
-      expect(mockFetch).toHaveBeenCalled();
-    });
-  });
-
-  describe('getSession', () => {
-    it('should return null when session file does not exist', async () => {
-      const { existsSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(false);
-      const { getSession } = await import('../../src/session/session-client.js');
-      const result = await getSession('nonexistent');
-      expect(result).toBeNull();
-    });
-
-    it('should return session data when file exists', async () => {
-      const { existsSync, readFileSync } = await import('fs');
-      const sessionData = { id: '1', name: 'test', url: 'https://example.com' };
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
-      (readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(JSON.stringify(sessionData));
-      const { getSession } = await import('../../src/session/session-client.js');
-      const result = await getSession('test');
-      expect(result).toEqual(sessionData);
+      const info = await openSession('test', 'https://example.com');
+      expect(info.name).toBe('test');
+      expect(info.id).toBeDefined();
     });
   });
 
   describe('listSessions', () => {
-    it('should return empty array when daemon not running', async () => {
-      const { existsSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(false);
+    it('should return empty when no sessions', async () => {
       const { listSessions } = await import('../../src/session/session-client.js');
       const result = await listSessions();
       expect(result).toEqual([]);
     });
 
-    it('should return sessions when daemon is running', async () => {
-      const { existsSync, readFileSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
-      (readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(JSON.stringify({ port: 9222 }));
-      mockFetch.mockResolvedValue({
-        ok: true,
-        json: vi.fn().mockResolvedValue([
-          { id: '1', name: 'default' },
-          { id: '2', name: 'test' },
-        ]),
-      });
-
-      const { listSessions } = await import('../../src/session/session-client.js');
+    it('should list created sessions', async () => {
+      const { openSession, listSessions } = await import('../../src/session/session-client.js');
+      await openSession('test', 'https://example.com');
       const result = await listSessions();
-      expect(result).toHaveLength(2);
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe('test');
     });
+  });
 
-    it('should return empty on fetch error', async () => {
-      const { existsSync, readFileSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
-      (readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(JSON.stringify({ port: 9222 }));
-      mockFetch.mockRejectedValue(new Error('connection refused'));
+  describe('closeSession', () => {
+    it('should close a session by name', async () => {
+      const { openSession, closeSession, listSessions } = await import('../../src/session/session-client.js');
+      await openSession('test', 'https://example.com');
+      await closeSession('test');
+      const result = await listSessions();
+      expect(result).toEqual([]);
+    });
+  });
 
-      const { listSessions } = await import('../../src/session/session-client.js');
+  describe('closeAllSessions', () => {
+    it('should close all sessions', async () => {
+      const { openSession, closeAllSessions, listSessions } = await import('../../src/session/session-client.js');
+      await openSession('test1', 'https://example.com');
+      await openSession('test2', 'https://example.com');
+      await closeAllSessions();
       const result = await listSessions();
       expect(result).toEqual([]);
     });

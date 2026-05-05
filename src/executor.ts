@@ -1,0 +1,198 @@
+import { getCommand, getAllCommands } from './commands/index.js';
+import type { BrowserCommandContext } from './context.js';
+import { findSession, createSession, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
+import {
+  parseCommandChain,
+  splitCommand,
+  parseCommandArgs,
+} from './chain-parser.js';
+
+export interface ExecutionResult {
+  success: boolean;
+  data: unknown;
+  message?: string;
+  duration: number;
+}
+
+export interface ChainStepResult {
+  command: string;
+  raw: string;
+  success: boolean;
+  data: unknown;
+  message?: string;
+  duration: number;
+}
+
+export interface ChainExecutionResult {
+  success: boolean;
+  steps: ChainStepResult[];
+  totalDuration: number;
+  stoppedAt?: number;
+  stoppedReason?: string;
+}
+
+function errorResult(message: string): ExecutionResult {
+  return { success: false, data: null, message, duration: 0 };
+}
+
+export async function executeCommand(
+  commandName: string,
+  params: Record<string, unknown>,
+  sessionName: string = 'default'
+): Promise<ExecutionResult> {
+  const command = getCommand(commandName);
+  if (!command) {
+    const available = getAllCommands().map((c) => c.name);
+    return errorResult(
+      `Unknown command: ${commandName}. Available: ${available.join(', ')}`
+    );
+  }
+
+  if (command.parameters) {
+    const result = command.parameters.safeParse(params);
+    if (!result.success) {
+      return errorResult(
+        `Invalid parameters: ${result.error.errors
+          .map((e) => `${e.path.join('.')}: ${e.message}`)
+          .join(', ')}`
+      );
+    }
+  }
+
+  let session: ManagedSession;
+  const existing = findSession(sessionName);
+  if (!existing) {
+    return errorResult(
+      `Session '${sessionName}' not found. Run "xbrowser session open <url>" first.`
+    );
+  }
+  session = existing;
+
+  const ctx: BrowserCommandContext = {
+    page: session.page,
+    browser: session.context.browser()!,
+    browserContext: session.context,
+    sessionId: session.id,
+    args: [],
+    options: {},
+    cwd: process.cwd(),
+    storage: {
+      get: async () => null,
+      set: async () => {},
+      delete: async () => {},
+      clear: async () => {},
+      keys: async () => [],
+    },
+    output: {
+      mode: 'text' as const,
+      showTips: false,
+      color: false,
+      emoji: false,
+    },
+    error: (msg: string) => {
+      throw new Error(msg);
+    },
+    config: {},
+    site: {} as never,
+    cliName: 'xbrowser',
+  };
+
+  const start = Date.now();
+  try {
+    const data = await command.handler(params, ctx);
+    return { success: true, data, duration: Date.now() - start };
+  } catch (err) {
+    return {
+      success: false,
+      data: null,
+      message: (err as Error).message,
+      duration: Date.now() - start,
+    };
+  }
+}
+
+export async function executeChain(
+  input: string,
+  options?: { cdpEndpoint?: string; sessionName?: string }
+): Promise<ChainExecutionResult> {
+  const pipelines = parseCommandChain(input);
+  const sessionName = options?.sessionName || 'default';
+  const results: ChainStepResult[] = [];
+  const totalStart = Date.now();
+
+  let session = findSession(sessionName);
+  if (!session) {
+    const launchOpts: BrowserLaunchOptions = {};
+    if (options?.cdpEndpoint) {
+      launchOpts.cdpEndpoint = options.cdpEndpoint;
+    }
+    session = await createSession(sessionName, undefined, launchOpts);
+  }
+
+  for (const pipeline of pipelines) {
+    const { type, pipeline: commands } = pipeline;
+
+    for (const cmdStr of commands) {
+      const parts = splitCommand(cmdStr);
+      if (parts.length === 0) continue;
+
+      const cmdName = parts[0];
+      const cmdArgs = parts.slice(1);
+      const { params } = parseCommandArgs(cmdName, cmdArgs);
+
+      if (cmdName === 'goto' && params.url) {
+        const existing2 = findSession(sessionName);
+        if (!existing2) {
+          session = await createSession(sessionName, params.url as string, {
+            cdpEndpoint: options?.cdpEndpoint,
+          });
+        }
+      }
+
+      const start = Date.now();
+      const result = await executeCommand(cmdName, params, sessionName);
+      const duration = Date.now() - start;
+
+      const stepResult: ChainStepResult = {
+        command: cmdName,
+        raw: cmdStr,
+        success: result.success,
+        data: result.data,
+        message: result.message,
+        duration,
+      };
+      results.push(stepResult);
+
+      if (type === 'and' && !result.success) {
+        return {
+          success: false,
+          steps: results,
+          totalDuration: Date.now() - totalStart,
+          stoppedAt: results.length,
+          stoppedReason: `Command '${cmdName}' failed (&& chain): ${result.message}`,
+        };
+      }
+
+      if (type === 'or' && result.success) {
+        return {
+          success: true,
+          steps: results,
+          totalDuration: Date.now() - totalStart,
+          stoppedAt: results.length,
+          stoppedReason: `Command '${cmdName}' succeeded (|| chain)`,
+        };
+      }
+    }
+  }
+
+  const anyFailed = results.some((r) => !r.success);
+  return {
+    success: !anyFailed,
+    steps: results,
+    totalDuration: Date.now() - totalStart,
+  };
+}
+
+export function isChainInput(input: string): boolean {
+  return /&&|\|\||;/.test(input);
+}
