@@ -23,6 +23,7 @@ export {
 } from './commands/index.js';
 export type { RegisteredCommand, BrowserCommandDefinition } from './commands/index.js';
 export { routeCommand as cliRoute } from './router.js';
+export { readStdin, readCommandFile } from './stdin.js';
 export {
   openSession,
   closeSession,

@@ -9,3 +9,4 @@ export {
   handleExtract,
   handleFilter,
 } from './record-routes.js';
+export { handleRun } from './run-routes.js';

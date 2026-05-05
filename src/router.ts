@@ -13,6 +13,7 @@ import {
   handleConvert,
   handleExtract,
   handleFilter,
+  handleRun,
 } from './cli/index.js';
 import { outputError } from './cli/output.js';
 
@@ -21,8 +22,11 @@ function showMainHelp(): void {
 xbrowser v${version} - Browser Automation CLI
 
 Usage:
-  xbrowser <command> [options]
-  xbrowser "goto https://example.com && title && click '#btn'"
+  xbrowser <command> [options]          Execute a single command
+  xbrowser "cmd1 && cmd2 && cmd3"       Execute command chain
+  echo "cmd" | xbrowser                 Execute from pipe/stdin
+  xbrowser run commands.txt             Execute commands from file
+  xbrowser -e cmd1 -e cmd2             Execute multiple -e commands
 
 Commands:
   session open <url> [--name <n>]   Open browser session
@@ -63,12 +67,29 @@ Commands:
   record stop                       Stop recording
   record status                     Recording status
   replay <file>                     Replay recording
+  run <file>                        Execute commands from file
   help                              Show this help
   --version, -v                     Show version
 
 Chain Execution:
   xbrowser "goto https://example.com && title && click '#btn'"
   xbrowser "goto https://example.com ; screenshot"
+
+Pipe / Stdin:
+  echo "goto https://example.com" | xbrowser
+  printf "goto https://example.com\\ntitle\\nclick btn\\n" | xbrowser
+  xbrowser <<EOF
+  goto https://example.com
+  title
+  click btn
+  EOF
+
+Run from File:
+  xbrowser run commands.txt
+  # commands.txt: one command per line, # for comments, blank lines ok
+
+Eval Flag:
+  xbrowser -e "goto https://example.com" -e title -e "click btn"
 
 Selector Syntax:
   xbrowser click '#btn'              Quoted (handles # in shell)
@@ -95,7 +116,73 @@ function handleConfig(
   if (builtin) builtin.execute(args, options, { cwd: process.cwd() });
 }
 
-export async function routeCommand(argv: string[]): Promise<void> {
+function parseEvalFlags(argv: string[]): string[] {
+  const commands: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '-e' || argv[i] === '--eval') {
+      const cmd = argv[i + 1];
+      if (!cmd) {
+        console.error('Error: -e/--eval requires a command argument');
+        process.exit(1);
+      }
+      commands.push(cmd);
+      i++;
+    }
+  }
+  return commands;
+}
+
+export async function routeCommand(
+  argv: string[],
+  stdinCommands?: string[]
+): Promise<void> {
+  // 1. Stdin mode (pipe/heredoc)
+  if (stdinCommands && stdinCommands.length > 0) {
+    const chain = stdinCommands.join(' && ');
+    const chainResult = await executeChain(chain);
+    for (const step of chainResult.steps) {
+      if (step.success) {
+        console.log(`[OK] ${step.raw}`);
+        if (step.data && typeof step.data === 'object') {
+          const d = step.data as Record<string, unknown>;
+          for (const [k, v] of Object.entries(d)) {
+            if (k !== 'ok')
+              console.log(`     ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+          }
+        }
+      } else {
+        console.error(`[FAIL] ${step.raw}: ${step.message}`);
+      }
+    }
+    if (chainResult.stoppedReason) {
+      console.error(`Stopped: ${chainResult.stoppedReason}`);
+    }
+    if (!chainResult.success) process.exit(1);
+    return;
+  }
+
+  // 2. -e / --eval flags
+  const evalCommands = parseEvalFlags(argv);
+  if (evalCommands.length > 0) {
+    const chain = evalCommands.join(' && ');
+    const chainResult = await executeChain(chain);
+    for (const step of chainResult.steps) {
+      if (step.success) {
+        console.log(`[OK] ${step.raw}`);
+      } else {
+        console.error(`[FAIL] ${step.raw}: ${step.message}`);
+      }
+    }
+    if (chainResult.stoppedReason) {
+      console.error(`Stopped: ${chainResult.stoppedReason}`);
+    }
+    if (!chainResult.success) process.exit(1);
+    // If there are remaining args after filtering -e, they are ignored
+    // since -e mode is exclusive
+    return;
+  }
+
+  // 3. Single chain input (quoted string)
   if (argv.length === 1 && isChainInput(argv[0])) {
     const chainResult = await executeChain(argv[0]);
     for (const step of chainResult.steps) {
@@ -104,7 +191,8 @@ export async function routeCommand(argv: string[]): Promise<void> {
         if (step.data && typeof step.data === 'object') {
           const d = step.data as Record<string, unknown>;
           for (const [k, v] of Object.entries(d)) {
-            if (k !== 'ok') console.log(`     ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+            if (k !== 'ok')
+              console.log(`     ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
           }
         }
       } else {
@@ -175,6 +263,12 @@ export async function routeCommand(argv: string[]): Promise<void> {
         break;
       case 'filter':
         handleFilter(cmdArgs, mode);
+        break;
+      case 'run':
+        if (!cmdArgs[0]) {
+          outputError('Usage: xbrowser run <file>');
+        }
+        await handleRun(cmdArgs[0], { cdpEndpoint, sessionName });
         break;
       case 'help':
         showMainHelp();
