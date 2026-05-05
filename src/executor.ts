@@ -117,9 +117,9 @@ export async function executeCommand(
 
 export async function executeChain(
   input: string,
-  options?: { cdpEndpoint?: string; sessionName?: string }
+  options?: { cdpEndpoint?: string; sessionName?: string; fileMode?: boolean }
 ): Promise<ChainExecutionResult> {
-  const pipelines = parseCommandChain(input);
+  const pipelines = parseCommandChain(input, { fileMode: options?.fileMode });
   const sessionName = options?.sessionName || 'default';
   const results: ChainStepResult[] = [];
   const totalStart = Date.now();
@@ -206,5 +206,5 @@ export async function executeChain(
 }
 
 export function isChainInput(input: string): boolean {
-  return /&&|\|\||;/.test(input);
+  return /\s&&\s|\s;\s|\s,\s|\s\+\s|\s->\s/.test(input);
 }

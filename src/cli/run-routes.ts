@@ -23,6 +23,7 @@ export async function handleRun(
   const chainResult = await executeChain(chain, {
     cdpEndpoint: options?.cdpEndpoint,
     sessionName: options?.sessionName,
+    fileMode: true,
   });
 
   for (const step of chainResult.steps) {

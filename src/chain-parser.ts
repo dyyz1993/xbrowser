@@ -3,13 +3,31 @@ export interface ParsedPipeline {
   type: 'sequence' | 'and' | 'or';
 }
 
-export function parseCommandChain(input: string): ParsedPipeline[] {
+export interface ParseOptions {
+  fileMode?: boolean;
+}
+
+export function parseCommandChain(input: string, options?: ParseOptions): ParsedPipeline[] {
   const result: ParsedPipeline[] = [];
   let currentPipeline: string[] = [];
   let inQuote: "'" | '"' | null = null;
   let current = '';
   let parenDepth = 0;
   let lastOperator: 'and' | 'or' = 'and';
+
+  const pushCommand = () => {
+    if (current.trim()) currentPipeline.push(current.trim());
+    current = '';
+  };
+
+  const flushPipeline = () => {
+    pushCommand();
+    if (currentPipeline.length > 0) {
+      result.push({ pipeline: currentPipeline, type: lastOperator });
+    }
+    currentPipeline = [];
+    lastOperator = 'and';
+  };
 
   for (let i = 0; i < input.length; i++) {
     const char = input[i];
@@ -31,28 +49,45 @@ export function parseCommandChain(input: string): ParsedPipeline[] {
 
     if (!inQuote && parenDepth === 0) {
       if (char === '&' && input[i + 1] === '&') {
-        if (current.trim()) currentPipeline.push(current.trim());
-        current = '';
+        pushCommand();
         lastOperator = 'and';
         i++;
         continue;
       }
 
       if (char === '|' && input[i + 1] === '|') {
-        if (current.trim()) currentPipeline.push(current.trim());
-        current = '';
+        pushCommand();
         lastOperator = 'or';
         i++;
         continue;
       }
 
       if (char === ';') {
-        if (current.trim()) currentPipeline.push(current.trim());
-        if (currentPipeline.length > 0) {
-          result.push({ pipeline: currentPipeline, type: lastOperator });
-        }
-        currentPipeline = [];
-        current = '';
+        flushPipeline();
+        continue;
+      }
+
+      if (char === '-' && input[i + 1] === '>' && isSpaceAround(input, i, 2)) {
+        pushCommand();
+        lastOperator = 'and';
+        i++;
+        continue;
+      }
+
+      if (char === ',' && isSpaceAdjacent(input, i)) {
+        pushCommand();
+        lastOperator = 'and';
+        continue;
+      }
+
+      if (char === '+' && isSpaceAdjacent(input, i)) {
+        pushCommand();
+        lastOperator = 'and';
+        continue;
+      }
+
+      if (options?.fileMode && char === '|' && input[i + 1] !== '|') {
+        pushCommand();
         lastOperator = 'and';
         continue;
       }
@@ -61,12 +96,24 @@ export function parseCommandChain(input: string): ParsedPipeline[] {
     current += char;
   }
 
-  if (current.trim()) currentPipeline.push(current.trim());
+  pushCommand();
   if (currentPipeline.length > 0) {
     result.push({ pipeline: currentPipeline, type: lastOperator });
   }
 
   return result;
+}
+
+function isSpaceAdjacent(input: string, pos: number): boolean {
+  const before = pos > 0 && input[pos - 1] === ' ';
+  const after = pos + 1 < input.length && input[pos + 1] === ' ';
+  return before || after;
+}
+
+function isSpaceAround(input: string, pos: number, tokenLen: number): boolean {
+  const before = pos > 0 && input[pos - 1] === ' ';
+  const after = pos + tokenLen < input.length && input[pos + tokenLen] === ' ';
+  return before && after;
 }
 
 export function splitCommand(cmdStr: string): string[] {

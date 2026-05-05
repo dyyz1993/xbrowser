@@ -86,6 +86,79 @@ describe('parseCommandChain', () => {
     expect(result).toHaveLength(1);
     expect(result[0].pipeline).toEqual(['title']);
   });
+
+  it('parses commands separated by comma', () => {
+    const result = parseCommandChain('goto url, title, click btn');
+    expect(result).toHaveLength(1);
+    expect(result[0].pipeline).toEqual(['goto url', 'title', 'click btn']);
+    expect(result[0].type).toBe('and');
+  });
+
+  it('parses commands separated by comma with spaces', () => {
+    const result = parseCommandChain('goto url , title , click btn');
+    expect(result).toHaveLength(1);
+    expect(result[0].pipeline).toEqual(['goto url', 'title', 'click btn']);
+  });
+
+  it('parses commands separated by plus', () => {
+    const result = parseCommandChain('goto url + title + click btn');
+    expect(result).toHaveLength(1);
+    expect(result[0].pipeline).toEqual(['goto url', 'title', 'click btn']);
+    expect(result[0].type).toBe('and');
+  });
+
+  it('parses commands separated by arrow', () => {
+    const result = parseCommandChain('goto url -> title -> click btn');
+    expect(result).toHaveLength(1);
+    expect(result[0].pipeline).toEqual(['goto url', 'title', 'click btn']);
+    expect(result[0].type).toBe('and');
+  });
+
+  it('does not split comma without space (value comma)', () => {
+    const result = parseCommandChain('fill input,hello world');
+    expect(result).toHaveLength(1);
+    expect(result[0].pipeline).toEqual(['fill input,hello world']);
+  });
+
+  it('does not split plus without space (url+path)', () => {
+    const result = parseCommandChain('goto url+path');
+    expect(result).toHaveLength(1);
+    expect(result[0].pipeline).toEqual(['goto url+path']);
+  });
+
+  it('does not split arrow without spaces', () => {
+    const result = parseCommandChain('title->click');
+    expect(result).toHaveLength(1);
+    expect(result[0].pipeline).toEqual(['title->click']);
+  });
+
+  it('parses pipe separator in file mode', () => {
+    const result = parseCommandChain('goto url | title | click btn', { fileMode: true });
+    expect(result).toHaveLength(1);
+    expect(result[0].pipeline).toEqual(['goto url', 'title', 'click btn']);
+    expect(result[0].type).toBe('and');
+  });
+
+  it('does not split || as pipe in file mode', () => {
+    const result = parseCommandChain('goto a || goto b', { fileMode: true });
+    expect(result).toHaveLength(1);
+    expect(result[0].type).toBe('or');
+    expect(result[0].pipeline).toEqual(['goto a', 'goto b']);
+  });
+
+  it('mixed comma and && separators', () => {
+    const result = parseCommandChain('goto url, title && click btn');
+    expect(result).toHaveLength(1);
+    expect(result[0].pipeline).toEqual(['goto url', 'title', 'click btn']);
+    expect(result[0].type).toBe('and');
+  });
+
+  it('comma with semicolon creates separate pipelines', () => {
+    const result = parseCommandChain('goto url, title ; screenshot');
+    expect(result).toHaveLength(2);
+    expect(result[0].pipeline).toEqual(['goto url', 'title']);
+    expect(result[1].pipeline).toEqual(['screenshot']);
+  });
 });
 
 describe('splitCommand', () => {

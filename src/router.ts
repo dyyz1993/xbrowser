@@ -71,9 +71,15 @@ Commands:
   help                              Show this help
   --version, -v                     Show version
 
-Chain Execution:
-  xbrowser "goto https://example.com && title && click '#btn'"
-  xbrowser "goto https://example.com ; screenshot"
+Chain Execution (shell-safe, no quotes needed):
+   xbrowser goto https://example.com , title , click btn
+   xbrowser goto https://example.com + title + screenshot
+   xbrowser goto https://example.com -> title -> click btn
+   (comma, plus, arrow must have spaces around them)
+
+Chain Execution (needs quotes):
+   xbrowser "goto https://example.com && title && click '#btn'"
+   xbrowser "goto https://example.com ; screenshot"
 
 Pipe / Stdin:
   echo "goto https://example.com" | xbrowser
@@ -139,7 +145,7 @@ export async function routeCommand(
   // 1. Stdin mode (pipe/heredoc)
   if (stdinCommands && stdinCommands.length > 0) {
     const chain = stdinCommands.join(' && ');
-    const chainResult = await executeChain(chain);
+    const chainResult = await executeChain(chain, { fileMode: true });
     for (const step of chainResult.steps) {
       if (step.success) {
         console.log(`[OK] ${step.raw}`);
