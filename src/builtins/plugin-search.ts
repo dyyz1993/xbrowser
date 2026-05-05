@@ -1,5 +1,6 @@
 import type { BuiltinCommand } from './session.js';
 import { NPMSearcher } from '../plugin/npm-search.js';
+import { MarketplaceSearcher } from '../plugin/marketplace-search.js';
 import { PluginMetadataParser } from '../plugin/metadata-parser.js';
 import type { SearchOptions } from '../plugin/types.js';
 
@@ -21,10 +22,10 @@ function handleSearchHelp(): string {
 
 export const pluginSearchBuiltin: BuiltinCommand = {
   name: 'plugin search',
-  description: 'Search for xbrowser plugins on npm registry',
+  description: 'Search for xbrowser plugins on npm registry and marketplace',
   help: {
     usage: 'xbrowser plugin search <query> [options]',
-    description: 'Search npm registry for xbrowser-compatible plugins',
+    description: 'Search npm registry and marketplace for xbrowser-compatible plugins',
     options: [
       { name: '--tag <tag>', description: 'Filter by plugin tag' },
       { name: '--site <site>', description: 'Filter by target site' },
@@ -47,38 +48,85 @@ export const pluginSearchBuiltin: BuiltinCommand = {
         limit: options['limit'] ? Number.parseInt(String(options['limit'])) : 20,
       };
 
-      console.log(`Searching npm registry for xbrowser plugins...${query ? ` (query: "${query}")` : ''}`);
+      console.log(
+        `Searching npm registry and marketplace for xbrowser plugins...${query ? ` (query: "${query}")` : ''}`
+      );
 
-      const results = await NPMSearcher.search(searchOptions);
+      const [npmSettled, marketplaceSettled] = await Promise.allSettled([
+        NPMSearcher.search(searchOptions),
+        MarketplaceSearcher.search(searchOptions),
+      ]);
 
-      if (results.length === 0) {
+      const npmResults = npmSettled.status === 'fulfilled' ? npmSettled.value : [];
+      const marketplaceResults = marketplaceSettled.status === 'fulfilled' ? marketplaceSettled.value : [];
+
+      if (npmSettled.status === 'rejected') {
+        console.warn(`Warning: npm search failed: ${npmSettled.reason}`);
+      }
+      if (marketplaceSettled.status === 'rejected') {
+        console.warn(`Warning: marketplace search failed: ${marketplaceSettled.reason}`);
+      }
+
+      const total = npmResults.length + marketplaceResults.length;
+
+      if (total === 0) {
         console.log('No plugins found.');
         return;
       }
 
-      console.log(`Found ${results.length} plugin(s):\n`);
+      console.log(`Found ${total} plugin(s) (npm: ${npmResults.length}, marketplace: ${marketplaceResults.length}):\n`);
 
-      results.forEach((result, idx) => {
-        const metadata = PluginMetadataParser.fromNPMResult(result);
-        console.log(`${idx + 1}. ${result.name}`);
-        console.log(`   ${result.description}`);
-        console.log(`   Version: ${result.version}`);
-        console.log(`   Author: ${typeof result.author === 'string' ? result.author : result.author?.name}`);
+      if (npmResults.length > 0) {
+        console.log('--- npm ---\n');
+        npmResults.forEach((result, idx) => {
+          const metadata = PluginMetadataParser.fromNPMResult(result);
+          console.log(`${idx + 1}. ${result.name}`);
+          console.log(`   ${result.description}`);
+          console.log(`   Version: ${result.version}`);
+          console.log(`   Author: ${typeof result.author === 'string' ? result.author : result.author?.name}`);
 
-        if (metadata?.tags && metadata.tags.length > 0) {
-          console.log(`   Tags: ${metadata.tags.join(', ')}`);
-        }
+          if (metadata?.tags && metadata.tags.length > 0) {
+            console.log(`   Tags: ${metadata.tags.join(', ')}`);
+          }
 
-        if (result.links?.homepage) {
-          console.log(`   Homepage: ${result.links.homepage}`);
-        }
+          if (result.links?.homepage) {
+            console.log(`   Homepage: ${result.links.homepage}`);
+          }
 
-        if (result.links?.npm) {
-          console.log(`   NPM: ${result.links.npm}`);
-        }
+          if (result.links?.npm) {
+            console.log(`   NPM: ${result.links.npm}`);
+          }
 
-        console.log('');
-      });
+          console.log(`   Install: xbrowser plugin install ${result.name}`);
+          console.log('');
+        });
+      }
+
+      if (marketplaceResults.length > 0) {
+        console.log('--- marketplace ---\n');
+        marketplaceResults.forEach((result, idx) => {
+          console.log(`${idx + 1}. ${result.name} [marketplace]`);
+          console.log(`   ${result.description}`);
+          console.log(`   Version: ${result.version}`);
+          console.log(`   Author: ${result.author}`);
+          console.log(`   Downloads: ${result.downloads}`);
+
+          if (result.tags && result.tags.length > 0) {
+            console.log(`   Tags: ${result.tags.join(', ')}`);
+          }
+
+          if (result.commands && result.commands.length > 0) {
+            console.log(`   Commands: ${result.commands.join(', ')}`);
+          }
+
+          if (result.homepage) {
+            console.log(`   Homepage: ${result.homepage}`);
+          }
+
+          console.log(`   Install: xbrowser plugin install ${result.slug} --from-marketplace`);
+          console.log('');
+        });
+      }
     } catch (e: unknown) {
       console.error('Error:', e instanceof Error ? e.message : String(e));
       process.exit(1);

@@ -37,6 +37,25 @@ export interface SearchOptions {
   limit?: number;
 }
 
+export interface MarketplacePluginSearchResult {
+  source: 'marketplace';
+  slug: string;
+  name: string;
+  version: string;
+  description: string;
+  author: string;
+  homepage?: string;
+  repository?: string;
+  keywords?: string[];
+  tags?: string[];
+  sites?: string[];
+  commands?: string[];
+  downloads: number;
+  license?: string;
+}
+
+export type PluginSearchResult = NPMPluginSearchResult | MarketplacePluginSearchResult;
+
 export interface PluginListOptions {
   json?: boolean;
 }

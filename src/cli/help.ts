@@ -42,6 +42,10 @@ Commands:
   plugin uninstall <name>           Uninstall plugin
   plugin list                       List plugins
   plugin reload <name>              Reload plugin
+  plugin publish [--dry-run]        Publish plugin to marketplace
+  plugin login [--token <key>]      Login to marketplace
+  plugin whoami                     Show current user
+  plugin logout                     Logout from marketplace
   create <name> --template <type>   Create plugin
   daemon start [--port <port>]      Start daemon
   daemon stop                       Stop daemon

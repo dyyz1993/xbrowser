@@ -26,11 +26,16 @@ function handlePluginHelp(): string {
     'Usage: xbrowser plugin <command> [options]',
     '',
     'Commands:',
-    '  search <query> [options]                      Search for plugins on npm',
-    '  install <source> [--name <name>] [--force]  Install a plugin',
-    '  uninstall <name>                             Uninstall a plugin',
-    '  list [--json]                                List installed plugins',
-    '  reload <name>                                Reload a plugin',
+    '  search <query> [options]                      Search for plugins on npm and marketplace',
+    '  install <source> [--name <name>] [--force]    Install a plugin',
+    '  install <slug> --from-marketplace             Install from marketplace',
+    '  uninstall <name>                              Uninstall a plugin',
+    '  list [--json]                                 List installed plugins',
+    '  reload <name>                                 Reload a plugin',
+    '  publish [--registry <url>] [--dry-run]        Publish plugin to marketplace',
+    '  login [--token <api-key>] [--registry <url>]  Login to marketplace',
+    '  whoami                                        Show current logged-in user',
+    '  logout                                        Logout from marketplace',
     '',
     'Examples:',
     '  xbrowser plugin search scraper',
@@ -39,6 +44,11 @@ function handlePluginHelp(): string {
     '  xbrowser plugin uninstall my-plugin',
     '  xbrowser plugin list',
     '  xbrowser plugin reload my-plugin',
+    '  xbrowser plugin publish',
+    '  xbrowser plugin publish --dry-run',
+    '  xbrowser plugin login --token my-api-key',
+    '  xbrowser plugin whoami',
+    '  xbrowser plugin logout',
   ].join('\n');
 }
 
@@ -46,29 +56,38 @@ export const pluginInstallBuiltin: BuiltinCommand = {
   name: 'plugin install',
   description: 'Install a plugin',
   help: {
-    usage: 'xbrowser plugin install <source> [--name <name>] [--force]',
-    description: 'Install a plugin from local path, npm, git, or URL',
+    usage: 'xbrowser plugin install <source> [--name <name>] [--force] [--from-marketplace]',
+    description: 'Install a plugin from local path, npm, git, URL, or marketplace',
     options: [
       { name: '--name <name>', description: 'Custom plugin name' },
       { name: '--force', description: 'Overwrite existing plugin' },
+      { name: '--from-marketplace', description: 'Install from marketplace by slug' },
     ],
     examples: [
       { cmd: 'xbrowser plugin install xbrowser-plugin-scraper', description: 'Install from npm' },
       { cmd: 'xbrowser plugin install ./my-plugin', description: 'Install from local path' },
+      { cmd: 'xbrowser plugin install my-plugin --from-marketplace', description: 'Install from marketplace' },
     ],
   },
   execute: async (args, options) => {
     const source = args[0];
     if (!source) {
-      console.error('Usage: xbrowser plugin install <source> [--name <name>]');
+      console.error('Usage: xbrowser plugin install <source> [--name <name>] [--from-marketplace]');
       process.exit(1);
     }
     try {
       const installer = getInstaller();
-      const result = await installer.install(source, {
+      const installOpts = {
         name: options['name'] as string | undefined,
         force: !!options['force'],
-      });
+      };
+
+      let result;
+      if (options['from-marketplace']) {
+        result = await installer.installFromMarketplace(source, installOpts);
+      } else {
+        result = await installer.install(source, installOpts);
+      }
 
       console.log(`Plugin "${result.name}" installed from ${result.source}`);
       console.log(`  Path: ${result.path}`);

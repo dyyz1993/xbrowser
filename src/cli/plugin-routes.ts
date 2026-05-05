@@ -3,6 +3,12 @@ import { XBrowserPluginLoader } from '../plugin/loader.js';
 import { PluginInstaller } from '../plugin/installer.js';
 import { DaemonManager } from '../daemon/daemon.js';
 import { outputResult, outputError } from './output.js';
+import {
+  handlePublish,
+  handlePluginLogin,
+  handlePluginWhoami,
+  handlePluginLogout,
+} from './publish-routes.js';
 
 let pluginLoader: XBrowserPluginLoader | null = null;
 
@@ -56,6 +62,18 @@ export async function handlePlugin(
       outputResult({ ok: true, name }, mode);
       break;
     }
+    case 'publish':
+      await handlePublish(subArgs, options, mode);
+      break;
+    case 'login':
+      await handlePluginLogin(subArgs, options, mode);
+      break;
+    case 'whoami':
+      await handlePluginWhoami(subArgs, options, mode);
+      break;
+    case 'logout':
+      await handlePluginLogout(subArgs, options, mode);
+      break;
     default:
       console.log(handlePluginHelp());
   }

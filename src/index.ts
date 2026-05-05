@@ -41,6 +41,8 @@ export { XBrowserPluginLoader } from './plugin/loader.js';
 export type { PluginLoaderOptions, PluginStatus } from './plugin/loader.js';
 export { PluginInstaller } from './plugin/installer.js';
 export type { InstalledPlugin, InstallOptions } from './plugin/installer.js';
+export { createTarball } from './plugin/publisher.js';
+export type { PublishOptions, PublishResult, AuthConfig } from './plugin/publisher.js';
 export { RecorderController } from './recorder/recorder.js';
 export type { RecordedEvent, RecordingSession, RecorderStatus } from './recorder/recorder.js';
 export { PlaybackEngine } from './recorder/player.js';
