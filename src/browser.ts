@@ -52,9 +52,7 @@ export async function getBrowser(options?: BrowserLaunchOptions): Promise<Browse
   }
 
   const executablePath =
-    options?.executablePath ||
-    process.env.XBROWSER_CHROMIUM_PATH ||
-    '/Applications/Chromium.app/Contents/MacOS/Chromium';
+    options?.executablePath || process.env.XBROWSER_CHROMIUM_PATH || undefined;
   browser = await chromium.launch({ executablePath, headless: options?.headless ?? true });
   return browser;
 }
