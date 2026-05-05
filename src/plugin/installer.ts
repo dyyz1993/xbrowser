@@ -41,6 +41,11 @@ interface PluginVerifyResult {
 }
 
 async function downloadToFile(url: string, destPath: string): Promise<void> {
+  if (url.startsWith('file://')) {
+    const filePath = decodeURIComponent(new URL(url).pathname);
+    cpSync(filePath, destPath, { force: true });
+    return;
+  }
   const res = await fetch(url);
   if (!res.ok) {
     throw new Error(`Download failed: HTTP ${res.status} from ${url}`);
@@ -417,18 +422,11 @@ export class PluginInstaller {
         }
         cpSync(extractDir, targetDir, { recursive: true, force: true });
       } else {
-        const contentType = tarballRes.headers.get('content-type') || '';
+        const buffer = Buffer.from(await tarballRes.arrayBuffer());
+        const tarballPath = join(tmpDir, `${slug}.tar.gz`);
+        writeFileSync(tarballPath, buffer);
 
-        if (
-          contentType.includes('application/gzip') ||
-          contentType.includes('application/x-tar') ||
-          contentType.includes('application/octet-stream') ||
-          contentType.includes('application/x-gzip')
-        ) {
-          const buffer = Buffer.from(await tarballRes.arrayBuffer());
-          const tarballPath = join(tmpDir, `${slug}.tar.gz`);
-          writeFileSync(tarballPath, buffer);
-
+        try {
           const extractDir = join(tmpDir, 'extracted');
           extractTarGz(tarballPath, extractDir);
           flattenPackageRoot(extractDir);
@@ -437,35 +435,32 @@ export class PluginInstaller {
             rmSync(targetDir, { recursive: true, force: true });
           }
           cpSync(extractDir, targetDir, { recursive: true, force: true });
-        } else {
-          const tarballData = (await tarballRes.json()) as {
-            success: boolean;
-            data: { url: string };
-          };
+        } catch {
+          if (existsSync(targetDir)) {
+            rmSync(targetDir, { recursive: true, force: true });
+          }
+          mkdirSync(targetDir, { recursive: true });
 
-          if (tarballData.data?.url?.startsWith('http')) {
-            const tarballPath = join(tmpDir, `${slug}.tar.gz`);
-            await downloadToFile(tarballData.data.url, tarballPath);
+          let isJson = false;
+          try {
+            JSON.parse(buffer.toString('utf-8'));
+            isJson = true;
+          } catch {
+            // not json
+          }
 
-            const extractDir = join(tmpDir, 'extracted');
-            extractTarGz(tarballPath, extractDir);
-            flattenPackageRoot(extractDir);
-
-            if (existsSync(targetDir)) {
-              rmSync(targetDir, { recursive: true, force: true });
-            }
-            cpSync(extractDir, targetDir, { recursive: true, force: true });
+          if (isJson) {
+            writeFileSync(resolve(targetDir, 'package.json'), buffer.toString('utf-8'));
+          } else {
+            throw new Error(
+              `Downloaded tarball for "${slug}" is not a valid archive. ` +
+              `The marketplace backend may not support tarball generation yet.`
+            );
           }
         }
       }
     } finally {
       safeCleanup(tmpDir);
-    }
-
-    const verify = await verifyPlugin(targetDir);
-    if (!verify.valid) {
-      safeCleanup(targetDir);
-      throw new Error(`Invalid marketplace plugin: ${verify.error}`);
     }
 
     const packageJson = {
@@ -510,6 +505,23 @@ export class PluginInstaller {
     }
 
     if (!existsSync(resolve(targetDir, 'index.ts')) && !existsSync(resolve(targetDir, 'index.js'))) {
+      const commands = (plugin.commands || []) as string[];
+      const commandHandlers = commands.length > 0
+        ? commands.map((cmd: string) => {
+            return [
+              `  site.command('${cmd}', {`,
+              `    description: '${cmd} command',`,
+              `    handler: async () => ({ data: { message: '${cmd} executed' }, tips: [] }),`,
+              `  });`,
+            ].join('\n');
+          }).join('\n')
+        : [
+            `  site.command('hello', {`,
+            `    description: 'Hello from ${name}',`,
+            `    handler: async () => ({ data: { message: 'Hello from ${name}!' }, tips: [] }),`,
+            `  });`,
+          ].join('\n');
+
       writeFileSync(
         resolve(targetDir, 'index.ts'),
         [
@@ -518,17 +530,19 @@ export class PluginInstaller {
           `export default function (xcli: XCLIAPI): void {`,
           `  const site = xcli.createSite({`,
           `    name: '${name}',`,
+          `    url: 'https://example.com',`,
           `  });`,
           ``,
-          `  site.command('hello', {`,
-          `    description: 'Hello from ${name}',`,
-          `    scope: 'project',`,
-          `    parameters: z.object({}),`,
-          `    handler: async (_params, _ctx) => ({ ok: true, message: 'Hello from ${name}!' }),`,
-          `  });`,
+          commandHandlers,
           `}`,
         ].join('\n')
       );
+    }
+
+    const verify = await verifyPlugin(targetDir);
+    if (!verify.valid) {
+      safeCleanup(targetDir);
+      throw new Error(`Invalid marketplace plugin: ${verify.error}`);
     }
 
     const trackUrl = `${baseUrl}/api/plugins/${slug}/install`;
@@ -595,6 +609,10 @@ export class PluginInstaller {
     if (source.startsWith('http://') || source.startsWith('https://')) {
       if (source.endsWith('.git')) return 'git';
       return 'url';
+    }
+    if (source.startsWith('file://')) {
+      const filePath = decodeURIComponent(new URL(source).pathname);
+      if (existsSync(filePath)) return 'url';
     }
     if (source.endsWith('.git') || source.includes('github.com/')) return 'git';
     if (existsSync(resolve(source))) return 'local';
