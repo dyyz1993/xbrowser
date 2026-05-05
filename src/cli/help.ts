@@ -38,6 +38,7 @@ Commands:
   extract <rec.yaml>                Extract LLM-ready summary
   filter <in.yaml> <out.yaml>       Filter recording events
   config <get|set|list>             Manage config
+  plugin search <query>             Search for plugins
   plugin install <source>           Install plugin
   plugin uninstall <name>           Uninstall plugin
   plugin list                       List plugins
