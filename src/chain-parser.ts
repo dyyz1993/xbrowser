@@ -114,6 +114,20 @@ function unquote(s: string): string {
   return s;
 }
 
+const SHORT_FLAG_MAP: Record<string, string> = {
+  s: 'selector',
+  v: 'value',
+};
+
+function coerceValue(raw: string): unknown {
+  const v = unquote(raw);
+  if (v === 'true') return true;
+  if (v === 'false') return false;
+  if (/^\d+$/.test(v)) return parseInt(v, 10);
+  if (/^\d+\.\d+$/.test(v)) return parseFloat(v);
+  return v;
+}
+
 export function parseCommandArgs(
   name: string,
   args: string[]
@@ -131,18 +145,26 @@ export function parseCommandArgs(
     if (raw.startsWith('--')) {
       const key = raw.slice(2);
       const value = args[i + 1];
-      if (value && !value.startsWith('--')) {
-        const unquotedValue = unquote(value);
-        if (unquotedValue === 'true') params[key] = true;
-        else if (unquotedValue === 'false') params[key] = false;
-        else if (/^\d+$/.test(unquotedValue)) params[key] = parseInt(unquotedValue, 10);
-        else if (/^\d+\.\d+$/.test(unquotedValue)) params[key] = parseFloat(unquotedValue);
-        else params[key] = unquotedValue;
+      if (value && !value.startsWith('-')) {
+        params[key] = coerceValue(value);
         i++;
       } else {
         params[key] = true;
       }
-    } else if (!raw.startsWith('-')) {
+    } else if (raw.startsWith('-') && raw.length === 2) {
+      const flag = raw[1];
+      const mappedKey = SHORT_FLAG_MAP[flag];
+      const value = args[i + 1];
+      if (mappedKey && value && !value.startsWith('-')) {
+        params[mappedKey] = coerceValue(value);
+        i++;
+      } else if (value && !value.startsWith('-')) {
+        params[flag] = coerceValue(value);
+        i++;
+      } else {
+        params[mappedKey || flag] = true;
+      }
+    } else {
       if (positionalIndex < positionalKeys.length) {
         params[positionalKeys[positionalIndex]] = arg;
         positionalIndex++;

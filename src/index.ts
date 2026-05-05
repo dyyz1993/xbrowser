@@ -53,6 +53,7 @@ export {
   registerCommandDefinition,
   type ParsedPipeline,
 } from './chain-parser.js';
+export { normalizeSelector } from './utils/selector.js';
 export { generateJSScript, generatePythonScript, generateBashScript } from './commands/convert.js';
 export { extractRecording, extractAndSave, printExtractSummary } from './commands/extract.js';
 export { filterRecording, parseExcludeTypes } from './commands/filter.js';

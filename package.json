@@ -1,18 +1,47 @@
 {
-  "name": "xbrowser",
+  "name": "@dyyz1993/xbrowser",
   "version": "0.1.0",
-  "description": "A browser automation CLI built with @dyyz1993/xcli-core",
+  "description": "A self-contained browser automation CLI tool — navigate, click, fill forms, extract data, record & replay sessions via YAML scripts",
   "type": "module",
   "bin": {
     "xbrowser": "dist/cli.js"
   },
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "browser",
+    "automation",
+    "cli",
+    "playwright",
+    "cdp",
+    "scraper",
+    "puppeteer",
+    "web-testing",
+    "browser-automation",
+    "record-replay"
+  ],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dyyz1993/xbrowser.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dyyz1993/xbrowser/issues"
+  },
+  "homepage": "https://github.com/dyyz1993/xbrowser#readme",
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
     "lint": "eslint src/ bin/ --ext .ts",
     "typecheck": "tsc --noEmit",
-    "start": "node dist/bin/cli.js",
+    "start": "node dist/cli.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "validate": "npm run typecheck && npm run lint && npm run build && npm test"
