@@ -1,1 +1,15 @@
-export { loadBrowserPlugin, ensureBrowser, closeBrowser } from './browser.js';
+import './navigation.js';
+import './interaction.js';
+import './query.js';
+import './wait.js';
+import './scroll.js';
+import './mouse.js';
+import './evaluate.js';
+import './storage.js';
+import './snapshot.js';
+import './structure.js';
+import './viewport.js';
+import './frame.js';
+
+export { getCommand, getAllCommands, getCommandNames, clearRegistry, registerCommand } from './command-registry.js';
+export type { RegisteredCommand, BrowserCommandDefinition } from './command-registry.js';

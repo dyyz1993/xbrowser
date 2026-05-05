@@ -1,0 +1,113 @@
+import { spawn, type ChildProcess } from 'child_process';
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'fs';
+import { resolve } from 'path';
+import { homedir } from 'os';
+
+export interface DaemonConfig {
+  pid: number;
+  port: number;
+  startedAt: string;
+}
+
+export interface DaemonManagerOptions {
+  configDir?: string;
+  workerScript?: string;
+}
+
+export class DaemonManager {
+  private configDir: string;
+  private configPath: string;
+  private workerScript: string;
+  private process: ChildProcess | null = null;
+
+  constructor(options?: DaemonManagerOptions) {
+    this.configDir = options?.configDir || resolve(homedir(), '.xbrowser');
+    this.configPath = resolve(this.configDir, 'daemon.json');
+    this.workerScript = options?.workerScript || resolve(process.cwd(), 'dist/bin/cli.js');
+  }
+
+  async start(port?: number): Promise<DaemonConfig> {
+    const existing = this.getConfig();
+    if (existing && this.isProcessRunning(existing.pid)) {
+      throw new Error(`Daemon already running (PID: ${existing.pid}, Port: ${existing.port})`);
+    }
+
+    const daemonPort = port || 9222;
+
+    this.process = spawn('node', [this.workerScript, 'daemon', 'worker', '--port', String(daemonPort)], {
+      detached: true,
+      stdio: 'ignore',
+      env: { ...process.env },
+    });
+
+    this.process.unref();
+
+    const config: DaemonConfig = {
+      pid: this.process.pid!,
+      port: daemonPort,
+      startedAt: new Date().toISOString(),
+    };
+
+    this.saveConfig(config);
+    return config;
+  }
+
+  async stop(): Promise<void> {
+    const config = this.getConfig();
+    if (!config) {
+      throw new Error('Daemon is not running');
+    }
+
+    try {
+      process.kill(config.pid, 'SIGTERM');
+    } catch {
+      // process may already be dead
+    }
+
+    this.clearConfig();
+  }
+
+  status(): DaemonConfig | null {
+    const config = this.getConfig();
+    if (!config) return null;
+
+    if (!this.isProcessRunning(config.pid)) {
+      this.clearConfig();
+      return null;
+    }
+
+    return config;
+  }
+
+  private getConfig(): DaemonConfig | null {
+    if (!existsSync(this.configPath)) return null;
+    try {
+      return JSON.parse(readFileSync(this.configPath, 'utf-8'));
+    } catch {
+      return null;
+    }
+  }
+
+  private saveConfig(config: DaemonConfig): void {
+    const dir = resolve(this.configPath, '..');
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true });
+    }
+    writeFileSync(this.configPath, JSON.stringify(config, null, 2));
+  }
+
+  private clearConfig(): void {
+    if (existsSync(this.configPath)) {
+      unlinkSync(this.configPath);
+    }
+  }
+
+  private isProcessRunning(pid: number): boolean {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}

@@ -4,25 +4,35 @@
   "description": "A browser automation CLI built with @dyyz1993/xcli-core",
   "type": "module",
   "bin": {
-    "xbrowser": "dist/bin/cli.js"
+    "xbrowser": "dist/cli.js"
   },
   "main": "dist/index.js",
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "lint": "eslint src/",
+    "lint": "eslint src/ bin/ --ext .ts",
     "typecheck": "tsc --noEmit",
-    "start": "node dist/bin/cli.js"
+    "start": "node dist/bin/cli.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "validate": "npm run typecheck && npm run lint && npm run build && npm test"
   },
   "dependencies": {
     "@dyyz1993/xcli-core": "^0.1.0",
-    "zod": "^3.24.0",
+    "@dyyz1993/xpage": "file:../mpage",
     "playwright": "^1.59.0",
-    "playwright-core": "^1.58.0"
+    "playwright-core": "^1.58.0",
+    "yaml": "^2.8.4",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.2",
+    "@typescript-eslint/parser": "^8.59.2",
+    "eslint": "^10.3.0",
+    "eslint-config-prettier": "^10.1.8",
     "tsup": "^8.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0"
   }
 }

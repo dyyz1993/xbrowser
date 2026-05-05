@@ -1,0 +1,24 @@
+import { z } from 'zod';
+import { ok } from '@dyyz1993/xcli-core';
+import type { BrowserCommandContext } from '../context.js';
+import { registerCommand } from './command-registry.js';
+
+export const setViewportCommand = registerCommand({
+  name: 'setViewport',
+  description: 'Set the viewport size and properties',
+  scope: 'browser',
+  parameters: z.object({
+    width: z.number(),
+    height: z.number(),
+    deviceScaleFactor: z.number().optional(),
+    isMobile: z.boolean().optional(),
+    hasTouch: z.boolean().optional(),
+  }),
+  handler: async (p, ctx: BrowserCommandContext) => {
+    const viewport = ctx.page.viewportSize();
+    const width = p.width ?? viewport?.width ?? 1280;
+    const height = p.height ?? viewport?.height ?? 720;
+    await ctx.page.setViewportSize({ width, height });
+    return ok({ width, height });
+  },
+});

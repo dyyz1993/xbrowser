@@ -1,11 +1,7 @@
 #!/usr/bin/env node
-import { createApp } from '../src/index.js';
+import { routeCommand } from '../src/router.js';
 
-const app = createApp();
-
-try {
-  await app.run(process.argv.slice(2));
-} catch (err) {
-  console.error(err);
+routeCommand(process.argv.slice(2)).catch((err: unknown) => {
+  console.error(err instanceof Error ? err.message : String(err));
   process.exit(1);
-}
+});
