@@ -2,6 +2,8 @@
 
 > 自包含的浏览器自动化 CLI 工具 — 导航、点击、填表、截图、录制回放、插件扩展，一行命令搞定
 
+[![CI Status](https://github.com/dyyz1993/xbrowser/workflows/CI/badge.svg)](https://github.com/dyyz1993/xbrowser/actions)
+[![codecov](https://codecov.io/gh/dyyz1993/xbrowser/branch/master/graph/badge.svg)](https://codecov.io/gh/dyyz1993/xbrowser)
 [![npm version](https://img.shields.io/npm/v/@dyyz1993/xbrowser.svg)](https://www.npmjs.com/package/@dyyz1993/xbrowser)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -320,12 +322,39 @@ xbrowser --cdp auto "goto https://example.com , title"
 
 | 命令 | 说明 | 示例 |
 |------|------|------|
-| `plugin install <path>` | 安装插件 | `xbrowser plugin install ./my-plugin` |
+| `plugin search <query>` | 搜索 npm 上的插件 | `xbrowser plugin search scraper` |
+| `plugin search <query> --tag <tag>` | 按标签搜索 | `xbrowser plugin search ecommerce --tag scraper` |
+| `plugin search <query> --site <site>` | 按站点搜索 | `xbrowser plugin search amazon --site amazon.com` |
+| `plugin install <path>` | 安装插件 | `xbrowser plugin install xbrowser-plugin-scraper` |
 | `plugin install <path> --name my-plugin` | 指定名称安装 | `xbrowser plugin install ./my-plugin --name my-plugin` |
 | `plugin install <path> --force` | 强制重新安装 | `xbrowser plugin install ./my-plugin --force` |
 | `plugin uninstall <name>` | 卸载插件 | `xbrowser plugin uninstall my-plugin` |
 | `plugin list` | 列出已安装插件 | `xbrowser plugin list` |
+| `plugin list --json` | JSON 格式输出 | `xbrowser plugin list --json` |
 | `plugin reload <name>` | 重新加载插件 | `xbrowser plugin reload my-plugin` |
+
+**插件搜索**：
+
+使用 `xbrowser plugin search` 在 npm registry 中搜索 xbrowser 兼容插件：
+
+```bash
+# 搜索所有插件
+xbrowser plugin search
+
+# 按关键词搜索
+xbrowser plugin search scraper
+
+# 按标签过滤
+xbrowser plugin search --tag ecommerce
+
+# 按站点过滤
+xbrowser plugin search --site amazon.com
+
+# 组合搜索
+xbrowser plugin search scraper --tag data-extraction --limit 10
+```
+
+搜索结果会显示插件名称、描述、版本、作者、标签、主页和 npm 链接。
 
 ### 创建插件
 

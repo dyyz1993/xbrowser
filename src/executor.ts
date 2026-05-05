@@ -7,6 +7,7 @@ import {
   splitCommand,
   parseCommandArgs,
 } from './chain-parser.js';
+import type { WSServer, CommandMessage } from './websocket-server.js';
 
 export interface ExecutionResult {
   success: boolean;
@@ -34,6 +35,20 @@ export interface ChainExecutionResult {
 
 function errorResult(message: string): ExecutionResult {
   return { success: false, data: null, message, duration: 0 };
+}
+
+let wsServer: WSServer | null = null;
+
+export function setWSServer(server: WSServer | null): void {
+  wsServer = server;
+}
+
+function streamCommandEvent(sessionId: string, message: CommandMessage): void {
+  if (!wsServer || !wsServer.getRunning()) return;
+  wsServer.broadcastToSession(sessionId, {
+    type: 'command',
+    data: message,
+  });
 }
 
 export async function executeCommand(
@@ -99,18 +114,63 @@ export async function executeCommand(
   };
 
   const start = Date.now();
+
+  streamCommandEvent(session.id, {
+    sessionId: session.id,
+    command: commandName,
+    args: Object.values(params),
+    phase: 'before',
+    timestamp: start,
+  });
+
   try {
     const raw = await command.handler(params, ctx);
+    const end = Date.now();
+    const duration = end - start;
+
     if (isCommandResult(raw)) {
-      return { ...raw, duration: Date.now() - start };
+      streamCommandEvent(session.id, {
+        sessionId: session.id,
+        command: commandName,
+        args: Object.values(params),
+        phase: 'after',
+        result: raw.data,
+        timestamp: end,
+        duration,
+      });
+      return { ...raw, duration };
     }
-    return { success: true, data: raw, duration: Date.now() - start };
+
+    streamCommandEvent(session.id, {
+      sessionId: session.id,
+      command: commandName,
+      args: Object.values(params),
+      phase: 'after',
+      result: raw,
+      timestamp: end,
+      duration,
+    });
+    return { success: true, data: raw, duration };
   } catch (err) {
+    const end = Date.now();
+    const duration = end - start;
+    const errorMessage = (err as Error).message;
+
+    streamCommandEvent(session.id, {
+      sessionId: session.id,
+      command: commandName,
+      args: Object.values(params),
+      phase: 'after',
+      error: errorMessage,
+      timestamp: end,
+      duration,
+    });
+
     return {
       success: false,
       data: null,
-      message: (err as Error).message,
-      duration: Date.now() - start,
+      message: errorMessage,
+      duration,
     };
   }
 }

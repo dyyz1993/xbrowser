@@ -130,13 +130,13 @@ export async function routeCommand(
         handleConfig(cmdArgs, options);
         break;
       case 'convert':
-        handleConvert(cmdArgs, mode);
+        await handleConvert(cmdArgs, mode);
         break;
       case 'extract':
-        handleExtract(cmdArgs, mode);
+        await handleExtract(cmdArgs, mode);
         break;
       case 'filter':
-        handleFilter(cmdArgs, mode);
+        await handleFilter(cmdArgs, mode);
         break;
       case 'run':
         if (!cmdArgs[0]) {
@@ -144,6 +144,11 @@ export async function routeCommand(
         }
         await handleRun(cmdArgs[0], { cdpEndpoint, sessionName });
         break;
+      case 'preview': {
+        const builtin = allBuiltins.find((b) => b.name === 'preview');
+        if (builtin) builtin.execute(cmdArgs, options, { cwd: process.cwd() });
+        break;
+      }
       case 'help':
         showMainHelp();
         break;

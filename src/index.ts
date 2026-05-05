@@ -1,5 +1,5 @@
 export { version } from './version.js';
-export { executeCommand, executeChain, isChainInput, type ExecutionResult, type ChainStepResult, type ChainExecutionResult } from './executor.js';
+export { executeCommand, executeChain, isChainInput, setWSServer, type ExecutionResult, type ChainStepResult, type ChainExecutionResult } from './executor.js';
 export {
   getBrowser,
   findSession,
@@ -47,6 +47,9 @@ export { PlaybackEngine } from './recorder/player.js';
 export type { PlaybackOptions, PlaybackResult } from './recorder/player.js';
 export { DaemonManager } from './daemon/daemon.js';
 export type { DaemonConfig } from './daemon/daemon.js';
+export { WSServer } from './websocket-server.js';
+export type { WSServerConfig, WSMessage, ScreencastMessage, CommandMessage, StatusMessage } from './websocket-server.js';
+export { ScreencastCapturer, type ScreencastFrame, type ScreencastOptions } from './screencast.js';
 export {
   parseCommandChain,
   splitCommand,

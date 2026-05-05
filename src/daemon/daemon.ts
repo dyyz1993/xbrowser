@@ -2,10 +2,12 @@ import { spawn, type ChildProcess } from 'child_process';
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'fs';
 import { resolve } from 'path';
 import { homedir } from 'os';
+import { WSServer } from '../websocket-server.js';
 
 export interface DaemonConfig {
   pid: number;
   port: number;
+  wsPort?: number;
   startedAt: string;
 }
 
@@ -19,6 +21,7 @@ export class DaemonManager {
   private configPath: string;
   private workerScript: string;
   private process: ChildProcess | null = null;
+  private wsServer: WSServer | null = null;
 
   constructor(options?: DaemonManagerOptions) {
     this.configDir = options?.configDir || resolve(homedir(), '.xbrowser');
@@ -26,15 +29,16 @@ export class DaemonManager {
     this.workerScript = options?.workerScript || resolve(process.cwd(), 'dist/bin/cli.js');
   }
 
-  async start(port?: number): Promise<DaemonConfig> {
+  async start(port?: number, wsPort?: number): Promise<DaemonConfig> {
     const existing = this.getConfig();
     if (existing && this.isProcessRunning(existing.pid)) {
       throw new Error(`Daemon already running (PID: ${existing.pid}, Port: ${existing.port})`);
     }
 
     const daemonPort = port || 9222;
+    const websocketPort = wsPort || 9223;
 
-    this.process = spawn('node', [this.workerScript, 'daemon', 'worker', '--port', String(daemonPort)], {
+    this.process = spawn('node', [this.workerScript, 'daemon', 'worker', '--port', String(daemonPort), '--ws-port', String(websocketPort)], {
       detached: true,
       stdio: 'ignore',
       env: { ...process.env },
@@ -45,6 +49,7 @@ export class DaemonManager {
     const config: DaemonConfig = {
       pid: this.process.pid!,
       port: daemonPort,
+      wsPort: websocketPort,
       startedAt: new Date().toISOString(),
     };
 
@@ -57,6 +62,8 @@ export class DaemonManager {
     if (!config) {
       throw new Error('Daemon is not running');
     }
+
+    await this.stopWSServer();
 
     try {
       process.kill(config.pid, 'SIGTERM');
@@ -77,6 +84,27 @@ export class DaemonManager {
     }
 
     return config;
+  }
+
+  getWSServer(): WSServer | null {
+    return this.wsServer;
+  }
+
+  async startWSServer(wsPort?: number): Promise<WSServer> {
+    if (this.wsServer && this.wsServer.getRunning()) {
+      return this.wsServer;
+    }
+
+    const port = wsPort || 9223;
+    this.wsServer = new WSServer({ port });
+    await this.wsServer.start();
+    return this.wsServer;
+  }
+
+  async stopWSServer(): Promise<void> {
+    if (!this.wsServer) return;
+    await this.wsServer.stop();
+    this.wsServer = null;
   }
 
   private getConfig(): DaemonConfig | null {

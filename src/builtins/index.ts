@@ -12,10 +12,13 @@ import {
   pluginListBuiltin,
   pluginReloadBuiltin,
 } from './plugin.js';
+import { pluginSearchBuiltin } from './plugin-search.js';
 import { createBuiltin } from './create.js';
+import { previewBuiltin } from './preview.js';
 
 export { type BuiltinCommand, type BuiltinContext, handleSessionHelp } from './session.js';
 export { handlePluginHelp } from './plugin.js';
+export { handleSearchHelp } from './plugin-search.js';
 export { createBuiltin, listTemplates } from './create.js';
 
 export const allBuiltins: BuiltinCommand[] = [
@@ -24,11 +27,13 @@ export const allBuiltins: BuiltinCommand[] = [
   sessionListBuiltin,
   sessionKillBuiltin,
   configBuiltin,
+  pluginSearchBuiltin,
   pluginInstallBuiltin,
   pluginUninstallBuiltin,
   pluginListBuiltin,
   pluginReloadBuiltin,
   createBuiltin,
+  previewBuiltin,
 ];
 
 export function getBuiltin(name: string): BuiltinCommand | undefined {

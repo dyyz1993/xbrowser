@@ -125,7 +125,7 @@ describe('DaemonManager', () => {
       const config = await daemon.start(8080);
       expect(spawn).toHaveBeenCalledWith(
         'node',
-        ['/tmp/test-worker.js', 'daemon', 'worker', '--port', '8080'],
+        ['/tmp/test-worker.js', 'daemon', 'worker', '--port', '8080', '--ws-port', '9223'],
         expect.objectContaining({ detached: true, stdio: 'ignore' })
       );
       expect(config.pid).toBe(54321);

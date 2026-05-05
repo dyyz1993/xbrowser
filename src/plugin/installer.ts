@@ -1,13 +1,16 @@
 import { existsSync, readdirSync, cpSync, rmSync, mkdirSync, writeFileSync } from 'fs';
 import { resolve, basename } from 'path';
 import { homedir } from 'os';
+import type { XBrowserPluginMetadata, PluginListOptions } from './types.js';
+import { PluginMetadataParser } from './metadata-parser.js';
 
 export interface InstalledPlugin {
   id: string;
   name: string;
   path: string;
-  source: 'local' | 'npm' | 'git' | 'url';
+  source: 'local' | 'npm' | 'git' | 'url' | 'builtin';
   installedAt: string;
+  metadata?: XBrowserPluginMetadata;
 }
 
 export interface InstallOptions {
@@ -100,7 +103,7 @@ export class PluginInstaller {
     rmSync(targetDir, { recursive: true, force: true });
   }
 
-  async list(): Promise<InstalledPlugin[]> {
+  async list(_options?: PluginListOptions): Promise<InstalledPlugin[]> {
     if (!existsSync(this.pluginsDir)) return [];
 
     const entries = readdirSync(this.pluginsDir, { withFileTypes: true });
@@ -112,12 +115,15 @@ export class PluginInstaller {
       const indexPath = resolve(pluginPath, 'index.ts');
       if (!existsSync(indexPath)) continue;
 
+      const metadata = PluginMetadataParser.parseFromPackageJson(pluginPath);
+
       plugins.push({
         id: entry.name,
         name: entry.name,
         path: pluginPath,
-        source: 'local',
+        source: metadata ? 'npm' : 'local',
         installedAt: '',
+        metadata: metadata || undefined,
       });
     }
 
