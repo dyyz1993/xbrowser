@@ -12,7 +12,7 @@ export {
   type ManagedSession,
   type BrowserLaunchOptions,
 } from './browser.js';
-export { BrowserCommandContext, checkBrowserScope, assertPageScope } from './context.js';
+export { BrowserCommandContext, checkBrowserScope, assertPageScope, attachWaitForHuman, getWSServerFromCache, setWSServerCache } from './context.js';
 export { BROWSER_SCOPE } from './scope.js';
 export type { ScopeDefinition, ScopeLevel } from './scope.js';
 export {
@@ -50,8 +50,15 @@ export type { PlaybackOptions, PlaybackResult } from './recorder/player.js';
 export { DaemonManager } from './daemon/daemon.js';
 export type { DaemonConfig } from './daemon/daemon.js';
 export { WSServer } from './websocket-server.js';
-export type { WSServerConfig, WSMessage, ScreencastMessage, CommandMessage, StatusMessage } from './websocket-server.js';
+export type { WSServerConfig, WSMessage, WSInboundMessage, ScreencastMessage, CommandMessage, StatusMessage } from './websocket-server.js';
+export { CaptchaDetector } from './captcha-detector.js';
+export type { CaptchaDetectionResult } from './captcha-detector.js';
 export { ScreencastCapturer, type ScreencastFrame, type ScreencastOptions } from './screencast.js';
+export { HumanInteractionManager } from './human-interaction.js';
+export type { WaitForHumanOptions, WaitForHumanResult } from './human-interaction.js';
+export { WebhookNotifier } from './webhook.js';
+export type { WebhookPayload } from './webhook.js';
+export { getCaptchaConfig } from './config.js';
 export {
   parseCommandChain,
   splitCommand,

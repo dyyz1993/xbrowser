@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import type { Page } from 'playwright';
 
 export interface WSServerConfig {
   port?: number;
@@ -8,7 +9,17 @@ export interface WSServerConfig {
 export type WSMessage =
   | { type: 'screenshot'; data: ScreencastMessage }
   | { type: 'command'; data: CommandMessage }
-  | { type: 'status'; data: StatusMessage };
+  | { type: 'status'; data: StatusMessage }
+  | { type: 'captcha-detected'; sessionId: string; url: string; reason: string; timeout: number }
+  | { type: 'resolved'; sessionId: string };
+
+export type WSInboundMessage =
+  | { type: 'click'; x: number; y: number; button?: 'left' | 'right' }
+  | { type: 'type'; text: string }
+  | { type: 'keypress'; key: string }
+  | { type: 'scroll'; deltaX: number; deltaY: number }
+  | { type: 'solved' }
+  | { type: 'bind'; sessionId: string };
 
 export interface ScreencastMessage {
   sessionId: string;
@@ -43,6 +54,12 @@ interface WSClient {
   close: () => void;
 }
 
+interface WSLike {
+  send: (data: string) => void;
+  close: () => void;
+  on: (event: string, handler: (...args: unknown[]) => void) => void;
+}
+
 export class WSServer extends EventEmitter {
   private port: number;
   private host: string;
@@ -51,11 +68,16 @@ export class WSServer extends EventEmitter {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private server: any = null;
   private isRunning = false;
+  private page: Page | null = null;
 
   constructor(config: WSServerConfig = {}) {
     super();
     this.port = config.port || 9223;
     this.host = config.host || '0.0.0.0';
+  }
+
+  setPage(page: Page): void {
+    this.page = page;
   }
 
   async start(): Promise<void> {
@@ -68,19 +90,20 @@ export class WSServer extends EventEmitter {
       this.server = new wsModule.WebSocketServer({ host: this.host, port: this.port });
 
       this.server.on('connection', (ws: unknown) => {
+        const wsLike = ws as WSLike;
         const clientId = crypto.randomUUID();
         const client: WSClient = {
           id: clientId,
           send: (data: string) => {
             try {
-              (ws as { send: (data: string) => void }).send(data);
+              wsLike.send(data);
             } catch {
               // ignore send errors
             }
           },
           close: () => {
             try {
-              (ws as { close: () => void }).close();
+              wsLike.close();
             } catch {
               // ignore close errors
             }
@@ -90,26 +113,27 @@ export class WSServer extends EventEmitter {
         this.clients.set(clientId, client);
         this.emit('client-connected', clientId);
 
-        (ws as { on: (event: string, handler: () => void) => void }).on(
-          'close',
-          () => {
-            this.handleClientDisconnect(clientId);
-          }
-        );
+        wsLike.on('close', () => {
+          this.handleClientDisconnect(clientId);
+        });
 
-        (ws as { on: (event: string, handler: (data: Buffer | string) => void) => void }).on(
-          'message',
-          (data: Buffer | string) => {
-            try {
-              const message = JSON.parse(data.toString()) as { type: string; sessionId?: string };
-              if (message.sessionId) {
-                this.bindClientToSession(clientId, message.sessionId);
-              }
-            } catch {
-              // ignore parse errors
+        wsLike.on('message', (...raw: unknown[]) => {
+          const data = raw[0] as Buffer | string;
+          try {
+            const msg = JSON.parse(
+              typeof data === 'string' ? data : data.toString()
+            ) as WSInboundMessage;
+
+            if (msg.type === 'bind') {
+              this.bindClientToSession(clientId, msg.sessionId);
+              return;
             }
+
+            this.handleInboundMessage(clientId, msg);
+          } catch {
+            // ignore parse errors
           }
-        );
+        });
 
         client.send(
           JSON.stringify({
@@ -127,6 +151,45 @@ export class WSServer extends EventEmitter {
       this.emit('started', { port: this.port, host: this.host });
     } catch (error) {
       throw new Error(`Failed to start WebSocket server: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  private async handleInboundMessage(clientId: string, msg: WSInboundMessage): Promise<void> {
+    const client = this.clients.get(clientId);
+
+    switch (msg.type) {
+      case 'click':
+        if (this.page) {
+          await this.page.mouse.click(msg.x, msg.y, {
+            button: msg.button || 'left',
+          });
+        }
+        break;
+
+      case 'type':
+        if (this.page) {
+          await this.page.keyboard.type(msg.text, { delay: 50 });
+        }
+        break;
+
+      case 'keypress':
+        if (this.page) {
+          await this.page.keyboard.press(msg.key);
+        }
+        break;
+
+      case 'scroll':
+        if (this.page) {
+          await this.page.mouse.wheel(msg.deltaX, msg.deltaY);
+        }
+        break;
+
+      case 'solved':
+        this.emit('human-solved', {
+          sessionId: client?.sessionId ?? null,
+          clientId,
+        });
+        break;
     }
   }
 
@@ -229,5 +292,9 @@ export class WSServer extends EventEmitter {
 
   getPort(): number {
     return this.port;
+  }
+
+  getPage(): Page | null {
+    return this.page;
   }
 }

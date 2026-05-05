@@ -38,3 +38,31 @@ export function setConfigValue(key: string, value: unknown): void {
   config[key] = value;
   saveConfig(config);
 }
+
+interface CaptchaConfig {
+  notifyUrl: string | undefined;
+  autoOpen: boolean;
+  timeout: number;
+  previewPort: number;
+}
+
+interface ConfigRoot {
+  captcha?: {
+    notifyUrl?: string;
+    autoOpen?: boolean;
+    timeout?: number;
+  };
+  preview?: {
+    port?: number;
+  };
+}
+
+export function getCaptchaConfig(): CaptchaConfig {
+  const config = loadConfig() as ConfigRoot;
+  return {
+    notifyUrl: process.env.XBROWSER_NOTIFY_URL || config.captcha?.notifyUrl,
+    autoOpen: process.env.XBROWSER_AUTO_OPEN === 'true' || config.captcha?.autoOpen === true,
+    timeout: parseInt(process.env.XBROWSER_CAPTCHA_TIMEOUT || '') || config.captcha?.timeout || 120,
+    previewPort: parseInt(process.env.XBROWSER_PREVIEW_PORT || '') || config.preview?.port || 9223,
+  };
+}
