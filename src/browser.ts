@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 
 export interface ManagedSession {
@@ -119,7 +120,7 @@ export async function createSession(
   }
 
   const session: ManagedSession = {
-    id: globalThis.crypto.randomUUID(),
+    id: randomUUID(),
     name,
     context,
     page,
