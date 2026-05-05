@@ -119,7 +119,7 @@ export async function createSession(
   }
 
   const session: ManagedSession = {
-    id: crypto.randomUUID(),
+    id: globalThis.crypto.randomUUID(),
     name,
     context,
     page,
