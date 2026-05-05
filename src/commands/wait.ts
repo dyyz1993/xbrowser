@@ -3,23 +3,25 @@ import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 
-export const waitForSelectorCommand = registerCommand({
-  name: 'waitForSelector',
+const waitForSelectorDef = {
   description: 'Wait for an element to appear on the page',
-  scope: 'page',
+  scope: 'page' as const,
   parameters: z.object({
     selector: z.string(),
     state: z.enum(['attached', 'detached', 'visible', 'hidden']).optional(),
     timeout: z.number().optional(),
   }),
-  handler: async (p, ctx: BrowserCommandContext) => {
+  handler: async (p: { selector: string; state?: string; timeout?: number }, ctx: BrowserCommandContext) => {
     await ctx.page.waitForSelector(p.selector, {
-      state: p.state || 'visible',
+      state: (p.state || 'visible') as 'attached' | 'detached' | 'visible' | 'hidden',
       timeout: p.timeout || 30000,
     });
     return ok({ selector: p.selector, found: true });
   },
-});
+};
+
+export const waitCommand = registerCommand({ name: 'wait', ...waitForSelectorDef });
+export const waitForSelectorCommand = registerCommand({ name: 'waitForSelector', ...waitForSelectorDef });
 
 export const waitForTimeoutCommand = registerCommand({
   name: 'waitForTimeout',

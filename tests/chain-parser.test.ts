@@ -4,6 +4,7 @@ import {
   splitCommand,
   parseCommandArgs,
 } from '../src/chain-parser.js';
+import { normalizeSelector } from '../src/utils/selector.js';
 
 describe('parseCommandChain', () => {
   it('parses a simple single command', () => {
@@ -178,5 +179,68 @@ describe('parseCommandArgs', () => {
     const { command, params } = parseCommandArgs('custom', ['arg1', 'arg2']);
     expect(command).toBe('custom');
     expect(Object.keys(params)).toHaveLength(0);
+  });
+
+  it('parses click with -s short flag', () => {
+    const { command, params } = parseCommandArgs('click', ['-s', '#btn']);
+    expect(command).toBe('click');
+    expect(params.selector).toBe('#btn');
+  });
+
+  it('parses fill with -s and -v short flags', () => {
+    const { params } = parseCommandArgs('fill', ['-s', '#input', '-v', 'hello']);
+    expect(params.selector).toBe('#input');
+    expect(params.value).toBe('hello');
+  });
+
+  it('parses click with --selector long flag', () => {
+    const { params } = parseCommandArgs('click', ['--selector', '#btn']);
+    expect(params.selector).toBe('#btn');
+  });
+
+  it('parses fill with --selector and --value long flags', () => {
+    const { params } = parseCommandArgs('fill', ['--selector', '#input', '--value', 'hello']);
+    expect(params.selector).toBe('#input');
+    expect(params.value).toBe('hello');
+  });
+
+  it('mixes positional and long flags', () => {
+    const { params } = parseCommandArgs('fill', ['#input', '--value', 'hello']);
+    expect(params.selector).toBe('#input');
+    expect(params.value).toBe('hello');
+  });
+});
+
+describe('normalizeSelector', () => {
+  it('auto-prefixes # for simple names', () => {
+    expect(normalizeSelector('btn')).toBe('#btn');
+  });
+
+  it('keeps # selectors as-is', () => {
+    expect(normalizeSelector('#btn')).toBe('#btn');
+  });
+
+  it('keeps . selectors as-is', () => {
+    expect(normalizeSelector('.class')).toBe('.class');
+  });
+
+  it('keeps [ attribute selectors as-is', () => {
+    expect(normalizeSelector('[data-id]')).toBe('[data-id]');
+  });
+
+  it('keeps : pseudo selectors as-is', () => {
+    expect(normalizeSelector(':root')).toBe(':root');
+  });
+
+  it('keeps // xpath selectors as-is', () => {
+    expect(normalizeSelector('//div[@id="main"]')).toBe('//div[@id="main"]');
+  });
+
+  it('returns empty string for empty input', () => {
+    expect(normalizeSelector('')).toBe('');
+  });
+
+  it('auto-prefixes compound names', () => {
+    expect(normalizeSelector('my-button')).toBe('#my-button');
   });
 });

@@ -217,7 +217,13 @@ function aggregateEvents(events: RecordingEvent[]): RecordingEvent[] {
     if (event.type === 'input' || event.type === 'type') {
       lastInput = event;
     } else if (event.type === 'keydown' || event.type === 'keypress') {
-      // skip keydown, aggregate with input
+      if ((event.data?.key === 'Enter' || event.data?.key === 'Tab') && !lastInput) {
+        if (lastInput) {
+          aggregated.push(lastInput);
+          lastInput = null;
+        }
+        aggregated.push(event);
+      }
     } else {
       if (lastInput) {
         aggregated.push(lastInput);

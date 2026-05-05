@@ -1,0 +1,37 @@
+startUrl: https://example.com
+id: test-recording
+name: Test Recording
+startTime: "2026-01-01T00:00:00.000Z"
+duration: 4000
+events:
+  - type: page_load
+    timestamp: 0
+    data:
+      url: https://example.com
+  - type: click
+    selector: "#btn"
+    timestamp: 1000
+    data:
+      x: 100
+      y: 200
+  - type: input
+    selector: "#input"
+    tagName: input
+    timestamp: 2000
+    data:
+      value: hello world
+  - type: keydown
+    timestamp: 2500
+    data:
+      key: Enter
+  - type: scroll
+    timestamp: 3000
+    data:
+      x: 0
+      y: 300
+  - type: click
+    selector: "a.more-info"
+    timestamp: 4000
+    data:
+      x: 50
+      y: 400

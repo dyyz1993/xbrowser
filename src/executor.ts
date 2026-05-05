@@ -1,6 +1,7 @@
+import { isCommandResult } from '@dyyz1993/xcli-core';
 import { getCommand, getAllCommands } from './commands/index.js';
 import type { BrowserCommandContext } from './context.js';
-import { findSession, createSession, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
+import { findSession, createSession, destroyBrowser, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
 import {
   parseCommandChain,
   splitCommand,
@@ -99,8 +100,11 @@ export async function executeCommand(
 
   const start = Date.now();
   try {
-    const data = await command.handler(params, ctx);
-    return { success: true, data, duration: Date.now() - start };
+    const raw = await command.handler(params, ctx);
+    if (isCommandResult(raw)) {
+      return { ...raw, duration: Date.now() - start };
+    }
+    return { success: true, data: raw, duration: Date.now() - start };
   } catch (err) {
     return {
       success: false,
@@ -121,76 +125,84 @@ export async function executeChain(
   const totalStart = Date.now();
 
   let session = findSession(sessionName);
+  let createdSession = false;
   if (!session) {
     const launchOpts: BrowserLaunchOptions = {};
     if (options?.cdpEndpoint) {
       launchOpts.cdpEndpoint = options.cdpEndpoint;
     }
     session = await createSession(sessionName, undefined, launchOpts);
+    createdSession = true;
   }
 
-  for (const pipeline of pipelines) {
-    const { type, pipeline: commands } = pipeline;
+  try {
+    for (const pipeline of pipelines) {
+      const { type, pipeline: commands } = pipeline;
 
-    for (const cmdStr of commands) {
-      const parts = splitCommand(cmdStr);
-      if (parts.length === 0) continue;
+      for (const cmdStr of commands) {
+        const parts = splitCommand(cmdStr);
+        if (parts.length === 0) continue;
 
-      const cmdName = parts[0];
-      const cmdArgs = parts.slice(1);
-      const { params } = parseCommandArgs(cmdName, cmdArgs);
+        const cmdName = parts[0];
+        const cmdArgs = parts.slice(1);
+        const { params } = parseCommandArgs(cmdName, cmdArgs);
 
-      if (cmdName === 'goto' && params.url) {
-        const existing2 = findSession(sessionName);
-        if (!existing2) {
-          session = await createSession(sessionName, params.url as string, {
-            cdpEndpoint: options?.cdpEndpoint,
-          });
+        if (cmdName === 'goto' && params.url) {
+          const existing2 = findSession(sessionName);
+          if (!existing2) {
+            session = await createSession(sessionName, params.url as string, {
+              cdpEndpoint: options?.cdpEndpoint,
+            });
+          }
+        }
+
+        const start = Date.now();
+        const result = await executeCommand(cmdName, params, sessionName);
+        const duration = Date.now() - start;
+
+        const stepResult: ChainStepResult = {
+          command: cmdName,
+          raw: cmdStr,
+          success: result.success,
+          data: result.data,
+          message: result.message,
+          duration,
+        };
+        results.push(stepResult);
+
+        if (type === 'and' && !result.success) {
+          return {
+            success: false,
+            steps: results,
+            totalDuration: Date.now() - totalStart,
+            stoppedAt: results.length,
+            stoppedReason: `Command '${cmdName}' failed (&& chain): ${result.message}`,
+          };
+        }
+
+        if (type === 'or' && result.success) {
+          return {
+            success: true,
+            steps: results,
+            totalDuration: Date.now() - totalStart,
+            stoppedAt: results.length,
+            stoppedReason: `Command '${cmdName}' succeeded (|| chain)`,
+          };
         }
       }
+    }
 
-      const start = Date.now();
-      const result = await executeCommand(cmdName, params, sessionName);
-      const duration = Date.now() - start;
-
-      const stepResult: ChainStepResult = {
-        command: cmdName,
-        raw: cmdStr,
-        success: result.success,
-        data: result.data,
-        message: result.message,
-        duration,
-      };
-      results.push(stepResult);
-
-      if (type === 'and' && !result.success) {
-        return {
-          success: false,
-          steps: results,
-          totalDuration: Date.now() - totalStart,
-          stoppedAt: results.length,
-          stoppedReason: `Command '${cmdName}' failed (&& chain): ${result.message}`,
-        };
-      }
-
-      if (type === 'or' && result.success) {
-        return {
-          success: true,
-          steps: results,
-          totalDuration: Date.now() - totalStart,
-          stoppedAt: results.length,
-          stoppedReason: `Command '${cmdName}' succeeded (|| chain)`,
-        };
-      }
+    const anyFailed = results.some((r) => !r.success);
+    return {
+      success: !anyFailed,
+      steps: results,
+      totalDuration: Date.now() - totalStart,
+    };
+  } finally {
+    if (createdSession) {
+      await destroyBrowser();
     }
   }
-
-  const anyFailed = results.some((r) => !r.success);
-  return {
-    success: !anyFailed,
-    steps: results,
-    totalDuration: Date.now() - totalStart,
-  };
 }
 
 export function isChainInput(input: string): boolean {
