@@ -1,14 +1,6 @@
 import { loadAuth } from './publish-routes.js';
 import { outputResult, outputError } from './output.js';
 
-function getRegistryUrl(options: Record<string, unknown>): string {
-  return (
-    (options['registry'] as string) ||
-    process.env.XBROWSER_REGISTRY ||
-    'https://xbrowser.dev'
-  );
-}
-
 function requireAuth(options: Record<string, unknown>): {
   token: string;
   registryUrl: string;
@@ -17,7 +9,12 @@ function requireAuth(options: Record<string, unknown>): {
   if (!auth?.token) {
     outputError('Not logged in. Run: xbrowser plugin login');
   }
-  return { token: auth!.token, registryUrl: getRegistryUrl(options) };
+  const registryUrl =
+    (options['registry'] as string) ||
+    process.env.XBROWSER_REGISTRY ||
+    auth!.registry ||
+    'https://xbrowser.dev';
+  return { token: auth!.token, registryUrl };
 }
 
 async function adminFetch(
