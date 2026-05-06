@@ -1,0 +1,14 @@
+{
+  "name": "xbrowser-plugin-taobao",
+  "version": "1.0.0",
+  "description": "淘宝 - 商品搜索与采集",
+  "main": "index.ts",
+  "keywords": ["xbrowser", "xbrowser-plugin", "taobao", "ecommerce", "shopping"],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://www.taobao.com",
+    "requiresLogin": false,
+    "commands": ["search", "detail"]
+  }
+}

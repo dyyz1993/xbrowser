@@ -10,6 +10,8 @@ import './snapshot.js';
 import './structure.js';
 import './viewport.js';
 import './frame.js';
+import './ui-test.js';
+import './ui-debug.js';
 
 export { getCommand, getAllCommands, getCommandNames, clearRegistry, registerCommand } from './command-registry.js';
 export type { RegisteredCommand, BrowserCommandDefinition } from './command-registry.js';
