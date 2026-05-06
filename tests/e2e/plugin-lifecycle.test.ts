@@ -1,15 +1,22 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { execSync } from 'child_process';
 import { mkdirSync, rmSync, writeFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 
 const TMP_DIR = join(process.env.TMPDIR || '/tmp', 'xbrowser-e2e');
 const REGISTRY =
   process.env.XBROWSER_REGISTRY || 'https://xbrowser-marketplace.dyyz1993.workers.dev';
 
+const XBROWSER_BIN = (() => {
+  const localBin = resolve(import.meta.dirname, '../../node_modules/.bin/xbrowser');
+  if (existsSync(localBin)) return localBin;
+  return 'xbrowser';
+})();
+
 function run(cmd: string): { stdout: string; stderr: string; exitCode: number } {
+  const resolvedCmd = cmd.replace(/^xbrowser\b/, XBROWSER_BIN);
   try {
-    const stdout = execSync(cmd, { encoding: 'utf-8', timeout: 30000 });
+    const stdout = execSync(resolvedCmd, { encoding: 'utf-8', timeout: 30000 });
     return { stdout, stderr: '', exitCode: 0 };
   } catch (e: unknown) {
     const err = e as { stdout?: string; stderr?: string; status?: number };

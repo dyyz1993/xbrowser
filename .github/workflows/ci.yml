@@ -46,6 +46,7 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install chromium
       - run: npm run build
+      - run: npm link
       - run: npm test -- --coverage
         env:
           XBROWSER_CHROMIUM_PATH: ''
