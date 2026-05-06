@@ -96,7 +96,7 @@ export class WSServer extends EventEmitter {
 
   constructor(config: WSServerConfig = {}) {
     super();
-    this.port = config.port || 9223;
+    this.port = config.port ?? 9223;
     this.host = config.host || '0.0.0.0';
   }
 
@@ -166,6 +166,11 @@ export class WSServer extends EventEmitter {
           } satisfies WSMessage)
         );
       });
+
+      const addr = this.server.address();
+      if (addr && typeof addr === 'object') {
+        this.port = addr.port;
+      }
 
       this.server.on('error', (error: Error) => {
         this.emit('error', error);
