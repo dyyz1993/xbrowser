@@ -1,0 +1,14 @@
+{
+  "name": "xbrowser-plugin-csdn",
+  "version": "1.0.0",
+  "description": "CSDN SEO 外链 - 中文技术平台 (DA 80+, 百度排名 #1)",
+  "main": "index.ts",
+  "keywords": ["xbrowser", "xbrowser-plugin", "csdn.net"],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://www.csdn.net",
+    "requiresLogin": true,
+    "commands": ["login", "publish", "draft", "update-profile"]
+  }
+}

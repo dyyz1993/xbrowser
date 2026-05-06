@@ -1,0 +1,14 @@
+{
+  "name": "xbrowser-plugin-devto",
+  "version": "1.0.0",
+  "description": "Dev.to SEO 外链 - 开发者社区 (DA 51, UGC/nofollow, 高流量)",
+  "main": "index.ts",
+  "keywords": ["xbrowser", "xbrowser-plugin", "dev.to"],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://dev.to",
+    "requiresLogin": true,
+    "commands": ["login", "publish", "draft", "update-profile"]
+  }
+}

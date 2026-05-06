@@ -1,0 +1,14 @@
+{
+  "name": "xbrowser-plugin-web-automation",
+  "version": "1.0.0",
+  "description": "通用网页自动化 - 搜索、提取、分页采集",
+  "main": "index.ts",
+  "keywords": ["xbrowser", "xbrowser-plugin", "automation"],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "",
+    "requiresLogin": false,
+    "commands": ["extract", "paginate", "fill-and-submit", "screenshot"]
+  }
+}

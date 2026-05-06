@@ -1,0 +1,14 @@
+{
+  "name": "xbrowser-plugin-producthunt",
+  "version": "1.0.0",
+  "description": "Product Hunt SEO 外链 - 产品发布平台 (DA 91, dofollow, 高权重)",
+  "main": "index.ts",
+  "keywords": ["xbrowser", "xbrowser-plugin", "producthunt.com"],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://www.producthunt.com",
+    "requiresLogin": true,
+    "commands": ["login", "submit-product", "comment", "update-profile"]
+  }
+}

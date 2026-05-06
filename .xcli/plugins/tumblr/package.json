@@ -1,0 +1,14 @@
+{
+  "name": "xbrowser-plugin-tumblr",
+  "version": "1.0.0",
+  "description": "Tumblr SEO 外链 - 博客平台 (DA 86, dofollow)",
+  "main": "index.ts",
+  "keywords": ["xbrowser", "xbrowser-plugin", "tumblr.com"],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://www.tumblr.com",
+    "requiresLogin": true,
+    "commands": ["login", "publish", "update-profile", "reblog"]
+  }
+}

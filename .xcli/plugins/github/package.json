@@ -1,0 +1,14 @@
+{
+  "name": "xbrowser-plugin-github",
+  "version": "1.0.0",
+  "description": "GitHub SEO 外链 - Profile / README / Gist",
+  "main": "index.ts",
+  "keywords": ["xbrowser", "xbrowser-plugin", "github.com"],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://github.com",
+    "requiresLogin": true,
+    "commands": ["update-profile", "add-social-link", "create-gist", "get-profile"]
+  }
+}
