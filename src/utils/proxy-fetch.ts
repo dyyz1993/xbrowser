@@ -1,5 +1,11 @@
 let patched = false;
 
+type UndiciDispatcher = { dispatch: unknown };
+type UndiciFetch = (
+  input: string | URL | Request,
+  init?: RequestInit & { dispatcher?: UndiciDispatcher },
+) => Promise<Response>;
+
 export async function ensureProxyFetch(): Promise<void> {
   if (patched) return;
   patched = true;
@@ -15,9 +21,10 @@ export async function ensureProxyFetch(): Promise<void> {
   if (!proxyUrl) return;
 
   try {
-    const undici = await import('undici') as Record<string, unknown>;
-    const EnvHttpProxyAgent = undici.EnvHttpProxyAgent as typeof import('undici').EnvHttpProxyAgent | undefined;
-    const uFetch = undici.fetch as typeof fetch | undefined;
+    // @ts-ignore undici is an optional dependency that may not be installed
+    const undici: Record<string, unknown> = await import('undici');
+    const EnvHttpProxyAgent = undici.EnvHttpProxyAgent as (new () => UndiciDispatcher) | undefined;
+    const uFetch = undici.fetch as UndiciFetch | undefined;
     const UFormData = undici.FormData as typeof FormData | undefined;
 
     if (EnvHttpProxyAgent && uFetch && UFormData) {
@@ -35,9 +42,9 @@ export async function ensureProxyFetch(): Promise<void> {
               ufd.append(key, value);
             }
           });
-          return uFetch(url, { ...init, body: ufd, dispatcher: agent } as RequestInit);
+          return uFetch(url, { ...init, body: ufd, dispatcher: agent });
         }
-        return uFetch(url, { ...init, dispatcher: agent } as RequestInit);
+        return uFetch(url, { ...init, dispatcher: agent });
       }) as typeof fetch;
     }
   } catch {
