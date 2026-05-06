@@ -16,3 +16,4 @@ export {
   handleFilter,
 } from './record-routes.js';
 export { handleRun } from './run-routes.js';
+export { handleAdmin } from './admin-routes.js';

@@ -14,6 +14,7 @@ import {
   handleExtract,
   handleFilter,
   handleRun,
+  handleAdmin,
 } from './cli/index.js';
 import { outputError, outputResult } from './cli/output.js';
 import { showMainHelp } from './cli/help.js';
@@ -199,6 +200,9 @@ export async function routeCommand(
           outputError('Usage: xbrowser run <file>');
         }
         await handleRun(cmdArgs[0], { cdpEndpoint, sessionName });
+        break;
+      case 'admin':
+        await handleAdmin(cmdArgs, options, mode);
         break;
       case 'preview': {
         const builtin = allBuiltins.find((b) => b.name === 'preview');

@@ -48,6 +48,16 @@ Commands:
   plugin login [--token <key>]      Login to marketplace
   plugin whoami                     Show current user
   plugin logout                     Logout from marketplace
+  admin pending                     List pending plugins
+  admin approve <slug>              Approve a plugin
+  admin reject <slug> [--reason]    Reject a plugin
+  admin feature <slug>              Toggle featured status
+  admin remove <slug>               Remove a plugin
+  admin stats                       Dashboard stats
+  admin inventory                   Full plugin inventory
+  admin list [--status <status>]    List all plugins
+  admin bulk-approve <slugs...>     Bulk approve plugins
+  admin cleanup                     Reset fake data
   create <name> --template <type>   Create plugin
   daemon start [--port <port>]      Start daemon
   daemon stop                       Stop daemon
