@@ -886,7 +886,7 @@ cp -r my-plugin .xcli/plugins/
   "version": "1.0.0",
   "main": "index.ts",
   "peerDependencies": {
-    "@dyyz1993/xcli-core": "^0.5.0"
+    "@dyyz1993/xcli-core": "^0.6.0"
   }
 }
 ```

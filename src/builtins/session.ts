@@ -5,6 +5,9 @@ import {
   closeAllSessions,
 } from '../session/session-client.js';
 
+/**
+ * A built-in CLI command with help text and an execute function.
+ */
 export interface BuiltinCommand {
   name: string;
   description: string;
@@ -22,6 +25,9 @@ export interface BuiltinCommand {
   ) => Promise<void>;
 }
 
+/**
+ * Minimal execution context for built-in commands.
+ */
 export interface BuiltinContext {
   cwd: string;
 }

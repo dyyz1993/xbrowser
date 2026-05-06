@@ -1,3 +1,6 @@
+/**
+ * Payload sent to a webhook endpoint for lifecycle events.
+ */
 export interface WebhookPayload {
   event: 'captcha-detected' | 'captcha-resolved' | 'session-started' | 'session-ended';
   timestamp: string;
@@ -9,6 +12,12 @@ export interface WebhookPayload {
   timeout?: number;
 }
 
+/**
+ * Sends webhook notifications for browser automation lifecycle events.
+ *
+ * Reads the webhook URL from the constructor argument or the
+ * `XBROWSER_NOTIFY_URL` environment variable.
+ */
 export class WebhookNotifier {
   private url: string | null;
 
@@ -16,6 +25,12 @@ export class WebhookNotifier {
     this.url = url || process.env.XBROWSER_NOTIFY_URL || null;
   }
 
+  /**
+   * Send a webhook notification payload.
+   *
+   * @param payload - The event payload to send.
+   * @returns `true` if the request succeeded (HTTP 2xx), `false` otherwise.
+   */
   async notify(payload: WebhookPayload): Promise<boolean> {
     if (!this.url) return false;
 

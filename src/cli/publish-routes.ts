@@ -1,8 +1,9 @@
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from 'fs';
+import { existsSync, writeFileSync, mkdirSync } from 'fs';
 import { resolve } from 'path';
 import { homedir } from 'os';
 import { createInterface, type Interface as ReadlineInterface } from 'readline';
 import { createTarball, type AuthConfig } from '../plugin/publisher.js';
+import { readJsonFile } from '../utils/json-file.js';
 
 function getAuthDir(): string {
   return resolve(homedir(), '.xbrowser');
@@ -15,11 +16,7 @@ function getAuthFile(): string {
 export function loadAuth(): AuthConfig | null {
   const authFile = getAuthFile();
   if (!existsSync(authFile)) return null;
-  try {
-    return JSON.parse(readFileSync(authFile, 'utf-8')) as AuthConfig;
-  } catch {
-    return null;
-  }
+  return readJsonFile<AuthConfig | null>(authFile, null);
 }
 
 function saveAuth(config: AuthConfig): void {

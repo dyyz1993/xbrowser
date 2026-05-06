@@ -3,6 +3,9 @@ import * as path from 'path';
 import * as yaml from 'yaml';
 import type { Page } from 'playwright';
 
+/**
+ * A single recorded browser event (click, type, scroll, navigate, etc.).
+ */
 export interface RecordedEvent {
   id: string;
   type: 'click' | 'type' | 'scroll' | 'navigate' | 'keypress' | 'page_load';
@@ -11,6 +14,9 @@ export interface RecordedEvent {
   data?: Record<string, unknown>;
 }
 
+/**
+ * A complete recording session with metadata and captured events.
+ */
 export interface RecordingSession {
   id: string;
   name: string;
@@ -20,6 +26,9 @@ export interface RecordingSession {
   events: RecordedEvent[];
 }
 
+/**
+ * Current status of an active recording.
+ */
 export interface RecorderStatus {
   isRecording: boolean;
   eventCount: number;
@@ -89,6 +98,13 @@ const RECORDER_INJECT = `
 })();
 `;
 
+/**
+ * Controller for recording browser interactions on a page.
+ *
+ * Injects a client-side recorder script that captures click, input,
+ * scroll, and keyboard events. The recording can be stopped and saved
+ * to a YAML file.
+ */
 export class RecorderController {
   private page: Page;
   private isRecordingFlag = false;
@@ -101,6 +117,15 @@ export class RecorderController {
     this.page = page;
   }
 
+  /**
+   * Start recording browser interactions.
+   *
+   * Injects the recorder script into the page and optionally navigates
+   * to a starting URL.
+   *
+   * @param options - Recording options with optional starting URL and session name.
+   * @throws If a recording is already in progress.
+   */
   async start(options: { url?: string; name?: string } = {}): Promise<void> {
     if (this.isRecordingFlag) {
       throw new Error('Recording is already in progress');
@@ -130,6 +155,16 @@ export class RecorderController {
     });
   }
 
+  /**
+   * Stop the current recording and save it to a YAML file.
+   *
+   * Collects all captured events from the page, stops the recorder,
+   * and writes the session to disk.
+   *
+   * @param outputPath - Optional file path to save the recording. Defaults to `recordings/` directory.
+   * @returns An object with the output file path and the recording session data.
+   * @throws If no recording is in progress.
+   */
   async stop(outputPath?: string): Promise<{ path: string; session: RecordingSession }> {
     if (!this.isRecordingFlag) {
       throw new Error('No recording in progress');
@@ -183,6 +218,11 @@ export class RecorderController {
     return { path: finalPath, session };
   }
 
+  /**
+   * Get the current recording status.
+   *
+   * @returns The recorder status, or `null` if not recording.
+   */
   getStatus(): RecorderStatus | null {
     if (!this.isRecordingFlag) return null;
     return {

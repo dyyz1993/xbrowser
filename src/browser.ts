@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 
+/**
+ * Represents a managed browser session with its Playwright context and page.
+ */
 export interface ManagedSession {
   id: string;
   name: string;
@@ -11,6 +14,9 @@ export interface ManagedSession {
   cdpEndpoint?: string;
 }
 
+/**
+ * Options for launching or connecting to a browser instance.
+ */
 export interface BrowserLaunchOptions {
   headless?: boolean;
   executablePath?: string;
@@ -43,6 +49,20 @@ async function resolveCDPEndpoint(raw: string): Promise<string> {
   return raw;
 }
 
+/**
+ * Get or create the shared browser instance.
+ *
+ * If a browser is already running, returns it directly. Otherwise launches a
+ * new Chromium instance or connects via CDP depending on the provided options.
+ *
+ * @param options - Launch options including headless mode, executable path, or CDP endpoint.
+ * @returns The shared Playwright Browser instance.
+ *
+ * @example
+ * ```ts
+ * const browser = await getBrowser({ headless: true });
+ * ```
+ */
 export async function getBrowser(options?: BrowserLaunchOptions): Promise<Browser> {
   if (browser) return browser;
 
@@ -58,6 +78,12 @@ export async function getBrowser(options?: BrowserLaunchOptions): Promise<Browse
   return browser;
 }
 
+/**
+ * Find a managed session by its name.
+ *
+ * @param name - The session name to search for.
+ * @returns The matching session, or `undefined` if not found.
+ */
 export function findSession(name: string): ManagedSession | undefined {
   for (const [, session] of sessions) {
     if (session.name === name) return session;
@@ -65,14 +91,41 @@ export function findSession(name: string): ManagedSession | undefined {
   return undefined;
 }
 
+/**
+ * Find a managed session by its unique ID.
+ *
+ * @param id - The session UUID.
+ * @returns The matching session, or `undefined` if not found.
+ */
 export function getSessionById(id: string): ManagedSession | undefined {
   return sessions.get(id);
 }
 
+/**
+ * Get all active managed sessions.
+ *
+ * @returns Array of all active sessions.
+ */
 export function getAllSessions(): ManagedSession[] {
   return Array.from(sessions.values());
 }
 
+/**
+ * Create a new browser session with a page and optional initial URL.
+ *
+ * If connecting via CDP, reuses existing pages when possible instead of
+ * creating a new context/page pair.
+ *
+ * @param name - Unique name for the session.
+ * @param url - Optional URL to navigate to after creation.
+ * @param options - Browser launch or CDP connection options.
+ * @returns The newly created managed session.
+ *
+ * @example
+ * ```ts
+ * const session = await createSession('default', 'https://example.com');
+ * ```
+ */
 export async function createSession(
   name: string,
   url?: string,
@@ -132,6 +185,12 @@ export async function createSession(
   return session;
 }
 
+/**
+ * Close a session by its name or ID.
+ *
+ * @param name - Session name or UUID to close.
+ * @returns `true` if a session was found and closed, `false` otherwise.
+ */
 export async function closeSessionByName(name: string): Promise<boolean> {
   for (const [id, session] of sessions) {
     if (session.name === name || session.id === name) {
@@ -143,6 +202,11 @@ export async function closeSessionByName(name: string): Promise<boolean> {
   return false;
 }
 
+/**
+ * Close all active browser sessions.
+ *
+ * Closes every managed context, ignoring individual close errors.
+ */
 export async function closeAllSessions(): Promise<void> {
   for (const [, session] of sessions) {
     try {
@@ -154,6 +218,12 @@ export async function closeAllSessions(): Promise<void> {
   sessions.clear();
 }
 
+/**
+ * Close all sessions and destroy the shared browser instance.
+ *
+ * After calling this, the module returns to a clean state and
+ * {@link getBrowser} will create a new instance on next call.
+ */
 export async function destroyBrowser(): Promise<void> {
   await closeAllSessions();
   if (browser) {
@@ -166,6 +236,12 @@ export async function destroyBrowser(): Promise<void> {
   }
 }
 
+/**
+ * Reset all internal state for testing purposes.
+ *
+ * Clears the session map and drops the browser reference without
+ * closing anything. Intended for use in test teardown.
+ */
 export function resetForTesting(): void {
   sessions.clear();
   browser = null;

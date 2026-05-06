@@ -1,6 +1,7 @@
-import { readFileSync, existsSync } from 'fs';
+import { existsSync } from 'fs';
 import { resolve } from 'path';
 import type { XBrowserPluginMetadata, NPMPluginSearchResult } from './types.js';
+import { readJsonFile } from '../utils/json-file.js';
 
 export class PluginMetadataParser {
   private static readonly XBROWSER_KEYWORDS = ['xbrowser', 'xbrowser-plugin'];
@@ -12,31 +13,29 @@ export class PluginMetadataParser {
       return null;
     }
 
-    try {
-      const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+    const packageJson = readJsonFile<Record<string, unknown> | null>(packageJsonPath, null);
+    if (!packageJson) return null;
 
-      if (!packageJson.xbrowser) {
-        return null;
-      }
-
-      const metadata: XBrowserPluginMetadata = {
-        id: packageJson.xbrowser.id || packageJson.name,
-        name: packageJson.xbrowser.name || packageJson.name,
-        description: packageJson.xbrowser.description || packageJson.description || '',
-        version: packageJson.xbrowser.version || packageJson.version || '1.0.0',
-        author: packageJson.xbrowser.author || this.extractAuthor(packageJson.author),
-        homepage: packageJson.xbrowser.homepage || packageJson.homepage,
-        commands: packageJson.xbrowser.commands,
-        sites: packageJson.xbrowser.sites,
-        tags: packageJson.xbrowser.tags,
-        screenshot: packageJson.xbrowser.screenshot,
-        license: packageJson.xbrowser.license || packageJson.license,
-      };
-
-      return metadata;
-    } catch {
+    if (!packageJson.xbrowser) {
       return null;
     }
+
+    const xbrowser = packageJson.xbrowser as Record<string, unknown>;
+    const metadata: XBrowserPluginMetadata = {
+      id: (xbrowser.id as string) || (packageJson.name as string),
+      name: (xbrowser.name as string) || (packageJson.name as string),
+      description: (xbrowser.description as string) || (packageJson.description as string) || '',
+      version: (xbrowser.version as string) || (packageJson.version as string) || '1.0.0',
+      author: (xbrowser.author as string) || this.extractAuthor(packageJson.author),
+      homepage: (xbrowser.homepage as string) || (packageJson.homepage as string),
+      commands: xbrowser.commands as string[] | undefined,
+      sites: xbrowser.sites as string[] | undefined,
+      tags: xbrowser.tags as string[] | undefined,
+      screenshot: xbrowser.screenshot as string | undefined,
+      license: (xbrowser.license as string) || (packageJson.license as string),
+    };
+
+    return metadata;
   }
 
   static isXBrowserPlugin(packageJson: Record<string, unknown>): boolean {

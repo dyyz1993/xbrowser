@@ -12,6 +12,9 @@ import { homedir } from 'os';
 
 export type { PluginInstance, PluginStatus, XCLIAPI };
 
+/**
+ * Options for configuring the plugin loader's search directories.
+ */
 export interface PluginLoaderOptions {
   cwd?: string;
   userDir?: string;
@@ -20,6 +23,12 @@ export interface PluginLoaderOptions {
 
 const DEFAULT_PLUGIN_DIRS = ['.xcli/plugins', '../.xcli/plugins'];
 
+/**
+ * Plugin loader for discovering and managing xbrowser plugins.
+ *
+ * Wraps the xcli-core PluginLoader and provides xbrowser-specific
+ * directory conventions for plugin discovery.
+ */
 export class XBrowserPluginLoader {
   private core: Core;
   private loader: PluginLoader;
@@ -77,6 +86,15 @@ export class XBrowserPluginLoader {
     return this.loader.loadFromFunction(setup);
   }
 
+  /**
+   * Scan configured plugin directories and load all discovered plugins.
+   *
+   * Searches project-local `.xcli/plugins`, user-level `~/.xcli/plugins`,
+   * and global `~/.xbrowser/plugins` directories. Plugins without an
+   * `index.ts` entry file are skipped.
+   *
+   * @returns Array of successfully loaded plugin instances.
+   */
   async scanAndLoad(): Promise<PluginInstance[]> {
     const cwd = this.options.cwd || process.cwd();
     const dirs = [

@@ -1,13 +1,12 @@
 import type { NPMPluginSearchResult, SearchOptions } from './types.js';
+import { NPM_REGISTRY_URL } from '../config.js';
 
 export class NPMSearcher {
-  private static readonly REGISTRY_URL = 'https://registry.npmjs.org';
-
   static async search(options: SearchOptions = {}): Promise<NPMPluginSearchResult[]> {
     const { query = '', tag, site, limit = 20 } = options;
 
     const npmQuery = this.buildQuery(query, tag, site);
-    const url = `${this.REGISTRY_URL}/-/v1/search?text=${encodeURIComponent(npmQuery)}&size=${limit}`;
+    const url = `${NPM_REGISTRY_URL}/-/v1/search?text=${encodeURIComponent(npmQuery)}&size=${limit}`;
 
     try {
       const response = await fetch(url);
@@ -113,7 +112,7 @@ export class NPMSearcher {
   }
 
   static async getPackageManifest(name: string): Promise<Record<string, unknown>> {
-    const url = `${this.REGISTRY_URL}/${name}`;
+    const url = `${NPM_REGISTRY_URL}/${name}`;
 
     try {
       const response = await fetch(url);

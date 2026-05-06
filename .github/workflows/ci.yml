@@ -1,13 +1,22 @@
 name: CI
+
 on:
   push:
     branches: [master]
   pull_request:
     branches: [master]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  test:
+  lint-and-typecheck:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       matrix:
         node-version: [18, 20]
@@ -18,9 +27,24 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
       - run: npm ci
-      - run: npx playwright install chromium
       - run: npm run typecheck
       - run: npm run lint
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        node-version: [18, 20]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
       - run: npm run build
       - run: npm test -- --coverage
         env:
@@ -28,6 +52,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
+        if: matrix.node-version == 20
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/coverage-final.json
@@ -41,3 +66,18 @@ jobs:
         with:
           name: coverage-report-${{ matrix.node-version }}
           path: ./coverage/
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        node-version: [18, 20]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build

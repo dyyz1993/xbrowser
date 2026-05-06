@@ -17,6 +17,12 @@ interface ExtractSummary {
   }>;
 }
 
+/**
+ * Extract and summarize key events from a YAML recording file.
+ *
+ * @param filePath - Path to the YAML recording file.
+ * @returns A summary with start URL, event counts, type statistics, and key operations.
+ */
 export function extractRecording(filePath: string): ExtractSummary {
   const content = fs.readFileSync(filePath, 'utf-8');
   const recording: Recording = yaml.parse(content);
@@ -59,6 +65,12 @@ export function extractRecording(filePath: string): ExtractSummary {
   };
 }
 
+/**
+ * Extract a recording summary and save it as a JSON file alongside the original.
+ *
+ * @param filePath - Path to the YAML recording file.
+ * @returns An object with the summary and the output file path.
+ */
 export function extractAndSave(filePath: string): { summary: ExtractSummary; outputPath: string } {
   const summary = extractRecording(filePath);
   const outputPath = filePath.replace(/\.ya?ml$/i, '-summary.json');
@@ -66,6 +78,11 @@ export function extractAndSave(filePath: string): { summary: ExtractSummary; out
   return { summary, outputPath };
 }
 
+/**
+ * Print a human-readable recording summary to stdout.
+ *
+ * @param summary - The extracted recording summary to display.
+ */
 export function printExtractSummary(summary: ExtractSummary): void {
   console.log('Analysis Results:');
   console.log(`  Start URL: ${summary.startUrl}`);

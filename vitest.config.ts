@@ -16,6 +16,12 @@ export default defineConfig({
         '**/types/**',
         'bin/**',
       ],
+      thresholds: {
+        branches: 50,
+        functions: 50,
+        lines: 55,
+        statements: 55,
+      },
     },
   },
 });

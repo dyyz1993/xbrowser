@@ -21,6 +21,9 @@ export { handlePluginHelp } from './plugin.js';
 export { handleSearchHelp } from './plugin-search.js';
 export { createBuiltin, listTemplates } from './create.js';
 
+/**
+ * All built-in CLI commands (session, config, plugin, create, preview).
+ */
 export const allBuiltins: BuiltinCommand[] = [
   sessionOpenBuiltin,
   sessionCloseBuiltin,
@@ -36,6 +39,12 @@ export const allBuiltins: BuiltinCommand[] = [
   previewBuiltin,
 ];
 
+/**
+ * Find a built-in command by name or alias.
+ *
+ * @param name - The command name or alias to look up.
+ * @returns The matching built-in command, or `undefined` if not found.
+ */
 export function getBuiltin(name: string): BuiltinCommand | undefined {
   return allBuiltins.find(
     (b) => b.name === name || b.aliases?.includes(name)

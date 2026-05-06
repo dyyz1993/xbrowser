@@ -1,3 +1,6 @@
+/**
+ * A parsed pipeline of commands with its chain type.
+ */
 export interface ParsedPipeline {
   pipeline: string[];
   type: 'sequence' | 'and' | 'or';
@@ -7,6 +10,22 @@ export interface ParseOptions {
   fileMode?: boolean;
 }
 
+/**
+ * Parse a command chain string into ordered pipelines.
+ *
+ * Supports `&&` (and), `||` (or), `;` (sequence), `->`, `,`, and `+` operators.
+ * Respects quoted strings and parenthesized groups.
+ *
+ * @param input - The raw command chain string.
+ * @param options - Parse options; `fileMode` treats single `|` as a pipeline separator.
+ * @returns Array of parsed pipelines, each with commands and a chain type.
+ *
+ * @example
+ * ```ts
+ * const pipelines = parseCommandChain('goto https://example.com && click #btn');
+ * // [{ pipeline: ['goto https://example.com', 'click #btn'], type: 'and' }]
+ * ```
+ */
 export function parseCommandChain(input: string, options?: ParseOptions): ParsedPipeline[] {
   const result: ParsedPipeline[] = [];
   let currentPipeline: string[] = [];
@@ -116,6 +135,12 @@ function isSpaceAround(input: string, pos: number, tokenLen: number): boolean {
   return before && after;
 }
 
+/**
+ * Split a command string into whitespace-separated tokens, respecting quotes.
+ *
+ * @param cmdStr - The raw command string (e.g. `"click '#my-btn'"`).
+ * @returns Array of string tokens.
+ */
 export function splitCommand(cmdStr: string): string[] {
   const parts: string[] = [];
   let current = '';
@@ -175,6 +200,23 @@ function coerceValue(raw: string): unknown {
   return v;
 }
 
+/**
+ * Parse positional and flagged arguments into a parameter object.
+ *
+ * Supports `--key value`, `-s value` (short flags), and positional arguments
+ * mapped via registered command definitions. Values are automatically coerced
+ * to boolean, number, or string.
+ *
+ * @param name - The command name (used to look up positional parameter names).
+ * @param args - Array of argument strings.
+ * @returns An object with the command name and parsed params.
+ *
+ * @example
+ * ```ts
+ * const { params } = parseCommandArgs('fill', ['#email', 'hello']);
+ * // { command: 'fill', params: { selector: '#email', value: 'hello' } }
+ * ```
+ */
 export function parseCommandArgs(
   name: string,
   args: string[]
@@ -254,6 +296,12 @@ function getCommandDefinitions(): Record<string, CommandDef> {
   return commandDefCache;
 }
 
+/**
+ * Register positional parameter names for a command used by {@link parseCommandArgs}.
+ *
+ * @param name - The command name.
+ * @param positional - Ordered array of positional parameter names.
+ */
 export function registerCommandDefinition(
   name: string,
   positional: string[]

@@ -104,7 +104,7 @@ xbrowser --cdp auto                     # 自动发现
 ```json
 {
   "dependencies": {
-    "@dyyz1993/xcli-core": "^0.5.0",
+    "@dyyz1993/xcli-core": "^0.6.0",
     "playwright": "^1.59.0",
     "yaml": "^2.8.4",
     "zod": "^3.24.0"

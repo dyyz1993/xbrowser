@@ -1,8 +1,13 @@
-import { readFileSync, existsSync, readdirSync } from 'fs';
+import { existsSync, readdirSync, readFileSync } from 'fs';
 import { resolve, relative, basename, posix } from 'path';
 import { createHash } from 'crypto';
 import { PluginMetadataParser } from './metadata-parser.js';
+import { NPM_REGISTRY_URL } from '../config.js';
+import { readJsonFile } from '../utils/json-file.js';
 
+/**
+ * Authentication configuration for publishing to a registry.
+ */
 export interface AuthConfig {
   token: string;
   registry: string;
@@ -10,6 +15,9 @@ export interface AuthConfig {
 
 export type StorageType = 'npm' | 'r2';
 
+/**
+ * Options for publishing a plugin.
+ */
 export interface PublishOptions {
   registry: string;
   token: string;
@@ -17,6 +25,9 @@ export interface PublishOptions {
   storage?: StorageType;
 }
 
+/**
+ * Result of creating a plugin tarball for publishing.
+ */
 export interface PublishResult {
   name: string;
   version: string;
@@ -90,7 +101,7 @@ function slugify(name: string): string {
 
 async function validateNpmPackageExists(packageName: string, version: string): Promise<void> {
   const encodedName = encodeURIComponent(packageName);
-  const res = await fetch(`https://registry.npmjs.org/${encodedName}/${version}`);
+  const res = await fetch(`${NPM_REGISTRY_URL}/${encodedName}/${version}`);
   if (!res.ok) {
     throw new Error(
       `Package ${packageName}@${version} not found on npm. ` +
@@ -99,6 +110,18 @@ async function validateNpmPackageExists(packageName: string, version: string): P
   }
 }
 
+/**
+ * Create a publishable tarball from a plugin directory.
+ *
+ * Collects plugin files, extracts metadata from package.json, detects
+ * registered commands from source code, and prepares a FormData payload
+ * for uploading to the marketplace or an npm-based registry.
+ *
+ * @param pluginDir - Path to the plugin directory containing `index.ts`.
+ * @param options - Publish options including registry, token, storage type, and dry-run flag.
+ * @returns A PublishResult with metadata and the prepared FormData.
+ * @throws If `index.ts` is missing or the plugin has no description.
+ */
 export async function createTarball(
   pluginDir: string,
   options: PublishOptions
@@ -112,7 +135,7 @@ export async function createTarball(
 
   let packageJson: Record<string, unknown> = {};
   if (existsSync(pkgPath)) {
-    packageJson = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+    packageJson = readJsonFile<Record<string, unknown>>(pkgPath, {});
   }
 
   const xbrowserMeta = (packageJson.xbrowser || {}) as Record<string, unknown>;

@@ -8,7 +8,10 @@
     "skipLibCheck": true,
     "declaration": true,
     "sourceMap": true,
-    "outDir": "dist"
+    "outDir": "dist",
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "forceConsistentCasingInFileNames": true
   },
   "include": ["src/**/*", "bin/**/*"],
   "exclude": ["node_modules", "dist"]

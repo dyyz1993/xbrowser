@@ -1,7 +1,5 @@
 import type { MarketplacePluginSearchResult, SearchOptions } from './types.js';
-import { getConfigValue } from '../config.js';
-
-const DEFAULT_MARKETPLACE_URL = 'https://xbrowser-marketplace.dyyz1993.workers.dev';
+import { getConfigValue, DEFAULT_MARKETPLACE_URL } from '../config.js';
 
 export class MarketplaceSearcher {
   private static getBaseUrl(): string {

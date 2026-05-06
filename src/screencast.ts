@@ -1,5 +1,8 @@
 import type { Page } from 'playwright';
 
+/**
+ * A single screencast frame with base64-encoded screenshot data.
+ */
 export interface ScreencastFrame {
   id: string;
   sessionId: string;
@@ -9,6 +12,9 @@ export interface ScreencastFrame {
   viewport: { width: number; height: number };
 }
 
+/**
+ * Options for configuring screencast capture behavior.
+ */
 export interface ScreencastOptions {
   interval?: number;
   quality?: number;
@@ -17,12 +23,15 @@ export interface ScreencastOptions {
   height?: number;
 }
 
+/**
+ * Captures periodic screenshots from a Playwright page for screencast streaming.
+ *
+ * Supports configurable interval, quality, image type, and viewport dimensions.
+ */
 export class ScreencastCapturer {
   private interval: number;
   private quality: number;
   private type: 'jpeg' | 'png';
-  private width?: number;
-  private height?: number;
   private captureTimer: ReturnType<typeof setInterval> | null = null;
   private isCapturing = false;
   private frameCallback: ((frame: ScreencastFrame) => void) | null = null;
@@ -31,10 +40,17 @@ export class ScreencastCapturer {
     this.interval = options.interval || 1000;
     this.quality = options.quality || 80;
     this.type = options.type || 'jpeg';
-    this.width = options.width;
-    this.height = options.height;
+    void options.width;
+    void options.height;
   }
 
+  /**
+   * Capture a single screenshot frame from the page.
+   *
+   * @param page - The Playwright page to screenshot.
+   * @param sessionId - The session identifier to tag the frame with.
+   * @returns A ScreencastFrame with base64-encoded image data.
+   */
   async captureFrame(
     page: Page,
     sessionId: string
@@ -56,6 +72,14 @@ export class ScreencastCapturer {
     };
   }
 
+  /**
+   * Start periodic screencast capture, invoking the callback for each frame.
+   *
+   * @param page - The Playwright page to capture from.
+   * @param sessionId - The session identifier for frame tagging.
+   * @param onFrame - Callback invoked with each captured frame.
+   * @throws If a capture is already in progress.
+   */
   startCapture(
     page: Page,
     sessionId: string,
@@ -81,6 +105,9 @@ export class ScreencastCapturer {
     this.captureTimer = setInterval(captureLoop, this.interval);
   }
 
+  /**
+   * Stop the current screencast capture.
+   */
   stopCapture(): void {
     if (this.captureTimer) {
       clearInterval(this.captureTimer);

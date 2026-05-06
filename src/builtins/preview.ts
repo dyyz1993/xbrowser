@@ -21,7 +21,7 @@ const previewBuiltin: BuiltinCommand = {
       { cmd: 'xbrowser preview --url https://example.com', description: 'Preview a specific URL' },
     ],
   },
-  execute: async (args: string[], options: Record<string, unknown>, context: BuiltinContext): Promise<void> => {
+  execute: async (_args: string[], options: Record<string, unknown>, context: BuiltinContext): Promise<void> => {
     const { cwd } = context;
     const cfg = getCaptchaConfig();
     const port = options.port ? Number(options.port) : cfg.previewPort;

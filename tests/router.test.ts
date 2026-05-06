@@ -54,6 +54,29 @@ vi.mock('../src/cli/output.js', () => ({
   outputError: vi.fn(),
 }));
 
+vi.mock('../src/plugin/loader.js', () => {
+  const mockLoader = {
+    getCore: () => ({
+      loader: {
+        getSite: () => null,
+      },
+    }),
+    scanAndLoad: vi.fn(),
+  };
+  return {
+    XBrowserPluginLoader: vi.fn(() => mockLoader),
+  };
+});
+
+vi.mock('../src/cli/chain-output.js', () => ({
+  printChainResult: vi.fn(),
+  printChainResultBrief: vi.fn(),
+}));
+
+vi.mock('../src/cli/help.js', () => ({
+  showMainHelp: vi.fn(),
+}));
+
 describe('router', () => {
   let routeCommand: typeof import('../src/router.js').routeCommand;
 
@@ -83,9 +106,7 @@ describe('router', () => {
   });
 
   it('shows help with --help flag', async () => {
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(' '));
+    const { showMainHelp } = await import('../src/cli/help.js');
     const origExit = process.exit;
     process.exit = ((code: number) => {
       throw new Error(`exit:${code}`);
@@ -96,15 +117,12 @@ describe('router', () => {
     } catch (e) {
       expect(String(e)).toContain('exit:0');
     }
-    console.log = origLog;
     process.exit = origExit;
-    expect(logs.join('\n')).toContain('Browser Automation CLI');
+    expect(showMainHelp).toHaveBeenCalled();
   });
 
   it('shows help when no args', async () => {
-    const logs: string[] = [];
-    const origLog = console.log;
-    console.log = (...args: unknown[]) => logs.push(args.join(' '));
+    const { showMainHelp } = await import('../src/cli/help.js');
     const origExit = process.exit;
     process.exit = ((code: number) => {
       throw new Error(`exit:${code}`);
@@ -115,9 +133,8 @@ describe('router', () => {
     } catch (e) {
       expect(String(e)).toContain('exit:0');
     }
-    console.log = origLog;
     process.exit = origExit;
-    expect(logs.join('\n')).toContain('Browser Automation CLI');
+    expect(showMainHelp).toHaveBeenCalled();
   });
 
   it('routes session list to handleSession', async () => {

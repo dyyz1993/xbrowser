@@ -23,6 +23,17 @@ const DEFAULT_EXCLUDE_TYPES: string[] = [
   'mousedown',
 ];
 
+/**
+ * Filter a recording file by removing events of specified types.
+ *
+ * Reads the YAML recording, removes events matching the exclude list,
+ * and writes the filtered result to the output path.
+ *
+ * @param inputPath - Path to the input YAML recording file.
+ * @param outputPath - Path to write the filtered recording.
+ * @param excludeTypes - Event types to remove. Defaults to a built-in list of noise events.
+ * @returns Statistics about original count, filtered count, and removal percentage.
+ */
 export function filterRecording(
   inputPath: string,
   outputPath: string,
@@ -49,6 +60,12 @@ export function filterRecording(
   return { originalCount, filteredCount, removed, percentage };
 }
 
+/**
+ * Parse the `--exclude-types` flag from CLI arguments.
+ *
+ * @param args - CLI argument array.
+ * @returns Array of event type strings, or `undefined` if not specified.
+ */
 export function parseExcludeTypes(args: string[]): string[] | undefined {
   for (const arg of args) {
     if (arg.startsWith('--exclude-types=')) {

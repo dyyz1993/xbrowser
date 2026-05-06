@@ -1,3 +1,6 @@
+/**
+ * A single event in a browser recording.
+ */
 export interface RecordingEvent {
   type: string;
   selector?: string;
@@ -7,6 +10,9 @@ export interface RecordingEvent {
   pageState?: { url?: string; title?: string };
 }
 
+/**
+ * A browser recording session with a start URL and captured events.
+ */
 export interface Recording {
   startUrl: string;
   events?: RecordingEvent[];

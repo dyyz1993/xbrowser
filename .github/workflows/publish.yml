@@ -1,18 +1,29 @@
 name: Publish
+
 on:
   push:
     branches: [master]
     paths: ['package.json']
   workflow_dispatch:
 
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
           registry-url: https://registry.npmjs.org/
       - run: npm ci
       - run: npm run build

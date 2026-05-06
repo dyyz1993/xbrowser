@@ -1,11 +1,18 @@
 import { EventEmitter } from 'events';
 import type { Page } from 'playwright';
+import type { WebSocketServer } from 'ws';
 
+/**
+ * Configuration for the WebSocket server.
+ */
 export interface WSServerConfig {
   port?: number;
   host?: string;
 }
 
+/**
+ * Outbound WebSocket message types sent to connected clients.
+ */
 export type WSMessage =
   | { type: 'screenshot'; data: ScreencastMessage }
   | { type: 'command'; data: CommandMessage }
@@ -13,6 +20,9 @@ export type WSMessage =
   | { type: 'captcha-detected'; sessionId: string; url: string; reason: string; timeout: number }
   | { type: 'resolved'; sessionId: string };
 
+/**
+ * Inbound WebSocket message types received from connected clients.
+ */
 export type WSInboundMessage =
   | { type: 'click'; x: number; y: number; button?: 'left' | 'right' }
   | { type: 'type'; text: string }
@@ -21,6 +31,9 @@ export type WSInboundMessage =
   | { type: 'solved' }
   | { type: 'bind'; sessionId: string };
 
+/**
+ * A screencast frame message with base64-encoded screenshot data.
+ */
 export interface ScreencastMessage {
   sessionId: string;
   id: string;
@@ -30,6 +43,9 @@ export interface ScreencastMessage {
   viewport: { width: number; height: number };
 }
 
+/**
+ * A command execution event message streamed during command lifecycle.
+ */
 export interface CommandMessage {
   sessionId: string;
   command: string;
@@ -41,6 +57,9 @@ export interface CommandMessage {
   duration?: number;
 }
 
+/**
+ * A server status change notification.
+ */
 export interface StatusMessage {
   status: 'connected' | 'disconnected' | 'error';
   sessionId?: string;
@@ -60,13 +79,18 @@ interface WSLike {
   on: (event: string, handler: (...args: unknown[]) => void) => void;
 }
 
+/**
+ * WebSocket server for streaming browser screenshots and handling remote input.
+ *
+ * Supports session-based client binding, screencast streaming, and inbound
+ * mouse/keyboard events for remote browser control.
+ */
 export class WSServer extends EventEmitter {
   private port: number;
   private host: string;
   private clients: Map<string, WSClient> = new Map();
   private sessionClients: Map<string, Set<string>> = new Map();
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private server: any = null;
+  private server: WebSocketServer | null = null;
   private isRunning = false;
   private page: Page | null = null;
 

@@ -1,9 +1,13 @@
 import { spawn, type ChildProcess } from 'child_process';
-import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'fs';
+import { existsSync, writeFileSync, unlinkSync, mkdirSync } from 'fs';
 import { resolve } from 'path';
 import { homedir } from 'os';
 import { WSServer } from '../websocket-server.js';
+import { readJsonFile } from '../utils/json-file.js';
 
+/**
+ * Configuration for a running daemon process.
+ */
 export interface DaemonConfig {
   pid: number;
   port: number;
@@ -16,6 +20,12 @@ export interface DaemonManagerOptions {
   workerScript?: string;
 }
 
+/**
+ * Manages the xbrowser daemon process lifecycle.
+ *
+ * Handles starting, stopping, and querying the daemon, as well as
+ * managing its WebSocket server for remote browser control.
+ */
 export class DaemonManager {
   private configDir: string;
   private configPath: string;
@@ -29,6 +39,14 @@ export class DaemonManager {
     this.workerScript = options?.workerScript || resolve(process.cwd(), 'dist/bin/cli.js');
   }
 
+  /**
+   * Start the daemon process in a detached child process.
+   *
+   * @param port - The browser CDP port. Defaults to 9222.
+   * @param wsPort - The WebSocket server port. Defaults to 9223.
+   * @returns The daemon configuration with PID and ports.
+   * @throws If a daemon is already running.
+   */
   async start(port?: number, wsPort?: number): Promise<DaemonConfig> {
     const existing = this.getConfig();
     if (existing && this.isProcessRunning(existing.pid)) {
@@ -57,6 +75,11 @@ export class DaemonManager {
     return config;
   }
 
+  /**
+   * Stop the daemon process and its WebSocket server.
+   *
+   * @throws If the daemon is not running.
+   */
   async stop(): Promise<void> {
     const config = this.getConfig();
     if (!config) {
@@ -74,6 +97,11 @@ export class DaemonManager {
     this.clearConfig();
   }
 
+  /**
+   * Check the daemon status.
+   *
+   * @returns The daemon config if running, or `null` if not running.
+   */
   status(): DaemonConfig | null {
     const config = this.getConfig();
     if (!config) return null;
@@ -109,11 +137,7 @@ export class DaemonManager {
 
   private getConfig(): DaemonConfig | null {
     if (!existsSync(this.configPath)) return null;
-    try {
-      return JSON.parse(readFileSync(this.configPath, 'utf-8'));
-    } catch {
-      return null;
-    }
+    return readJsonFile<DaemonConfig | null>(this.configPath, null);
   }
 
   private saveConfig(config: DaemonConfig): void {

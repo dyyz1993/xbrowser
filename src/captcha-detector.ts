@@ -1,5 +1,8 @@
 import type { Page } from 'playwright';
 
+/**
+ * Result of a CAPTCHA detection scan.
+ */
 export interface CaptchaDetectionResult {
   detected: boolean;
   type?: string;
@@ -44,7 +47,18 @@ const CAPTCHA_TEXT_PATTERNS = [
   'not a robot',
 ];
 
+/**
+ * Detect CAPTCHAs on the current page using selector-based rules and text patterns.
+ *
+ * Supports reCAPTCHA, hCaptcha, Cloudflare Turnstile, and generic CAPTCHAs.
+ */
 export class CaptchaDetector {
+  /**
+   * Scan the page for visible CAPTCHA elements or challenge text.
+   *
+   * @param page - The Playwright page to scan.
+   * @returns Detection result with type, selector, and confidence level.
+   */
   static async detect(page: Page): Promise<CaptchaDetectionResult> {
     for (const rule of CAPTCHA_SELECTORS) {
       try {
@@ -86,6 +100,13 @@ export class CaptchaDetector {
     return { detected: false, confidence: 'low' };
   }
 
+  /**
+   * Check whether a previously detected CAPTCHA has been solved.
+   *
+   * @param page - The Playwright page to check.
+   * @param previousSelector - The selector from a previous detection result.
+   * @returns `true` if the CAPTCHA is no longer visible.
+   */
   static async isSolved(page: Page, previousSelector?: string): Promise<boolean> {
     if (previousSelector) {
       try {

@@ -6,6 +6,9 @@ import { CaptchaDetector } from './captcha-detector.js';
 import { WebhookNotifier, type WebhookPayload } from './webhook.js';
 import { getCaptchaConfig } from './config.js';
 
+/**
+ * Options for the wait-for-human interaction flow.
+ */
 export interface WaitForHumanOptions {
   reason?: string;
   timeout?: number;
@@ -13,11 +16,21 @@ export interface WaitForHumanOptions {
   detectInterval?: number;
 }
 
+/**
+ * Result of a wait-for-human interaction attempt.
+ */
 export interface WaitForHumanResult {
   solved: boolean;
   method: 'preview' | 'auto-detected' | 'timeout' | 'manual';
 }
 
+/**
+ * Manages human-in-the-loop interactions for CAPTCHA solving and manual intervention.
+ *
+ * Streams the page via screencast, sends webhook notifications, and waits
+ * for either auto-detection of CAPTCHA resolution, manual solving via
+ * the preview UI, or timeout.
+ */
 export class HumanInteractionManager {
   private wsServer: WSServer;
   private page: Page;
@@ -66,6 +79,15 @@ export class HumanInteractionManager {
     }
   }
 
+  /**
+   * Wait for a human to solve a CAPTCHA or complete an interaction.
+   *
+   * Starts screencast streaming, sends webhook and broadcast notifications,
+   * then polls for CAPTCHA resolution or waits for a manual solve signal.
+   *
+   * @param options - Configuration for timeout, auto-detection, and reason text.
+   * @returns Result indicating whether the CAPTCHA was solved and by what method.
+   */
   async waitForHuman(options: WaitForHumanOptions = {}): Promise<WaitForHumanResult> {
     const {
       reason = 'Human interaction required',

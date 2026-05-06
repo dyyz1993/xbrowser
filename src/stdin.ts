@@ -1,6 +1,14 @@
 import { createInterface } from 'readline';
 import { readFileSync } from 'fs';
 
+/**
+ * Read non-empty, non-comment lines from stdin.
+ *
+ * Returns an empty array when stdin is a TTY. Lines starting with `#` are
+ * treated as comments and skipped.
+ *
+ * @returns Array of trimmed, non-comment lines.
+ */
 export async function readStdin(): Promise<string[]> {
   if (process.stdin.isTTY) return [];
 
@@ -16,6 +24,12 @@ export async function readStdin(): Promise<string[]> {
   return lines;
 }
 
+/**
+ * Read a command file and return non-empty, non-comment lines.
+ *
+ * @param filePath - Path to the file to read.
+ * @returns Array of trimmed, non-comment lines.
+ */
 export function readCommandFile(filePath: string): string[] {
   const content = readFileSync(filePath, 'utf-8');
   return content

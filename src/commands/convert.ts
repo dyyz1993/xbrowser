@@ -10,6 +10,12 @@ function escapeString(str: string): string {
     .replace(/\t/g, '\\t');
 }
 
+/**
+ * Generate a Node.js replay script from a recording.
+ *
+ * @param recording - The recording session to convert.
+ * @returns A self-contained JavaScript script string.
+ */
 export function generateJSScript(recording: Recording): string {
   const events = aggregateEvents(recording.events || []);
 
@@ -91,6 +97,12 @@ function generateJSEvent(event: RecordingEvent): string {
   }
 }
 
+/**
+ * Generate a Python replay script from a recording.
+ *
+ * @param recording - The recording session to convert.
+ * @returns A self-contained Python script string using Playwright async API.
+ */
 export function generatePythonScript(recording: Recording): string {
   const events = recording.events || [];
 
@@ -158,6 +170,12 @@ function generatePythonEvent(event: RecordingEvent): string {
   }
 }
 
+/**
+ * Generate a Bash replay script from a recording using CDP HTTP endpoints.
+ *
+ * @param recording - The recording session to convert.
+ * @returns A self-contained Bash script string.
+ */
 export function generateBashScript(recording: Recording): string {
   const events = recording.events || [];
 

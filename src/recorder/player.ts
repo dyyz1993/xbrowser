@@ -3,12 +3,18 @@ import * as yaml from 'yaml';
 import type { Page } from 'playwright';
 import type { RecordingSession, RecordedEvent } from './recorder.js';
 
+/**
+ * Options for controlling playback speed and error handling.
+ */
 export interface PlaybackOptions {
   slowMo?: number;
   stopOnError?: boolean;
   onProgress?: (info: { current: number; total: number; event: RecordedEvent }) => void;
 }
 
+/**
+ * Result of playing back a recording session.
+ */
 export interface PlaybackResult {
   success: boolean;
   duration: number;
@@ -17,6 +23,12 @@ export interface PlaybackResult {
   errors: Array<{ eventIndex: number; event: RecordedEvent; error: string }>;
 }
 
+/**
+ * Engine for playing back a recorded browser session.
+ *
+ * Replays events (click, type, scroll, navigate, keypress) on a live
+ * Playwright page, respecting original timing with an optional slow-motion factor.
+ */
 export class PlaybackEngine {
   private page: Page;
   private recording: RecordingSession;
@@ -26,12 +38,28 @@ export class PlaybackEngine {
     this.recording = recording;
   }
 
+  /**
+   * Create a PlaybackEngine from a YAML recording file.
+   *
+   * @param page - The Playwright page to replay events on.
+   * @param filePath - Path to the YAML recording file.
+   * @returns A new PlaybackEngine instance.
+   */
   static fromFile(page: Page, filePath: string): PlaybackEngine {
     const content = fs.readFileSync(filePath, 'utf-8');
     const recording = yaml.parse(content) as RecordingSession;
     return new PlaybackEngine(page, recording);
   }
 
+  /**
+   * Play back all recorded events on the page.
+   *
+   * Navigates to the recording's start URL, then replays each event
+   * with original inter-event timing multiplied by the slow-motion factor.
+   *
+   * @param options - Playback options for slow motion, error handling, and progress callbacks.
+   * @returns A PlaybackResult with success status, duration, and any errors.
+   */
   async play(options: PlaybackOptions = {}): Promise<PlaybackResult> {
     const startTime = Date.now();
     const errors: PlaybackResult['errors'] = [];

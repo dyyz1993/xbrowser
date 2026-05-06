@@ -9,6 +9,9 @@ import {
 } from './chain-parser.js';
 import type { WSServer, CommandMessage } from './websocket-server.js';
 
+/**
+ * Result of a single command execution.
+ */
 export interface ExecutionResult {
   success: boolean;
   data: unknown;
@@ -16,6 +19,9 @@ export interface ExecutionResult {
   duration: number;
 }
 
+/**
+ * Result of a single step within a command chain execution.
+ */
 export interface ChainStepResult {
   command: string;
   raw: string;
@@ -25,6 +31,9 @@ export interface ChainStepResult {
   duration: number;
 }
 
+/**
+ * Result of executing a command chain (multiple commands linked with &&, ||, etc.).
+ */
 export interface ChainExecutionResult {
   success: boolean;
   steps: ChainStepResult[];
@@ -39,6 +48,11 @@ function errorResult(message: string): ExecutionResult {
 
 let wsServer: WSServer | null = null;
 
+/**
+ * Set or clear the WebSocket server used for streaming command events.
+ *
+ * @param server - A WSServer instance to stream events to, or null to disable.
+ */
 export function setWSServer(server: WSServer | null): void {
   wsServer = server;
 }
@@ -51,6 +65,24 @@ function streamCommandEvent(sessionId: string, message: CommandMessage): void {
   });
 }
 
+/**
+ * Execute a single browser command against an existing session.
+ *
+ * Looks up the command by name, validates parameters via Zod schema,
+ * resolves the target session, and runs the command handler.
+ * Streams before/after events to the configured WebSocket server.
+ *
+ * @param commandName - Registered command name (e.g. "goto", "click", "fill").
+ * @param params - Key-value parameters forwarded to the command handler.
+ * @param sessionName - Name of the target session. Defaults to "default".
+ * @returns An {@link ExecutionResult} with success status, data, and duration.
+ *
+ * @example
+ * ```ts
+ * const result = await executeCommand('click', { selector: '#submit' }, 'default');
+ * if (result.success) console.log('Clicked!', result.data);
+ * ```
+ */
 export async function executeCommand(
   commandName: string,
   params: Record<string, unknown>,
@@ -175,6 +207,24 @@ export async function executeCommand(
   }
 }
 
+/**
+ * Execute a chain of browser commands parsed from a string expression.
+ *
+ * Supports `&&` (and-chain, stops on first failure), `||` (or-chain, stops on
+ * first success), `;` (sequence separator), `->`, `,`, and `+` operators.
+ * Automatically creates a browser session if none exists and destroys it
+ * afterwards.
+ *
+ * @param input - Raw chain expression (e.g. `"goto https://example.com && click #btn"`).
+ * @param options - Optional configuration for CDP endpoint, session name, and file mode.
+ * @returns A {@link ChainExecutionResult} with per-step results and total duration.
+ *
+ * @example
+ * ```ts
+ * const result = await executeChain('goto https://example.com && click #btn');
+ * console.log(result.success, result.steps.length);
+ * ```
+ */
 export async function executeChain(
   input: string,
   options?: { cdpEndpoint?: string; sessionName?: string; fileMode?: boolean }
@@ -265,6 +315,14 @@ export async function executeChain(
   }
 }
 
+/**
+ * Check whether the given input string contains chain operators.
+ *
+ * Detects `&&`, `;`, `,`, `+`, and `->` surrounded by whitespace.
+ *
+ * @param input - The raw input string to test.
+ * @returns `true` if chain operators are present.
+ */
 export function isChainInput(input: string): boolean {
   return /\s&&\s|\s;\s|\s,\s|\s\+\s|\s->\s/.test(input);
 }
