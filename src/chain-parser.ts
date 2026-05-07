@@ -197,6 +197,13 @@ function coerceValue(raw: string): unknown {
   if (v === 'false') return false;
   if (/^\d+$/.test(v)) return parseInt(v, 10);
   if (/^\d+\.\d+$/.test(v)) return parseFloat(v);
+  if (v.startsWith('[') || v.startsWith('{')) {
+    try {
+      return JSON.parse(v);
+    } catch {
+      return v;
+    }
+  }
   return v;
 }
 

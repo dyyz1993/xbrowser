@@ -180,6 +180,8 @@ export const networkCheckCommand = registerCommand({
 
     if (p.url) {
       await page.goto(p.url, { waitUntil: 'domcontentloaded' });
+    } else {
+      await page.reload({ waitUntil: 'domcontentloaded' });
     }
 
     await page.waitForTimeout(p.duration);
@@ -221,7 +223,7 @@ export const networkCheckCommand = registerCommand({
       errorRequests: errorCount,
       totalSizeKB: Math.round(totalSize / 1024),
       requests: filtered,
-      summary: `${requests.length} requests: ${failedCount} failed, ${slowCount} slow (>${p.slowThreshold}ms), ${errorCount} errors`,
+      summary: `${requests.length} requests: ${failedCount} failed, ${slowCount} slow (>${p.slowThreshold ?? 3000}ms), ${errorCount} errors`,
       passed: failedCount === 0 && errorCount === 0,
     });
   },
@@ -242,10 +244,13 @@ export const perfCheckCommand = registerCommand({
     for (let i = 0; i < p.iterations; i++) {
       if (p.url) {
         await page.goto(p.url, { waitUntil: 'load' });
+      } else {
+        await page.reload({ waitUntil: 'load' });
       }
 
       const metrics = await page.evaluate(() => {
-        const nav = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming;
+        const navEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+        const nav = navEntries.length > 0 ? navEntries[navEntries.length - 1] : null;
         const paint = performance.getEntriesByType('paint');
 
         const fcp = paint.find((e) => e.name === 'first-contentful-paint');
@@ -288,23 +293,27 @@ export const perfCheckCommand = registerCommand({
 
       allMetrics.push(metrics);
 
-      if (i < p.iterations - 1 && p.url) {
+      if (i < p.iterations - 1) {
         await page.evaluate(() => {
           performance.clearResourceTimings();
         });
       }
     }
 
-    const avgMetrics = allMetrics.length === 1
+    const numericKeys = ['ttfb', 'domContentLoaded', 'loadComplete', 'fcp', 'lcp', 'domInteractive', 'transferSize', 'decodedBodySize'];
+
+    const avgMetrics: Record<string, unknown> = allMetrics.length === 1
       ? allMetrics[0]
-      : allMetrics.reduce<Record<string, unknown>>((acc, m) => {
-          Object.keys(m).forEach((key) => {
-            if (typeof m[key] === 'number') {
-              acc[key] = ((acc[key] as number) || 0) + (m[key] as number) / allMetrics.length;
-            }
+      : (() => {
+          const avg: Record<string, unknown> = {};
+          numericKeys.forEach((key) => {
+            const values = allMetrics.map((m) => m[key]).filter((v): v is number => typeof v === 'number');
+            avg[key] = values.length > 0 ? Math.round(values.reduce((s, v) => s + v, 0) / values.length) : null;
           });
-          return acc;
-        }, {});
+          const resourceStats = allMetrics[allMetrics.length - 1]?.resourceStats;
+          if (resourceStats) avg.resourceStats = resourceStats;
+          return avg;
+        })();
 
     return ok({
       url: page.url(),

@@ -1,4 +1,4 @@
-import { isCommandResult } from '@dyyz1993/xcli-core';
+import { isCommandResult, type CommandResult } from '@dyyz1993/xcli-core';
 import { getCommand, getAllCommands } from './commands/index.js';
 import type { BrowserCommandContext } from './context.js';
 import { findSession, createSession, destroyBrowser, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
@@ -8,6 +8,7 @@ import {
   parseCommandArgs,
 } from './chain-parser.js';
 import type { WSServer, CommandMessage } from './websocket-server.js';
+import { XBrowserPluginLoader } from './plugin/loader.js';
 
 /**
  * Result of a single command execution.
@@ -47,6 +48,19 @@ function errorResult(message: string): ExecutionResult {
 }
 
 let wsServer: WSServer | null = null;
+let pluginLoader: XBrowserPluginLoader | null = null;
+let pluginsScanned = false;
+
+async function getPluginLoader(): Promise<XBrowserPluginLoader> {
+  if (!pluginLoader) {
+    pluginLoader = new XBrowserPluginLoader();
+  }
+  if (!pluginsScanned) {
+    await pluginLoader.scanAndLoad();
+    pluginsScanned = true;
+  }
+  return pluginLoader;
+}
 
 /**
  * Set or clear the WebSocket server used for streaming command events.
@@ -255,6 +269,142 @@ export async function executeChain(
 
         const cmdName = parts[0];
         const cmdArgs = parts.slice(1);
+
+        const loader = await getPluginLoader();
+        const internalLoader = loader.getCore().loader;
+        const site = internalLoader.getSite(cmdName);
+
+        if (site) {
+          const subCommand = cmdArgs[0];
+          if (!subCommand) {
+            results.push({
+              command: cmdName,
+              raw: cmdStr,
+              success: false,
+              data: null,
+              message: `Plugin "${cmdName}" requires a sub-command`,
+              duration: 0,
+            });
+            if (type === 'and') {
+              return {
+                success: false,
+                steps: results,
+                totalDuration: Date.now() - totalStart,
+                stoppedAt: results.length,
+                stoppedReason: `Command '${cmdName}' failed (&& chain): no sub-command`,
+              };
+            }
+            continue;
+          }
+
+          const cmdEntry = site.getCommand(subCommand);
+          if (!cmdEntry) {
+            results.push({
+              command: cmdName,
+              raw: cmdStr,
+              success: false,
+              data: null,
+              message: `Unknown command "${subCommand}" for plugin "${cmdName}"`,
+              duration: 0,
+            });
+            if (type === 'and') {
+              return {
+                success: false,
+                steps: results,
+                totalDuration: Date.now() - totalStart,
+                stoppedAt: results.length,
+                stoppedReason: `Command '${cmdName}' failed (&& chain): unknown sub-command "${subCommand}"`,
+              };
+            }
+            continue;
+          }
+
+          const pluginArgs = cmdArgs.slice(1);
+          const pluginParams: Record<string, unknown> = {};
+          for (let i = 0; i < pluginArgs.length; i++) {
+            if (pluginArgs[i].startsWith('--')) {
+              const key = pluginArgs[i].slice(2);
+              const value = pluginArgs[i + 1];
+              if (value && !value.startsWith('-')) {
+                if (value === 'true') pluginParams[key] = true;
+                else if (value === 'false') pluginParams[key] = false;
+                else if (/^\d+$/.test(value)) pluginParams[key] = parseInt(value, 10);
+                else pluginParams[key] = value;
+                i++;
+              } else {
+                pluginParams[key] = true;
+              }
+            }
+          }
+
+          const pluginCtx = {
+            args: pluginArgs,
+            options: pluginParams,
+            cwd: process.cwd(),
+            page: session!.page,
+            browser: session!.context.browser()!,
+            browserContext: session!.context,
+            sessionId: session!.id,
+            storage: {
+              get: async <T>(_key: string): Promise<T | null> => null,
+              set: async <T>(_key: string, _value: T): Promise<void> => {},
+              delete: async (_key: string): Promise<void> => {},
+              clear: async (): Promise<void> => {},
+              keys: async (): Promise<string[]> => [],
+            },
+            output: { mode: 'text' as const, showTips: false, color: false, emoji: false },
+            error: (msg: string) => { throw new Error(msg); },
+            config: {},
+            site,
+            cliName: 'xbrowser',
+          };
+
+          const start = Date.now();
+          try {
+            const raw = await cmdEntry.handler(pluginParams, pluginCtx) as CommandResult;
+            const duration = Date.now() - start;
+            const data = raw?.data ?? raw;
+            results.push({
+              command: `${cmdName} ${subCommand}`,
+              raw: cmdStr,
+              success: true,
+              data,
+              message: undefined,
+              duration,
+            });
+            if (type === 'or') {
+              return {
+                success: true,
+                steps: results,
+                totalDuration: Date.now() - totalStart,
+                stoppedAt: results.length,
+                stoppedReason: `Command '${cmdName} ${subCommand}' succeeded (|| chain)`,
+              };
+            }
+          } catch (err) {
+            const duration = Date.now() - start;
+            const errorMessage = (err as Error).message;
+            results.push({
+              command: `${cmdName} ${subCommand}`,
+              raw: cmdStr,
+              success: false,
+              data: null,
+              message: errorMessage,
+              duration,
+            });
+            if (type === 'and') {
+              return {
+                success: false,
+                steps: results,
+                totalDuration: Date.now() - totalStart,
+                stoppedAt: results.length,
+                stoppedReason: `Command '${cmdName} ${subCommand}' failed (&& chain): ${errorMessage}`,
+              };
+            }
+          }
+          continue;
+        }
+
         const { params } = parseCommandArgs(cmdName, cmdArgs);
 
         if (cmdName === 'goto' && params.url) {

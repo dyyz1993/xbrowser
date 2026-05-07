@@ -20,6 +20,7 @@ import { outputError, outputResult } from './cli/output.js';
 import { showMainHelp } from './cli/help.js';
 import { printChainResult, printChainResultBrief } from './cli/chain-output.js';
 import { XBrowserPluginLoader } from './plugin/loader.js';
+import { findSession, createSession, destroyBrowser } from './browser.js';
 
 let pluginLoader: XBrowserPluginLoader | null = null;
 let pluginsScanned = false;
@@ -275,10 +276,21 @@ export async function routeCommand(
             }
           }
 
+          let session = findSession(sessionName);
+          let createdSession = false;
+          if (!session) {
+            session = await createSession(sessionName, undefined, {});
+            createdSession = true;
+          }
+
           const ctx = {
             args: cmdArgsForPlugin,
             options,
             cwd: process.cwd(),
+            page: session.page,
+            browser: session.context.browser()!,
+            browserContext: session.context,
+            sessionId: session.id,
             storage: {
               get: async <T>(_key: string): Promise<T | null> => null,
               set: async <T>(_key: string, _value: T): Promise<void> => {},
@@ -296,13 +308,19 @@ export async function routeCommand(
             },
           };
 
-          const result = await cmdEntry.handler(params, ctx) as CommandResult;
-          if (mode === 'json' || mode === 'yaml') {
-            outputResult(result, mode);
-          } else if (result) {
-            if (result.data) console.log(JSON.stringify(result.data, null, 2));
-            if (result.tips?.length) {
-              for (const tip of result.tips) console.log(`  💡 ${tip}`);
+          try {
+            const result = await cmdEntry.handler(params, ctx) as CommandResult;
+            if (mode === 'json' || mode === 'yaml') {
+              outputResult(result, mode);
+            } else if (result) {
+              if (result.data) console.log(JSON.stringify(result.data, null, 2));
+              if (result.tips?.length) {
+                for (const tip of result.tips) console.log(`  💡 ${tip}`);
+              }
+            }
+          } finally {
+            if (createdSession) {
+              await destroyBrowser();
             }
           }
           return;
