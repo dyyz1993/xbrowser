@@ -150,10 +150,11 @@ export const visualDiffCommand = registerCommand({
     let baselineBuffer: Buffer;
     try {
       baselineBuffer = readFileSync(p.baseline);
-    } catch {
+    } catch (err) {
+      const reason = (err as NodeJS.ErrnoException).code === 'ENOENT' ? 'not found' : 'unreadable';
       return ok({
         passed: false,
-        message: `Baseline file not found: ${p.baseline}`,
+        message: `Baseline file ${reason}: ${p.baseline}`,
         diffPercentage: 100,
         tip: 'Save current screenshot as baseline first',
       });

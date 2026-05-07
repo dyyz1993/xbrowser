@@ -34,7 +34,7 @@ export const consoleCheckCommand = registerCommand({
         const capture = (type: string, captureArgs: unknown[]) => {
           const text = captureArgs.map((a) => {
             if (a instanceof Error) return `${a.message}\n${a.stack || ''}`;
-            if (typeof a === 'object') try { return JSON.stringify(a); } catch { return String(a); }
+            if (typeof a === 'object') try { return JSON.stringify(a); } catch { return String(a); } // circular refs
             return String(a);
           }).join(' ');
 
@@ -116,116 +116,118 @@ export const networkCheckCommand = registerCommand({
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
     const { page } = ctx;
-
     const client = await page.context().newCDPSession(page);
+    try {
+      const requests: Array<{
+        url: string;
+        method: string;
+        resourceType: string;
+        status: number;
+        mimeType: string;
+        duration: number;
+        size: number;
+        error?: string;
+      }> = [];
 
-    const requests: Array<{
-      url: string;
-      method: string;
-      resourceType: string;
-      status: number;
-      mimeType: string;
-      duration: number;
-      size: number;
-      error?: string;
-    }> = [];
+      const pendingRequests = new Map<string, { startTime: number; request: { url: string; method: string; resourceType: string } }>();
 
-    const pendingRequests = new Map<string, { startTime: number; request: { url: string; method: string; resourceType: string } }>();
+      await client.send('Network.enable');
 
-    await client.send('Network.enable');
-
-    client.on('Network.requestWillBeSent', (params: { requestId: string; request: { url: string; method: string }; type?: string }) => {
-      pendingRequests.set(params.requestId, {
-        startTime: Date.now(),
-        request: {
-          url: params.request.url,
-          method: params.request.method,
-          resourceType: params.type || 'other',
-        },
+      client.on('Network.requestWillBeSent', (params: { requestId: string; request: { url: string; method: string }; type?: string }) => {
+        pendingRequests.set(params.requestId, {
+          startTime: Date.now(),
+          request: {
+            url: params.request.url,
+            method: params.request.method,
+            resourceType: params.type || 'other',
+          },
+        });
       });
-    });
 
-    client.on('Network.responseReceived', (params: { requestId: string; response: { status: number; mimeType: string; encodedDataLength?: number } }) => {
-      const pending = pendingRequests.get(params.requestId);
-      if (pending) {
-        requests.push({
-          url: pending.request.url,
-          method: pending.request.method,
-          resourceType: pending.request.resourceType,
-          status: params.response.status,
-          mimeType: params.response.mimeType,
-          duration: Date.now() - pending.startTime,
-          size: params.response.encodedDataLength || 0,
-        });
-        pendingRequests.delete(params.requestId);
+      client.on('Network.responseReceived', (params: { requestId: string; response: { status: number; mimeType: string; encodedDataLength?: number } }) => {
+        const pending = pendingRequests.get(params.requestId);
+        if (pending) {
+          requests.push({
+            url: pending.request.url,
+            method: pending.request.method,
+            resourceType: pending.request.resourceType,
+            status: params.response.status,
+            mimeType: params.response.mimeType,
+            duration: Date.now() - pending.startTime,
+            size: params.response.encodedDataLength || 0,
+          });
+          pendingRequests.delete(params.requestId);
+        }
+      });
+
+      client.on('Network.loadingFailed', (params: { requestId: string; errorText?: string }) => {
+        const pending = pendingRequests.get(params.requestId);
+        if (pending) {
+          requests.push({
+            url: pending.request.url,
+            method: pending.request.method,
+            resourceType: pending.request.resourceType,
+            status: 0,
+            mimeType: '',
+            duration: Date.now() - pending.startTime,
+            size: 0,
+            error: params.errorText || 'Loading failed',
+          });
+          pendingRequests.delete(params.requestId);
+        }
+      });
+
+      if (p.url) {
+        await page.goto(p.url, { waitUntil: 'domcontentloaded' });
+      } else {
+        await page.reload({ waitUntil: 'domcontentloaded' });
       }
-    });
 
-    client.on('Network.loadingFailed', (params: { requestId: string; errorText?: string }) => {
-      const pending = pendingRequests.get(params.requestId);
-      if (pending) {
-        requests.push({
-          url: pending.request.url,
-          method: pending.request.method,
-          resourceType: pending.request.resourceType,
-          status: 0,
-          mimeType: '',
-          duration: Date.now() - pending.startTime,
-          size: 0,
-          error: params.errorText || 'Loading failed',
-        });
-        pendingRequests.delete(params.requestId);
+      await page.waitForTimeout(p.duration);
+
+      let filtered = requests;
+      switch (p.filter) {
+        case 'failed':
+          filtered = requests.filter((r) => r.status === 0 || r.status >= 400);
+          break;
+        case 'slow':
+          filtered = requests.filter((r) => r.duration >= p.slowThreshold);
+          break;
+        case 'error':
+          filtered = requests.filter((r) => r.error);
+          break;
+        case 'xhr':
+        case 'fetch':
+          filtered = requests.filter((r) => r.resourceType === p.filter);
+          break;
+        case 'document':
+        case 'stylesheet':
+        case 'script':
+        case 'image':
+          filtered = requests.filter((r) => r.resourceType === p.filter);
+          break;
       }
-    });
 
-    if (p.url) {
-      await page.goto(p.url, { waitUntil: 'domcontentloaded' });
-    } else {
-      await page.reload({ waitUntil: 'domcontentloaded' });
+      const failedCount = requests.filter((r) => r.status === 0 || r.status >= 400).length;
+      const slowCount = requests.filter((r) => r.duration >= p.slowThreshold).length;
+      const errorCount = requests.filter((r) => r.error).length;
+      const totalSize = requests.reduce((sum, r) => sum + r.size, 0);
+
+      return ok({
+        url: page.url(),
+        duration: p.duration,
+        totalRequests: requests.length,
+        failedRequests: failedCount,
+        slowRequests: slowCount,
+        errorRequests: errorCount,
+        totalSizeKB: Math.round(totalSize / 1024),
+        requests: filtered,
+        summary: `${requests.length} requests: ${failedCount} failed, ${slowCount} slow (>${p.slowThreshold ?? 3000}ms), ${errorCount} errors`,
+        passed: failedCount === 0 && errorCount === 0,
+      });
+    } finally {
+      await client.detach().catch(() => {});
     }
-
-    await page.waitForTimeout(p.duration);
-
-    let filtered = requests;
-    switch (p.filter) {
-      case 'failed':
-        filtered = requests.filter((r) => r.status === 0 || r.status >= 400);
-        break;
-      case 'slow':
-        filtered = requests.filter((r) => r.duration >= p.slowThreshold);
-        break;
-      case 'error':
-        filtered = requests.filter((r) => r.error);
-        break;
-      case 'xhr':
-      case 'fetch':
-        filtered = requests.filter((r) => r.resourceType === p.filter);
-        break;
-      case 'document':
-      case 'stylesheet':
-      case 'script':
-      case 'image':
-        filtered = requests.filter((r) => r.resourceType === p.filter);
-        break;
-    }
-
-    const failedCount = requests.filter((r) => r.status === 0 || r.status >= 400).length;
-    const slowCount = requests.filter((r) => r.duration >= p.slowThreshold).length;
-    const errorCount = requests.filter((r) => r.error).length;
-    const totalSize = requests.reduce((sum, r) => sum + r.size, 0);
-
-    return ok({
-      url: page.url(),
-      duration: p.duration,
-      totalRequests: requests.length,
-      failedRequests: failedCount,
-      slowRequests: slowCount,
-      errorRequests: errorCount,
-      totalSizeKB: Math.round(totalSize / 1024),
-      requests: filtered,
-      summary: `${requests.length} requests: ${failedCount} failed, ${slowCount} slow (>${p.slowThreshold ?? 3000}ms), ${errorCount} errors`,
-      passed: failedCount === 0 && errorCount === 0,
-    });
   },
 });
 
@@ -412,11 +414,11 @@ export const healthCheckCommand = registerCommand({
                 message: `Broken link (${response.status}): ${href} — "${link.textContent?.trim()?.slice(0, 50) || ''}"`,
               });
             }
-          } catch {
+          } catch (err) {
             issues.push({
               severity: 'error',
               category: 'links',
-              message: `Broken link (fetch error): ${href} — "${link.textContent?.trim()?.slice(0, 50) || ''}"`,
+              message: `Broken link (fetch error): ${href} — ${(err as Error).message || 'unknown'}`,
             });
           }
         }
