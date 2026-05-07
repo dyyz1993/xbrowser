@@ -128,7 +128,7 @@ export const assertCommand = registerCommand({
 });
 
 export const visualDiffCommand = registerCommand({
-  name: 'visualDiff',
+  name: 'diff',
   description: 'Compare current page screenshot against a baseline image for visual regression',
   scope: 'page',
   parameters: z.object({
@@ -247,7 +247,7 @@ export const visualDiffCommand = registerCommand({
 });
 
 export const testSuiteCommand = registerCommand({
-  name: 'testSuite',
+  name: 'testsuite',
   description: 'Run a sequence of test steps (navigate + interact + assert) and report results',
   scope: 'page',
   parameters: z.object({

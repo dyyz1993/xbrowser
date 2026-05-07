@@ -4,7 +4,7 @@ import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 
 export const consoleCheckCommand = registerCommand({
-  name: 'consoleCheck',
+  name: 'console',
   description: 'Collect and analyze browser console messages (errors, warnings, logs)',
   scope: 'page',
   parameters: z.object({
@@ -105,7 +105,7 @@ export const consoleCheckCommand = registerCommand({
 });
 
 export const networkCheckCommand = registerCommand({
-  name: 'networkCheck',
+  name: 'network',
   description: 'Monitor and analyze network requests — capture failed requests, slow responses, status codes',
   scope: 'page',
   parameters: z.object({
@@ -228,7 +228,7 @@ export const networkCheckCommand = registerCommand({
 });
 
 export const perfCheckCommand = registerCommand({
-  name: 'perfCheck',
+  name: 'perf',
   description: 'Audit page performance metrics — load time, FCP, LCP, CLS, TTFB, resource sizes',
   scope: 'page',
   parameters: z.object({
@@ -318,7 +318,7 @@ export const perfCheckCommand = registerCommand({
 });
 
 export const healthCheckCommand = registerCommand({
-  name: 'healthCheck',
+  name: 'health',
   description: 'Comprehensive page health check — broken links, missing images, console errors, SEO issues',
   scope: 'page',
   parameters: z.object({

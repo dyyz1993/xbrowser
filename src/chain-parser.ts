@@ -291,12 +291,12 @@ const commandDefCache: Record<string, CommandDef> = {
   forward: { positional: [] },
   refresh: { positional: [] },
   assert: { positional: ['type'] },
-  visualDiff: { positional: ['baseline'] },
-  testSuite: { positional: [] },
-  consoleCheck: { positional: [] },
-  networkCheck: { positional: [] },
-  perfCheck: { positional: [] },
-  healthCheck: { positional: [] },
+  diff: { positional: ['baseline'] },
+  testsuite: { positional: [] },
+  console: { positional: [] },
+  network: { positional: [] },
+  perf: { positional: [] },
+  health: { positional: [] },
 };
 
 function getCommandDefinitions(): Record<string, CommandDef> {
