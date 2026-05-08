@@ -8,7 +8,7 @@ import {
   parseCommandArgs,
 } from './chain-parser.js';
 import type { WSServer, CommandMessage } from './websocket-server.js';
-import { XBrowserPluginLoader } from './plugin/loader.js';
+import { getPluginLoader } from './utils/plugin-singleton.js';
 
 /**
  * Result of a single command execution.
@@ -48,19 +48,6 @@ function errorResult(message: string): ExecutionResult {
 }
 
 let wsServer: WSServer | null = null;
-let pluginLoader: XBrowserPluginLoader | null = null;
-let pluginsScanned = false;
-
-async function getPluginLoader(): Promise<XBrowserPluginLoader> {
-  if (!pluginLoader) {
-    pluginLoader = new XBrowserPluginLoader();
-  }
-  if (!pluginsScanned) {
-    await pluginLoader.scanAndLoad();
-    pluginsScanned = true;
-  }
-  return pluginLoader;
-}
 
 /**
  * Set or clear the WebSocket server used for streaming command events.

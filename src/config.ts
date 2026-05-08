@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { tmpdir } from 'os';
+import { tmpdir, homedir } from 'os';
 import { readJsonFile } from './utils/json-file.js';
 
 function getHome(): string {
-  return process.env.HOME || tmpdir();
+  return homedir() || tmpdir();
 }
 
 function getConfigDir(): string {

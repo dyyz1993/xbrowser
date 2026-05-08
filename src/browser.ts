@@ -10,6 +10,7 @@ export interface ManagedSession {
   context: BrowserContext;
   page: Page;
   createdAt: string;
+  lastActivityAt: number;
   isCDP?: boolean;
   cdpEndpoint?: string;
 }
@@ -25,6 +26,43 @@ export interface BrowserLaunchOptions {
 
 const sessions = new Map<string, ManagedSession>();
 let browser: Browser | null = null;
+
+const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+let idleTimer: ReturnType<typeof setTimeout> | null = null;
+
+function resetIdleTimer(): void {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(async () => {
+    const now = Date.now();
+    let allIdle = true;
+    for (const [, s] of sessions) {
+      if (now - s.lastActivityAt < IDLE_TIMEOUT_MS) {
+        allIdle = false;
+        break;
+      }
+    }
+    if (allIdle && browser) {
+      await destroyBrowser().catch(() => {});
+    }
+  }, IDLE_TIMEOUT_MS);
+}
+
+export function touchSession(id: string): void {
+  const s = sessions.get(id);
+  if (s) s.lastActivityAt = Date.now();
+  resetIdleTimer();
+}
+
+process.on('exit', () => {
+  if (browser) {
+    try {
+      browser.close();
+    } catch {
+      // force cleanup on exit
+    }
+    browser = null;
+  }
+});
 
 async function resolveCDPEndpoint(raw: string): Promise<string> {
   if (raw === 'auto') {
@@ -178,10 +216,12 @@ export async function createSession(
     context,
     page,
     createdAt: new Date().toISOString(),
+    lastActivityAt: Date.now(),
     isCDP,
     cdpEndpoint: options?.cdpEndpoint,
   };
   sessions.set(session.id, session);
+  resetIdleTimer();
   return session;
 }
 
@@ -245,4 +285,36 @@ export async function destroyBrowser(): Promise<void> {
 export function resetForTesting(): void {
   sessions.clear();
   browser = null;
+}
+
+/**
+ * Create an ephemeral BrowserContext for one-off commands (scrape/crawl/map).
+ *
+ * Shares the single Browser instance but creates an isolated context
+ * that can be closed independently without affecting other sessions.
+ *
+ * @param options - Browser launch options.
+ * @returns The BrowserContext and its default Page.
+ */
+export async function createEphemeralContext(
+  options?: BrowserLaunchOptions,
+): Promise<{ context: BrowserContext; page: Page }> {
+  const b = await getBrowser(options);
+  const context = await b.newContext();
+  const page = await context.newPage();
+  resetIdleTimer();
+  return { context, page };
+}
+
+/**
+ * Close an ephemeral BrowserContext without destroying the shared Browser.
+ *
+ * Safe to call after one-off commands. Other sessions remain unaffected.
+ */
+export async function closeEphemeralContext(context: BrowserContext): Promise<void> {
+  try {
+    await context.close();
+  } catch {
+    // ignore close errors
+  }
 }

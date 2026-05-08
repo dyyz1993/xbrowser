@@ -19,22 +19,9 @@ import {
 import { outputError, outputResult } from './cli/output.js';
 import { showMainHelp } from './cli/help.js';
 import { printChainResult, printChainResultBrief } from './cli/chain-output.js';
-import { XBrowserPluginLoader } from './plugin/loader.js';
+import { getPluginLoader } from './utils/plugin-singleton.js';
 import { findSession, createSession, destroyBrowser } from './browser.js';
 
-let pluginLoader: XBrowserPluginLoader | null = null;
-let pluginsScanned = false;
-
-async function getPluginLoader(): Promise<XBrowserPluginLoader> {
-  if (!pluginLoader) {
-    pluginLoader = new XBrowserPluginLoader();
-  }
-  if (!pluginsScanned) {
-    await pluginLoader.scanAndLoad();
-    pluginsScanned = true;
-  }
-  return pluginLoader;
-}
 
 function handleConfig(
   args: string[],

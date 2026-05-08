@@ -3,7 +3,7 @@ import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { htmlToMarkdown } from '../lib/html-to-markdown.js';
-import { createSession, destroyBrowser } from '../browser.js';
+import { createEphemeralContext, closeEphemeralContext } from '../browser.js';
 
 export const scrapeCommand = registerCommand({
   name: 'scrape',
@@ -17,12 +17,10 @@ export const scrapeCommand = registerCommand({
     onlyMainContent: z.boolean().default(true),
   }),
   handler: async (p, _ctx: BrowserCommandContext) => {
-    const sessionName = `scrape-${Date.now()}`;
+    const { context, page } = await createEphemeralContext({ headless: true });
 
     try {
-      const session = await createSession(sessionName, p.url, { headless: true });
-      const page = session.page;
-
+      await page.goto(p.url, { waitUntil: 'domcontentloaded', timeout: p.timeout });
       await page.waitForLoadState('networkidle', { timeout: p.timeout });
 
       if (p.selector) {
@@ -48,7 +46,7 @@ export const scrapeCommand = registerCommand({
 
       return ok({ content, title, url: finalUrl });
     } finally {
-      await destroyBrowser().catch(() => {});
+      await closeEphemeralContext(context);
     }
   },
 });

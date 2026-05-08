@@ -233,7 +233,7 @@ export async function handleBrowserCommand(
           };
           break;
         case 'crawl':
-          if (!args[0]) outputError('Usage: xbrowser crawl <url> [--limit <n>] [--max-depth <n>] [--format markdown|html]');
+          if (!args[0]) outputError('Usage: xbrowser crawl <url> [--limit <n>] [--max-depth <n>] [--format markdown|html] [--concurrency <n>] [--retries <n>] [--verbose]');
           cmdName = 'crawl';
           params = {
             url: args[0],
@@ -245,6 +245,9 @@ export async function handleBrowserCommand(
             allowExternalLinks: options['allow-external-links'] === 'true',
             format: options.format as string | undefined,
             onlyMainContent: options['only-main-content'] !== 'false',
+            concurrency: options.concurrency ? Number(options.concurrency) : undefined,
+            retries: options.retries ? Number(options.retries) : undefined,
+            verbose: options.verbose === 'true' || options.verbose === '',
           };
           break;
        default:

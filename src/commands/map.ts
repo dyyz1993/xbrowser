@@ -2,14 +2,22 @@ import { z } from 'zod';
 import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
-import { createSession, destroyBrowser } from '../browser.js';
+import { createEphemeralContext, closeEphemeralContext } from '../browser.js';
+import { getBaseDomain, deduplicateUrls } from '../utils/url.js';
 import type { Page } from 'playwright';
+
+export { deduplicateUrls };
+
+export function getRootDomain(hostname: string): string {
+  return getBaseDomain(hostname);
+}
 
 interface MapOptions {
   sitemap?: 'include' | 'only';
   includeSubdomains?: boolean;
   limit?: number;
   search?: string;
+  verbose?: boolean;
 }
 
 export function normalizeUrl(href: string, baseUrl: string): string | null {
@@ -28,12 +36,6 @@ export function getHostname(url: string): string | null {
   }
 }
 
-export function getRootDomain(hostname: string): string {
-  const parts = hostname.split('.');
-  if (parts.length <= 2) return hostname;
-  return parts.slice(-2).join('.');
-}
-
 export function isSameDomain(
   url: string,
   baseHostname: string,
@@ -43,7 +45,7 @@ export function isSameDomain(
   if (!h) return false;
   if (h === baseHostname) return true;
   if (includeSubdomains) {
-    return getRootDomain(h) === getRootDomain(baseHostname);
+    return getBaseDomain(h) === getBaseDomain(baseHostname);
   }
   return false;
 }
@@ -60,34 +62,6 @@ export function isWithinPathScope(targetUrl: string, basePath: string): boolean 
   }
 }
 
-function isSpaHashRoute(hash: string): boolean {
-  return hash.startsWith('#/') || hash.startsWith('#!/') || hash.startsWith('#!/');
-}
-
-export function deduplicateUrls(urls: string[]): string[] {
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const u of urls) {
-    let normalized: string;
-    try {
-      const parsed = new URL(u);
-      if (!isSpaHashRoute(parsed.hash)) {
-        parsed.hash = '';
-      }
-      normalized = parsed.href;
-    } catch {
-      normalized = u;
-    }
-    const key = normalized
-      .replace(/^https?:/, '')
-      .replace(/^\/\/www\./, '//');
-    if (!seen.has(key)) {
-      seen.add(key);
-      result.push(u);
-    }
-  }
-  return result;
-}
 
 async function fetchSitemapUrls(page: Page, origin: string): Promise<string[]> {
   const urls: string[] = [];
@@ -157,14 +131,22 @@ export async function discoverUrls(
   if (!baseHostname) return [];
 
   const origin = new URL(baseUrl).origin;
+  const steps = options.sitemap === 'only' ? 1 : 2;
+  let step = 0;
 
   if (options.sitemap !== 'only') {
+    step++;
+    if (options.verbose) console.log(`[${step}/${steps}] Extracting page links...`);
     const pageLinks = await extractPageLinks(page, baseUrl);
     for (const u of pageLinks) allUrls.add(u);
+    if (options.verbose) console.log(`[${step}/${steps}] Found ${pageLinks.length} links from page`);
   }
 
+  step++;
+  if (options.verbose) console.log(`[${step}/${steps}] Fetching sitemap...`);
   const sitemapUrls = await fetchSitemapUrls(page, origin);
   for (const u of sitemapUrls) allUrls.add(u);
+  if (options.verbose) console.log(`[${step}/${steps}] Found ${sitemapUrls.length} URLs from sitemap`);
 
   const basePath = new URL(baseUrl).pathname;
 
@@ -197,19 +179,18 @@ export const mapCommand = registerCommand({
     sitemap: z.enum(['include', 'only']).optional(),
     includeSubdomains: z.boolean().optional(),
     limit: z.number().optional(),
+    verbose: z.boolean().default(false).describe('Show progress feedback'),
   }),
   handler: async (p, _ctx: BrowserCommandContext) => {
-    const sessionName = `map-${Date.now()}`;
+    const { context, page } = await createEphemeralContext({ headless: true });
 
     try {
-      const session = await createSession(sessionName, p.url, { headless: true });
-      const page = session.page;
-
       const links = await discoverUrls(page, p.url, {
         sitemap: p.sitemap,
         includeSubdomains: p.includeSubdomains,
         limit: p.limit,
         search: p.search,
+        verbose: p.verbose,
       });
 
       const linkObjects = links.map((url) => ({ url }));
@@ -219,7 +200,7 @@ export const mapCommand = registerCommand({
         success: true,
       });
     } finally {
-      await destroyBrowser().catch(() => {});
+      await closeEphemeralContext(context);
     }
   },
 });

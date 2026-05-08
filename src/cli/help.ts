@@ -37,6 +37,9 @@ Commands:
   convert <rec.yaml> <out.{js,py,sh}> Convert recording to script
   extract <rec.yaml>                Extract LLM-ready summary
   filter <in.yaml> <out.yaml>       Filter recording events
+  scrape <url>                      Scrape a page and convert to markdown
+  crawl <url>                       Crawl a website and extract content from multiple pages
+  map <url>                         Discover all URLs on a website
   config <get|set|list>             Manage config
   plugin search <query>             Search for plugins
   plugin install <source>           Install plugin

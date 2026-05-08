@@ -1,6 +1,6 @@
 {
   "name": "@dyyz1993/xbrowser",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "A self-contained browser automation CLI tool — navigate, click, fill forms, extract data, record & replay sessions via YAML scripts",
   "type": "module",
   "bin": {
@@ -45,7 +45,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "vitest run tests/e2e/",
-    "validate": "npm run typecheck && npm run lint && npm run build && npm test"
+    "validate": "npm run typecheck && npm run lint && npm run build && npm test",
+    "prepare": "husky"
   },
   "dependencies": {
     "@dyyz1993/xcli-core": "^0.6.0",
@@ -73,10 +74,17 @@
     "@vitest/coverage-v8": "^3.2.4",
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.3",
     "tailwindcss": "^4.2.4",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0",
     "vitest": "^3.0.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix"
+    ]
   },
   "optionalDependencies": {
     "undici": "^7.25.0"

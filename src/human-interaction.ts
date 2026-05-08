@@ -5,6 +5,7 @@ import { ScreencastCapturer } from './screencast.js';
 import { CaptchaDetector } from './captcha-detector.js';
 import { WebhookNotifier, type WebhookPayload } from './webhook.js';
 import { getCaptchaConfig } from './config.js';
+import { shellEscape } from './utils/shell-escape.js';
 
 /**
  * Options for the wait-for-human interaction flow.
@@ -73,7 +74,7 @@ export class HumanInteractionManager {
           : process.platform === 'linux'
             ? 'xdg-open'
             : 'start';
-      execSync(`${cmd} ${previewUrl}`, { stdio: 'ignore' });
+      execSync(`${cmd} ${shellEscape(previewUrl)}`, { stdio: 'ignore' });
     } catch {
       // ignore auto-open failures
     }

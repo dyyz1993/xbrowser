@@ -162,30 +162,44 @@ async function executeAction(page: BrowserCommandContext['page'], action: Action
 
 export const actionsCommand = registerCommand({
   name: 'actions',
-  description: '执行一系列 Actions（等待、点击、滚动、截图、填表单等）',
+  description: 'Execute a sequence of actions (wait, click, scroll, screenshot, fill, etc.)',
   scope: 'page',
   parameters: z.object({
-    url: z.string().describe('起始 URL'),
-    actions: z.array(actionSchema).max(MAX_ACTIONS).describe('Actions 数组（最多 50 个）'),
-    output: z.enum(['text', 'json']).default('json').describe('输出格式：text 或 json'),
+    url: z.string().describe('Starting URL'),
+    actions: z.array(actionSchema).max(MAX_ACTIONS).describe('Array of actions (max 50)'),
+    output: z.enum(['text', 'json']).default('json').describe('Output format: text or json'),
+    timeout: z.number().default(60).describe('Overall timeout in seconds (default: 60)'),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
     await ctx.page.goto(p.url, { waitUntil: 'domcontentloaded' });
 
     const results: ActionResult[] = [];
-    for (const action of p.actions) {
-      const result = await executeAction(ctx.page, action);
-      results.push(result);
-    }
+    const timeoutMs = (p.timeout ?? 60) * 1000;
+
+    const executionPromise = (async () => {
+      for (const action of p.actions) {
+        const result = await executeAction(ctx.page, action);
+        results.push(result);
+      }
+    })();
+
+    const timeoutPromise = new Promise<void>((resolve) => {
+      setTimeout(resolve, timeoutMs);
+    });
+
+    await Promise.race([executionPromise, timeoutPromise]);
 
     const title = await ctx.page.title();
     const finalUrl = ctx.page.url();
+
+    const timedOut = results.length < p.actions.length;
 
     if (p.output === 'text') {
       return ok({
         title,
         url: finalUrl,
         actions: results.map((r) => JSON.stringify(r)).join('\n'),
+        ...(timedOut ? { warning: `Timed out after ${p.timeout}s, completed ${results.length}/${p.actions.length} actions` } : {}),
       });
     }
 
@@ -193,6 +207,7 @@ export const actionsCommand = registerCommand({
       title,
       url: finalUrl,
       results,
+      ...(timedOut ? { warning: `Timed out after ${p.timeout}s, completed ${results.length}/${p.actions.length} actions` } : {}),
     });
   },
 });

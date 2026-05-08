@@ -1,0 +1,8 @@
+# any 类型计数检查
+ANY_COUNT=$(grep -r '\bany\b' src/ --include='*.ts' -c 2>/dev/null | awk -F: '{sum+=$NF} END {print sum+0}')
+if [ "$ANY_COUNT" -gt 100 ]; then
+  echo "❌ Commit rejected: Found $ANY_COUNT 'any' type usages in src/ (max allowed: 100)"
+  echo "   Please reduce 'any' usage before committing."
+  exit 1
+fi
+echo "✅ any check passed: $ANY_COUNT/100"

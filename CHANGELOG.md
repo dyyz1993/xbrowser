@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.5] - 2026-05-09
+
+### Fixed
+- Refactored html-to-markdown: replaced regex with cheerio, built-in base64 image filtering
+- Fixed convert.ts aggregateEvents logic bug (Enter/Tab event loss)
+- Eliminated all `any` types
+
+### Added
+- Crawl concurrent fetching (--concurrency parameter, default 3)
+- Crawl robots.txt support
+- Crawl retry mechanism (--retries parameter, default 2)
+- Crawl/map progress feedback (--verbose)
+- Actions timeout protection (--timeout parameter)
+- Unified URL utility functions in src/utils/url.ts
+- Unified pluginLoader singleton
+- Help text: added scrape/crawl/map commands
+- husky + lint-staged + commit-msg hook (any ≤ 100 check)
+
+### Changed
+- Cross-platform compatibility: HOME → os.homedir()
+- Browser lifecycle: scrape/crawl/map use ephemeral BrowserContext instead of full Browser
+- Added idle timeout (5 min) for automatic browser cleanup
+
+## [0.5.4] - 2026-05-09
+
+### Fixed
+- Refactored html-to-markdown with cheerio replacing regex HTML parsing
+- Built-in base64 image filtering and expanded noise selectors
+
 ## [0.4.0] - 2026-05-06
 
 ### Changed
