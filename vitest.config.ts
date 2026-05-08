@@ -15,6 +15,10 @@ export default defineConfig({
         '**/*.d.ts',
         '**/types/**',
         'bin/**',
+        '.xcli/**',
+        'eslint.config.js',
+        'tsup.config.ts',
+        'vitest.config.ts',
       ],
       thresholds: {
         branches: 75,
