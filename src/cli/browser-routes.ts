@@ -188,7 +188,13 @@ export async function handleBrowserCommand(
             const content = fs.readFileSync(options['actions-file'] as string, 'utf-8');
             parsedActions = JSON.parse(content);
           } else if (options.actions) {
-            parsedActions = JSON.parse(options.actions as string);
+            const raw = options.actions;
+            if (typeof raw === 'string') {
+              parsedActions = JSON.parse(raw);
+            } else if (Array.isArray(raw)) {
+              const joined = '[' + (raw as string[]).join(',') + ']';
+              parsedActions = JSON.parse(joined);
+            }
           }
 
           if (!parsedActions || parsedActions.length === 0) {

@@ -1,2 +1,2 @@
 /** Current version of the xbrowser package. */
-export const version = '0.5.2';
+export const version = '0.5.3';

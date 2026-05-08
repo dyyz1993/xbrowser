@@ -123,9 +123,13 @@ export async function executeCommand(
   }
 
   let session: ManagedSession | undefined;
+  let autoCreated = false;
   const existing = findSession(sessionName);
   if (existing) {
     session = existing;
+  } else if (command.scope === 'page' && params.url) {
+    session = await createSession(sessionName, params.url as string, {});
+    autoCreated = true;
   } else if (command.scope !== 'project') {
     return errorResult(
       `Session '${sessionName}' not found. Run "xbrowser session open <url>" first.`
@@ -222,6 +226,10 @@ export async function executeCommand(
       message: errorMessage,
       duration,
     };
+  } finally {
+    if (autoCreated) {
+      await destroyBrowser();
+    }
   }
 }
 
