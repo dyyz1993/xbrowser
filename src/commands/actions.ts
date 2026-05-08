@@ -58,7 +58,7 @@ const pdfActionSchema = z.object({
   format: z.enum(['A0', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'Letter', 'Legal', 'Tabloid', 'Ledger']).optional(),
 });
 
-const actionSchema = z.union([
+export const actionSchema = z.union([
   waitActionSchema,
   clickActionSchema,
   screenshotActionSchema,

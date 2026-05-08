@@ -171,17 +171,39 @@ export async function handleBrowserCommand(
          cmdName = 'refresh';
          params = {};
          break;
-       case 'actions':
-         if (!args[0]) {
-           outputError('Usage: xbrowser actions <url> --actions \'[...]\' [--output text|json]');
-         }
-         cmdName = 'actions';
-         params = {
-           url: args[0],
-           actions: options.actions ? JSON.parse(options.actions as string) : undefined,
-           output: options.output as string | undefined,
-         };
-         break;
+       case 'actions': {
+          if (!args[0]) {
+            outputError('Usage: xbrowser actions <url> --action "wait 1000" --action "click #btn" --action "scrape"\n       xbrowser actions <url> --actions-file ./actions.json\n       xbrowser actions <url> --actions \'[...]\' (legacy JSON)');
+            break;
+          }
+
+          let parsedActions: unknown[] | undefined;
+
+          if (options.action) {
+            const actionList = Array.isArray(options.action) ? options.action : [options.action];
+            const { parseActionDsl } = await import('../lib/parse-action-dsl.js');
+            parsedActions = actionList.map((a: string) => parseActionDsl(a));
+          } else if (options['actions-file']) {
+            const fs = await import('fs');
+            const content = fs.readFileSync(options['actions-file'] as string, 'utf-8');
+            parsedActions = JSON.parse(content);
+          } else if (options.actions) {
+            parsedActions = JSON.parse(options.actions as string);
+          }
+
+          if (!parsedActions || parsedActions.length === 0) {
+            outputError('No actions provided. Use --action, --actions-file, or --actions');
+            break;
+          }
+
+          cmdName = 'actions';
+          params = {
+            url: args[0],
+            actions: parsedActions,
+            output: options.output as string | undefined,
+          };
+          break;
+        }
        case 'scrape':
           if (!args[0]) outputError('Usage: xbrowser scrape <url> [--format markdown|html|text] [--selector <sel>] [--timeout <ms>]');
           cmdName = 'scrape';
