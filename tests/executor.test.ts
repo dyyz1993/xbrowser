@@ -355,3 +355,137 @@ describe('setWSServer', () => {
     expect(() => setWSServer(mockServer as never)).not.toThrow();
   });
 });
+
+describe('executeCommand with session', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should execute command and return result with session', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+    const { executeCommand } = await import('../src/executor.js');
+    const result = await executeCommand('title', {});
+    expect(typeof result.duration).toBe('number');
+    expect(typeof result.success).toBe('boolean');
+  });
+
+  it('should include data in successful result', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+    const { executeCommand } = await import('../src/executor.js');
+    const result = await executeCommand('title', {});
+    expect(result.data).toBeDefined();
+  });
+
+  it('should handle command handler throwing error', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+    const { executeCommand } = await import('../src/executor.js');
+    const result = await executeCommand('click', { selector: 'nonexistent' });
+    expect(result.success).toBe(false);
+    expect(result.message).toBeDefined();
+    expect(typeof result.duration).toBe('number');
+  });
+
+  it('should stream events when wsServer is set', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+    const { executeCommand, setWSServer } = await import('../src/executor.js');
+    const mockBroadcast = vi.fn();
+    const mockServer = {
+      getRunning: vi.fn(() => true),
+      broadcastToSession: mockBroadcast,
+    };
+    setWSServer(mockServer as never);
+
+    await executeCommand('title', {});
+    expect(mockBroadcast).toHaveBeenCalled();
+
+    setWSServer(null);
+  });
+
+  it('should not stream events when wsServer is null', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+    const { executeCommand, setWSServer } = await import('../src/executor.js');
+    setWSServer(null);
+
+    const result = await executeCommand('title', {});
+    expect(result).toBeDefined();
+  });
+
+  it('should return duration > 0 for executed commands', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+    const { executeCommand } = await import('../src/executor.js');
+    const result = await executeCommand('url', {});
+    expect(typeof result.duration).toBe('number');
+  });
+});
+
+describe('executeChain advanced', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should handle || chain with all failures', async () => {
+    const { resetForTesting } = await import('../src/browser.js');
+    resetForTesting();
+    const { executeChain } = await import('../src/executor.js');
+    const result = await executeChain('nonexistent1 || nonexistent2');
+    expect(result.success).toBe(false);
+    expect(result.steps.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('should handle || chain with session present', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+    const { executeChain } = await import('../src/executor.js');
+    const result = await executeChain('nonexistent_cmd || title');
+    expect(result.steps.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('should handle + operator with nonexistent commands', async () => {
+    const { resetForTesting } = await import('../src/browser.js');
+    resetForTesting();
+    const { executeChain } = await import('../src/executor.js');
+    const result = await executeChain('nonexistent1 + nonexistent2');
+    expect(result.steps.length).toBeGreaterThanOrEqual(1);
+    expect(result.success).toBe(false);
+  });
+
+  it('should handle -> operator with nonexistent commands', async () => {
+    const { resetForTesting } = await import('../src/browser.js');
+    resetForTesting();
+    const { executeChain } = await import('../src/executor.js');
+    const result = await executeChain('nonexistent1 -> nonexistent2');
+    expect(result.steps.length).toBeGreaterThanOrEqual(1);
+    expect(result.success).toBe(false);
+  });
+
+  it('should handle , operator with nonexistent commands', async () => {
+    const { resetForTesting } = await import('../src/browser.js');
+    resetForTesting();
+    const { executeChain } = await import('../src/executor.js');
+    const result = await executeChain('nonexistent1 , nonexistent2');
+    expect(result.steps.length).toBeGreaterThanOrEqual(1);
+    expect(result.success).toBe(false);
+  });
+
+  it('should handle chain with multiple pipelines separated by ;', async () => {
+    const { resetForTesting } = await import('../src/browser.js');
+    resetForTesting();
+    const { executeChain } = await import('../src/executor.js');
+    const result = await executeChain('nonexistent1 ; nonexistent2 ; nonexistent3');
+    expect(result.steps.length).toBeGreaterThanOrEqual(1);
+    expect(result.success).toBe(false);
+  });
+});

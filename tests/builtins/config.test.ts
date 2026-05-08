@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
@@ -129,5 +129,64 @@ describe('config builtin', () => {
     await configBuiltin.execute(['get', 'missing.key'], {}, { cwd: process.cwd() });
     console.log = origLog;
     expect(logs[0]).toContain('(not set)');
+  });
+
+  it('config list shows values when config exists', async () => {
+    const { configBuiltin } = await import('../../src/builtins/config.js');
+    const { setConfigValue } = await import('../../src/config.js');
+    setConfigValue('browser.path', '/usr/bin/chromium');
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => logs.push(args.join(' '));
+    await configBuiltin.execute(['list'], {}, { cwd: process.cwd() });
+    console.log = origLog;
+    expect(logs.some(l => l.includes('browser.path'))).toBe(true);
+    expect(logs.some(l => l.includes('/usr/bin/chromium'))).toBe(true);
+  });
+
+  it('config with no subcommand acts as list', async () => {
+    const { configBuiltin } = await import('../../src/builtins/config.js');
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => logs.push(args.join(' '));
+    await configBuiltin.execute([], {}, { cwd: process.cwd() });
+    console.log = origLog;
+    expect(logs.some(l => l.includes('empty') || l.includes('Configuration'))).toBe(true);
+  });
+
+  it('config set without value shows error', async () => {
+    const { configBuiltin } = await import('../../src/builtins/config.js');
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit'); }) as never);
+    const errors: string[] = [];
+    const origErr = console.error;
+    console.error = (...args: unknown[]) => errors.push(args.join(' '));
+    await expect(configBuiltin.execute(['set', 'key'], {}, { cwd: process.cwd() })).rejects.toThrow('exit');
+    console.error = origErr;
+    exitSpy.mockRestore();
+    expect(errors.some(e => e.includes('Usage'))).toBe(true);
+  });
+
+  it('config with unknown subcommand shows error', async () => {
+    const { configBuiltin } = await import('../../src/builtins/config.js');
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit'); }) as never);
+    const errors: string[] = [];
+    const origErr = console.error;
+    console.error = (...args: unknown[]) => errors.push(args.join(' '));
+    await expect(configBuiltin.execute(['badcmd'], {}, { cwd: process.cwd() })).rejects.toThrow('exit');
+    console.error = origErr;
+    exitSpy.mockRestore();
+    expect(errors.some(e => e.includes('Unknown subcommand'))).toBe(true);
+  });
+
+  it('config get without key shows error', async () => {
+    const { configBuiltin } = await import('../../src/builtins/config.js');
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit'); }) as never);
+    const errors: string[] = [];
+    const origErr = console.error;
+    console.error = (...args: unknown[]) => errors.push(args.join(' '));
+    await expect(configBuiltin.execute(['get'], {}, { cwd: process.cwd() })).rejects.toThrow('exit');
+    console.error = origErr;
+    exitSpy.mockRestore();
+    expect(errors.some(e => e.includes('Usage'))).toBe(true);
   });
 });

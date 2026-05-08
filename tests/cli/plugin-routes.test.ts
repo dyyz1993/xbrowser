@@ -251,4 +251,133 @@ describe('plugin-routes', () => {
       delete process.env.XBROWSER_MARKETPLACE_URL;
     });
   });
+
+  describe('handlePlugin - search text mode', () => {
+    it('should output text format search results', async () => {
+      const { MarketplaceSearcher } = await import('../../src/plugin/marketplace-search.js');
+      vi.mocked(MarketplaceSearcher.search).mockResolvedValueOnce([
+        { name: 'text-plugin', description: 'A text plugin', version: '1.0.0', slug: 'tp' },
+      ]);
+
+      const logs: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: unknown[]) => logs.push(args.join(' '));
+
+      await handlePlugin(['search', 'test'], {}, 'text');
+
+      console.log = origLog;
+      expect(logs.some(l => l.includes('text-plugin'))).toBe(true);
+      expect(logs.some(l => l.includes('Total:'))).toBe(true);
+    });
+
+    it('should show "No plugins found" when search returns empty', async () => {
+      const { MarketplaceSearcher } = await import('../../src/plugin/marketplace-search.js');
+      const { NPMSearcher } = await import('../../src/plugin/npm-search.js');
+      vi.mocked(MarketplaceSearcher.search).mockResolvedValueOnce([]);
+      vi.mocked(NPMSearcher.search).mockResolvedValueOnce([]);
+
+      const logs: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: unknown[]) => logs.push(args.join(' '));
+
+      await handlePlugin(['search', 'nonexistent'], {}, 'text');
+
+      console.log = origLog;
+      expect(logs.some(l => l.includes('No plugins found'))).toBe(true);
+    });
+
+    it('should fallback to npm when marketplace returns empty', async () => {
+      const { MarketplaceSearcher } = await import('../../src/plugin/marketplace-search.js');
+      const { NPMSearcher } = await import('../../src/plugin/npm-search.js');
+      vi.mocked(MarketplaceSearcher.search).mockResolvedValueOnce([]);
+      vi.mocked(NPMSearcher.search).mockResolvedValueOnce([
+        { name: 'npm-plugin', description: 'From npm', version: '2.0.0' },
+      ]);
+
+      await handlePlugin(['search', 'test'], {}, 'json');
+
+      expect(NPMSearcher.search).toHaveBeenCalled();
+      expect(mockOutputResult).toHaveBeenCalledWith(
+        expect.objectContaining({ total: 1 }),
+        'json'
+      );
+    });
+
+    it('should pass limit option to search', async () => {
+      const { MarketplaceSearcher } = await import('../../src/plugin/marketplace-search.js');
+      vi.mocked(MarketplaceSearcher.search).mockResolvedValueOnce([]);
+
+      await handlePlugin(['search', 'test'], { limit: 5 }, 'json');
+
+      expect(MarketplaceSearcher.search).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 5 })
+      );
+    });
+  });
+
+  describe('handlePlugin - publish/register/login/whoami/logout', () => {
+    it('should delegate publish to handlePublish', async () => {
+      const { handlePublish } = await import('../../src/cli/publish-routes.js');
+      await handlePlugin(['publish'], {}, 'json');
+      expect(handlePublish).toHaveBeenCalledWith([], {}, 'json');
+    });
+
+    it('should delegate register to handleRegister', async () => {
+      const { handleRegister } = await import('../../src/cli/publish-routes.js');
+      await handlePlugin(['register'], {}, 'text');
+      expect(handleRegister).toHaveBeenCalledWith([], {}, 'text');
+    });
+
+    it('should delegate login to handlePluginLogin', async () => {
+      const { handlePluginLogin } = await import('../../src/cli/publish-routes.js');
+      await handlePlugin(['login'], {}, 'text');
+      expect(handlePluginLogin).toHaveBeenCalledWith([], {}, 'text');
+    });
+
+    it('should delegate whoami to handlePluginWhoami', async () => {
+      const { handlePluginWhoami } = await import('../../src/cli/publish-routes.js');
+      await handlePlugin(['whoami'], {}, 'json');
+      expect(handlePluginWhoami).toHaveBeenCalledWith([], {}, 'json');
+    });
+
+    it('should delegate logout to handlePluginLogout', async () => {
+      const { handlePluginLogout } = await import('../../src/cli/publish-routes.js');
+      await handlePlugin(['logout'], {}, 'text');
+      expect(handlePluginLogout).toHaveBeenCalledWith([], {}, 'text');
+    });
+  });
+
+  describe('handleDaemon - start/stop', () => {
+    it('should start daemon with port option', async () => {
+      const { DaemonManager } = await import('../../src/daemon/daemon.js');
+      const mockStart = vi.fn().mockResolvedValue({ pid: 1234, port: 9222 });
+      vi.mocked(DaemonManager).mockImplementation(() => ({
+        start: mockStart,
+        stop: vi.fn(),
+        status: vi.fn(),
+      }) as never);
+
+      handleDaemon(['start'], { port: 9222 }, 'json');
+
+      await vi.waitFor(() => {
+        expect(mockStart).toHaveBeenCalledWith(9222);
+      });
+    });
+
+    it('should stop daemon', async () => {
+      const { DaemonManager } = await import('../../src/daemon/daemon.js');
+      const mockStop = vi.fn().mockResolvedValue(undefined);
+      vi.mocked(DaemonManager).mockImplementation(() => ({
+        start: vi.fn(),
+        stop: mockStop,
+        status: vi.fn(),
+      }) as never);
+
+      handleDaemon(['stop'], {}, 'json');
+
+      await vi.waitFor(() => {
+        expect(mockStop).toHaveBeenCalled();
+      });
+    });
+  });
 });

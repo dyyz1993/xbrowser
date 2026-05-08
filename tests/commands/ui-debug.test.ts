@@ -324,6 +324,116 @@ describe('UI Debug Commands', () => {
         tips: [],
       });
     });
+
+    it('should filter by error requests', async () => {
+      const { networkCheckCommand } = await import('../../src/commands/ui-debug.js');
+      const result = await networkCheckCommand.handler({ duration: 1000, filter: 'error' }, ctx);
+      expect(result).toEqual({
+        success: true,
+        data: expect.objectContaining({ passed: true }),
+        tips: [],
+      });
+    });
+
+    it('should filter by xhr resource type', async () => {
+      const { networkCheckCommand } = await import('../../src/commands/ui-debug.js');
+      const result = await networkCheckCommand.handler({ duration: 1000, filter: 'xhr' }, ctx);
+      expect(result).toEqual({
+        success: true,
+        data: expect.objectContaining({ passed: true }),
+        tips: [],
+      });
+    });
+
+    it('should filter by fetch resource type', async () => {
+      const { networkCheckCommand } = await import('../../src/commands/ui-debug.js');
+      const result = await networkCheckCommand.handler({ duration: 1000, filter: 'fetch' }, ctx);
+      expect(result).toEqual({
+        success: true,
+        data: expect.objectContaining({ passed: true }),
+        tips: [],
+      });
+    });
+
+    it('should filter by document resource type', async () => {
+      const { networkCheckCommand } = await import('../../src/commands/ui-debug.js');
+      const result = await networkCheckCommand.handler({ duration: 1000, filter: 'document' }, ctx);
+      expect(result).toEqual({
+        success: true,
+        data: expect.objectContaining({ passed: true }),
+        tips: [],
+      });
+    });
+
+    it('should filter by script resource type', async () => {
+      const { networkCheckCommand } = await import('../../src/commands/ui-debug.js');
+      const result = await networkCheckCommand.handler({ duration: 1000, filter: 'script' }, ctx);
+      expect(result).toEqual({
+        success: true,
+        data: expect.objectContaining({ passed: true }),
+        tips: [],
+      });
+    });
+
+    it('should filter by stylesheet resource type', async () => {
+      const { networkCheckCommand } = await import('../../src/commands/ui-debug.js');
+      const result = await networkCheckCommand.handler({ duration: 1000, filter: 'stylesheet' }, ctx);
+      expect(result).toEqual({
+        success: true,
+        data: expect.objectContaining({ passed: true }),
+        tips: [],
+      });
+    });
+
+    it('should filter by image resource type', async () => {
+      const { networkCheckCommand } = await import('../../src/commands/ui-debug.js');
+      const result = await networkCheckCommand.handler({ duration: 1000, filter: 'image' }, ctx);
+      expect(result).toEqual({
+        success: true,
+        data: expect.objectContaining({ passed: true }),
+        tips: [],
+      });
+    });
+
+    it('should capture response with CDP events including size', async () => {
+      const cdpSession = createMockCDPSession();
+      const contextWithCdp = {
+        newCDPSession: vi.fn().mockResolvedValue(cdpSession),
+      } as unknown as BrowserContext;
+
+      let resolveWait: () => void;
+      const waitPromise = new Promise<void>((resolve) => { resolveWait = resolve; });
+
+      const pageWithCdp = createMockPage(undefined, {
+        context: vi.fn().mockReturnValue(contextWithCdp),
+        waitForTimeout: vi.fn().mockReturnValue(waitPromise),
+      });
+      const ctxWithCdp = createMockContext(pageWithCdp);
+
+      const { networkCheckCommand } = await import('../../src/commands/ui-debug.js');
+
+      const handlerPromise = networkCheckCommand.handler({ duration: 1000, filter: 'all' }, ctxWithCdp);
+
+      await vi.waitFor(() => {
+        expect(cdpSession.on).toHaveBeenCalledWith('Network.requestWillBeSent', expect.any(Function));
+      });
+
+      (cdpSession as unknown as { emit: (e: string, ...a: unknown[]) => void }).emit('Network.requestWillBeSent', {
+        requestId: '10',
+        request: { url: 'https://example.com/api', method: 'POST' },
+        type: 'fetch',
+      });
+
+      (cdpSession as unknown as { emit: (e: string, ...a: unknown[]) => void }).emit('Network.responseReceived', {
+        requestId: '10',
+        response: { status: 200, mimeType: 'application/json', encodedDataLength: 2048 },
+      });
+
+      resolveWait!();
+      const result = await handlerPromise;
+      const data = (result as { data: Record<string, unknown> }).data;
+      expect(data.totalSizeKB).toBe(2);
+    });
   });
 
   describe('perfCheckCommand', () => {

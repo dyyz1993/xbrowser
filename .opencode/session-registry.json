@@ -1,0 +1,16 @@
+{
+  "tier1-extract": {
+    "id": "ses_1fb0fc88bffekYmnpytkDzntas",
+    "name": "tier1-extract",
+    "parentID": "main",
+    "status": "running",
+    "createdAt": 1778199312246
+  },
+  "tier1-config-session": {
+    "id": "ses_1fb0ef663ffeQ9Ef4sc2KBCVnW",
+    "name": "tier1-config-session",
+    "parentID": "main",
+    "status": "running",
+    "createdAt": 1778199366045
+  }
+}

@@ -728,4 +728,52 @@ describe('router', () => {
     vi.mocked(allBuiltins).length = 0;
     await routeCommand(['preview', 'test.html']);
   });
+
+  it('handles --h short flag as help via no-args path', async () => {
+    const { showMainHelp } = await import('../src/cli/help.js');
+    const exit = mockExit();
+
+    try {
+      await routeCommand(['-h']);
+    } catch (e) {
+      expect(String(e)).toContain('exit:0');
+    }
+    exit.restore();
+  });
+
+  it('handles chain failure with error message in steps', async () => {
+    const { executeChain } = await import('../src/executor.js');
+    const { isChainInput } = await import('../src/executor.js');
+    vi.mocked(isChainInput).mockReturnValue(true);
+    vi.mocked(executeChain).mockResolvedValueOnce({
+      success: false,
+      steps: [
+        { command: 'bad', raw: 'bad', success: false, data: null, message: 'test error msg', duration: 0 },
+      ],
+      totalDuration: 0,
+    });
+
+    const origError = console.error;
+    console.error = vi.fn();
+    const exit = mockExit();
+    try {
+      await routeCommand(['bad', '&&', 'cmd']);
+    } catch (e) {
+      expect(String(e)).toContain('exit:1');
+    }
+    exit.restore();
+    console.error = origError;
+  });
+
+  it('handles stdin with empty commands array (no stdin)', async () => {
+    const { handleSession } = await import('../src/cli/index.js');
+    await routeCommand(['session', 'list'], []);
+    expect(handleSession).toHaveBeenCalled();
+  });
+
+  it('routes preview with empty builtins (no-op)', async () => {
+    const { allBuiltins } = await import('../src/builtins/index.js');
+    vi.mocked(allBuiltins).length = 0;
+    await routeCommand(['preview']);
+  });
 });

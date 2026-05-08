@@ -119,5 +119,47 @@ describe('Snapshot Commands', () => {
         expect.objectContaining({ selector: '#main' })
       );
     });
+
+    it('should return base64 data in screenshot result', async () => {
+      const { screenshotCommand } = await import('../../src/commands/snapshot.js');
+      const result = await screenshotCommand.handler({}, ctx);
+      expect(typeof (result as any).data.data).toBe('string');
+      expect((result as any).data.data.length).toBeGreaterThan(0);
+    });
+
+    it('should return size of buffer in screenshot result', async () => {
+      const { screenshotCommand } = await import('../../src/commands/snapshot.js');
+      const result = await screenshotCommand.handler({}, ctx);
+      expect((result as any).data.size).toBeGreaterThan(0);
+    });
+
+    it('should handle snapshot returning empty elements', async () => {
+      const snapCtx = createMockContext([]);
+      const { snapshotCommand } = await import('../../src/commands/snapshot.js');
+      const result = await snapshotCommand.handler({}, snapCtx);
+      expect((result as any).data.elements).toEqual([]);
+    });
+
+    it('should handle snapshot with multiple element types', async () => {
+      const elements = [
+        { ref: '@0', tag: 'div', role: '', text: 'Container', attrs: { id: 'main' } },
+        { ref: '@1', tag: 'button', role: 'button', text: 'Submit', attrs: { type: 'submit' } },
+        { ref: '@2', tag: 'input', role: 'textbox', text: '', attrs: { placeholder: 'Search' } },
+      ];
+      const snapCtx = createMockContext(elements);
+      const { snapshotCommand } = await import('../../src/commands/snapshot.js');
+      const result = await snapshotCommand.handler({}, snapCtx);
+      expect((result as any).data.elements.length).toBe(3);
+    });
+
+    it('should pass default selector body when none provided', async () => {
+      const snapCtx = createMockContext([]);
+      const { snapshotCommand } = await import('../../src/commands/snapshot.js');
+      await snapshotCommand.handler({}, snapCtx);
+      expect(snapCtx.page.evaluate).toHaveBeenCalledWith(
+        expect.any(Function),
+        expect.objectContaining({ selector: 'body' })
+      );
+    });
   });
 });

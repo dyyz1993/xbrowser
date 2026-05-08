@@ -254,4 +254,191 @@ describe('publish-routes', () => {
       logSpy.mockRestore();
     });
   });
+
+  describe('handlePublish - edge cases', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('should publish with default directory when no args', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadJsonFile.mockReturnValue({ token: 'tok', registry: 'https://xbrowser.dev' });
+      mockCreateTarball.mockResolvedValue({
+        name: 'cwd-plugin',
+        version: '1.0.0',
+        slug: 'cwd-plugin',
+        description: 'test',
+        commands: ['cmd'],
+        tags: ['MIT'],
+        sites: [],
+        fileCount: 2,
+        size: 512,
+        formData: new FormData(),
+      });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ data: { slug: 'cwd-plugin' } }),
+      });
+      vi.stubGlobal('fetch', mockFetch);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      await handlePublish([], {}, 'json');
+      expect(mockCreateTarball).toHaveBeenCalledWith(process.cwd(), expect.any(Object));
+      logSpy.mockRestore();
+    });
+
+    it('should handle publish failure with non-R2 error', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadJsonFile.mockReturnValue({ token: 'tok', registry: 'https://xbrowser.dev' });
+      mockCreateTarball.mockResolvedValue({
+        name: 'fail-plugin',
+        version: '1.0.0',
+        slug: 'fail-plugin',
+        description: 'test',
+        commands: [],
+        tags: [],
+        sites: [],
+        fileCount: 1,
+        size: 100,
+        formData: new FormData(),
+      });
+      const mockFetch = vi.fn().mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        json: () => Promise.resolve({ error: 'Not authorized' }),
+      });
+      vi.stubGlobal('fetch', mockFetch);
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit'); }) as never);
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await expect(handlePublish(['/p'], {}, 'text')).rejects.toThrow('exit');
+      exitSpy.mockRestore();
+      errSpy.mockRestore();
+    });
+
+    it('should handle publish error with empty error body', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadJsonFile.mockReturnValue({ token: 'tok', registry: 'https://xbrowser.dev' });
+      mockCreateTarball.mockResolvedValue({
+        name: 'err-plugin',
+        version: '1.0.0',
+        slug: 'err-plugin',
+        description: 'test',
+        commands: [],
+        tags: [],
+        sites: [],
+        fileCount: 1,
+        size: 100,
+        formData: new FormData(),
+      });
+      const mockFetch = vi.fn().mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+        json: () => Promise.reject(new Error('not json')),
+      });
+      vi.stubGlobal('fetch', mockFetch);
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit'); }) as never);
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await expect(handlePublish(['/p'], {}, 'text')).rejects.toThrow('exit');
+      exitSpy.mockRestore();
+      errSpy.mockRestore();
+    });
+
+    it('should handle createTarball throwing', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadJsonFile.mockReturnValue({ token: 'tok', registry: 'https://xbrowser.dev' });
+      mockCreateTarball.mockRejectedValue(new Error('Package invalid'));
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit'); }) as never);
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await expect(handlePublish(['/p'], {}, 'text')).rejects.toThrow('exit');
+      exitSpy.mockRestore();
+      errSpy.mockRestore();
+    });
+
+    it('should use custom registry URL from options', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadJsonFile.mockReturnValue({ token: 'tok', registry: 'https://default.com' });
+      mockCreateTarball.mockResolvedValue({
+        name: 'p',
+        version: '1.0.0',
+        slug: 'p',
+        description: 'd',
+        commands: [],
+        tags: [],
+        sites: [],
+        fileCount: 1,
+        size: 100,
+        formData: new FormData(),
+      });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ data: { slug: 'p' } }),
+      });
+      vi.stubGlobal('fetch', mockFetch);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      await handlePublish(['/p'], { registry: 'https://custom.registry.com' }, 'json');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://custom.registry.com/api/plugins/publish',
+        expect.any(Object)
+      );
+      logSpy.mockRestore();
+    });
+  });
+
+  describe('handlePluginLogin - edge cases', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('should handle token login with verify failure', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadJsonFile.mockReturnValue({ token: 'mytoken', registry: 'https://xbrowser.dev' });
+      const mockFetch = vi.fn().mockResolvedValue({ ok: false });
+      vi.stubGlobal('fetch', mockFetch);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      await handlePluginLogin([], { token: 'mytoken' }, 'json');
+      expect(mockOutputResult).toHaveBeenCalledWith({ ok: true }, 'json');
+      logSpy.mockRestore();
+    });
+
+    it('should handle token login with network error during verify', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadJsonFile.mockReturnValue({ token: 'mytoken', registry: 'https://xbrowser.dev' });
+      const mockFetch = vi.fn().mockRejectedValue(new Error('Network error'));
+      vi.stubGlobal('fetch', mockFetch);
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      await handlePluginLogin([], { token: 'mytoken' }, 'json');
+      expect(mockOutputResult).toHaveBeenCalledWith({ ok: true }, 'json');
+      logSpy.mockRestore();
+    });
+  });
+
+  describe('handlePluginWhoami - edge cases', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('should use registry from options', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadJsonFile.mockReturnValue({ token: 'tok', registry: 'https://default.com' });
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ data: { username: 'u', email: 'e@e.com', role: 'user' } }),
+      });
+      vi.stubGlobal('fetch', mockFetch);
+      await handlePluginWhoami([], { registry: 'https://custom.com' }, 'json');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://custom.com/api/auth/verify',
+        expect.any(Object)
+      );
+    });
+
+    it('should handle network error in whoami', async () => {
+      mockExistsSync.mockReturnValue(true);
+      mockReadJsonFile.mockReturnValue({ token: 'tok', registry: 'https://xbrowser.dev' });
+      const mockFetch = vi.fn().mockRejectedValue(new Error('timeout'));
+      vi.stubGlobal('fetch', mockFetch);
+      await expect(handlePluginWhoami([], {}, 'text')).rejects.toThrow('EXIT');
+    });
+  });
 });

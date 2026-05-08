@@ -337,4 +337,114 @@ describe('install-sources/marketplace', () => {
 
     expect(verifyPlugin).toHaveBeenCalled();
   });
+
+  it('should handle inline tarball that fails extract but is valid JSON', async () => {
+    const packageJsonContent = JSON.stringify({
+      name: 'json-plugin',
+      version: '1.0.0',
+      description: 'A JSON plugin',
+      commands: ['test'],
+    });
+    const jsonBuffer = Buffer.from(packageJsonContent);
+
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: { slug: 'json-plugin', name: 'JSON Plugin', description: 'JSON test', commands: ['test'] },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        arrayBuffer: async () => jsonBuffer,
+      })
+      .mockResolvedValueOnce({ ok: true });
+
+    vi.mocked(extractTarGz).mockImplementation(() => { throw new Error('Not a tarball'); });
+    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+
+    const result = await installFromMarketplace(pluginsDir, 'json-plugin');
+
+    expect(result.id).toBe('json-plugin');
+    expect(result.source).toBe('marketplace');
+  });
+
+  it('should throw for inline tarball that is not JSON and not valid archive', async () => {
+    const badBuffer = Buffer.from('not-json-not-tarball');
+
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: { slug: 'bad-tar', name: 'Bad Tar', description: 'bad', commands: [] },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        arrayBuffer: async () => badBuffer,
+      });
+
+    vi.mocked(extractTarGz).mockImplementation(() => { throw new Error('Not a tarball'); });
+
+    await expect(
+      installFromMarketplace(pluginsDir, 'bad-tar')
+    ).rejects.toThrow('not a valid archive');
+  });
+
+  it('should use plugin slug from data when slug is present', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: { slug: 'actual-slug', name: 'Actual', description: 'x', commands: [] },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 302,
+        headers: { get: (name: string) => name === 'location' ? 'https://cdn.test/a.tar.gz' : null },
+      })
+      .mockResolvedValueOnce({ ok: true });
+
+    setupExtractMockWithFiles(resolve(pluginsDir, 'actual-slug'));
+    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+
+    const result = await installFromMarketplace(pluginsDir, 'input-slug');
+
+    expect(result.name).toBe('actual-slug');
+    expect(result.path).toContain('actual-slug');
+  });
+
+  it('should handle plugin with no commands generating default hello command', async () => {
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          success: true,
+          data: { slug: 'no-cmd', name: 'NoCmd', description: 'x', commands: [] },
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 302,
+        headers: { get: (name: string) => name === 'location' ? 'https://cdn.test/n.tar.gz' : null },
+      })
+      .mockResolvedValueOnce({ ok: true });
+
+    const pluginDir = resolve(pluginsDir, 'no-cmd');
+    vi.mocked(extractTarGz).mockImplementation((_tarball: string, target: string) => {
+      mkdirSync(target, { recursive: true });
+    });
+    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+
+    const result = await installFromMarketplace(pluginsDir, 'no-cmd');
+    expect(result.id).toBe('no-cmd');
+  });
 });
