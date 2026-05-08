@@ -263,7 +263,7 @@ export function parseCommandArgs(
     } else {
       if (positionalIndex < positionalKeys.length) {
         const isLast = positionalIndex === positionalKeys.length - 1;
-        if (isLast) {
+        if (isLast && name === 'eval') {
           const remaining = args.slice(i).map(unquote).join(' ');
           params[positionalKeys[positionalIndex]] = remaining;
           break;
