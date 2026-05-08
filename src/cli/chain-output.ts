@@ -6,9 +6,19 @@ export function printChainResult(chainResult: ChainExecutionResult): void {
       console.log(`[OK] ${step.raw}`);
       if (step.data && typeof step.data === 'object') {
         const d = step.data as Record<string, unknown>;
-        for (const [k, v] of Object.entries(d)) {
-          if (k !== 'ok')
-            console.log(`     ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+        if ('success' in d && 'data' in d) {
+          const inner = d.data as Record<string, unknown> | undefined;
+          if (inner && typeof inner === 'object') {
+            for (const [k, v] of Object.entries(inner)) {
+              if (k !== 'ok')
+                console.log(`     ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+            }
+          }
+        } else {
+          for (const [k, v] of Object.entries(d)) {
+            if (k !== 'ok')
+              console.log(`     ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+          }
         }
       }
     } else {

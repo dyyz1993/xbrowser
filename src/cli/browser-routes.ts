@@ -167,15 +167,63 @@ export async function handleBrowserCommand(
         cmdName = 'forward';
         params = {};
         break;
-      case 'refresh':
-        cmdName = 'refresh';
-        params = {};
-        break;
-      default:
-        cmdName = command;
-        params = { ...options };
-        break;
-    }
+       case 'refresh':
+         cmdName = 'refresh';
+         params = {};
+         break;
+       case 'actions':
+         if (!args[0]) {
+           outputError('Usage: xbrowser actions <url> --actions \'[...]\' [--output text|json]');
+         }
+         cmdName = 'actions';
+         params = {
+           url: args[0],
+           actions: options.actions ? JSON.parse(options.actions as string) : undefined,
+           output: options.output as string | undefined,
+         };
+         break;
+       case 'scrape':
+          if (!args[0]) outputError('Usage: xbrowser scrape <url> [--format markdown|html|text] [--selector <sel>] [--timeout <ms>]');
+          cmdName = 'scrape';
+          params = {
+            url: args[0],
+            selector: (options.selector || options.s) as string | undefined,
+            timeout: options.timeout ? Number(options.timeout) : undefined,
+            format: options.format as string | undefined,
+            onlyMainContent: options['only-main-content'] !== 'false',
+          };
+          break;
+        case 'map':
+          if (!args[0]) outputError('Usage: xbrowser map <url> [--search <query>] [--sitemap include|only] [--include-subdomains] [--limit <n>]');
+          cmdName = 'map';
+          params = {
+            url: args[0],
+            search: options.search as string | undefined,
+            sitemap: options.sitemap as 'include' | 'only' | undefined,
+            includeSubdomains: !!(options['include-subdomains'] || options.includeSubdomains),
+            limit: options.limit ? Number(options.limit) : undefined,
+          };
+          break;
+        case 'crawl':
+          if (!args[0]) outputError('Usage: xbrowser crawl <url> [--limit <n>] [--max-depth <n>] [--format markdown|html]');
+          cmdName = 'crawl';
+          params = {
+            url: args[0],
+            limit: options.limit ? Number(options.limit) : undefined,
+            maxDepth: options['max-depth'] ? Number(options['max-depth']) : undefined,
+            includePaths: options['include-paths'] ? String(options['include-paths']).split(',') : undefined,
+            excludePaths: options['exclude-paths'] ? String(options['exclude-paths']).split(',') : undefined,
+            allowSubdomains: options['allow-subdomains'] === 'true',
+            allowExternalLinks: options['allow-external-links'] === 'true',
+            format: options.format as string | undefined,
+            onlyMainContent: options['only-main-content'] !== 'false',
+          };
+          break;
+       default:
+         cmdName = command;
+         params = { ...options };
+         break;
+     }
   }
 
   const result = await executeCommand(cmdName, params, sessionName);

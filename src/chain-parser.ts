@@ -262,6 +262,12 @@ export function parseCommandArgs(
       }
     } else {
       if (positionalIndex < positionalKeys.length) {
+        const isLast = positionalIndex === positionalKeys.length - 1;
+        if (isLast) {
+          const remaining = args.slice(i).map(unquote).join(' ');
+          params[positionalKeys[positionalIndex]] = remaining;
+          break;
+        }
         params[positionalKeys[positionalIndex]] = arg;
         positionalIndex++;
       }
@@ -304,6 +310,13 @@ const commandDefCache: Record<string, CommandDef> = {
   network: { positional: [] },
   perf: { positional: [] },
   health: { positional: [] },
+  scrape: { positional: ['url'] },
+  structure: { positional: [] },
+  snapshot: { positional: [] },
+  getProperty: { positional: ['selector'] },
+  frames: { positional: [] },
+  frame: { positional: ['selector'] },
+  actions: { positional: ['url'] },
 };
 
 function getCommandDefinitions(): Record<string, CommandDef> {

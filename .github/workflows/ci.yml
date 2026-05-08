@@ -82,3 +82,27 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+
+  scrape-test:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install chromium
+      - run: npm run build
+      - run: npm link
+      - name: Test scrape command
+        run: |
+          xbrowser scrape https://example.com --format markdown 2>&1 | head -20
+          echo "Scrape test passed"
+      - name: Test map command
+        run: |
+          xbrowser map https://example.com --json 2>&1 | jq '.links | length'
+          echo "Map test passed"

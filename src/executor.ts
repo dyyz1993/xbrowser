@@ -119,22 +119,24 @@ export async function executeCommand(
           .join(', ')}`
       );
     }
+    params = result.data as Record<string, unknown>;
   }
 
-  let session: ManagedSession;
+  let session: ManagedSession | undefined;
   const existing = findSession(sessionName);
-  if (!existing) {
+  if (existing) {
+    session = existing;
+  } else if (command.scope !== 'project') {
     return errorResult(
       `Session '${sessionName}' not found. Run "xbrowser session open <url>" first.`
     );
   }
-  session = existing;
 
   const ctx: BrowserCommandContext = {
-    page: session.page,
-    browser: session.context.browser()!,
-    browserContext: session.context,
-    sessionId: session.id,
+    page: session?.page as BrowserCommandContext['page'],
+    browser: session?.context.browser() as BrowserCommandContext['browser'],
+    browserContext: session?.context as BrowserCommandContext['browserContext'],
+    sessionId: session?.id,
     args: [],
     options: {},
     cwd: process.cwd(),
@@ -161,56 +163,58 @@ export async function executeCommand(
 
   const start = Date.now();
 
-  streamCommandEvent(session.id, {
-    sessionId: session.id,
-    command: commandName,
-    args: Object.values(params),
-    phase: 'before',
-    timestamp: start,
-  });
+  if (session) {
+    streamCommandEvent(session.id, {
+      sessionId: session.id,
+      command: commandName,
+      args: Object.values(params),
+      phase: 'before',
+      timestamp: start,
+    });
+  }
 
   try {
     const raw = await command.handler(params, ctx);
     const end = Date.now();
     const duration = end - start;
 
-    if (isCommandResult(raw)) {
-      streamCommandEvent(session.id, {
+    if (session) {
+      const phaseData = {
         sessionId: session.id,
         command: commandName,
         args: Object.values(params),
-        phase: 'after',
-        result: raw.data,
+        phase: 'after' as const,
         timestamp: end,
         duration,
-      });
+      };
+      if (isCommandResult(raw)) {
+        streamCommandEvent(session.id, { ...phaseData, result: raw.data });
+      } else {
+        streamCommandEvent(session.id, { ...phaseData, result: raw });
+      }
+    }
+
+    if (isCommandResult(raw)) {
       return { ...raw, duration };
     }
 
-    streamCommandEvent(session.id, {
-      sessionId: session.id,
-      command: commandName,
-      args: Object.values(params),
-      phase: 'after',
-      result: raw,
-      timestamp: end,
-      duration,
-    });
     return { success: true, data: raw, duration };
   } catch (err) {
     const end = Date.now();
     const duration = end - start;
     const errorMessage = (err as Error).message;
 
-    streamCommandEvent(session.id, {
-      sessionId: session.id,
-      command: commandName,
-      args: Object.values(params),
-      phase: 'after',
-      error: errorMessage,
-      timestamp: end,
-      duration,
-    });
+    if (session) {
+      streamCommandEvent(session.id, {
+        sessionId: session.id,
+        command: commandName,
+        args: Object.values(params),
+        phase: 'after',
+        error: errorMessage,
+        timestamp: end,
+        duration,
+      });
+    }
 
     return {
       success: false,

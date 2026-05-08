@@ -12,6 +12,10 @@ import './viewport.js';
 import './frame.js';
 import './ui-test.js';
 import './ui-debug.js';
+import './actions.js';
+import './scrape.js';
+import './map.js';
+import './crawl.js';
 
 export { getCommand, getAllCommands, getCommandNames, clearRegistry, registerCommand } from './command-registry.js';
 export type { RegisteredCommand, BrowserCommandDefinition } from './command-registry.js';
