@@ -1,4 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { randomUUID } from 'crypto';
+
+if (typeof globalThis.crypto === 'undefined') {
+  Object.defineProperty(globalThis, 'crypto', {
+    value: { randomUUID },
+    writable: true,
+  });
+}
 
 describe('ScreencastCapturer', () => {
   let ScreencastCapturer: typeof import('../src/screencast.js').ScreencastCapturer;
