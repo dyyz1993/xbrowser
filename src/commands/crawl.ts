@@ -87,11 +87,25 @@ async function fetchRobotsRules(origin: string): Promise<DisallowRule[]> {
   }
 }
 
+async function navigateToPage(page: Page, url: string, timeout = 15000): Promise<void> {
+  const urlObj = new URL(url);
+  if (isSpaHashRoute(urlObj.hash)) {
+    const baseUrl = urlObj.origin + urlObj.pathname + urlObj.search;
+    await page.goto(baseUrl, { waitUntil: 'networkidle', timeout });
+    await page.evaluate((hash: string) => {
+      window.location.hash = hash;
+    }, urlObj.hash);
+    await page.waitForTimeout(1500);
+    return;
+  }
+  await page.goto(url, { waitUntil: 'networkidle', timeout });
+}
+
 async function retryGoto(page: Page, url: string, retries: number, verbose: boolean): Promise<void> {
   let lastError: Error | null = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      await page.goto(url, { waitUntil: 'networkidle', timeout: 15000 });
+      await navigateToPage(page, url);
       return;
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
@@ -257,7 +271,7 @@ export const crawlCommand = registerCommand({
         const seedPage = await seedContext.newPage();
         contexts.push(seedContext);
 
-        await seedPage.goto(p.url, { waitUntil: 'networkidle', timeout: 15000 });
+        await navigateToPage(seedPage, p.url);
 
         const firstNormalized = normalizeUrl(seedPage.url());
         visited.add(firstNormalized);

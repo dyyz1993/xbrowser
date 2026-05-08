@@ -718,4 +718,47 @@ describe('actions command', () => {
       expect(mockPage.evaluate).toHaveBeenCalledWith(expect.any(Function), 500);
     });
   });
+
+  describe('timeout parameter', () => {
+    it('should default timeout to 60 seconds', async () => {
+      const cmd = await getHandler();
+      const parsed = cmd.parameters!.safeParse({
+        url: 'https://example.com',
+        actions: [{ type: 'wait', milliseconds: 50 }],
+      });
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect(parsed.data.timeout).toBe(60);
+      }
+    });
+
+    it('should accept custom timeout value', async () => {
+      const cmd = await getHandler();
+      const parsed = cmd.parameters!.safeParse({
+        url: 'https://example.com',
+        actions: [{ type: 'wait', milliseconds: 50 }],
+        timeout: 120,
+      });
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect(parsed.data.timeout).toBe(120);
+      }
+    });
+
+    it('should include timeout warning when not all actions complete', async () => {
+      let resolveWait: () => void;
+      const waitPromise = new Promise<void>((r) => { resolveWait = r; });
+      (mockPage.waitForSelector as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+        await waitPromise;
+      });
+      const cmd = await getHandler();
+      const result = await cmd.handler(
+        { url: 'https://example.com', actions: [{ type: 'wait', selector: '#slow' }, { type: 'click', selector: '#btn' }], output: 'json', timeout: 0 },
+        ctx,
+      );
+      const data = (result as { data: Record<string, unknown> }).data;
+      expect(data).toHaveProperty('warning');
+      resolveWait!();
+    });
+  });
 });

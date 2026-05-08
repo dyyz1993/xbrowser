@@ -1,48 +1,5 @@
 import { describe, it, expect } from 'vitest';
-
-const SKIP_EXTENSIONS = new Set([
-  '.png', '.jpg', '.jpeg', '.gif', '.svg', '.ico', '.webp',
-  '.css', '.js', '.woff', '.woff2', '.ttf', '.eot',
-  '.pdf', '.zip', '.tar', '.gz', '.rar',
-  '.mp3', '.mp4', '.avi', '.mov', '.wmv',
-  '.xml', '.json', '.rss',
-]);
-
-function normalizeUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    parsed.hash = '';
-    let href = parsed.href;
-    if (href.endsWith('/')) href = href.slice(0, -1);
-    href = href.replace(/^http:/, 'https:');
-    href = href.replace(/^https:\/\/www\./, 'https://');
-    return href;
-  } catch {
-    return url;
-  }
-}
-
-function shouldSkipUrl(url: string): boolean {
-  try {
-    const parsed = new URL(url);
-    if (['mailto:', 'tel:', 'javascript:'].includes(parsed.protocol)) return true;
-    const path = parsed.pathname.toLowerCase();
-    const dotIndex = path.lastIndexOf('.');
-    if (dotIndex !== -1) {
-      const ext = path.substring(dotIndex);
-      if (SKIP_EXTENSIONS.has(ext)) return true;
-    }
-    return false;
-  } catch {
-    return true;
-  }
-}
-
-function getBaseDomain(hostname: string): string {
-  const parts = hostname.split('.');
-  if (parts.length <= 2) return hostname;
-  return parts.slice(-2).join('.');
-}
+import { normalizeUrl, shouldSkipUrl, getBaseDomain, isSpaHashRoute, deduplicateUrls, SKIP_EXTENSIONS } from '../../src/utils/url.js';
 
 interface CrawlOptions {
   limit: number;
@@ -52,8 +9,6 @@ interface CrawlOptions {
   allowSubdomains: boolean;
   allowExternalLinks: boolean;
   allowBackwardCrawling: boolean;
-  format: 'markdown' | 'html';
-  onlyMainContent: boolean;
 }
 
 function isUrlAllowed(
@@ -118,8 +73,6 @@ const defaultOptions: CrawlOptions = {
   allowSubdomains: false,
   allowExternalLinks: false,
   allowBackwardCrawling: false,
-  format: 'markdown',
-  onlyMainContent: true,
 };
 
 describe('Crawl - URL Filtering', () => {
@@ -194,6 +147,83 @@ describe('Crawl - URL Filtering', () => {
       ];
       const normalized = new Set(urls.map(normalizeUrl));
       expect(normalized.size).toBe(1);
+    });
+  });
+
+  describe('normalizeUrl - SPA hash routes', () => {
+    it('should preserve SPA hash routes (#/path)', () => {
+      expect(normalizeUrl('https://example.com/#/home')).toBe('https://example.com/#/home');
+    });
+
+    it('should preserve SPA hash routes (#!/path)', () => {
+      expect(normalizeUrl('https://example.com/#!/page')).toBe('https://example.com/#!/page');
+    });
+
+    it('should preserve SPA hash route with nested path', () => {
+      expect(normalizeUrl('https://example.com/#/users/123')).toBe('https://example.com/#/users/123');
+    });
+  });
+
+  describe('isSpaHashRoute', () => {
+    it('should detect hash routes starting with #/', () => {
+      expect(isSpaHashRoute('#/home')).toBe(true);
+      expect(isSpaHashRoute('#/users/123')).toBe(true);
+    });
+
+    it('should detect hash routes starting with #!/', () => {
+      expect(isSpaHashRoute('#!/home')).toBe(true);
+      expect(isSpaHashRoute('#!/dashboard')).toBe(true);
+    });
+
+    it('should NOT detect regular anchor hashes', () => {
+      expect(isSpaHashRoute('#section')).toBe(false);
+      expect(isSpaHashRoute('#top')).toBe(false);
+    });
+
+    it('should NOT detect empty hash', () => {
+      expect(isSpaHashRoute('')).toBe(false);
+    });
+  });
+
+  describe('deduplicateUrls', () => {
+    it('should remove exact duplicates', () => {
+      const result = deduplicateUrls([
+        'https://example.com/a',
+        'https://example.com/a',
+      ]);
+      expect(result).toEqual(['https://example.com/a']);
+    });
+
+    it('should deduplicate http vs https', () => {
+      const result = deduplicateUrls([
+        'http://example.com/a',
+        'https://example.com/a',
+      ]);
+      expect(result).toHaveLength(1);
+    });
+
+    it('should deduplicate www vs non-www', () => {
+      const result = deduplicateUrls([
+        'https://www.example.com/a',
+        'https://example.com/a',
+      ]);
+      expect(result).toHaveLength(1);
+    });
+
+    it('should ignore non-SPA hash fragments for deduplication', () => {
+      const result = deduplicateUrls([
+        'https://example.com/a#section1',
+        'https://example.com/a#section2',
+      ]);
+      expect(result).toHaveLength(1);
+    });
+
+    it('should keep distinct URLs', () => {
+      const result = deduplicateUrls([
+        'https://example.com/a',
+        'https://example.com/b',
+      ]);
+      expect(result).toHaveLength(2);
     });
   });
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.6] - 2026-05-09
+
+### Fixed
+- 修复 SPA hash 路由爬取（#/、#!/）— 先加载基础页面再导航 hash
+- 增强 GitHub 仓库页面噪音过滤（24 个选择器）
+- 修复 crawl.test.ts 复制粘贴函数 → 改为 import 源码
+- verbose 进度输出改用 stderr（API 模式下也可用）
+
+### Added
+- isSpaHashRoute、deduplicateUrls 测试用例
+- actions timeout 测试用例
+
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),

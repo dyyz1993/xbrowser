@@ -1,0 +1,82 @@
+[
+  {
+    "id": "proc_2026-05-08T1834_7a60d3",
+    "workspaceId": "mox92lro",
+    "title": "xbrowser scrape volcengine doc",
+    "command": "node dist/cli.js scrape \"https://www.volcengine.com/docs/6561/1354869?lang=zh\" --format markdown --timeout 30000",
+    "cwd": "/Users/xuyingzhou/Project/study-node-ts/xbrowser",
+    "status": "error",
+    "pid": 39039,
+    "startedAt": "2026-05-08T18:34:17.658Z",
+    "outputSizeBytes": 954,
+    "notify": {
+      "sessionID": "ses_1f721d6a3ffedpEgYfFytazPL5",
+      "directory": "/Users/xuyingzhou/Project/study-node-ts/xbrowser",
+      "sentAt": "2026-05-08T18:34:18.613Z"
+    },
+    "terminalReason": "failed",
+    "exitCode": 1,
+    "stoppedAt": "2026-05-08T18:34:18.606Z"
+  },
+  {
+    "id": "proc_2026-05-08T1835_31012b",
+    "workspaceId": "mox92lro",
+    "title": "xbrowser scrape volcengine doc retry",
+    "command": "node dist/cli.js scrape \"https://www.volcengine.com/docs/6561/1354869?lang=zh\" --format markdown --timeout 30000",
+    "cwd": "/Users/xuyingzhou/Project/study-node-ts/xbrowser",
+    "status": "stopped",
+    "pid": 41171,
+    "startedAt": "2026-05-08T18:35:17.277Z",
+    "outputSizeBytes": 106904,
+    "notify": {
+      "sessionID": "ses_1f721d6a3ffedpEgYfFytazPL5",
+      "directory": "/Users/xuyingzhou/Project/study-node-ts/xbrowser",
+      "sentAt": "2026-05-08T18:35:28.369Z"
+    },
+    "terminalReason": "finished",
+    "exitCode": 0,
+    "stoppedAt": "2026-05-08T18:35:28.362Z"
+  },
+  {
+    "id": "proc_2026-05-08T1846_c850cf",
+    "workspaceId": "mox92lro",
+    "title": "xbrowser build",
+    "command": "npm run build 2>&1",
+    "cwd": "/Users/xuyingzhou/Project/study-node-ts/xbrowser",
+    "status": "stopped",
+    "pid": 67399,
+    "startedAt": "2026-05-08T18:46:54.322Z",
+    "outputSizeBytes": 1802,
+    "terminalReason": "finished",
+    "exitCode": 0,
+    "stoppedAt": "2026-05-08T18:46:56.640Z"
+  },
+  {
+    "id": "proc_2026-05-08T1847_7b57ba",
+    "workspaceId": "mox92lro",
+    "title": "scrape volcengine docs",
+    "command": "node dist/cli.js scrape \"https://www.volcengine.com/docs/6561/1354869?lang=zh\" --format markdown --timeout 30000 2>&1",
+    "cwd": "/Users/xuyingzhou/Project/study-node-ts/xbrowser",
+    "status": "stopped",
+    "pid": 67697,
+    "startedAt": "2026-05-08T18:47:03.118Z",
+    "outputSizeBytes": 54287,
+    "terminalReason": "finished",
+    "exitCode": 0,
+    "stoppedAt": "2026-05-08T18:47:10.684Z"
+  },
+  {
+    "id": "proc_2026-05-08T1847_c5c25b",
+    "workspaceId": "mox92lro",
+    "title": "run scrape tests",
+    "command": "npx vitest run tests/commands/scrape.test.ts 2>&1",
+    "cwd": "/Users/xuyingzhou/Project/study-node-ts/xbrowser",
+    "status": "error",
+    "pid": 70024,
+    "startedAt": "2026-05-08T18:47:39.865Z",
+    "outputSizeBytes": 1884,
+    "terminalReason": "failed",
+    "exitCode": 1,
+    "stoppedAt": "2026-05-08T18:47:41.758Z"
+  }
+]

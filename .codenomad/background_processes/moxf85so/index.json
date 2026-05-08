@@ -1,0 +1,30 @@
+[
+  {
+    "id": "proc_2026-05-08T2130_dc0984",
+    "workspaceId": "moxf85so",
+    "title": "vitest run",
+    "command": "cd /Users/xuyingzhou/Project/study-node-ts/xbrowser && npx vitest run 2>&1",
+    "cwd": "/Users/xuyingzhou/Project/study-node-ts/xbrowser",
+    "status": "stopped",
+    "pid": 13180,
+    "startedAt": "2026-05-08T21:30:23.086Z",
+    "outputSizeBytes": 13209,
+    "terminalReason": "finished",
+    "exitCode": 0,
+    "stoppedAt": "2026-05-08T21:31:06.031Z"
+  },
+  {
+    "id": "proc_2026-05-08T2133_47062e",
+    "workspaceId": "moxf85so",
+    "title": "vitest full test run",
+    "command": "cd /Users/xuyingzhou/Project/study-node-ts/xbrowser && npx vitest run 2>&1",
+    "cwd": "/Users/xuyingzhou/Project/study-node-ts/xbrowser",
+    "status": "stopped",
+    "pid": 17085,
+    "startedAt": "2026-05-08T21:33:09.584Z",
+    "outputSizeBytes": 13198,
+    "terminalReason": "finished",
+    "exitCode": 0,
+    "stoppedAt": "2026-05-08T21:33:58.531Z"
+  }
+]

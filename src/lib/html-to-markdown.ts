@@ -48,6 +48,16 @@ const MAIN_CONTENT_NOISE_SELECTORS = [
   '.toc', '#toc', '[class*="table-of-contents"]',
   '.author-card', '.author-bio', '.author-info',
   '.actions',
+  // GitHub repository noise
+  '.file-navigation', '.Box-header', '.js-navigation-container',
+  '.toc-diff-stats', '.avatar', '.avatar-stack', '[data-testid="avatar"]',
+  '.user-mention', '.commit-tease', '.overall-summary',
+  '.numbers-summary', '.repository-lang-stats', '.file-wrap',
+  '.commits', '.branch-infobar', '.subnav', '.pagehead',
+  '.gh-header', '.Label', '.hx_badge',
+  // Forum / docs noise
+  '.post-actions', '.share-buttons', '.author-info',
+  '.post-meta', '.reply-count', '.vote-count',
 ];
 
 function removeNoise($: cheerio.CheerioAPI, mainContentOnly: boolean): void {

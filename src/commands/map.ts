@@ -3,7 +3,7 @@ import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { createEphemeralContext, closeEphemeralContext } from '../browser.js';
-import { getBaseDomain, deduplicateUrls } from '../utils/url.js';
+import { getBaseDomain, deduplicateUrls, isSpaHashRoute } from '../utils/url.js';
 import type { Page } from 'playwright';
 
 export { deduplicateUrls };
@@ -88,8 +88,22 @@ async function fetchSitemapUrls(page: Page, origin: string): Promise<string[]> {
   return urls;
 }
 
+async function navigateForMap(page: Page, url: string, timeout = 15000): Promise<void> {
+  const urlObj = new URL(url);
+  if (isSpaHashRoute(urlObj.hash)) {
+    const baseUrl = urlObj.origin + urlObj.pathname + urlObj.search;
+    await page.goto(baseUrl, { waitUntil: 'networkidle', timeout });
+    await page.evaluate((hash: string) => {
+      window.location.hash = hash;
+    }, urlObj.hash);
+    await page.waitForTimeout(1500);
+    return;
+  }
+  await page.goto(url, { waitUntil: 'networkidle', timeout });
+}
+
 async function extractPageLinks(page: Page, baseUrl: string): Promise<string[]> {
-  await page.goto(baseUrl, { waitUntil: 'networkidle', timeout: 15000 });
+  await navigateForMap(page, baseUrl);
   await new Promise(resolve => setTimeout(resolve, 2000));
   await page.evaluate(() => {
     window.scrollTo(0, document.body.scrollHeight);
@@ -136,17 +150,17 @@ export async function discoverUrls(
 
   if (options.sitemap !== 'only') {
     step++;
-    if (options.verbose) console.log(`[${step}/${steps}] Extracting page links...`);
+    if (options.verbose) process.stderr.write(`[${step}/${steps}] Extracting page links...\n`);
     const pageLinks = await extractPageLinks(page, baseUrl);
     for (const u of pageLinks) allUrls.add(u);
-    if (options.verbose) console.log(`[${step}/${steps}] Found ${pageLinks.length} links from page`);
+    if (options.verbose) process.stderr.write(`[${step}/${steps}] Found ${pageLinks.length} links from page\n`);
   }
 
   step++;
-  if (options.verbose) console.log(`[${step}/${steps}] Fetching sitemap...`);
+  if (options.verbose) process.stderr.write(`[${step}/${steps}] Fetching sitemap...\n`);
   const sitemapUrls = await fetchSitemapUrls(page, origin);
   for (const u of sitemapUrls) allUrls.add(u);
-  if (options.verbose) console.log(`[${step}/${steps}] Found ${sitemapUrls.length} URLs from sitemap`);
+  if (options.verbose) process.stderr.write(`[${step}/${steps}] Found ${sitemapUrls.length} URLs from sitemap\n`);
 
   const basePath = new URL(baseUrl).pathname;
 
