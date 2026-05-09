@@ -17,6 +17,7 @@ import './scrape.js';
 import './map.js';
 import './crawl.js';
 import './search.js';
+import './network.js';
 
 export { getCommand, getAllCommands, getCommandNames, clearRegistry, registerCommand } from './command-registry.js';
 export type { RegisteredCommand, BrowserCommandDefinition } from './command-registry.js';
