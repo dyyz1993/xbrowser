@@ -265,6 +265,10 @@ export async function closeAllSessions(): Promise<void> {
  * {@link getBrowser} will create a new instance on next call.
  */
 export async function destroyBrowser(): Promise<void> {
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
   await closeAllSessions();
   if (browser) {
     const b = browser;

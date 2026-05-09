@@ -280,4 +280,5 @@ export async function handleBrowserCommand(
   } else {
     outputResult(result.data, mode);
   }
+  if (cdpEndpoint) process.exit(0);
 }

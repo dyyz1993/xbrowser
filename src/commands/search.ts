@@ -309,10 +309,7 @@ export const searchCommand = registerCommand({
       return ok(searchResult);
     } finally {
       await closeEphemeralContext(context);
-      if (isCDP) {
-        destroyBrowser();
-        setTimeout(() => process.exit(0), 500);
-      }
+      await destroyBrowser();
     }
   },
 });
