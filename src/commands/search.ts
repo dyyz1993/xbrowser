@@ -4,7 +4,7 @@ import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { htmlToMarkdown } from '../lib/html-to-markdown.js';
-import { createEphemeralContext, closeEphemeralContext, getBrowser, destroyBrowser } from '../browser.js';
+import { createEphemeralContext, closeEphemeralContext, getBrowser } from '../browser.js';
 import { shouldSkipUrl } from '../utils/url.js';
 import type { Page } from 'playwright';
 
@@ -309,7 +309,6 @@ export const searchCommand = registerCommand({
       return ok(searchResult);
     } finally {
       await closeEphemeralContext(context);
-      await destroyBrowser();
     }
   },
 });

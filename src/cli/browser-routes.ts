@@ -1,6 +1,7 @@
 import { executeCommand } from '../executor.js';
 import { outputResult, outputError } from './output.js';
 import { normalizeSelector } from '../utils/selector.js';
+import { destroyBrowser } from '../browser.js';
 
 interface ParsedSelectorArgs {
   selector?: string;
@@ -280,5 +281,6 @@ export async function handleBrowserCommand(
   } else {
     outputResult(result.data, mode);
   }
+  await destroyBrowser();
   if (cdpEndpoint) process.exit(0);
 }
