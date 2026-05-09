@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.7] - 2026-05-09
+
+### Added
+- search 命令：搜索引擎查询（Bing/Google/Baidu/DuckDuckGo）
+- 自动引擎降级：Bing→Google→Baidu→DDG 依次尝试
+- --full 模式：搜索结果并发抓取全文内容
+- playground SearchPanel 组件：前端搜索 UI
+- playground search API：/api/cdp/search 端点
+
 ## [0.5.6] - 2026-05-09
 
 ### Fixed

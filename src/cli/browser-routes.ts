@@ -33,8 +33,8 @@ export async function handleBrowserCommand(
   sessionName: string,
   mode: string
 ): Promise<void> {
-  let cmdName: string;
-  let params: Record<string, unknown>;
+  let cmdName = '';
+  let params: Record<string, unknown> = {};
 
   if (SELECTOR_COMMANDS.has(command)) {
     const parsed = parseSelectorFlags(args, options);
@@ -248,6 +248,18 @@ export async function handleBrowserCommand(
             concurrency: options.concurrency ? Number(options.concurrency) : undefined,
             retries: options.retries ? Number(options.retries) : undefined,
             verbose: options.verbose === 'true' || options.verbose === '',
+          };
+          break;
+        case 'search':
+          if (!args[0]) outputError('Usage: xbrowser search "query" [--engine bing|google|baidu|duckduckgo] [--limit N] [--full] [--format markdown|json] [--timeout ms]');
+          cmdName = 'search';
+          params = {
+            query: args.join(' '),
+            engine: (options.engine || options.e) as string | undefined,
+            limit: options.limit || options.l ? Number(options.limit || options.l) : undefined,
+            full: !!(options.full || options.f),
+            format: (options.format || options.F) as string | undefined,
+            timeout: options.timeout || options.t ? Number(options.timeout || options.t) : undefined,
           };
           break;
        default:

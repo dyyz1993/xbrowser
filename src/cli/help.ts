@@ -38,8 +38,9 @@ Commands:
   extract <rec.yaml>                Extract LLM-ready summary
   filter <in.yaml> <out.yaml>       Filter recording events
   scrape <url>                      Scrape a page and convert to markdown
-  crawl <url>                       Crawl a website and extract content from multiple pages
-  map <url>                         Discover all URLs on a website
+   crawl <url>                       Crawl a website and extract content from multiple pages
+   search "query"                    Search the web and extract results (--engine, --limit, --full)
+   map <url>                         Discover all URLs on a website
   config <get|set|list>             Manage config
   plugin search <query>             Search for plugins
   plugin install <source>           Install plugin

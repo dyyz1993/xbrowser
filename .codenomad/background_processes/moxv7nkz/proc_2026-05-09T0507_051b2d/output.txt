@@ -1,6 +1,7 @@
 
  RUN  v3.2.4 /Users/xuyingzhou/Project/study-node-ts/xbrowser
 
+ ✓ tests/commands/wait.test.ts (6 tests) 141ms
 stdout | tests/builtins/plugin.test.ts > Create Builtin > should create plugin from static template
 Plugin "test-plugin" created from "static" template
   Directory: /var/folders/j9/bv0n54t96556fycmy511r2rc0000gn/T/xbrowser-test-builtins/test-plugin
@@ -11,34 +12,36 @@ Plugin "my-api" created from "api" template
   Directory: /var/folders/j9/bv0n54t96556fycmy511r2rc0000gn/T/xbrowser-test-builtins/my-api
   Files: index.ts, package.json
 
- ✓ tests/plugin/loader.test.ts (13 tests) 34ms
- ✓ tests/commands/ui-debug.test.ts (39 tests) 295ms
- ✓ tests/plugins/seo-plugins-comprehensive.test.ts (70 tests) 304ms
- ✓ tests/builtins/plugin.test.ts (11 tests) 435ms
- ✓ tests/executor.test.ts (48 tests) 494ms
-   ✓ Executor > should return error for unknown command  481ms
- ✓ tests/recording-commands.test.ts (11 tests) 25ms
- ✓ tests/commands/frame.test.ts (8 tests) 41ms
- ✓ tests/commands/actions.test.ts (55 tests) 586ms
- ✓ tests/commands/crawl.test.ts (42 tests) 601ms
-   ✓ Crawl - Command Registration > should register crawl command  596ms
- ✓ tests/commands/ui-test.test.ts (40 tests) 128ms
- ✓ tests/commands/scroll.test.ts (6 tests) 41ms
- ✓ tests/plugin/install-utils.test.ts (17 tests) 137ms
- ✓ tests/commands/mouse.test.ts (8 tests) 59ms
+ ✓ tests/commands/ui-debug.test.ts (39 tests) 306ms
+ ✓ tests/plugins/seo-plugins-comprehensive.test.ts (70 tests) 332ms
+ ✓ tests/builtins/plugin.test.ts (11 tests) 420ms
+ ✓ tests/plugin/install-utils.test.ts (17 tests) 134ms
+ ✓ tests/executor.test.ts (48 tests) 564ms
+   ✓ Executor > should return error for unknown command  543ms
+ ✓ tests/commands/structure.test.ts (5 tests) 63ms
+ ✓ tests/commands/actions.test.ts (55 tests) 633ms
+ ✓ tests/commands/crawl.test.ts (42 tests) 637ms
+   ✓ Crawl - Command Registration > should register crawl command  632ms
+ ✓ tests/commands/ui-test.test.ts (40 tests) 133ms
+ ✓ tests/commands/storage.test.ts (8 tests) 43ms
+ ✓ tests/router.test.ts (49 tests) 77ms
+ ✓ tests/commands/snapshot.test.ts (12 tests) 60ms
+ ✓ tests/commands/viewport.test.ts (3 tests) 33ms
+ ✓ tests/commands/evaluate.test.ts (6 tests) 59ms
+ ✓ tests/commands/scroll.test.ts (6 tests) 55ms
+ ✓ tests/commands/frame.test.ts (8 tests) 56ms
+ ✓ tests/plugin/install-marketplace.test.ts (15 tests) 38ms
+ ✓ tests/commands/mouse.test.ts (8 tests) 70ms
+ ✓ tests/plugin/publisher.test.ts (13 tests) 25ms
+ ✓ tests/plugin/install-url.test.ts (11 tests) 28ms
+ ✓ tests/recording-commands.test.ts (11 tests) 31ms
+ ✓ tests/plugin/loader.test.ts (13 tests) 36ms
  ✓ tests/websocket-server.test.ts (9 tests) 17ms
- ✓ tests/commands/evaluate.test.ts (6 tests) 38ms
- ✓ tests/router.test.ts (49 tests) 45ms
- ✓ tests/commands/viewport.test.ts (3 tests) 35ms
- ✓ tests/commands/storage.test.ts (8 tests) 35ms
- ✓ tests/commands/snapshot.test.ts (12 tests) 44ms
- ✓ tests/commands/wait.test.ts (6 tests) 37ms
- ✓ tests/commands/structure.test.ts (5 tests) 46ms
- ✓ tests/plugin/install-marketplace.test.ts (15 tests) 35ms
- ✓ tests/plugin/install-url.test.ts (11 tests) 29ms
- ✓ tests/plugin/publisher.test.ts (13 tests) 19ms
- ✓ tests/builtins/config.test.ts (16 tests) 21ms
- ✓ tests/plugin/installer.test.ts (20 tests) 30ms
+ ✓ tests/plugin/installer.test.ts (20 tests) 22ms
+ ✓ tests/builtins/config.test.ts (16 tests) 26ms
+ ✓ tests/plugin/install-npm.test.ts (6 tests) 15ms
+ ✓ tests/commands/scrape.test.ts (13 tests) 32ms
+ ✓ tests/recorder/recorder.test.ts (12 tests) 66ms
 stdout | tests/human-interaction.test.ts > HumanInteractionManager > waitForHuman > should detect captcha and return timeout result
 
 ⚠️  ═══════════════════════════════════════════════════
@@ -134,6 +137,7 @@ stdout | tests/human-interaction.test.ts > HumanInteractionManager > waitForHuma
 stdout | tests/human-interaction.test.ts > HumanInteractionManager > waitForHuman > should use default options when none provided
 ⏰ Timeout - skipping
 
+ ✓ tests/plugin/metadata-parser.test.ts (18 tests) 16ms
 stdout | tests/human-interaction.test.ts > HumanInteractionManager > waitForHuman > should return timeout when timeout is 0 (no timeout)
 
 ⚠️  ═══════════════════════════════════════════════════
@@ -153,26 +157,11 @@ stdout | tests/human-interaction.test.ts > HumanInteractionManager > waitForHuma
 stdout | tests/human-interaction.test.ts > HumanInteractionManager > waitForHuman > should return timeout when timeout is 0 (no timeout)
 ✅ CAPTCHA solved via preview!
 
- ✓ tests/human-interaction.test.ts (7 tests) 15ms
- ✓ tests/commands/scrape.test.ts (13 tests) 71ms
- ✓ tests/cli/admin-routes.test.ts (86 tests) 31ms
- ✓ tests/utils/proxy-fetch.test.ts (6 tests) 17ms
- ✓ tests/plugins/zhihu.test.ts (9 tests) 7ms
- ✓ tests/commands/query.test.ts (12 tests) 7ms
- ✓ tests/recorder/recorder.test.ts (12 tests) 17ms
-stderr | tests/cli/record-routes.test.ts > record-routes > handleConvert > should exit when file path missing
-Usage: xbrowser convert <recording.yaml> <output.{js,py,sh}>
-
-stderr | tests/cli/record-routes.test.ts > record-routes > handleConvert > should exit when output path missing
-Usage: xbrowser convert <recording.yaml> <output.{js,py,sh}>
-
-stderr | tests/cli/record-routes.test.ts > record-routes > handleExtract > should exit when no file path provided
-Usage: xbrowser extract <recording.yaml>
-
-stderr | tests/cli/record-routes.test.ts > record-routes > handleFilter > should exit when file path missing
-Usage: xbrowser filter <input.yaml> <output.yaml> [--exclude-types=type1,type2]
-
- ✓ tests/cli/record-routes.test.ts (19 tests) 8ms
+ ✓ tests/human-interaction.test.ts (7 tests) 18ms
+ ✓ tests/cli/admin-routes.test.ts (86 tests) 22ms
+ ✓ tests/cli/auth.test.ts (7 tests) 12ms
+ ✓ tests/plugins/baidu.test.ts (13 tests) 7ms
+ ✓ tests/screencast.test.ts (10 tests) 15ms
 stderr | tests/cli/publish-routes.test.ts > publish-routes > handlePublish > should exit when not logged in
 Not logged in. Run: xbrowser plugin login
 
@@ -182,76 +171,59 @@ Publishing fail-plugin@1.0.0...
 stdout | tests/cli/publish-routes.test.ts > publish-routes > handlePublish - edge cases > should handle publish error with empty error body
 Publishing err-plugin@1.0.0...
 
+ ✓ tests/daemon/daemon.test.ts (8 tests) 14ms
  ✓ tests/cli/publish-routes.test.ts (23 tests) 11ms
- ✓ tests/e2e/no-browser.test.ts (33 tests) 15ms
- ✓ tests/daemon/daemon.test.ts (8 tests) 11ms
- ✓ tests/cli/auth.test.ts (7 tests) 11ms
- ✓ tests/session/session-client.test.ts (5 tests) 8ms
- ✓ tests/plugins/baidu.test.ts (13 tests) 9ms
- ✓ tests/screencast.test.ts (10 tests) 8ms
- ✓ tests/plugins/github.test.ts (8 tests) 7ms
- ✓ tests/plugin/install-npm.test.ts (6 tests) 8ms
- ✓ tests/plugins/twitter.test.ts (11 tests) 5ms
- ✓ tests/plugin/metadata-parser.test.ts (18 tests) 9ms
- ✓ tests/plugin/install-git.test.ts (11 tests) 7ms
- ✓ tests/commands/interaction.test.ts (12 tests) 7ms
- ✓ tests/cli/plugin-routes.test.ts (28 tests) 8ms
- ✓ tests/builtins/session.test.ts (13 tests) 6ms
- ✓ tests/plugins/douyin.test.ts (10 tests) 5ms
- ✓ tests/browser.test.ts (23 tests) 7ms
+ ✓ tests/browser.test.ts (23 tests) 11ms
+ ✓ tests/cli/plugin-routes.test.ts (28 tests) 11ms
+ ✓ tests/utils/proxy-fetch.test.ts (6 tests) 32ms
+ ✓ tests/config.test.ts (9 tests) 8ms
  ✓ tests/cli/browser-routes.test.ts (39 tests) 8ms
- ✓ tests/config.test.ts (9 tests) 5ms
- ✓ tests/chain-parser.test.ts (48 tests) 6ms
- ✓ tests/plugins/web-automation.test.ts (10 tests) 7ms
- ✓ tests/webhook.test.ts (8 tests) 5ms
- ✓ tests/stdin.test.ts (7 tests) 5ms
- ✓ tests/plugin/seo-plugins.test.ts (21 tests) 6ms
- ✓ tests/context.test.ts (16 tests) 5ms
+ ✓ tests/plugins/web-automation.test.ts (10 tests) 9ms
+ ✓ tests/e2e/no-browser.test.ts (33 tests) 17ms
+ ✓ tests/plugins/github.test.ts (8 tests) 6ms
+ ✓ tests/session/session-client.test.ts (5 tests) 22ms
+stderr | tests/cli/record-routes.test.ts > record-routes > handleConvert > should exit when file path missing
+Usage: xbrowser convert <recording.yaml> <output.{js,py,sh}>
+
+stderr | tests/cli/record-routes.test.ts > record-routes > handleConvert > should exit when output path missing
+Usage: xbrowser convert <recording.yaml> <output.{js,py,sh}>
+
+stderr | tests/cli/record-routes.test.ts > record-routes > handleExtract > should exit when no file path provided
+Usage: xbrowser extract <recording.yaml>
+
+ ✓ tests/builtins/session.test.ts (13 tests) 13ms
+stderr | tests/cli/record-routes.test.ts > record-routes > handleFilter > should exit when file path missing
+Usage: xbrowser filter <input.yaml> <output.yaml> [--exclude-types=type1,type2]
+
+ ✓ tests/cli/record-routes.test.ts (19 tests) 12ms
+ ✓ tests/commands/interaction.test.ts (12 tests) 9ms
+ ✓ tests/plugin/seo-plugins.test.ts (21 tests) 9ms
+ ✓ tests/chain-parser.test.ts (48 tests) 8ms
+ ✓ tests/plugins/twitter.test.ts (11 tests) 7ms
+ ✓ tests/plugins/zhihu.test.ts (9 tests) 7ms
+ ✓ tests/cli/session-routes.test.ts (10 tests) 5ms
+ ✓ tests/webhook.test.ts (8 tests) 4ms
+ ✓ tests/stdin.test.ts (7 tests) 9ms
+ ✓ tests/plugin/migrated-plugins.test.ts (5 tests) 3ms
+ ✓ tests/context.test.ts (16 tests) 7ms
+ ✓ tests/plugin/npm-search.test.ts (9 tests) 8ms
+ ✓ tests/plugins/taobao.test.ts (8 tests) 8ms
+ ✓ tests/plugin/install-git.test.ts (11 tests) 6ms
 stderr | tests/cli/run-routes.test.ts > run-routes > should exit with code 1 when chain fails
 [FAIL] bad-cmd: fail
 
 stdout | tests/cli/run-routes.test.ts > run-routes > should pass cdpEndpoint and sessionName options
 [OK] title
 
- ✓ tests/cli/run-routes.test.ts (9 tests) 5ms
- ✓ tests/plugin/npm-search.test.ts (9 tests) 5ms
- ✓ tests/plugins/taobao.test.ts (8 tests) 5ms
- ✓ tests/cli/session-routes.test.ts (10 tests) 4ms
- ✓ tests/commands/extract.test.ts (16 tests) 6ms
- ✓ tests/cli/output.test.ts (11 tests) 5ms
- ✓ tests/commands/navigation.test.ts (8 tests) 4ms
+ ✓ tests/cli/run-routes.test.ts (9 tests) 7ms
  ✓ tests/cli/chain-output.test.ts (8 tests) 5ms
- ✓ tests/cli/help.test.ts (10 tests) 4ms
- ✓ tests/parse-action-dsl.test.ts (22 tests) 3ms
- ✓ tests/captcha-detector.test.ts (12 tests) 4ms
- ✓ tests/plugin/migrated-plugins.test.ts (5 tests) 3ms
- ✓ tests/commands/convert.test.ts (20 tests) 2ms
+ ✓ tests/plugins/douyin.test.ts (10 tests) 12ms
+ ✓ tests/cli/output.test.ts (11 tests) 10ms
+ ✓ tests/commands/query.test.ts (12 tests) 5ms
+ ✓ tests/commands/extract.test.ts (16 tests) 4ms
+ ✓ tests/captcha-detector.test.ts (12 tests) 6ms
+ ✓ tests/commands/navigation.test.ts (8 tests) 6ms
+ ✓ tests/cli/help.test.ts (10 tests) 6ms
+ ✓ tests/parse-action-dsl.test.ts (22 tests) 19ms
+ ✓ tests/commands/convert.test.ts (20 tests) 3ms
  ✓ tests/map.test.ts (15 tests) 3ms
- ✓ tests/commands/map.test.ts (33 tests) 21033ms
-   ✓ Map Command - discoverUrls Integration > should return URL list from page links and sitemap  3005ms
-   ✓ Map Command - discoverUrls Integration > should respect limit parameter  3002ms
-   ✓ Map Command - discoverUrls Integration > should filter by search query  3002ms
-   ✓ Map Command - discoverUrls Integration > should exclude subdomains by default  3002ms
-   ✓ Map Command - discoverUrls Integration > should include subdomains when option is set  3002ms
-   ✓ Map Command - discoverUrls Integration > should filter URLs to path scope when base has a path  3003ms
-   ✓ Map Command - discoverUrls Integration > should not restrict path when base URL is root  3004ms
-fetch failed
- ✓ tests/e2e/plugin-lifecycle.test.ts (6 tests) 23968ms
-   ✓ Plugin Lifecycle E2E > Local plugin install > should install plugin from local directory  536ms
-   ✓ Plugin Lifecycle E2E > Local plugin install > should list the installed plugin  359ms
-   ✓ Plugin Lifecycle E2E > Local plugin install > should uninstall the plugin  312ms
-   ✓ Plugin Lifecycle E2E > Marketplace search > should search for baidu plugin  11608ms
-   ✓ Plugin Lifecycle E2E > Marketplace install > should install baidu from marketplace  10889ms
- ✓ tests/e2e/browser.test.ts (15 tests) 34358ms
-   ✓ E2E: Browser Automation > should click a link element  1960ms
-   ✓ E2E: Chain Execution > should stop on failure in AND chain  30038ms
- ✓ tests/e2e/real-world.test.ts (30 tests) 46559ms
-   ✓ Real-world: navigation (click/back/forward) > should click "More information" link and land on iana.org  1227ms
-   ✓ Real-world: navigation (click/back/forward) > should go forward in history  10897ms
-   ✓ Real-world: chain execution on example.com > should stop AND chain on failure  30006ms
-
- Test Files  77 passed (77)
-      Tests  1349 passed (1349)
-   Start at  05:33:10
-   Duration  48.07s (transform 1.84s, setup 0ms, collect 5.76s, tests 129.95s, environment 7ms, prepare 3.20s)
-
