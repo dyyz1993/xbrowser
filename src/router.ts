@@ -313,7 +313,7 @@ export async function routeCommand(
           return;
         }
 
-        await handleBrowserCommand(command, cmdArgs, options, sessionName, mode);
+        await handleBrowserCommand(command, cmdArgs, options, sessionName, mode, cdpEndpoint);
       }
     }
   } catch (e: unknown) {

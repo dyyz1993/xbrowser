@@ -4,7 +4,7 @@ import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { htmlToMarkdown } from '../lib/html-to-markdown.js';
-import { createEphemeralContext, closeEphemeralContext, getBrowser } from '../browser.js';
+import { createEphemeralContext, closeEphemeralContext, getBrowser, destroyBrowser } from '../browser.js';
 import { shouldSkipUrl } from '../utils/url.js';
 import type { Page } from 'playwright';
 
@@ -73,32 +73,72 @@ function parseBingResults($: cheerio.CheerioAPI): SearchResultItem[] {
 
 function parseGoogleResults($: cheerio.CheerioAPI): SearchResultItem[] {
   const results: SearchResultItem[] = [];
-  $('div.g, div[data-sokoban-container]').each((idx, el) => {
+  $('div.tF2Cxc').each((idx, el) => {
     const $el = $(el);
-    const $titleLink = $el.find('h3 > a').first();
-    const title = $titleLink.text().trim();
-    const url = $titleLink.attr('href') || '';
-    const snippet = $el.find('div.VwiC3b, [data-sncf]').first().text().trim() || $el.find('div[style*="-webkit-line-clamp"]').first().text().trim();
+    const $h3 = $el.find('h3').first();
+    const title = $h3.text().trim();
+    const url = $h3.closest('a').attr('href') || '';
+    const snippet = $el.find('div.VwiC3b').first().text().trim();
     if (title && url && !shouldSkipUrl(url)) {
       results.push({ title, url, snippet, position: idx + 1 });
     }
   });
+  if (results.length === 0) {
+    $('div.g, div[data-sokoban-container]').each((idx, el) => {
+      const $el = $(el);
+      const $titleLink = $el.find('h3 > a').first();
+      const title = $titleLink.text().trim();
+      const url = $titleLink.attr('href') || '';
+      const snippet = $el.find('div.VwiC3b, [data-sncf]').first().text().trim() || $el.find('div[style*="-webkit-line-clamp"]').first().text().trim();
+      if (title && url && !shouldSkipUrl(url)) {
+        results.push({ title, url, snippet, position: idx + 1 });
+      }
+    });
+  }
   return results;
 }
 
 function parseBaiduResults($: cheerio.CheerioAPI): SearchResultItem[] {
   const results: SearchResultItem[] = [];
-  $('.result, .c-container').each((idx, el) => {
-    const $el = $(el);
-    const $titleLink = $el.find('h3 > a').first();
+  const selectors = [
+    'div.result h3 a',
+    'div.c-container h3 a',
+    'div.result-op h3 a',
+  ].join(', ');
+  $(selectors).each((_idx, el) => {
+    const $titleLink = $(el);
     const title = $titleLink.text().trim();
     const url = $titleLink.attr('href') || '';
-    const snippet = $el.find('.c-abstract, .c-span-last').first().text().trim();
+    const $container = $titleLink.closest('div.result, div.c-container, div.result-op');
+    const snippet = extractBaiduSnippet($, $container, title);
     if (title && url && !shouldSkipUrl(url)) {
-      results.push({ title, url, snippet, position: idx + 1 });
+      results.push({ title, url, snippet, position: results.length + 1 });
     }
   });
   return results;
+}
+
+function extractBaiduSnippet(
+  $: cheerio.CheerioAPI,
+  $container: ReturnType<cheerio.CheerioAPI>,
+  title: string,
+): string {
+  const candidates = [
+    $container.find('.c-abstract').first().text().trim(),
+    $container.find('.c-color-text.c-line-clamp2').first().text().trim(),
+    $container.find('p.c-color-text').first().text().trim(),
+    $container.find('.c-span9 span').first().text().trim(),
+  ];
+  for (const text of candidates) {
+    if (text && text.length > 10 && text !== title) return text;
+  }
+  let pSnippet = '';
+  $container.find('p').each((_i, el) => {
+    if (pSnippet) return;
+    const t = $(el).text().trim();
+    if (t.length > 20 && t !== title && !t.startsWith(title)) pSnippet = t;
+  });
+  return pSnippet;
 }
 
 function parseDuckDuckGoResults($: cheerio.CheerioAPI): SearchResultItem[] {
@@ -123,7 +163,7 @@ const PARSERS: Record<SearchEngineKey, ($: cheerio.CheerioAPI) => SearchResultIt
   duckduckgo: parseDuckDuckGoResults,
 };
 
-async function trySearchWithEngine(
+  async function trySearchWithEngine(
   page: Page,
   engine: SearchEngineKey,
   query: string,
@@ -131,22 +171,33 @@ async function trySearchWithEngine(
 ): Promise<{ engine: SearchEngineKey; results: SearchResultItem[] }> {
   const config = SEARCH_ENGINES[engine];
   const searchUrl = config.url(query);
-
+  
+  const headers = {
+    'Accept': 'text/html,application/xhtml+xml,application/xml',
+    'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0 Safari/537.36',
+    'Referer': `https://www.${engine === 'google' ? 'www.google.com' : engine === 'bing' ? 'www.bing.com' : engine === 'baidu' ? 'www.baidu.com' : 'html.duckduckgo.com'}`,
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'cors',
+  };
+  
+  await page.setExtraHTTPHeaders(headers);
   await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout });
   await page.waitForLoadState('networkidle', { timeout }).catch(() => {});
-
+  
   const html = await page.content();
   const $ = cheerio.load(html);
-
+  
   const parser = PARSERS[engine];
   const results = parser($);
-
+  
   return { engine, results };
 }
 
-async function fetchFullContent(urls: string[], timeout: number): Promise<Map<string, string>> {
+async function fetchFullContent(urls: string[], timeout: number, cdpEndpoint?: string): Promise<Map<string, string>> {
   const contentMap = new Map<string, string>();
-  const b = await getBrowser({ headless: true });
+  const launchOpts = cdpEndpoint ? { cdpEndpoint } : { headless: true };
+  const b = await getBrowser(launchOpts);
 
   const chunks: string[][] = [];
   for (let i = 0; i < urls.length; i += 5) {
@@ -193,8 +244,13 @@ export const searchCommand = registerCommand({
     format: z.enum(['markdown', 'json', 'text']).default('markdown'),
     timeout: z.number().default(15000),
   }),
-  handler: async (p: SearchOptions, _ctx: BrowserCommandContext): Promise<ReturnType<typeof ok>> => {
-    const { context, page } = await createEphemeralContext({ headless: true });
+  handler: async (p: SearchOptions, ctx: BrowserCommandContext): Promise<ReturnType<typeof ok>> => {
+    const isCDP = !!ctx.cdpEndpoint;
+    const launchOpts = isCDP
+      ? { cdpEndpoint: ctx.cdpEndpoint }
+      : { headless: true };
+
+    const { context, page } = await createEphemeralContext(launchOpts);
 
     try {
       let finalResult: { engine: SearchEngineKey; results: SearchResultItem[] } | null = null;
@@ -230,7 +286,7 @@ export const searchCommand = registerCommand({
       if (p.full && results.length > 0) {
         const urls = results.map((r) => r.url).filter((u) => !shouldSkipUrl(u));
         const safeTimeout = p.timeout ?? 15000;
-        const contentMap = await fetchFullContent(urls, safeTimeout);
+        const contentMap = await fetchFullContent(urls, safeTimeout, ctx.cdpEndpoint);
 
         results = results.map((r) => ({
           ...r,
@@ -253,6 +309,13 @@ export const searchCommand = registerCommand({
       return ok(searchResult);
     } finally {
       await closeEphemeralContext(context);
+      if (isCDP) {
+        try {
+          const b = await getBrowser();
+          if (b.isConnected()) await b.close();
+        } catch { /* ignore */ }
+        destroyBrowser();
+      }
     }
   },
 });

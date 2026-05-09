@@ -14,6 +14,7 @@ export interface BrowserCommandContext extends CommandContext {
   browser: Browser;
   browserContext: BrowserContext;
   sessionId?: string;
+  cdpEndpoint?: string;
   waitForHuman?: (options?: WaitForHumanOptions) => Promise<WaitForHumanResult>;
 }
 

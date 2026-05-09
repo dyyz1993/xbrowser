@@ -87,7 +87,8 @@ function streamCommandEvent(sessionId: string, message: CommandMessage): void {
 export async function executeCommand(
   commandName: string,
   params: Record<string, unknown>,
-  sessionName: string = 'default'
+  sessionName: string = 'default',
+  extraOpts?: { cdpEndpoint?: string }
 ): Promise<ExecutionResult> {
   const command = getCommand(commandName);
   if (!command) {
@@ -128,6 +129,7 @@ export async function executeCommand(
     browser: session?.context.browser() as BrowserCommandContext['browser'],
     browserContext: session?.context as BrowserCommandContext['browserContext'],
     sessionId: session?.id,
+    cdpEndpoint: extraOpts?.cdpEndpoint || session?.cdpEndpoint,
     args: [],
     options: {},
     cwd: process.cwd(),
@@ -416,7 +418,9 @@ export async function executeChain(
         }
 
         const start = Date.now();
-        const result = await executeCommand(cmdName, params, sessionName);
+        const result = options?.cdpEndpoint
+          ? await executeCommand(cmdName, params, sessionName, { cdpEndpoint: options.cdpEndpoint })
+          : await executeCommand(cmdName, params, sessionName);
         const duration = Date.now() - start;
 
         const stepResult: ChainStepResult = {

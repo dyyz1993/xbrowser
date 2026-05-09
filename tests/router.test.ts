@@ -445,7 +445,8 @@ describe('router', () => {
       [],
       expect.any(Object),
       'default',
-      'text'
+      'text',
+      undefined
     );
   });
 
@@ -460,7 +461,8 @@ describe('router', () => {
       ['https://example.com'],
       expect.any(Object),
       'default',
-      'text'
+      'text',
+      undefined
     );
   });
 

@@ -31,7 +31,8 @@ export async function handleBrowserCommand(
   args: string[],
   options: Record<string, unknown>,
   sessionName: string,
-  mode: string
+  mode: string,
+  cdpEndpoint?: string
 ): Promise<void> {
   let cmdName = '';
   let params: Record<string, unknown> = {};
@@ -269,7 +270,9 @@ export async function handleBrowserCommand(
      }
   }
 
-  const result = await executeCommand(cmdName, params, sessionName);
+  const result = cdpEndpoint
+    ? await executeCommand(cmdName, params, sessionName, { cdpEndpoint })
+    : await executeCommand(cmdName, params, sessionName);
   if (mode === 'json' || mode === 'yaml') {
     outputResult(result, mode);
   } else if (!result.success) {
