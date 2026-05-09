@@ -310,11 +310,8 @@ export const searchCommand = registerCommand({
     } finally {
       await closeEphemeralContext(context);
       if (isCDP) {
-        try {
-          const b = await getBrowser();
-          if (b.isConnected()) await b.close();
-        } catch { /* ignore */ }
         destroyBrowser();
+        setTimeout(() => process.exit(0), 500);
       }
     }
   },

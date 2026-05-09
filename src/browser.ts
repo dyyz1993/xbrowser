@@ -267,12 +267,9 @@ export async function closeAllSessions(): Promise<void> {
 export async function destroyBrowser(): Promise<void> {
   await closeAllSessions();
   if (browser) {
-    try {
-      await browser.close();
-    } catch {
-      // ignore
-    }
+    const b = browser;
     browser = null;
+    b.close().catch(() => {});
   }
 }
 
