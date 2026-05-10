@@ -69,11 +69,12 @@ function parseComment(item: Record<string, unknown>) {
 }
 
 function parseUser(data: Record<string, unknown>) {
+  const user = ((data as Record<string, unknown>).user ?? data) as Record<string, unknown>;
   return {
-    userId: s(data.user_id), nickname: s(data.nickname), redId: s(data.red_id || data.xhsId),
-    avatar: s(data.image), desc: s(data.desc), gender: s(data.gender), ipLocation: s(data.ip_location),
-    tags: Array.isArray(data.tag) ? data.tag.map((t: unknown) => s((t as Record<string, unknown>).name || t)) : [],
-    statistics: { notes: n(data.notes), fans: n(data.fans), following: n(data.follows), interaction: n(data.interaction) },
+    userId: s(user.user_id), nickname: s(user.nickname), redId: s(user.red_id || user.xhsId),
+    avatar: s(user.image), desc: s(user.desc), gender: s(user.gender), ipLocation: s(user.ip_location),
+    tags: Array.isArray(user.tag) ? user.tag.map((t: unknown) => s((t as Record<string, unknown>).name || t)) : [],
+    statistics: { notes: n(user.notes), fans: n(user.fans), following: n(user.follows), interaction: n(user.interaction) },
   };
 }
 
@@ -100,6 +101,10 @@ function interceptApi(page: Page, urlPattern: string, dataKey: string, idKey: st
     try {
       const json = await response.json();
       const root = (json as Record<string, unknown>)?.data;
+      if ((json as Record<string, unknown>)?.success === false) {
+        if (process.env.DEBUG) console.warn('[xhs] API returned success=false for', urlPattern);
+        return;
+      }
       if (!root) return;
       const list = (root as Record<string, unknown>)?.[dataKey];
       if (!Array.isArray(list)) return;
@@ -109,7 +114,9 @@ function interceptApi(page: Page, urlPattern: string, dataKey: string, idKey: st
         seenIds.add(id);
         items.push(item as Record<string, unknown>);
       }
-    } catch { /* body may be consumed */ }
+    } catch (err) {
+      if (process.env.DEBUG) console.warn('[xhs] interceptApi parse error:', (err as Error)?.message);
+    }
   };
   page.on('response', handler);
   return { items: () => items, dispose: () => page.off('response', handler) };
@@ -119,22 +126,49 @@ function interceptFirst<T>(page: Page, urlPattern: string, extractor: (json: unk
   let result: T | null = null;
   const handler = async (response: Response) => {
     if (result || !response.url().includes(urlPattern)) return;
-    try { const json = await response.json(); const extracted = extractor(json); if (extracted) result = extracted; } catch { /* ignore */ }
+    try {
+      const json = await response.json();
+      if ((json as Record<string, unknown>)?.success === false) {
+        if (process.env.DEBUG) console.warn('[xhs] API returned success=false for', urlPattern);
+        return;
+      }
+      const extracted = extractor(json);
+      if (extracted) result = extracted;
+    } catch (err) {
+      if (process.env.DEBUG) console.warn('[xhs] interceptFirst parse error:', (err as Error)?.message);
+    }
   };
   page.on('response', handler);
   return { get: () => result, dispose: () => page.off('response', handler) };
 }
 
-async function scrollAndCollect(page: Page, maxPages: number, getItemCount: () => number, opts: { delay?: number; staleThreshold?: number } = {}) {
-  const { delay = 2500, staleThreshold = 3 } = opts;
+type WaitForHumanFn = (opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>;
+
+async function scrollAndCollect(
+  page: Page, maxPages: number, getItemCount: () => number,
+  opts: { delay?: number; staleThreshold?: number; waitForHuman?: WaitForHumanFn } = {},
+) {
+  const { delay = 2500, staleThreshold = 3, waitForHuman } = opts;
   let lastCount = getItemCount(), staleCount = 0;
   for (let i = 0; i < maxPages; i++) {
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(delay + Math.random() * 1000);
     const cur = getItemCount();
+    if (cur === 0 && lastCount === 0 && i >= 1 && waitForHuman) {
+      await waitForHuman({ reason: '小红书可能需要验证，请在浏览器中完成滑块验证', timeout: 120 });
+    }
     if (cur === lastCount) staleCount++; else { staleCount = 0; lastCount = cur; }
     if (staleCount >= staleThreshold) break;
   }
+}
+
+async function waitForInterceptor<T>(getter: () => T | null, maxMs = 10000): Promise<T | null> {
+  for (let w = 0; w < maxMs / 500; w++) {
+    const r = getter();
+    if (r) return r;
+    await new Promise<void>(res => setTimeout(res, 500));
+  }
+  return getter();
 }
 
 async function dismissModals(page: Page) {
@@ -170,6 +204,7 @@ export default function (xcli: XCLIAPI): void {
         const page = (ctx as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
         const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const waitForHuman = (ctx as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
         const interceptor = interceptFirst<Record<string, unknown>>(page, API.FEED, (json) => {
           const data = (json as Record<string, unknown>)?.data;
           if (!data || typeof data !== 'object') return null;
@@ -179,9 +214,12 @@ export default function (xcli: XCLIAPI): void {
         });
         try {
           await page.goto(`${XHS_BASE}/explore/${params.noteId}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-          await page.waitForTimeout(5000);
           await dismissModals(page);
-          const raw = interceptor.get();
+          let raw = await waitForInterceptor(interceptor.get);
+          if (!raw && waitForHuman) {
+            await waitForHuman({ reason: '小红书笔记详情加载失败，可能需要登录或验证', timeout: 120 });
+            raw = await waitForInterceptor(interceptor.get, 5000);
+          }
           if (!raw) return { data: null, tips: [...tips, '未获取到笔记数据，可能笔记不存在或需要登录'] };
           const note = parseNote(raw);
           tips.push(`笔记: ${note.title?.slice(0, 50) || note.desc?.slice(0, 50)}`);
@@ -201,12 +239,12 @@ export default function (xcli: XCLIAPI): void {
         const page = (ctx as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
         const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const waitForHuman = (ctx as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
         const interceptor = interceptApi(page, API.USER_POSTED, 'notes', 'note_id');
         try {
           await page.goto(`${XHS_BASE}/user/profile/${params.userId}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-          await page.waitForTimeout(3000);
           await dismissModals(page);
-          await scrollAndCollect(page, params.maxPages || 5, () => interceptor.items().length);
+          await scrollAndCollect(page, params.maxPages || 5, () => interceptor.items().length, { waitForHuman });
           const notes = interceptor.items().map(parseNote);
           tips.push(`采集到 ${notes.length} 条笔记`);
           return { data: { total: notes.length, notes }, tips };
@@ -225,18 +263,26 @@ export default function (xcli: XCLIAPI): void {
         const page = (ctx as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
         const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const waitForHuman = (ctx as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
         const interceptor = interceptFirst<Record<string, unknown>>(page, API.USER_INFO, (json) => {
           const data = (json as Record<string, unknown>)?.data;
           return data && typeof data === 'object' ? data as Record<string, unknown> : null;
         });
         try {
           await page.goto(`${XHS_BASE}/user/profile/${params.userId}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-          await page.waitForTimeout(5000);
           await dismissModals(page);
-          const raw = interceptor.get();
+          let raw = await waitForInterceptor(interceptor.get);
+          if (!raw && waitForHuman) {
+            await waitForHuman({ reason: '小红书用户资料加载失败，可能需要登录或验证', timeout: 120 });
+            raw = await waitForInterceptor(interceptor.get, 5000);
+          }
           if (raw) { const user = parseUser(raw); tips.push(`用户: ${user.nickname}`); return { data: user, tips }; }
           const domInfo = await page.evaluate(() => {
-            const nickname = document.querySelector('[class*="nickname"]')?.textContent?.trim() || '';
+            const nickname =
+              document.querySelector('[class*="nickname"]')?.textContent?.trim() ||
+              document.querySelector('[class*="userName"]')?.textContent?.trim() ||
+              document.querySelector('[class*="user-name"]')?.textContent?.trim() ||
+              '';
             const desc = document.querySelector('[class*="desc"]')?.textContent?.trim() || '';
             const avatar = document.querySelector('[class*="avatar"] img')?.getAttribute('src') || '';
             const stats: Record<string, string> = {};
@@ -263,12 +309,12 @@ export default function (xcli: XCLIAPI): void {
         const page = (ctx as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
         const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const waitForHuman = (ctx as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
         const interceptor = interceptApi(page, API.SEARCH_NOTES, 'items', 'id');
         try {
           await page.goto(`${XHS_BASE}/search_result?keyword=${encodeURIComponent(params.keyword)}&source=web_search_result_notes`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-          await page.waitForTimeout(3000);
           await dismissModals(page);
-          await scrollAndCollect(page, params.maxPages || 3, () => interceptor.items().length);
+          await scrollAndCollect(page, params.maxPages || 3, () => interceptor.items().length, { waitForHuman });
           const notes = interceptor.items().map(parseNoteBrief);
           tips.push(`搜索到 ${notes.length} 条笔记`);
           return { data: { keyword: params.keyword, total: notes.length, notes }, tips };
@@ -280,19 +326,23 @@ export default function (xcli: XCLIAPI): void {
   site.command('comments', {
     description: '获取笔记评论（API 拦截）',
     scope: 'browser',
-    parameters: z.object({ noteId: z.string().describe('笔记 ID'), maxPages: z.number().default(5).describe('最大滚动次数') }),
+    parameters: z.object({ noteId: z.string().describe('笔记 ID'), maxPages: z.number().default(8).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu comments --noteId "67xxxxxxxxxxxxxx"', description: '获取笔记评论' }],
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
         const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const waitForHuman = (ctx as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
         const interceptor = interceptApi(page, API.COMMENT_PAGE, 'comments', 'id');
         try {
           await page.goto(`${XHS_BASE}/explore/${params.noteId}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-          await page.waitForTimeout(3000);
           await dismissModals(page);
-          await scrollAndCollect(page, params.maxPages || 5, () => interceptor.items().length);
+          await scrollAndCollect(page, params.maxPages || 8, () => interceptor.items().length, {
+            delay: 3000,
+            staleThreshold: 4,
+            waitForHuman,
+          });
           const comments = interceptor.items().map(parseComment);
           tips.push(`采集到 ${comments.length} 条评论`);
           return { data: { total: comments.length, comments }, tips };
@@ -311,12 +361,12 @@ export default function (xcli: XCLIAPI): void {
         const page = (ctx as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
         const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const waitForHuman = (ctx as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
         const interceptor = interceptApi(page, API.HOME_FEED, 'items', 'id');
         try {
           await page.goto(`${XHS_BASE}/explore`, { waitUntil: 'domcontentloaded', timeout: 30000 });
-          await page.waitForTimeout(3000);
           await dismissModals(page);
-          await scrollAndCollect(page, params.maxPages || 3, () => interceptor.items().length);
+          await scrollAndCollect(page, params.maxPages || 3, () => interceptor.items().length, { waitForHuman });
           const notes = interceptor.items().map(parseNoteBrief);
           tips.push(`获取到 ${notes.length} 条推荐笔记`);
           return { data: { total: notes.length, notes }, tips };
@@ -338,8 +388,8 @@ export default function (xcli: XCLIAPI): void {
         await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 15000 });
         await page.waitForTimeout(3000);
         const finalUrl = page.url();
-        const noteIdMatch = finalUrl.match(/\/explore\/([a-f0-9]+)/);
-        const userIdMatch = finalUrl.match(/\/user\/profile\/([a-f0-9]+)/);
+        const noteIdMatch = finalUrl.match(/\/explore\/([a-zA-Z0-9]+)/);
+        const userIdMatch = finalUrl.match(/\/user\/profile\/([a-zA-Z0-9]+)/);
         const noteId = noteIdMatch ? noteIdMatch[1] : '';
         const userId = userIdMatch ? userIdMatch[1] : '';
         tips.push(`最终 URL: ${finalUrl}`);

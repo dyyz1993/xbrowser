@@ -34,9 +34,16 @@ const CAPTCHA_SELECTORS: CaptchaSelectorRule[] = [
   { selector: '#captcha', type: 'generic', confidence: 'medium' },
   { selector: '.captcha-image', type: 'generic', confidence: 'medium' },
   { selector: '#captcha_image', type: 'generic', confidence: 'medium' },
+
+  // 小红书滑块验证
+  { selector: '.captcha-verify-image', type: 'xhs-slider', confidence: 'high' },
+  { selector: '.verify-wrap', type: 'xhs-slider', confidence: 'medium' },
+  { selector: '[class*="slider-verify"]', type: 'xhs-slider', confidence: 'medium' },
+  { selector: '[class*="captcha-verify"]', type: 'xhs-slider', confidence: 'medium' },
+  { selector: '[class*="verify-image"]', type: 'xhs-slider', confidence: 'low' },
 ];
 
-const CAPTCHA_TEXT_PATTERNS = [
+const CAPTCHA_TEXT_PATTERNS: (string | RegExp)[] = [
   'verify you are human',
   'prove you are not a robot',
   'complete the challenge',
@@ -45,6 +52,12 @@ const CAPTCHA_TEXT_PATTERNS = [
   'security check',
   "prove you're human",
   'not a robot',
+
+  // 小红书验证提示
+  /xiaohongshu.*verif/i,
+  /拖动滑块/,
+  /请完成验证/,
+  /slide.*verify/i,
 ];
 
 /**
@@ -82,9 +95,11 @@ export class CaptchaDetector {
     try {
       const bodyText = await page.textContent('body').catch(() => '');
       if (bodyText) {
-        const lower = bodyText.toLowerCase();
         for (const pattern of CAPTCHA_TEXT_PATTERNS) {
-          if (lower.includes(pattern)) {
+          const matches = pattern instanceof RegExp
+            ? pattern.test(bodyText)
+            : bodyText.toLowerCase().includes(pattern);
+          if (matches) {
             return {
               detected: true,
               type: 'text-challenge',

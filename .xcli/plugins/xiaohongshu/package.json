@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-xiaohongshu",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "小红书 - 笔记详情、用户信息、搜索、评论采集",
   "main": "index.ts",
   "keywords": ["xbrowser", "xiaohongshu", "redbook", "xhs", "笔记", "social-media"],
