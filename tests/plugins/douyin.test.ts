@@ -43,7 +43,7 @@ describe('douyin plugin', () => {
 
   it('should register expected command names', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
-    expect(names).toEqual(expect.arrayContaining(['videos', 'profile', 'detail', 'comments', 'user-comments', 'video-stats']));
+    expect(names).toEqual(expect.arrayContaining(['videos', 'profile', 'detail', 'comments', 'user-comments', 'ai-subtitle']));
   });
 
   describe('profile command handler', () => {

@@ -1,7 +1,7 @@
 {
   "name": "xbrowser-plugin-douyin",
-  "version": "2.0.0",
-  "description": "XBrowser 抖音数据采集插件 - 支持视频评论、用户评论、作品统计等功能",
+  "version": "2.1.0",
+  "description": "XBrowser 抖音数据采集插件 - 支持视频评论、用户评论、作品统计、AI 字幕提取等功能",
   "type": "module",
   "main": "index.ts",
   "keywords": [
@@ -12,7 +12,8 @@
     "web-scraping",
     "data-collection",
     "cdp",
-    "playwright"
+    "playwright",
+    "ai-subtitle"
   ],
   "dependencies": {
     "zod": "^3.24.0"

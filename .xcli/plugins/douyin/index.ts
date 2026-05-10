@@ -421,65 +421,238 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
-  site.command('video-stats', {
-    description: '获取单个作品数据（网络拦截）',
+  site.command('ai-subtitle', {
+    description: '通过抖音 AI 提取视频字幕',
     scope: 'browser',
     parameters: z.object({
-      awemeId: z.string().describe('视频 ID'),
+      url: z.string().describe('视频详情页 URL 或用户主页 URL'),
+      videoIndex: z.number().optional().default(0).describe('第几个作品（0=第一个，仅用户主页时有效）'),
+      prompt: z.string().optional().default('提取当前视频的字幕信息').describe('AI 提示词'),
+      waitTimeout: z.number().optional().default(60000).describe('等待 AI 响应超时（毫秒）'),
     }),
     examples: [
-      { cmd: 'xbrowser douyin video-stats --awemeId "7xxxxxxxxxxxxx"', description: '获取视频统计数据' },
+      { cmd: 'xbrowser douyin ai-subtitle --url "https://www.douyin.com/video/7xxx"', description: '提取指定视频字幕' },
+      { cmd: 'xbrowser douyin ai-subtitle --url "https://www.douyin.com/user/xxx" --videoIndex 0', description: '提取用户第一个作品字幕' },
     ],
     handler: async (params, ctx) => {
+      const page = (ctx as Record<string, unknown>).page as Page;
+      if (!page) throw new Error('需要浏览器页面');
+      const tips = buildCtxTips(ctx as Record<string, unknown>);
+      const waitForHuman = (ctx as Record<string, unknown>).waitForHuman as
+        | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
+        | undefined;
+
+      const AI_ICON_SELECTORS = [
+        'button[class*="ai"]',
+        '[class*="ai-icon"]',
+        '[class*="aiIcon"]',
+        '[data-e2e="ai-button"]',
+        'button[aria-label*="AI"]',
+        'button[aria-label*="ai"]',
+        '[class*="AIPanel"] button',
+        'svg[class*="ai"]',
+      ];
+
+      const IFRAME_SELECTORS = [
+        'iframe[class*="ai"]',
+        'iframe[src*="ai"]',
+        'iframe[class*="AIPanel"]',
+        'iframe[class*="chat"]',
+      ];
+
+      const INPUT_SELECTORS = [
+        'textarea',
+        'input[type="text"]',
+        '[contenteditable="true"]',
+        'div[contenteditable="true"]',
+      ];
+
+      const SEND_SELECTORS = [
+        'button[type="submit"]',
+        'button:has-text("发送")',
+        'button:has-text("Send")',
+        '[class*="send"]',
+        '[class*="submit"]',
+      ];
+
+      const RESPONSE_SELECTORS = [
+        '[class*="message"]',
+        '[class*="response"]',
+        '[class*="ai-response"]',
+        '[class*="content"]',
+      ];
+
       try {
-        const page = (ctx as Record<string, unknown>).page as Page;
-        if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as Record<string, unknown>);
+        let videoUrl = params.url;
+        const isUserPage = params.url.includes('/user/');
 
-        let videoData: Record<string, unknown> | null = null;
-        const interceptor = interceptApi(page, API.AWEME_DETAIL, 'aweme_detail', 'aweme_id');
+        if (isUserPage) {
+          tips.push('进入用户主页...');
+          await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.waitForTimeout(3000);
 
-        const detailHandler = async (response: Response) => {
-          if (!response.url().includes(API.AWEME_DETAIL)) return;
-          try {
-            const json = await response.json();
-            const awemeDetail = (json as Record<string, unknown>)?.aweme_detail;
-            if (awemeDetail && typeof awemeDetail === 'object') {
-              videoData = awemeDetail as Record<string, unknown>;
-            }
-          } catch (err) {
-            if (process.env.DEBUG) {
-              console.warn('[douyin] Failed to parse detail response:', (err as Error).message);
+          const videoSelectors = [
+            'li[data-e2e="recommend-list-item"]',
+            'li[class*="video-item"]',
+            'div[class*="video-card"]',
+            'a[href*="/video/"]',
+          ];
+
+          let videoEl: import('playwright-core').ElementHandle | null = null;
+          for (const sel of videoSelectors) {
+            const videos = await page.$$(sel);
+            if (videos.length > 0 && params.videoIndex < videos.length) {
+              videoEl = videos[params.videoIndex];
+              break;
             }
           }
-        };
 
-        page.on('response', detailHandler);
-        try {
-          await page.goto(`${DOUYIN_BASE}/video/${params.awemeId}`, {
-            waitUntil: 'domcontentloaded',
-            timeout: 30000,
-          });
-          await page.waitForTimeout(5000);
-
-          if (!videoData) {
-            return {
-              data: null,
-              tips: [...tips, '未获取到视频数据，可能需要登录或视频不存在'],
-            };
+          if (!videoEl) {
+            if (waitForHuman) {
+              tips.push('未找到作品元素，等待手动操作...');
+              await waitForHuman({ reason: '请在浏览器中点击要提取字幕的视频', timeout: 60 });
+              videoUrl = page.url();
+            } else {
+              throw new Error(`未找到第 ${params.videoIndex + 1} 个作品`);
+            }
+          } else {
+            await videoEl.click();
+            await page.waitForTimeout(3000);
+            videoUrl = page.url();
+            tips.push(`已点击第 ${params.videoIndex + 1} 个作品`);
           }
-
-          const parsedVideo = parseVideo(videoData);
-          tips.push(`视频: ${parsedVideo.desc?.slice(0, 50)}`);
-          return { data: parsedVideo, tips };
-        } finally {
-          page.off('response', detailHandler);
-          interceptor.dispose();
+        } else {
+          tips.push('进入视频详情页...');
+          await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.waitForTimeout(3000);
         }
+
+        tips.push('正在查找 AI 图标...');
+        let aiIconFound = false;
+        for (const sel of AI_ICON_SELECTORS) {
+          const el = await page.$(sel);
+          if (el) {
+            await el.click();
+            aiIconFound = true;
+            tips.push(`已点击 AI 图标 (${sel.split('[')[0]})`);
+            break;
+          }
+        }
+
+        if (!aiIconFound) {
+          if (waitForHuman) {
+            tips.push('未找到 AI 图标，等待手动操作...');
+            await waitForHuman({ reason: '请在浏览器中找到并点击 AI 图标', timeout: 60 });
+          } else {
+            throw new Error('未找到 AI 图标，请确认页面已加载 AI 功能');
+          }
+        }
+
+        await page.waitForTimeout(2000);
+        tips.push('等待 AI 面板加载...');
+
+        let frame: import('playwright-core').FrameLocator | null = null;
+        for (const sel of IFRAME_SELECTORS) {
+          const iframeEl = page.frameLocator(sel);
+          const count = await iframeEl.locator('body').count();
+          if (count > 0) {
+            frame = iframeEl;
+            tips.push(`已定位到 iframe`);
+            break;
+          }
+        }
+
+        if (!frame) {
+          frame = page.frameLocator('iframe').first();
+          tips.push('使用第一个 iframe');
+        }
+
+        let inputBox: import('playwright-core').Locator | null = null;
+        for (const sel of INPUT_SELECTORS) {
+          const el = frame.locator(sel).first();
+          const count = await el.count();
+          if (count > 0) {
+            inputBox = el;
+            tips.push(`已定位到输入框`);
+            break;
+          }
+        }
+
+        if (!inputBox) {
+          if (waitForHuman) {
+            tips.push('未找到输入框，等待手动操作...');
+            await waitForHuman({ reason: '请在 AI 面板中输入提示词并发送', timeout: 60 });
+            const response = await frame.locator(RESPONSE_SELECTORS.join(',')).last().textContent();
+            return {
+              data: { subtitle: response?.trim() || '', prompt: params.prompt },
+              tips: [...tips, '字幕提取完成'],
+            };
+          } else {
+            throw new Error('未找到 AI 输入框');
+          }
+        }
+
+        await inputBox.fill(params.prompt!);
+        await page.waitForTimeout(500);
+        tips.push(`已输入提示词: ${params.prompt}`);
+
+        let sent = false;
+        for (const sel of SEND_SELECTORS) {
+          const btn = frame.locator(sel).first();
+          const count = await btn.count();
+          if (count > 0) {
+            await btn.click();
+            sent = true;
+            tips.push('已点击发送按钮');
+            break;
+          }
+        }
+
+        if (!sent) {
+          await inputBox.press('Enter');
+          tips.push('已按 Enter 发送');
+        }
+
+        tips.push('等待 AI 响应...');
+        await page.waitForTimeout(5000);
+
+        const startTime = Date.now();
+        let response = '';
+        while (Date.now() - startTime < params.waitTimeout!) {
+          await page.waitForTimeout(2000);
+          for (const sel of RESPONSE_SELECTORS) {
+            const text = await frame!.locator(sel).last().textContent();
+            if (text && text.trim().length > 50 && text !== params.prompt) {
+              response = text.trim();
+              break;
+            }
+          }
+          if (response) break;
+        }
+
+        if (!response) {
+          if (waitForHuman) {
+            tips.push('AI 响应超时，等待手动操作...');
+            await waitForHuman({ reason: '请等待 AI 响应完成', timeout: 60 });
+            response = (await frame!.locator(RESPONSE_SELECTORS.join(',')).last().textContent()) || '';
+          } else {
+            throw new Error('AI 响应超时');
+          }
+        }
+
+        tips.push('字幕提取完成');
+        return {
+          data: {
+            subtitle: response,
+            prompt: params.prompt,
+            videoUrl,
+          },
+          tips,
+        };
       } catch (error) {
         return {
           data: null,
-          tips: ['获取视频统计数据失败'],
+          tips,
           message: error instanceof Error ? error.message : '未知错误',
         };
       }
