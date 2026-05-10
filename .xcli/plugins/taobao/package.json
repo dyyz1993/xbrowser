@@ -1,14 +1,14 @@
 {
   "name": "xbrowser-plugin-taobao",
-  "version": "2.0.0",
-  "description": "淘宝 - 商品搜索、店铺信息与评价采集",
+  "version": "3.0.0",
+  "description": "淘宝 - 商品搜索、详情、店铺、评价与优惠券采集（需登录态）",
   "main": "index.ts",
   "keywords": ["xbrowser", "xbrowser-plugin", "taobao", "ecommerce", "shopping"],
   "author": "dyyz1993",
   "license": "MIT",
   "xbrowser": {
     "site": "https://www.taobao.com",
-    "requiresLogin": false,
-    "commands": ["login", "search", "detail", "update-profile", "shop", "reviews"]
+    "requiresLogin": true,
+    "commands": ["login", "search", "search-advanced", "detail", "item-detail", "reviews", "shop", "seller-items", "coupons", "update-profile"]
   }
 }
