@@ -1,14 +1,12 @@
 {
   "name": "xbrowser-plugin-douyin",
   "version": "1.0.0",
-  "description": "抖音页面数据提取（DOM 方式）",
+  "type": "module",
   "main": "index.ts",
-  "keywords": ["xbrowser", "xbrowser-plugin", "douyin.com"],
-  "author": "dyyz1993",
-  "license": "MIT",
-  "xbrowser": {
-    "site": "https://www.douyin.com",
-    "requiresLogin": false,
-    "commands": ["ai-summary", "user-info", "video-info"]
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
   }
 }

@@ -4,6 +4,7 @@ import { homedir } from 'os';
 import { createInterface, type Interface as ReadlineInterface } from 'readline';
 import { createTarball, type AuthConfig } from '../plugin/publisher.js';
 import { readJsonFile } from '../utils/json-file.js';
+import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 
 function getAuthDir(): string {
   return resolve(homedir(), '.xbrowser');
@@ -25,8 +26,8 @@ function saveAuth(config: AuthConfig): void {
   writeFileSync(getAuthFile(), JSON.stringify(config, null, 2), 'utf-8');
 }
 
-function getRegistryUrl(options: Record<string, unknown>): string {
-  return (options['registry'] as string) || process.env.XBROWSER_REGISTRY || 'https://xbrowser.dev';
+function getRegistryUrl(options: Record<string, unknown>, fallbackRegistry?: string): string {
+  return (options['registry'] as string) || process.env.XBROWSER_REGISTRY || fallbackRegistry || 'https://xbrowser.dev';
 }
 
 function prompt(rl: ReadlineInterface, question: string, hidden = false): Promise<string> {
@@ -72,6 +73,7 @@ export async function handleRegister(
 ): Promise<void> {
   const { outputResult, outputError } = await import('./output.js');
   const registryUrl = getRegistryUrl(options);
+  await ensureProxyFetch();
 
   console.log('\nRegister for xbrowser developer account\n');
 
@@ -154,13 +156,15 @@ export async function handlePublish(
   mode: string
 ): Promise<void> {
   const pluginDir = (args[0] as string) || process.cwd();
-  const registryUrl = getRegistryUrl(options);
   const auth = loadAuth();
 
   if (!auth?.token) {
     console.error('Not logged in. Run: xbrowser plugin login');
     process.exit(1);
   }
+
+  const registryUrl = getRegistryUrl(options, auth.registry);
+  await ensureProxyFetch();
 
   try {
     const result = await createTarball(pluginDir, {
@@ -248,7 +252,9 @@ export async function handlePublish(
     const { outputResult } = await import('./output.js');
     outputResult({ ok: true, name: result.name, version: result.version, slug }, mode);
   } catch (e: unknown) {
-    console.error('Error:', e instanceof Error ? e.message : String(e));
+    const msg = e instanceof Error ? e.message : String(e);
+    const cause = e instanceof Error && e.cause instanceof Error ? ` (${e.cause.message})` : '';
+    console.error(`Error: ${msg}${cause}`);
     process.exit(1);
   }
 }
@@ -260,6 +266,7 @@ export async function handlePluginLogin(
 ): Promise<void> {
   const registryUrl = getRegistryUrl(options);
   const { outputResult, outputError } = await import('./output.js');
+  await ensureProxyFetch();
 
   const token = options['token'] as string | undefined;
   if (token) {
@@ -340,7 +347,8 @@ export async function handlePluginWhoami(
     return;
   }
 
-  const registryUrl = getRegistryUrl(options);
+  const registryUrl = getRegistryUrl(options, auth.registry);
+  await ensureProxyFetch();
 
   try {
     const resp = await fetch(`${registryUrl}/api/auth/verify`, {
@@ -357,7 +365,7 @@ export async function handlePluginWhoami(
       username: body.data?.username,
       email: body.data?.email,
       role: body.data?.role,
-      registry: auth.registry,
+      registry: registryUrl,
     }, mode);
   } catch (e: unknown) {
     outputError(e instanceof Error ? e.message : String(e));

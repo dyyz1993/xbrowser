@@ -266,7 +266,7 @@ export async function routeCommand(
           let session = findSession(sessionName);
           let createdSession = false;
           if (!session) {
-            session = await createSession(sessionName, undefined, {});
+            session = await createSession(sessionName, undefined, cdpEndpoint ? { cdpEndpoint } : {});
             createdSession = true;
           }
 

@@ -13,9 +13,11 @@ const mockXCLI = {
 
 function createMockPage(evaluateResult: unknown = {}) {
   return {
-    goto: vi.fn(),
-    waitForTimeout: vi.fn(),
+    goto: vi.fn().mockResolvedValue(undefined),
+    waitForTimeout: vi.fn().mockResolvedValue(undefined),
     evaluate: vi.fn(() => evaluateResult),
+    on: vi.fn(),
+    scrollTo: vi.fn(),
   };
 }
 
@@ -40,66 +42,62 @@ describe('douyin plugin', () => {
 
   it('should register expected command names', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
-    expect(names).toEqual(expect.arrayContaining(['ai-summary', 'user-info', 'video-info']));
+    expect(names).toEqual(expect.arrayContaining(['videos', 'profile', 'detail']));
   });
 
-  describe('ai-summary command handler', () => {
+  describe('profile command handler', () => {
     let handler: Function;
     beforeEach(() => {
-      const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'ai-summary');
+      const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'profile');
       handler = call![1].handler;
     });
 
     it('should throw if no page', async () => {
-      await expect(handler({ url: 'https://douyin.com/user/123', awemeId: 'a1' }, {})).rejects.toThrow('需要浏览器页面上下文');
-    });
-
-    it('should throw if no summary found', async () => {
-      const mockPage = createMockPage(null);
-      await expect(handler({ url: 'https://douyin.com/user/123', awemeId: 'a1' }, { page: mockPage })).rejects.toThrow('未找到 AI 章节摘要');
-    });
-
-    it('should return summary data', async () => {
-      const mockPage = createMockPage({ summary: 'Test summary', chapters: [] });
-      const result = await handler({ url: 'https://douyin.com/user/123', awemeId: 'a1' }, { page: mockPage });
-      expect(result.awemeId).toBe('a1');
-      expect(result.summary).toBe('Test summary');
-    });
-  });
-
-  describe('user-info command handler', () => {
-    let handler: Function;
-    beforeEach(() => {
-      const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'user-info');
-      handler = call![1].handler;
-    });
-
-    it('should throw if no page', async () => {
-      await expect(handler({ url: 'https://douyin.com/user/123' }, {})).rejects.toThrow('需要浏览器页面上下文');
+      await expect(handler({ url: 'https://douyin.com/user/123' }, {})).rejects.toThrow('需要浏览器页面');
     });
 
     it('should return user info', async () => {
       const mockPage = createMockPage({ nickname: 'TestUser', signature: 'sig', stats: {} });
       const result = await handler({ url: 'https://douyin.com/user/123' }, { page: mockPage });
-      expect(result.nickname).toBe('TestUser');
+      expect(result.data.nickname).toBe('TestUser');
     });
   });
 
-  describe('video-info command handler', () => {
+  describe('detail command handler', () => {
     let handler: Function;
     beforeEach(() => {
-      const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'video-info');
+      const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'detail');
       handler = call![1].handler;
     });
 
     it('should throw if no page', async () => {
-      await expect(handler({ awemeId: 'v1' }, {})).rejects.toThrow('需要浏览器页面上下文');
+      await expect(handler({ awemeId: 'v1' }, {})).rejects.toThrow('需要浏览器页面');
     });
 
     it('should return video info', async () => {
-      const mockPage = createMockPage({ desc: 'Video desc', author: 'Auth', likeCount: '100', commentCount: '10', collectCount: '5', shareCount: '2' });
+      const mockPage = createMockPage({ desc: 'Video desc', author: 'Auth', likeCount: '100', commentCount: '10' });
       const result = await handler({ awemeId: 'v1' }, { page: mockPage });
-      expect(result.desc).toBe('Video desc');
+      expect(result.data.awemeId).toBe('v1');
+      expect(result.data.desc).toBe('Video desc');
+    });
+  });
+
+  describe('videos command handler', () => {
+    let handler: Function;
+    beforeEach(() => {
+      const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'videos');
+      handler = call![1].handler;
+    });
+
+    it('should throw if no page', async () => {
+      await expect(handler({ url: 'https://douyin.com/user/123' }, {})).rejects.toThrow('需要浏览器页面');
+    });
+
+    it('should return videos data', async () => {
+      const mockPage = createMockPage();
+      const result = await handler({ url: 'https://douyin.com/user/123', maxPages: 1 }, { page: mockPage });
+      expect(result.data.total).toBe(0);
+      expect(result.data.videos).toEqual([]);
     });
   });
 });

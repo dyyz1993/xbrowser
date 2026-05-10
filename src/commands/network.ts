@@ -99,14 +99,55 @@ function buildJsonOutput(
   captures: NetworkCapture[],
   consoleMessages: string[],
   totalCount: number,
-): NetworkJsonResult {
+  searchResults?: unknown,
+): NetworkJsonResult & { searchResults?: unknown } {
   return {
     url,
     captures,
     console: consoleMessages,
     total: totalCount,
     timestamp: Date.now(),
+    searchResults,
   };
+}
+
+function searchInObject(obj: unknown, searchTerm: string, path: string = ''): unknown {
+  if (obj === null || obj === undefined) return undefined;
+
+  if (typeof obj === 'string') {
+    return obj.toLowerCase().includes(searchTerm.toLowerCase()) ? obj : undefined;
+  }
+
+  if (typeof obj !== 'object') {
+    const str = String(obj).toLowerCase();
+    return str.includes(searchTerm.toLowerCase()) ? obj : undefined;
+  }
+
+  if (Array.isArray(obj)) {
+    const results: unknown[] = [];
+    for (let i = 0; i < obj.length; i++) {
+      const found = searchInObject(obj[i], searchTerm, `${path}[${i}]`);
+      if (found !== undefined) results.push(found);
+    }
+    return results.length > 0 ? results : undefined;
+  }
+
+  const record = obj as Record<string, unknown>;
+  const results: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(record)) {
+    const currentPath = path ? `${path}.${key}` : key;
+    if (key.toLowerCase().includes(searchTerm.toLowerCase())) {
+      results[key] = value;
+    } else {
+      const found = searchInObject(value, searchTerm, currentPath);
+      if (found !== undefined) {
+        results[key] = found;
+      }
+    }
+  }
+
+  return Object.keys(results).length > 0 ? results : undefined;
 }
 
 export const networkCommand = registerCommand({
@@ -117,6 +158,7 @@ export const networkCommand = registerCommand({
     url: z.string(),
     filter: z.string().optional(),
     match: z.string().optional(),
+    search: z.string().optional().describe('Search within all captured response bodies'),
     console: z.boolean().default(false),
     timeout: z.number().default(30000),
     wait: z.number().default(3000),
@@ -200,9 +242,11 @@ export const networkCommand = registerCommand({
       }
 
       await page.goto(p.url, {
-        waitUntil: 'networkidle',
+        waitUntil: 'domcontentloaded',
         timeout: p.timeout,
       });
+
+      await page.waitForLoadState('networkidle', { timeout: p.timeout }).catch(() => {});
 
       await page.waitForTimeout(p.wait);
 
@@ -213,10 +257,28 @@ export const networkCommand = registerCommand({
         results = captures.filter((c) => JSON.stringify(c).includes(p.match!));
       }
 
+      let searchResults: unknown = undefined;
+      if (p.search) {
+        const allMatches: Array<{ url: string; path: string; match: unknown }> = [];
+        for (const cap of results) {
+          if (cap.body !== undefined) {
+            const found = searchInObject(cap.body, p.search);
+            if (found !== undefined) {
+              allMatches.push({
+                url: cap.url,
+                path: cap.path,
+                match: found,
+              });
+            }
+          }
+        }
+        searchResults = allMatches.length > 0 ? allMatches : null;
+      }
+
       const duration = Date.now() - startTime;
 
       if (p.format === 'json') {
-        return ok(buildJsonOutput(p.url, results, consoleMessages, totalCount));
+        return ok(buildJsonOutput(p.url, results, consoleMessages, totalCount, searchResults));
       }
 
       return ok(buildSummaryOutput(p.url, duration, results, consoleMessages, totalCount));

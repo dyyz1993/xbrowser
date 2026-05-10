@@ -46,8 +46,9 @@ export function extractTarGz(tarballPath: string, targetDir: string): void {
 export function flattenPackageRoot(targetDir: string): void {
   const entries = readdirSync(targetDir, { withFileTypes: true });
   const dirs = entries.filter((e) => e.isDirectory());
-  if (dirs.length === 1 && dirs[0].name === 'package') {
-    const pkgDir = resolve(targetDir, 'package');
+  const files = entries.filter((e) => !e.isDirectory());
+  if (dirs.length === 1 && files.length === 0) {
+    const pkgDir = resolve(targetDir, dirs[0].name);
     const items = readdirSync(pkgDir);
     for (const item of items) {
       const src = resolve(pkgDir, item);

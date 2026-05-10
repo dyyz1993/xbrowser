@@ -125,6 +125,7 @@ export class PluginInstaller {
 
   private detectSourceType(source: string): 'local' | 'npm' | 'git' | 'url' {
     if (source.startsWith('http://') || source.startsWith('https://')) {
+      if (source.includes('github.com/')) return 'git';
       if (source.endsWith('.git')) return 'git';
       return 'url';
     }
@@ -149,7 +150,9 @@ export class PluginInstaller {
       }
       case 'url': {
         const parts = new URL(source).pathname.split('/');
-        return parts[parts.length - 1] || 'plugin';
+        let derived = parts[parts.length - 1] || 'plugin';
+        derived = derived.replace(/\.(tar\.gz|tgz|tar|zip)$/, '');
+        return derived;
       }
     }
   }

@@ -134,15 +134,15 @@ describe('install-utils', () => {
       expect(existsSync(resolve(targetDir, 'other'))).toBe(true);
     });
 
-    it('should not flatten when single dir is not named package', () => {
+    it('should flatten any single root directory regardless of name', () => {
       const targetDir = resolve(TEST_DIR, 'not-package');
       mkdirSync(resolve(targetDir, 'dist'), { recursive: true });
       writeFileSync(resolve(targetDir, 'dist', 'file.txt'), 'a');
 
       flattenPackageRoot(targetDir);
 
-      expect(existsSync(resolve(targetDir, 'dist'))).toBe(true);
-      expect(existsSync(resolve(targetDir, 'file.txt'))).toBe(false);
+      expect(existsSync(resolve(targetDir, 'dist'))).toBe(false);
+      expect(existsSync(resolve(targetDir, 'file.txt'))).toBe(true);
     });
   });
 

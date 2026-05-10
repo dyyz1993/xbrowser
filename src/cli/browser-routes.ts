@@ -264,25 +264,26 @@ export async function handleBrowserCommand(
             timeout: options.timeout || options.t ? Number(options.timeout || options.t) : undefined,
           };
           break;
-        case 'network': {
-          const subCmd = args[0];
-          if (subCmd === 'intercept') {
-            args = args.slice(1);
-          }
-          if (!args[0]) outputError('Usage: xbrowser network <url> [--filter pattern] [--match keyword] [--console] [--timeout ms] [--wait ms] [--limit N] [--format summary|json]');
-          cmdName = 'network';
-          params = {
-            url: args[0],
-            filter: options.filter as string | undefined,
-            match: options.match as string | undefined,
-            console: !!(options.console),
-            timeout: options.timeout ? Number(options.timeout) : undefined,
-            wait: options.wait ? Number(options.wait) : undefined,
-            limit: options.limit ? Number(options.limit) : undefined,
-            format: (options.format as string | undefined),
-          };
-          break;
-        }
+         case 'network': {
+           const subCmd = args[0];
+           if (subCmd === 'intercept') {
+             args = args.slice(1);
+           }
+           if (!args[0]) outputError('Usage: xbrowser network <url> [--filter pattern] [--match keyword] [--search keyword] [--console] [--timeout ms] [--wait ms] [--limit N] [--format summary|json]');
+           cmdName = 'network';
+           params = {
+             url: args[0],
+             filter: options.filter as string | undefined,
+             match: options.match as string | undefined,
+             search: options.search as string | undefined,
+             console: !!(options.console),
+             timeout: options.timeout ? Number(options.timeout) : undefined,
+             wait: options.wait ? Number(options.wait) : undefined,
+             limit: options.limit ? Number(options.limit) : undefined,
+             format: (options.format as string | undefined),
+           };
+           break;
+         }
        default:
          cmdName = command;
          params = { ...options };
