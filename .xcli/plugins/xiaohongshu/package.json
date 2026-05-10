@@ -1,0 +1,20 @@
+{
+  "name": "xbrowser-plugin-xiaohongshu",
+  "version": "1.0.0",
+  "description": "小红书 - 笔记详情、用户信息、搜索、评论采集",
+  "main": "index.ts",
+  "keywords": ["xbrowser", "xiaohongshu", "redbook", "xhs", "笔记", "social-media"],
+  "author": "XBrowser Team",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://www.xiaohongshu.com",
+    "requiresLogin": false,
+    "commands": ["detail", "notes", "profile", "search", "comments", "feed", "resolve-url"]
+  },
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  }
+}

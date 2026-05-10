@@ -1,0 +1,352 @@
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import { z } from 'zod';
+
+type Page = import('playwright-core').Page;
+type Response = import('playwright-core').Response;
+
+const XHS_BASE = 'https://www.xiaohongshu.com';
+const API = {
+  FEED: '/api/sns/web/v1/feed',
+  USER_POSTED: '/api/sns/web/v1/user_posted',
+  COMMENT_PAGE: '/api/sns/web/v2/comment/page',
+  USER_INFO: '/api/sns/web/v1/user/otherinfo',
+  SEARCH_NOTES: '/api/sns/web/v1/search/notes',
+  HOME_FEED: '/api/sns/web/v1/homefeed',
+} as const;
+
+function n(v: unknown): number { return Number(v ?? 0); }
+function s(v: unknown): string { return String(v ?? ''); }
+
+function g(obj: unknown, path: string): unknown {
+  let cur: unknown = obj;
+  for (const k of path.split('.')) {
+    if (!cur || typeof cur !== 'object') return undefined;
+    cur = (cur as Record<string, unknown>)[k];
+  }
+  return cur;
+}
+
+function formatTime(ts: number): string {
+  if (ts <= 0) return '';
+  const d = new Date(ts);
+  const p = (v: number) => String(v).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
+function parseNote(item: Record<string, unknown>) {
+  const nc = (item.note_card || item) as Record<string, unknown>;
+  const inter = ((nc.interact_info ?? {}) || {}) as Record<string, unknown>;
+  const user = ((nc.user ?? {}) || {}) as Record<string, unknown>;
+  const cover = (nc.cover ?? {}) as Record<string, unknown>;
+  const images = Array.isArray(nc.image_list)
+    ? nc.image_list.map((img: unknown) => { const i = img as Record<string, unknown>; return s(i.url_default || i.url); })
+    : [];
+  const video = nc.video;
+  const videoUrl = video && typeof video === 'object' ? s((video as Record<string, unknown>).url) : '';
+  const tags = Array.isArray(nc.tag_list) ? nc.tag_list.map((t: unknown) => s((t as Record<string, unknown>).name)) : [];
+  return {
+    noteId: s(nc.note_id), type: s(nc.type), title: s(nc.title), desc: s(nc.desc),
+    cover: s(cover.url_default || cover.url), images, videoUrl,
+    author: { userId: s(user.user_id), nickname: s(user.nickname), avatar: s(user.avatar || '') },
+    statistics: {
+      likedCount: s(inter.liked_count), collectedCount: s(inter.collected_count),
+      commentCount: s(inter.comment_count), shareCount: s(inter.share_count),
+    },
+    tags, time: n(nc.time), lastUpdateTime: n(nc.last_update_time),
+  };
+}
+
+function parseComment(item: Record<string, unknown>) {
+  const ui = (item.user_info ?? {}) as Record<string, unknown>;
+  const ct = n(item.create_time);
+  return {
+    id: s(item.id || item.comment_id), content: s(item.content),
+    author: { userId: s(ui.user_id || ''), nickname: s(ui.nickname || ''), avatar: s(ui.image || '') },
+    likedCount: n(item.like_count || item.liked_count),
+    subCommentCount: n(item.sub_comment_count || item.sub_comment_total),
+    ipLocation: s(item.ip_location), createTime: ct, createTimeStr: formatTime(ct),
+  };
+}
+
+function parseUser(data: Record<string, unknown>) {
+  return {
+    userId: s(data.user_id), nickname: s(data.nickname), redId: s(data.red_id || data.xhsId),
+    avatar: s(data.image), desc: s(data.desc), gender: s(data.gender), ipLocation: s(data.ip_location),
+    tags: Array.isArray(data.tag) ? data.tag.map((t: unknown) => s((t as Record<string, unknown>).name || t)) : [],
+    statistics: { notes: n(data.notes), fans: n(data.fans), following: n(data.follows), interaction: n(data.interaction) },
+  };
+}
+
+function parseNoteBrief(item: Record<string, unknown>) {
+  const nc = ((item.note_card ?? item) ?? {}) as Record<string, unknown>;
+  const user = ((nc.user ?? {}) || {}) as Record<string, unknown>;
+  const inter = ((nc.interact_info ?? {}) || {}) as Record<string, unknown>;
+  const cover = (nc.cover ?? {}) as Record<string, unknown>;
+  return {
+    noteId: s(nc.note_id || item.id), type: s(nc.type),
+    title: s(nc.title || nc.display_title), cover: s(cover.url_default || cover.url || ''),
+    author: { userId: s(user.user_id), nickname: s(user.nickname) },
+    likedCount: s(inter.liked_count),
+  };
+}
+
+interface Interceptor { items: () => Record<string, unknown>[]; dispose: () => void }
+
+function interceptApi(page: Page, urlPattern: string, dataKey: string, idKey: string): Interceptor {
+  const items: Record<string, unknown>[] = [];
+  const seenIds = new Set<string>();
+  const handler = async (response: Response) => {
+    if (!response.url().includes(urlPattern)) return;
+    try {
+      const json = await response.json();
+      const root = (json as Record<string, unknown>)?.data;
+      if (!root) return;
+      const list = (root as Record<string, unknown>)?.[dataKey];
+      if (!Array.isArray(list)) return;
+      for (const item of list) {
+        const id = s(g(item, idKey));
+        if (!id || seenIds.has(id)) continue;
+        seenIds.add(id);
+        items.push(item as Record<string, unknown>);
+      }
+    } catch { /* body may be consumed */ }
+  };
+  page.on('response', handler);
+  return { items: () => items, dispose: () => page.off('response', handler) };
+}
+
+function interceptFirst<T>(page: Page, urlPattern: string, extractor: (json: unknown) => T | null) {
+  let result: T | null = null;
+  const handler = async (response: Response) => {
+    if (result || !response.url().includes(urlPattern)) return;
+    try { const json = await response.json(); const extracted = extractor(json); if (extracted) result = extracted; } catch { /* ignore */ }
+  };
+  page.on('response', handler);
+  return { get: () => result, dispose: () => page.off('response', handler) };
+}
+
+async function scrollAndCollect(page: Page, maxPages: number, getItemCount: () => number, opts: { delay?: number; staleThreshold?: number } = {}) {
+  const { delay = 2500, staleThreshold = 3 } = opts;
+  let lastCount = getItemCount(), staleCount = 0;
+  for (let i = 0; i < maxPages; i++) {
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(delay + Math.random() * 1000);
+    const cur = getItemCount();
+    if (cur === lastCount) staleCount++; else { staleCount = 0; lastCount = cur; }
+    if (staleCount >= staleThreshold) break;
+  }
+}
+
+async function dismissModals(page: Page) {
+  await page.evaluate(() => {
+    document.querySelectorAll('[class*="login-layer"], [class*="mask"], [class*="overlay"]').forEach((el) => {
+      if (el instanceof HTMLElement) el.style.display = 'none';
+    });
+    document.body.style.overflow = '';
+  });
+}
+
+function buildCtxTips(ctx: Record<string, unknown>): string[] {
+  const tips: string[] = [];
+  if (!ctx.cdpEndpoint) tips.push('建议使用 --cdp 9221 连接 Chrome 浏览器');
+  tips.push(`Session: ${ctx.sessionId || 'default'}`);
+  return tips;
+}
+
+function errResult(message: string, tips: string[]) {
+  return { data: null, tips, message };
+}
+
+export default function (xcli: XCLIAPI): void {
+  const site = xcli.createSite({ name: 'xiaohongshu', url: XHS_BASE, description: '小红书数据采集' });
+
+  site.command('detail', {
+    description: '获取笔记详情（API 拦截）',
+    scope: 'browser',
+    parameters: z.object({ noteId: z.string().describe('笔记 ID') }),
+    examples: [{ cmd: 'xbrowser xiaohongshu detail --noteId "67xxxxxxxxxxxxxx"', description: '获取笔记详情' }],
+    handler: async (params, ctx) => {
+      try {
+        const page = (ctx as Record<string, unknown>).page as Page;
+        if (!page) throw new Error('需要浏览器页面');
+        const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const interceptor = interceptFirst<Record<string, unknown>>(page, API.FEED, (json) => {
+          const data = (json as Record<string, unknown>)?.data;
+          if (!data || typeof data !== 'object') return null;
+          const items = (data as Record<string, unknown>)?.items;
+          if (!Array.isArray(items) || items.length === 0) return null;
+          return items[0] as Record<string, unknown>;
+        });
+        try {
+          await page.goto(`${XHS_BASE}/explore/${params.noteId}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.waitForTimeout(5000);
+          await dismissModals(page);
+          const raw = interceptor.get();
+          if (!raw) return { data: null, tips: [...tips, '未获取到笔记数据，可能笔记不存在或需要登录'] };
+          const note = parseNote(raw);
+          tips.push(`笔记: ${note.title?.slice(0, 50) || note.desc?.slice(0, 50)}`);
+          return { data: note, tips };
+        } finally { interceptor.dispose(); }
+      } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['获取笔记详情失败']); }
+    },
+  });
+
+  site.command('notes', {
+    description: '采集用户笔记列表（API 拦截）',
+    scope: 'browser',
+    parameters: z.object({ userId: z.string().describe('用户 ID'), maxPages: z.number().default(5).describe('最大滚动次数') }),
+    examples: [{ cmd: 'xbrowser xiaohongshu notes --userId "5xxxxxxxxxxxx"', description: '采集用户笔记' }],
+    handler: async (params, ctx) => {
+      try {
+        const page = (ctx as Record<string, unknown>).page as Page;
+        if (!page) throw new Error('需要浏览器页面');
+        const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const interceptor = interceptApi(page, API.USER_POSTED, 'notes', 'note_id');
+        try {
+          await page.goto(`${XHS_BASE}/user/profile/${params.userId}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.waitForTimeout(3000);
+          await dismissModals(page);
+          await scrollAndCollect(page, params.maxPages || 5, () => interceptor.items().length);
+          const notes = interceptor.items().map(parseNote);
+          tips.push(`采集到 ${notes.length} 条笔记`);
+          return { data: { total: notes.length, notes }, tips };
+        } finally { interceptor.dispose(); }
+      } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['采集用户笔记失败']); }
+    },
+  });
+
+  site.command('profile', {
+    description: '获取用户资料（API 拦截 + DOM 兜底）',
+    scope: 'browser',
+    parameters: z.object({ userId: z.string().describe('用户 ID') }),
+    examples: [{ cmd: 'xbrowser xiaohongshu profile --userId "5xxxxxxxxxxxx"', description: '获取用户资料' }],
+    handler: async (params, ctx) => {
+      try {
+        const page = (ctx as Record<string, unknown>).page as Page;
+        if (!page) throw new Error('需要浏览器页面');
+        const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const interceptor = interceptFirst<Record<string, unknown>>(page, API.USER_INFO, (json) => {
+          const data = (json as Record<string, unknown>)?.data;
+          return data && typeof data === 'object' ? data as Record<string, unknown> : null;
+        });
+        try {
+          await page.goto(`${XHS_BASE}/user/profile/${params.userId}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.waitForTimeout(5000);
+          await dismissModals(page);
+          const raw = interceptor.get();
+          if (raw) { const user = parseUser(raw); tips.push(`用户: ${user.nickname}`); return { data: user, tips }; }
+          const domInfo = await page.evaluate(() => {
+            const nickname = document.querySelector('[class*="nickname"]')?.textContent?.trim() || '';
+            const desc = document.querySelector('[class*="desc"]')?.textContent?.trim() || '';
+            const avatar = document.querySelector('[class*="avatar"] img')?.getAttribute('src') || '';
+            const stats: Record<string, string> = {};
+            document.querySelectorAll('[class*="count"]').forEach((el) => {
+              const label = el.previousElementSibling?.textContent?.trim() || '';
+              if (label) stats[label] = el.textContent?.trim() || '';
+            });
+            return { nickname, desc, avatar, stats };
+          });
+          tips.push(`用户(DOM): ${domInfo.nickname}`);
+          return { data: { userId: params.userId, ...domInfo }, tips };
+        } finally { interceptor.dispose(); }
+      } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['获取用户资料失败']); }
+    },
+  });
+
+  site.command('search', {
+    description: '搜索笔记（API 拦截）',
+    scope: 'browser',
+    parameters: z.object({ keyword: z.string().describe('搜索关键词'), maxPages: z.number().default(3).describe('最大滚动次数') }),
+    examples: [{ cmd: 'xbrowser xiaohongshu search --keyword "美食推荐"', description: '搜索笔记' }],
+    handler: async (params, ctx) => {
+      try {
+        const page = (ctx as Record<string, unknown>).page as Page;
+        if (!page) throw new Error('需要浏览器页面');
+        const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const interceptor = interceptApi(page, API.SEARCH_NOTES, 'items', 'id');
+        try {
+          await page.goto(`${XHS_BASE}/search_result?keyword=${encodeURIComponent(params.keyword)}&source=web_search_result_notes`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.waitForTimeout(3000);
+          await dismissModals(page);
+          await scrollAndCollect(page, params.maxPages || 3, () => interceptor.items().length);
+          const notes = interceptor.items().map(parseNoteBrief);
+          tips.push(`搜索到 ${notes.length} 条笔记`);
+          return { data: { keyword: params.keyword, total: notes.length, notes }, tips };
+        } finally { interceptor.dispose(); }
+      } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['搜索笔记失败']); }
+    },
+  });
+
+  site.command('comments', {
+    description: '获取笔记评论（API 拦截）',
+    scope: 'browser',
+    parameters: z.object({ noteId: z.string().describe('笔记 ID'), maxPages: z.number().default(5).describe('最大滚动次数') }),
+    examples: [{ cmd: 'xbrowser xiaohongshu comments --noteId "67xxxxxxxxxxxxxx"', description: '获取笔记评论' }],
+    handler: async (params, ctx) => {
+      try {
+        const page = (ctx as Record<string, unknown>).page as Page;
+        if (!page) throw new Error('需要浏览器页面');
+        const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const interceptor = interceptApi(page, API.COMMENT_PAGE, 'comments', 'id');
+        try {
+          await page.goto(`${XHS_BASE}/explore/${params.noteId}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.waitForTimeout(3000);
+          await dismissModals(page);
+          await scrollAndCollect(page, params.maxPages || 5, () => interceptor.items().length);
+          const comments = interceptor.items().map(parseComment);
+          tips.push(`采集到 ${comments.length} 条评论`);
+          return { data: { total: comments.length, comments }, tips };
+        } finally { interceptor.dispose(); }
+      } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['获取笔记评论失败']); }
+    },
+  });
+
+  site.command('feed', {
+    description: '获取首页推荐（API 拦截）',
+    scope: 'browser',
+    parameters: z.object({ maxPages: z.number().default(3).describe('最大滚动次数') }),
+    examples: [{ cmd: 'xbrowser xiaohongshu feed', description: '获取首页推荐' }],
+    handler: async (params, ctx) => {
+      try {
+        const page = (ctx as Record<string, unknown>).page as Page;
+        if (!page) throw new Error('需要浏览器页面');
+        const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const interceptor = interceptApi(page, API.HOME_FEED, 'items', 'id');
+        try {
+          await page.goto(`${XHS_BASE}/explore`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.waitForTimeout(3000);
+          await dismissModals(page);
+          await scrollAndCollect(page, params.maxPages || 3, () => interceptor.items().length);
+          const notes = interceptor.items().map(parseNoteBrief);
+          tips.push(`获取到 ${notes.length} 条推荐笔记`);
+          return { data: { total: notes.length, notes }, tips };
+        } finally { interceptor.dispose(); }
+      } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['获取首页推荐失败']); }
+    },
+  });
+
+  site.command('resolve-url', {
+    description: '解析小红书短链',
+    scope: 'browser',
+    parameters: z.object({ url: z.string().describe('短链 URL') }),
+    examples: [{ cmd: 'xbrowser xiaohongshu resolve-url --url "https://xhslink.com/xxx"', description: '解析短链' }],
+    handler: async (params, ctx) => {
+      try {
+        const page = (ctx as Record<string, unknown>).page as Page;
+        if (!page) throw new Error('需要浏览器页面');
+        const tips = buildCtxTips(ctx as Record<string, unknown>);
+        await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        await page.waitForTimeout(3000);
+        const finalUrl = page.url();
+        const noteIdMatch = finalUrl.match(/\/explore\/([a-f0-9]+)/);
+        const userIdMatch = finalUrl.match(/\/user\/profile\/([a-f0-9]+)/);
+        const noteId = noteIdMatch ? noteIdMatch[1] : '';
+        const userId = userIdMatch ? userIdMatch[1] : '';
+        tips.push(`最终 URL: ${finalUrl}`);
+        if (noteId) tips.push(`笔记 ID: ${noteId}`);
+        if (userId) tips.push(`用户 ID: ${userId}`);
+        return { data: { originalUrl: params.url, finalUrl, noteId, userId }, tips };
+      } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['解析短链失败']); }
+    },
+  });
+}
