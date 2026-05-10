@@ -96,5 +96,26 @@
     "parentID": "ses_1ee8a931effePwSrcD76XosyKU",
     "status": "running",
     "createdAt": 1778409445949
+  },
+  "fix1-proxy-env": {
+    "id": "ses_1ee334600ffeJhL0sD9tU81yy7",
+    "name": "fix1-proxy-env",
+    "parentID": "ses_1ee344e1fffebKlV7LjJAfl7tw",
+    "status": "running",
+    "createdAt": 1778415090176
+  },
+  "fix2-admin-url": {
+    "id": "ses_1ee3343c1ffeZKy9j2kRcroMdY",
+    "name": "fix2-admin-url",
+    "parentID": "ses_1ee344e1fffebKlV7LjJAfl7tw",
+    "status": "running",
+    "createdAt": 1778415090751
+  },
+  "fix3-plugin-info": {
+    "id": "ses_1ee334345ffePO4Z04MB8Qu11y",
+    "name": "fix3-plugin-info",
+    "parentID": "ses_1ee344e1fffebKlV7LjJAfl7tw",
+    "status": "running",
+    "createdAt": 1778415090875
   }
 }

@@ -10,6 +10,16 @@ export async function ensureProxyFetch(): Promise<void> {
   if (patched) return;
   patched = true;
 
+  if (process.env.https_proxy && !process.env.HTTPS_PROXY) {
+    process.env.HTTPS_PROXY = process.env.https_proxy;
+  }
+  if (process.env.http_proxy && !process.env.HTTP_PROXY) {
+    process.env.HTTP_PROXY = process.env.http_proxy;
+  }
+  if (process.env.all_proxy && !process.env.ALL_PROXY) {
+    process.env.ALL_PROXY = process.env.all_proxy;
+  }
+
   const proxyUrl =
     process.env.https_proxy ||
     process.env.HTTPS_PROXY ||

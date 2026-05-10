@@ -1,8 +1,10 @@
 import type { NPMPluginSearchResult, SearchOptions } from './types.js';
 import { NPM_REGISTRY_URL } from '../config.js';
+import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 
 export class NPMSearcher {
   static async search(options: SearchOptions = {}): Promise<NPMPluginSearchResult[]> {
+    await ensureProxyFetch();
     const { query = '', tag, site, limit = 20 } = options;
 
     const npmQuery = this.buildQuery(query, tag, site);
@@ -112,6 +114,7 @@ export class NPMSearcher {
   }
 
   static async getPackageManifest(name: string): Promise<Record<string, unknown>> {
+    await ensureProxyFetch();
     const url = `${NPM_REGISTRY_URL}/${name}`;
 
     try {

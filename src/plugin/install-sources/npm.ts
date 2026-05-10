@@ -3,12 +3,14 @@ import { resolve, join } from 'path';
 import { tmpdir } from 'os';
 import type { InstalledPlugin } from '../installer-types.js';
 import { downloadToFile, extractTarGz, flattenPackageRoot, verifyPlugin, safeCleanup } from '../install-utils.js';
+import { ensureProxyFetch } from '../../utils/proxy-fetch.js';
 
 export async function installFromNpm(
   packageName: string,
   name: string,
   targetDir: string
 ): Promise<InstalledPlugin> {
+  await ensureProxyFetch();
   const encodedName = encodeURIComponent(packageName);
   const metaRes = await fetch(`https://registry.npmjs.org/${encodedName}`);
   if (!metaRes.ok) {

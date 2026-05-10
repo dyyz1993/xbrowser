@@ -27,6 +27,7 @@ function handlePluginHelp(): string {
     '',
     'Commands:',
     '  search <query> [options]                      Search for plugins on npm and marketplace',
+    '  info <slug>                                   Show plugin details',
     '  install <source> [--name <name>] [--force]    Install a plugin',
     '  install <slug> --from-marketplace             Install from marketplace',
     '  uninstall <name>                              Uninstall a plugin',

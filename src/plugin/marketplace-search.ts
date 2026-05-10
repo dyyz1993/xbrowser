@@ -1,5 +1,6 @@
 import type { MarketplacePluginSearchResult, SearchOptions } from './types.js';
 import { getConfigValue, DEFAULT_MARKETPLACE_URL } from '../config.js';
+import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 
 export class MarketplaceSearcher {
   private static getBaseUrl(): string {
@@ -11,6 +12,7 @@ export class MarketplaceSearcher {
   }
 
   static async search(options: SearchOptions = {}): Promise<MarketplacePluginSearchResult[]> {
+    await ensureProxyFetch();
     const { query = '', tag, site, limit = 20 } = options;
     const baseUrl = this.getBaseUrl();
 
@@ -48,6 +50,7 @@ export class MarketplaceSearcher {
   }
 
   static async getPluginDetail(slug: string): Promise<MarketplacePluginSearchResult | null> {
+    await ensureProxyFetch();
     const baseUrl = this.getBaseUrl();
     const url = `${baseUrl}/api/plugins/${slug}`;
 

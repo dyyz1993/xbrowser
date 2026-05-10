@@ -1,5 +1,6 @@
 import { loadAuth } from './publish-routes.js';
 import { outputResult, outputError } from './output.js';
+import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 
 function requireAuth(options: Record<string, unknown>): {
   token: string;
@@ -22,6 +23,7 @@ async function adminFetch(
   token: string,
   init?: RequestInit
 ): Promise<Record<string, unknown>> {
+  await ensureProxyFetch();
   const res = await fetch(url, {
     ...init,
     headers: {
@@ -303,7 +305,7 @@ async function handleBulkApprove(
   const { token, registryUrl } = requireAuth(options);
   try {
     const body = await adminFetch(
-      `${registryUrl}/admin/plugins/bulk-approve`,
+      `${registryUrl}/api/admin/plugins/bulk-approve`,
       token,
       {
         method: 'POST',
@@ -331,7 +333,7 @@ async function handleCleanup(
 ): Promise<void> {
   const { token, registryUrl } = requireAuth(options);
   try {
-    const body = await adminFetch(`${registryUrl}/admin/db/cleanup`, token, {
+    const body = await adminFetch(`${registryUrl}/api/admin/db/cleanup`, token, {
       method: 'POST',
     });
     const data = body.data as Record<string, unknown> | undefined;

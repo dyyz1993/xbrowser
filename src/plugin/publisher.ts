@@ -4,6 +4,7 @@ import { createHash } from 'crypto';
 import { PluginMetadataParser } from './metadata-parser.js';
 import { NPM_REGISTRY_URL } from '../config.js';
 import { readJsonFile } from '../utils/json-file.js';
+import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 
 /**
  * Authentication configuration for publishing to a registry.
@@ -100,6 +101,7 @@ function slugify(name: string): string {
 }
 
 async function validateNpmPackageExists(packageName: string, version: string): Promise<void> {
+  await ensureProxyFetch();
   const encodedName = encodeURIComponent(packageName);
   const res = await fetch(`${NPM_REGISTRY_URL}/${encodedName}/${version}`);
   if (!res.ok) {

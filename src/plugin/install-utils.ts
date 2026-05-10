@@ -12,6 +12,7 @@ import { execSync } from 'child_process';
 import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';
 import { getConfigValue } from '../config.js';
+import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 
 export interface PluginVerifyResult {
   valid: boolean;
@@ -22,6 +23,7 @@ export interface PluginVerifyResult {
 const DEFAULT_MARKETPLACE_URL = 'https://xbrowser-marketplace.dyyz1993.workers.dev';
 
 export async function downloadToFile(url: string, destPath: string): Promise<void> {
+  await ensureProxyFetch();
   if (url.startsWith('file://')) {
     const filePath = decodeURIComponent(new URL(url).pathname);
     cpSync(filePath, destPath, { force: true });

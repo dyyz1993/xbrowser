@@ -17,12 +17,14 @@ import {
   safeCleanup,
   getMarketplaceUrl,
 } from '../install-utils.js';
+import { ensureProxyFetch } from '../../utils/proxy-fetch.js';
 
 export async function installFromMarketplace(
   pluginsDir: string,
   slug: string,
   options?: InstallOptions
 ): Promise<InstalledPlugin> {
+  await ensureProxyFetch();
   const baseUrl = getMarketplaceUrl();
 
   const detailUrl = `${baseUrl}/api/plugins/${slug}`;

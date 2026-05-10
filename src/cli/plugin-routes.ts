@@ -5,6 +5,8 @@ import { MarketplaceSearcher } from '../plugin/marketplace-search.js';
 import { NPMSearcher } from '../plugin/npm-search.js';
 import { DaemonManager } from '../daemon/daemon.js';
 import { outputResult, outputError } from './output.js';
+import { DEFAULT_MARKETPLACE_URL, NPM_REGISTRY_URL } from '../config.js';
+import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 import {
   handlePublish,
   handlePluginLogin,
@@ -76,6 +78,76 @@ async function handleSearch(
   }
 }
 
+async function handlePluginInfo(
+  args: string[],
+  options: Record<string, unknown>,
+  mode: string
+): Promise<void> {
+  const slug = args[0];
+  if (!slug) outputError('Usage: xbrowser plugin info <slug>');
+
+  applyRegistryOverride(options);
+  await ensureProxyFetch();
+
+  const marketplaceUrl =
+    process.env.XBROWSER_MARKETPLACE_URL || DEFAULT_MARKETPLACE_URL;
+
+  try {
+    const resp = await fetch(`${marketplaceUrl}/api/plugins/${slug}`);
+    if (resp.ok) {
+      const raw = (await resp.json()) as {
+        success?: boolean;
+        data?: Record<string, unknown>;
+      };
+      const d = raw.data || (raw as Record<string, unknown>);
+      if (mode === 'json') {
+        outputResult({ source: 'marketplace', ...d }, mode);
+        return;
+      }
+      console.log(`名称: ${d.name || ''}`);
+      console.log(`版本: ${d.version || ''}`);
+      console.log(`描述: ${d.description || ''}`);
+      console.log(`作者: ${d.authorName || d.author || ''}`);
+      console.log(`状态: ${d.status || ''}`);
+      console.log(`命令: ${((d.commands || []) as string[]).join(', ')}`);
+      console.log(`下载量: ${d.downloadCount || 0}`);
+      console.log(`标签: ${((d.tags || []) as string[]).join(', ')}`);
+      console.log(`网站: ${((d.siteUrls || []) as string[]).join(', ')}`);
+      return;
+    }
+  } catch {
+    // marketplace unavailable, fallback to npm
+  }
+
+  try {
+    const resp = await fetch(`${NPM_REGISTRY_URL}/${encodeURIComponent(slug)}`);
+    if (resp.ok) {
+      const data = (await resp.json()) as Record<string, unknown>;
+      const distTags = data['dist-tags'] as Record<string, string> | undefined;
+      const latest = distTags?.latest;
+      const versions = data.versions as Record<string, Record<string, unknown>> | undefined;
+      const pkg = latest && versions?.[latest];
+      if (pkg) {
+        if (mode === 'json') {
+          outputResult({ source: 'npm', name: pkg.name, version: latest, description: pkg.description }, mode);
+          return;
+        }
+        console.log(`名称: ${pkg.name || ''}`);
+        console.log(`版本: ${latest}`);
+        console.log(`描述: ${pkg.description || ''}`);
+        const author = pkg.author as { name?: string } | string | undefined;
+        console.log(`作者: ${typeof author === 'string' ? author : author?.name || ''}`);
+        console.log(`关键词: ${((pkg.keywords || []) as string[]).join(', ')}`);
+        console.log(`许可证: ${pkg.license || ''}`);
+        return;
+      }
+    }
+    console.error(`插件 '${slug}' 未找到`);
+  } catch (err) {
+    console.error('查询失败:', (err as Error).message);
+  }
+}
+
 export async function handlePlugin(
   args: string[],
   options: Record<string, unknown>,
@@ -130,6 +202,9 @@ export async function handlePlugin(
     }
     case 'search':
       await handleSearch(subArgs, options, mode);
+      break;
+    case 'info':
+      await handlePluginInfo(subArgs, options, mode);
       break;
     case 'publish':
       await handlePublish(subArgs, options, mode);
