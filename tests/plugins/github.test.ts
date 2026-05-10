@@ -58,13 +58,13 @@ describe('github plugin', () => {
     );
   });
 
-  it('should register 4 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(4);
+  it('should register 6 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(6);
   });
 
   it('should register expected command names', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
-    expect(names).toEqual(expect.arrayContaining(['update-profile', 'add-social-link', 'create-gist', 'get-profile']));
+    expect(names).toEqual(expect.arrayContaining(['update-profile', 'add-social-link', 'create-gist', 'get-profile', 'create-repo', 'edit-readme']));
   });
 
   it('should register login and logout', () => {
@@ -80,7 +80,7 @@ describe('github plugin', () => {
     });
 
     it('should throw if no page', async () => {
-      await expect(handler({ bio: 'test' }, {})).rejects.toThrow('需要浏览器页面上下文');
+      await expect(handler({ bio: 'test' }, {})).rejects.toThrow('需要浏览器页面');
     });
 
     it('should navigate to profile settings and submit', async () => {
@@ -103,7 +103,7 @@ describe('github plugin', () => {
     });
 
     it('should throw if no page', async () => {
-      await expect(handler({ filename: 'test.md', content: '# test' }, {})).rejects.toThrow('需要浏览器页面上下文');
+      await expect(handler({ filename: 'test.md', content: '# test' }, {})).rejects.toThrow('需要浏览器页面');
     });
 
     it('should return gist URL on success', async () => {

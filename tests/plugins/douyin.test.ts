@@ -17,6 +17,7 @@ function createMockPage(evaluateResult: unknown = {}) {
     waitForTimeout: vi.fn().mockResolvedValue(undefined),
     evaluate: vi.fn(() => evaluateResult),
     on: vi.fn(),
+    off: vi.fn(),
     scrollTo: vi.fn(),
   };
 }
@@ -36,13 +37,13 @@ describe('douyin plugin', () => {
     );
   });
 
-  it('should register 3 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(3);
+  it('should register 6 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(6);
   });
 
   it('should register expected command names', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
-    expect(names).toEqual(expect.arrayContaining(['videos', 'profile', 'detail']));
+    expect(names).toEqual(expect.arrayContaining(['videos', 'profile', 'detail', 'comments', 'user-comments', 'video-stats']));
   });
 
   describe('profile command handler', () => {
@@ -52,8 +53,9 @@ describe('douyin plugin', () => {
       handler = call![1].handler;
     });
 
-    it('should throw if no page', async () => {
-      await expect(handler({ url: 'https://douyin.com/user/123' }, {})).rejects.toThrow('需要浏览器页面');
+    it('should return error result if no page', async () => {
+      const result = await handler({ url: 'https://douyin.com/user/123' }, {});
+      expect(result.data).toBeNull();
     });
 
     it('should return user info', async () => {
@@ -70,8 +72,9 @@ describe('douyin plugin', () => {
       handler = call![1].handler;
     });
 
-    it('should throw if no page', async () => {
-      await expect(handler({ awemeId: 'v1' }, {})).rejects.toThrow('需要浏览器页面');
+    it('should return error result if no page', async () => {
+      const result = await handler({ awemeId: 'v1' }, {});
+      expect(result.data).toBeNull();
     });
 
     it('should return video info', async () => {
@@ -89,8 +92,9 @@ describe('douyin plugin', () => {
       handler = call![1].handler;
     });
 
-    it('should throw if no page', async () => {
-      await expect(handler({ url: 'https://douyin.com/user/123' }, {})).rejects.toThrow('需要浏览器页面');
+    it('should return error result if no page', async () => {
+      const result = await handler({ url: 'https://douyin.com/user/123' }, {});
+      expect(result.data).toBeNull();
     });
 
     it('should return videos data', async () => {

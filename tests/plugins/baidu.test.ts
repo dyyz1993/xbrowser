@@ -42,13 +42,13 @@ describe('baidu plugin', () => {
     );
   });
 
-  it('should register 4 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(4);
+  it('should register 5 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(5);
   });
 
   it('should register expected command names', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
-    expect(names).toEqual(expect.arrayContaining(['search', 'hotsearch', 'suggest', 'news']));
+    expect(names).toEqual(expect.arrayContaining(['search', 'hotsearch', 'suggest', 'news', 'seo-rank']));
   });
 
   it('should register login and logout', () => {
@@ -64,7 +64,7 @@ describe('baidu plugin', () => {
     });
 
     it('should throw if no page', async () => {
-      await expect(handler({ query: 'test', pages: 1 }, {})).rejects.toThrow('需要浏览器页面上下文');
+      await expect(handler({ query: 'test', pages: 1 }, {})).rejects.toThrow('需要浏览器页面');
     });
 
     it('should return search results', async () => {
@@ -94,7 +94,7 @@ describe('baidu plugin', () => {
     });
 
     it('should throw if no page', async () => {
-      await expect(handler({ category: 'hot' }, {})).rejects.toThrow('需要浏览器页面上下文');
+      await expect(handler({ category: 'hot' }, {})).rejects.toThrow('需要浏览器页面');
     });
 
     it('should return hot search items', async () => {
@@ -115,7 +115,7 @@ describe('baidu plugin', () => {
     });
 
     it('should throw if no page', async () => {
-      await expect(handler({ query: 'test' }, {})).rejects.toThrow('需要浏览器页面上下文');
+      await expect(handler({ query: 'test' }, {})).rejects.toThrow('需要浏览器页面');
     });
 
     it('should parse suggestion text', async () => {
@@ -133,7 +133,7 @@ describe('baidu plugin', () => {
     });
 
     it('should throw if no page', async () => {
-      await expect(handler({ query: 'AI', limit: 10 }, {})).rejects.toThrow('需要浏览器页面上下文');
+      await expect(handler({ query: 'AI', limit: 10 }, {})).rejects.toThrow('需要浏览器页面');
     });
 
     it('should return news items', async () => {

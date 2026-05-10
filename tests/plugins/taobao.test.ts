@@ -35,13 +35,13 @@ describe('taobao plugin', () => {
     );
   });
 
-  it('should register 2 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(2);
+  it('should register 6 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(6);
   });
 
   it('should register expected command names', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
-    expect(names).toEqual(expect.arrayContaining(['search', 'detail']));
+    expect(names).toEqual(expect.arrayContaining(['search', 'detail', 'login', 'update-profile', 'shop', 'reviews']));
   });
 
   describe('search command handler', () => {

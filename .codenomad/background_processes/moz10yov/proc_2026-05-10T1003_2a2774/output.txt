@@ -1,0 +1,13 @@
+
+ RUN  v3.2.4 /Users/xuyingzhou/Project/study-node-ts/xbrowser
+
+ ✓ tests/plugins/douyin.test.ts (9 tests) 10ms
+ ✓ tests/plugins/twitter.test.ts (12 tests) 10ms
+ ✓ tests/twitter.test.ts (54 tests) 15ms
+ ✓ tests/douyin.test.ts (42 tests) 928ms
+
+ Test Files  4 passed (4)
+      Tests  117 passed (117)
+   Start at  18:03:29
+   Duration  1.42s (transform 262ms, setup 0ms, collect 428ms, tests 962ms, environment 0ms, prepare 315ms)
+

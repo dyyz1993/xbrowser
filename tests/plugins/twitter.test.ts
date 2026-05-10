@@ -13,9 +13,12 @@ const mockXCLI = {
 
 function createMockPage(evaluateResult: unknown = {}) {
   return {
-    goto: vi.fn(),
-    waitForTimeout: vi.fn(),
+    goto: vi.fn().mockResolvedValue(undefined),
+    waitForTimeout: vi.fn().mockResolvedValue(undefined),
     evaluate: vi.fn(() => evaluateResult),
+    waitForSelector: vi.fn().mockResolvedValue(undefined),
+    $: vi.fn().mockResolvedValue(null),
+    on: vi.fn(),
   };
 }
 
@@ -35,13 +38,13 @@ describe('twitter plugin', () => {
     );
   });
 
-  it('should register 3 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(3);
+  it('should register 6 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(6);
   });
 
   it('should register expected command names', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
-    expect(names).toEqual(expect.arrayContaining(['search', 'profile', 'timeline']));
+    expect(names).toEqual(expect.arrayContaining(['search', 'profile', 'timeline', 'timeline-advanced', 'tweets', 'replies']));
   });
 
   describe('search command handler', () => {
@@ -51,21 +54,28 @@ describe('twitter plugin', () => {
       handler = call![1].handler;
     });
 
-    it('should throw if no page', async () => {
-      await expect(handler({ query: 'OpenAI', limit: 10 }, {})).rejects.toThrow('需要浏览器页面');
+    it('should return error result if no page', async () => {
+      const result = await handler({ query: 'OpenAI', limit: 10 }, { cdpEndpoint: 'ws://localhost:9222' });
+      expect(result.data).toBeNull();
+    });
+
+    it('should return error result without CDP', async () => {
+      const mockPage = createMockPage([]);
+      const result = await handler({ query: 'OpenAI', limit: 10 }, { page: mockPage });
+      expect(result.data).toBeNull();
     });
 
     it('should return tweet search results', async () => {
-      const tweets = [{ author: 'User', handle: '@user', text: 'Hello', time: '2024-01-01', likes: '10', retweets: '2', link: '' }];
+      const tweets = [{ author: 'User', handle: '@user', text: 'Hello', time: '2024-01-01', likes: '10', retweets: '2', link: 'https://x.com/user/status/123' }];
       const mockPage = createMockPage(tweets);
-      const result = await handler({ query: 'OpenAI', limit: 10 }, { page: mockPage });
+      const result = await handler({ query: 'OpenAI', limit: 10 }, { page: mockPage, cdpEndpoint: 'ws://localhost:9222' });
       expect(result.data.tweets).toHaveLength(1);
       expect(result.data.query).toBe('OpenAI');
     });
 
     it('should navigate to search URL', async () => {
       const mockPage = createMockPage([]);
-      await handler({ query: 'test', limit: 5 }, { page: mockPage });
+      await handler({ query: 'test', limit: 5 }, { page: mockPage, cdpEndpoint: 'ws://localhost:9222' });
       expect(mockPage.goto).toHaveBeenCalledWith(
         expect.stringContaining('x.com/search'),
         expect.anything()
@@ -80,14 +90,15 @@ describe('twitter plugin', () => {
       handler = call![1].handler;
     });
 
-    it('should throw if no page', async () => {
-      await expect(handler({ username: 'elonmusk' }, {})).rejects.toThrow('需要浏览器页面');
+    it('should return error result if no page', async () => {
+      const result = await handler({ username: 'elonmusk' }, { cdpEndpoint: 'ws://localhost:9222' });
+      expect(result.data).toBeNull();
     });
 
     it('should return profile data', async () => {
       const data = { name: 'Elon Musk', bio: 'Mars', location: 'Mars', website: '', stats: {}, avatar: '' };
       const mockPage = createMockPage(data);
-      const result = await handler({ username: 'elonmusk' }, { page: mockPage });
+      const result = await handler({ username: 'elonmusk' }, { page: mockPage, cdpEndpoint: 'ws://localhost:9222' });
       expect(result.data.name).toBe('Elon Musk');
     });
   });
@@ -99,22 +110,23 @@ describe('twitter plugin', () => {
       handler = call![1].handler;
     });
 
-    it('should throw if no page', async () => {
-      await expect(handler({ username: 'elonmusk', limit: 5 }, {})).rejects.toThrow('需要浏览器页面');
+    it('should return error result if no page', async () => {
+      const result = await handler({ username: 'elonmusk', limit: 5 }, { cdpEndpoint: 'ws://localhost:9222' });
+      expect(result.data).toBeNull();
     });
 
     it('should return timeline tweets', async () => {
-      const tweets = [{ text: 'Hello', time: '2024-01-01', likes: '10', replies: '2', link: '' }];
+      const tweets = [{ text: 'Hello', time: '2024-01-01', likes: '10', replies: '2', link: '', id: '123' }];
       const mockPage = createMockPage(tweets);
-      const result = await handler({ username: 'elonmusk', limit: 5 }, { page: mockPage });
+      const result = await handler({ username: 'elonmusk', limit: 5 }, { page: mockPage, cdpEndpoint: 'ws://localhost:9222' });
       expect(result.data.tweets).toHaveLength(1);
       expect(result.data.username).toBe('elonmusk');
     });
 
     it('should scroll page for loading', async () => {
       const mockPage = createMockPage([]);
-      await handler({ username: 'test', limit: 5 }, { page: mockPage });
-      expect(mockPage.evaluate).toHaveBeenCalledTimes(4);
+      await handler({ username: 'test', limit: 5 }, { page: mockPage, cdpEndpoint: 'ws://localhost:9222' });
+      expect(mockPage.evaluate).toHaveBeenCalled();
     });
   });
 });

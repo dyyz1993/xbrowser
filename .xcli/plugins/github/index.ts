@@ -1,5 +1,30 @@
 import { z } from 'zod';
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { Page } from 'playwright';
+
+interface BrowserCtx extends CommandContext {
+  page?: Page;
+  cdpEndpoint?: string;
+  sessionId?: string;
+}
+
+function getPage(ctx: CommandContext): Page {
+  const browserCtx = ctx as BrowserCtx;
+  const page = browserCtx.page;
+  if (!page) throw new Error('需要浏览器页面');
+  return page;
+}
+
+function buildCtxTips(ctx: CommandContext): { tips: string[]; hasCdp: boolean } {
+  const browserCtx = ctx as BrowserCtx;
+  const tips: string[] = [];
+  const hasCdp = !!browserCtx.cdpEndpoint;
+  if (!hasCdp) {
+    tips.push('建议使用 --cdp 9221 参数连接到 Chrome 浏览器');
+  }
+  tips.push(`Session: ${browserCtx.sessionId || 'default'}`);
+  return { tips, hasCdp };
+}
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -27,8 +52,8 @@ export default function (xcli: XCLIAPI): void {
       },
     ],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
-      if (!page) throw new Error('需要浏览器页面上下文');
+      const page = getPage(ctx);
+      const { tips: ctxTips } = buildCtxTips(ctx);
 
       await page.goto('https://github.com/settings/profile', {
         waitUntil: 'domcontentloaded',
@@ -44,6 +69,7 @@ export default function (xcli: XCLIAPI): void {
         'user[profile_name]': params.name || '',
       };
 
+      const updatedFields: string[] = [];
       for (const [name, value] of Object.entries(fields)) {
         if (!value) continue;
         const selector = `[name="${name}"]`;
@@ -52,20 +78,27 @@ export default function (xcli: XCLIAPI): void {
         if (exists) {
           await el.fill(value);
           await page.waitForTimeout(300);
+          updatedFields.push(name);
         }
       }
 
       if (params.hireable !== undefined) {
-        const checkbox = page.locator('#user_profile_hireable');
+        const checkbox = page.locator(
+          '#user_profile_hireable, input[name="user[hireable]"], input[type="checkbox"][name*="hireable"]'
+        ).first();
         const isChecked = await checkbox.isChecked().catch(() => false);
         if (params.hireable !== isChecked) {
           await checkbox.click();
         }
       }
 
-      const submitBtn = page.locator('button[type="submit"], input[type="submit"]').first();
-      await submitBtn.click();
-      await page.waitForTimeout(2000);
+      const submitBtn = page.locator(
+        'button[type="submit"], input[type="submit"], button:has-text("Update profile")'
+      ).first();
+      if (await submitBtn.isVisible().catch(() => false)) {
+        await submitBtn.click();
+        await page.waitForTimeout(2000);
+      }
 
       const currentUrl = page.url();
       const saved = !currentUrl.includes('error');
@@ -74,11 +107,9 @@ export default function (xcli: XCLIAPI): void {
         data: {
           url: currentUrl,
           saved,
-          updatedFields: Object.entries(fields)
-            .filter(([, v]) => v)
-            .map(([k]) => k),
+          updatedFields,
         },
-        tips: [saved ? 'Profile 更新成功' : 'Profile 更新可能失败，请检查页面'],
+        tips: [...ctxTips, saved ? 'Profile 更新成功' : 'Profile 更新可能失败，请检查页面'],
       };
     },
   });
@@ -96,8 +127,8 @@ export default function (xcli: XCLIAPI): void {
       },
     ],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
-      if (!page) throw new Error('需要浏览器页面上下文');
+      const page = getPage(ctx);
+      const { tips: ctxTips } = buildCtxTips(ctx);
 
       await page.goto('https://github.com/settings/profile', {
         waitUntil: 'domcontentloaded',
@@ -105,13 +136,15 @@ export default function (xcli: XCLIAPI): void {
       });
       await page.waitForTimeout(2000);
 
-      const socialInputs = page.locator('[name="user[profile_social_accounts][][url]"]');
+      const socialInputs = page.locator(
+        '[name="user[profile_social_accounts][][url]"], input[placeholder*="social"], input[class*="social-url"]'
+      );
       const count = await socialInputs.count();
 
       let filled = false;
       for (let i = 0; i < count; i++) {
         const input = socialInputs.nth(i);
-        const value = await input.inputValue();
+        const value = await input.inputValue().catch(() => '');
         if (!value) {
           await input.fill(params.url);
           filled = true;
@@ -120,27 +153,36 @@ export default function (xcli: XCLIAPI): void {
       }
 
       if (!filled) {
-        const addBtn = page.locator('button:has-text("Add"), button.js-add-social-account');
-        await addBtn
-          .first()
-          .click()
-          .catch(() => {});
-        await page.waitForTimeout(500);
-        const newInputs = page.locator('[name="user[profile_social_accounts][][url]"]');
-        const lastIdx = (await newInputs.count()) - 1;
-        if (lastIdx >= 0) {
-          await newInputs.nth(lastIdx).fill(params.url);
-          filled = true;
+        const addBtn = page.locator(
+          'button:has-text("Add"), button.js-add-social-account, button[class*="add-social"]'
+        ).first();
+        if (await addBtn.isVisible().catch(() => false)) {
+          await addBtn.click();
+          await page.waitForTimeout(500);
+          const newInputs = page.locator(
+            '[name="user[profile_social_accounts][][url]"], input[placeholder*="social"]'
+          );
+          const lastIdx = (await newInputs.count()) - 1;
+          if (lastIdx >= 0) {
+            await newInputs.nth(lastIdx).fill(params.url);
+            filled = true;
+          }
         }
       }
 
-      const submitBtn = page.locator('button[type="submit"], input[type="submit"]').first();
-      await submitBtn.click();
-      await page.waitForTimeout(2000);
+      if (filled) {
+        const submitBtn = page.locator(
+          'button[type="submit"], input[type="submit"], button:has-text("Update profile")'
+        ).first();
+        if (await submitBtn.isVisible().catch(() => false)) {
+          await submitBtn.click();
+          await page.waitForTimeout(2000);
+        }
+      }
 
       return {
-        data: { url: params.url, filled, saved: true },
-        tips: [filled ? `已添加社交链接: ${params.url}` : '没有可用的社交链接空位'],
+        data: { url: params.url, filled },
+        tips: [...ctxTips, filled ? `已添加社交链接: ${params.url}` : '没有可用的社交链接空位'],
       };
     },
   });
@@ -161,8 +203,8 @@ export default function (xcli: XCLIAPI): void {
       },
     ],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
-      if (!page) throw new Error('需要浏览器页面上下文');
+      const page = getPage(ctx);
+      const { tips: ctxTips } = buildCtxTips(ctx);
 
       await page.goto('https://gist.github.com/', {
         waitUntil: 'domcontentloaded',
@@ -170,43 +212,63 @@ export default function (xcli: XCLIAPI): void {
       });
       await page.waitForTimeout(2000);
 
-      const descInput = page.locator('[name="gist[description]"]').first();
-      await descInput.fill(params.description || '');
+      const descInput = page.locator(
+        '[name="gist[description]"], input[aria-label*="description"], input[placeholder*="description"]'
+      ).first();
+      if (await descInput.isVisible().catch(() => false)) {
+        await descInput.fill(params.description || '');
+      }
 
-      const nameInput = page.locator('[name="gist[contents][][name]"]').first();
-      await nameInput.fill(params.filename);
+      const nameInput = page.locator(
+        '[name="gist[contents][][name]"], input[aria-label*="filename"], input[placeholder*="filename"]'
+      ).first();
+      if (await nameInput.isVisible().catch(() => false)) {
+        await nameInput.fill(params.filename);
+      }
 
-      const contentArea = page.locator('.CodeMirror').first();
+      const contentArea = page.locator(
+        '.CodeMirror, textarea[class*="code"], [name="gist[contents][][content]"]'
+      ).first();
       if (await contentArea.isVisible().catch(() => false)) {
         await contentArea.click();
         await page.keyboard.type(params.content, { delay: 10 });
       } else {
-        const textarea = page.locator('[name="gist[contents][][content]"]').first();
-        await textarea.fill(params.content);
+        const textarea = page.locator(
+          '[name="gist[contents][][content]"], textarea[placeholder*="content"]'
+        ).first();
+        if (await textarea.isVisible().catch(() => false)) {
+          await textarea.fill(params.content);
+        }
       }
 
       if (!params.public) {
-        const secretBtn = page.locator('button:has-text("Create secret gist")').first();
-        await secretBtn.click();
+        const secretBtn = page.locator(
+          'button:has-text("Create secret gist"), button:has-text("secret")'
+        ).first();
+        if (await secretBtn.isVisible().catch(() => false)) {
+          await secretBtn.click();
+        }
       } else {
-        const publicBtn = page.locator('button:has-text("Create public gist")').first();
-        await publicBtn.click();
+        const publicBtn = page.locator(
+          'button:has-text("Create public gist"), button:has-text("public")'
+        ).first();
+        if (await publicBtn.isVisible().catch(() => false)) {
+          await publicBtn.click();
+        }
       }
 
       await page.waitForTimeout(3000);
       const gistUrl = page.url();
+      const created = gistUrl.includes('gist.github.com') && !gistUrl.endsWith('gist.github.com/');
 
       return {
         data: {
           gistUrl,
           filename: params.filename,
           public: params.public,
+          created,
         },
-        tips: [
-          gistUrl.includes('gist.github.com')
-            ? `Gist 创建成功: ${gistUrl}`
-            : 'Gist 创建可能失败，请检查',
-        ],
+        tips: [...ctxTips, created ? `Gist 创建成功: ${gistUrl}` : 'Gist 创建可能失败，请检查'],
       };
     },
   });
@@ -219,8 +281,8 @@ export default function (xcli: XCLIAPI): void {
     }),
     examples: [{ cmd: 'xbrowser github get-profile', description: '获取 Profile 信息' }],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
-      if (!page) throw new Error('需要浏览器页面上下文');
+      const page = getPage(ctx);
+      const { tips: ctxTips } = buildCtxTips(ctx);
 
       let profileUrl: string;
       if (params.username) {
@@ -232,7 +294,9 @@ export default function (xcli: XCLIAPI): void {
         });
         await page.waitForTimeout(1500);
         const userLink = await page
-          .locator('a[data-hovercard-type="user"], a[aria-label="View profile"]')
+          .locator(
+            'a[data-hovercard-type="user"], a[aria-label="View profile"], a[href*="/"][data-view-component]'
+          )
           .first()
           .getAttribute('href')
           .catch(() => '');
@@ -277,7 +341,176 @@ export default function (xcli: XCLIAPI): void {
 
       return {
         data: profile,
-        tips: [`Profile: ${profile.name} (@${profile.username})`],
+        tips: [...ctxTips, `Profile: ${profile.name} (@${profile.username})`],
+      };
+    },
+  });
+
+  site.command('create-repo', {
+    description: '创建 GitHub 仓库',
+    scope: 'browser',
+    parameters: z.object({
+      name: z.string().describe('仓库名称'),
+      description: z.string().optional().describe('仓库描述'),
+      private: z.boolean().optional().default(false).describe('是否私有'),
+      readme: z.boolean().optional().default(true).describe('是否初始化 README'),
+    }),
+    examples: [
+      {
+        cmd: 'xbrowser github create-repo --name "my-project" --description "My project" --readme true',
+        description: '创建公开仓库',
+      },
+    ],
+    handler: async (params, ctx) => {
+      const page = getPage(ctx);
+      const { tips: ctxTips } = buildCtxTips(ctx);
+
+      await page.goto('https://github.com/new', {
+        waitUntil: 'domcontentloaded',
+        timeout: 15000,
+      });
+      await page.waitForTimeout(2000);
+
+      const nameInput = page.locator(
+        '#repository_name, [name="repository[name]"], input[aria-label*="Repository name"]'
+      ).first();
+      if (await nameInput.isVisible().catch(() => false)) {
+        await nameInput.fill(params.name);
+        await page.waitForTimeout(500);
+      }
+
+      if (params.description) {
+        const descInput = page.locator(
+          '#repository_description, [name="repository[description]"], textarea[aria-label*="description"]'
+        ).first();
+        if (await descInput.isVisible().catch(() => false)) {
+          await descInput.fill(params.description);
+        }
+      }
+
+      if (params.private) {
+        const privateRadio = page.locator(
+          '#repository_visibility_private, input[value="private"], label:has-text("Private") input[type="radio"]'
+        ).first();
+        if (await privateRadio.isVisible().catch(() => false)) {
+          await privateRadio.click();
+        }
+      }
+
+      if (params.readme) {
+        const readmeCheckbox = page.locator(
+          '#repository_auto_init, input[name="repository[auto_init]"], label:has-text("README") input[type="checkbox"]'
+        ).first();
+        const isChecked = await readmeCheckbox.isChecked().catch(() => false);
+        if (!isChecked) {
+          await readmeCheckbox.click();
+        }
+      }
+
+      await page.waitForTimeout(1000);
+
+      const createBtn = page.locator(
+        'button[type="submit"]:has-text("Create repository"), button:has-text("Create repository"), button.btn-primary[type="submit"]'
+      ).first();
+      if (await createBtn.isVisible().catch(() => false)) {
+        await createBtn.click();
+        await page.waitForTimeout(3000);
+      }
+
+      const repoUrl = page.url();
+      const created = repoUrl.includes(`/${params.name}`) && !repoUrl.includes('/new');
+
+      return {
+        data: {
+          repoUrl,
+          name: params.name,
+          private: params.private,
+          created,
+        },
+        tips: [...ctxTips, created ? `仓库创建成功: ${repoUrl}` : '仓库创建可能失败，请检查'],
+      };
+    },
+  });
+
+  site.command('edit-readme', {
+    description: '编辑 GitHub 仓库的 README.md 文件',
+    scope: 'browser',
+    parameters: z.object({
+      repo: z.string().describe('仓库名称（owner/repo 格式）'),
+      content: z.string().describe('README 内容（Markdown）'),
+      message: z.string().optional().describe('提交信息'),
+    }),
+    examples: [
+      {
+        cmd: 'xbrowser github edit-readme --repo "user/my-project" --content "# My Project\\nhttps://example.com" --message "Update README"',
+        description: '编辑仓库 README 添加外链',
+      },
+    ],
+    handler: async (params, ctx) => {
+      const page = getPage(ctx);
+      const { tips: ctxTips } = buildCtxTips(ctx);
+
+      await page.goto(`https://github.com/${params.repo}/edit/main/README.md`, {
+        waitUntil: 'domcontentloaded',
+        timeout: 15000,
+      });
+      await page.waitForTimeout(2000);
+
+      const notFound = await page.locator('text="404", text="not found"').first().isVisible().catch(() => false);
+      if (notFound) {
+        await page.goto(`https://github.com/${params.repo}/edit/master/README.md`, {
+          waitUntil: 'domcontentloaded',
+          timeout: 15000,
+        });
+        await page.waitForTimeout(2000);
+      }
+
+      const editor = page.locator(
+        '.CodeMirror, textarea[class*="code"], textarea[name="value"], .editor-instance'
+      ).first();
+      if (await editor.isVisible().catch(() => false)) {
+        await editor.click();
+        await page.keyboard.press('Meta+a');
+        await page.keyboard.press('Backspace');
+        await page.keyboard.insertText(params.content);
+      } else {
+        const textarea = page.locator(
+          'textarea[name="value"], textarea[id="blob-contents"]'
+        ).first();
+        if (await textarea.isVisible().catch(() => false)) {
+          await textarea.fill(params.content);
+        }
+      }
+
+      await page.waitForTimeout(500);
+
+      if (params.message) {
+        const commitInput = page.locator(
+          'input[name="message"], input[aria-label*="commit message"], input[id="commit-summary-input"]'
+        ).first();
+        if (await commitInput.isVisible().catch(() => false)) {
+          await commitInput.fill(params.message);
+        }
+      }
+
+      const commitBtn = page.locator(
+        'button:has-text("Commit changes"), button[id="submit-file"], button.btn-primary:has-text("Commit")'
+      ).first();
+      if (await commitBtn.isVisible().catch(() => false)) {
+        await commitBtn.click();
+        await page.waitForTimeout(3000);
+      }
+
+      const currentUrl = page.url();
+      const saved = !currentUrl.includes('/edit/');
+
+      return {
+        data: {
+          repo: params.repo,
+          saved,
+          url: currentUrl,
+        },
+        tips: [...ctxTips, saved ? `README 已更新: ${params.repo}` : 'README 更新可能失败，请检查'],
       };
     },
   });

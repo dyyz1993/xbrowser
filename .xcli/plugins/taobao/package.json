@@ -1,7 +1,7 @@
 {
   "name": "xbrowser-plugin-taobao",
-  "version": "1.0.0",
-  "description": "淘宝 - 商品搜索与采集",
+  "version": "2.0.0",
+  "description": "淘宝 - 商品搜索、店铺信息与评价采集",
   "main": "index.ts",
   "keywords": ["xbrowser", "xbrowser-plugin", "taobao", "ecommerce", "shopping"],
   "author": "dyyz1993",
@@ -9,6 +9,6 @@
   "xbrowser": {
     "site": "https://www.taobao.com",
     "requiresLogin": false,
-    "commands": ["search", "detail"]
+    "commands": ["login", "search", "detail", "update-profile", "shop", "reviews"]
   }
 }

@@ -35,13 +35,13 @@ describe('zhihu plugin', () => {
     );
   });
 
-  it('should register 3 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(3);
+  it('should register 5 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(5);
   });
 
   it('should register expected command names', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
-    expect(names).toEqual(expect.arrayContaining(['search', 'trending', 'question']));
+    expect(names).toEqual(expect.arrayContaining(['search', 'trending', 'question', 'answer', 'article']));
   });
 
   describe('search command handler', () => {

@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-baidu",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "百度搜索 - 真实浏览器操作",
   "main": "index.ts",
   "keywords": ["xbrowser", "xbrowser-plugin", "baidu.com"],
@@ -9,6 +9,6 @@
   "xbrowser": {
     "site": "https://www.baidu.com",
     "requiresLogin": false,
-    "commands": ["search", "hotsearch", "suggest", "news"]
+    "commands": ["search", "hotsearch", "suggest", "news", "seo-rank"]
   }
 }

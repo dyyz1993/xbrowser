@@ -120,14 +120,14 @@ const seoPlugins: SEOPluginSpec[] = [
     name: 'juejin',
     importPath: '../../.xcli/plugins/juejin/index.ts',
     expectedUrl: 'https://juejin.cn',
-    expectedCommands: ['login', 'publish', 'draft', 'update-profile'],
+    expectedCommands: ['login', 'publish', 'draft', 'update-profile', 'fetch-articles'],
     requiresLogin: true,
   },
   {
     name: 'csdn',
     importPath: '../../.xcli/plugins/csdn/index.ts',
     expectedUrl: 'https://www.csdn.net',
-    expectedCommands: ['login', 'publish', 'draft', 'update-profile'],
+    expectedCommands: ['login', 'publish', 'draft', 'update-profile', 'fetch-articles'],
     requiresLogin: true,
   },
 ];
@@ -186,7 +186,7 @@ for (const spec of seoPlugins) {
         const handler = config.handler as Function;
         const params = getDefaultParams(spec.name, call[0] as string);
         await expect(handler(params, { storage: { set: vi.fn(), delete: vi.fn(), get: vi.fn() } }))
-          .rejects.toThrow('需要浏览器页面上下文');
+          .rejects.toThrow('需要浏览器页面');
       }
     });
 
@@ -270,12 +270,14 @@ function getDefaultParams(pluginName: string, cmdName: string): Record<string, u
       publish: { title: 'Test', content: 'Test', tags: '前端', category: '前端' },
       draft: { title: 'Test', content: 'Draft' },
       'update-profile': { url: 'https://example.com', bio: 'Bio' },
+      'fetch-articles': { limit: 10 },
     },
     csdn: {
       login: {},
       publish: { title: 'Test', content: 'Test', tags: 'JavaScript' },
       draft: { title: 'Test', content: 'Draft' },
       'update-profile': { url: 'https://example.com', bio: 'Bio' },
+      'fetch-articles': { limit: 10 },
     },
   };
   return base[pluginName]?.[cmdName] ?? {};

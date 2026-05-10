@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-zhihu",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "知乎 - 知识问答与内容采集 (DA 93)",
   "main": "index.ts",
   "keywords": ["xbrowser", "xbrowser-plugin", "zhihu", "search", "qa"],
@@ -9,6 +9,6 @@
   "xbrowser": {
     "site": "https://www.zhihu.com",
     "requiresLogin": false,
-    "commands": ["search", "trending", "question"]
+    "commands": ["search", "trending", "question", "answer", "article"]
   }
 }
