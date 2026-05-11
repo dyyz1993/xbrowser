@@ -253,14 +253,19 @@ export async function routeCommand(
           }
 
           const cmdArgsForPlugin = cmdArgs.slice(1);
-          const params: Record<string, unknown> = { ...options };
+          const rawParams: Record<string, unknown> = { ...options };
           for (let i = 0; i < cmdArgsForPlugin.length; i++) {
             if (cmdArgsForPlugin[i] === '--' && cmdArgsForPlugin[i + 1]) {
               try {
-                Object.assign(params, JSON.parse(cmdArgsForPlugin[i + 1]));
+                Object.assign(rawParams, JSON.parse(cmdArgsForPlugin[i + 1]));
               } catch { /* not JSON, skip */ }
               break;
             }
+          }
+          const params: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(rawParams)) {
+            const camelKey = k.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+            params[camelKey] = v;
           }
 
           let session = findSession(sessionName);

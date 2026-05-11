@@ -112,7 +112,10 @@ export class XBrowserPluginLoader {
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
         const pluginDir = resolve(dir, entry.name);
-        const indexPath = resolve(pluginDir, 'index.ts');
+        let indexPath = resolve(pluginDir, 'index.js');
+        if (!existsSync(indexPath)) {
+          indexPath = resolve(pluginDir, 'index.ts');
+        }
         if (!existsSync(indexPath)) continue;
         try {
           const instance = await this.loadPlugin(indexPath, entry.name);

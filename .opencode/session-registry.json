@@ -117,5 +117,12 @@
     "parentID": "ses_1ee344e1fffebKlV7LjJAfl7tw",
     "status": "running",
     "createdAt": 1778415090875
+  },
+  "fix-ai-subtitle": {
+    "id": "ses_1ecac1af4ffesTTrqCwmD6MszL",
+    "name": "fix-ai-subtitle",
+    "parentID": "fix-ai-subtitle-callback",
+    "status": "running",
+    "createdAt": 1778440725794
   }
 }
