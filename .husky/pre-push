@@ -1,0 +1,9 @@
+set -e
+
+echo "🧪 [pre-push] Running full test suite..."
+npx vitest run --exclude='tests/e2e/**'
+if [ $? -ne 0 ]; then
+  echo "❌ Tests failed. All tests must pass before pushing."
+  exit 1
+fi
+echo "✅ [pre-push] All tests passed!"

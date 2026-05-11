@@ -66,6 +66,8 @@ Commands:
   daemon start [--port <port>]      Start daemon
   daemon stop                       Stop daemon
   daemon status                     Check status
+  serve [--port <port>] [--token <t>] Start HTTP server for remote access
+  remote <url> [command] [--token <t>] Execute command on remote server
   record start --url <url>          Start recording
   record stop                       Stop recording
   record status                     Recording status

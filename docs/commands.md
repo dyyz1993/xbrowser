@@ -675,6 +675,128 @@ Commands require specific execution contexts:
 | page | Active page | goto, wait, query |
 | element | Element selected | click, fill, type |
 
+## HTTP Server
+
+### serve
+
+Start an HTTP REST API server for remote browser automation.
+
+```bash
+xbrowser serve [options]
+```
+
+**Options:**
+- `--port <port>` - HTTP server port (default: 9224)
+- `--token <secret>` - Bearer token for authentication
+
+**Examples:**
+```bash
+# Start without auth (dev mode)
+xbrowser serve
+
+# Start with authentication
+xbrowser serve --port 9224 --token my-secret
+
+# Start on custom port
+xbrowser serve --port 8080
+```
+
+When no token is configured, authentication is disabled (dev mode). To configure tokens persistently, set `server.tokens` in `~/.xbrowser/config.json` or use the `XBROWSER_SERVER_TOKEN` environment variable.
+
+**API Endpoints:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/v1/health` | Health check (no auth required) |
+| GET | `/api/v1/commands` | List all registered commands |
+| GET | `/api/v1/sessions` | List active browser sessions |
+| POST | `/api/v1/sessions` | Create a new session |
+| DELETE | `/api/v1/sessions/:name` | Close a session |
+| POST | `/api/v1/exec` | Execute a single command |
+| POST | `/api/v1/chain` | Execute a command chain |
+
+**Execute a command:**
+```bash
+curl -X POST http://localhost:9224/api/v1/exec \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my-secret" \
+  -d '{"command":"goto","params":{"url":"https://example.com"}}'
+```
+
+**Execute a command chain:**
+```bash
+curl -X POST http://localhost:9224/api/v1/chain \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer my-secret" \
+  -d '{"chain":"goto https://example.com && title && text --selector h1"}'
+```
+
+## Remote CLI
+
+### remote
+
+Execute commands on a remote xbrowser HTTP server.
+
+```bash
+xbrowser remote <url> [command] [--token <secret>]
+```
+
+**Arguments:**
+- `<url>` - Remote server URL (e.g. `http://192.168.1.100:9224`)
+- `[command]` - Command to execute (omit for health check)
+
+**Options:**
+- `--token <secret>` - Authentication token
+
+**Examples:**
+```bash
+# Health check
+xbrowser remote http://192.168.1.100:9224 --token my-secret
+
+# Execute a single command
+xbrowser remote http://192.168.1.100:9224 "goto https://example.com" --token my-secret --json
+
+# Execute a command chain
+xbrowser remote http://192.168.1.100:9224 "goto https://example.com && title && text --selector h1" --token my-secret
+
+# With default session
+xbrowser remote http://192.168.1.100:9224 "title" --token my-secret
+```
+
+## Daemon Commands
+
+### daemon
+
+Manage the xbrowser daemon background process.
+
+```bash
+xbrowser daemon <subcommand> [options]
+```
+
+**Subcommands:**
+- `start` - Start the daemon
+- `stop` - Stop the daemon
+- `status` - Check daemon status
+
+**Options:**
+- `--port <port>` - Browser CDP port (default: 9222)
+- `--http-port <port>` - HTTP API port (default: off)
+
+**Examples:**
+```bash
+# Start daemon with HTTP API
+xbrowser daemon start --http-port 9224
+
+# Start daemon with custom ports
+xbrowser daemon start --port 9222 --http-port 9224
+
+# Check status
+xbrowser daemon status
+
+# Stop daemon
+xbrowser daemon stop
+```
+
 ## See Also
 
 - [Quick Start](./quickstart.md) — Getting started guide

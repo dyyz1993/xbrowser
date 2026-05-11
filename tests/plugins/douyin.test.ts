@@ -37,13 +37,13 @@ describe('douyin plugin', () => {
     );
   });
 
-  it('should register 6 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(6);
+  it('should register 7 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(7);
   });
 
   it('should register expected command names', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
-    expect(names).toEqual(expect.arrayContaining(['videos', 'profile', 'detail', 'comments', 'user-comments', 'ai-subtitle']));
+    expect(names).toEqual(expect.arrayContaining(['videos', 'profile', 'detail', 'comments', 'user-comments', 'search', 'ai-subtitle']));
   });
 
   describe('profile command handler', () => {

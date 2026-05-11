@@ -3,6 +3,7 @@ import { existsSync, writeFileSync, unlinkSync, mkdirSync } from 'fs';
 import { resolve } from 'path';
 import { homedir } from 'os';
 import { WSServer } from '../websocket-server.js';
+import { HTTPServer } from '../server/http-server.js';
 import { readJsonFile } from '../utils/json-file.js';
 
 /**
@@ -12,6 +13,7 @@ export interface DaemonConfig {
   pid: number;
   port: number;
   wsPort?: number;
+  httpPort?: number;
   startedAt: string;
 }
 
@@ -32,6 +34,7 @@ export class DaemonManager {
   private workerScript: string;
   private process: ChildProcess | null = null;
   private wsServer: WSServer | null = null;
+  private httpServer: HTTPServer | null = null;
 
   constructor(options?: DaemonManagerOptions) {
     this.configDir = options?.configDir || resolve(homedir(), '.xbrowser');
@@ -44,10 +47,11 @@ export class DaemonManager {
    *
    * @param port - The browser CDP port. Defaults to 9222.
    * @param wsPort - The WebSocket server port. Defaults to 9223.
+   * @param httpPort - The HTTP server port. Optional.
    * @returns The daemon configuration with PID and ports.
    * @throws If a daemon is already running.
    */
-  async start(port?: number, wsPort?: number): Promise<DaemonConfig> {
+  async start(port?: number, wsPort?: number, httpPort?: number): Promise<DaemonConfig> {
     const existing = this.getConfig();
     if (existing && this.isProcessRunning(existing.pid)) {
       throw new Error(`Daemon already running (PID: ${existing.pid}, Port: ${existing.port})`);
@@ -56,7 +60,12 @@ export class DaemonManager {
     const daemonPort = port || 9222;
     const websocketPort = wsPort || 9223;
 
-    this.process = spawn('node', [this.workerScript, 'daemon', 'worker', '--port', String(daemonPort), '--ws-port', String(websocketPort)], {
+    const args = ['daemon', 'worker', '--port', String(daemonPort), '--ws-port', String(websocketPort)];
+    if (httpPort) {
+      args.push('--http-port', String(httpPort));
+    }
+
+    this.process = spawn('node', [this.workerScript, ...args], {
       detached: true,
       stdio: 'ignore',
       env: { ...process.env },
@@ -68,6 +77,7 @@ export class DaemonManager {
       pid: this.process.pid!,
       port: daemonPort,
       wsPort: websocketPort,
+      httpPort,
       startedAt: new Date().toISOString(),
     };
 
@@ -87,6 +97,7 @@ export class DaemonManager {
     }
 
     await this.stopWSServer();
+    await this.stopHTTPServer();
 
     try {
       process.kill(config.pid, 'SIGTERM');
@@ -133,6 +144,32 @@ export class DaemonManager {
     if (!this.wsServer) return;
     await this.wsServer.stop();
     this.wsServer = null;
+  }
+
+  /**
+   * Start the HTTP server for remote API access.
+   *
+   * @param httpPort - The port to listen on. Defaults to 9224.
+   * @returns The started HTTPServer instance.
+   */
+  async startHTTPServer(httpPort?: number): Promise<HTTPServer> {
+    if (this.httpServer) {
+      return this.httpServer;
+    }
+
+    const port = httpPort || 9224;
+    this.httpServer = new HTTPServer({ port });
+    await this.httpServer.start();
+    return this.httpServer;
+  }
+
+  /**
+   * Stop the HTTP server if running.
+   */
+  async stopHTTPServer(): Promise<void> {
+    if (!this.httpServer) return;
+    await this.httpServer.stop();
+    this.httpServer = null;
   }
 
   private getConfig(): DaemonConfig | null {

@@ -21,6 +21,8 @@ import { showMainHelp } from './cli/help.js';
 import { printChainResult, printChainResultBrief } from './cli/chain-output.js';
 import { getPluginLoader } from './utils/plugin-singleton.js';
 import { findSession, createSession, destroyBrowser } from './browser.js';
+import { HTTPServer } from './server/http-server.js';
+import { DaemonManager } from './daemon/daemon.js';
 
 
 function handleConfig(
@@ -163,7 +165,11 @@ export async function routeCommand(
         handleCreate(cmdArgs, options);
         break;
       case 'daemon':
-        handleDaemon(cmdArgs, options, mode);
+        if (cmdArgs[0] === 'worker') {
+          await handleDaemonWorker(cmdArgs.slice(1), options);
+        } else {
+          handleDaemon(cmdArgs, options, mode);
+        }
         break;
       case 'record':
         await handleRecord(cmdArgs, options, mode);
@@ -191,6 +197,12 @@ export async function routeCommand(
         break;
       case 'admin':
         await handleAdmin(cmdArgs, options, mode);
+        break;
+      case 'serve':
+        await handleServe(cmdArgs, options, mode);
+        break;
+      case 'remote':
+        await handleRemote(cmdArgs, options, mode);
         break;
       case 'preview': {
         const builtin = allBuiltins.find((b) => b.name === 'preview');
@@ -323,5 +335,218 @@ export async function routeCommand(
     }
   } catch (e: unknown) {
     outputError(e instanceof Error ? e.message : String(e));
+  }
+}
+
+/**
+ * Handle the `xbrowser serve` command — start an HTTP server for remote access.
+ *
+ * @param args - Positional arguments (unused).
+ * @param options - CLI options including `--port` and `--token`.
+ * @param mode - Output mode (text, json, yaml).
+ */
+async function handleServe(
+  _args: string[],
+  options: Record<string, unknown>,
+  mode: string
+): Promise<void> {
+  const port = options.port ? Number(options.port) : undefined;
+  const token = options.token as string | undefined;
+
+  const httpServer = new HTTPServer({ port, tokens: token ? [token] : undefined });
+
+  process.on('SIGINT', async () => {
+    await httpServer.stop();
+    process.exit(0);
+  });
+  process.on('SIGTERM', async () => {
+    await httpServer.stop();
+    process.exit(0);
+  });
+
+  try {
+    const addr = await httpServer.start();
+    const output = {
+      ok: true,
+      message: `xbrowser HTTP server running`,
+      url: `http://${addr.host}:${addr.port}`,
+      port: addr.port,
+      authRequired: !!token || !!process.env.XBROWSER_SERVER_TOKEN,
+      endpoints: {
+        health: `GET  /api/v1/health`,
+        commands: `GET  /api/v1/commands`,
+        sessions: `GET  /api/v1/sessions`,
+        createSession: `POST /api/v1/sessions`,
+        closeSession: `DELETE /api/v1/sessions/:name`,
+        exec: `POST /api/v1/exec`,
+        chain: `POST /api/v1/chain`,
+      },
+    };
+
+    if (mode === 'json') {
+      outputResult(output, mode);
+    } else {
+      console.log(`\n  🌐 xbrowser HTTP Server`);
+      console.log(`\n  URL: ${output.url}`);
+      console.log(`  Auth: ${output.authRequired ? 'Enabled (Bearer token)' : 'Disabled (dev mode)'}\n`);
+      console.log(`  Endpoints:`);
+      for (const [, value] of Object.entries(output.endpoints)) {
+        console.log(`    ${value}`);
+      }
+      console.log(`\n  Press Ctrl+C to stop\n`);
+    }
+  } catch (e: unknown) {
+    outputError(e instanceof Error ? e.message : String(e));
+    process.exit(1);
+  }
+}
+
+/**
+ * Handle the daemon worker process — starts WS and HTTP servers in the
+ * detached child process spawned by `daemon start`.
+ *
+ * @param args - Worker arguments (--port, --ws-port, --http-port).
+ * @param options - Parsed CLI options.
+ */
+async function handleDaemonWorker(
+  _args: string[],
+  options: Record<string, unknown>
+): Promise<void> {
+  const port = options.port ? Number(options.port) : 9222;
+  const wsPort = options.wsPort ? Number(options.wsPort) : 9223;
+  const httpPort = options.httpPort ? Number(options.httpPort) : undefined;
+
+  const daemon = new DaemonManager();
+
+  process.on('SIGTERM', async () => {
+    await daemon.stopWSServer();
+    await daemon.stopHTTPServer();
+    process.exit(0);
+  });
+  process.on('SIGINT', async () => {
+    await daemon.stopWSServer();
+    await daemon.stopHTTPServer();
+    process.exit(0);
+  });
+
+  await daemon.startWSServer(wsPort);
+  console.log(`Daemon worker started (port: ${port}, ws: ${wsPort})`);
+
+  if (httpPort) {
+    await daemon.startHTTPServer(httpPort);
+    console.log(`Daemon HTTP server started on port ${httpPort}`);
+  }
+
+  // Keep process alive
+  setInterval(() => {}, 60000);
+}
+
+/**
+ * Handle the `xbrowser remote` command — proxy commands to a remote
+ * xbrowser HTTP server.
+ *
+ * @param args - Positional arguments: [url, command...].
+ * @param options - CLI options including `--token`.
+ * @param mode - Output mode (text, json, yaml).
+ */
+async function handleRemote(
+  args: string[],
+  options: Record<string, unknown>,
+  mode: string
+): Promise<void> {
+  const serverUrl = args[0];
+  if (!serverUrl) {
+    outputError('Usage: xbrowser remote <url> [command] [--token <token>]');
+    return;
+  }
+
+  const token = options.token as string | undefined;
+
+  if (!args[1]) {
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    try {
+      const resp = await fetch(`${serverUrl}/api/v1/health`, { headers });
+      const data = await resp.json();
+      outputResult(data, mode);
+    } catch (e) {
+      outputError(`Failed to connect to ${serverUrl}: ${e instanceof Error ? e.message : String(e)}`);
+    }
+    return;
+  }
+
+  const command = args.slice(1).join(' ');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  if (isChainInput(command)) {
+    const body = { chain: command };
+    try {
+      const resp = await fetch(`${serverUrl}/api/v1/chain`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+      const data = (await resp.json()) as { steps?: Array<{ success: boolean; raw: string; message?: string }> };
+      if (mode === 'json') {
+        outputResult(data, mode);
+      } else {
+        for (const step of data.steps || []) {
+          if (step.success) {
+            console.log(`[OK] ${step.raw}`);
+          } else {
+            console.error(`[FAIL] ${step.raw}: ${step.message}`);
+          }
+        }
+      }
+    } catch (e) {
+      outputError(`Remote execution failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  } else {
+    const parts = command.split(/\s+/);
+    const cmdName = parts[0];
+    const cmdParts = parts.slice(1);
+    const params: Record<string, unknown> = {};
+
+    for (let i = 0; i < cmdParts.length; i++) {
+      if (cmdParts[i].startsWith('--')) {
+        const key = cmdParts[i].slice(2);
+        const val = cmdParts[i + 1];
+        if (val && !val.startsWith('--')) {
+          params[key] = val;
+          i++;
+        } else {
+          params[key] = true;
+        }
+      } else {
+        if (!params.url) params.url = cmdParts[i];
+        else if (!params.selector) params.selector = cmdParts[i];
+        else if (!params.value) params.value = cmdParts[i];
+      }
+    }
+
+    const body = { command: cmdName, params };
+    try {
+      const resp = await fetch(`${serverUrl}/api/v1/exec`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+      const data = (await resp.json()) as { success?: boolean; data?: unknown; message?: string };
+      if (mode === 'json') {
+        outputResult(data, mode);
+      } else {
+        if (data.success) {
+          if (data.data) console.log(JSON.stringify(data.data, null, 2));
+        } else {
+          outputError(data.message || 'Command failed');
+        }
+      }
+    } catch (e) {
+      outputError(`Remote execution failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 }

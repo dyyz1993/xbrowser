@@ -246,10 +246,11 @@ export function handleDaemon(
   switch (sub) {
     case 'start': {
       const port = options.port ? Number(options.port) : undefined;
+      const httpPort = options.httpPort ? Number(options.httpPort) : undefined;
       daemon
-        .start(port)
+        .start(port, undefined, httpPort)
         .then((config) =>
-          outputResult({ ok: true, pid: config.pid, port: config.port }, mode)
+          outputResult({ ok: true, pid: config.pid, port: config.port, httpPort: config.httpPort }, mode)
         )
         .catch((e: unknown) =>
           outputError(e instanceof Error ? e.message : String(e))
@@ -274,6 +275,6 @@ export function handleDaemon(
       break;
     }
     default:
-      console.log('Usage: xbrowser daemon <start|stop|status> [--port <port>]');
+      console.log('Usage: xbrowser daemon <start|stop|status> [--port <port>] [--http-port <port>]');
   }
 }

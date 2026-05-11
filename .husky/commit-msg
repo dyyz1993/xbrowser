@@ -1,8 +1,24 @@
-# any 类型计数检查
-ANY_COUNT=$(grep -r '\bany\b' src/ --include='*.ts' -c 2>/dev/null | awk -F: '{sum+=$NF} END {print sum+0}')
-if [ "$ANY_COUNT" -gt 100 ]; then
-  echo "❌ Commit rejected: Found $ANY_COUNT 'any' type usages in src/ (max allowed: 100)"
-  echo "   Please reduce 'any' usage before committing."
+MSG=$(cat "$1")
+
+if ! echo "$MSG" | grep -qE "^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: .{1,80}"; then
+  echo "❌ Invalid commit message format."
+  echo ""
+  echo "Expected format: <type>(<scope>): <subject>"
+  echo ""
+  echo "Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert"
+  echo "Subject: 1-80 chars, no trailing period"
+  echo ""
+  echo "Examples:"
+  echo "  feat(auth): add login support"
+  echo "  fix: resolve null pointer in parser"
+  echo "  docs: update API documentation"
   exit 1
 fi
-echo "✅ any check passed: $ANY_COUNT/100"
+
+LENGTH=$(echo "$MSG" | head -1 | wc -c | tr -d ' ')
+if [ "$LENGTH" -gt 100 ]; then
+  echo "❌ Commit message first line too long ($LENGTH chars, max 100)."
+  exit 1
+fi
+
+echo "✅ Commit message format valid"

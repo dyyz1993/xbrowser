@@ -219,7 +219,7 @@ describe('plugin-routes', () => {
       handleDaemon(['unknown'], {}, 'text');
 
       expect(consoleSpy).toHaveBeenCalledWith(
-        'Usage: xbrowser daemon <start|stop|status> [--port <port>]'
+        'Usage: xbrowser daemon <start|stop|status> [--port <port>] [--http-port <port>]'
       );
       consoleSpy.mockRestore();
     });
@@ -360,7 +360,7 @@ describe('plugin-routes', () => {
       handleDaemon(['start'], { port: 9222 }, 'json');
 
       await vi.waitFor(() => {
-        expect(mockStart).toHaveBeenCalledWith(9222);
+        expect(mockStart).toHaveBeenCalledWith(9222, undefined, undefined);
       });
     });
 

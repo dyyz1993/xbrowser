@@ -71,3 +71,5 @@ export { generateJSScript, generatePythonScript, generateBashScript } from './co
 export { extractRecording, extractAndSave, printExtractSummary } from './commands/extract.js';
 export { filterRecording, parseExcludeTypes } from './commands/filter.js';
 export type { Recording, RecordingEvent } from './commands/definitions.js';
+export { HTTPServer } from './server/http-server.js';
+export type { HTTPServerConfig, APIRequest, APIResponse, ExecRequest, ChainRequest, HTTPServerError } from './server/types.js';
