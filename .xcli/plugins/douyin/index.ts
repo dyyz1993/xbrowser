@@ -1,5 +1,6 @@
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
+import { detectSsr } from '../shared/ssr-detect.js';
 
 type Page = import('playwright-core').Page;
 type Response = import('playwright-core').Response;
@@ -224,6 +225,13 @@ export default function (xcli: XCLIAPI): void {
         try {
           await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
           await page.waitForTimeout(3000);
+
+          const ssr = await detectSsr(page);
+          if (ssr) {
+            tips.push(ssr.tip);
+            if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
+          }
+
           await scrollAndCollect(page, params.maxPages || 5, () => interceptor.items().length);
 
           const videos = interceptor.items().map(parseVideo);
@@ -259,6 +267,12 @@ export default function (xcli: XCLIAPI): void {
 
         await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForTimeout(5000);
+
+        const ssr = await detectSsr(page);
+        if (ssr) {
+          tips.push(ssr.tip);
+          if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
+        }
 
         const userInfo = await page.evaluate(() => {
           const nickname =
@@ -305,6 +319,12 @@ export default function (xcli: XCLIAPI): void {
           timeout: 30000,
         });
         await page.waitForTimeout(5000);
+
+        const ssr = await detectSsr(page);
+        if (ssr) {
+          tips.push(ssr.tip);
+          if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
+        }
 
         const info = await page.evaluate(() => {
           const desc =
@@ -356,6 +376,13 @@ export default function (xcli: XCLIAPI): void {
             timeout: 30000,
           });
           await page.waitForTimeout(3000);
+
+          const ssr = await detectSsr(page);
+          if (ssr) {
+            tips.push(ssr.tip);
+            if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
+          }
+
           await scrollAndCollect(page, params.maxPages || 5, () => interceptor.items().length);
 
           const comments = interceptor.items().map(parseComment);
@@ -397,6 +424,13 @@ export default function (xcli: XCLIAPI): void {
             timeout: 30000,
           });
           await page.waitForTimeout(3000);
+
+          const ssr = await detectSsr(page);
+          if (ssr) {
+            tips.push(ssr.tip);
+            if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
+          }
+
           await scrollAndCollect(page, params.maxPages || 5, () => interceptor.items().length);
 
           const videos = interceptor.items().map(parseVideo);
@@ -495,6 +529,12 @@ export default function (xcli: XCLIAPI): void {
         try {
           await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
           await page.waitForTimeout(6000);
+
+          const ssr = await detectSsr(page);
+          if (ssr) {
+            tips.push(ssr.tip);
+            if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
+          }
 
           for (let i = 0; i < params.maxPages; i++) {
             await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));

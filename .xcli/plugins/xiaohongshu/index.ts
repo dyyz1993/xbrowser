@@ -1,5 +1,6 @@
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
+import { detectSsr } from '../shared/ssr-detect.js';
 
 type Page = import('playwright-core').Page;
 type Response = import('playwright-core').Response;
@@ -215,6 +216,13 @@ export default function (xcli: XCLIAPI): void {
         try {
           await page.goto(`${XHS_BASE}/explore/${params.noteId}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
           await dismissModals(page);
+
+          const ssr = await detectSsr(page);
+          if (ssr) {
+            tips.push(ssr.tip);
+            if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
+          }
+
           let raw = await waitForInterceptor(interceptor.get);
           if (!raw && waitForHuman) {
             await waitForHuman({ reason: '小红书笔记详情加载失败，可能需要登录或验证', timeout: 120 });
@@ -244,6 +252,13 @@ export default function (xcli: XCLIAPI): void {
         try {
           await page.goto(`${XHS_BASE}/user/profile/${params.userId}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
           await dismissModals(page);
+
+          const ssr = await detectSsr(page);
+          if (ssr) {
+            tips.push(ssr.tip);
+            if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
+          }
+
           await scrollAndCollect(page, params.maxPages || 5, () => interceptor.items().length, { waitForHuman });
           const notes = interceptor.items().map(parseNote);
           tips.push(`采集到 ${notes.length} 条笔记`);
@@ -271,6 +286,13 @@ export default function (xcli: XCLIAPI): void {
         try {
           await page.goto(`${XHS_BASE}/user/profile/${params.userId}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
           await dismissModals(page);
+
+          const ssr = await detectSsr(page);
+          if (ssr) {
+            tips.push(ssr.tip);
+            if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
+          }
+
           let raw = await waitForInterceptor(interceptor.get);
           if (!raw && waitForHuman) {
             await waitForHuman({ reason: '小红书用户资料加载失败，可能需要登录或验证', timeout: 120 });
@@ -314,6 +336,13 @@ export default function (xcli: XCLIAPI): void {
         try {
           await page.goto(`${XHS_BASE}/search_result?keyword=${encodeURIComponent(params.keyword)}&source=web_search_result_notes`, { waitUntil: 'domcontentloaded', timeout: 30000 });
           await dismissModals(page);
+
+          const ssr = await detectSsr(page);
+          if (ssr) {
+            tips.push(ssr.tip);
+            if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
+          }
+
           await scrollAndCollect(page, params.maxPages || 3, () => interceptor.items().length, { waitForHuman });
           const notes = interceptor.items().map(parseNoteBrief);
           tips.push(`搜索到 ${notes.length} 条笔记`);
@@ -338,6 +367,13 @@ export default function (xcli: XCLIAPI): void {
         try {
           await page.goto(`${XHS_BASE}/explore/${params.noteId}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
           await dismissModals(page);
+
+          const ssr = await detectSsr(page);
+          if (ssr) {
+            tips.push(ssr.tip);
+            if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
+          }
+
           await scrollAndCollect(page, params.maxPages || 8, () => interceptor.items().length, {
             delay: 3000,
             staleThreshold: 4,
@@ -366,6 +402,13 @@ export default function (xcli: XCLIAPI): void {
         try {
           await page.goto(`${XHS_BASE}/explore`, { waitUntil: 'domcontentloaded', timeout: 30000 });
           await dismissModals(page);
+
+          const ssr = await detectSsr(page);
+          if (ssr) {
+            tips.push(ssr.tip);
+            if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
+          }
+
           await scrollAndCollect(page, params.maxPages || 3, () => interceptor.items().length, { waitForHuman });
           const notes = interceptor.items().map(parseNoteBrief);
           tips.push(`获取到 ${notes.length} 条推荐笔记`);
@@ -387,6 +430,13 @@ export default function (xcli: XCLIAPI): void {
         const tips = buildCtxTips(ctx as Record<string, unknown>);
         await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 15000 });
         await page.waitForTimeout(3000);
+
+        const ssr = await detectSsr(page);
+        if (ssr) {
+          tips.push(ssr.tip);
+          if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
+        }
+
         const finalUrl = page.url();
         const noteIdMatch = finalUrl.match(/\/explore\/([a-zA-Z0-9]+)/);
         const userIdMatch = finalUrl.match(/\/user\/profile\/([a-zA-Z0-9]+)/);
