@@ -31,6 +31,69 @@ function log(msg: string): void {
   }
 }
 
+// --- Built-in recording JS injected on every session creation ---
+const RECORDING_INJECT_JS = `
+(function(){
+  if(window.__xb_rec) return;
+  window.__xb_rec = true;
+  window.__xb_evts = [];
+  window.__xb_t0 = Date.now();
+  function d(el){
+    if(!el||!el.tagName) return {tag:'unknown'};
+    var o={tag:el.tagName.toLowerCase(),text:(el.textContent||'').trim().substring(0,80)};
+    if(el.getAttribute('role')) o.role=el.getAttribute('role');
+    if(el.id) o.id=el.id;
+    if(el.getAttribute('type')) o.type=el.getAttribute('type');
+    if(el.getAttribute('placeholder')) o.placeholder=el.getAttribute('placeholder');
+    if(el.getAttribute('aria-label')) o.ariaLabel=el.getAttribute('aria-label');
+    if(el.contentEditable==='true') o.contentEditable=true;
+    return o;
+  }
+  function p(t,det){
+    var e={type:t,ts:Date.now()-window.__xb_t0,url:location.href};
+    for(var k in det) e[k]=det[k];
+    window.__xb_evts.push(e);
+  }
+  document.addEventListener('click',function(e){p('click',{target:d(e.target),x:e.clientX,y:e.clientY})},true);
+  document.addEventListener('dblclick',function(e){p('dblclick',{target:d(e.target),x:e.clientX,y:e.clientY})},true);
+  document.addEventListener('input',function(e){var el=e.target;p('input',{target:d(el),value:(el.value||el.textContent||'').substring(0,200)})},true);
+  document.addEventListener('change',function(e){p('change',{target:d(e.target),value:(e.target.value||'').substring(0,100)})},true);
+  document.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key==='Tab'||e.key==='Escape'||e.key.startsWith('Arrow'))p('keydown',{key:e.key,target:d(e.target)})},true);
+  document.addEventListener('submit',function(e){p('submit',{target:d(e.target)})},true);
+  document.addEventListener('focus',function(e){var t=e.target.tagName;if(t==='INPUT'||t==='TEXTAREA'||e.target.contentEditable==='true')p('focus',{target:d(e.target)})},true);
+  var obs=new MutationObserver(function(mutations){
+    for(var m of mutations){
+      for(var node of m.addedNodes){
+        if(node.nodeType===1&&node.tagName){
+          var text=(node.textContent||'').trim().substring(0,60);
+          if(text&&text.length>1) p('dom_added',{tag:node.tagName.toLowerCase(),role:node.getAttribute&&node.getAttribute('role'),text:text});
+        }
+      }
+    }
+  });
+  if(document.body) obs.observe(document.body,{childList:true,subtree:true});
+  p('recording_started',{url:location.href});
+})();
+`;
+
+/** Inject recording JS into a page and set up auto-reinject on navigation */
+async function injectRecording(page: import('playwright').Page): Promise<void> {
+  try {
+    await page.evaluate(RECORDING_INJECT_JS);
+    log('Recording JS injected into current page');
+  } catch {
+    log('Could not inject recording JS (page may be navigating)');
+  }
+  // Auto-reinject on every new document load via CDP
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: RECORDING_INJECT_JS });
+    log('Recording JS registered for auto-reinject on navigation');
+  } catch {
+    log('Could not register auto-reinject (CDP Page.addScriptToEvaluateOnNewDocument)');
+  }
+}
+
 async function resolveCDPEndpoint(raw: string): Promise<string> {
   if (raw === 'auto') {
     const httpResp = await fetch('http://localhost:9222/json/version');
@@ -58,8 +121,10 @@ async function main() {
   const existing = findSession('default');
   if (!existing) {
     log('Creating default session...');
-    await createSession('default', undefined, { cdpEndpoint: endpoint });
-    log('Default session created');
+    const session = await createSession('default', undefined, { cdpEndpoint: endpoint });
+    log('Default session created, injecting recording JS...');
+    await injectRecording(session.page);
+    log('Recording JS injected');
   }
 
   const server = startHttpServer({
@@ -189,6 +254,61 @@ async function main() {
           const entry = networkStore.inspect(sessionName, id);
           if (!entry.capture) return { error: `Entry #${id} not found` };
           return exportEntry(entry.capture, lang);
+        }
+        case 'recording:status': {
+          const sess = findSession((params.session as string) || 'default');
+          if (!sess) return { recording: false, error: 'No session' };
+          try {
+            const result = await sess.page.evaluate(() => ({
+              active: !!(window as unknown as Record<string, unknown>).__xb_rec,
+              events: ((window as unknown as Record<string, unknown>).__xb_evts as unknown[])?.length || 0,
+              url: location.href,
+            }));
+            return { recording: true, ...result };
+          } catch {
+            return { recording: false, error: 'Page unreachable' };
+          }
+        }
+        case 'recording:events': {
+          const sess = findSession((params.session as string) || 'default');
+          if (!sess) return { events: [], error: 'No session' };
+          try {
+            const events = await sess.page.evaluate(() => (window as unknown as Record<string, unknown>).__xb_evts || []);
+            return { events, url: sess.page.url() };
+          } catch {
+            return { events: [], error: 'Page unreachable' };
+          }
+        }
+        case 'recording:clear': {
+          const sess = findSession((params.session as string) || 'default');
+          if (!sess) return { ok: false, error: 'No session' };
+          try {
+            await sess.page.evaluate(() => {
+              (window as unknown as Record<string, unknown>).__xb_evts = [];
+              (window as unknown as Record<string, unknown>).__xb_t0 = Date.now();
+            });
+            return { ok: true };
+          } catch {
+            return { ok: false, error: 'Page unreachable' };
+          }
+        }
+        case 'recording:save': {
+          const sess = findSession((params.session as string) || 'default');
+          if (!sess) return { ok: false, error: 'No session' };
+          try {
+            const events = await sess.page.evaluate(() => (window as unknown as Record<string, unknown>).__xb_evts || []) as unknown[];
+            const recordingsDir = join(CONFIG_DIR, 'recordings');
+            mkdirSync(recordingsDir, { recursive: true });
+            const outPath = (params.path as string) || join(recordingsDir, `recording-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+            writeFileSync(outPath, JSON.stringify({
+              startUrl: sess.page.url(),
+              recordedAt: new Date().toISOString(),
+              events,
+            }, null, 2));
+            return { ok: true, path: outPath, events: events.length };
+          } catch (e) {
+            return { ok: false, error: (e as Error).message };
+          }
         }
         default:
           log(`RPC unknown method: ${method}`);

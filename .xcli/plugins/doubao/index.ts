@@ -1249,20 +1249,27 @@ export default function (xcli: XCLIAPI): void {
         });
 
         if (params.lyric) {
-          const dropdownBtn = page.locator('button:has-text("AI 帮我写歌词")').first();
+          // Step 1: Click "AI 帮我写歌词" dropdown
+          const dropdownBtn = page.locator('div:has-text("AI 帮我写歌词")').first();
           await dropdownBtn.click();
           await page.waitForTimeout(500);
-          const customOption = page.locator('[role="menuitem"]:has-text("自定义歌词")').first();
+          
+          // Step 2: Select "自定义歌词" from dropdown
+          const customOption = page.locator('div:has-text("自定义歌词")').first();
           await customOption.click();
           await page.waitForTimeout(1000);
 
-          const editor = page.locator('[contenteditable="true"][role="textbox"]').first();
-          await editor.click();
-          await page.keyboard.press('Meta+a');
-          await page.keyboard.press('Backspace');
-          await page.waitForTimeout(300);
-          await page.keyboard.type(params.lyric, { delay: 5 });
+          // Step 3: A popup appears with textarea[placeholder="自定义歌词"]
+          const lyricTextarea = page.locator('textarea[placeholder="自定义歌词"]').first();
+          await lyricTextarea.waitFor({ state: 'visible', timeout: 5000 });
+          await lyricTextarea.click();
+          await lyricTextarea.fill(params.lyric);
           await page.waitForTimeout(500);
+          
+          // Step 4: Click "确认" button in the popup
+          const confirmBtn = page.locator('span:has-text("确认")').first();
+          await confirmBtn.click();
+          await page.waitForTimeout(1000);
           tips.push('已切换到自定义歌词模式并输入歌词');
         } else {
           const descSet = await page.evaluate((description: string) => {
@@ -1287,24 +1294,14 @@ export default function (xcli: XCLIAPI): void {
 
         await page.waitForTimeout(500);
 
-        await page.evaluate(() => {
-          const ed = document.querySelector('[contenteditable="true"][role="textbox"]');
-          if (ed) {
-            ed.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-            ed.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-            ed.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-            ed.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
-            setTimeout(() => {
-              ed.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-              ed.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-              ed.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-              ed.dispatchEvent(new Event('beforeinput', { bubbles: true }));
-              ed.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertLineBreak' }));
-            }, 50);
-          }
-        });
-        await page.waitForTimeout(300);
-        await page.keyboard.press('Enter').catch(() => {});
+        // Click the send button to submit
+        const sendBtn = page.locator('button#flow-end-msg-send').first();
+        if (await sendBtn.isVisible().catch(() => false)) {
+          await sendBtn.click();
+        } else {
+          // Fallback: press Enter
+          await page.keyboard.press('Enter').catch(() => {});
+        }
         tips.push('音乐生成请求已发送，等待 AI 生成...');
 
         const ctxAny = ctx as unknown as Record<string, unknown>;

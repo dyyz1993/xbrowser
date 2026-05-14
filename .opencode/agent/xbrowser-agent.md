@@ -408,6 +408,16 @@ npm run typecheck
 - **Chromium 路径**: /Applications/Chromium.app/Contents/MacOS/Chromium
 - **配置文件**: ~/.xbrowser/config.json
 
+### 代理环境变量（访问外网必需）
+
+所有涉及外网请求的操作（npm publish、插件市场 `plugin publish/search/whoami`、Web 搜索等）**必须先设置代理环境变量**，否则会 `fetch failed`：
+
+```bash
+export https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 all_proxy=socks5://127.0.0.1:7890
+```
+
+**注意**：`npx xbrowser plugin publish` / `plugin search` / `plugin whoami` / `npm publish` 等命令都需要代理才能访问 marketplace（Cloudflare Workers）。执行前务必先 export 上述变量。
+
 ### 端口分配
 
 | 端口 | 服务 | 说明 |

@@ -100,6 +100,9 @@ describe('doubao plugin', () => {
     const config = cmd[1] as Record<string, unknown>;
     expect(config.description).toContain('音乐生成');
     expect(config.scope).toBe('browser');
+    const examples = config.examples as Array<{ cmd: string; description: string }>;
+    expect(examples.some(e => e.cmd.includes('--lyric'))).toBe(true);
+    expect(examples.some(e => e.cmd.includes('--debug'))).toBe(true);
   });
 
   it('should register upload command', () => {
