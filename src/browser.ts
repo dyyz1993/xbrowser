@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { chromium, type Browser, type BrowserContext, type Page, type Response } from 'playwright';
@@ -503,6 +503,11 @@ export async function destroyBrowser(): Promise<void> {
 export function resetForTesting(): void {
   sessions.clear();
   browser = null;
+  try {
+    for (const f of readdirSync(SESSION_DIR)) {
+      unlinkSync(join(SESSION_DIR, f));
+    }
+  } catch { /* dir may not exist */ }
 }
 
 /**
