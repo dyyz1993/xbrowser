@@ -224,7 +224,14 @@ export default function (xcli: XCLIAPI): void {
               const legacy = result.legacy as Record<string, unknown>;
               const extMedia = ((legacy as Record<string, unknown>).extended_entities?.media || []) as Array<Record<string, unknown>>;
               capturedTweets.push({
-          for (const inst of instructions) {
+                id: result.rest_id,
+                text: (legacy.full_text as string || ''),
+                likes: Number(legacy.favorite_count) || 0,
+                retweets: Number(legacy.retweet_count) || 0,
+                mediaUrls: extMedia.map((m: Record<string, unknown>) => (m.media_url_https as string) || ''),
+              });
+            }
+          }
             const entries = (inst.entries || []) as Array<Record<string, unknown>>;
             for (const entry of entries) {
               const result = (entry?.content as Record<string, unknown>)?.itemContent?.tweet_results?.result as Record<string, unknown> | undefined;
