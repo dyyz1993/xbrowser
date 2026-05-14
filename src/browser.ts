@@ -466,16 +466,16 @@ export async function closeSessionByName(name: string): Promise<boolean> {
 export async function closeAllSessions(): Promise<void> {
   const names = [...sessions.values()].map(s => `${s.name}(${s.page.url()})`).join(', ');
   if (names) logSessionEvent('close_all_sessions', `Closing ${sessions.size} sessions: ${names}`);
-  for (const [, session] of sessions) {
+  for (const [id, session] of sessions) {
     try {
       if (!session.isCDP) {
         await session.context.close();
+        sessions.delete(id);
       }
     } catch {
-      // ignore
+      sessions.delete(id);
     }
   }
-  sessions.clear();
 }
 
 /**
