@@ -232,42 +232,7 @@ export default function (xcli: XCLIAPI): void {
               });
             }
           }
-            const entries = (inst.entries || []) as Array<Record<string, unknown>>;
-            for (const entry of entries) {
-              const result = (entry?.content as Record<string, unknown>)?.itemContent?.tweet_results?.result as Record<string, unknown> | undefined;
-              if (!result?.legacy || capturedTweets.length >= params.limit) continue;
-              const legacy = result.legacy as Record<string, unknown>;
-              const extMedia = ((legacy as Record<string, unknown>).extended_entities?.media || []) as Array<Record<string, unknown>>;
-              capturedTweets.push({
-                id: result.rest_id as string,
-                text: legacy.full_text as string,
-                createdAt: legacy.created_at as string,
-                likes: legacy.favorite_count,
-                retweets: legacy.retweet_count,
-                replies: legacy.reply_count,
-                views: (result.views as Record<string, unknown>)?.count,
-                bookmarks: legacy.bookmark_count,
-                quotes: legacy.quote_count,
-                lang: legacy.lang,
-                isQuote: !!legacy.is_quote_status,
-                isReply: !!legacy.in_reply_to_status_id_str,
-                conversationId: legacy.conversation_id,
-                source: legacy.source,
-                media: extMedia.map((m: Record<string, unknown>) => ({
-                  type: m.type,
-                  url: (m.media_url_https as string) || '',
-                  videoInfo: m.video_info ? {
-                    duration: (m.video_info as Record<string, unknown>).duration_millis,
-                    variants: ((m.video_info as Record<string, unknown>).variants as Array<Record<string, unknown>>)?.map(v => ({
-                      bitrate: v.bitrate,
-                      url: v.url,
-                    })),
-                  } : null,
-                })),
-              });
-            }
-          }
-        } catch {}
+        } catch { /* ignore parse errors */ }
       }
 
       const tweets = capturedTweets.slice(0, params.limit);
