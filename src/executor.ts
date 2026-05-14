@@ -1,7 +1,7 @@
 import { isCommandResult, type CommandResult } from '@dyyz1993/xcli-core';
 import { getCommand, getAllCommands } from './commands/index.js';
 import type { BrowserCommandContext } from './context.js';
-import { findSession, createSession, destroyBrowser, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
+import { findOrRestoreSession, createSession, destroyBrowser, saveSessionDiskMeta, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
 import {
   parseCommandChain,
   splitCommand,
@@ -18,6 +18,7 @@ export interface ExecutionResult {
   data: unknown;
   message?: string;
   duration: number;
+  tips?: string[];
 }
 
 /**
@@ -30,6 +31,7 @@ export interface ChainStepResult {
   data: unknown;
   message?: string;
   duration: number;
+  tips?: string[];
 }
 
 /**
@@ -110,13 +112,24 @@ export async function executeCommand(
     params = result.data as Record<string, unknown>;
   }
 
+  // If daemon is running and CDP is being used, forward to daemon
+  if (extraOpts?.cdpEndpoint && command.scope === 'page' && !process.env.XBROWSER_DAEMON_WORKER) {
+    const { isDaemonRunning, forwardExec } = await import('./client/daemon-client.js');
+    if (await isDaemonRunning()) {
+      return forwardExec(commandName, params, sessionName);
+    }
+  }
+
   let session: ManagedSession | undefined;
   let autoCreated = false;
-  const existing = findSession(sessionName);
+  // Try in-memory first, then disk restore
+  const existing = await findOrRestoreSession(sessionName, extraOpts?.cdpEndpoint);
   if (existing) {
     session = existing;
   } else if (command.scope === 'page' && params.url) {
-    session = await createSession(sessionName, params.url as string, {});
+    session = await createSession(sessionName, params.url as string, {
+      cdpEndpoint: extraOpts?.cdpEndpoint,
+    });
     autoCreated = true;
   } else if (command.scope !== 'project') {
     return errorResult(
@@ -170,6 +183,15 @@ export async function executeCommand(
     const raw = await command.handler(params, ctx);
     const end = Date.now();
     const duration = end - start;
+
+    // Save conversationUrl to session disk metadata when a command returns it
+    if (session && isCommandResult(raw)) {
+      const resultData = raw.data as Record<string, unknown> | undefined;
+      const convUrl = resultData?.conversationUrl as string | undefined;
+      if (convUrl) {
+        saveSessionDiskMeta(sessionName, { conversationUrl: convUrl });
+      }
+    }
 
     if (session) {
       const phaseData = {
@@ -249,7 +271,7 @@ export async function executeChain(
   const results: ChainStepResult[] = [];
   const totalStart = Date.now();
 
-  let session = findSession(sessionName);
+  let session = await findOrRestoreSession(sessionName, options?.cdpEndpoint);
   let createdSession = false;
   if (!session) {
     const launchOpts: BrowserLaunchOptions = {};
@@ -409,7 +431,7 @@ export async function executeChain(
         const { params } = parseCommandArgs(cmdName, cmdArgs);
 
         if (cmdName === 'goto' && params.url) {
-          const existing2 = findSession(sessionName);
+          const existing2 = await findOrRestoreSession(sessionName, options?.cdpEndpoint);
           if (!existing2) {
             session = await createSession(sessionName, params.url as string, {
               cdpEndpoint: options?.cdpEndpoint,
@@ -430,6 +452,7 @@ export async function executeChain(
           data: result.data,
           message: result.message,
           duration,
+          tips: result.tips,
         };
         results.push(stepResult);
 

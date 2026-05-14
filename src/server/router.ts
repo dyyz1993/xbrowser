@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 import { executeCommand, executeChain } from '../executor.js';
-import { findSession, getAllSessions, createSession, closeSessionByName } from '../browser.js';
+import { findSession, findOrRestoreSession, getAllSessions, createSession, closeSessionByName } from '../browser.js';
 import { getCommand, getAllCommands } from '../commands/index.js';
 import type { APIRequest, APIResponse } from './types.js';
 
@@ -235,7 +235,7 @@ async function ensureSession(
   url?: string,
   cdpEndpoint?: string,
 ): Promise<void> {
-  const existing = findSession(sessionName);
+  const existing = await findOrRestoreSession(sessionName, cdpEndpoint);
   if (existing) return;
 
   await createSession(sessionName, url, cdpEndpoint ? { cdpEndpoint } : {});

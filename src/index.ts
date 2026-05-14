@@ -47,8 +47,12 @@ export { RecorderController } from './recorder/recorder.js';
 export type { RecordedEvent, RecordingSession, RecorderStatus } from './recorder/recorder.js';
 export { PlaybackEngine } from './recorder/player.js';
 export type { PlaybackOptions, PlaybackResult } from './recorder/player.js';
-export { DaemonManager } from './daemon/daemon.js';
-export type { DaemonConfig } from './daemon/daemon.js';
+export {
+  startDaemonProcess,
+  stopDaemonProcess,
+  getDaemonProcessStatus,
+} from './daemon/daemon.js';
+export type { DaemonInfo } from './daemon/daemon.js';
 export { WSServer } from './websocket-server.js';
 export type { WSServerConfig, WSMessage, WSInboundMessage, ScreencastMessage, CommandMessage, StatusMessage } from './websocket-server.js';
 export { CaptchaDetector } from './captcha-detector.js';

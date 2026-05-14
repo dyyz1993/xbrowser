@@ -3,7 +3,7 @@ import { XBrowserPluginLoader } from '../plugin/loader.js';
 import { PluginInstaller } from '../plugin/installer.js';
 import { MarketplaceSearcher } from '../plugin/marketplace-search.js';
 import { NPMSearcher } from '../plugin/npm-search.js';
-import { DaemonManager } from '../daemon/daemon.js';
+import { startDaemonProcess, stopDaemonProcess, getDaemonProcessStatus } from '../daemon/daemon.js';
 import { outputResult, outputError } from './output.js';
 import { DEFAULT_MARKETPLACE_URL, NPM_REGISTRY_URL } from '../config.js';
 import { ensureProxyFetch } from '../utils/proxy-fetch.js';
@@ -242,15 +242,13 @@ export function handleDaemon(
   mode: string
 ): void {
   const sub = args[0];
-  const daemon = new DaemonManager();
   switch (sub) {
     case 'start': {
-      const port = options.port ? Number(options.port) : undefined;
-      const httpPort = options.httpPort ? Number(options.httpPort) : undefined;
-      daemon
-        .start(port, undefined, httpPort)
+      const cdpEndpoint = (options.cdp as string) || 'auto';
+      const port = options.port ? Number(options.port) : 9224;
+      startDaemonProcess(cdpEndpoint, port)
         .then((config) =>
-          outputResult({ ok: true, pid: config.pid, port: config.port, httpPort: config.httpPort }, mode)
+          outputResult({ ok: true, pid: config.pid, port: config.port }, mode)
         )
         .catch((e: unknown) =>
           outputError(e instanceof Error ? e.message : String(e))
@@ -258,8 +256,7 @@ export function handleDaemon(
       break;
     }
     case 'stop': {
-      daemon
-        .stop()
+      stopDaemonProcess()
         .then(() => outputResult({ ok: true }, mode))
         .catch((e: unknown) =>
           outputError(e instanceof Error ? e.message : String(e))
@@ -267,14 +264,14 @@ export function handleDaemon(
       break;
     }
     case 'status': {
-      const status = daemon.status();
+      const status = getDaemonProcessStatus();
       outputResult(
-        status ? { running: true, ...status } : { running: false },
+        status.running ? { running: true, pid: status.pid, port: status.port } : { running: false },
         mode
       );
       break;
     }
     default:
-      console.log('Usage: xbrowser daemon <start|stop|status> [--port <port>] [--http-port <port>]');
+      console.log('Usage: xbrowser daemon <start|stop|status> [--cdp <endpoint>] [--port <port>]');
   }
 }

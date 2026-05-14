@@ -7,11 +7,11 @@
     "createdAt": 1778199312246
   },
   "tier1-config-session": {
-    "id": "ses_1fb0ef663ffeQ9Ef4sc2KBCVnW",
+    "id": "ses_1dd18b3cdffemZbDiMSlqjdAxZ",
     "name": "tier1-config-session",
-    "parentID": "main",
+    "parentID": "ses_1df7e5e1fffeL4nxvkBlRrJqNf",
     "status": "running",
-    "createdAt": 1778199366045
+    "createdAt": 1778702044213
   },
   "crawl-impl": {
     "id": "ses_1f8622293ffe4aq1IVpiMUBwPV",

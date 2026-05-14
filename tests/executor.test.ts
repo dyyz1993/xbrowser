@@ -1,31 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const mockBrowserPage = {
+  goto: vi.fn().mockResolvedValue(null),
+  url: vi.fn().mockReturnValue('about:blank'),
+  close: vi.fn().mockResolvedValue(undefined),
+};
+const mockBrowserContext = {
+  newPage: vi.fn().mockResolvedValue(mockBrowserPage),
+  pages: vi.fn().mockReturnValue([]),
+  close: vi.fn().mockResolvedValue(undefined),
+  browser: vi.fn().mockReturnValue({ close: vi.fn().mockResolvedValue(undefined) }),
+};
+const mockBrowser = {
+  newContext: vi.fn().mockResolvedValue(mockBrowserContext),
+  contexts: vi.fn().mockReturnValue([]),
+  close: vi.fn().mockResolvedValue(undefined),
+};
+
 vi.mock('playwright', () => ({
   chromium: {
-    launch: vi.fn().mockResolvedValue({
-      newContext: vi.fn().mockResolvedValue({
-        newPage: vi.fn().mockResolvedValue({
-          goto: vi.fn().mockResolvedValue(null),
-          url: vi.fn().mockReturnValue('about:blank'),
-          close: vi.fn().mockResolvedValue(undefined),
-        }),
-        close: vi.fn().mockResolvedValue(undefined),
-        browser: vi.fn().mockReturnValue({ close: vi.fn().mockResolvedValue(undefined) }),
-      }),
-      close: vi.fn().mockResolvedValue(undefined),
-      connectOverCDP: vi.fn().mockResolvedValue({
-        newContext: vi.fn().mockResolvedValue({
-          newPage: vi.fn().mockResolvedValue({
-            goto: vi.fn().mockResolvedValue(null),
-            url: vi.fn().mockReturnValue('about:blank'),
-            close: vi.fn().mockResolvedValue(undefined),
-          }),
-          close: vi.fn().mockResolvedValue(undefined),
-          browser: vi.fn().mockReturnValue({ close: vi.fn().mockResolvedValue(undefined) }),
-        }),
-        close: vi.fn().mockResolvedValue(undefined),
-      }),
-    }),
+    launch: vi.fn().mockResolvedValue(mockBrowser),
+    connectOverCDP: vi.fn().mockResolvedValue(mockBrowser),
   },
 }));
 
@@ -487,5 +482,47 @@ describe('executeChain advanced', () => {
     const result = await executeChain('nonexistent1 ; nonexistent2 ; nonexistent3');
     expect(result.steps.length).toBeGreaterThanOrEqual(1);
     expect(result.success).toBe(false);
+  });
+});
+
+describe('executeCommand cdpEndpoint forwarding', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should pass cdpEndpoint to createSession when auto-creating session for goto command', async () => {
+    const browserModule = await import('../src/browser.js');
+    browserModule.resetForTesting();
+    const { executeCommand } = await import('../src/executor.js');
+
+    const result = await executeCommand('goto', { url: 'https://example.com' }, 'test-session', {
+      cdpEndpoint: 'http://localhost:9221',
+    });
+
+    expect(result).toBeDefined();
+  });
+
+  it('should work without cdpEndpoint (backward compatibility)', async () => {
+    const browserModule = await import('../src/browser.js');
+    browserModule.resetForTesting();
+    const { executeCommand } = await import('../src/executor.js');
+
+    const result = await executeCommand('goto', { url: 'https://example.com' }, 'test-session');
+
+    expect(result).toBeDefined();
+  });
+
+  it('should reuse existing session without creating new one', async () => {
+    const browserModule = await import('../src/browser.js');
+    browserModule.resetForTesting();
+    await browserModule.createSession('existing', undefined, {});
+    const createSessionSpy = vi.spyOn(browserModule, 'createSession');
+    const { executeCommand } = await import('../src/executor.js');
+
+    await executeCommand('goto', { url: 'https://example.com' }, 'existing', {
+      cdpEndpoint: 'http://localhost:9221',
+    });
+
+    expect(createSessionSpy).not.toHaveBeenCalled();
   });
 });

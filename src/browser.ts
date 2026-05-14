@@ -1,5 +1,19 @@
 import { randomUUID } from 'node:crypto';
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { chromium, type Browser, type BrowserContext, type Page, type Response } from 'playwright';
+
+/**
+ * Log a session lifecycle event for traceability.
+ * Format: [SESSION] event | details
+ * Events: create, close, idle_timeout, destroy_browser, process_exit, cdp_disconnect
+ */
+function logSessionEvent(event: string, details: string): void {
+  const ts = new Date().toISOString().replace('T', ' ').substring(0, 19);
+  const pid = process.pid;
+  console.error(`[SESSION] ${ts} [PID:${pid}] ${event} | ${details}`);
+}
 
 /**
  * Represents a managed browser session with its Playwright context and page.
@@ -15,6 +29,26 @@ export interface ManagedSession {
   cdpEndpoint?: string;
 }
 
+/** Extra metadata stored on disk for cross-process session recovery. */
+export interface SessionDiskMeta {
+  id: string;
+  name: string;
+  url: string;
+  createdAt: string;
+  cdpEndpoint?: string;
+  conversationUrl?: string;   // specific page URL to restore (e.g. doubao chat conversation)
+}
+
+const SESSION_DIR = join(homedir(), '.xbrowser', 'sessions');
+
+function sessionFile(name: string): string {
+  return join(SESSION_DIR, `${name}.json`);
+}
+
+function ensureSessionDir(): void {
+  mkdirSync(SESSION_DIR, { recursive: true });
+}
+
 /**
  * Options for launching or connecting to a browser instance.
  */
@@ -27,7 +61,7 @@ export interface BrowserLaunchOptions {
 const sessions = new Map<string, ManagedSession>();
 let browser: Browser | null = null;
 
-const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
 function resetIdleTimer(): void {
@@ -35,13 +69,16 @@ function resetIdleTimer(): void {
   idleTimer = setTimeout(async () => {
     const now = Date.now();
     let allIdle = true;
+    const idleSessions: string[] = [];
     for (const [, s] of sessions) {
       if (now - s.lastActivityAt < IDLE_TIMEOUT_MS) {
         allIdle = false;
-        break;
+      } else {
+        idleSessions.push(`${s.name}(${(now - s.lastActivityAt) / 1000}s idle)`);
       }
     }
     if (allIdle && browser) {
+      logSessionEvent('idle_timeout', `Sessions idle for >${IDLE_TIMEOUT_MS / 60000}min. Sessions: ${idleSessions.join(', ') || 'all'}. Calling destroyBrowser()`);
       await destroyBrowser().catch(() => {});
     }
   }, IDLE_TIMEOUT_MS);
@@ -55,6 +92,8 @@ export function touchSession(id: string): void {
 
 process.on('exit', () => {
   if (browser) {
+    const sessionNames = [...sessions.values()].map(s => s.name).join(', ');
+    logSessionEvent('process_exit', `Process exiting. Closing browser. Active sessions: ${sessionNames || '(none)'}`);
     try {
       browser.close();
     } catch {
@@ -130,6 +169,85 @@ export function findSession(name: string): ManagedSession | undefined {
 }
 
 /**
+ * Save session metadata to disk for cross-process recovery.
+ */
+export function saveSessionDiskMeta(name: string, data: Partial<SessionDiskMeta>): void {
+  ensureSessionDir();
+  const file = sessionFile(name);
+  let existing: Record<string, unknown> = {};
+  try { existing = JSON.parse(readFileSync(file, 'utf8')); } catch { /* new file */ }
+  Object.assign(existing, data, { name });
+  writeFileSync(file, JSON.stringify(existing, null, 2));
+}
+
+/**
+ * Read session metadata from disk.
+ */
+export function readSessionDiskMeta(name: string): SessionDiskMeta | null {
+  const file = sessionFile(name);
+  try {
+    return JSON.parse(readFileSync(file, 'utf8')) as SessionDiskMeta;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Find a session by name, falling back to disk-stored metadata when the
+ * in-memory session is gone (e.g. cross-CLI-invocation).
+ *
+ * In restore mode, creates a fresh page via CDP and navigates to the saved
+ * conversationUrl or url so the caller gets a working page.
+ *
+ * @param name - Session name.
+ * @param cdpEndpoint - CDP endpoint to use when restoring from disk.
+ * @returns A managed session (possibly restored), or `undefined`.
+ */
+export async function findOrRestoreSession(
+  name: string,
+  cdpEndpoint?: string,
+): Promise<ManagedSession | undefined> {
+  // 1. Try in-memory first
+  const inMem = findSession(name);
+  if (inMem) return inMem;
+
+  // 2. Try disk recovery if we have CDP
+  const meta = readSessionDiskMeta(name);
+  if (!meta) return undefined;
+  const ep = cdpEndpoint || meta.cdpEndpoint;
+  if (!ep) return undefined;
+
+  try {
+    const b = await getBrowser({ cdpEndpoint: ep });
+    const contexts = b.contexts();
+    const context = contexts[0] || (await b.newContext());
+    const page = await context.newPage();
+
+    // Navigate to conversationUrl (specific page) or url (generic)
+    const targetUrl = meta.conversationUrl || meta.url || 'about:blank';
+    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+
+    const session: ManagedSession = {
+      id: meta.id || randomUUID(),
+      name,
+      context,
+      page,
+      createdAt: meta.createdAt || new Date().toISOString(),
+      lastActivityAt: Date.now(),
+      isCDP: true,
+      cdpEndpoint: ep,
+    };
+    sessions.set(session.id, session);
+    resetIdleTimer();
+    await installNetworkCapture(page, name);
+    return session;
+  } catch (e) {
+    console.error(`[Session Restore] Failed for "${name}":`, (e as Error).message);
+    return undefined;
+  }
+}
+
+/**
  * Find a managed session by its unique ID.
  *
  * @param id - The session UUID.
@@ -146,6 +264,99 @@ export function getSessionById(id: string): ManagedSession | undefined {
  */
 export function getAllSessions(): ManagedSession[] {
   return Array.from(sessions.values());
+}
+
+async function installNetworkCapture(page: Page, sessionName: string): Promise<void> {
+  if (process.env.XBROWSER_DAEMON_WORKER !== '1') return;
+
+  const { networkStore } = await import('./daemon/network-store.js');
+
+  page.on('response', async (response: Response) => {
+    try {
+      const request = response.request();
+      const url = response.url();
+      const contentType = response.headers()['content-type'] || '';
+
+      // Capture response headers
+      const headers: Record<string, string> = {};
+      for (const [k, v] of Object.entries(response.headers())) {
+        headers[k] = v;
+      }
+
+      // Capture request headers
+      const requestHeaders: Record<string, string> = {};
+      for (const [k, v] of Object.entries(request.headers())) {
+        requestHeaders[k] = v;
+      }
+
+      // Capture request body for POST/PATCH/PUT with JSON
+      let requestBody: unknown = undefined;
+      const method = request.method();
+      const isPostLike = ['POST', 'PATCH', 'PUT'].includes(method);
+      if (isPostLike && requestHeaders['content-type']?.includes('application/json')) {
+        try {
+          const postData = request.postData();
+          if (postData) {
+            try {
+              requestBody = JSON.parse(postData);
+            } catch {
+              // Keep as string if not valid JSON
+              requestBody = postData;
+            }
+          }
+        } catch {
+          // Ignore errors reading post data
+        }
+      }
+
+      let responseBody: unknown = undefined;
+      let size = 0;
+
+      const isJsonish =
+        contentType.includes('json') ||
+        contentType.includes('javascript') ||
+        contentType.includes('text/');
+      if (isJsonish) {
+        try {
+          const text = await response.text();
+          size = text.length;
+          if (size <= 10240) {
+            try {
+              responseBody = JSON.parse(text);
+            } catch {
+              responseBody = text.slice(0, 200);
+            }
+          }
+        } catch {
+          /* unable to read body */
+        }
+      } else {
+        try {
+          const text = await response.text();
+          size = text.length;
+        } catch {
+          size = 0;
+        }
+      }
+
+      networkStore.add(sessionName, {
+        timestamp: Date.now(),
+        method,
+        url,
+        path: new URL(url).pathname,
+        status: response.status(),
+        contentType,
+        size,
+        headers,
+        body: responseBody,
+        requestHeaders,
+        requestBody,
+        resourceType: request.resourceType(),
+      });
+    } catch {
+      // Silently ignore capture errors
+    }
+  });
 }
 
 /**
@@ -221,7 +432,9 @@ export async function createSession(
     cdpEndpoint: options?.cdpEndpoint,
   };
   sessions.set(session.id, session);
+  logSessionEvent('create_session', `name="${name}" id="${session.id}" url="${url || '(no url)'}" isCDP=${isCDP} cdpEndpoint=${options?.cdpEndpoint || '(none)'}`);
   resetIdleTimer();
+  await installNetworkCapture(page, name);
   return session;
 }
 
@@ -234,6 +447,7 @@ export async function createSession(
 export async function closeSessionByName(name: string): Promise<boolean> {
   for (const [id, session] of sessions) {
     if (session.name === name || session.id === name) {
+      logSessionEvent('close_session', `name="${session.name}" id="${session.id}" url="${session.page.url()}"`);
       await session.context.close();
       sessions.delete(id);
       return true;
@@ -248,6 +462,8 @@ export async function closeSessionByName(name: string): Promise<boolean> {
  * Closes every managed context, ignoring individual close errors.
  */
 export async function closeAllSessions(): Promise<void> {
+  const names = [...sessions.values()].map(s => `${s.name}(${s.page.url()})`).join(', ');
+  if (names) logSessionEvent('close_all_sessions', `Closing ${sessions.size} sessions: ${names}`);
   for (const [, session] of sessions) {
     try {
       await session.context.close();
@@ -265,6 +481,7 @@ export async function closeAllSessions(): Promise<void> {
  * {@link getBrowser} will create a new instance on next call.
  */
 export async function destroyBrowser(): Promise<void> {
+  logSessionEvent('destroy_browser', `Sessions count: ${sessions.size}. Clearing idle timer and closing browser.`);
   if (idleTimer) {
     clearTimeout(idleTimer);
     idleTimer = null;

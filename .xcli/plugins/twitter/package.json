@@ -1,32 +1,17 @@
 {
   "name": "xbrowser-plugin-twitter",
-  "version": "2.0.0",
-  "description": "X (Twitter) 数据采集插件 - 支持推文搜索、用户资料、时间线、回复等功能，针对高影响力账号优化",
+  "version": "2.1.0",
+  "type": "module",
+  "description": "X (Twitter) 数据采集 - XHR 拦截模式，含 views/bookmarks/媒体等丰富数据",
   "main": "index.ts",
-  "keywords": [
-    "xbrowser",
-    "xbrowser-plugin",
-    "twitter",
-    "x",
-    "social-media",
-    "scraper",
-    "elonmusk",
-    "trump",
-    "data-collection"
-  ],
   "author": "XBrowser Team",
   "license": "MIT",
   "xbrowser": {
-    "site": "https://x.com",
-    "requiresLogin": false,
-    "commands": [
-      "search",
-      "profile",
-      "timeline",
-      "timeline-advanced",
-      "tweets",
-      "replies"
-    ]
+    "name": "twitter",
+    "url": "https://x.com",
+    "description": "X (Twitter) 数据采集插件（XHR 拦截模式）",
+    "commands": ["search", "profile", "timeline", "replies", "liked"],
+    "sites": ["twitter"]
   },
   "dependencies": {
     "zod": "^3.24.0"

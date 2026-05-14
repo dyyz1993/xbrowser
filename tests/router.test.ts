@@ -306,7 +306,7 @@ describe('router', () => {
     await routeCommand(['goto https://example.com && title']);
     exit.restore();
 
-    expect(executeChain).toHaveBeenCalledWith('goto https://example.com && title');
+    expect(executeChain).toHaveBeenCalledWith('goto https://example.com && title', { cdpEndpoint: undefined });
   });
 
   it('exits with code 1 when chain fails in single arg mode', async () => {
@@ -339,7 +339,7 @@ describe('router', () => {
 
     await routeCommand([], ['goto https://example.com', 'title']);
 
-    expect(executeChain).toHaveBeenCalledWith('goto https://example.com && title', { fileMode: true });
+    expect(executeChain).toHaveBeenCalledWith('goto https://example.com && title', { fileMode: true, cdpEndpoint: undefined });
     expect(printChainResult).toHaveBeenCalled();
   });
 
@@ -371,7 +371,7 @@ describe('router', () => {
 
     await routeCommand(['-e', 'title']);
 
-    expect(executeChain).toHaveBeenCalledWith('title');
+    expect(executeChain).toHaveBeenCalledWith('title', { cdpEndpoint: undefined });
     expect(printChainResultBrief).toHaveBeenCalled();
   });
 
@@ -385,7 +385,7 @@ describe('router', () => {
 
     await routeCommand(['--eval', 'title']);
 
-    expect(executeChain).toHaveBeenCalledWith('title');
+    expect(executeChain).toHaveBeenCalledWith('title', { cdpEndpoint: undefined });
   });
 
   it('handles multiple -e flags', async () => {
@@ -398,7 +398,7 @@ describe('router', () => {
 
     await routeCommand(['-e', 'goto https://example.com', '-e', 'title']);
 
-    expect(executeChain).toHaveBeenCalledWith('goto https://example.com && title');
+    expect(executeChain).toHaveBeenCalledWith('goto https://example.com && title', { cdpEndpoint: undefined });
   });
 
   it('exits with code 1 when eval chain fails', async () => {
@@ -698,7 +698,7 @@ describe('router', () => {
 
     await routeCommand(['session', 'list'], ['goto https://example.com']);
 
-    expect(executeChain).toHaveBeenCalledWith('goto https://example.com', { fileMode: true });
+    expect(executeChain).toHaveBeenCalledWith('goto https://example.com', { fileMode: true, cdpEndpoint: undefined });
   });
 
   it('handles eval mode taking priority over normal routing', async () => {
@@ -711,7 +711,7 @@ describe('router', () => {
 
     await routeCommand(['-e', 'title', 'session', 'list']);
 
-    expect(executeChain).toHaveBeenCalledWith('title');
+    expect(executeChain).toHaveBeenCalledWith('title', { cdpEndpoint: undefined });
   });
 
   it('routes preview subcommand to builtin', async () => {

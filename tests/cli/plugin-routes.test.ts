@@ -44,11 +44,10 @@ vi.mock('../../src/plugin/npm-search.js', () => ({
 }));
 
 vi.mock('../../src/daemon/daemon.js', () => ({
-  DaemonManager: vi.fn().mockImplementation(() => ({
-    start: vi.fn(),
-    stop: vi.fn(),
-    status: vi.fn(),
-  })),
+  startDaemonProcess: vi.fn(),
+  stopDaemonProcess: vi.fn(),
+  getDaemonProcessStatus: vi.fn(),
+  isDaemonRunning: vi.fn(),
 }));
 
 vi.mock('../../src/cli/publish-routes.js', () => ({
@@ -219,14 +218,22 @@ describe('plugin-routes', () => {
       handleDaemon(['unknown'], {}, 'text');
 
       expect(consoleSpy).toHaveBeenCalledWith(
-        'Usage: xbrowser daemon <start|stop|status> [--port <port>] [--http-port <port>]'
+        'Usage: xbrowser daemon <start|stop|status> [--cdp <endpoint>] [--port <port>]'
       );
       consoleSpy.mockRestore();
     });
 
-    it('should output daemon status', () => {
+    it('should output daemon status', async () => {
+      const { getDaemonProcessStatus } = await import('../../src/daemon/daemon.js');
+      vi.mocked(getDaemonProcessStatus).mockReturnValue({
+        running: true, pid: 12345, port: 9224, info: { pid: 12345, port: 9224, startedAt: new Date().toISOString() },
+      });
+
       handleDaemon(['status'], {}, 'json');
-      expect(mockOutputResult).toHaveBeenCalled();
+      expect(mockOutputResult).toHaveBeenCalledWith(
+        { running: true, pid: 12345, port: 9224 },
+        'json'
+      );
     });
   });
 
@@ -349,34 +356,38 @@ describe('plugin-routes', () => {
 
   describe('handleDaemon - start/stop', () => {
     it('should start daemon with port option', async () => {
-      const { DaemonManager } = await import('../../src/daemon/daemon.js');
-      const mockStart = vi.fn().mockResolvedValue({ pid: 1234, port: 9222 });
-      vi.mocked(DaemonManager).mockImplementation(() => ({
-        start: mockStart,
-        stop: vi.fn(),
-        status: vi.fn(),
-      }) as never);
+      const { startDaemonProcess } = await import('../../src/daemon/daemon.js');
+      vi.mocked(startDaemonProcess).mockResolvedValue({ pid: 1234, port: 9222, startedAt: new Date().toISOString() });
 
       handleDaemon(['start'], { port: 9222 }, 'json');
 
       await vi.waitFor(() => {
-        expect(mockStart).toHaveBeenCalledWith(9222, undefined, undefined);
+        expect(mockOutputResult).toHaveBeenCalledWith(
+          { ok: true, pid: 1234, port: 9222 },
+          'json'
+        );
+      });
+    });
+
+    it('should start daemon with default CDP endpoint', async () => {
+      const { startDaemonProcess } = await import('../../src/daemon/daemon.js');
+      vi.mocked(startDaemonProcess).mockResolvedValue({ pid: 1234, port: 9224, startedAt: new Date().toISOString() });
+
+      handleDaemon(['start'], {}, 'json');
+
+      await vi.waitFor(() => {
+        expect(startDaemonProcess).toHaveBeenCalledWith('auto', 9224);
       });
     });
 
     it('should stop daemon', async () => {
-      const { DaemonManager } = await import('../../src/daemon/daemon.js');
-      const mockStop = vi.fn().mockResolvedValue(undefined);
-      vi.mocked(DaemonManager).mockImplementation(() => ({
-        start: vi.fn(),
-        stop: mockStop,
-        status: vi.fn(),
-      }) as never);
+      const { stopDaemonProcess } = await import('../../src/daemon/daemon.js');
+      vi.mocked(stopDaemonProcess).mockResolvedValue(undefined);
 
       handleDaemon(['stop'], {}, 'json');
 
       await vi.waitFor(() => {
-        expect(mockStop).toHaveBeenCalled();
+        expect(mockOutputResult).toHaveBeenCalledWith({ ok: true }, 'json');
       });
     });
   });

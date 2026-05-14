@@ -7,3 +7,4 @@ recordings/
 coverage/
 *.log
 .DS_Store
+.codenomad/

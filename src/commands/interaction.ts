@@ -14,11 +14,55 @@ export const clickCommand = registerCommand({
     delay: z.number().optional(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
-    await ctx.page.click(p.selector, {
-      button: p.button,
-      clickCount: p.clickCount,
-      delay: p.delay,
-    });
+    // 用 Promise 监听新 Tab 打开事件（target="_blank" 链接等）
+    let detectedNewPage: import('playwright').Page | undefined;
+    let cleanup: (() => void) | undefined;
+
+    if (ctx.browserContext?.on) {
+      const pagePromise = new Promise<import('playwright').Page | undefined>((resolve) => {
+        const timer = setTimeout(() => {
+          ctx.browserContext.off('page', handler);
+          resolve(undefined);
+        }, 3000);
+        const handler = (page: import('playwright').Page) => {
+          clearTimeout(timer);
+          ctx.browserContext.off('page', handler);
+          resolve(page);
+        };
+        ctx.browserContext.on('page', handler);
+      });
+      cleanup = () => {
+        // Force resolve to clean up timer if click throws
+      };
+      await ctx.page.click(p.selector, {
+        button: p.button,
+        clickCount: p.clickCount,
+        delay: p.delay,
+      });
+      detectedNewPage = await pagePromise;
+    } else {
+      await ctx.page.click(p.selector, {
+        button: p.button,
+        clickCount: p.clickCount,
+        delay: p.delay,
+      });
+    }
+
+    void cleanup;
+
+    if (detectedNewPage) {
+      const np = detectedNewPage;
+      await np.waitForLoadState('domcontentloaded').catch(() => {});
+      const newUrl = np.url();
+      const newTitle = (await np.title().catch(() => '')) as string;
+      const result = ok({
+        selector: p.selector,
+        newTab: { url: newUrl, title: newTitle },
+      });
+      result.tips = [`新 Tab 已打开: ${newTitle ? newTitle + ' — ' : ''}${newUrl}`];
+      return result;
+    }
+
     return ok({ selector: p.selector });
   },
 });

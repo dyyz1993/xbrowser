@@ -21,6 +21,11 @@ export function printChainResult(chainResult: ChainExecutionResult): void {
           }
         }
       }
+      if (step.tips?.length) {
+        for (const tip of step.tips) {
+          console.log(`  💡 ${tip}`);
+        }
+      }
     } else {
       console.error(`[FAIL] ${step.raw}: ${step.message}`);
     }

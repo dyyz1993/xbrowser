@@ -1,0 +1,52 @@
+{
+  "name": "xbrowser-plugin-doubao",
+  "version": "1.1.0",
+  "description": "豆包 (Doubao) 全能助手 - 会话管理、图像/视频/音乐生成、文件管理、联网搜索",
+  "type": "module",
+  "main": "index.ts",
+  "keywords": [
+    "xbrowser",
+    "doubao",
+    "doucai",
+    "ai",
+    "image-generation",
+    "video-generation",
+    "music-generation",
+    "cloud-drive",
+    "cdp",
+    "playwright"
+  ],
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "doubao",
+    "description": "豆包 AI 全能助手",
+    "commands": [
+      "list",
+      "new",
+      "open",
+      "chat",
+      "image",
+      "image-edit",
+      "image-cutout",
+      "image-vary",
+      "my-creations",
+      "video",
+      "video-status",
+      "video-result",
+      "music",
+      "music-status",
+      "music-result",
+      "upload",
+      "cloud-drive",
+      "mode",
+      "search",
+      "attach"
+    ],
+    "sites": ["doubao"]
+  }
+}

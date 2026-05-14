@@ -1,18 +1,25 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { DaemonConfig } from '../../src/daemon/daemon.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('child_process', () => ({
   spawn: vi.fn().mockReturnValue({
     unref: vi.fn(),
-    pid: 12345,
+    pid: 54321,
+    on: vi.fn(),
   }),
 }));
 
+const mockXcliCore = {
+  isDaemonRunning: vi.fn(),
+  stopDaemon: vi.fn().mockResolvedValue(undefined),
+};
+
+vi.mock('@dyyz1993/xcli-core', () => mockXcliCore);
+
 vi.mock('fs', () => ({
-  existsSync: vi.fn().mockReturnValue(false),
+  existsSync: vi.fn().mockReturnValue(true),
   readFileSync: vi.fn(),
-  writeFileSync: vi.fn(),
   unlinkSync: vi.fn(),
+  writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
 }));
 
@@ -20,165 +27,92 @@ vi.mock('os', () => ({
   homedir: vi.fn().mockReturnValue('/home/test'),
 }));
 
-describe('DaemonManager', () => {
-  let DaemonManager: typeof import('../../src/daemon/daemon.js').DaemonManager;
+vi.mock('url', () => ({
+  fileURLToPath: vi.fn().mockReturnValue('/home/test/project/dist/daemon/daemon.js'),
+}));
 
-  beforeEach(async () => {
+describe('Daemon API', () => {
+  beforeEach(() => {
     vi.clearAllMocks();
-    const mod = await import('../../src/daemon/daemon.js');
-    DaemonManager = mod.DaemonManager;
   });
 
-  describe('status', () => {
-    it('should return null when no config file', async () => {
+  describe('getDaemonProcessStatus', () => {
+    it('should return not running when no config', async () => {
+      mockXcliCore.isDaemonRunning.mockReturnValue(false);
       const { existsSync } = await import('fs');
       (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(false);
-      const daemon = new DaemonManager({
-        configDir: '/tmp/xbrowser-test',
-        workerScript: '/tmp/test-worker.js',
-      });
-      expect(daemon.status()).toBeNull();
+
+      const { getDaemonProcessStatus } = await import('../../src/daemon/daemon.js');
+      const result = getDaemonProcessStatus();
+      expect(result.running).toBe(false);
     });
 
-    it('should return null and clear config when process not running', async () => {
-      const { existsSync, readFileSync, unlinkSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
-      (readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(JSON.stringify({
-        pid: 9999999,
-        port: 9222,
-        startedAt: '2025-01-01',
-      }));
-      const originalKill = process.kill;
-      process.kill = vi.fn().mockImplementation(() => {
-        throw new Error('ESRCH');
-      });
-
-      const daemon = new DaemonManager({
-        configDir: '/tmp/xbrowser-test',
-        workerScript: '/tmp/test-worker.js',
-      });
-      const result = daemon.status();
-      expect(result).toBeNull();
-      expect(unlinkSync).toHaveBeenCalled();
-
-      process.kill = originalKill;
-    });
-
-    it('should return config when process is running', async () => {
+    it('should return running status', async () => {
+      mockXcliCore.isDaemonRunning.mockReturnValue(true);
       const { existsSync, readFileSync } = await import('fs');
       (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
-      const config: DaemonConfig = {
+      (readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(JSON.stringify({
         pid: 12345,
-        port: 9222,
-        startedAt: '2025-01-01T00:00:00Z',
-      };
-      (readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(JSON.stringify(config));
-      const originalKill = process.kill;
-      process.kill = vi.fn();
+        port: 9224,
+        startedAt: Date.now(),
+      }));
 
-      const daemon = new DaemonManager({
-        configDir: '/tmp/xbrowser-test',
-        workerScript: '/tmp/test-worker.js',
-      });
-      const result = daemon.status();
-      expect(result).toEqual(config);
-
-      process.kill = originalKill;
+      const { getDaemonProcessStatus } = await import('../../src/daemon/daemon.js');
+      const result = getDaemonProcessStatus();
+      expect(result.running).toBe(true);
+      expect(result.pid).toBe(12345);
+      expect(result.port).toBe(9224);
     });
   });
 
-  describe('start', () => {
-    it('should throw when daemon already running', async () => {
+  describe('startDaemonProcess', () => {
+    it('should spawn worker process and wait for config', async () => {
+      vi.useFakeTimers();
       const { existsSync, readFileSync } = await import('fs');
       (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
       (readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(JSON.stringify({
-        pid: 12345,
-        port: 9222,
-        startedAt: '2025-01-01',
+        pid: 54321,
+        port: 9224,
+        startedAt: Date.now(),
       }));
-      const originalKill = process.kill;
-      process.kill = vi.fn();
+      const { spawn } = await import('child_process');
+      const mockProcess = { unref: vi.fn(), pid: 54321, on: vi.fn() };
+      (spawn as ReturnType<typeof vi.fn>).mockReturnValue(mockProcess);
 
-      const daemon = new DaemonManager({
-        configDir: '/tmp/xbrowser-test',
-        workerScript: '/tmp/test-worker.js',
-      });
-      await expect(daemon.start()).rejects.toThrow('Daemon already running');
+      const { startDaemonProcess } = await import('../../src/daemon/daemon.js');
+      const promise = startDaemonProcess('auto', 9224);
+      vi.advanceTimersByTime(500);
+      const config = await promise;
 
-      process.kill = originalKill;
+      expect(config.pid).toBe(54321);
+      expect(config.port).toBe(9224);
+      vi.useRealTimers();
     });
 
-    it('should spawn process and write config', async () => {
-      const { existsSync, writeFileSync } = await import('fs');
+    it('should reject on spawn error', async () => {
+      vi.useRealTimers();
+      const { existsSync } = await import('fs');
       (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(false);
       const { spawn } = await import('child_process');
       const mockProcess = {
         unref: vi.fn(),
         pid: 54321,
+        on: vi.fn((_event: string, handler: (err: Error) => void) => {
+          setImmediate(() => handler(new Error('spawn failed')));
+        }),
       };
       (spawn as ReturnType<typeof vi.fn>).mockReturnValue(mockProcess);
 
-      const daemon = new DaemonManager({
-        configDir: '/tmp/xbrowser-test',
-        workerScript: '/tmp/test-worker.js',
-      });
-      const config = await daemon.start(8080);
-      expect(spawn).toHaveBeenCalledWith(
-        'node',
-        ['/tmp/test-worker.js', 'daemon', 'worker', '--port', '8080', '--ws-port', '9223'],
-        expect.objectContaining({ detached: true, stdio: 'ignore' })
-      );
-      expect(config.pid).toBe(54321);
-      expect(config.port).toBe(8080);
-      expect(writeFileSync).toHaveBeenCalled();
-    });
-
-    it('should default to port 9222', async () => {
-      const { existsSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(false);
-      const { spawn } = await import('child_process');
-      (spawn as ReturnType<typeof vi.fn>).mockReturnValue({ unref: vi.fn(), pid: 11111 });
-
-      const daemon = new DaemonManager({
-        configDir: '/tmp/xbrowser-test',
-        workerScript: '/tmp/test-worker.js',
-      });
-      const config = await daemon.start();
-      expect(config.port).toBe(9222);
+      const { startDaemonProcess } = await import('../../src/daemon/daemon.js');
+      await expect(startDaemonProcess('auto', 9224)).rejects.toThrow('spawn failed');
     });
   });
 
-  describe('stop', () => {
-    it('should throw when daemon not running', async () => {
-      const { existsSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(false);
-      const daemon = new DaemonManager({
-        configDir: '/tmp/xbrowser-test',
-        workerScript: '/tmp/test-worker.js',
-      });
-      await expect(daemon.stop()).rejects.toThrow('Daemon is not running');
-    });
-
-    it('should kill process and clear config', async () => {
-      const { existsSync, readFileSync, unlinkSync } = await import('fs');
-      (existsSync as ReturnType<typeof vi.fn>).mockReturnValue(true);
-      (readFileSync as ReturnType<typeof vi.fn>).mockReturnValue(JSON.stringify({
-        pid: 12345,
-        port: 9222,
-        startedAt: '2025-01-01',
-      }));
-      const originalKill = process.kill;
-      process.kill = vi.fn();
-
-      const daemon = new DaemonManager({
-        configDir: '/tmp/xbrowser-test',
-        workerScript: '/tmp/test-worker.js',
-      });
-      await daemon.stop();
-      expect(process.kill).toHaveBeenCalledWith(12345, 'SIGTERM');
-      expect(unlinkSync).toHaveBeenCalled();
-
-      process.kill = originalKill;
+  describe('stopDaemonProcess', () => {
+    it('should delegate to xcli-core stopDaemon', async () => {
+      const { stopDaemonProcess } = await import('../../src/daemon/daemon.js');
+      await stopDaemonProcess();
+      expect(mockXcliCore.stopDaemon).toHaveBeenCalled();
     });
   });
 });

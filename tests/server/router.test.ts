@@ -19,6 +19,7 @@ vi.mock('../../src/executor.js', () => ({
 vi.mock('../../src/browser.js', () => ({
   findSession: vi.fn(() => null),
   getAllSessions: vi.fn(() => []),
+  findOrRestoreSession: vi.fn().mockResolvedValue(undefined),
   createSession: vi.fn().mockImplementation((name: string) =>
     Promise.resolve({
       id: 'sess-1',

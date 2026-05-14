@@ -43,18 +43,13 @@ const previewBuiltin: BuiltinCommand = {
     console.log('Press Ctrl+C to stop the preview server');
     console.log('');
 
-    const { DaemonManager } = await import('../daemon/daemon.js');
+    const { WSServer } = await import('../websocket-server.js');
     const { ScreencastCapturer } = await import('../screencast.js');
     const { getBrowser, createSession } = await import('../browser.js');
     const { WebhookNotifier } = await import('../webhook.js');
 
-    const daemon = new DaemonManager();
-    await daemon.startWSServer(port);
-
-    const wsServer = daemon.getWSServer();
-    if (!wsServer) {
-      throw new Error('Failed to start WebSocket server');
-    }
+    const wsServer = new WSServer({ port });
+    await wsServer.start();
 
     console.log(`[Preview] WS server listening on ws://localhost:${port}`);
 
@@ -118,7 +113,7 @@ const previewBuiltin: BuiltinCommand = {
         url: page.url(),
       });
 
-      await daemon.stopWSServer();
+      await wsServer.stop();
       console.log('[Preview] WS server stopped');
 
       try {
