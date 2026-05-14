@@ -86,6 +86,8 @@ describe('Twitter Plugin', () => {
       command: vi.fn((name: string, config: any) => {
         registeredCommands.set(name, config);
       }),
+      login: vi.fn(),
+      logout: vi.fn(),
     };
     mockXcli = {
       createSite: vi.fn().mockReturnValue(mockSite),
