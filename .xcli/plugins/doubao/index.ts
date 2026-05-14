@@ -1100,10 +1100,11 @@ export default function (xcli: XCLIAPI): void {
 
   //  13. music — 音乐生成（verified flow via 音乐生成 button + bigmusic/get_video interceptor）
   site.command('music', {
-    description: '通过豆包音乐生成面板创建音乐。传 --timeout 同步等待音频 URL，否则异步提交',
+    description: '通过豆包音乐生成面板创建音乐。传 --lyric 使用自定义歌词，传 --timeout 同步等待音频 URL，否则异步提交',
     scope: 'browser',
     parameters: z.object({
-      description: z.string().describe('歌词主题描述（如"春天的田野"、友情岁月"）'),
+      description: z.string().optional().describe('歌词主题描述（如"春天的田野"、"友情岁月"），AI 写歌词模式使用'),
+      lyric: z.string().optional().describe('自定义歌词（传入后自动切换到自定义歌词模式，豆包将按此歌词生成音乐）'),
       style: z.string().optional().describe('音乐风格（如：流行、摇滚、民谣、古典）'),
       mood: z.string().optional().describe('情绪（如：快乐、忧伤、激昂、温柔）'),
       voice: z.string().optional().describe('音色（如：女声、男声、童声）'),
@@ -1111,11 +1112,12 @@ export default function (xcli: XCLIAPI): void {
         .describe('时长（秒）：如 30、60、90'),
       timeout: z.coerce.number().int().positive().optional()
         .describe('同步等待秒数（如 --timeout 60），不传则异步提交'),
+      debug: z.boolean().optional().describe('开启 debug 模式，自动记录 API 请求结构到 ~/.xbrowser/debug/'),
     }),
     examples: [
-      { cmd: 'xbrowser doubao music --description "轻快的钢琴曲" --timeout 60', description: '同步等待 60 秒获取音频 URL' },
-      { cmd: 'xbrowser doubao music --description "摇滚吉他" --style 摇滚 --mood 激昂', description: '指定风格和情绪，异步提交' },
-      { cmd: 'xbrowser doubao music --description "古风笛子" --style 民谣 --voice 女声 --timeout 90', description: '指定多参数同步等待' },
+      { cmd: 'xbrowser doubao music --description "轻快的钢琴曲" --timeout 60', description: 'AI 写歌词模式，同步等待' },
+      { cmd: 'xbrowser doubao music --lyric "明月几时有，把酒问青天" --style 古风 --mood 激昂 --timeout 90', description: '自定义歌词模式' },
+      { cmd: 'xbrowser doubao music --description "草原牧歌" --debug --timeout 60', description: '带 debug 模式，记录 API 结构' },
     ],
     handler: async (params, ctx) => {
       try {
@@ -1123,18 +1125,66 @@ export default function (xcli: XCLIAPI): void {
         const tips = buildTips(ctx);
         const waitSeconds = typeof params.timeout === 'number' ? params.timeout : 0;
 
-        // ── 1. Navigate to doubao chat ──
+        if (!params.description && !params.lyric) {
+          return {
+            data: null,
+            tips: ['请提供 --description（AI 写歌词模式）或 --lyric（自定义歌词模式）'],
+            message: '❌ 缺少必要参数：需要 --description 或 --lyric',
+          };
+        }
+
+        if (params.debug) {
+          const debugDir = path.join(process.env.HOME || '', '.xbrowser', 'debug');
+          if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
+          page.on('request', (req) => {
+            const url = req.url();
+            if (url.includes('bigmusic') || url.includes('chat/completion') || url.includes('samantha')) {
+              const entry = {
+                timestamp: new Date().toISOString(),
+                url: url.substring(0, 200),
+                method: req.method(),
+                postData: req.postData()?.substring(0, 2000),
+              };
+              fs.appendFileSync(
+                path.join(debugDir, `music-${Date.now()}.jsonl`),
+                JSON.stringify(entry) + '\n'
+              );
+            }
+          });
+          tips.push('🐛 Debug 模式已开启，API 请求记录到 ~/.xbrowser/debug/');
+        }
+
+        page.on('request', (req) => {
+          if (req.url().includes('chat/completion') && req.method() === 'POST') {
+            try {
+              const body = JSON.parse(req.postData() || '{}');
+              const msgs = body.messages || [];
+              for (const msg of msgs) {
+                if (typeof msg.content === 'string') {
+                  try {
+                    const content = JSON.parse(msg.content);
+                    if (content.generation_type === 'custome_lyric' && !content.lyric) {
+                      tips.push('⚠️ 检测到自定义歌词模式下 lyric 字段为空，歌词可能未正确填入');
+                    }
+                    if (content.generation_type === 'ai_lyric' && !content.theme) {
+                      tips.push('⚠️ 检测到 AI 写歌词模式下 theme 字段为空，主题可能未正确填入');
+                    }
+                  } catch { /* ignore */ }
+                }
+              }
+            } catch { /* ignore */ }
+          }
+        });
+
         await page.goto('https://www.doubao.com/chat/', { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForTimeout(2000);
 
-        // ── 2. Click "音乐生成" button ──
         const musicBtn = page.locator('button:has-text("音乐生成")').first();
         await musicBtn.waitFor({ state: 'visible', timeout: 10000 });
         await musicBtn.click();
         tips.push('已点击「音乐生成」按钮');
         await page.waitForTimeout(1500);
 
-        // ── 3. Optionally click style/mood/voice tags ──
         if (params.style) {
           const styleClicked = await page.evaluate((style: string) => {
             const tags = document.querySelectorAll('span[contenteditable="false"]');
@@ -1177,7 +1227,6 @@ export default function (xcli: XCLIAPI): void {
           if (!voiceClicked) tips.push(`⚠ 未找到音色标签"${params.voice}"，使用默认`);
         }
 
-        // ── 4. Set up response interceptor BEFORE sending ──
         const audioUrlPromise = new Promise<string | null>((resolve) => {
           const timeout = (waitSeconds > 0 ? waitSeconds : 60) * 1000;
           const timer = setTimeout(() => resolve(null), timeout);
@@ -1193,40 +1242,51 @@ export default function (xcli: XCLIAPI): void {
                   page.off('response', handler);
                   resolve(data.url);
                 }
-                // Don't resolve(null) on non-zero code — keep waiting
-              } catch {
-                // Don't resolve on parse error — keep waiting for next response
-              }
+              } catch { /* keep waiting */ }
             }
           };
           page.on('response', handler);
         });
 
-        // ── 5. Modify description span ──
-        const descSet = await page.evaluate((description: string) => {
-          const spans = document.querySelectorAll('span[contenteditable="true"]');
-          for (const span of spans) {
-            if (span.textContent?.includes('描述歌词要表达的主题')) {
-              span.textContent = description;
-              span.dispatchEvent(new Event('input', { bubbles: true }));
-              return true;
-            }
-          }
-          return false;
-        }, params.description);
+        if (params.lyric) {
+          const dropdownBtn = page.locator('button:has-text("AI 帮我写歌词")').first();
+          await dropdownBtn.click();
+          await page.waitForTimeout(500);
+          const customOption = page.locator('[role="menuitem"]:has-text("自定义歌词")').first();
+          await customOption.click();
+          await page.waitForTimeout(1000);
 
-        if (!descSet) {
-          tips.push('⚠ 未找到描述输入区域，尝试直接输入到编辑器');
           const editor = page.locator('[contenteditable="true"][role="textbox"]').first();
           await editor.click();
-          await editor.fill(params.description);
+          await page.keyboard.press('Meta+a');
+          await page.keyboard.press('Backspace');
+          await page.waitForTimeout(300);
+          await page.keyboard.type(params.lyric, { delay: 5 });
+          await page.waitForTimeout(500);
+          tips.push('已切换到自定义歌词模式并输入歌词');
+        } else {
+          const descSet = await page.evaluate((description: string) => {
+            const spans = document.querySelectorAll('span[contenteditable="true"]');
+            for (const span of spans) {
+              if (span.textContent?.includes('描述歌词要表达的主题')) {
+                span.textContent = description;
+                span.dispatchEvent(new Event('input', { bubbles: true }));
+                return true;
+              }
+            }
+            return false;
+          }, params.description!);
+
+          if (!descSet) {
+            tips.push('⚠ 未找到描述输入区域，尝试直接输入到编辑器');
+            const editor = page.locator('[contenteditable="true"][role="textbox"]').first();
+            await editor.click();
+            await editor.fill(params.description!);
+          }
         }
 
         await page.waitForTimeout(500);
 
-        // ── 6. Click editor then press Enter to send ──
-        // Use evaluate for both click AND Enter to avoid overlays intercepting Playwright input
-        // page.keyboard.press('Enter') fails when <html> intercepts pointer events
         await page.evaluate(() => {
           const ed = document.querySelector('[contenteditable="true"][role="textbox"]');
           if (ed) {
@@ -1234,23 +1294,19 @@ export default function (xcli: XCLIAPI): void {
             ed.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
             ed.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
             ed.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
-            // Also dispatch Enter directly in the DOM to bypass Playwright keyboard limitations
             setTimeout(() => {
               ed.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
               ed.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
               ed.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true }));
-              // Also dispatch input + enter for Slate.js / contenteditable
               ed.dispatchEvent(new Event('beforeinput', { bubbles: true }));
               ed.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertLineBreak' }));
             }, 50);
           }
         });
-        // Fallback: also try Playwright's keyboard Enter (works if no overlay)
         await page.waitForTimeout(300);
         await page.keyboard.press('Enter').catch(() => {});
         tips.push('音乐生成请求已发送，等待 AI 生成...');
 
-        // ── 7. Decide sync vs async ──
         const ctxAny = ctx as unknown as Record<string, unknown>;
         const opts = ctxAny.options as Record<string, unknown> | undefined;
         const cdpFlag = ctxAny.cdpEndpoint || opts?.cdp;
@@ -1258,11 +1314,11 @@ export default function (xcli: XCLIAPI): void {
         const sessionName = (opts?.session as string) || 'default';
         const sessionSuffix = ` --session ${sessionName}${cdpSuffix}`;
 
-        // Capture conversation URL for cross-process session recovery
         const conversationUrl = page.url();
+        const activeDescription = params.description || params.lyric || '';
+        const mode = params.lyric ? 'custom_lyric' : 'ai_lyric';
 
         if (waitSeconds > 0) {
-          // ⏳ SYNC MODE — wait for bigmusic/get_video response
           tips.push(`⏳ 等待音乐生成（最长 ${waitSeconds} 秒）...`);
           const audioUrl = await audioUrlPromise;
 
@@ -1271,38 +1327,39 @@ export default function (xcli: XCLIAPI): void {
               data: {
                 url: audioUrl,
                 conversationUrl,
-                description: params.description,
+                description: activeDescription,
                 style: params.style || null,
                 mood: params.mood || null,
                 voice: params.voice || null,
                 duration: params.duration || null,
+                lyric: params.lyric || null,
+                mode,
               },
               tips: [...tips, '✅ 音乐生成完成！', '💡 URL 有签名有时效，建议尽快下载'],
               message: `✅ 音乐已生成: ${audioUrl}`,
             };
           }
 
-          // Fallback: try extracting audio from page DOM
           const fallbackUrl = await extractPageAudio(page);
           if (fallbackUrl) {
             return {
               data: {
                 url: fallbackUrl,
                 conversationUrl,
-                description: params.description,
+                description: activeDescription,
                 style: params.style || null,
                 mood: params.mood || null,
                 voice: params.voice || null,
                 duration: params.duration || null,
+                lyric: params.lyric || null,
+                mode,
               },
               tips: [...tips, '✅ 音乐生成完成（通过 DOM 提取）'],
               message: `✅ 音乐已生成: ${fallbackUrl}`,
             };
           }
 
-          // Check for errors — only match visible Chinese error text, not JSON responses
           const hasError = await page.evaluate(() => {
-            // Check visible error toasts / banners (not page source which may contain API JSON)
             const errorSelectors = [
               '[class*="error"]', '[class*="toast"]', '[class*="notice"]',
               '[class*="alert"]', '[class*="warning"]', '[role="alert"]',
@@ -1314,20 +1371,19 @@ export default function (xcli: XCLIAPI): void {
                 if (t.length > 0 && t.length < 200) return true;
               }
             }
-            // Check for specific Chinese error phrases in visible text only
-            const body = document.body.innerText; // innerText = visible only
+            const body = document.body.innerText;
             return /生成失败|出错了|无法生成|请求过于频繁|操作过于频繁|请稍后再试|抱歉/.test(body);
           });
           if (hasError) {
             return {
-              data: { error: '生成失败', conversationUrl, description: params.description },
+              data: { error: '生成失败', conversationUrl, description: activeDescription, lyric: params.lyric || null, mode },
               tips: [...tips, '❌ 音乐生成失败，请检查豆包页面'],
               message: '❌ 音乐生成失败',
             };
           }
 
           return {
-            data: { status: 'timeout', conversationUrl, description: params.description },
+            data: { status: 'timeout', conversationUrl, description: activeDescription, lyric: params.lyric || null, mode },
             tips: [
               ...tips,
               `⏱ 等待超时（${waitSeconds}秒），音乐可能还在生成中`,
@@ -1338,25 +1394,26 @@ export default function (xcli: XCLIAPI): void {
           };
         }
 
-        // 📤 ASYNC MODE — return immediately
         return {
           data: {
             status: 'submitted',
             conversationUrl,
-            description: params.description,
+            description: activeDescription,
             style: params.style || null,
             mood: params.mood || null,
             voice: params.voice || null,
             duration: params.duration || null,
+            lyric: params.lyric || null,
+            mode,
           },
           tips: [
             ...tips,
-            `✅ 音乐生成已提交！描述: "${params.description}"`,
+            `✅ 音乐生成已提交！${params.lyric ? '模式: 自定义歌词' : `描述: "${activeDescription}"`}`,
             `⏱ 预计 25-60 秒后生成完成`,
             `恢复查看: 使用相同 --cdp 重新执行命令会自动回到此对话`,
             `或查看创作历史: xbrowser doubao my-creations --type all${cdpSuffix ? ' --cdp ' + cdpFlag : ''}`,
           ],
-          message: `✅ 音乐生成已提交！描述: "${params.description}"`,
+          message: `✅ 音乐生成已提交！${params.lyric ? '模式: 自定义歌词' : `描述: "${activeDescription}"`}`,
         };
       } catch (error) {
         return {
