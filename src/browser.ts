@@ -448,7 +448,9 @@ export async function closeSessionByName(name: string): Promise<boolean> {
   for (const [id, session] of sessions) {
     if (session.name === name || session.id === name) {
       logSessionEvent('close_session', `name="${session.name}" id="${session.id}" url="${session.page.url()}"`);
-      await session.context.close();
+      if (!session.isCDP) {
+        await session.context.close();
+      }
       sessions.delete(id);
       return true;
     }
@@ -466,7 +468,9 @@ export async function closeAllSessions(): Promise<void> {
   if (names) logSessionEvent('close_all_sessions', `Closing ${sessions.size} sessions: ${names}`);
   for (const [, session] of sessions) {
     try {
-      await session.context.close();
+      if (!session.isCDP) {
+        await session.context.close();
+      }
     } catch {
       // ignore
     }
@@ -486,11 +490,14 @@ export async function destroyBrowser(): Promise<void> {
     clearTimeout(idleTimer);
     idleTimer = null;
   }
+  const hasCDPSession = [...sessions.values()].some(s => s.isCDP);
   await closeAllSessions();
   if (browser) {
     const b = browser;
     browser = null;
-    b.close().catch(() => {});
+    if (!hasCDPSession) {
+      b.close().catch(() => {});
+    }
   }
 }
 
