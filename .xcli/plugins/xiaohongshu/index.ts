@@ -449,4 +449,41 @@ export default function (xcli: XCLIAPI): void {
       } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['解析短链失败']); }
     },
   });
+
+  site.command('search-image', {
+    description: '小红书图片搜索',
+    scope: 'browser',
+    parameters: z.object({
+      query: z.string(),
+      limit: z.number().optional().default(10),
+      page: z.any().optional(),
+      timeout: z.number().optional().default(20000),
+    }),
+    handler: async (params, ctx) => {
+      const page = (params.page as import('playwright').Page) || (ctx as Record<string, unknown>).page as import('playwright').Page;
+      if (!page) throw new Error('需要浏览器页面');
+      try {
+        await page.goto('https://www.xiaohongshu.com/search_result?keyword=' + encodeURIComponent(params.query) + '&source=web_search_result_notes', { waitUntil: 'domcontentloaded', timeout: params.timeout });
+        await page.waitForTimeout(3000);
+        for (let i = 0; i < 3; i++) { await page.evaluate(() => window.scrollBy(0, 800)); await page.waitForTimeout(600); }
+        const results = await page.evaluate((limit) => {
+          const imgs: Array<Record<string, unknown>> = [];
+          document.querySelectorAll('img').forEach((img) => {
+            if (imgs.length >= limit) return;
+            const el = img as HTMLImageElement;
+            const src = el.src || '';
+            if (el.width < 80 || el.height < 80) return;
+            if (!src.includes('xhscdn') && !src.includes('sns-webpic') && !src.includes('xiaohongshu')) return;
+            imgs.push({
+              title: el.alt || '', thumbnailUrl: src, sourceUrl: el.closest('a')?.href || '',
+              originalUrl: src.replace(/\/\d+$/, '/0'), width: el.naturalWidth || 0,
+              height: el.naturalHeight || 0, format: 'jpg', sourceSite: 'xiaohongshu',
+            });
+          });
+          return imgs;
+        }, params.limit);
+        return { data: { query: params.query, engine: 'xiaohongshu', results, total: results.length, timestamp: Date.now() }, tips: [`小红书 "${params.query}"，共 ${results.length} 张`] };
+      } catch (error) { return { data: null, message: error instanceof Error ? error.message : '未知错误' }; }
+    },
+  });
 }

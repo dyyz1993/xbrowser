@@ -430,6 +430,154 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  baidu.command('search-image', {
+    description: '百度图片搜索',
+    scope: 'browser',
+    parameters: z.object({
+      query: z.string().describe('搜索关键词'),
+      limit: z.number().default(20).describe('结果数量，默认20'),
+      size: z.enum(['any', 'large', 'medium', 'small', 'icon']).optional().default('any').describe('图片尺寸过滤'),
+      color: z.string().optional().describe('颜色过滤'),
+      page: z.any().optional().describe('外部传入的 Page 对象'),
+      timeout: z.number().default(20000).describe('超时时间(ms)'),
+    }),
+    examples: [
+      { cmd: 'xbrowser baidu search-image --query "猫咪"', description: '搜索猫咪图片' },
+      { cmd: 'xbrowser baidu search-image --query "风景" --size large --limit 10', description: '搜索大尺寸风景图片' },
+      { cmd: 'xbrowser baidu search-image --query "logo" --size icon --color red', description: '搜索红色图标' },
+    ],
+    handler: async (params, ctx) => {
+      const page = (params.page || (ctx as Record<string, unknown>).page) as import('playwright').Page;
+      if (!page) throw new Error('需要浏览器页面');
+      const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
+
+      try {
+        const { query, limit, color } = params;
+        const sizeMap: Record<string, string> = {
+          any: '',
+          large: '&z=3',
+          medium: '&z=2',
+          small: '&z=1',
+          icon: '&z=0',
+        };
+        const sizeParam = sizeMap[params.size || 'any'] || '';
+        const colorParam = color ? `&ie=utf-8&color=${encodeURIComponent(color)}` : '';
+
+        const apiUrl = `https://image.baidu.com/search/acjson?tn=resultjson_com&word=${encodeURIComponent(query)}&pn=0&rn=${limit}${sizeParam}${colorParam}`;
+        await page.goto(apiUrl, { waitUntil: 'domcontentloaded', timeout: params.timeout });
+        const jsonText = await page.evaluate(() => document.body.innerText || document.body.textContent || '');
+
+        let results: Array<{
+          title: string;
+          thumbnailUrl: string;
+          sourceUrl: string;
+          originalUrl: string;
+          width: number;
+          height: number;
+          fileSize?: string;
+          format?: string;
+          sourceSite: string;
+        }> = [];
+
+        try {
+          const json = JSON.parse(jsonText);
+          const items = Array.isArray(json.data) ? json.data : [];
+          results = items
+            .filter((item: Record<string, unknown>) => item && item.thumbURL)
+            .map((item: Record<string, unknown>) => ({
+              title: String(item.fromPageTitleEnc || ''),
+              thumbnailUrl: String(item.thumbURL || ''),
+              sourceUrl: String(item.fromURL || ''),
+              originalUrl: String(item.objURL || ''),
+              width: Number(item.width) || 0,
+              height: Number(item.height) || 0,
+              fileSize: item.fileSize ? String(item.fileSize) : undefined,
+              format: item.type ? String(item.type) : undefined,
+              sourceSite: 'baidu',
+            }));
+        } catch {
+          await page.goto(
+            `https://image.baidu.com/search/index?tn=baiduimage&word=${encodeURIComponent(query)}${sizeParam}${colorParam}`,
+            { waitUntil: 'domcontentloaded', timeout: params.timeout }
+          );
+          await page.waitForTimeout(2000);
+
+          results = await page.evaluate((maxItems: number) => {
+            const items: Array<{
+              title: string;
+              thumbnailUrl: string;
+              sourceUrl: string;
+              originalUrl: string;
+              width: number;
+              height: number;
+              sourceSite: string;
+            }> = [];
+
+            // 方法1: [data-imgurl] 属性
+            const imgElements = document.querySelectorAll('[data-imgurl]');
+            imgElements.forEach((el, idx) => {
+              if (idx >= maxItems) return;
+              const imgEl = el as HTMLElement;
+              const originalUrl = el.getAttribute('data-imgurl') || '';
+              const thumbnailUrl = (imgEl.querySelector('img') as HTMLImageElement)?.src || '';
+              const title = el.getAttribute('title') || imgEl.getAttribute('alt') || '';
+              if (originalUrl || thumbnailUrl) {
+                items.push({
+                  title, thumbnailUrl, sourceUrl: '', originalUrl,
+                  width: parseInt(el.getAttribute('data-width') || '0', 10),
+                  height: parseInt(el.getAttribute('data-height') || '0', 10),
+                  sourceSite: 'baidu',
+                });
+              }
+            });
+
+            // 方法2: img 标签 src 含 baidu/bdimg/hiphotos
+            if (items.length === 0) {
+              document.querySelectorAll('img').forEach((img, idx) => {
+                if (items.length >= maxItems) return;
+                const el = img as HTMLImageElement;
+                const src = el.src || '';
+                if (el.width < 50 || el.height < 50) return;
+                if (src.includes('baidu.com/it/') || src.includes('bdimg.com') || src.includes('hiphotos')) {
+                  items.push({
+                    title: el.alt || '',
+                    thumbnailUrl: src,
+                    sourceUrl: '',
+                    originalUrl: src.replace(/&w=\d+/, '&w=1200').replace(/&h=\d+/, '&h=1200'),
+                    width: el.naturalWidth || 0,
+                    height: el.naturalHeight || 0,
+                    sourceSite: 'baidu',
+                  });
+                }
+              });
+            }
+
+            return items;
+          }, limit);
+        }
+
+        const total = results.length;
+
+        return {
+          data: {
+            query,
+            engine: 'baidu-images',
+            results,
+            total,
+            timestamp: new Date().toISOString(),
+          },
+          tips: [...cdpTips, `关键词 "${query}" 搜索到 ${total} 张图片`],
+        };
+      } catch (error) {
+        return {
+          data: null,
+          tips: cdpTips,
+          message: error instanceof Error ? error.message : '未知错误',
+        };
+      }
+    },
+  });
+
   baidu.login(async (ctx) => {
     const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
     if (!page) return;

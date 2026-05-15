@@ -118,6 +118,19 @@ async function uploadFileViaDataTransfer(page: Page, absPath: string): Promise<b
   return result;
 }
 
+async function safeClickSelector(page: Page, selector: string): Promise<boolean> {
+  const handle = await page.evaluateHandle(
+    (sel: string) => document.querySelector(sel),
+    selector
+  );
+  const el = handle.asElement();
+  if (!el) return false;
+  const box = await el.boundingBox();
+  if (!box) return false;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  return true;
+}
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'doubao',
@@ -324,9 +337,7 @@ export default function (xcli: XCLIAPI): void {
                 'button[class*="image"]', '[class*="file-upload"]',
               ];
               for (const sel of uploadBtnSelectors) {
-                const btn = page.locator(sel).first();
-                if (await btn.count() > 0) {
-                  await btn.click();
+                if (await safeClickSelector(page, sel)) {
                   await page.waitForTimeout(500);
                   const retry = await uploadFileViaDataTransfer(page, absPath);
                   if (retry) {
@@ -347,18 +358,31 @@ export default function (xcli: XCLIAPI): void {
         ];
 
         let inputEl: Awaited<ReturnType<typeof page.locator>> | null = null;
+        let inputSel: string | null = null;
         for (const sel of inputLocators) {
           const loc = page.locator(sel).first();
           if (await loc.count() > 0) {
             inputEl = loc;
+            inputSel = sel;
             break;
           }
         }
 
-        if (!inputEl) throw new Error('找不到消息输入框');
+        if (!inputEl || !inputSel) throw new Error('找不到消息输入框');
 
-        await inputEl.click();
-        await inputEl.fill(params.message);
+        await safeClickSelector(page, inputSel);
+        await page.evaluate((sel: string, msg: string) => {
+          const el = document.querySelector(sel) as HTMLTextAreaElement;
+          if (!el) return;
+          el.focus();
+          if ('value' in el) {
+            el.value = msg;
+          } else {
+            el.textContent = msg;
+          }
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }, inputSel, params.message);
         await page.waitForTimeout(500);
 
         const wantSources = !!params.showSources;
@@ -373,7 +397,7 @@ export default function (xcli: XCLIAPI): void {
           });
         }
 
-        await inputEl.press('Enter');
+        await page.keyboard.press('Enter');
         tips.push('消息已发送，等待 AI 回复...');
         await page.waitForTimeout(2000);
 
@@ -581,17 +605,20 @@ export default function (xcli: XCLIAPI): void {
           await page.waitForTimeout(2000);
           try {
             imageUrl = await page.evaluate(() => {
-              const imgs = document.querySelectorAll('img[class*="generated"], img[class*="result"], [class*="image-result"] img');
-              for (const img of imgs) {
-                const src = (img as HTMLImageElement).src;
-                if (src && src.startsWith('http') && !src.includes('data:image')) {
-                  return src;
+              const selectors = [
+                'img[class*="image-item-img"]',
+                'img[src*="image_generation"]',
+                'img[class*="generated"]',
+                'img[class*="result"]',
+              ];
+              for (const sel of selectors) {
+                const imgs = document.querySelectorAll(sel);
+                for (const img of imgs) {
+                  const src = (img as HTMLImageElement).src;
+                  if (src && src.startsWith('http') && !src.includes('data:image') && !src.includes('avatar') && !src.includes('BIZ_BOT')) {
+                    return src;
+                  }
                 }
-              }
-              const imgLinks = document.querySelectorAll('[class*="image-url"], [class*="download"] a');
-              for (const a of imgLinks) {
-                const href = a.getAttribute('href');
-                if (href && href.startsWith('http')) return href;
               }
               return '';
             });
@@ -648,12 +675,9 @@ export default function (xcli: XCLIAPI): void {
 
         const uploaded = await uploadFileViaDataTransfer(page, absPath);
         if (!uploaded) {
-          const uploadBtn = page.locator('[class*="upload"], [class*="image-upload"], [class*="attach"]').first();
-          if (await uploadBtn.count() > 0) {
-            await uploadBtn.click();
-            await page.waitForTimeout(500);
-            await uploadFileViaDataTransfer(page, absPath);
-          }
+          await safeClickSelector(page, '[class*="upload"], [class*="image-upload"], [class*="attach"]');
+          await page.waitForTimeout(500);
+          await uploadFileViaDataTransfer(page, absPath);
         }
         await page.waitForTimeout(1000);
         tips.push(`已上传图片: ${path.basename(absPath)}`);
@@ -689,9 +713,21 @@ export default function (xcli: XCLIAPI): void {
           }
         }
 
-        const submitBtn = page.locator('button[class*="submit"], button[class*="generate"], [class*="confirm"] button, button:has-text("生成")').first();
-        if (await submitBtn.count() > 0) {
-          await submitBtn.click();
+        const submitHandle = await page.evaluateHandle(() => {
+          const selectors = ['button[class*="submit"]', 'button[class*="generate"]', '[class*="confirm"] button'];
+          for (const sel of selectors) {
+            const el = document.querySelector(sel);
+            if (el) return el;
+          }
+          for (const btn of document.querySelectorAll('button')) {
+            if (btn.textContent?.includes('生成')) return btn;
+          }
+          return null;
+        });
+        const submitEl = submitHandle.asElement();
+        if (submitEl) {
+          const submitBox = await submitEl.boundingBox();
+          if (submitBox) await page.mouse.click(submitBox.x + submitBox.width / 2, submitBox.y + submitBox.height / 2);
           tips.push('编辑请求已提交，等待处理...');
         }
 
@@ -1179,52 +1215,106 @@ export default function (xcli: XCLIAPI): void {
         await page.goto('https://www.doubao.com/chat/', { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForTimeout(2000);
 
-        const musicBtn = page.locator('button:has-text("音乐生成")').first();
-        await musicBtn.waitFor({ state: 'visible', timeout: 10000 });
-        await musicBtn.click();
+        const musicHandle = await page.evaluateHandle(() => Array.from(document.querySelectorAll('div,button')).find(e => e.textContent.trim() === '音乐生成' && e.children.length === 0));
+        const musicEl = musicHandle.asElement();
+        if (!musicEl) throw new Error('找不到「音乐生成」按钮');
+        const musicBox = await musicEl.boundingBox();
+        if (!musicBox) throw new Error('「音乐生成」按钮不可见');
+        await page.mouse.click(musicBox.x + musicBox.width / 2, musicBox.y + musicBox.height / 2);
         tips.push('已点击「音乐生成」按钮');
-        await page.waitForTimeout(1500);
+        await page.waitForTimeout(2500);
 
         if (params.style) {
-          const styleClicked = await page.evaluate((style: string) => {
-            const tags = document.querySelectorAll('span[contenteditable="false"]');
-            for (const tag of tags) {
-              if (tag.textContent?.trim() === '流行') {
-                tag.click();
-                return true;
-              }
+          const styleSpanHandle = await page.evaluateHandle(() => {
+            for (const s of document.querySelectorAll('span')) {
+              const text = s.textContent.trim();
+              if (['流行', '嘻哈', '国风', 'DJ', '摇滚', '民谣', 'R&B', '雷鬼', '朋克', '电音', '爵士'].includes(text) && s.className.includes('px-6')) return s;
             }
-            return false;
-          }, params.style);
-          if (!styleClicked) tips.push(`⚠ 未找到风格标签"${params.style}"，使用默认`);
+            return null;
+          });
+          const styleSpan = styleSpanHandle.asElement();
+          if (styleSpan) {
+            const styleBox = await styleSpan.boundingBox();
+            if (styleBox) await page.mouse.click(styleBox.x + styleBox.width / 2, styleBox.y + styleBox.height / 2);
+            await page.waitForTimeout(800);
+            const styleSelected = await page.evaluateHandle((style: string) => {
+              const el = Array.from(document.querySelectorAll('div')).find(e => e.textContent.trim() === style && e.children.length === 0);
+              return el || null;
+            }, params.style);
+            const styleOpt = styleSelected.asElement();
+            if (styleOpt) {
+              const optBox = await styleOpt.boundingBox();
+              if (optBox) await page.mouse.click(optBox.x + optBox.width / 2, optBox.y + optBox.height / 2);
+              tips.push(`已选择风格: ${params.style}`);
+            } else {
+              tips.push(`⚠ 未找到风格"${params.style}"，使用默认`);
+            }
+            await page.waitForTimeout(500);
+          } else {
+            tips.push(`⚠ 未找到风格下拉入口，使用默认`);
+          }
         }
 
         if (params.mood) {
-          const moodClicked = await page.evaluate((mood: string) => {
-            const tags = document.querySelectorAll('span[contenteditable="false"]');
-            for (const tag of tags) {
-              if (tag.textContent?.trim() === '快乐') {
-                tag.click();
-                return true;
-              }
+          const moodSpanHandle = await page.evaluateHandle(() => {
+            for (const s of document.querySelectorAll('span')) {
+              const text = s.textContent.trim();
+              if (['快乐', '忧伤', '激昂', '温柔', '思念', '愤怒', '平静', '浪漫'].includes(text) && s.className.includes('px-6')) return s;
             }
-            return false;
-          }, params.mood);
-          if (!moodClicked) tips.push(`⚠ 未找到情绪标签"${params.mood}"，使用默认`);
+            return null;
+          });
+          const moodSpan = moodSpanHandle.asElement();
+          if (moodSpan) {
+            const moodBox = await moodSpan.boundingBox();
+            if (moodBox) await page.mouse.click(moodBox.x + moodBox.width / 2, moodBox.y + moodBox.height / 2);
+            await page.waitForTimeout(800);
+            const moodSelected = await page.evaluateHandle((mood: string) => {
+              const el = Array.from(document.querySelectorAll('div')).find(e => e.textContent.trim() === mood && e.children.length === 0);
+              return el || null;
+            }, params.mood);
+            const moodOpt = moodSelected.asElement();
+            if (moodOpt) {
+              const optBox = await moodOpt.boundingBox();
+              if (optBox) await page.mouse.click(optBox.x + optBox.width / 2, optBox.y + optBox.height / 2);
+              tips.push(`已选择情绪: ${params.mood}`);
+            } else {
+              tips.push(`⚠ 未找到情绪"${params.mood}"，使用默认`);
+            }
+            await page.waitForTimeout(500);
+          } else {
+            tips.push(`⚠ 未找到情绪下拉入口，使用默认`);
+          }
         }
 
         if (params.voice) {
-          const voiceClicked = await page.evaluate((voice: string) => {
-            const tags = document.querySelectorAll('span[contenteditable="false"]');
-            for (const tag of tags) {
-              if (tag.textContent?.trim() === '女声') {
-                tag.click();
-                return true;
-              }
+          const voiceSpanHandle = await page.evaluateHandle(() => {
+            for (const s of document.querySelectorAll('span')) {
+              const text = s.textContent.trim();
+              if (['女声', '男声', '童声'].includes(text) && s.className.includes('px-6')) return s;
             }
-            return false;
-          }, params.voice);
-          if (!voiceClicked) tips.push(`⚠ 未找到音色标签"${params.voice}"，使用默认`);
+            return null;
+          });
+          const voiceSpan = voiceSpanHandle.asElement();
+          if (voiceSpan) {
+            const voiceBox = await voiceSpan.boundingBox();
+            if (voiceBox) await page.mouse.click(voiceBox.x + voiceBox.width / 2, voiceBox.y + voiceBox.height / 2);
+            await page.waitForTimeout(800);
+            const voiceSelected = await page.evaluateHandle((voice: string) => {
+              const el = Array.from(document.querySelectorAll('div')).find(e => e.textContent.trim() === voice && e.children.length === 0);
+              return el || null;
+            }, params.voice);
+            const voiceOpt = voiceSelected.asElement();
+            if (voiceOpt) {
+              const optBox = await voiceOpt.boundingBox();
+              if (optBox) await page.mouse.click(optBox.x + optBox.width / 2, optBox.y + optBox.height / 2);
+              tips.push(`已选择音色: ${params.voice}`);
+            } else {
+              tips.push(`⚠ 未找到音色"${params.voice}"，使用默认`);
+            }
+            await page.waitForTimeout(500);
+          } else {
+            tips.push(`⚠ 未找到音色下拉入口，使用默认`);
+          }
         }
 
         const audioUrlPromise = new Promise<string | null>((resolve) => {
@@ -1249,57 +1339,97 @@ export default function (xcli: XCLIAPI): void {
         });
 
         if (params.lyric) {
-          // Step 1: Click "AI 帮我写歌词" dropdown
-          const dropdownBtn = page.locator('div:has-text("AI 帮我写歌词")').first();
-          await dropdownBtn.click();
-          await page.waitForTimeout(500);
-          
-          // Step 2: Select "自定义歌词" from dropdown
-          const customOption = page.locator('div:has-text("自定义歌词")').first();
-          await customOption.click();
+          const dropdownHandle = await page.evaluateHandle(() => {
+            for (const s of document.querySelectorAll('span')) {
+              if (s.textContent.trim() === 'AI 帮我写歌词') return s;
+            }
+            return null;
+          });
+          const dropdownEl = dropdownHandle.asElement();
+          if (!dropdownEl) throw new Error('找不到「AI 帮我写歌词」下拉选项');
+          const dropBox = await dropdownEl.boundingBox();
+          if (dropBox) await page.mouse.click(dropBox.x + dropBox.width / 2, dropBox.y + dropBox.height / 2);
+          tips.push('已点击「AI 帮我写歌词」下拉');
           await page.waitForTimeout(1000);
 
-          // Step 3: A popup appears with textarea[placeholder="自定义歌词"]
+          const customHandle = await page.evaluateHandle(() => {
+            return Array.from(document.querySelectorAll('div')).find(e => e.textContent.trim() === '自定义歌词' && e.children.length === 0) || null;
+          });
+          const customEl = customHandle.asElement();
+          if (!customEl) throw new Error('下拉菜单中找不到「自定义歌词」选项');
+          const customBox = await customEl.boundingBox();
+          if (customBox) await page.mouse.click(customBox.x + customBox.width / 2, customBox.y + customBox.height / 2);
+          tips.push('已选择「自定义歌词」');
+          await page.waitForTimeout(2000);
+
           const lyricTextarea = page.locator('textarea[placeholder="自定义歌词"]').first();
           await lyricTextarea.waitFor({ state: 'visible', timeout: 5000 });
-          await lyricTextarea.click();
           await lyricTextarea.fill(params.lyric);
           await page.waitForTimeout(500);
-          
-          // Step 4: Click "确认" button in the popup
-          const confirmBtn = page.locator('span:has-text("确认")').first();
-          await confirmBtn.click();
-          await page.waitForTimeout(1000);
+
+          // 豆包弹窗的确认按钮默认 disabled（React 状态管理未跟随 fill 更新）
+          // 需要强制移除 disabled 属性才能点击
+          await page.evaluate(() => {
+            const btn = document.querySelector('button[class*="lyric-confirm"]');
+            if (btn) {
+              btn.disabled = false;
+              btn.classList.remove('semi-button-disabled', 'semi-button-primary-disabled');
+            }
+          });
+          await page.waitForTimeout(200);
+
+          const confirmHandle = await page.evaluateHandle(() => document.querySelector('button[class*="lyric-confirm"]'));
+          const confirmEl = confirmHandle.asElement();
+          if (confirmEl) {
+            const confirmBox = await confirmEl.boundingBox();
+            if (confirmBox) await page.mouse.click(confirmBox.x + confirmBox.width / 2, confirmBox.y + confirmBox.height / 2);
+            tips.push('已确认歌词');
+          }
+          await page.waitForTimeout(1500);
           tips.push('已切换到自定义歌词模式并输入歌词');
         } else {
-          const descSet = await page.evaluate((description: string) => {
-            const spans = document.querySelectorAll('span[contenteditable="true"]');
-            for (const span of spans) {
-              if (span.textContent?.includes('描述歌词要表达的主题')) {
-                span.textContent = description;
-                span.dispatchEvent(new Event('input', { bubbles: true }));
-                return true;
-              }
+          const descHandle = await page.evaluateHandle(() => {
+            for (const s of document.querySelectorAll('span')) {
+              if (s.textContent?.includes('描述歌词要表达的主题')) return s;
             }
-            return false;
-          }, params.description!);
-
-          if (!descSet) {
-            tips.push('⚠ 未找到描述输入区域，尝试直接输入到编辑器');
-            const editor = page.locator('[contenteditable="true"][role="textbox"]').first();
-            await editor.click();
-            await editor.fill(params.description!);
+            return null;
+          });
+          const descEl = descHandle.asElement();
+          if (descEl) {
+            const descBox = await descEl.boundingBox();
+            if (descBox) await page.mouse.click(descBox.x + descBox.width / 2, descBox.y + descBox.height / 2);
+            await page.waitForTimeout(300);
+            const descSet = await page.evaluate((description: string) => {
+              const spans = document.querySelectorAll('span');
+              for (const span of spans) {
+                if (span.textContent?.includes('描述歌词要表达的主题')) {
+                  (span as HTMLElement).focus();
+                  document.execCommand('selectAll', false);
+                  document.execCommand('insertText', false, description);
+                  return true;
+                }
+              }
+              return false;
+            }, params.description!);
+            if (descSet) {
+              tips.push(`已输入描述: "${params.description}"`);
+            } else {
+              tips.push('⚠ 描述输入失败，将尝试直接提交');
+            }
+          } else {
+            tips.push('⚠ 未找到描述输入区域');
           }
         }
 
         await page.waitForTimeout(500);
 
         // Click the send button to submit
-        const sendBtn = page.locator('button#flow-end-msg-send').first();
-        if (await sendBtn.isVisible().catch(() => false)) {
-          await sendBtn.click();
+        const sendHandle = await page.evaluateHandle(() => document.querySelector('#flow-end-msg-send'));
+        const sendEl = sendHandle.asElement();
+        if (sendEl) {
+          const sendBox = await sendEl.boundingBox();
+          if (sendBox) await page.mouse.click(sendBox.x + sendBox.width / 2, sendBox.y + sendBox.height / 2);
         } else {
-          // Fallback: press Enter
           await page.keyboard.press('Enter').catch(() => {});
         }
         tips.push('音乐生成请求已发送，等待 AI 生成...');
@@ -1590,18 +1720,28 @@ export default function (xcli: XCLIAPI): void {
 
         const uploaded = await uploadFileViaDataTransfer(page, absPath);
         if (!uploaded) {
-          const uploadBtns = [
+          const uploadBtnSelectors = [
             '[class*="upload"]', '[class*="attach"]', '[class*="file"]',
-            'button:has-text("上传")', '[class*="cloud-upload"]',
+            '[class*="cloud-upload"]',
           ];
           let btnClicked = false;
-          for (const sel of uploadBtns) {
-            const btn = page.locator(sel).first();
-            if (await btn.count() > 0) {
-              await btn.click();
+          for (const sel of uploadBtnSelectors) {
+            if (await safeClickSelector(page, sel)) {
               await page.waitForTimeout(500);
               btnClicked = true;
               break;
+            }
+          }
+          if (!btnClicked) {
+            const textHandle = await page.evaluateHandle(() => {
+              return Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('上传')) || null;
+            });
+            const textEl = textHandle.asElement();
+            if (textEl) {
+              const textBox = await textEl.boundingBox();
+              if (textBox) await page.mouse.click(textBox.x + textBox.width / 2, textBox.y + textBox.height / 2);
+              await page.waitForTimeout(500);
+              btnClicked = true;
             }
           }
           if (!btnClicked) throw new Error('找不到上传按钮或文件输入框');
@@ -1802,18 +1942,31 @@ export default function (xcli: XCLIAPI): void {
 
         const searchInputLocators = ['textarea', '[contenteditable="true"]', '[role="textbox"]', '[class*="chat-input"] textarea'];
         let searchInputEl: Awaited<ReturnType<typeof page.locator>> | null = null;
+        let searchInputSel: string | null = null;
         for (const sel of searchInputLocators) {
           const loc = page.locator(sel).first();
           if (await loc.count() > 0) {
             searchInputEl = loc;
+            searchInputSel = sel;
             break;
           }
         }
 
-        if (!searchInputEl) throw new Error('找不到输入框');
+        if (!searchInputEl || !searchInputSel) throw new Error('找不到输入框');
 
-        await searchInputEl.click();
-        await searchInputEl.fill(params.query);
+        await safeClickSelector(page, searchInputSel);
+        await page.evaluate((sel: string, msg: string) => {
+          const el = document.querySelector(sel) as HTMLTextAreaElement;
+          if (!el) return;
+          el.focus();
+          if ('value' in el) {
+            el.value = msg;
+          } else {
+            el.textContent = msg;
+          }
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }, searchInputSel, params.query);
         await page.waitForTimeout(500);
         let capturedStream = '';
         await page.route('**/doubao.com/chat/completion', async (route) => {
@@ -1823,7 +1976,7 @@ export default function (xcli: XCLIAPI): void {
           await route.fulfill({ body, headers: resp.headers(), status: resp.status() });
         });
 
-        await searchInputEl.press('Enter');
+        await page.keyboard.press('Enter');
         tips.push('搜索请求已发送');
         await page.waitForTimeout(2000);
 
@@ -1966,18 +2119,29 @@ export default function (xcli: XCLIAPI): void {
 
         const uploaded = await uploadFileViaDataTransfer(page, absPath);
         if (!uploaded) {
-          const uploadBtns = [
-            'button:has-text("上传")', 'button:has-text("附件")',
+          const uploadBtnSelectors = [
             '[class*="attach"]', '[class*="upload"]',
           ];
           let clicked = false;
-          for (const sel of uploadBtns) {
-            const btn = page.locator(sel).first();
-            if (await btn.count() > 0) {
-              await btn.click();
+          for (const sel of uploadBtnSelectors) {
+            if (await safeClickSelector(page, sel)) {
               await page.waitForTimeout(500);
               clicked = true;
               break;
+            }
+          }
+          if (!clicked) {
+            const textHandle = await page.evaluateHandle(() => {
+              return Array.from(document.querySelectorAll('button')).find(
+                b => b.textContent?.includes('上传') || b.textContent?.includes('附件')
+              ) || null;
+            });
+            const textEl = textHandle.asElement();
+            if (textEl) {
+              const textBox = await textEl.boundingBox();
+              if (textBox) await page.mouse.click(textBox.x + textBox.width / 2, textBox.y + textBox.height / 2);
+              await page.waitForTimeout(500);
+              clicked = true;
             }
           }
           if (!clicked) throw new Error('找不到附件上传入口');

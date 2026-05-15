@@ -358,6 +358,44 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  // ─── 6. search-image ───────────────────────────
+
+  site.command('search-image', {
+    description: 'Twitter/X 图片搜索',
+    scope: 'browser',
+    parameters: z.object({
+      query: z.string().describe('搜索关键词'),
+      limit: z.number().optional().default(10),
+      page: z.any().optional(),
+      timeout: z.number().optional().default(20000),
+    }),
+    handler: async (params, ctx) => {
+      const page = (params.page as import('playwright').Page) || (ctx as Record<string, unknown>).page as import('playwright').Page;
+      if (!page) throw new Error('需要浏览器页面');
+      try {
+        await page.goto(`https://x.com/search?q=${encodeURIComponent(params.query)}%20filter%3Aimages&f=live`, { waitUntil: 'domcontentloaded', timeout: params.timeout });
+        await page.waitForTimeout(5000);
+        for (let i = 0; i < 3; i++) { await page.evaluate(() => window.scrollBy(0, 800)); await page.waitForTimeout(600); }
+        const results = await page.evaluate((limit) => {
+          const imgs: Array<Record<string, unknown>> = [];
+          document.querySelectorAll('img[src*="pbs.twimg"]').forEach((img) => {
+            if (imgs.length >= limit) return;
+            const el = img as HTMLImageElement;
+            if (el.width < 80) return;
+            const src = el.src || '';
+            imgs.push({
+              title: el.alt || '', thumbnailUrl: src, sourceUrl: el.closest('a')?.href || '',
+              originalUrl: src.replace(/name=\w+/, 'name=orig'), width: el.naturalWidth || 0,
+              height: el.naturalHeight || 0, format: 'jpg', sourceSite: 'twitter',
+            });
+          });
+          return imgs;
+        }, params.limit);
+        return { data: { query: params.query, engine: 'twitter', results, total: results.length, timestamp: Date.now() }, tips: [`Twitter "${params.query}"，共 ${results.length} 张`] };
+      } catch (error) { return { data: null, message: error instanceof Error ? error.message : '未知错误' }; }
+    },
+  });
+
   // ─── login/logout ──────────────────────────────
 
   site.login(async (ctx) => {

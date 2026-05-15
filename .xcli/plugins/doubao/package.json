@@ -1,7 +1,7 @@
 {
   "name": "xbrowser-plugin-doubao",
-  "version": "1.1.0",
-  "description": "豆包 (Doubao) 全能助手 - 会话管理、图像/视频/音乐生成、文件管理、联网搜索",
+  "version": "1.2.0",
+  "description": "豆包 (Doubao) 全能助手 - 会话管理、图像/视频/音乐生成、自定义歌词、文件管理、联网搜索",
   "type": "module",
   "main": "index.ts",
   "keywords": [

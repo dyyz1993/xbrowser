@@ -1641,6 +1641,43 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  site.command('search-image', {
+    description: '淘宝图片搜索',
+    scope: 'browser',
+    parameters: z.object({
+      query: z.string().describe('搜索关键词'),
+      limit: z.number().optional().default(10),
+      page: z.any().optional(),
+      timeout: z.number().optional().default(20000),
+    }),
+    handler: async (params, ctx) => {
+      const page = (params.page as import('playwright').Page) || (ctx as Record<string, unknown>).page as import('playwright').Page;
+      if (!page) throw new Error('需要浏览器页面');
+      try {
+        await page.goto('https://s.taobao.com/search?q=' + encodeURIComponent(params.query), { waitUntil: 'domcontentloaded', timeout: params.timeout });
+        await page.waitForTimeout(3000);
+        for (let i = 0; i < 3; i++) { await page.evaluate(() => window.scrollBy(0, 800)); await page.waitForTimeout(600); }
+        const results = await page.evaluate((limit) => {
+          const imgs: Array<Record<string, unknown>> = [];
+          document.querySelectorAll('img').forEach((img) => {
+            if (imgs.length >= limit) return;
+            const el = img as HTMLImageElement;
+            const src = el.src || '';
+            if (el.width < 80) return;
+            if (!src.includes('taobaocdn') && !src.includes('img.alicdn')) return;
+            imgs.push({
+              title: el.alt || '', thumbnailUrl: src, sourceUrl: el.closest('a')?.href || '',
+              originalUrl: src, width: el.naturalWidth || 0,
+              height: el.naturalHeight || 0, format: 'jpg', sourceSite: 'taobao',
+            });
+          });
+          return imgs;
+        }, params.limit);
+        return { data: { query: params.query, engine: 'taobao', results, total: results.length, timestamp: Date.now() }, tips: [`淘宝 "${params.query}"，共 ${results.length} 张`] };
+      } catch (error) { return { data: null, message: error instanceof Error ? error.message : '未知错误' }; }
+    },
+  });
+
   site.login(async (ctx) => {
     const page = (ctx as Record<string, unknown>).page as
       | import('playwright').Page
