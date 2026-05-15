@@ -463,21 +463,27 @@ export default function (xcli: XCLIAPI): void {
       const page = (params.page as import('playwright').Page) || (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
       try {
-        await page.goto('https://www.xiaohongshu.com/search_result?keyword=' + encodeURIComponent(params.query) + '&source=web_search_result_notes', { waitUntil: 'domcontentloaded', timeout: params.timeout });
-        await page.waitForTimeout(3000);
-        for (let i = 0; i < 3; i++) { await page.evaluate(() => window.scrollBy(0, 800)); await page.waitForTimeout(600); }
+        await page.goto('https://www.xiaohongshu.com/search_result?keyword=' + encodeURIComponent(params.query) + '&source=web_search_result_notes', { waitUntil: 'networkidle', timeout: params.timeout });
+        await page.waitForTimeout(6000);
+        for (let i = 0; i < 8; i++) { await page.evaluate(() => window.scrollBy(0, 800)); await page.waitForTimeout(1500); }
         const results = await page.evaluate((limit) => {
           const imgs: Array<Record<string, unknown>> = [];
-          document.querySelectorAll('img').forEach((img) => {
+          let allImgs = document.querySelectorAll('img[src*="xhscdn"], img[src*="sns-webpic"], img[src*="xiaohongshu"]');
+          if (allImgs.length === 0) {
+            allImgs = document.querySelectorAll('img');
+          }
+          allImgs.forEach((img) => {
             if (imgs.length >= limit) return;
             const el = img as HTMLImageElement;
-            const src = el.src || '';
-            if (el.width < 80 || el.height < 80) return;
-            if (!src.includes('xhscdn') && !src.includes('sns-webpic') && !src.includes('xiaohongshu')) return;
+            const src = el.src || el.getAttribute('data-src') || '';
+            const finalSrc = src.startsWith('//') ? 'https:' + src : src;
+            if (!finalSrc.startsWith('http')) return;
+            if (el.width < 30) return;
+            if (finalSrc.includes('logo') || finalSrc.includes('icon') || finalSrc.includes('avatar')) return;
             imgs.push({
-              title: el.alt || '', thumbnailUrl: src, sourceUrl: el.closest('a')?.href || '',
-              originalUrl: src.replace(/\/\d+$/, '/0'), width: el.naturalWidth || 0,
-              height: el.naturalHeight || 0, format: 'jpg', sourceSite: 'xiaohongshu',
+              title: el.alt || '', thumbnailUrl: finalSrc, sourceUrl: el.closest('a')?.href || '',
+              originalUrl: finalSrc.replace(/\/\d+$/, '/0'), width: el.naturalWidth || el.width || 0,
+              height: el.naturalHeight || el.height || 0, format: 'jpg', sourceSite: 'xiaohongshu',
             });
           });
           return imgs;

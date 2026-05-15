@@ -25,10 +25,12 @@ export default function (xcli: XCLIAPI): void {
 
       try {
         const url = `https://www.tumblr.com/search/${encodeURIComponent(params.query)}`;
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout });
-        await page.waitForTimeout(3000);
-        await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
-        await page.waitForTimeout(1000);
+        await page.goto(url, { waitUntil: 'networkidle', timeout: params.timeout });
+        await page.waitForTimeout(6000);
+        for (let i = 0; i < 5; i++) {
+          await page.evaluate(() => window.scrollBy(0, window.innerHeight));
+          await page.waitForTimeout(1200);
+        }
 
         const results = await page.evaluate((limit: number) => {
           const images: Array<{
@@ -36,17 +38,22 @@ export default function (xcli: XCLIAPI): void {
             width: number; height: number;
           }> = [];
 
-          const selectors = 'img[src*="tumblr"], img[src*="media.tumblr"]';
-          document.querySelectorAll(selectors).forEach((img, idx) => {
-            if (idx >= limit) return;
+          let imgs = document.querySelectorAll('img[src*="tumblr"], img[src*="media.tumblr"]');
+          if (imgs.length === 0) {
+            imgs = document.querySelectorAll('img');
+          }
+          imgs.forEach((img) => {
+            if (images.length >= limit) return;
             const el = img as HTMLImageElement;
-            if (el.naturalWidth < 80) return;
+            const src = el.src || '';
+            if (el.width < 30 || !src.startsWith('http')) return;
+            if (src.includes('logo') || src.includes('icon') || src.includes('avatar')) return;
             images.push({
               title: el.alt || '',
-              thumbnailUrl: el.src,
+              thumbnailUrl: src,
               sourceUrl: el.closest('a')?.getAttribute('href') || '',
-              width: el.naturalWidth,
-              height: el.naturalHeight,
+              width: el.naturalWidth || el.width,
+              height: el.naturalHeight || el.height,
             });
           });
 
