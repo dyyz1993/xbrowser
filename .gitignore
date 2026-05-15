@@ -8,3 +8,18 @@ coverage/
 *.log
 .DS_Store
 .codenomad/
+
+# Debug scripts & temp outputs
+debug-*
+crawl-*.ts
+test-*.js
+test-*.mjs
+test-cdp.ts
+test-url-*.mjs
+output/
+docs/debug-*
+docs/plans/
+scripts/debug-*
+
+# IDE / editor
+.opencode/opencode.jsonc.bak*
