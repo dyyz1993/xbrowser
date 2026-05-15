@@ -123,6 +123,22 @@ async function resolveCDPEndpoint(raw: string): Promise<string> {
     return data.webSocketDebuggerUrl;
   }
 
+  // Handle HTTP/HTTPS URLs - fetch the WebSocket Debugger URL
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    try {
+      const httpResp = await fetch(`${raw}/json/version`);
+      const data = (await httpResp.json()) as { webSocketDebuggerUrl?: string };
+      if (!data.webSocketDebuggerUrl) {
+        throw new Error(`Could not discover CDP endpoint from ${raw}`);
+      }
+      return data.webSocketDebuggerUrl;
+    } catch (error) {
+      // If we can't fetch the WebSocket URL, fall back to using the endpoint directly
+      console.warn(`Failed to fetch WebSocket URL from ${raw}, using endpoint directly: ${error instanceof Error ? error.message : String(error)}`);
+      return raw;
+    }
+  }
+
   return raw;
 }
 
@@ -166,6 +182,10 @@ export function findSession(name: string): ManagedSession | undefined {
     if (session.name === name) return session;
   }
   return undefined;
+}
+
+export function getSessionById(id: string): ManagedSession | undefined {
+  return sessions.get(id);
 }
 
 /**
@@ -248,13 +268,68 @@ export async function findOrRestoreSession(
 }
 
 /**
- * Find a managed session by its unique ID.
+ * Create an ephemeral (short-lived) BrowserContext for one-off commands.
  *
- * @param id - The session UUID.
- * @returns The matching session, or `undefined` if not found.
+ * When using CDP, creates a dedicated connection (new client) so that
+ * concurrent calls don't interfere with each other. The connection is
+ * tracked and disconnected by {@link closeEphemeralContext}.
+ *
+ * @param options - Browser launch options.
+ * @returns The BrowserContext and its default Page.
  */
-export function getSessionById(id: string): ManagedSession | undefined {
-  return sessions.get(id);
+export async function createEphemeralContext(
+  options?: BrowserLaunchOptions,
+): Promise<{ context: BrowserContext; page: Page }> {
+  if (options?.cdpEndpoint) {
+    // CDP mode: create a dedicated connection (new client) for isolation.
+    // CDP Tunnel assigns each connectOverCDP a separate clientId.
+    const endpoint = await resolveCDPEndpoint(options.cdpEndpoint);
+    const b = await chromium.connectOverCDP(endpoint);
+    const contexts = b.contexts();
+    const ctx = contexts[0] || await b.newContext();
+    const page = await ctx.newPage();
+    resetIdleTimer();
+    // Store the browser connection so closeEphemeralContext can disconnect it.
+    ephemeralConnections.set(page, b);
+    return { context: ctx, page };
+  }
+
+  // Non-CDP mode: use the shared browser instance.
+  const b = await getBrowser(options);
+  const context = await b.newContext();
+  const page = await context.newPage();
+  resetIdleTimer();
+  return { context, page };
+}
+
+/** Tracks dedicated CDP connections created by createEphemeralContext. */
+const ephemeralConnections = new WeakMap<Page, Browser>();
+
+/**
+ * Close an ephemeral BrowserContext without destroying the shared Browser.
+ *
+ * For CDP connections, disconnects the dedicated browser instance (new client)
+ * without affecting the user's browser or other clients.
+ *
+ * Safe to call after one-off commands. Other sessions remain unaffected.
+ */
+export async function closeEphemeralContext(context: BrowserContext): Promise<void> {
+  try {
+    // Check if this context has a dedicated CDP connection to disconnect.
+    const pages = context.pages();
+    for (const p of pages) {
+      const conn = ephemeralConnections.get(p);
+      if (conn) {
+        ephemeralConnections.delete(p);
+        // close() on CDP connection only disconnects, does NOT kill remote browser.
+        await conn.close();
+        return;
+      }
+    }
+    await context.close();
+  } catch {
+    // ignore close errors
+  }
 }
 
 /**
@@ -515,36 +590,4 @@ export function resetForTesting(): void {
       unlinkSync(join(SESSION_DIR, f));
     }
   } catch { /* dir may not exist */ }
-}
-
-/**
- * Create an ephemeral BrowserContext for one-off commands (scrape/crawl/map).
- *
- * Shares the single Browser instance but creates an isolated context
- * that can be closed independently without affecting other sessions.
- *
- * @param options - Browser launch options.
- * @returns The BrowserContext and its default Page.
- */
-export async function createEphemeralContext(
-  options?: BrowserLaunchOptions,
-): Promise<{ context: BrowserContext; page: Page }> {
-  const b = await getBrowser(options);
-  const context = await b.newContext();
-  const page = await context.newPage();
-  resetIdleTimer();
-  return { context, page };
-}
-
-/**
- * Close an ephemeral BrowserContext without destroying the shared Browser.
- *
- * Safe to call after one-off commands. Other sessions remain unaffected.
- */
-export async function closeEphemeralContext(context: BrowserContext): Promise<void> {
-  try {
-    await context.close();
-  } catch {
-    // ignore close errors
-  }
 }
