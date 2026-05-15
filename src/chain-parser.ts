@@ -1,3 +1,5 @@
+import { unquote } from '@dyyz1993/xcli-core';
+
 /**
  * A parsed pipeline of commands with its chain type.
  */
@@ -179,13 +181,6 @@ export function splitCommand(cmdStr: string): string[] {
   return parts;
 }
 
-function unquote(s: string): string {
-  if ((s.startsWith("'") && s.endsWith("'")) || (s.startsWith('"') && s.endsWith('"'))) {
-    return s.slice(1, -1);
-  }
-  return s;
-}
-
 const SHORT_FLAG_MAP: Record<string, string> = {
   s: 'selector',
   v: 'value',
@@ -311,6 +306,7 @@ const commandDefCache: Record<string, CommandDef> = {
   perf: { positional: [] },
   health: { positional: [] },
   scrape: { positional: ['url'] },
+  image: { positional: ['query'] },
   structure: { positional: [] },
   snapshot: { positional: [] },
   getProperty: { positional: ['selector'] },

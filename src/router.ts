@@ -1,4 +1,5 @@
 import { parseArgs, type CommandResult } from '@dyyz1993/xcli-core';
+import { mapPositionalValues } from './utils/positional-params.js';
 import { version } from './version.js';
 import { executeChain, isChainInput } from './executor.js';
 import { allBuiltins } from './builtins/index.js';
@@ -580,6 +581,9 @@ export async function routeCommand(
 
           const cmdArgsForPlugin = cmdArgs.slice(1);
           const rawParams: Record<string, unknown> = { ...options };
+
+          // Parse --key value pairs and collect positional args
+          const positionalValues: string[] = [];
           for (let i = 0; i < cmdArgsForPlugin.length; i++) {
             if (cmdArgsForPlugin[i] === '--' && cmdArgsForPlugin[i + 1]) {
               try {
@@ -587,7 +591,26 @@ export async function routeCommand(
               } catch { /* not JSON, skip */ }
               break;
             }
+            if (cmdArgsForPlugin[i].startsWith('--')) {
+              const key = cmdArgsForPlugin[i].slice(2);
+              const value = cmdArgsForPlugin[i + 1];
+              if (value && !value.startsWith('-')) {
+                if (value === 'true') rawParams[key] = true;
+                else if (value === 'false') rawParams[key] = false;
+                else if (/^\d+$/.test(value)) rawParams[key] = parseInt(value, 10);
+                else rawParams[key] = value;
+                i++;
+              } else {
+                rawParams[key] = true;
+              }
+            } else if (!cmdArgsForPlugin[i].startsWith('-')) {
+              positionalValues.push(cmdArgsForPlugin[i]);
+            }
           }
+
+          // Map positional values to Zod schema params (with type coercion + unquoting)
+          Object.assign(rawParams, mapPositionalValues(cmdEntry.parameters!, positionalValues, rawParams));
+
           const params: Record<string, unknown> = {};
           for (const [k, v] of Object.entries(rawParams)) {
             const camelKey = k.replace(/-([a-z])/g, (_, c) => c.toUpperCase());

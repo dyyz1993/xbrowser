@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { z } from 'zod';
 
 const mockBrowserPage = {
   goto: vi.fn().mockResolvedValue(null),
@@ -24,11 +25,13 @@ vi.mock('playwright', () => ({
   },
 }));
 
+const mockGetSite = vi.fn(() => null);
+
 vi.mock('../src/plugin/loader.js', () => {
   const mockLoader = {
     getCore: () => ({
       loader: {
-        getSite: vi.fn(() => null),
+        getSite: mockGetSite,
       },
     }),
     scanAndLoad: vi.fn(),
@@ -524,5 +527,169 @@ describe('executeCommand cdpEndpoint forwarding', () => {
     });
 
     expect(createSessionSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('Plugin positional args (executeChain integration)', () => {
+  let capturedParams: Record<string, unknown> | null = null;
+
+  function makeMockSite(commands: Record<string, { schema: z.ZodObject<Record<string, z.ZodTypeAny>>; handler?: (params: Record<string, unknown>) => Promise<unknown> }>) {
+    return {
+      getCommand: vi.fn((name: string) => {
+        const entry = commands[name];
+        if (!entry) return null;
+        return {
+          name,
+          parameters: entry.schema,
+          handler: entry.handler ?? (async (params: Record<string, unknown>) => {
+            capturedParams = params;
+            return { success: true, data: params };
+          }),
+        };
+      }),
+      getAllCommands: vi.fn(() =>
+        Object.entries(commands).map(([name, entry]) => ({
+          name,
+          parameters: entry.schema,
+          handler: entry.handler ?? (async (params: Record<string, unknown>) => {
+            capturedParams = params;
+            return { success: true, data: params };
+          }),
+        }))
+      ),
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturedParams = null;
+    mockGetSite.mockReturnValue(null);
+  });
+
+  it('maps positional value to message param for doubao chat', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+
+    const site = makeMockSite({
+      chat: { schema: z.object({ message: z.string() }) },
+    });
+    mockGetSite.mockImplementation((cmd: string) => cmd === 'doubao' ? site : null);
+
+    const { executeChain } = await import('../src/executor.js');
+    const result = await executeChain('doubao chat 你好');
+
+    expect(result.steps[0].success).toBe(true);
+    expect(capturedParams).toBeDefined();
+    expect((capturedParams as Record<string, unknown>).message).toBe('你好');
+  });
+
+  it('maps --message flag without positional', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+
+    const site = makeMockSite({
+      chat: { schema: z.object({ message: z.string() }) },
+    });
+    mockGetSite.mockImplementation((cmd: string) => cmd === 'doubao' ? site : null);
+
+    const { executeChain } = await import('../src/executor.js');
+    const result = await executeChain('doubao chat --message 你好');
+
+    expect(result.steps[0].success).toBe(true);
+    expect(capturedParams).toBeDefined();
+    expect((capturedParams as Record<string, unknown>).message).toBe('你好');
+  });
+
+  it('flag overrides positional when both present', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+
+    const site = makeMockSite({
+      chat: { schema: z.object({ message: z.string() }) },
+    });
+    mockGetSite.mockImplementation((cmd: string) => cmd === 'doubao' ? site : null);
+
+    const { executeChain } = await import('../src/executor.js');
+    const result = await executeChain('doubao chat 你好 --message override');
+
+    expect(result.steps[0].success).toBe(true);
+    expect(capturedParams).toBeDefined();
+    expect((capturedParams as Record<string, unknown>).message).toBe('override');
+  });
+
+  it('maps positional value to query param for doubao search', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+
+    const site = makeMockSite({
+      search: { schema: z.object({ query: z.string() }) },
+    });
+    mockGetSite.mockImplementation((cmd: string) => cmd === 'doubao' ? site : null);
+
+    const { executeChain } = await import('../src/executor.js');
+    const result = await executeChain('doubao search 天气');
+
+    expect(result.steps[0].success).toBe(true);
+    expect(capturedParams).toBeDefined();
+    expect((capturedParams as Record<string, unknown>).query).toBe('天气');
+  });
+
+  it('no positional args, only --prompt flag', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+
+    const site = makeMockSite({
+      music: { schema: z.object({ prompt: z.string() }) },
+    });
+    mockGetSite.mockImplementation((cmd: string) => cmd === 'doubao' ? site : null);
+
+    const { executeChain } = await import('../src/executor.js');
+    const result = await executeChain('doubao music --prompt 一首歌');
+
+    expect(result.steps[0].success).toBe(true);
+    expect(capturedParams).toBeDefined();
+    expect((capturedParams as Record<string, unknown>).prompt).toBe('一首歌');
+  });
+
+  it('maps two positional values to two ZodString params', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+
+    const site = makeMockSite({
+      fill: { schema: z.object({ selector: z.string(), value: z.string() }) },
+    });
+    mockGetSite.mockImplementation((cmd: string) => cmd === 'doubao' ? site : null);
+
+    const { executeChain } = await import('../src/executor.js');
+    const result = await executeChain('doubao fill #input hello');
+
+    expect(result.steps[0].success).toBe(true);
+    expect(capturedParams).toBeDefined();
+    expect((capturedParams as Record<string, unknown>).selector).toBe('#input');
+    expect((capturedParams as Record<string, unknown>).value).toBe('hello');
+  });
+
+  it('strips quotes from positional values in chain execution', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+
+    const site = makeMockSite({
+      chat: { schema: z.object({ message: z.string() }) },
+    });
+    mockGetSite.mockImplementation((cmd: string) => cmd === 'doubao' ? site : null);
+
+    const { executeChain } = await import('../src/executor.js');
+    const result = await executeChain('doubao chat "你好"');
+
+    expect(result.steps[0].success).toBe(true);
+    expect(capturedParams).toBeDefined();
+    expect((capturedParams as Record<string, unknown>).message).toBe('你好');
   });
 });

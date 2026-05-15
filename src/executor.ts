@@ -1,4 +1,5 @@
 import { isCommandResult, type CommandResult } from '@dyyz1993/xcli-core';
+import { mapPositionalValues } from './utils/positional-params.js';
 import { getCommand, getAllCommands } from './commands/index.js';
 import type { BrowserCommandContext } from './context.js';
 import { findOrRestoreSession, createSession, destroyBrowser, saveSessionDiskMeta, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
@@ -9,6 +10,7 @@ import {
 } from './chain-parser.js';
 import type { WSServer, CommandMessage } from './websocket-server.js';
 import { getPluginLoader } from './utils/plugin-singleton.js';
+import { getTipsManager } from './tips/index.js';
 
 /**
  * Result of a single command execution.
@@ -179,6 +181,11 @@ export async function executeCommand(
     });
   }
 
+  const tipsManager = getTipsManager();
+  if (session?.page) {
+    await tipsManager.beforeCommand(session.page, commandName, params);
+  }
+
   try {
     const raw = await command.handler(params, ctx);
     const end = Date.now();
@@ -209,11 +216,20 @@ export async function executeCommand(
       }
     }
 
-    if (isCommandResult(raw)) {
-      return { ...raw, duration };
+    let smartTips: string[] | undefined;
+    if (session?.page) {
+      const tips = await tipsManager.afterCommand();
+      if (tips.length > 0) {
+        smartTips = tipsManager.formatTips(tips);
+      }
     }
 
-    return { success: true, data: raw, duration };
+    if (isCommandResult(raw)) {
+      const merged = [...(raw.tips || []), ...(smartTips || [])];
+      return { ...raw, duration, tips: merged.length > 0 ? merged : raw.tips };
+    }
+
+    return { success: true, data: raw, duration, tips: smartTips };
   } catch (err) {
     const end = Date.now();
     const duration = end - start;
@@ -344,6 +360,9 @@ export async function executeChain(
 
           const pluginArgs = cmdArgs.slice(1);
           const pluginParams: Record<string, unknown> = {};
+
+          // Separate positional args from --flag args
+          const positionalValues: string[] = [];
           for (let i = 0; i < pluginArgs.length; i++) {
             if (pluginArgs[i].startsWith('--')) {
               const key = pluginArgs[i].slice(2);
@@ -357,8 +376,15 @@ export async function executeChain(
               } else {
                 pluginParams[key] = true;
               }
+            } else if (pluginArgs[i].startsWith('-') && pluginArgs[i].length === 2) {
+              // short flag like -j for --json — skip (handled elsewhere)
+            } else {
+              positionalValues.push(pluginArgs[i]);
             }
           }
+
+          // Map positional values to Zod schema params (with type coercion + unquoting)
+          Object.assign(pluginParams, mapPositionalValues(cmdEntry.parameters!, positionalValues, pluginParams));
 
           const pluginCtx = {
             args: pluginArgs,
