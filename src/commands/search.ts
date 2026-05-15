@@ -6,9 +6,9 @@ import { registerCommand } from './command-registry.js';
 import { htmlToMarkdown } from '../lib/html-to-markdown.js';
 import { createEphemeralContext, closeEphemeralContext, getBrowser } from '../browser.js';
 import { shouldSkipUrl } from '../utils/url.js';
-import type { Page } from 'playwright';
+import type { Page, BrowserContext } from 'playwright';
 
-type SearchEngineKey = 'bing' | 'google' | 'baidu' | 'duckduckgo';
+type SearchEngineKey = 'bing' | 'google' | 'baidu';
 
 interface SearchResultItem {
   title: string;
@@ -27,6 +27,20 @@ interface SearchOptions {
   timeout?: number;
 }
 
+type RecencyFilter = 'hour' | 'day' | 'week' | 'month' | 'year';
+
+interface SearchOptions {
+  query: string;
+  engine?: string;
+  limit?: number;
+  full?: boolean;
+  format?: 'markdown' | 'json' | 'text';
+  timeout?: number;
+  recency?: RecencyFilter;
+  fallback?: boolean;
+  site?: string;
+}
+
 interface SearchResult {
   query: string;
   engine: string;
@@ -35,26 +49,69 @@ interface SearchResult {
   timestamp: number;
 }
 
-const SEARCH_ENGINES: Record<SearchEngineKey, { name: string; url: (q: string) => string }> = {
+/** Build recency URL params — discovered by monitoring real UI interactions */
+function getRecencyParams(recency: RecencyFilter): Record<SearchEngineKey, string> {
+  const now = Math.floor(Date.now() / 1000);
+  switch (recency) {
+    case 'hour':
+      return {
+        bing: '&filters=ex1%3A%22ez1%22', // 24小时内（Bing 没有1小时选项）
+        google: '&tbs=qdr:h',
+        baidu: `&gpc=stf%3D${now - 3600}%2C${now}%7Cstftype%3D1&tfflag=1`,
+      };
+    case 'day':
+      return {
+        bing: '&filters=ex1%3A%22ez1%22', // 24小时内
+        google: '&tbs=qdr:d',
+        baidu: `&gpc=stf%3D${now - 86400}%2C${now}%7Cstftype%3D1&tfflag=1`,
+      };
+    case 'week':
+      return {
+        bing: '&filters=ex1%3A%22ez2%22', // 一周内
+        google: '&tbs=qdr:w',
+        baidu: `&gpc=stf%3D${now - 604800}%2C${now}%7Cstftype%3D1&tfflag=1`,
+      };
+    case 'month':
+      return {
+        bing: '&filters=ex1%3A%22ez3%22', // 一个月内
+        google: '&tbs=qdr:m',
+        baidu: `&gpc=stf%3D${now - 2592000}%2C${now}%7Cstftype%3D1&tfflag=1`,
+      };
+    case 'year':
+      return {
+        bing: '&filters=ex1%3A%22ez5_20223_20588%22', // 去年
+        google: '&tbs=qdr:y',
+        baidu: `&gpc=stf%3D${now - 31536000}%2C${now}%7Cstftype%3D1&tfflag=1`,
+      };
+  }
+}
+
+const SEARCH_ENGINES: Record<SearchEngineKey, { name: string; url: (q: string, site?: string) => string }> = {
   bing: {
     name: 'Bing',
-    url: (q) => `https://www.bing.com/search?q=${encodeURIComponent(q)}&count=10`,
+    url: (q, site) => {
+      const query = site ? `${q} site:${site}` : q;
+      return `https://www.bing.com/search?q=${encodeURIComponent(query)}&count=10`;
+    },
   },
   google: {
     name: 'Google',
-    url: (q) => `https://www.google.com/search?q=${encodeURIComponent(q)}&num=10`,
+    url: (q, site) => {
+      const query = site ? `${q} site:${site}` : q;
+      return `https://www.google.com/search?q=${encodeURIComponent(query)}&num=10`;
+    },
   },
   baidu: {
     name: 'Baidu',
-    url: (q) => `https://www.baidu.com/s?wd=${encodeURIComponent(q)}&rn=10`,
-  },
-  duckduckgo: {
-    name: 'DuckDuckGo',
-    url: (q) => `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`,
+    url: (q, site) => {
+      // 百度不支持 site: 语法在 wd 参数中，但支持在查询中直接加
+      const query = site ? `${q} site:${site}` : q;
+      return `https://www.baidu.com/s?wd=${encodeURIComponent(query)}&rn=10`;
+    },
   },
 } as const;
 
-const ENGINE_FALLBACK_ORDER: readonly SearchEngineKey[] = ['bing', 'google', 'baidu', 'duckduckgo'] as const;
+const ENGINE_FALLBACK_ORDER: readonly SearchEngineKey[] = ['bing', 'google', 'baidu'] as const;
 
 function parseBingResults($: cheerio.CheerioAPI): SearchResultItem[] {
   const results: SearchResultItem[] = [];
@@ -141,57 +198,144 @@ function extractBaiduSnippet(
   return pSnippet;
 }
 
-function parseDuckDuckGoResults($: cheerio.CheerioAPI): SearchResultItem[] {
-  const results: SearchResultItem[] = [];
-  $('.result').each((idx, el) => {
-    const $el = $(el);
-    const $titleLink = $el.find('h2 > a.result__a').first();
-    const title = $titleLink.text().trim();
-    const url = $titleLink.attr('href') || '';
-    const snippet = $el.find('.result__snippet').first().text().trim();
-    if (title && url && !shouldSkipUrl(url)) {
-      results.push({ title, url, snippet, position: idx + 1 });
-    }
-  });
-  return results;
-}
-
 const PARSERS: Record<SearchEngineKey, ($: cheerio.CheerioAPI) => SearchResultItem[]> = {
   bing: parseBingResults,
   google: parseGoogleResults,
   baidu: parseBaiduResults,
-  duckduckgo: parseDuckDuckGoResults,
 };
 
-  async function trySearchWithEngine(
+async function trySearchWithEngine(
   page: Page,
   engine: SearchEngineKey,
   query: string,
   timeout: number,
+  recency?: RecencyFilter,
+  site?: string,
 ): Promise<{ engine: SearchEngineKey; results: SearchResultItem[] }> {
   const config = SEARCH_ENGINES[engine];
-  const searchUrl = config.url(query);
-  
+
   const headers = {
     'Accept': 'text/html,application/xhtml+xml,application/xml',
     'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0 Safari/537.36',
-    'Referer': `https://www.${engine === 'google' ? 'www.google.com' : engine === 'bing' ? 'www.bing.com' : engine === 'baidu' ? 'www.baidu.com' : 'html.duckduckgo.com'}`,
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'Referer': `https://www.${engine === 'google' ? 'google.com' : engine === 'bing' ? 'bing.com' : 'baidu.com'}`,
     'Sec-Fetch-Dest': 'document',
     'Sec-Fetch-Mode': 'cors',
   };
-  
+
   await page.setExtraHTTPHeaders(headers);
+
+  // 直接在 URL 中拼接时间过滤参数（从 UI 交互中发现的真实参数，比 UI 点击更稳定）
+  let searchUrl = config.url(query, site);
+  if (recency) {
+    const params = getRecencyParams(recency);
+    searchUrl += params[engine];
+  }
+
   await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout });
-  await page.waitForLoadState('networkidle', { timeout }).catch(() => {});
-  
-  const html = await page.content();
+  await page.waitForTimeout(500);
+
+  let html: string | undefined;
+  let retries = 0;
+  while (retries < 3) {
+    try {
+      html = await page.content();
+      break;
+    } catch (err) {
+      if (retries === 2) throw err;
+      retries++;
+      await page.waitForTimeout(500);
+    }
+  }
+  if (!html) {
+    html = await page.content();
+  }
   const $ = cheerio.load(html);
-  
+
   const parser = PARSERS[engine];
   const results = parser($);
-  
+
   return { engine, results };
+}
+
+async function trySearchOnPage(
+  context: BrowserContext,
+  engine: SearchEngineKey,
+  query: string,
+  timeout: number,
+  recency?: RecencyFilter,
+  site?: string,
+): Promise<{ engine: SearchEngineKey; results: SearchResultItem[] }> {
+  const page = await context.newPage();
+  try {
+    return await trySearchWithEngine(page, engine, query, timeout, recency, site);
+  } finally {
+    await page.close().catch(() => { });
+  }
+}
+
+function normalizeUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, '');
+    let path = u.pathname;
+    if (path.endsWith('/') && path.length > 1) path = path.slice(0, -1);
+    return `${host}${path}`;
+  } catch {
+    return url;
+  }
+}
+
+function resolveUrl(item: SearchResultItem): SearchResultItem {
+  let url = item.url;
+  try {
+    const baiduMatch = url.match(/[?&]url=([^&]+)/);
+    if (baiduMatch && url.includes('baidu.com/link')) {
+      url = decodeURIComponent(baiduMatch[1]);
+    }
+  } catch { /* baidu link decode failed */ }
+  return { ...item, url };
+}
+
+function isAdResult(item: SearchResultItem): boolean {
+  const adKeywords = ['广告', '推广', 'Ad', 'Sponsored', 'Promoted'];
+  const text = `${item.title} ${item.snippet}`;
+  return adKeywords.some(k => text.toLowerCase().includes(k.toLowerCase()));
+}
+
+function mergeResults(
+  allEngineResults: Array<{ engine: SearchEngineKey; results: SearchResultItem[] }>,
+  limit: number,
+): SearchResultItem[] {
+  const groups = new Map<string, { item: SearchResultItem; engines: Set<string>; avgPosition: number }>();
+
+  for (const { engine, results } of allEngineResults) {
+    for (const item of results) {
+      const resolved = resolveUrl(item);
+      if (isAdResult(resolved)) continue;
+      const key = normalizeUrl(resolved.url);
+      if (groups.has(key)) {
+        const group = groups.get(key)!;
+        group.engines.add(engine);
+        group.avgPosition = (group.avgPosition + item.position) / 2;
+      } else {
+        groups.set(key, {
+          item: resolved,
+          engines: new Set([engine]),
+          avgPosition: item.position,
+        });
+      }
+    }
+  }
+
+  return [...groups.values()]
+    .sort((a, b) => {
+      const engineDiff = b.engines.size - a.engines.size;
+      if (engineDiff !== 0) return engineDiff;
+      return a.avgPosition - b.avgPosition;
+    })
+    .map(g => g.item)
+    .slice(0, limit);
 }
 
 async function fetchFullContent(urls: string[], timeout: number, cdpEndpoint?: string): Promise<Map<string, string>> {
@@ -213,11 +357,11 @@ async function fetchFullContent(urls: string[], timeout: number, cdpEndpoint?: s
             const pg = await context.newPage();
             try {
               await pg.goto(url, { waitUntil: 'domcontentloaded', timeout });
-              await pg.waitForLoadState('networkidle', { timeout }).catch(() => {});
+              await pg.waitForLoadState('networkidle', { timeout }).catch(() => { });
               const html = await pg.content();
               contentMap.set(url, htmlToMarkdown(html, { onlyMainContent: true }));
             } finally {
-              await pg.close().catch(() => {});
+              await pg.close().catch(() => { });
             }
           } catch {
             contentMap.set(url, '');
@@ -225,7 +369,7 @@ async function fetchFullContent(urls: string[], timeout: number, cdpEndpoint?: s
         }),
       );
     } finally {
-      await context.close().catch(() => {});
+      await context.close().catch(() => { });
     }
   }
 
@@ -243,6 +387,9 @@ export const searchCommand = registerCommand({
     full: z.boolean().default(false),
     format: z.enum(['markdown', 'json', 'text']).default('markdown'),
     timeout: z.number().default(15000),
+    recency: z.enum(['hour', 'day', 'week', 'month', 'year']).optional().describe('Filter by time: hour/day/week/month/year'),
+    fallback: z.boolean().default(false).describe('Sequential engine fallback instead of parallel'),
+    site: z.string().optional().describe('Limit results to a specific site (e.g. github.com, v2ex.com)'),
   }),
   handler: async (p: SearchOptions, ctx: BrowserCommandContext): Promise<ReturnType<typeof ok>> => {
     const isCDP = !!ctx.cdpEndpoint;
@@ -250,38 +397,88 @@ export const searchCommand = registerCommand({
       ? { cdpEndpoint: ctx.cdpEndpoint }
       : { headless: true };
 
-    const { context, page } = await createEphemeralContext(launchOpts);
+    const { context } = await createEphemeralContext(launchOpts);
 
     try {
-      let finalResult: { engine: SearchEngineKey; results: SearchResultItem[] } | null = null;
       const errors: Array<{ engine: string; error: string }> = [];
+      const specifiedEngine = p.engine && p.engine in SEARCH_ENGINES
+        ? (p.engine as SearchEngineKey)
+        : null;
 
-      const enginesToTry: SearchEngineKey[] = p.engine && p.engine in SEARCH_ENGINES
-        ? [p.engine as SearchEngineKey]
-        : [...ENGINE_FALLBACK_ORDER];
+      const isFallback = p.fallback || specifiedEngine !== null;
 
-      for (const engine of enginesToTry) {
-        try {
-          const result = await trySearchWithEngine(page, engine, p.query, p.timeout ?? 15000);
-          if (result.results.length > 0 || !finalResult) {
-            finalResult = result;
-            if (result.results.length > 0) break;
+      let results: SearchResultItem[] = [];
+      let engineLabel = '';
+
+      if (isFallback) {
+        const enginesToTry: SearchEngineKey[] = specifiedEngine
+          ? [specifiedEngine]
+          : [...ENGINE_FALLBACK_ORDER];
+
+        let finalResult: { engine: SearchEngineKey; results: SearchResultItem[] } | null = null;
+
+        for (const engine of enginesToTry) {
+          try {
+            const result = await trySearchOnPage(context, engine, p.query, p.timeout ?? 15000, p.recency as RecencyFilter | undefined, p.site);
+            if (result.results.length > 0 || !finalResult) {
+              finalResult = result;
+              if (result.results.length > 0) break;
+            }
+          } catch (err) {
+            errors.push({
+              engine: SEARCH_ENGINES[engine].name,
+              error: err instanceof Error ? err.message : String(err),
+            });
           }
-        } catch (err) {
-          errors.push({
-            engine: SEARCH_ENGINES[engine].name,
-            error: err instanceof Error ? err.message : String(err),
-          });
         }
-      }
 
-      if (!finalResult) {
-        throw new Error(
-          `All search engines failed:\n${errors.map((e) => `  - ${e.engine}: ${e.error}`).join('\n')}`,
+        if (!finalResult || finalResult.results.length === 0) {
+          throw new Error(
+            `All search engines failed:\n${errors.map((e) => `  - ${e.engine}: ${e.error}`).join('\n')}`,
+          );
+        }
+
+        results = finalResult.results.slice(0, p.limit ?? 10);
+        engineLabel = SEARCH_ENGINES[finalResult.engine].name;
+      } else {
+        const engines = [...ENGINE_FALLBACK_ORDER];
+        // Stagger engine starts by 200ms each to avoid CDP contention
+        const settled = await Promise.allSettled(
+          engines.map(async (engine, i) => {
+            if (i > 0) await new Promise(r => setTimeout(r, 200 * i));
+            return trySearchOnPage(context, engine, p.query, p.timeout ?? 15000, p.recency as RecencyFilter | undefined, p.site);
+          }),
         );
-      }
 
-      let results = finalResult.results.slice(0, p.limit ?? 10);
+        const allResults: Array<{ engine: SearchEngineKey; results: SearchResultItem[] }> = [];
+        for (let i = 0; i < settled.length; i++) {
+          const r = settled[i];
+          if (r.status === 'fulfilled') {
+            if (r.value.results.length > 0) {
+              allResults.push(r.value);
+            } else {
+              errors.push({
+                engine: SEARCH_ENGINES[engines[i]].name,
+                error: '0 results returned',
+              });
+            }
+          } else {
+            errors.push({
+              engine: SEARCH_ENGINES[engines[i]].name,
+              error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+            });
+          }
+        }
+
+        if (allResults.length === 0) {
+          throw new Error(
+            `All search engines failed:\n${errors.map((e) => `  - ${e.engine}: ${e.error}`).join('\n')}`,
+          );
+        }
+
+        results = mergeResults(allResults, p.limit ?? 10);
+        engineLabel = allResults.map(r => SEARCH_ENGINES[r.engine].name).join('+');
+      }
 
       if (p.full && results.length > 0) {
         const urls = results.map((r) => r.url).filter((u) => !shouldSkipUrl(u));
@@ -295,15 +492,16 @@ export const searchCommand = registerCommand({
       }
 
       const searchResult: SearchResult = {
-        query: p.query,
-        engine: SEARCH_ENGINES[finalResult.engine].name,
+        query: p.site ? `${p.query} (site:${p.site})` : p.query,
+        engine: engineLabel,
         results,
         total: results.length,
         timestamp: Date.now(),
       };
 
-      if (errors.length > 0 && finalResult.results.length === 0) {
-        console.warn(`Warning: ${SEARCH_ENGINES[finalResult.engine].name} returned no results. Tried ${errors.length} other engine(s).`);
+      if (errors.length > 0) {
+        const errorMsg = `${errors.length} engine(s) had issues: ${errors.map(e => `${e.engine}(${e.error.substring(0, 80)})`).join(', ')}`;
+        console.warn(errorMsg);
       }
 
       return ok(searchResult);
@@ -312,3 +510,5 @@ export const searchCommand = registerCommand({
     }
   },
 });
+
+export { getRecencyParams, parseBingResults, parseGoogleResults, parseBaiduResults, normalizeUrl, resolveUrl, isAdResult, mergeResults };

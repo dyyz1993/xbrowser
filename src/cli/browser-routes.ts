@@ -253,7 +253,7 @@ export async function handleBrowserCommand(
           };
           break;
         case 'search':
-          if (!args[0]) outputError('Usage: xbrowser search "query" [--engine bing|google|baidu|duckduckgo] [--limit N] [--full] [--format markdown|json] [--timeout ms]');
+          if (!args[0]) outputError('Usage: xbrowser search "query" [--engine bing|google|baidu] [--limit N] [--full] [--format markdown|json] [--timeout ms] [--recency hour|day|week|month|year] [--site domain.com] [--fallback]');
           cmdName = 'search';
           params = {
             query: args.join(' '),
@@ -262,6 +262,26 @@ export async function handleBrowserCommand(
             full: !!(options.full || options.f),
             format: (options.format || options.F) as string | undefined,
             timeout: options.timeout || options.t ? Number(options.timeout || options.t) : undefined,
+            recency: (options.recency || options.r) as string | undefined,
+            fallback: !!(options.fallback),
+            site: (options.site || options.s) as string | undefined,
+          };
+          break;
+        case 'image':
+          if (!args[0]) outputError('Usage: xbrowser image "query" [--engine NAME] [--limit N] [--size any|large|medium|small] [--download] [--download-dir ./images]\n\nEngines: bing-images, unsplash, pexels, pixabay (headless)\n         baidu-images, google-images, huaban, pinterest (need --cdp)\n\nDefault: searches bing-images + unsplash + pexels in parallel');
+          cmdName = 'image';
+          params = {
+            query: args.join(' '),
+            engine: options.engine as string | undefined,
+            limit: options.limit ? Number(options.limit) : undefined,
+            size: options.size as string | undefined,
+            color: options.color as string | undefined,
+            type: options.type as string | undefined,
+            download: !!(options.download),
+            downloadDir: (options['download-dir'] || options.downloadDir) as string | undefined,
+            concurrency: options.concurrency ? Number(options.concurrency) : undefined,
+            format: (options.format || options.F) as string | undefined,
+            timeout: options.timeout ? Number(options.timeout) : undefined,
           };
           break;
          case 'network': {
