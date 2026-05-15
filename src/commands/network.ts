@@ -287,3 +287,5 @@ export const networkCommand = registerCommand({
     }
   },
 });
+
+export { extractPath, generatePreview, buildSummaryOutput, buildJsonOutput, searchInObject };
