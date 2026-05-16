@@ -79,7 +79,7 @@ function resetIdleTimer(): void {
     }
     if (allIdle && browser) {
       logSessionEvent('idle_timeout', `Sessions idle for >${IDLE_TIMEOUT_MS / 60000}min. Sessions: ${idleSessions.join(', ') || 'all'}. Calling destroyBrowser()`);
-      await destroyBrowser().catch(() => {});
+      await destroyBrowser().catch(() => {         });
     }
   }, IDLE_TIMEOUT_MS);
 }
@@ -245,7 +245,7 @@ export async function findOrRestoreSession(
 
     // Navigate to conversationUrl (specific page) or url (generic)
     const targetUrl = meta.conversationUrl || meta.url || 'about:blank';
-    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {         });
 
     const session: ManagedSession = {
       id: meta.id || randomUUID(),
@@ -545,8 +545,8 @@ export async function closeAllSessions(): Promise<void> {
     try {
       if (!session.isCDP) {
         await session.context.close();
-        sessions.delete(id);
       }
+      sessions.delete(id);
     } catch {
       sessions.delete(id);
     }
@@ -565,19 +565,18 @@ export async function destroyBrowser(): Promise<void> {
     clearTimeout(idleTimer);
     idleTimer = null;
   }
-  const hasCDPSession = [...sessions.values()].some(s => s.isCDP);
   await closeAllSessions();
   if (browser) {
     const b = browser;
     browser = null;
-    if (!hasCDPSession) {
-      b.close().catch(() => {});
-    }
+    // close() on a CDP-connected browser only disconnects the WebSocket,
+    // it does NOT shut down the remote browser.
+    b.close().catch(() => {});
   }
 }
 
 /**
- * Reset all internal state for testing purposes.
+ * Reset all internal st    ate for testing purposes.
  *
  * Clears the session map and drops the browser reference without
  * closing anything. Intended for use in test teardown.

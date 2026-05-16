@@ -1,4 +1,4 @@
-import { parseArgs, type CommandResult } from '@dyyz1993/xcli-core';
+import { parseArgs, outputFormatter, isCommandResult, type CommandResult } from '@dyyz1993/xcli-core';
 import { mapPositionalValues } from './utils/positional-params.js';
 import { version } from './version.js';
 import { executeChain, isChainInput } from './executor.js';
@@ -188,13 +188,13 @@ export async function routeCommand(
         handleConfig(cmdArgs, options);
         break;
       case 'convert':
-        await handleConvert(cmdArgs, mode);
+        handleConvert(cmdArgs, mode);
         break;
       case 'extract':
-        await handleExtract(cmdArgs, mode);
+        handleExtract(cmdArgs, mode);
         break;
       case 'filter':
-        await handleFilter(cmdArgs, mode);
+        handleFilter(cmdArgs, mode);
         break;
       case 'run':
         if (!cmdArgs[0]) {
@@ -305,7 +305,7 @@ export async function routeCommand(
             break;
           }
           case 'log': {
-            const logResult = await forwardCommandLog(netSession, options.limit ? Number(options.limit) : 50) as { session: string; commands: Array<{id: number; timestamp: number; command: string; params: Record<string, unknown>}> };
+            const logResult = await forwardCommandLog(netSession, options.limit ? Number(options.limit) : 50) as { session: string; commands: Array<{ id: number; timestamp: number; command: string; params: Record<string, unknown> }> };
             if (mode === 'json') {
               outputResult(logResult, mode);
             } else {
@@ -313,7 +313,7 @@ export async function routeCommand(
               console.log(`  Total: ${logResult.commands.length}\n`);
               for (const cmd of logResult.commands) {
                 const ts = new Date(cmd.timestamp).toISOString().substring(11, 19);
-                const paramsStr = Object.entries(cmd.params).map(([k,v]) => `${k}=${v}`).join(' ');
+                const paramsStr = Object.entries(cmd.params).map(([k, v]) => `${k}=${v}`).join(' ');
                 console.log(`  #${cmd.id} [${ts}] ${cmd.command} ${paramsStr}`);
               }
               console.log('');
@@ -634,9 +634,9 @@ export async function routeCommand(
             sessionId: session.id,
             storage: {
               get: async <T>(_key: string): Promise<T | null> => null,
-              set: async <T>(_key: string, _value: T): Promise<void> => {},
-              delete: async (_key: string): Promise<void> => {},
-              clear: async (): Promise<void> => {},
+              set: async <T>(_key: string, _value: T): Promise<void> => { },
+              delete: async (_key: string): Promise<void> => { },
+              clear: async (): Promise<void> => { },
               keys: async (): Promise<string[]> => [],
             },
             output: { mode: mode as 'text' | 'json' | 'yaml', showTips: true, color: true, emoji: true },
@@ -658,12 +658,34 @@ export async function routeCommand(
                 saveSessionDiskMeta(sessionName, { conversationUrl: convUrl, cdpEndpoint });
               }
             }
-            if (mode === 'json' || mode === 'yaml') {
-              outputResult(result, mode);
-            } else if (result) {
-              if (result.data) console.log(JSON.stringify(result.data, null, 2));
-              if (result.tips?.length) {
-                for (const tip of result.tips) console.log(`  💡 ${tip}`);
+            if (isCommandResult(result)) {
+              // Framework-controlled output: json/yaml → pure data on stdout, tips on stderr
+              if (mode === 'json' || mode === 'yaml') {
+                console.log(outputFormatter.format(result.data, { mode: mode as 'json' | 'yaml', color: false, emoji: false }));
+                if (result.tips?.length) {
+                  for (const tip of result.tips) console.error(`\u{1F4A1} ${tip}`);
+                }
+              } else {
+                console.log(outputFormatter.format(result.data, { mode: 'text', color: true, emoji: true }));
+                if (result.tips?.length) {
+                  for (const tip of result.tips) console.log(`  \u{1F4A1} ${tip}`);
+                }
+              }
+            } else if (result && typeof result === 'object') {
+              // Legacy plugins that don't return standard CommandResult
+              const obj = result as Record<string, unknown>;
+              if (mode === 'json' || mode === 'yaml') {
+                console.log(outputFormatter.format(obj.data ?? obj, { mode: mode as 'json' | 'yaml', color: false, emoji: false }));
+                const tips = obj.tips as string[] | undefined;
+                if (tips?.length) {
+                  for (const tip of tips) console.error(`\u{1F4A1} ${tip}`);
+                }
+              } else {
+                if (obj.data) console.log(JSON.stringify(obj.data, null, 2));
+                const tips = obj.tips as string[] | undefined;
+                if (tips?.length) {
+                  for (const tip of tips) console.log(`  \u{1F4A1} ${tip}`);
+                }
               }
             }
           } finally {
