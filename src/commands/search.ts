@@ -504,6 +504,28 @@ export const searchCommand = registerCommand({
         console.warn(errorMsg);
       }
 
+      // format controls output shape: json → structured data, markdown → readable text, text → plain list
+      if (p.format === 'markdown') {
+        const lines = [`## Search: ${searchResult.query}`, `_Engine: ${searchResult.engine} | Total: ${searchResult.total}_`, ''];
+        for (const r of results) {
+          lines.push(`### ${r.position}. [${r.title}](${r.url})`);
+          lines.push(`> ${r.snippet}`);
+          lines.push('');
+        }
+        return ok({ ...searchResult, content: lines.join('\n') });
+      }
+
+      if (p.format === 'text') {
+        const lines = [`Search: ${searchResult.query} (Engine: ${searchResult.engine}, Total: ${searchResult.total})`, ''];
+        for (const r of results) {
+          lines.push(`${r.position}. ${r.title}`);
+          lines.push(`   ${r.url}`);
+          lines.push(`   ${r.snippet}`);
+          lines.push('');
+        }
+        return ok({ ...searchResult, content: lines.join('\n') });
+      }
+
       return ok(searchResult);
     } finally {
       await closeEphemeralContext(context);

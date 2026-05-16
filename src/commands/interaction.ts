@@ -77,8 +77,11 @@ export const fillCommand = registerCommand({
     clear: z.boolean().optional(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
+    if (p.clear) {
+      await ctx.page.fill(p.selector, '');
+    }
     await ctx.page.fill(p.selector, p.value);
-    return ok({ selector: p.selector, value: p.value });
+    return ok({ selector: p.selector, value: p.value, cleared: p.clear || false });
   },
 });
 

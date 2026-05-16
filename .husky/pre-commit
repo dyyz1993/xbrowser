@@ -24,4 +24,13 @@ if [ "$ANY_COUNT" -gt 100 ]; then
 fi
 echo "✅ any check passed: $ANY_COUNT/100"
 
+echo "🔍 [pre-commit] Checking command param consumption..."
+node scripts/check-command-params.mjs
+if [ $? -ne 0 ]; then
+  echo "❌ Command param check failed. Fix unconsumed parameters before committing."
+  echo "   → See rules/command-param-audit.mdc for guidelines."
+  exit 1
+fi
+echo "✅ Command param check passed"
+
 echo "✅ [pre-commit] All checks passed!"

@@ -18,7 +18,19 @@ export const setViewportCommand = registerCommand({
     const viewport = ctx.page.viewportSize();
     const width = p.width ?? viewport?.width ?? 1280;
     const height = p.height ?? viewport?.height ?? 720;
-    await ctx.page.setViewportSize({ width, height });
-    return ok({ width, height });
+    await ctx.page.setViewportSize({
+      width,
+      height,
+      ...(p.deviceScaleFactor !== undefined && { deviceScaleFactor: p.deviceScaleFactor }),
+      ...(p.isMobile !== undefined && { isMobile: p.isMobile }),
+      ...(p.hasTouch !== undefined && { hasTouch: p.hasTouch }),
+    });
+    return ok({
+      width,
+      height,
+      ...(p.deviceScaleFactor !== undefined && { deviceScaleFactor: p.deviceScaleFactor }),
+      ...(p.isMobile !== undefined && { isMobile: p.isMobile }),
+      ...(p.hasTouch !== undefined && { hasTouch: p.hasTouch }),
+    });
   },
 });

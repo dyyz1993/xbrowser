@@ -88,13 +88,13 @@ describe('Twitter Plugin', () => {
       });
     });
 
-    it('should register 5 commands', () => {
-      expect(mockSite.command).toHaveBeenCalledTimes(5);
+    it('should register 6 commands', () => {
+      expect(mockSite.command).toHaveBeenCalledTimes(6);
     });
 
     it('should register expected command names', () => {
       const names = Array.from(commands.keys());
-      expect(names).toEqual(['search', 'profile', 'timeline', 'replies', 'liked']);
+      expect(names).toEqual(['search', 'profile', 'timeline', 'replies', 'liked', 'search-image']);
     });
 
     it('should register login and logout handlers', () => {
@@ -519,7 +519,7 @@ describe('Twitter Plugin', () => {
   describe('Login/Logout', () => {
     it('login should log warning and navigate if page available', async () => {
       const page = createMockPage();
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => { });
       await loginHandler({ page });
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('--cdp'));
       expect(page.goto).toHaveBeenCalled();
@@ -527,14 +527,14 @@ describe('Twitter Plugin', () => {
     });
 
     it('login should log warning without page', async () => {
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => { });
       await loginHandler({});
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('--cdp'));
       consoleSpy.mockRestore();
     });
 
     it('logout should log warning', async () => {
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => { });
       await logoutHandler();
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('手动退出'));
       consoleSpy.mockRestore();

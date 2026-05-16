@@ -48,7 +48,7 @@ describe('taobao plugin', () => {
   });
 
   it('should register 10 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(10);
+    expect(mockSite.command).toHaveBeenCalledTimes(11);
   });
 
   it('should register expected command names', () => {

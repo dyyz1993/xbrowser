@@ -1,0 +1,60 @@
+---
+description: 当新增或修改 xbrowser 命令时触发，确保 Zod schema 声明的每个参数都在 handler 中被正确消费
+globs: src/commands/**/*.ts
+---
+
+# 命令参数审计规则
+
+## 规则：每个 Zod schema 参数必须在 handler 中消费
+
+在 `parameters: z.object({...})` 中声明的每个 key，handler 函数体内必须有对应的 `p.xxx` 引用。
+
+```typescript
+// ❌ 错误：声明了 format 但 handler 没用
+export const myCommand = defineCommand({
+  parameters: z.object({
+    query: z.string(),
+    format: z.enum(['text', 'json']).default('text'),
+  }),
+  handler: async (p) => {
+    return p.query // format 参数被浪费了
+  },
+})
+
+// ✅ 正确：每个参数都有引用
+export const myCommand = defineCommand({
+  parameters: z.object({
+    query: z.string(),
+    format: z.enum(['text', 'json']).default('text'),
+  }),
+  handler: async (p) => {
+    const result = await search(p.query)
+    return formatOutput(result, p.format)
+  },
+})
+```
+
+如果参数暂时不用，用注释说明原因，不要留死代码。
+
+## 为什么重要
+
+- 未消费的参数会让 API 使用者误以为参数有效
+- `--format json` vs `--json` 的混淆就是这类问题导致的
+- 参数声明即契约，不消费就是契约破裂
+
+## 自查清单
+
+每次新增或修改命令时，逐项检查：
+
+- [ ] schema 里声明的每个参数，handler 里都有 `p.xxx` 引用
+- [ ] 如果参数是给子函数用的，子函数签名里也明确接收了
+- [ ] `--format` / `--json` 的输出语义在命令文档中说清楚了
+- [ ] 新命令已在 `docs/commands.md` 中记录
+
+## 自动检测
+
+项目内置了自动检测机制：
+
+- 检测脚本：`scripts/check-command-params.mjs`
+- husky pre-commit 会自动运行
+- 如果脚本报错，先修参数消费问题再提交，不要 `--no-verify` 跳过

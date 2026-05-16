@@ -381,6 +381,82 @@ export default function(xcli: XCLIAPI): void {
 
 ---
 
+## 六-A、CDP 模式下的 Playwright 踩坑速查（必读）
+
+> 这些是从 doubao/抖音/小红书等插件开发中总结的实战经验。
+> 遇到 `Execution context was destroyed`、按钮点不动、`fill()` 无效等问题时，先查这里。
+
+### 坑 1：locator().click() 导致 context 丢失
+
+**现象**：`page.locator('button').click()` 报 `Execution context was destroyed, most likely because of a navigation`
+
+**原因**：CDP 模式下连接用户浏览器，`locator().click()` 会触发 Playwright 内部的可操作性检查，可能引起微小的页面导航/重渲染，导致执行上下文失效。
+
+**解决方案**：所有点击操作统一用 `evaluateHandle` + `mouse.click()` 模式：
+```typescript
+async function safeClickSelector(page: Page, selector: string): Promise<boolean> {
+  const handle = await page.evaluateHandle((sel: string) => {
+    const el = document.querySelector(sel);
+    return el;
+  }, selector);
+  const element = handle.asElement();
+  if (!element) return false;
+  const box = await element.boundingBox();
+  if (!box) return false;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  return true;
+}
+```
+
+### 坑 2：React/Semi UI 的 disabled 按钮陷阱
+
+**现象**：弹窗中的确认按钮始终 `disabled`，即使 `fill()` 已经填入了内容
+
+**原因**：Semi UI 等组件库用 React state 控制按钮状态。`fill()` 直接修改 DOM，不触发 React 状态更新。
+
+**解决方案**：强制移除 disabled 属性后点击：
+```typescript
+await page.evaluate(() => {
+  const btn = document.querySelector('button[class*="confirm"]');
+  if (btn) {
+    btn.disabled = false;
+    btn.classList.remove('semi-button-disabled', 'semi-button-primary-disabled');
+  }
+});
+```
+
+### 坑 3：元素定位 — 精确优于模糊
+
+**原则**：
+- ✅ 用 `class`、`placeholder`、`id` 等属性定位
+- ✅ 用 `evaluateHandle` + JS 函数精确匹配
+- ❌ 避免 `:has-text("xxx")` 文本搜索（SPA 文本可能延迟加载/动态变化）
+
+**示例**：
+```typescript
+// ❌ 不稳定
+page.locator('button:has-text("音乐生成")')
+
+// ✅ 稳定
+page.evaluateHandle(() => 
+  Array.from(document.querySelectorAll('div,button'))
+    .find(e => e.textContent.trim() === '音乐生成' && e.children.length === 0)
+)
+```
+
+### 坑 4：CDP 模式下不能关闭浏览器
+
+**原则**：CDP 连接的是用户的浏览器，**绝不能** `browser.close()`，否则会杀掉用户的整个浏览器进程。操作完成后只需断开连接。
+
+### 知识库检索关键词
+
+遇到 Playwright/CDP 相关问题时，用以下关键词搜索知识库：
+- **标签**: `playwright-pitfall`, `cdp-automation`
+- **关键词**: `evaluateHandle`, `context-destroyed`, `safeClickSelector`, `SPA点击`, `disabled按钮`
+- **文档 ID**: `96rhl9kc0l`（evaluateHandle 核心模式）、`m6slez0rmo`（豆包自定义歌词流程）、`bndgxh08u1`（music 命令修改记录）
+
+---
+
 ## 七、构建和测试
 
 ```bash

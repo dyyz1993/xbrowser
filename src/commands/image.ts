@@ -279,6 +279,34 @@ export const imageCommand = registerCommand({
         timestamp: Date.now(),
       };
 
+      // format controls output shape: json → structured data, markdown → image grid, text → plain list
+      if (params.format === 'markdown') {
+        const lines = [`## Image Search: ${params.query}`, `_Engines: ${result.engines.join(', ')} | Total: ${result.total}_`, ''];
+        for (const img of result.results) {
+          lines.push(`### [${img.title}](${img.sourceUrl})`);
+          lines.push(`![${img.title}](${img.thumbnailUrl})`);
+          lines.push(`- Size: ${img.width}x${img.height}${img.fileSize ? ` | File: ${img.fileSize}` : ''}`);
+          lines.push(`- Source: ${img.sourceSite} | [Original](${img.originalUrl})`);
+          lines.push('');
+        }
+        if (result.download) {
+          lines.push(`---\n_Downloaded: ${result.download.downloaded} | Failed: ${result.download.failed}_`);
+        }
+        return ok({ ...result, content: lines.join('\n') });
+      }
+
+      if (params.format === 'text') {
+        const lines = [`Image Search: ${params.query} (${result.engines.join(', ')}, Total: ${result.total})`, ''];
+        for (const img of result.results) {
+          lines.push(`${img.title}`);
+          lines.push(`  Thumbnail: ${img.thumbnailUrl}`);
+          lines.push(`  Original:  ${img.originalUrl}`);
+          lines.push(`  Size: ${img.width}x${img.height} | Source: ${img.sourceSite}`);
+          lines.push('');
+        }
+        return ok({ ...result, content: lines.join('\n') });
+      }
+
       return ok(result);
     } finally {
       await closeEphemeralContext(context);

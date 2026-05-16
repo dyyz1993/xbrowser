@@ -12,12 +12,12 @@ describe('twitter plugin', () => {
   });
 
   it('should register 5 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(5);
+    expect(mockSite.command).toHaveBeenCalledTimes(6);
   });
 
   it('should register expected commands', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
-    expect(names).toEqual(['search', 'profile', 'timeline', 'replies', 'liked']);
+    expect(names).toEqual(['search', 'profile', 'timeline', 'replies', 'liked', 'search-image']);
   });
 
   it.each([

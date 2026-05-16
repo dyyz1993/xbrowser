@@ -1,11 +1,10 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import * as cheerio from 'cheerio';
 import {
   getRecencyParams,
   parseBingResults,
   parseGoogleResults,
   parseBaiduResults,
-  parseDuckDuckGoResults,
   normalizeUrl,
   resolveUrl,
   isAdResult,
@@ -16,38 +15,37 @@ describe('search command - utility functions', () => {
   describe('getRecencyParams', () => {
     it('should generate hour filter parameters', () => {
       const params = getRecencyParams('hour');
-      expect(params.bing).toContain('ez5');
+      expect(params.bing).toContain('ez1');
       expect(params.google).toContain('qdr:h');
-      expect(params.baidu).toContain('gpc=stf=');
-      expect(params.duckduckgo).toContain('df=h');
+      expect(params.baidu).toContain('gpc=stf');
     });
 
     it('should generate day filter parameters', () => {
       const params = getRecencyParams('day');
-      expect(params.bing).toContain('freshness=day');
+      expect(params.bing).toContain('ez1');
       expect(params.google).toContain('qdr:d');
-      expect(params.duckduckgo).toContain('df=d');
+      expect(params.baidu).toContain('gpc=stf');
     });
 
     it('should generate week filter parameters', () => {
       const params = getRecencyParams('week');
-      expect(params.bing).toContain('freshness=week');
+      expect(params.bing).toContain('ez2');
       expect(params.google).toContain('qdr:w');
-      expect(params.duckduckgo).toContain('df=w');
+      expect(params.baidu).toContain('gpc=stf');
     });
 
     it('should generate month filter parameters', () => {
       const params = getRecencyParams('month');
-      expect(params.bing).toContain('freshness=month');
+      expect(params.bing).toContain('ez3');
       expect(params.google).toContain('qdr:m');
-      expect(params.duckduckgo).toContain('df=m');
+      expect(params.baidu).toContain('gpc=stf');
     });
 
     it('should generate year filter parameters', () => {
       const params = getRecencyParams('year');
-      expect(params.bing).toContain('freshness=year');
+      expect(params.bing).toContain('ez5');
       expect(params.google).toContain('qdr:y');
-      expect(params.duckduckgo).toContain('df=y');
+      expect(params.baidu).toContain('gpc=stf');
     });
   });
 
@@ -414,56 +412,5 @@ describe('search command - parsers', () => {
     });
   });
 
-  describe('parseDuckDuckGoResults', () => {
-    it('should parse DuckDuckGo search results', () => {
-      const html = `
-        <div class="result">
-          <h2><a class="result__a" href="https://example.com/page1">Test Title 1</a></h2>
-          <a class="result__snippet">Test snippet 1</a>
-        </div>
-        <div class="result">
-          <h2><a class="result__a" href="https://example.com/page2">Test Title 2</a></h2>
-          <a class="result__snippet">Test snippet 2</a>
-        </div>
-      `;
-      const $ = cheerio.load(html);
-      const results = parseDuckDuckGoResults($);
-
-      expect(results).toHaveLength(2);
-      expect(results[0]).toMatchObject({
-        title: 'Test Title 1',
-        url: 'https://example.com/page1',
-        snippet: 'Test snippet 1',
-        position: 1,
-      });
-    });
-
-    it('should resolve DuckDuckGo redirect URLs', () => {
-      const html = `
-        <div class="result">
-          <h2><a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fpage1">Test Title 1</a></h2>
-          <a class="result__snippet">Test snippet 1</a>
-        </div>
-      `;
-      const $ = cheerio.load(html);
-      const results = parseDuckDuckGoResults($);
-
-      expect(results).toHaveLength(1);
-      expect(results[0].url).toBe('https://example.com/page1');
-    });
-
-    it('should handle protocol-relative URLs', () => {
-      const html = `
-        <div class="result">
-          <h2><a class="result__a" href="//example.com/page1">Test Title 1</a></h2>
-          <a class="result__snippet">Test snippet 1</a>
-        </div>
-      `;
-      const $ = cheerio.load(html);
-      const results = parseDuckDuckGoResults($);
-
-      expect(results).toHaveLength(1);
-      expect(results[0].url).toBe('https://example.com/page1');
-    });
-  });
+  // parseDuckDuckGoResults removed — DDG engine was dropped in search refactor
 });

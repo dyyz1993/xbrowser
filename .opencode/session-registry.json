@@ -124,5 +124,47 @@
     "parentID": "fix-ai-subtitle-callback",
     "status": "running",
     "createdAt": 1778440725794
+  },
+  "test-search-command": {
+    "id": "ses_1d59e2a79fferA4W8QRwKmqbdP",
+    "name": "test-search-command",
+    "parentID": "ses_1ff1a48c6ffeWU8ZCZ6HXF1V41",
+    "status": "running",
+    "createdAt": 1778827515274
+  },
+  "test-network-command": {
+    "id": "ses_1d59e1646ffenZdpDgtv3mNJDw",
+    "name": "test-network-command",
+    "parentID": "ses_1ff1a48c6ffeWU8ZCZ6HXF1V41",
+    "status": "running",
+    "createdAt": 1778827520442
+  },
+  "test-filter-command": {
+    "id": "ses_1d59e061affeDCJgQKDEYhTNZe",
+    "name": "test-filter-command",
+    "parentID": "ses_1ff1a48c6ffeWU8ZCZ6HXF1V41",
+    "status": "running",
+    "createdAt": 1778827524582
+  },
+  "test-command-registry": {
+    "id": "ses_1d59df6b2ffe2R5PESDS7n2l6X",
+    "name": "test-command-registry",
+    "parentID": "ses_1ff1a48c6ffeWU8ZCZ6HXF1V41",
+    "status": "running",
+    "createdAt": 1778827528526
+  },
+  "search-engines-time-filter-verification": {
+    "id": "ses_1d56bc6c5ffeGsQNTS9Gj1p8Pi",
+    "name": "search-engines-time-filter-verification",
+    "parentID": "ses_1fb0fc88bffekYmnpytkDzntas",
+    "status": "running",
+    "createdAt": 1778830817598
+  },
+  "identify-recency-ui": {
+    "id": "ses_1d4e48e67ffeIAPwOTKi7oLjJ7",
+    "name": "identify-recency-ui",
+    "parentID": "ses_1d4e8144dffei8bFHmuEihYHz1",
+    "status": "running",
+    "createdAt": 1778839679401
   }
 }

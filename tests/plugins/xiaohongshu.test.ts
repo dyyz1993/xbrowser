@@ -72,7 +72,7 @@ function makePageCtxWithAutoFire(responses: Array<{ url: string; body: unknown }
         await Promise.all(responseHandlers.map(h => h(makeResponse(r.url, r.body))));
       }
     }),
-    waitForLoadState: vi.fn(async () => {}),
+    waitForLoadState: vi.fn(async () => {  }),
     evaluate: vi.fn(async () => null),
     locator: vi.fn(() => ({
       first: vi.fn(() => ({
@@ -111,7 +111,7 @@ async function runWithFakeTimers<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-const COMMANDS = ['detail', 'notes', 'profile', 'search', 'comments', 'feed', 'resolve-url'];
+const COMMANDS = ['detail', 'notes', 'profile', 'search', 'comments', 'feed', 'resolve-url', 'search-image'];
 
 describe('xiaohongshu plugin', () => {
   beforeEach(() => {
@@ -129,8 +129,8 @@ describe('xiaohongshu plugin', () => {
     );
   });
 
-  it('should register 7 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(7);
+  it('should register 8 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(8);
   });
 
   it('should register expected command names', () => {

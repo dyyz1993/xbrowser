@@ -85,8 +85,8 @@ const seoPlugins: SEOPluginSpec[] = [
     name: 'tumblr',
     importPath: '../../.xcli/plugins/tumblr/index.ts',
     expectedUrl: 'https://www.tumblr.com',
-    expectedCommands: ['login', 'publish', 'update-profile', 'reblog'],
-    requiresLogin: true,
+    expectedCommands: ['search-image'],
+    requiresLogin: false,
   },
   {
     name: 'devto',
@@ -165,6 +165,7 @@ for (const spec of seoPlugins) {
     });
 
     it('should register login and logout', () => {
+      if (!spec.requiresLogin) return; // skip for plugins that don't require login
       expect(mockXCLI._site.login).toHaveBeenCalledTimes(1);
       expect(mockXCLI._site.logout).toHaveBeenCalledTimes(1);
     });
