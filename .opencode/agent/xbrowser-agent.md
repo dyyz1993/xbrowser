@@ -133,6 +133,80 @@ xbrowser/
 3. `~/.xcli/plugins/`
 4. `~/.xbrowser/plugins/`
 
+### Session 生命周期
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    xbrowser Session 生命周期                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  session open https://baidu.com --cdp 9221                      │
+│       │                                                         │
+│       ▼                                                         │
+│  ┌──────────────────┐                                           │
+│  │  createSession() │                                           │
+│  │  ├─ connectOverCDP(9221)  ←─ 建立 WebSocket 到远程浏览器     │
+│  │  ├─ 复用已有页面 / 新建页面                                   │
+│  │  ├─ page.goto(url)                                            │
+│  │  └─ sessions.set(id, session)  ←─ 写入内存 Map               │
+│  └──────────────────┘                                           │
+│       │                                                         │
+│       ▼                                                         │
+│  ┌───────────────────┐                                          │
+│  │ saveSessionDiskMeta() │ ←─ 持久化到 ~/.xbrowser/sessions/default.json │
+│  └───────────────────┘                                          │
+│       │                                                         │
+│       ▼                                                         │
+│  CLI 进程退出                                                    │
+│  ├─ process.on('exit') → browser.close()                        │
+│  │  └─ CDP 模式：只断开 WebSocket，不关闭远程浏览器               │
+│  └─ 远程浏览器仍在运行，百度页面仍在                              │
+│                                                                 │
+│  ══════════════════════════════════                          │
+│                                                                 │
+│  下次命令：npx xbrowser title --cdp 9221                        │
+│       │                                                         │
+│       ▼                                                         │
+│  ┌────────────────────────┐                                     │
+│  │ findOrRestoreSession() │                                     │
+│  │  ├─ 内存 Map 为空（新进程）                                   │
+│  │  ├─ 读 ~/.xbrowser/sessions/default.json                     │
+│  │  ├─ connectOverCDP(9221)  ←─ 重新建立 WebSocket              │
+│  │  ├─ 遍历 contexts → pages → 复用已有页面                      │
+│  │  └─ sessions.set(id, session)                                 │
+│  └────────────────────────┘                                     │
+│       │                                                         │
+│       ▼                                                         │
+│  执行 title 命令 → "百度一下，你就知道" ✅                       │
+│       │                                                         │
+│       ▼                                                         │
+│  CLI 进程退出（只断开 WebSocket，session 留着）                   │
+│                                                                 │
+│  ════════════════════════════════════                          │
+│                                                                 │
+│  session close                                                  │
+│       │                                                         │
+│       ▼                                                         │
+│  ┌──────────────────────┐                                       │
+│  │ closeSessionByName() │                                       │
+│  │  ├─ 断开 CDP 连接                                              │
+│  │  ├─ sessions.delete(id)  ←─ 清除内存                         │
+│  │  ├─ unlinkSync(sessionFile)  ←─ 删除磁盘元数据               │
+│  │  └─ networkStore.clear()  ←─ 清除网络抓包数据                │
+│  └──────────────────────┘                                       │
+│       │                                                         │
+│       ▼                                                         │
+│  destroyBrowser() ←─ 只有 session close/kill 才触发             │
+│  └─ 进程完全退出                                                 │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**关键原则：**
+- `destroyBrowser()` 只在 `session close` / `session kill` 时调用
+- CLI 进程退出只断开 WebSocket 连接，不影响远程浏览器
+- Session 元数据持久化到 `~/.xbrowser/sessions/<name>.json`，供跨进程恢复
+
 ---
 
 ## 二、核心工作流
@@ -337,6 +411,37 @@ export default function(xcli: XCLIAPI): void {
 创建 → 开发 → 测试 → 安装(.xcli/plugins/) → 使用(xbrowser <site> <cmd>) → 发布(npm)
 ```
 
+### 插件发布流程
+
+#### 发布到 npm（公开插件）
+
+```bash
+# 1. 设置代理（必需）
+export https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 all_proxy=socks5://127.0.0.1:7890
+
+# 2. 构建 xbrowser（如果改了核心代码）
+npm run build && npm link
+
+# 3. 发布插件到 marketplace
+npx xbrowser plugin publish <plugin-name>
+```
+
+#### 插件 marketplace 命令
+
+| 命令 | 说明 |
+|------|------|
+| `xbrowser plugin publish <name>` | 发布插件到 marketplace |
+| `xbrowser plugin search <keyword>` | 搜索 marketplace 上的插件 |
+| `xbrowser plugin whoami` | 查看当前登录状态 |
+| `xbrowser plugin install <name>` | 从 marketplace 安装插件 |
+| `xbrowser plugin uninstall <name>` | 卸载插件 |
+| `xbrowser plugin list` | 列出已安装的插件 |
+
+#### 注意事项
+- 插件必须先在 `.xcli/plugins/` 目录下开发测试通过后再发布
+- 发布前确保 `package.json` 中的 `name`、`version`、`description` 正确
+- 所有 marketplace 操作都需要代理环境变量
+
 ---
 
 ## 四、任务分发规范
@@ -475,6 +580,53 @@ npm run validate
 # 类型检查
 npm run typecheck
 ```
+
+### 开发提交流程（必读）
+
+**核心原则：每完成一个模块/功能点就必须提交代码，不要攒一堆一起提交。**
+
+#### 代码修改后的完整流程
+
+```bash
+# 1. 构建（每次改代码后必须 build）
+npm run build
+
+# 2. 如果改了全局命令（bin/cli.ts / src/browser.ts / src/commands/ 等），需要重新 npm link
+npm link
+
+# 3. 验证改动生效
+npx xbrowser <你改的命令> --json
+
+# 4. 提交（每完成一个逻辑单元就提交）
+git add <相关文件>
+git commit -m "feat/fix/refactor: 简洁描述"
+```
+
+#### npm link 的作用
+
+`npm run build` 产出的是本地 `dist/` 目录的文件，但 `npx xbrowser` 执行的是**全局安装的版本**（`~/.nvm/versions/node/v25.2.1/lib/node_modules/@dyyz1993/xbrowser/dist/cli.js`）。
+
+`npm link` 会创建一个符号链接，让全局命令指向本地开发目录，这样 `npm run build` 后立即生效。
+
+**什么时候需要 npm link：**
+- 修改了 `bin/cli.ts`、`src/browser.ts`、`src/commands/`、`src/cli/` 等核心文件
+- 添加了新命令或修改了命令参数
+- **不需要** npm link 的情况：只改了插件（`.xcli/plugins/`），插件是运行时加载的
+
+**npm link 失败时的处理：**
+```bash
+# 清除旧的全局链接残留
+rm -rf ~/.nvm/versions/node/v25.2.1/lib/node_modules/@dyyz1993/.xbrowser-*
+rm -rf ~/.nvm/versions/node/v25.2.1/lib/node_modules/@dyyz1993/xbrowser
+npm link
+```
+
+#### 提交规范
+
+- 类型前缀：`feat:` / `fix:` / `refactor:` / `docs:` / `test:` / `chore:`
+- 每个提交只做一件事（原子提交）
+- 小步提交，完成一个逻辑点就提交
+- pre-commit hook 会自动运行 typecheck + ESLint + 命令参数检查
 
 ---
 
