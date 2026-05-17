@@ -146,7 +146,9 @@ export class WSServer extends EventEmitter {
       clientCount: 0,
     });
 
-    page.evaluate(() => {
+     const injectFocusListeners = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (window as any).__xb_focus_fn = () => {
       document.addEventListener('focusin', (e) => {
         const el = e.target as HTMLElement;
         if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.contentEditable === 'true') {
@@ -167,25 +169,44 @@ export class WSServer extends EventEmitter {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (window as any).__xb_last_focused = null;
       }, true);
-    }).catch(() => {});
+     }; };
+     page.evaluate(injectFocusListeners).catch(() => {});
+
+      // Re-inject focus listeners after navigation (page.evaluate listeners are lost on navigation)
+      page.on('load', () => {
+        page.evaluate(injectFocusListeners).catch(() => {});
+      });
 
     const focusPoll = setInterval(async () => {
       const sc = this.screencasts.get(sessionId);
       if (!sc || !this.getSessionClientCount(sessionId)) return;
-      try {
-        type FocusInfo = { focused: boolean; selector?: string; value?: string; tag?: string; placeholder?: string };
-        const info: FocusInfo = await page.evaluate(() => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const f = (window as any).__xb_last_focused;
-          if (f) return { focused: true, ...(f as Record<string, string>) };
-          return { focused: false };
-        });
-        if (info.focused && info.selector) {
-          this.broadcastToSession(sessionId, { type: 'input_focused', selector: info.selector, value: info.value || '', tag: info.tag || '', placeholder: info.placeholder });
-        } else {
-          this.broadcastToSession(sessionId, { type: 'input_blur', selector: '' });
-        }
-      } catch { /* ignore evaluate errors */ }
+       try {
+         type FocusInfo = { focused: boolean; selector?: string; value?: string; tag?: string; placeholder?: string };
+          const info: FocusInfo = await page.evaluate(() => {
+            // Check __xb_last_focused first, then fallback to activeElement
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const f = (window as any).__xb_last_focused;
+           if (f) return { focused: true, ...(f as Record<string, string>) };
+           // Fallback: check document.activeElement directly
+           const active = document.activeElement as HTMLElement | null;
+           if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.contentEditable === 'true')) {
+             const sel = active.id ? '#' + active.id : (active.getAttribute('name') ? '[name="' + active.getAttribute('name') + '"]' : active.tagName.toLowerCase());
+             return {
+               focused: true,
+               selector: sel,
+               tag: active.tagName,
+               value: (active as HTMLInputElement).value || '',
+               placeholder: (active as HTMLInputElement).placeholder || '',
+             };
+           }
+           return { focused: false };
+         });
+         if (info.focused && info.selector) {
+           this.broadcastToSession(sessionId, { type: 'input_focused', selector: info.selector, value: info.value || '', tag: info.tag || '', placeholder: info.placeholder });
+         } else {
+           this.broadcastToSession(sessionId, { type: 'input_blur', selector: '' });
+         }
+       } catch { /* ignore evaluate errors */ }
     }, 500);
 
     this.screencasts.get(sessionId)!.focusPoll = focusPoll;
@@ -437,7 +458,36 @@ export class WSServer extends EventEmitter {
           case 'move': await p.mouse.move(msg.x, msg.y); break;
           case 'down': await p.mouse.down({ button: msg.button || 'left' }); break;
           case 'up': await p.mouse.up({ button: msg.button || 'left' }); break;
-          case 'click': await p.mouse.click(msg.x, msg.y, { button: msg.button || 'left' }); break;
+          case 'click': {
+            await p.mouse.click(msg.x, msg.y, { button: msg.button || 'left' });
+            // Focus the element under the click point and set __xb_last_focused
+            // (mouse.click doesn't auto-focus or trigger focusin in CDP mode)
+            try {
+              await p.evaluate(({ x, y }) => {
+                const el = document.elementFromPoint(x, y) as HTMLElement | null;
+                if (el && typeof el.focus === 'function') {
+                  el.focus();
+                  // Manually set __xb_last_focused since focusin may not fire in CDP mode
+                  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.contentEditable === 'true') {
+                    const info: { selector: string; tag: string; value: string; placeholder: string } = {
+                      selector: '',
+                      tag: el.tagName,
+                      value: (el as HTMLInputElement).value || '',
+                      placeholder: (el as HTMLInputElement).placeholder || '',
+                    };
+                    if (el.id) info.selector = '#' + el.id;
+                    else if (el.getAttribute('name')) info.selector = '[name="' + el.getAttribute('name') + '"]';
+                     else info.selector = el.tagName.toLowerCase();
+                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                     (window as any).__xb_last_focused = info;
+                  }
+                }
+              }, { x: msg.x, y: msg.y });
+            } catch (err) {
+              this.emit('error', new Error(`focus-after-click failed: ${err}`));
+            }
+            break;
+          }
         }
         break;
       }

@@ -20,6 +20,7 @@ output/
 docs/debug-*
 docs/plans/
 scripts/debug-*
+*.mjs
 
 # IDE / editor
 .opencode/opencode.jsonc.bak*
