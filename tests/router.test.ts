@@ -309,9 +309,10 @@ describe('router', () => {
     expect(executeChain).toHaveBeenCalledWith('goto https://example.com && title', { cdpEndpoint: undefined });
   });
 
-  it('exits with code 1 when chain fails in single arg mode', async () => {
+  it('outputs error when chain fails in single arg mode', async () => {
     const { executeChain } = await import('../src/executor.js');
     const { isChainInput } = await import('../src/executor.js');
+    const { outputError } = await import('../src/cli/output.js');
     vi.mocked(isChainInput).mockReturnValue(true);
     vi.mocked(executeChain).mockResolvedValueOnce({
       success: false,
@@ -319,13 +320,8 @@ describe('router', () => {
       totalDuration: 0,
     });
 
-    const exit = mockExit();
-    try {
-      await routeCommand(['goto bad && title']);
-    } catch (e) {
-      expect(String(e)).toContain('exit:1');
-    }
-    exit.restore();
+    await routeCommand(['goto bad && title']);
+    expect(outputError).toHaveBeenCalledWith('Command failed');
   });
 
   it('handles stdin mode with commands', async () => {
@@ -343,21 +339,17 @@ describe('router', () => {
     expect(printChainResult).toHaveBeenCalled();
   });
 
-  it('exits with code 1 when stdin chain fails', async () => {
+  it('outputs error when stdin chain fails', async () => {
     const { executeChain } = await import('../src/executor.js');
+    const { outputError } = await import('../src/cli/output.js');
     vi.mocked(executeChain).mockResolvedValueOnce({
       success: false,
       steps: [],
       totalDuration: 0,
     });
 
-    const exit = mockExit();
-    try {
-      await routeCommand([], ['bad-command']);
-    } catch (e) {
-      expect(String(e)).toContain('exit:1');
-    }
-    exit.restore();
+    await routeCommand([], ['bad-command']);
+    expect(outputError).toHaveBeenCalledWith('Command failed');
   });
 
   it('handles eval mode with -e flag', async () => {
@@ -401,21 +393,17 @@ describe('router', () => {
     expect(executeChain).toHaveBeenCalledWith('goto https://example.com && title', { cdpEndpoint: undefined });
   });
 
-  it('exits with code 1 when eval chain fails', async () => {
+  it('outputs error when eval chain fails', async () => {
     const { executeChain } = await import('../src/executor.js');
+    const { outputError } = await import('../src/cli/output.js');
     vi.mocked(executeChain).mockResolvedValueOnce({
       success: false,
       steps: [],
       totalDuration: 0,
     });
 
-    const exit = mockExit();
-    try {
-      await routeCommand(['-e', 'bad']);
-    } catch (e) {
-      expect(String(e)).toContain('exit:1');
-    }
-    exit.restore();
+    await routeCommand(['-e', 'bad']);
+    expect(outputError).toHaveBeenCalledWith('Command failed');
   });
 
   it('handles -e flag without argument', async () => {
@@ -423,13 +411,8 @@ describe('router', () => {
     const errors: string[] = [];
     console.error = (...args: unknown[]) => errors.push(args.join(' '));
 
-    const exit = mockExit();
-    try {
-      await routeCommand(['-e']);
-    } catch (e) {
-      expect(String(e)).toContain('exit:1');
-    }
-    exit.restore();
+    await routeCommand(['-e']);
+
     console.error = origError;
     expect(errors[0]).toContain('-e/--eval requires a command argument');
   });

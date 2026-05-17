@@ -96,18 +96,23 @@ export async function routeCommand(
   argv: string[],
   stdinCommands?: string[]
 ): Promise<void> {
-  if (stdinCommands && stdinCommands.length > 0) {
-    await handleStdinMode(stdinCommands, argv);
-    return;
-  }
+  try {
+    if (stdinCommands && stdinCommands.length > 0) {
+      await handleStdinMode(stdinCommands, argv);
+      return;
+    }
 
-  if (parseEvalFlags(argv).length > 0) {
-    await handleEvalMode(argv);
-    return;
-  }
+    if (parseEvalFlags(argv).length > 0) {
+      await handleEvalMode(argv);
+      return;
+    }
 
-  if (argv.length === 1 && isChainInput(argv[0])) {
-    await handleChainInput(argv[0], argv);
+    if (argv.length === 1 && isChainInput(argv[0])) {
+      await handleChainInput(argv[0], argv);
+      return;
+    }
+  } catch (e: unknown) {
+    outputError(e instanceof Error ? e.message : String(e));
     return;
   }
 
