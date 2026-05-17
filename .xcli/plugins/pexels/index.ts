@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 
-export default function (xcli: XCLIAPI): void {
+export default function(xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'pexels', url: 'https://www.pexels.com',
     description: 'Pexels - Free stock photos and videos', requiresLogin: false,
@@ -41,7 +41,7 @@ export default function (xcli: XCLIAPI): void {
               if (!src.includes('images.pexels.com') && !src.includes('static.pexels.com')) return;
               if (src.includes('/flags/') || src.includes('/user/') || src.includes('avatar')) return;
               if (el.width < 100 || el.height < 100) return;
-              
+
               const srcset = el.getAttribute('srcset') || '';
               let originalUrl = el.getAttribute('data-big-src') || '';
               if (!originalUrl && srcset) {
@@ -50,19 +50,19 @@ export default function (xcli: XCLIAPI): void {
                 originalUrl = largest?.[0] || src;
               }
               if (!originalUrl) originalUrl = src;
-              // 尝试获取大图：将 w=xxx 替换为更大值
-              if (originalUrl.includes('w=')) {
-                originalUrl = originalUrl.replace(/w=\d+/, 'w=2400').replace(/h=\d+/, '');
-              }
+              // 获取高清大图：Pexels CDN URL 追加高清参数
+              const cleanUrl = originalUrl.split('?')[0];
+              originalUrl = cleanUrl + '?auto=compress&cs=tinysrgb&dpr=2&w=2400';
+              const midUrl = cleanUrl + '?auto=compress&cs=tinysrgb&dpr=2&w=800';
               images.push({
-                title: el.alt || '', thumbnailUrl: src,
+                title: el.alt || '', thumbnailUrl: midUrl,
                 sourceUrl: el.closest('a')?.href || '', originalUrl,
                 width: el.naturalWidth || 0, height: el.naturalHeight || 0,
                 format: 'jpg', sourceSite: 'pexels',
               });
             });
           });
-          
+
           // Fallback: 如果容器选择器没找到，直接找所有 pexels CDN 图片
           if (images.length === 0) {
             document.querySelectorAll('img').forEach((img) => {
@@ -72,10 +72,11 @@ export default function (xcli: XCLIAPI): void {
               if (!src.includes('images.pexels.com')) return;
               if (src.includes('/flags/') || src.includes('/user/')) return;
               if (el.width < 100) return;
+              const cleanFallbackUrl = src.split('?')[0];
               images.push({
-                title: el.alt || '', thumbnailUrl: src,
+                title: el.alt || '', thumbnailUrl: cleanFallbackUrl + '?auto=compress&cs=tinysrgb&dpr=2&w=800',
                 sourceUrl: el.closest('a')?.href || '',
-                originalUrl: src.replace(/w=\d+/, 'w=2400').replace(/h=\d+/, ''),
+                originalUrl: cleanFallbackUrl + '?auto=compress&cs=tinysrgb&dpr=2&w=2400',
                 width: el.naturalWidth || 0, height: el.naturalHeight || 0,
                 format: 'jpg', sourceSite: 'pexels',
               });

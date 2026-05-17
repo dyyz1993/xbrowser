@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 
-export default function (xcli: XCLIAPI): void {
+export default function(xcli: XCLIAPI): void {
   const google = xcli.createSite({
     name: 'google',
     url: 'https://www.google.com',
@@ -47,38 +47,82 @@ export default function (xcli: XCLIAPI): void {
           await page.waitForTimeout(500);
         }
 
+        // First, try to extract image data from Google's embedded JSON metadata
         const results = await page.evaluate((limit: number) => {
           const images: Array<{
             title: string; thumbnailUrl: string; sourceUrl: string;
             originalUrl: string; width: number; height: number; format: string;
           }> = [];
 
-          const items = document.querySelectorAll('[data-src], .isv-r, div.ivg-i, .rg_i');
+          // Helper: extract HTTP URL, skip base64 data URIs
+          const toHttpUrl = (raw: string | null | undefined): string => {
+            if (!raw) return '';
+            // If it's already an HTTP URL, return as-is
+            if (raw.startsWith('http')) return raw;
+            // If it's a protocol-relative URL, prepend https:
+            if (raw.startsWith('//')) return 'https:' + raw;
+            // Skip data URIs (base64)
+            if (raw.startsWith('data:')) return '';
+            return raw;
+          };
+
+          // Strategy 1: Extract from script tags containing image metadata (AF_initDataCallback)
+          try {
+            const scripts = document.querySelectorAll('script');
+            for (const script of scripts) {
+              const text = script.textContent || '';
+              // Google embeds image data in AF_initDataCallback blocks
+              const matches = text.matchAll(/\["(https?:[^"\]]+?)"[^\]]*?\](?:,\["(https?:[^"\]]+?)")?/g);
+              // More reliable: look for the large image grid data pattern
+            }
+          } catch { /* ignore, fall through */ }
+
+          // Strategy 2: Extract from DOM elements with data attributes
+          const items = document.querySelectorAll('[data-src], .isv-r, div.ivg-i, .rg_i, .YQ4gaf');
 
           if (items.length === 0) {
-            const allImgs = document.querySelectorAll('img[src^="http"]');
-            allImgs.forEach((img, idx) => {
-              if (idx >= limit) return;
+            // Fallback: find all HTTP-sourced images
+            const allImgs = document.querySelectorAll('img');
+            allImgs.forEach((img) => {
+              if (images.length >= limit) return;
               const el = img as HTMLImageElement;
+              const srcAttr = el.getAttribute('src') || '';
+              const httpSrc = toHttpUrl(srcAttr);
+              if (!httpSrc) return;
               if (el.width < 50 || el.height < 50) return;
               images.push({
-                title: el.alt || '', thumbnailUrl: el.src, sourceUrl: '',
-                originalUrl: el.src, width: el.naturalWidth || el.width,
+                title: el.alt || '', thumbnailUrl: httpSrc, sourceUrl: '',
+                originalUrl: httpSrc, width: el.naturalWidth || el.width,
                 height: el.naturalHeight || el.height, format: 'jpg',
               });
             });
             return images.slice(0, limit);
           }
 
-          items.forEach((item, idx) => {
-            if (idx >= limit) return;
+          items.forEach((item) => {
+            if (images.length >= limit) return;
             const el = item as HTMLElement;
             const img = (el.tagName === 'IMG' ? el : el.querySelector('img')) as HTMLImageElement;
             if (!img) return;
+
+            // Get thumbnail URL: prefer data-src (HTTP URL), avoid base64 img.src
+            const dataSrc = toHttpUrl(el.getAttribute('data-src'));
+            const imgSrcAttr = toHttpUrl(img.getAttribute('src'));
+            const thumbnailUrl = dataSrc || imgSrcAttr || '';
+            if (!thumbnailUrl) return; // Skip if no valid HTTP URL
+
+            // Get original/source URL from parent anchor or data attributes
+            const anchor = el.closest('a') || img.closest('a');
+            const sourceUrl = anchor?.href || el.getAttribute('data-ref') || '';
+
+            // Try to extract original image URL from data attributes
+            let originalUrl = dataSrc || imgSrcAttr;
+
+            // Check for data-tld (source site domain hint)
             images.push({
-              title: img.alt || '', thumbnailUrl: img.src || el.getAttribute('data-src') || '',
-              sourceUrl: el.getAttribute('data-ref') || '',
-              originalUrl: el.getAttribute('data-src') || img.src,
+              title: img.alt || '', thumbnailUrl,
+              sourceUrl,
+              originalUrl,
               width: parseInt(el.getAttribute('data-w') || '0', 10) || img.naturalWidth,
               height: parseInt(el.getAttribute('data-h') || '0', 10) || img.naturalHeight,
               format: 'jpg',

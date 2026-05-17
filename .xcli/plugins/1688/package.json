@@ -1,0 +1,14 @@
+{
+  "name": "xbrowser-plugin-1688",
+  "version": "1.0.1",
+  "description": "1688阿里巴巴 - 店铺信息、商品列表、商品详情、搜索采集",
+  "main": "index.ts",
+  "keywords": ["xbrowser", "xbrowser-plugin", "1688", "alibaba", "ecommerce", "wholesale"],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://www.1688.com",
+    "requiresLogin": false,
+    "commands": ["shop", "products", "product-detail", "search", "categories"]
+  }
+}
