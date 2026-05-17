@@ -3,7 +3,7 @@ import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { htmlToMarkdown } from '../lib/html-to-markdown.js';
-import { createEphemeralContext, closeEphemeralContext } from '../browser.js';
+import { createEphemeralContext, closeEphemeralContext, resolveLaunchOpts } from '../browser.js';
 
 export const scrapeCommand = registerCommand({
   name: 'scrape',
@@ -16,8 +16,8 @@ export const scrapeCommand = registerCommand({
     format: z.enum(['markdown', 'html', 'text']).default('markdown'),
     onlyMainContent: z.boolean().default(true),
   }),
-  handler: async (p, _ctx: BrowserCommandContext) => {
-    const { context, page } = await createEphemeralContext({ headless: true });
+  handler: async (p, ctx: BrowserCommandContext) => {
+    const { context, page } = await createEphemeralContext(resolveLaunchOpts(ctx));
 
     try {
       await page.goto(p.url, { waitUntil: 'domcontentloaded', timeout: p.timeout });

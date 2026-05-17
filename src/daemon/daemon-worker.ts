@@ -558,7 +558,15 @@ function connectWS(){
         currentFocusedSelector=m.selector||'';
         currentFocusedValue=m.value||'';
         inputLabel.textContent=(m.tag||'input')+(m.placeholder?' — '+m.placeholder:'');
-        if(deviceMode==='mobile') showInputPanel(m.value||'');
+        // Only show panel if not already showing, or update label without resetting field value
+        if(deviceMode==='mobile'){
+          if(inputPanel.style.display!=='flex'){
+            showInputPanel(m.value||'');
+          } else {
+            // Panel already open — just update label, don't reset user's input
+            inputLabel.textContent=(m.tag||'input')+(m.placeholder?' — '+m.placeholder:'');
+          }
+        }
       }else if(m.type==='input_blur'){
         currentFocusedSelector='';
         if(deviceMode==='mobile') hideInputPanel();

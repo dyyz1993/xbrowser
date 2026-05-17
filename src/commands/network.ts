@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
-import { createEphemeralContext, closeEphemeralContext } from '../browser.js';
+import { createEphemeralContext, closeEphemeralContext, resolveLaunchOpts } from '../browser.js';
 import type { Response } from 'playwright';
 
 interface NetworkCapture {
@@ -166,12 +166,7 @@ export const networkCommand = registerCommand({
     format: z.enum(['summary', 'json']).default('summary'),
   }),
   handler: async (p, ctx: BrowserCommandContext): Promise<ReturnType<typeof ok>> => {
-    const isCDP = !!ctx.cdpEndpoint;
-    const launchOpts = isCDP
-      ? { cdpEndpoint: ctx.cdpEndpoint }
-      : { headless: true };
-
-    const { context, page } = await createEphemeralContext(launchOpts);
+    const { context, page } = await createEphemeralContext(resolveLaunchOpts(ctx));
     const startTime = Date.now();
 
     try {

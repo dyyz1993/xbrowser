@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
-import { createEphemeralContext, closeEphemeralContext } from '../browser.js';
+import { createEphemeralContext, closeEphemeralContext, resolveLaunchOpts } from '../browser.js';
 import { getPluginLoader } from '../utils/plugin-singleton.js';
 
 /** 统一图片结果格式 */
@@ -152,8 +152,7 @@ export const imageCommand = registerCommand({
     const internalLoader = loader.getCore().loader;
 
     const isCDP = !!ctx.cdpEndpoint;
-    const launchOpts = isCDP ? { cdpEndpoint: ctx.cdpEndpoint } : { headless: true };
-    const { context } = await createEphemeralContext(launchOpts);
+    const { context } = await createEphemeralContext(resolveLaunchOpts(ctx));
 
     try {
       const errors: Array<{ engine: string; error: string }> = [];

@@ -4,7 +4,7 @@ import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { htmlToMarkdown } from '../lib/html-to-markdown.js';
-import { createEphemeralContext, closeEphemeralContext, getBrowser } from '../browser.js';
+import { createEphemeralContext, closeEphemeralContext, getBrowser, resolveLaunchOpts } from '../browser.js';
 import { shouldSkipUrl } from '../utils/url.js';
 import type { Page, BrowserContext } from 'playwright';
 
@@ -392,12 +392,7 @@ export const searchCommand = registerCommand({
     site: z.string().optional().describe('Limit results to a specific site (e.g. github.com, v2ex.com)'),
   }),
   handler: async (p: SearchOptions, ctx: BrowserCommandContext): Promise<ReturnType<typeof ok>> => {
-    const isCDP = !!ctx.cdpEndpoint;
-    const launchOpts = isCDP
-      ? { cdpEndpoint: ctx.cdpEndpoint }
-      : { headless: true };
-
-    const { context } = await createEphemeralContext(launchOpts);
+    const { context } = await createEphemeralContext(resolveLaunchOpts(ctx));
 
     try {
       const errors: Array<{ engine: string; error: string }> = [];

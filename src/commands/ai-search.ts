@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
-import { createEphemeralContext, closeEphemeralContext } from '../browser.js';
+import { createEphemeralContext, closeEphemeralContext, resolveLaunchOpts } from '../browser.js';
 import type { Page } from 'playwright';
 
 type AIEngineKey = 'deepseek' | 'doubao' | 'chatgpt' | 'claude';
@@ -337,20 +337,13 @@ export const aiSearchCommand = registerCommand({
     timeout: z.number().default(60000).describe('AI 回复超时（毫秒）'),
   }),
   handler: async (params, ctx: BrowserCommandContext): Promise<ReturnType<typeof ok>> => {
-    if (!ctx.cdpEndpoint) {
-      throw new Error(
-        'ai-search 需要 CDP 连接到已登录的浏览器。请使用 --cdp http://localhost:9221',
-      );
-    }
+    const { context, page } = await createEphemeralContext(resolveLaunchOpts(ctx));
 
     const engineKey: AIEngineKey = (params.engine || 'deepseek') as AIEngineKey;
     const engineConfig = AI_SEARCH_ENGINES[engineKey];
     if (!engineConfig) {
       throw new Error(`Unknown AI engine: ${params.engine}. Available: ${Object.keys(AI_SEARCH_ENGINES).join(', ')}`);
     }
-
-    const launchOpts = { cdpEndpoint: ctx.cdpEndpoint };
-    const { context, page } = await createEphemeralContext(launchOpts);
 
     try {
       await page.goto(engineConfig.url, { waitUntil: 'domcontentloaded', timeout: 30000 });

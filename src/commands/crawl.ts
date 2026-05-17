@@ -3,7 +3,7 @@ import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { htmlToMarkdown } from '../lib/html-to-markdown.js';
-import { getBrowser, destroyBrowser } from '../browser.js';
+import { getBrowser, destroyBrowser, resolveLaunchOpts } from '../browser.js';
 import { normalizeUrl, shouldSkipUrl, getBaseDomain, isSpaHashRoute } from '../utils/url.js';
 import type { Page } from 'playwright';
 
@@ -235,7 +235,7 @@ export const crawlCommand = registerCommand({
     retries: z.number().default(2),
     verbose: z.boolean().default(false),
   }),
-  handler: async (p, _ctx: BrowserCommandContext) => {
+  handler: async (p, ctx: BrowserCommandContext) => {
     const startUrl = new URL(p.url);
     const options: CrawlOptions = {
       limit: p.limit,
@@ -263,7 +263,7 @@ export const crawlCommand = registerCommand({
         process.stderr.write(`[robots.txt] Loaded ${robotsRules.length} disallow rules\n`);
       }
 
-      const browser = await getBrowser({ headless: true });
+      const browser = await getBrowser(resolveLaunchOpts(ctx));
       const contexts: import('playwright').BrowserContext[] = [];
 
       try {

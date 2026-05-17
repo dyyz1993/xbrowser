@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { chromium, type Browser, type BrowserContext, type Page, type Response } from 'playwright';
 import { CDPInterceptorProxy } from './cdp-interceptor/proxy.js';
 import type { CDPInterceptorConfig } from './cdp-interceptor/types.js';
+import type { BrowserCommandContext } from './context.js';
 
 /**
  * Log a session lifecycle event for traceability.
@@ -153,6 +154,13 @@ async function resolveCDPEndpoint(raw: string): Promise<string> {
   }
 
   return raw;
+}
+
+export function resolveLaunchOpts(ctx: BrowserCommandContext): BrowserLaunchOptions {
+  if (ctx.cdpEndpoint) {
+    return { cdpEndpoint: ctx.cdpEndpoint };
+  }
+  return { headless: true };
 }
 
 /**

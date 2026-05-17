@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
-import { createEphemeralContext, closeEphemeralContext } from '../browser.js';
+import { createEphemeralContext, closeEphemeralContext, resolveLaunchOpts } from '../browser.js';
 import { getBaseDomain, deduplicateUrls, isSpaHashRoute } from '../utils/url.js';
 import type { Page } from 'playwright';
 
@@ -195,8 +195,8 @@ export const mapCommand = registerCommand({
     limit: z.number().optional(),
     verbose: z.boolean().default(false).describe('Show progress feedback'),
   }),
-  handler: async (p, _ctx: BrowserCommandContext) => {
-    const { context, page } = await createEphemeralContext({ headless: true });
+  handler: async (p, ctx: BrowserCommandContext) => {
+    const { context, page } = await createEphemeralContext(resolveLaunchOpts(ctx));
 
     try {
       const links = await discoverUrls(page, p.url, {
