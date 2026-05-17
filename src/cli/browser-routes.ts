@@ -304,6 +304,19 @@ export async function handleBrowserCommand(
            };
            break;
          }
+        case 'ai-search':
+          if (!args[0]) outputError('Usage: xbrowser ai-search "query" [--engine deepseek|doubao|chatgpt|claude] [--limit N] [--full] [--showSources] [--format markdown|json|text] [--timeout ms]\n\nRequires: --cdp http://localhost:9221 (all AI engines need login)\nDefault engine: deepseek');
+          cmdName = 'ai-search';
+          params = {
+            query: args.join(' '),
+            engine: options.engine as string | undefined,
+            limit: options.limit ? Number(options.limit) : undefined,
+            full: !!(options.full || options.f),
+            showSources: !!(options.showSources || options['show-sources']),
+            format: (options.format || options.F) as string | undefined,
+            timeout: options.timeout ? Number(options.timeout) : undefined,
+          };
+          break;
        default:
          cmdName = command;
          params = { ...options };
@@ -322,5 +335,5 @@ export async function handleBrowserCommand(
     outputResult(result.data, mode);
   }
   await destroyBrowser();
-  if (cdpEndpoint) process.exit(0);
+  process.exit(0);
 }

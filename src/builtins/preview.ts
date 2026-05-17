@@ -1,135 +1,75 @@
+import { networkInterfaces } from 'os';
 import type { BuiltinCommand, BuiltinContext } from './session.js';
-import { getCaptchaConfig } from '../config.js';
+import { getDaemonProcessStatus } from '../daemon/daemon.js';
+
+function getLANIP(): string {
+  const nets = networkInterfaces();
+  for (const name of ['en0', 'eth0', 'wlan0']) {
+    const net = nets[name];
+    if (!net) continue;
+    for (const addr of net) {
+      if (addr.family === 'IPv4' && !addr.internal) {
+        return addr.address;
+      }
+    }
+  }
+  // Fallback: scan all interfaces
+  for (const [, net] of Object.entries(nets)) {
+    if (!net) continue;
+    for (const addr of net) {
+      if (addr.family === 'IPv4' && !addr.internal) {
+        return addr.address;
+      }
+    }
+  }
+  return '127.0.0.1';
+}
 
 const previewBuiltin: BuiltinCommand = {
   name: 'preview',
-  description: 'Start real-time browser preview via WebSocket',
+  description: 'Show preview URL for active daemon sessions',
   help: {
-    usage: 'xbrowser preview [options]',
-    description: 'Start a WebSocket server to stream browser screenshots and command events in real-time',
+    usage: 'xbrowser preview [--json]',
+    description: 'Display the WebSocket preview URL for the running daemon. Preview is always available when the daemon is running — just connect to the WS endpoint.',
     options: [
-      { name: 'port', description: 'WebSocket port (default: 9223)' },
-      { name: 'interval', description: 'Screenshot interval in ms (default: 500)' },
-      { name: 'quality', description: 'JPEG quality 0-100 (default: 90)' },
-      { name: 'type', description: 'Image type: jpeg or png (default: jpeg)' },
-      { name: 'url', description: 'URL to navigate to (default: about:blank)' },
+      { name: 'json', description: 'Output as JSON' },
     ],
     examples: [
-      { cmd: 'xbrowser preview', description: 'Start preview with default settings' },
-      { cmd: 'xbrowser preview --port 8080', description: 'Start preview on custom port' },
-      { cmd: 'xbrowser preview --interval 500 --quality 90', description: 'Fast refresh, high quality' },
-      { cmd: 'xbrowser preview --url https://example.com', description: 'Preview a specific URL' },
+      { cmd: 'xbrowser preview', description: 'Show preview URL (LAN address preferred)' },
+      { cmd: 'xbrowser preview --json', description: 'Output as JSON' },
     ],
   },
-  execute: async (_args: string[], options: Record<string, unknown>, context: BuiltinContext): Promise<void> => {
-    const { cwd } = context;
-    const cfg = getCaptchaConfig();
-    const port = options.port ? Number(options.port) : cfg.previewPort;
-    const interval = options.interval ? Number(options.interval) : 500;
-    const quality = options.quality ? Number(options.quality) : 90;
-    const type = options.type === 'png' ? 'png' : 'jpeg' as const;
-    const url = (options.url as string) || 'about:blank';
+  execute: async (_args: string[], options: Record<string, unknown>, _context: BuiltinContext): Promise<void> => {
+    const daemon = getDaemonProcessStatus();
 
-    console.log(`Starting preview server on port ${port}...`);
-    console.log(`  Interval: ${interval}ms`);
-    console.log(`  Quality: ${quality}`);
-    console.log(`  Type: ${type}`);
-    console.log(`  URL: ${url}`);
-    console.log('');
-    console.log('Open the viewer to see real-time browser preview:');
-    console.log(`  HTML viewer: file://${cwd}/preview.html`);
-    console.log(`  WebSocket: ws://localhost:${port}`);
-    console.log('');
-    console.log('Press Ctrl+C to stop the preview server');
-    console.log('');
-
-    const { WSServer } = await import('../websocket-server.js');
-    const { ScreencastCapturer } = await import('../screencast.js');
-    const { getBrowser, createSession } = await import('../browser.js');
-    const { WebhookNotifier } = await import('../webhook.js');
-
-    const wsServer = new WSServer({ port });
-    await wsServer.start();
-
-    console.log(`[Preview] WS server listening on ws://localhost:${port}`);
-
-    const browser = await getBrowser({ headless: false });
-    const session = await createSession('preview', url);
-    const page = session.page;
-
-    console.log(`[Preview] Browser session started: ${url}`);
-
-    wsServer.setPage(page);
-
-    const webhook = new WebhookNotifier(cfg.notifyUrl);
-    await webhook.notify({
-      event: 'session-started',
-      timestamp: new Date().toISOString(),
-      url,
-      previewUrl: `http://localhost:${port}`,
-    });
-
-    const capturer = new ScreencastCapturer({ interval, quality, type });
-    capturer.startCapture(page, 'preview', (frame) => {
-      wsServer.broadcast({
-        type: 'screenshot',
-        data: {
-          sessionId: frame.sessionId,
-          id: frame.id,
-          timestamp: frame.timestamp,
-          data: frame.data,
-          url: frame.url,
-          viewport: frame.viewport,
-        },
-      });
-    });
-
-    console.log(`[Preview] Screencast capturer started (${interval}ms interval)`);
-
-    wsServer.on('client-connected', (clientId: string) => {
-      console.log(`[Preview] Client connected: ${clientId}`);
-    });
-
-    wsServer.on('client-disconnected', (clientId: string) => {
-      console.log(`[Preview] Client disconnected: ${clientId}`);
-    });
-
-    wsServer.on('human-solved', () => {
-      console.log('[Preview] Human interaction resolved via preview');
-    });
-
-    let shuttingDown = false;
-    const shutdown = async () => {
-      if (shuttingDown) return;
-      shuttingDown = true;
-
-      console.log('\n[Preview] Stopping preview server...');
-      capturer.stopCapture();
-      console.log('[Preview] Screencast capturer stopped');
-
-      await webhook.notify({
-        event: 'session-ended',
-        timestamp: new Date().toISOString(),
-        url: page.url(),
-      });
-
-      await wsServer.stop();
-      console.log('[Preview] WS server stopped');
-
-      try {
-        await browser.close();
-        console.log('[Preview] Browser closed');
-      } catch {
-        // ignore close errors
+    if (!daemon.running) {
+      if (options.json) {
+        console.log(JSON.stringify({ running: false }));
+      } else {
+        console.log('Daemon is not running. Start with: xbrowser daemon start');
+        console.log('');
+        console.log('Preview is automatically available when the daemon is running.');
       }
+      return;
+    }
 
-      process.exit(0);
-    };
+    const port = daemon.port || 9224;
+    const lanIP = getLANIP();
+    const sessionId = (options.session as string) || 'default';
+    const previewURL = `http://${lanIP}:${port}/preview/${sessionId}`;
 
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
+    if (options.json) {
+      console.log(JSON.stringify({
+        running: true,
+        pid: daemon.pid,
+        port,
+        sessionId,
+        url: previewURL,
+      }));
+      return;
+    }
 
-    await new Promise<void>(() => {});
+    console.log(previewURL);
   },
 };
 

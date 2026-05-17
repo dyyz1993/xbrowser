@@ -3,6 +3,8 @@ import { mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { chromium, type Browser, type BrowserContext, type Page, type Response } from 'playwright';
+import { CDPInterceptorProxy } from './cdp-interceptor/proxy.js';
+import type { CDPInterceptorConfig } from './cdp-interceptor/types.js';
 
 /**
  * Log a session lifecycle event for traceability.
@@ -56,10 +58,13 @@ export interface BrowserLaunchOptions {
   headless?: boolean;
   executablePath?: string;
   cdpEndpoint?: string;
+  /** Enable CDP-level interception for anti-crawler protection */
+  intercept?: boolean | CDPInterceptorConfig;
 }
 
 const sessions = new Map<string, ManagedSession>();
 let browser: Browser | null = null;
+let cdpProxy: CDPInterceptorProxy | null = null;
 
 const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -100,6 +105,14 @@ process.on('exit', () => {
       // force cleanup on exit
     }
     browser = null;
+  }
+  if (cdpProxy) {
+    try {
+      cdpProxy.stop();
+    } catch {
+      // best effort
+    }
+    cdpProxy = null;
   }
 });
 
@@ -160,8 +173,22 @@ export async function getBrowser(options?: BrowserLaunchOptions): Promise<Browse
   if (browser) return browser;
 
   if (options?.cdpEndpoint) {
-    const endpoint = await resolveCDPEndpoint(options.cdpEndpoint);
-    browser = await chromium.connectOverCDP(endpoint);
+    const realEndpoint = await resolveCDPEndpoint(options.cdpEndpoint);
+
+    // Start CDP interceptor proxy if requested
+    if (options.intercept) {
+      const config: CDPInterceptorConfig = typeof options.intercept === 'object'
+        ? { ...options.intercept, cdpEndpoint: realEndpoint }
+        : { cdpEndpoint: realEndpoint };
+
+      cdpProxy = new CDPInterceptorProxy(config);
+      const proxyPort = await cdpProxy.start();
+      console.error(`[CDP Interceptor] Proxy running on ws://localhost:${proxyPort}, forwarding to ${realEndpoint}`);
+      browser = await chromium.connectOverCDP(`ws://localhost:${proxyPort}`);
+    } else {
+      browser = await chromium.connectOverCDP(realEndpoint);
+    }
+
     return browser;
   }
 
@@ -573,6 +600,10 @@ export async function destroyBrowser(): Promise<void> {
     // it does NOT shut down the remote browser.
     b.close().catch(() => {});
   }
+  if (cdpProxy) {
+    await cdpProxy.stop().catch(() => {});
+    cdpProxy = null;
+  }
 }
 
 /**
@@ -584,9 +615,36 @@ export async function destroyBrowser(): Promise<void> {
 export function resetForTesting(): void {
   sessions.clear();
   browser = null;
+  cdpProxy = null;
   try {
     for (const f of readdirSync(SESSION_DIR)) {
       unlinkSync(join(SESSION_DIR, f));
     }
   } catch { /* dir may not exist */ }
 }
+
+/**
+ * Force cleanup and ensure the process can exit.
+ * Call this before process.exit() to release all Playwright resources.
+ */
+export async function ensureProcessCanExit(): Promise<void> {
+  if (idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
+  }
+
+  // Clear all sessions
+  sessions.clear();
+
+  // Close browser if exists
+  if (browser) {
+    await browser.close().catch(() => {});
+    browser = null;
+  }
+
+  if (cdpProxy) {
+    await cdpProxy.stop().catch(() => {});
+    cdpProxy = null;
+  }
+}
+

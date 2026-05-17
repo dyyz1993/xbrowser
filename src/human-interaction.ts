@@ -48,7 +48,7 @@ export class HumanInteractionManager {
     this.webhook = new WebhookNotifier(cfg.notifyUrl);
     this.autoOpen = cfg.autoOpen;
 
-    this.wsServer.setPage(page);
+    this.wsServer.registerSession('default', page);
   }
 
   private async sendWebhook(

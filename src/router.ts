@@ -40,7 +40,7 @@ function parseEvalFlags(argv: string[]): string[] {
       const cmd = argv[i + 1];
       if (!cmd) {
         console.error('Error: -e/--eval requires a command argument');
-        process.exit(1);
+        throw new Error("Command failed");
       }
       commands.push(cmd);
       i++;
@@ -62,7 +62,7 @@ async function handleStdinMode(stdinCommands: string[], argv?: string[]): Promis
   const cdpEndpoint = argv ? extractCdpFromArgv(argv) : undefined;
   const chainResult = await executeChain(chain, { fileMode: true, cdpEndpoint });
   printChainResult(chainResult);
-  if (!chainResult.success) process.exit(1);
+  if (!chainResult.success) throw new Error("Command failed");
 }
 
 async function handleEvalMode(argv: string[]): Promise<void> {
@@ -72,14 +72,14 @@ async function handleEvalMode(argv: string[]): Promise<void> {
   const cdpEndpoint = extractCdpFromArgv(argv);
   const chainResult = await executeChain(chain, { cdpEndpoint });
   printChainResultBrief(chainResult);
-  if (!chainResult.success) process.exit(1);
+  if (!chainResult.success) throw new Error("Command failed");
 }
 
 async function handleChainInput(input: string, argv?: string[]): Promise<void> {
   const cdpEndpoint = argv ? extractCdpFromArgv(argv) : undefined;
   const chainResult = await executeChain(input, { cdpEndpoint });
   printChainResult(chainResult);
-  if (!chainResult.success) process.exit(1);
+  if (!chainResult.success) throw new Error("Command failed");
 }
 
 /**
@@ -119,11 +119,11 @@ export async function routeCommand(
 
   if (options.version || options.v) {
     console.log(`xbrowser v${version}`);
-    process.exit(0);
+    return;
   }
   if (positional.length === 0) {
     showMainHelp();
-    process.exit(0);
+    return;
   }
 
   const command = positional[0];
@@ -161,7 +161,7 @@ export async function routeCommand(
 
   if (options.help || options.h) {
     showMainHelp();
-    process.exit(0);
+    return;
   }
 
   try {
@@ -213,7 +213,7 @@ export async function routeCommand(
         break;
       case 'preview': {
         const builtin = allBuiltins.find((b) => b.name === 'preview');
-        if (builtin) builtin.execute(cmdArgs, options, { cwd: process.cwd() });
+        if (builtin) await builtin.execute(cmdArgs, options, { cwd: process.cwd() });
         break;
       }
       case 'help':
@@ -538,7 +538,7 @@ export async function routeCommand(
               console.error(`[FAIL] ${step.raw}: ${step.message}`);
             }
           }
-          if (!chainResult.success) process.exit(1);
+          if (!chainResult.success) throw new Error("Command failed");
           return;
         }
 
@@ -723,11 +723,11 @@ async function handleServe(
 
   process.on('SIGINT', async () => {
     await httpServer.stop();
-    process.exit(0);
+    return;
   });
   process.on('SIGTERM', async () => {
     await httpServer.stop();
-    process.exit(0);
+    return;
   });
 
   try {
@@ -763,7 +763,7 @@ async function handleServe(
     }
   } catch (e: unknown) {
     outputError(e instanceof Error ? e.message : String(e));
-    process.exit(1);
+    throw new Error("Command failed");
   }
 }
 
