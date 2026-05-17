@@ -378,12 +378,19 @@ export async function closeEphemeralContext(context: BrowserContext): Promise<vo
         ephemeralConnections.delete(p);
         // close() on CDP connection only disconnects, does NOT kill remote browser.
         await conn.close();
-        return;
+        break;
       }
     }
     await context.close();
   } catch {
     // ignore close errors
+  }
+
+  // If no managed sessions exist, clear the idle timer so the process can exit.
+  // Ephemeral commands (scrape/search/map etc.) don't need session lifecycle management.
+  if (sessions.size === 0 && idleTimer) {
+    clearTimeout(idleTimer);
+    idleTimer = null;
   }
 }
 
