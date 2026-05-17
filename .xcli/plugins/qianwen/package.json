@@ -1,0 +1,34 @@
+{
+  "name": "xbrowser-qianwen",
+  "version": "1.0.0",
+  "description": "通义千问 (Qianwen) plugin for xbrowser",
+  "type": "module",
+  "main": "index.ts",
+  "keywords": [
+    "xbrowser",
+    "qianwen",
+    "tongyi",
+    "aliyun",
+    "ai",
+    "chat",
+    "playwright"
+  ],
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "qianwen",
+    "description": "通义千问 (Qianwen) AI 助手",
+    "commands": [
+      "list",
+      "new",
+      "open",
+      "chat",
+      "attach"
+    ],
+    "sites": ["qianwen"]
+  }
+}

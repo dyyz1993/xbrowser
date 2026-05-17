@@ -541,11 +541,12 @@ async function fillInput(page: Page, message: string): Promise<boolean> {
   const selectors = [SEL.input, SEL.inputFallback, 'textarea[placeholder*="Message"]', 'textarea[placeholder*="message"]', '[contenteditable="true"][role="textbox"]'];
   for (const sel of selectors) {
     try {
-      const count = await page.locator(sel).count();
-      if (count > 0) {
-        await page.locator(sel).first().waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
-        await page.locator(sel).first().click();
-        await page.locator(sel).first().fill(message);
+      const loc = page.locator(sel).first();
+      if (await loc.count() > 0) {
+        await loc.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+        await loc.click();
+        await page.waitForTimeout(200);
+        await page.keyboard.type(message, { delay: 20 });
         return true;
       }
     } catch {
