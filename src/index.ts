@@ -77,3 +77,37 @@ export { filterRecording, parseExcludeTypes } from './commands/filter.js';
 export type { Recording, RecordingEvent } from './commands/definitions.js';
 export { HTTPServer } from './server/http-server.js';
 export type { HTTPServerConfig, APIRequest, APIResponse, ExecRequest, ChainRequest, HTTPServerError } from './server/types.js';
+
+// CDP Interceptor — Anti-crawler firewall at the CDP protocol level
+export {
+  CDPInterceptorProxy,
+  createCDPInterceptor,
+  createRuleEngine,
+  domMutationRule,
+  mouseTrajectoryRule,
+  inputKeystrokeRule,
+  automationSignalsRule,
+  fingerprintingRule,
+  eventSimulationRule,
+  emulationOverrideRule,
+  networkAnomalyRule,
+  pageLifecycleRule,
+  advise,
+} from './cdp-interceptor/index.js';
+export type {
+  RuleEngine,
+  AdvisoryResult,
+  CDPRequest,
+  CDPResponse,
+  CDPError,
+  CDPMessage,
+  MessageDirection,
+  CDPLogEntry,
+  ViolationSeverity,
+  DecisionAction,
+  DecisionResult,
+  RuleContext,
+  CDPInterceptorRule,
+  CDPInterceptorConfig,
+  CDPInterceptorStats,
+} from './cdp-interceptor/index.js';
