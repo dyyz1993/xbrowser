@@ -66,7 +66,7 @@ const sessions = new Map<string, ManagedSession>();
 let browser: Browser | null = null;
 let cdpProxy: CDPInterceptorProxy | null = null;
 
-const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const IDLE_TIMEOUT_MS = (process.env.XBROWSER_IDLE_TIMEOUT ? parseInt(process.env.XBROWSER_IDLE_TIMEOUT, 10) : 15) * 60 * 1000;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
 function resetIdleTimer(): void {
@@ -268,11 +268,31 @@ export async function findOrRestoreSession(
     const b = await getBrowser({ cdpEndpoint: ep });
     const contexts = b.contexts();
     const context = contexts[0] || (await b.newContext());
-    const page = await context.newPage();
 
-    // Navigate to conversationUrl (specific page) or url (generic)
-    const targetUrl = meta.conversationUrl || meta.url || 'about:blank';
-    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {         });
+    // Reuse an existing page (same logic as createSession) instead of creating a new one
+    let page: Page | null = null;
+    for (const ctx of contexts) {
+      const pages = ctx.pages();
+      for (const p of pages) {
+        const pUrl = p.url();
+        if (pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome://')) {
+          page = p;
+          break;
+        }
+      }
+      if (page) break;
+    }
+
+    if (!page) {
+      const pages = context.pages();
+      page = pages.length > 0 ? pages[0] : await context.newPage();
+    }
+
+    // Navigate to conversationUrl (specific page) or url (generic) if needed
+    const targetUrl = meta.conversationUrl || meta.url;
+    if (targetUrl && page.url() !== targetUrl) {
+      await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => { });
+    }
 
     const session: ManagedSession = {
       id: meta.id || randomUUID(),
@@ -554,9 +574,26 @@ export async function closeSessionByName(name: string): Promise<boolean> {
         await session.context.close();
       }
       sessions.delete(id);
+
+      // Clean up disk metadata for this session
+      const file = sessionFile(session.name);
+      try { unlinkSync(file); } catch { /* file may not exist */ }
+
+      // Clear associated network captures from memory
+      try {
+        const { networkStore, commandLogStore } = await import('./daemon/network-store.js');
+        networkStore.clear(session.name);
+        commandLogStore.clear(session.name);
+      } catch { /* stores may not be loaded */ }
+
       return true;
     }
   }
+
+  // Session not in memory — try cleaning disk metadata directly
+  const file = sessionFile(name);
+  try { unlinkSync(file); } catch { /* file may not exist */ }
+
   return false;
 }
 

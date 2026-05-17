@@ -18,13 +18,14 @@ async function main() {
     const { getDaemonProcessStatus } = await import('../src/daemon/daemon.js');
     const daemonStatus = getDaemonProcessStatus();
     const command = process.argv[2];
+    const subCommand = process.argv[3];
     const isLongRunning = command === 'preview' || command === 'serve' || daemonStatus.running;
+    const isSessionClose = command === 'session' && (subCommand === 'close' || subCommand === 'kill');
     if (!isLongRunning) {
-      const { destroyBrowser } = await import('../src/browser.js');
-      await destroyBrowser().catch(() => { });
-    }
-    // Force exit after cleanup (skip for long-running commands — they exit on their own)
-    if (!isLongRunning) {
+      if (isSessionClose) {
+        const { destroyBrowser } = await import('../src/browser.js');
+        await destroyBrowser().catch(() => { });
+      }
       process.exit(exitCode);
     }
   }

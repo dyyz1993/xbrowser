@@ -21,7 +21,7 @@ import { outputError, outputResult } from './cli/output.js';
 import { showMainHelp } from './cli/help.js';
 import { printChainResult, printChainResultBrief } from './cli/chain-output.js';
 import { getPluginLoader } from './utils/plugin-singleton.js';
-import { findOrRestoreSession, createSession, destroyBrowser, saveSessionDiskMeta } from './browser.js';
+import { findOrRestoreSession, createSession, saveSessionDiskMeta } from './browser.js';
 import { HTTPServer } from './server/http-server.js';
 
 
@@ -618,10 +618,8 @@ export async function routeCommand(
           }
 
           let session = await findOrRestoreSession(sessionName, cdpEndpoint);
-          let createdSession = false;
           if (!session) {
             session = await createSession(sessionName, undefined, cdpEndpoint ? { cdpEndpoint } : {});
-            createdSession = true;
           }
 
           const ctx = {
@@ -688,10 +686,8 @@ export async function routeCommand(
                 }
               }
             }
-          } finally {
-            if (createdSession) {
-              await destroyBrowser();
-            }
+          } catch (e: unknown) {
+            outputError(e instanceof Error ? e.message : String(e));
           }
           return;
         }
