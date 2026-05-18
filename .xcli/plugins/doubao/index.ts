@@ -435,7 +435,7 @@ export default function (xcli: XCLIAPI): void {
         if (!inputEl || !inputSel) throw new Error('找不到消息输入框');
 
         await safeClickSelector(page, inputSel);
-        await page.evaluate((sel: string, msg: string) => {
+        await page.evaluate(({ sel, msg }: { sel: string; msg: string }) => {
           const el = document.querySelector(sel) as HTMLTextAreaElement;
           if (!el) return;
           el.focus();
@@ -446,7 +446,7 @@ export default function (xcli: XCLIAPI): void {
           }
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
-        }, inputSel, params.message);
+        }, { sel: inputSel, msg: params.message });
         await page.waitForTimeout(500);
 
         const wantSources = !!params.showSources;
@@ -2019,7 +2019,7 @@ export default function (xcli: XCLIAPI): void {
         if (!searchInputEl || !searchInputSel) throw new Error('找不到输入框');
 
         await safeClickSelector(page, searchInputSel);
-        await page.evaluate((sel: string, msg: string) => {
+        await page.evaluate(({ sel, msg }: { sel: string; msg: string }) => {
           const el = document.querySelector(sel) as HTMLTextAreaElement;
           if (!el) return;
           el.focus();
@@ -2030,7 +2030,7 @@ export default function (xcli: XCLIAPI): void {
           }
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
-        }, searchInputSel, params.query);
+        }, { sel: searchInputSel, msg: params.query });
         await page.waitForTimeout(500);
         let capturedStream = '';
         await page.route('**/doubao.com/chat/completion', async (route) => {
