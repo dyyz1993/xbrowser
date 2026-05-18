@@ -23,6 +23,7 @@ import { printChainResult, printChainResultBrief } from './cli/chain-output.js';
 import { getPluginLoader } from './utils/plugin-singleton.js';
 import { findOrRestoreSession, createSession, saveSessionDiskMeta, destroyBrowser } from './browser.js';
 import { HTTPServer } from './server/http-server.js';
+import { getCommand } from './commands/command-registry.js';
 
 function showCommandHelp(siteName: string, cmd: unknown, siteConfig: { description?: string; name: string; url: string }, mode: string): void {
   const c = cmd as { name: string; description: string; scope: string; parameters?: unknown; examples?: Array<{ cmd: string; description: string }> };
@@ -270,11 +271,39 @@ export async function routeCommand(
       }
       return;
     }
-    showMainHelp();
-    return;
-  }
-
-  if (options.help || options.h) {
+    // Not a plugin site — check if it's a built-in browser command
+    const builtinCmd = getCommand(command);
+    if (builtinCmd) {
+      if (mode === 'json') {
+        const paramsList: Array<{ name: string; type: string; required: boolean; description: string }> = [];
+        const schema = builtinCmd.parameters as unknown as { _def?: { shape?: Record<string, unknown> }; shape?: Record<string, unknown> } | undefined;
+        const shape = schema?.shape ?? (schema?._def as Record<string, unknown>)?.shape as Record<string, unknown> | undefined;
+        if (shape) {
+          for (const [key, value] of Object.entries(shape)) {
+            const fieldSchema = value as unknown as Record<string, unknown>;
+            const fieldDef = fieldSchema._def as Record<string, unknown> | undefined;
+            const description = (fieldSchema.description as string) || (fieldDef?.description as string) || '';
+            const typeName = (fieldDef?.typeName as string) || '';
+            const isOptional = typeName === 'ZodOptional' || (typeof fieldSchema.isOptional === 'function' && (fieldSchema.isOptional as () => boolean)());
+            const innerType = fieldDef?.innerType as unknown as Record<string, unknown> | undefined;
+            const innerTypeName = innerType?._def ? (innerType._def as Record<string, unknown>).typeName as string : typeName;
+            let type = 'unknown';
+            if (innerTypeName === 'ZodString' || typeName === 'ZodString') type = 'string';
+            else if (innerTypeName === 'ZodNumber' || typeName === 'ZodNumber') type = 'number';
+            else if (innerTypeName === 'ZodBoolean' || typeName === 'ZodBoolean') type = 'boolean';
+            else if (innerTypeName === 'ZodEnum' || typeName === 'ZodEnum') {
+              const vals = (fieldDef?.values || (innerType?._def as Record<string, unknown>)?.values) as string[] | undefined;
+              type = vals ? vals.join('|') : 'enum';
+            }
+            paramsList.push({ name: key, type, required: !isOptional, description });
+          }
+        }
+        outputResult({ command: builtinCmd.name, description: builtinCmd.description, scope: builtinCmd.scope, parameters: paramsList }, mode);
+      } else {
+        console.log(helpGenerator.generate(builtinCmd as unknown as Parameters<typeof helpGenerator.generate>[0], { color: true, emoji: false }));
+      }
+      return;
+    }
     showMainHelp();
     return;
   }

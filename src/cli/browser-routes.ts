@@ -1,6 +1,8 @@
 import { executeCommand } from '../executor.js';
 import { outputResult, outputError } from './output.js';
 import { normalizeSelector } from '../utils/selector.js';
+import { getCommand } from '../commands/command-registry.js';
+import { helpGenerator } from '@dyyz1993/xcli-core';
 
 interface ParsedSelectorArgs {
   selector?: string;
@@ -34,6 +36,45 @@ export async function handleBrowserCommand(
   mode: string,
   cdpEndpoint?: string
 ): Promise<void> {
+  // Auto-generate --help from Zod schema via HelpGenerator
+  if (args.includes('--help') || args.includes('-h') || options.help || options.h) {
+    const cmdDef = getCommand(command);
+    if (cmdDef) {
+      if (mode === 'json') {
+        // JSON mode: output structured parameter info
+        const paramsList: Array<{ name: string; type: string; required: boolean; description: string }> = [];
+        const schema = cmdDef.parameters as unknown as { _def?: { shape?: Record<string, unknown> }; shape?: Record<string, unknown> } | undefined;
+        const shape = schema?.shape ?? (schema?._def as Record<string, unknown>)?.shape as Record<string, unknown> | undefined;
+        if (shape) {
+          for (const [key, value] of Object.entries(shape)) {
+            const fieldSchema = value as unknown as Record<string, unknown>;
+            const fieldDef = fieldSchema._def as Record<string, unknown> | undefined;
+            const description = (fieldSchema.description as string) || (fieldDef?.description as string) || '';
+            const typeName = (fieldDef?.typeName as string) || '';
+            const isOptional = typeName === 'ZodOptional' || typeof fieldSchema.isOptional === 'function' && (fieldSchema.isOptional as () => boolean)();
+            const innerType = fieldDef?.innerType as unknown as Record<string, unknown> | undefined;
+            const innerTypeName = innerType?._def ? (innerType._def as Record<string, unknown>).typeName as string : typeName;
+            let type = 'unknown';
+            if (innerTypeName === 'ZodString' || typeName === 'ZodString') type = 'string';
+            else if (innerTypeName === 'ZodNumber' || typeName === 'ZodNumber') type = 'number';
+            else if (innerTypeName === 'ZodBoolean' || typeName === 'ZodBoolean') type = 'boolean';
+            else if (innerTypeName === 'ZodEnum' || typeName === 'ZodEnum') {
+              const vals = (fieldDef?.values || (innerType?._def as Record<string, unknown>)?.values) as string[] | undefined;
+              type = vals ? vals.join('|') : 'enum';
+            }
+            paramsList.push({ name: key, type, required: !isOptional, description });
+          }
+        }
+        outputResult({ command: cmdDef.name, description: cmdDef.description, scope: cmdDef.scope, parameters: paramsList }, mode);
+      } else {
+        console.log(helpGenerator.generate(cmdDef as unknown as Parameters<typeof helpGenerator.generate>[0], { color: true, emoji: false }));
+      }
+    } else {
+      outputError(`Unknown command: ${command}`);
+    }
+    return;
+  }
+
   let cmdName = '';
   let params: Record<string, unknown> = {};
 
