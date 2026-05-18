@@ -240,7 +240,8 @@ describe('Chain Execution', () => {
     resetForTesting();
     const { executeChain } = await import('../src/executor.js');
     await executeChain('title');
-    expect(getAllSessions().length).toBe(0);
+    // Session should persist after command execution (lifecycle managed by process exit / session close)
+    expect(getAllSessions().length).toBe(1);
   });
 
   it('should reuse existing session in chain', async () => {

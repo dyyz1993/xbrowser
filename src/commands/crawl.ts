@@ -3,7 +3,7 @@ import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { htmlToMarkdown } from '../lib/html-to-markdown.js';
-import { getBrowser, destroyBrowser, resolveLaunchOpts } from '../browser.js';
+import { getBrowser, resolveLaunchOpts } from '../browser.js';
 import { normalizeUrl, shouldSkipUrl, getBaseDomain, isSpaHashRoute } from '../utils/url.js';
 import type { Page } from 'playwright';
 
@@ -394,8 +394,6 @@ export const crawlCommand = registerCommand({
       const message = err instanceof Error ? err.message : String(err);
       const successPages = results.filter((r): r is CrawlPage => !isPageError(r));
       return ok({ pages: successPages, total: successPages.length, success: false, error: message });
-    } finally {
-      await destroyBrowser().catch(() => {});
     }
   },
 });

@@ -21,7 +21,7 @@ import { outputError, outputResult } from './cli/output.js';
 import { showMainHelp } from './cli/help.js';
 import { printChainResult, printChainResultBrief } from './cli/chain-output.js';
 import { getPluginLoader } from './utils/plugin-singleton.js';
-import { findOrRestoreSession, createSession, saveSessionDiskMeta, destroyBrowser } from './browser.js';
+import { findOrRestoreSession, createSession, saveSessionDiskMeta } from './browser.js';
 import { HTTPServer } from './server/http-server.js';
 import { getCommand } from './commands/command-registry.js';
 
@@ -838,11 +838,10 @@ export async function routeCommand(
           } catch (e: unknown) {
             outputError(e instanceof Error ? e.message : String(e));
           } finally {
-            // CLI mode: clean up browser resources so process can exit.
-            // Daemon mode: keep sessions alive for reuse.
-            if (process.env.XBROWSER_DAEMON_WORKER !== '1') {
-              await destroyBrowser().catch(() => {});
-            }
+            // Session lifecycle is managed by:
+            //   1. process.on('exit') — cleanup on process exit
+            //   2. "session close/kill" — explicit destruction by user
+            // Do NOT destroy here — plugin commands are just command executors, not lifecycle managers.
           }
           return;
         }

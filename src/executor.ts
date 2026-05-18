@@ -2,7 +2,7 @@ import { ok, fail, isCommandResult, type CommandResult } from '@dyyz1993/xcli-co
 import { mapPositionalValues } from './utils/positional-params.js';
 import { getCommand, getAllCommands } from './commands/index.js';
 import type { BrowserCommandContext } from './context.js';
-import { findOrRestoreSession, createSession, destroyBrowser, saveSessionDiskMeta, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
+import { findOrRestoreSession, createSession, saveSessionDiskMeta, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
 import {
   parseCommandChain,
   splitCommand,
@@ -123,7 +123,6 @@ export async function executeCommand(
   }
 
   let session: ManagedSession | undefined;
-  let autoCreated = false;
   // Try in-memory first, then disk restore
   const existing = await findOrRestoreSession(sessionName, extraOpts?.cdpEndpoint);
   if (existing) {
@@ -132,7 +131,6 @@ export async function executeCommand(
     session = await createSession(sessionName, params.url as string, {
       cdpEndpoint: extraOpts?.cdpEndpoint,
     });
-    autoCreated = true;
   } else if (command.scope !== 'project') {
     return errorResult(
       `Session '${sessionName}' not found. Run "xbrowser session open <url>" first.`
@@ -249,9 +247,10 @@ export async function executeCommand(
 
     return { ...fail(errorMessage), duration };
   } finally {
-    if (autoCreated && !extraOpts?.skipCleanup && !extraOpts?.cdpEndpoint) {
-      await destroyBrowser();
-    }
+    // Session lifecycle is managed by:
+    //   1. process.on('exit') — cleanup on process exit (CDP: disconnect only; non-CDP: close browser)
+    //   2. "session close/kill" — explicit destruction by user
+    // Do NOT destroy here — executeCommand is just a command executor, not a lifecycle manager.
   }
 }
 
@@ -283,14 +282,20 @@ export async function executeChain(
   const totalStart = Date.now();
 
   let session = await findOrRestoreSession(sessionName, options?.cdpEndpoint);
-  let createdSession = false;
   if (!session) {
     const launchOpts: BrowserLaunchOptions = {};
     if (options?.cdpEndpoint) {
       launchOpts.cdpEndpoint = options.cdpEndpoint;
     }
     session = await createSession(sessionName, undefined, launchOpts);
-    createdSession = true;
+    // Persist session to disk for cross-CLI-invocation recovery (CDP mode)
+    saveSessionDiskMeta(sessionName, {
+      id: session.id,
+      name: sessionName,
+      url: session.page.url(),
+      createdAt: session.createdAt,
+      cdpEndpoint: session.cdpEndpoint,
+    });
   }
 
   try {
@@ -499,15 +504,11 @@ export async function executeChain(
       totalDuration: Date.now() - totalStart,
     };
   } finally {
-    // CLI mode: always clean up so process can exit.
-    // Daemon mode: keep sessions alive for reuse.
-    if (process.env.XBROWSER_DAEMON_WORKER !== '1') {
-      await destroyBrowser();
-    } else if (createdSession) {
-      // Daemon mode: only clean up if this chain created a new session
-      // (sessions created by explicit 'session open' should persist)
-      await destroyBrowser();
-    }
+    // Session lifecycle is managed by:
+    //   1. process.on('exit') — cleanup on process exit (CDP: disconnect only; non-CDP: close browser)
+    //   2. "session close/kill" — explicit destruction by user
+    // Do NOT destroy here — executeChain is just a command executor, not a lifecycle manager.
+    // Daemon mode keeps sessions alive for reuse across requests.
   }
 }
 
