@@ -253,12 +253,18 @@ export default function (xcli: XCLIAPI): void {
       message: z.string().describe('消息内容'),
       attach: z.string().optional().describe('附件路径（图片或文件）'),
       attachType: z.enum(['image', 'file', 'url']).optional().describe('附件类型'),
+      mode: z.enum(['normal', 'expert']).optional().describe('对话模式: normal=快速模式, expert=专家模式'),
+      think: z.boolean().optional().describe('开启深度思考模式'),
+      search: z.boolean().optional().describe('开启联网搜索'),
       showSources: z.boolean().optional().describe('显示联网搜索引用的来源 URL 和域名'),
     }),
     examples: [
       { cmd: 'xbrowser deepseek chat "你好"', description: '发送消息' },
       { cmd: 'xbrowser deepseek chat "分析这张图" --attach /path/to/img.jpg', description: '发送消息+图片' },
-      { cmd: 'xbrowser deepseek chat "2024诺贝尔奖" --showSources', description: '发送消息并显示搜索来源' },
+      { cmd: 'xbrowser deepseek chat "深度分析" --think', description: '开启深度思考' },
+      { cmd: 'xbrowser deepseek chat "专家级分析" --mode expert', description: '使用专家模式' },
+      { cmd: 'xbrowser deepseek chat "最新新闻" --search --showSources', description: '联网搜索+来源' },
+      { cmd: 'xbrowser deepseek chat "深度研究" --think --search --showSources', description: '深度思考+联网+来源' },
     ],
     handler: async (params, ctx) => {
       try {
@@ -266,6 +272,95 @@ export default function (xcli: XCLIAPI): void {
         await ensurePage(page, ctx);
         await page.waitForTimeout(3000); // 等 React 渲染
         const tips = buildTips(ctx);
+
+        // 切换对话模式（快速/专家）
+        if (params.mode) {
+          const modeToggled = await page.evaluate((targetMode) => {
+            const allElements = document.querySelectorAll('*');
+            for (const el of allElements) {
+              const text = el.textContent?.trim() || '';
+              if ((text.includes('专家模式') || text.includes('深度思考')) && el.children.length <= 3 && el.offsetParent !== null) {
+                if (targetMode === 'expert' && !text.includes('专家')) {
+                  el.click();
+                  return 'expert_toggled';
+                }
+                break;
+              }
+            }
+            for (const el of allElements) {
+              const text = el.textContent?.trim() || '';
+              if (targetMode === 'expert' && text.includes('专家') && el.offsetParent !== null) {
+                el.click();
+                return 'expert_clicked';
+              }
+            }
+            return 'not_found';
+          }, params.mode);
+          if (modeToggled !== 'not_found') {
+            tips.push(`已切换到${params.mode === 'expert' ? '专家' : '快速'}模式`);
+            await page.waitForTimeout(500);
+          }
+        }
+
+        // 开启深度思考
+        if (params.think) {
+          const thinkToggled = await page.evaluate(() => {
+            const allElements = document.querySelectorAll('*');
+            for (const el of allElements) {
+              const text = el.textContent?.trim() || '';
+              if (text === '深度思考' || text === 'DeepThink' || text === '深度推理') {
+                const parent = el.closest('button, [role="switch"], [role="button"]') || el.parentElement;
+                if (parent) {
+                  const isActive = parent.getAttribute('aria-checked') === 'true'
+                    || parent.getAttribute('aria-pressed') === 'true'
+                    || parent.classList.contains('active');
+                  if (!isActive) {
+                    (parent instanceof HTMLElement ? parent : parent.parentElement)?.click();
+                    return 'toggled_on';
+                  }
+                  return 'already_on';
+                }
+              }
+            }
+            return 'not_found';
+          });
+          if (thinkToggled === 'toggled_on') {
+            tips.push('已开启深度思考');
+            await page.waitForTimeout(500);
+          } else if (thinkToggled === 'not_found') {
+            tips.push('⚠ 未找到深度思考开关');
+          }
+        }
+
+        // 开启联网搜索
+        if (params.search) {
+          const searchEnabled = await page.evaluate(() => {
+            const allElements = document.querySelectorAll('*');
+            for (const el of allElements) {
+              const text = el.textContent?.trim() || '';
+              if (text === '联网搜索' || text === '搜索' || text === 'Search') {
+                const parent = el.closest('button, [role="switch"], [role="button"]') || el.parentElement;
+                if (parent) {
+                  const isActive = parent.getAttribute('aria-checked') === 'true'
+                    || parent.getAttribute('aria-pressed') === 'true'
+                    || parent.classList.contains('active');
+                  if (!isActive) {
+                    (parent instanceof HTMLElement ? parent : parent.parentElement)?.click();
+                    return 'toggled_on';
+                  }
+                  return 'already_on';
+                }
+              }
+            }
+            return 'not_found';
+          });
+          if (searchEnabled === 'toggled_on') {
+            tips.push('已开启联网搜索');
+            await page.waitForTimeout(500);
+          } else if (searchEnabled === 'not_found') {
+            tips.push('⚠ 未找到联网搜索开关');
+          }
+        }
 
         // 先上传附件（如果有）
         if (params.attach) {

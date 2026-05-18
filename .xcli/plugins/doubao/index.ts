@@ -307,12 +307,16 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       message: z.string().describe('消息内容'),
       attach: z.string().optional().describe('附件路径（图片或文件）'),
+      think: z.boolean().optional().describe('开启深度思考模式'),
+      search: z.boolean().optional().describe('开启联网搜索'),
       showSources: z.boolean().optional().describe('显示联网搜索引用的来源 URL 和域名'),
     }),
     examples: [
       { cmd: 'xbrowser doubao chat "你好"', description: '发送消息' },
       { cmd: 'xbrowser doubao chat "分析这张图" --attach /path/to/img.jpg', description: '发送消息+图片' },
-      { cmd: 'xbrowser doubao chat "2024年新闻" --showSources', description: '发送消息并显示搜索来源' },
+      { cmd: 'xbrowser doubao chat "深度分析" --think', description: '开启深度思考' },
+      { cmd: 'xbrowser doubao chat "2024年新闻" --search --showSources', description: '联网搜索+显示来源' },
+      { cmd: 'xbrowser doubao chat "深度研究AI趋势" --think --search --showSources', description: '深度思考+联网搜索+来源' },
     ],
     handler: async (params, ctx) => {
       try {
@@ -320,6 +324,66 @@ export default function (xcli: XCLIAPI): void {
         await ensurePage(page, ctx);
         await page.waitForTimeout(3000);
         const tips = buildTips(ctx);
+
+        // 开启深度思考模式
+        if (params.think) {
+          const thinkToggled = await page.evaluate(() => {
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            let node;
+            while ((node = walker.nextNode())) {
+              if (node.textContent?.includes('深度思考') || node.textContent?.includes('深度推理')) {
+                const parent = node.parentElement;
+                if (parent) {
+                  const isActive = parent.getAttribute('aria-checked') === 'true'
+                    || parent.getAttribute('aria-pressed') === 'true'
+                    || parent.classList.contains('active');
+                  if (!isActive) {
+                    parent.click();
+                    return 'toggled_on';
+                  }
+                  return 'already_on';
+                }
+              }
+            }
+            return 'not_found';
+          });
+          if (thinkToggled === 'toggled_on') {
+            tips.push('已开启深度思考');
+            await page.waitForTimeout(500);
+          } else if (thinkToggled === 'not_found') {
+            tips.push('⚠ 未找到深度思考开关');
+          }
+        }
+
+        // 开启联网搜索
+        if (params.search) {
+          const searchEnabled = await page.evaluate(() => {
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            let node;
+            while ((node = walker.nextNode())) {
+              if (node.textContent?.includes('联网搜索') || node.textContent?.includes('搜索')) {
+                const parent = node.parentElement;
+                if (parent) {
+                  const isActive = parent.getAttribute('aria-checked') === 'true'
+                    || parent.getAttribute('aria-pressed') === 'true'
+                    || parent.classList.contains('active');
+                  if (!isActive) {
+                    parent.click();
+                    return 'toggled_on';
+                  }
+                  return 'already_on';
+                }
+              }
+            }
+            return 'not_found';
+          });
+          if (searchEnabled === 'toggled_on') {
+            tips.push('已开启联网搜索');
+            await page.waitForTimeout(500);
+          } else if (searchEnabled === 'not_found') {
+            tips.push('⚠ 未找到联网搜索开关');
+          }
+        }
 
         if (params.attach) {
           const absPath = path.resolve(params.attach);

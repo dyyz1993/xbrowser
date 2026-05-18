@@ -253,12 +253,15 @@ export default function (xcli: XCLIAPI): void {
       message: z.string().describe('消息内容'),
       attach: z.string().optional().describe('附件路径（图片或文件）'),
       attachType: z.enum(['image', 'file', 'url']).optional().describe('附件类型'),
+      model: z.string().optional().describe('模型名称 (如 GPT-4o, o1, o3, 4o-mini)'),
+      search: z.boolean().optional().describe('开启联网搜索'),
       showSources: z.boolean().optional().describe('显示联网搜索引用的来源 URL 和域名'),
     }),
     examples: [
       { cmd: 'xbrowser chatgpt chat "你好"', description: '发送消息' },
       { cmd: 'xbrowser chatgpt chat "分析这张图" --attach /path/to/img.jpg', description: '发送消息+图片' },
-      { cmd: 'xbrowser chatgpt chat "2024诺贝尔奖" --showSources', description: '发送消息并显示搜索来源' },
+      { cmd: 'xbrowser chatgpt chat "推理分析" --model o1', description: '使用 o1 推理模型' },
+      { cmd: 'xbrowser chatgpt chat "最新新闻" --search --showSources', description: '联网搜索+来源' },
     ],
     handler: async (params, ctx) => {
       try {
@@ -266,6 +269,77 @@ export default function (xcli: XCLIAPI): void {
         await ensurePage(page, ctx);
         await page.waitForTimeout(3000);
         const tips = buildTips(ctx);
+
+        // 切换模型
+        if (params.model) {
+          const modelSwitched = await page.evaluate((modelName) => {
+            const modelBtns = document.querySelectorAll('[class*="model"], [class*="Model"], [data-testid*="model"]');
+            for (const btn of modelBtns) {
+              if (btn.textContent?.trim() && btn.offsetParent !== null) {
+                btn.click();
+                return 'clicked_selector';
+              }
+            }
+            const allEls = document.querySelectorAll('*');
+            for (const el of allEls) {
+              const text = el.textContent?.trim() || '';
+              if ((text.includes('GPT') || text.includes('4o') || text.includes('o1') || text.includes('o3') || text.includes('mini')) 
+                  && el.children.length <= 3 && el.offsetParent !== null && text.length < 30) {
+                el.click();
+                return 'clicked_label';
+              }
+            }
+            return 'not_found';
+          }, params.model);
+          
+          if (modelSwitched !== 'not_found') {
+            await page.waitForTimeout(800);
+            const selected = await page.evaluate((modelName) => {
+              const allEls = document.querySelectorAll('*');
+              for (const el of allEls) {
+                const text = el.textContent?.trim() || '';
+                if (text.toLowerCase().includes(modelName.toLowerCase()) && el.children.length <= 2 && el.offsetParent !== null) {
+                  (el as HTMLElement).click();
+                  return true;
+                }
+              }
+              return false;
+            }, params.model);
+            if (selected) {
+              tips.push(`已切换到模型: ${params.model}`);
+              await page.waitForTimeout(500);
+            } else {
+              tips.push(`⚠ 找不到模型 "${params.model}"，请手动切换`);
+              await page.keyboard.press('Escape');
+            }
+          } else {
+            tips.push(`⚠ 未找到模型选择器`);
+          }
+        }
+
+        // 开启联网搜索
+        if (params.search) {
+          const searchEnabled = await page.evaluate(() => {
+            const allEls = document.querySelectorAll('*');
+            for (const el of allEls) {
+              const text = el.textContent?.trim() || '';
+              if ((text === 'Search' || text === '搜索' || text.includes('联网')) && el.children.length <= 3 && el.offsetParent !== null) {
+                const btn = el.closest('button, [role="switch"]') || el;
+                if (btn instanceof HTMLElement) {
+                  btn.click();
+                  return 'toggled';
+                }
+              }
+            }
+            return 'not_found';
+          });
+          if (searchEnabled !== 'not_found') {
+            tips.push('已开启联网搜索');
+            await page.waitForTimeout(500);
+          } else {
+            tips.push('⚠ 未找到联网搜索开关');
+          }
+        }
 
         if (params.attach) {
           const attachType = params.attachType || 'image';

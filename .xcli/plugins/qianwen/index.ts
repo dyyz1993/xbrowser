@@ -272,10 +272,16 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       message: z.string().describe('消息内容'),
       attach: z.string().optional().describe('附件路径（图片或文件）'),
+      attachType: z.enum(['image', 'file', 'url']).optional().describe('附件类型'),
+      think: z.boolean().optional().describe('开启深度思考模式'),
+      search: z.boolean().optional().describe('开启联网搜索'),
+      showSources: z.boolean().optional().describe('显示联网搜索引用的来源 URL 和域名'),
     }),
     examples: [
       { cmd: 'xbrowser qianwen chat "你好"', description: '发送消息' },
       { cmd: 'xbrowser qianwen chat "分析这张图" --attach /path/to/img.jpg', description: '发送消息+图片' },
+      { cmd: 'xbrowser qianwen chat "深度分析" --think', description: '开启深度思考' },
+      { cmd: 'xbrowser qianwen chat "最新新闻" --search --showSources', description: '联网搜索+来源' },
     ],
     handler: async (params, ctx) => {
       try {
@@ -283,6 +289,54 @@ export default function (xcli: XCLIAPI): void {
         await ensurePage(page, ctx);
         await page.waitForTimeout(3000);
         const tips = buildTips(ctx);
+
+        if (params.think) {
+          const thinkToggled = await page.evaluate(() => {
+            const allEls = document.querySelectorAll('*');
+            for (const el of allEls) {
+              const text = el.textContent?.trim() || '';
+              if ((text === '深度思考' || text === '思考' || text.includes('Think'))
+                  && el.children.length <= 3 && el.offsetParent !== null) {
+                const btn = el.closest('button, [role="switch"]') || el.parentElement;
+                if (btn instanceof HTMLElement) {
+                  btn.click();
+                  return 'toggled';
+                }
+              }
+            }
+            return 'not_found';
+          });
+          if (thinkToggled !== 'not_found') {
+            tips.push('已开启深度思考');
+            await page.waitForTimeout(500);
+          } else {
+            tips.push('⚠ 未找到深度思考开关');
+          }
+        }
+
+        if (params.search) {
+          const searchEnabled = await page.evaluate(() => {
+            const allEls = document.querySelectorAll('*');
+            for (const el of allEls) {
+              const text = el.textContent?.trim() || '';
+              if ((text === '联网搜索' || text === '搜索' || text.includes('Search'))
+                  && el.children.length <= 3 && el.offsetParent !== null) {
+                const btn = el.closest('button, [role="switch"]') || el.parentElement;
+                if (btn instanceof HTMLElement) {
+                  btn.click();
+                  return 'toggled';
+                }
+              }
+            }
+            return 'not_found';
+          });
+          if (searchEnabled !== 'not_found') {
+            tips.push('已开启联网搜索');
+            await page.waitForTimeout(500);
+          } else {
+            tips.push('⚠ 未找到联网搜索开关');
+          }
+        }
 
         if (params.attach) {
           const absPath = path.resolve(params.attach);

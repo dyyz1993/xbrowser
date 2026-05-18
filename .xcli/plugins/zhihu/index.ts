@@ -1,6 +1,23 @@
 import { z } from 'zod';
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import type { Page } from 'playwright';
+
+const ZHIDA_URL = 'https://zhida.zhihu.com';
+
+/** 思考模式映射 */
+const THINKING_MODE_MAP: Record<string, string> = {
+  smart: '智能思考',
+  deep: '深度思考',
+  fast: '快速回答',
+};
+
+/** 知识来源映射 */
+const SOURCE_MAP: Record<string, string> = {
+  all: '全网',
+  zhihu: '知乎',
+  academic: '学术',
+  my: '我的知识库',
+};
 
 function resolvePage(ctx: Record<string, unknown>): { page: Page; tips: string[] } {
   const page = ctx.page as Page;
@@ -9,10 +26,321 @@ function resolvePage(ctx: Record<string, unknown>): { page: Page; tips: string[]
   const sessionId = ctx.sessionId as string | undefined;
   const tips: string[] = [];
   if (!cdpEndpoint) {
-    tips.push('建议使用 --cdp 9221 连接 Chrome 浏览器以获取登录态');
+    tips.push('建议使用 --cdp 9221 连接 Chrome 浏览器以获取登录态（知乎知答需要登录）');
   }
   tips.push(`Session: ${sessionId || 'default'}`);
   return { page, tips };
+}
+
+/** 安全点击选择器（CDP 模式兼容） */
+async function safeClick(page: Page, selector: string): Promise<boolean> {
+  try {
+    const handle = await page.evaluateHandle((sel: string) => {
+      const el = document.querySelector(sel);
+      return el;
+    }, selector);
+    const element = handle.asElement();
+    if (!element) return false;
+    const box = await element.boundingBox();
+    if (!box) return false;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 确保在知乎知答页面且已登录 */
+async function ensureZhidaPage(page: Page, ctx?: CommandContext): Promise<void> {
+  if (!page.url().includes('zhida.zhihu.com')) {
+    await page.goto(ZHIDA_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(3000);
+  }
+
+  // 检查是否跳转到登录页
+  const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 500) || '');
+  if (bodyText.includes('登录') && bodyText.includes('注册') && !bodyText.includes('知乎直答') && !bodyText.includes('知答')) {
+    const cdp = (ctx as unknown as Record<string, unknown>)?.cdpEndpoint;
+    throw new Error(
+      '知乎知答 (zhida) 未登录！\n' +
+      (cdp
+        ? '  使用 --cdp 连接的浏览器未登录知乎，请先在浏览器中登录。\n  或运行: xbrowser zhihu login'
+        : '  请使用 --cdp 参数连接已登录的浏览器:\n    xbrowser zhihu chat "你的问题" --cdp http://localhost:9221')
+    );
+  }
+}
+
+/** 选择思考模式下拉菜单 */
+async function selectThinkingMode(page: Page, mode: string): Promise<void> {
+  const targetLabel = THINKING_MODE_MAP[mode];
+  if (!targetLabel) throw new Error(`无效的思考模式: ${mode}，可选值: ${Object.keys(THINKING_MODE_MAP).join(', ')}`);
+
+  // 检查当前是否已选中目标模式
+  const currentMode = await page.evaluate(() => {
+    const el = Array.from(document.querySelectorAll('*')).find(e =>
+      e.textContent?.trim() === '智能思考' || e.textContent?.trim() === '深度思考' || e.textContent?.trim() === '快速回答'
+    );
+    return el?.textContent?.trim();
+  });
+
+  if (currentMode === targetLabel) {
+    console.log(`  [mode] 已是目标模式: ${targetLabel}`);
+    return;
+  }
+
+  // 点击"智能思考"按钮打开下拉菜单
+  const clicked = await page.evaluate(() => {
+    const els = Array.from(document.querySelectorAll('*'));
+    const target = els.find(el =>
+      ['智能思考', '深度思考', '快速回答'].includes(el.textContent?.trim() || '') &&
+      el.children.length <= 2
+    );
+    if (target) {
+      (target as HTMLElement).click();
+      return true;
+    }
+    return false;
+  });
+
+  if (!clicked) throw new Error('无法找到思考模式选择器');
+  await page.waitForTimeout(800);
+
+  // 点击目标选项
+  const selected = await page.evaluate((label: string) => {
+    const els = Array.from(document.querySelectorAll('*'));
+    const target = els.find(el => el.textContent?.trim() === label && el.children.length <= 1);
+    if (target && target.offsetParent !== null) {
+      (target as HTMLElement).click();
+      return true;
+    }
+    return false;
+  }, targetLabel);
+
+  if (!selected) {
+    // 尝试关闭下拉菜单并继续
+    await page.keyboard.press('Escape');
+    console.log(`  [mode] ⚠ 无法选择 "${targetLabel}"，使用默认模式`);
+  } else {
+    console.log(`  [mode] ✓ 已选择: ${targetLabel}`);
+    await page.waitForTimeout(500);
+  }
+}
+
+/** 选择知识来源下拉菜单 */
+async function selectKnowledgeSource(page: Page, source: string): Promise<void> {
+  const targetLabel = SOURCE_MAP[source];
+  if (!targetLabel) throw new Error(`无效的知识来源: ${source}，可选值: ${Object.keys(SOURCE_MAP).join(', ')}`);
+
+  // 知识来源选择器在思考模式的右边，点击它打开下拉菜单
+  // 基于UI布局: 智能思考 ▼ | 🌐知🎓📚 ▼ | @ | 📎 | ↑
+  const clicked = await page.evaluate(() => {
+    // 找到思考模式元素，然后点击它右边的兄弟元素（知识来源选择器）
+    const thinkEl = Array.from(document.querySelectorAll('*')).find(el =>
+      ['智能思考', '深度思考', '快速回答'].includes(el.textContent?.trim() || '') &&
+      el.children.length <= 2
+    );
+    if (!thinkEl) return false;
+
+    // 找到父容器中在思考模式右边的可点击元素
+    const parent = thinkEl.parentElement;
+    if (parent) {
+      const children = Array.from(parent.children);
+      const thinkIdx = children.indexOf(thinkEl);
+      // 思考模式后面的 1-2 个元素可能是知识来源选择器
+      for (let i = thinkIdx + 1; i < Math.min(thinkIdx + 3, children.length); i++) {
+        const sibling = children[i] as HTMLElement;
+        if (sibling.offsetWidth > 0 && sibling.offsetWidth < 200) {
+          sibling.click();
+          return true;
+        }
+      }
+    }
+
+    // 备选：找下一个兄弟元素
+    let next = thinkEl.nextElementSibling;
+    while (next) {
+      const r = next.getBoundingClientRect();
+      if (r.width > 0 && r.width < 200) {
+        (next as HTMLElement).click();
+        return true;
+      }
+      next = next.nextElementSibling;
+    }
+    return false;
+  });
+
+  if (!clicked) {
+    console.log(`  [source] ⚠ 无法找到知识来源选择器，使用默认`);
+    return;
+  }
+
+  await page.waitForTimeout(800);
+
+  // 点击目标选项
+  const selected = await page.evaluate((label: string) => {
+    const els = Array.from(document.querySelectorAll('*'));
+    const targets = els.filter(el => el.textContent?.trim() === label && el.children.length <= 1 && el.offsetParent !== null);
+    if (targets.length > 0) {
+      (targets[0] as HTMLElement).click();
+      return true;
+    }
+    return false;
+  }, targetLabel);
+
+  if (!selected) {
+    await page.keyboard.press('Escape');
+    console.log(`  [source] ⚠ 无法选择 "${targetLabel}"，使用默认来源`);
+  } else {
+    console.log(`  [source] ✓ 已选择: ${targetLabel}`);
+    await page.waitForTimeout(500);
+  }
+}
+
+/** 在 DraftEditor 中输入文本 */
+async function typeInDraftEditor(page: Page, text: string): Promise<void> {
+  // 点击输入框区域
+  const editorClicked = await safeClick(page, '.public-DraftEditor-content');
+  if (!editorClicked) {
+    // 备选：用 evaluate 点击
+    await page.evaluate(() => {
+      const editor = document.querySelector('.public-DraftEditor-content');
+      if (editor) (editor as HTMLElement).click();
+    });
+  }
+  await page.waitForTimeout(500);
+
+  // 使用 keyboard 输入（DraftJS 兼容）
+  await page.keyboard.type(text, { delay: 10 });
+  await page.waitForTimeout(300);
+}
+
+/** 点击发送按钮 */
+async function clickSendButton(page: Page): Promise<boolean> {
+  // 发送按钮通常是输入框右侧的向上箭头图标 (SVG)
+  const sent = await page.evaluate(() => {
+    // 方法1: 查找包含 SVG 上箭头的按钮
+    const svgs = document.querySelectorAll('svg');
+    for (const svg of svgs) {
+      const rect = svg.getBoundingClientRect();
+      const parent = svg.parentElement;
+      // 发送按钮通常在右侧、大小适中
+      if (rect.width > 20 && rect.width < 60 && rect.height > 20 && rect.height < 60 && rect.top > 50) {
+        // 检查是否像发送箭头（通常有 path d 包含 M 和向上的方向）
+        (svg.closest('button') || svg.parentElement || svg as HTMLElement).click();
+        return `clicked svg at (${Math.round(rect.x)}, ${Math.round(rect.y)})`;
+      }
+    }
+
+    // 方法2: 查找 button 或 role=button 在输入区域附近
+    const buttons = document.querySelectorAll('button, [role="button"]');
+    for (const btn of buttons) {
+      const cls = btn.getAttribute('class') || '';
+      const rect = btn.getBoundingClientRect();
+      if ((cls.includes('send') || cls.includes('submit') || cls.includes('arrow')) && rect.width > 0) {
+        (btn as HTMLElement).click();
+        return `clicked button.${cls}`;
+      }
+    }
+
+    // 方法3: 按 Enter 键作为备选
+    return 'not_found';
+  });
+
+  if (sent === 'not_found') {
+    // 用 Enter 键发送
+    await page.keyboard.press('Enter');
+    console.log('  [send] 使用 Enter 键发送');
+    return true;
+  }
+
+  console.log(`  [send] ✓ ${sent}`);
+  return true;
+}
+
+/** 等待 AI 回复并提取文本 */
+async function waitForResponse(page: Page, query: string, maxWaitMs: number = 60000): Promise<string> {
+  const startTime = Date.now();
+
+  while (Date.now() - startTime < maxWaitMs) {
+    await page.waitForTimeout(1500);
+    try {
+      const responseText = await page.evaluate((q: string) => {
+        const getText = (el: Element) => el.textContent?.trim() || '';
+        const pageTxt = document.body?.textContent || '';
+
+        // 如果还在生成中，等待
+        if (pageTxt.includes('停止生成') || pageTxt.includes('思考中') || pageTxt.includes('生成中') || pageTxt.includes('正在思考')) {
+          return '';
+        }
+
+        // 策略1: 查找回复区域 - 知乎知答的回复容器
+        const answerContainers = document.querySelectorAll(
+          '[class*="answer"], [class*="response"], [class*="result"], ' +
+          '[class*="markdown"], [class*="content"], [class*="reply"]'
+        );
+
+        for (const container of Array.from(answerContainers)) {
+          const txt = getText(container);
+          // 排除输入框内容，找到足够长的回复
+          if (txt.length > 30 && !txt.includes(q.slice(0, 20))) {
+            return txt.slice(0, 2000);
+          }
+        }
+
+        // 策略2: 查找页面后半部分的新增内容
+        const allDivs = document.querySelectorAll('div');
+        for (let i = allDivs.length - 1; i >= Math.max(0, allDivs.length - 20); i--) {
+          const div = allDivs[i];
+          const txt = getText(div);
+          if (txt.length > 30 && !txt.includes(q.slice(0, 20)) && div.offsetParent !== null) {
+            return txt.slice(0, 2000);
+          }
+        }
+
+        return '';
+      }, query);
+
+      if (responseText) return responseText;
+    } catch {
+      // ignore errors during polling
+    }
+  }
+
+  return '';
+}
+
+/** 从回复中提取引用来源 URL */
+async function extractSources(page: Page): Promise<{ total: number; domains: string[]; urls: Array<{ url: string; domain: string }> }> {
+  const links = await page.evaluate(() => {
+    const seen = new Set<string>();
+    return Array.from(document.querySelectorAll('a[href*="http"]'))
+      .map(a => ({ href: a.getAttribute('href') || '', text: a.textContent?.trim()?.slice(0, 100) || '' }))
+      .filter(item => {
+        if (!item.href || seen.has(item.href)) return false;
+        seen.add(item.href);
+        // 过滤掉知乎内部导航链接
+        if (item.href.includes('zhihu.com/question') || item.href.includes('zhida.zhihu.com')) return false;
+        return true;
+      });
+  });
+
+  const domains = new Set<string>();
+  const urls = links.map(l => {
+    try {
+      const u = new URL(l.href);
+      const domain = u.hostname.replace(/^www\./, '');
+      domains.add(domain);
+      return { url: l.href.slice(0, 300), domain };
+    } catch {
+      return { url: l.href.slice(0, 300), domain: '' };
+    }
+  });
+
+  return {
+    total: urls.length,
+    domains: Array.from(domains).sort(),
+    urls,
+  };
 }
 
 async function dismissModals(page: Page): Promise<void> {
@@ -238,6 +566,130 @@ export default function (xcli: XCLIAPI): void {
         return {
           data: null,
           tips,
+          message: error instanceof Error ? error.message : '未知错误',
+        };
+      }
+    },
+  });
+
+  // ====== AI 知答 (zhida.zhihu.com) ======
+
+  site.command('chat', {
+    description: '知乎知答 AI 搜索 — 支持思考模式选择和知识来源过滤，返回 AI 回复及引用来源',
+    scope: 'browser',
+    parameters: z.object({
+      query: z.string().describe('问题或查询内容'),
+      mode: z.enum(['smart', 'deep', 'fast']).optional().default('smart')
+        .describe('思考模式: smart=智能思考(默认), deep=深度思考, fast=快速回答'),
+      source: z.enum(['all', 'zhihu', 'academic', 'my']).optional().default('all')
+        .describe('知识来源: all=全网(默认), zhihu=知乎, academic=学术, my=我的知识库'),
+      showSources: z.boolean().optional().describe('显示引用来源 URL 和域名统计'),
+    }),
+    examples: [
+      { cmd: 'xbrowser zhihu chat --query "适合编程初学者看的书有哪些？"', description: 'AI 搜索（默认智能思考+全网）' },
+      { cmd: 'xbrowser zhihu chat --query "量子计算原理" --mode deep --source academic', description: '深度思考+学术来源' },
+      { cmd: 'xbrowser zhihu chat --query "2024年房价走势" --mode fast --showSources', description: '快速回答+显示来源' },
+      { cmd: 'xbrowser zhihu chat --query "我的收藏里关于Python的内容" --source my', description: '搜索个人知识库' },
+    ],
+    handler: async (params, ctx) => {
+      try {
+        const { page, tips } = resolvePage(ctx as Record<string, unknown>);
+
+        // 1. 导航到知乎知答页面
+        await ensureZhidaPage(page, ctx);
+        tips.push(`已打开知乎知答`);
+
+        // 2. 选择思考模式
+        if (params.mode && params.mode !== 'smart') {
+          await selectThinkingMode(page, params.mode);
+        }
+
+        // 3. 选择知识来源
+        if (params.source && params.source !== 'all') {
+          await selectKnowledgeSource(page, params.source);
+        }
+
+        // 4. 输入查询内容
+        await typeInDraftEditor(page, params.query);
+        tips.push(`已输入: ${params.query.slice(0, 50)}${params.query.length > 50 ? '...' : ''}`);
+
+        // 5. 拦截 API 调用（可选，用于提取来源）
+        let capturedStream = '';
+        if (params.showSources) {
+          await page.route('**/zhida.zhihu.com/**', async (route) => {
+            try {
+              const resp = await route.fetch();
+              const body = await resp.text();
+              capturedStream += body;
+              await route.fulfill({ body, headers: resp.headers(), status: resp.status() });
+            } catch {
+              await route.continue();
+            }
+          }).catch(() => {});
+        }
+
+        // 6. 点击发送
+        await clickSendButton(page);
+        tips.push('查询已发送，等待 AI 回复...');
+        await page.waitForTimeout(2000);
+
+        // 7. 等待回复
+        const responseText = await waitForResponse(page, params.query);
+
+        // 8. 清理路由拦截
+        if (params.showSources) {
+          await page.unroute('**/zhida.zhihu.com/**').catch(() => {});
+        }
+
+        // 9. 构建返回结果
+        const result: Record<string, unknown> = {
+          query: params.query,
+          mode: THINKING_MODE_MAP[params.mode] || params.mode,
+          source: SOURCE_MAP[params.source] || params.source,
+          response: responseText || '等待回复中（可能需要更长时间）',
+          duration: `${((Date.now() - (await page.evaluate(() => performance.now()))) / 1000).toFixed(1)}s`,
+        };
+
+        // 10. 提取引用来源（如果请求了）
+        if (params.showSources) {
+          await new Promise(r => setTimeout(r, 2000));
+          let sources;
+
+          // 先尝试从拦截的流中提取 URL
+          if (capturedStream) {
+            const urlMatches = capturedStream.match(/https?:\/\/[^"'\s,<>\\\]\)]+/g) || [];
+            const allUrls: string[] = [];
+            for (const u of urlMatches) {
+              const clean = u.replace(/\\u002F/g, '/').split(/[)\]"'.,;:!?]+$/)[0];
+              try { new URL(clean); allUrls.push(clean); } catch { /* ignore */ }
+            }
+            // 去重并提取域名
+            const seen = new Set<string>();
+            const uniqueUrls = allUrls.filter(u => { const k = u.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+            const domains = new Set<string>();
+            sources = {
+              total: uniqueUrls.length,
+              domains: Array.from(uniqueUrls.map(u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } })).filter((d, i, arr) => arr.indexOf(d) === i).sort(),
+              urls: uniqueUrls.slice(0, 20).map(u => ({ url: u.slice(0, 300), domain: (() => { try { return new URL(u).hostname; } catch { return ''; } })() })),
+            };
+          } else {
+            // 从 DOM 中提取链接
+            sources = await extractSources(page);
+          }
+
+          result.sources = sources;
+          tips.push(`引用来源：${sources.domains.length} 个域名, ${sources.total} 条链接`);
+        }
+
+        return {
+          data: result,
+          tips: [...tips, responseText ? '✅ AI 回复完成' : '⏱ 查询已发送'],
+          message: responseText ? '搜索完成' : '正在生成回复中',
+        };
+      } catch (error) {
+        return {
+          data: null,
+          tips: ['chat 失败'],
           message: error instanceof Error ? error.message : '未知错误',
         };
       }
