@@ -303,51 +303,99 @@ export default function (xcli: XCLIAPI): void {
 
         // 开启深度思考
         if (params.think) {
-          const thinkToggled = await page.evaluate(() => {
-            const allEls = document.querySelectorAll('*');
-            for (const el of allEls) {
-              const text = el.textContent?.trim() || '';
-              if ((text === '深度思考' || text === '思考' || text.includes('Think'))
-                  && el.children.length <= 3 && el.offsetParent !== null) {
-                const btn = el.closest('button, [role="switch"]') || el.parentElement;
-                if (btn instanceof HTMLElement) {
-                  btn.click();
-                  return 'toggled';
+          try {
+            const thinkResult = await page.evaluate(() => {
+              const allEls = document.querySelectorAll('*');
+              let candidates: Array<{ element: Element; text: string; tag: string; class: string; visible: boolean }> = [];
+
+              for (const el of allEls) {
+                const text = el.textContent?.trim() || '';
+                if ((text === '深度思考' || text === '思考' || text.includes('Think'))
+                    && el.children.length <= 3) {
+                  const rect = el.getBoundingClientRect();
+                  candidates.push({
+                    element: el,
+                    text,
+                    tag: el.tagName,
+                    class: el.className,
+                    visible: rect.width > 0 && rect.height > 0
+                  });
                 }
               }
+
+              // 优先选择可见的元素
+              const visibleCandidates = candidates.filter(c => c.visible);
+              const candidate = visibleCandidates.length > 0 ? visibleCandidates[0] : candidates[0];
+
+              if (!candidate) {
+                return { found: false, count: 0 };
+              }
+
+              const btn = candidate.element.closest('button, [role="switch"]') || candidate.element.parentElement;
+              if (btn && btn instanceof HTMLElement) {
+                btn.click();
+                return { found: true, text: candidate.text, count: candidates.length };
+              }
+              return { found: false, count: candidates.length };
+            });
+
+            if (thinkResult.found) {
+              tips.push(`已开启深度思考 (找到 ${thinkResult.count} 个候选元素)`);
+              await page.waitForTimeout(1000);
+            } else {
+              tips.push(`⚠ 未找到深度思考开关 (搜索到 ${thinkResult.count} 个候选元素)`);
             }
-            return 'not_found';
-          });
-          if (thinkToggled !== 'not_found') {
-            tips.push('已开启深度思考');
-            await page.waitForTimeout(500);
-          } else {
-            tips.push('⚠ 未找到深度思考开关');
+          } catch (err) {
+            tips.push(`⚠ 开启深度思考失败: ${err instanceof Error ? err.message : '未知错误'}`);
           }
         }
 
         // 开启联网搜索
         if (params.search) {
-          const searchEnabled = await page.evaluate(() => {
-            const allEls = document.querySelectorAll('*');
-            for (const el of allEls) {
-              const text = el.textContent?.trim() || '';
-              if ((text === '联网搜索' || text === '搜索' || text.includes('Search'))
-                  && el.children.length <= 3 && el.offsetParent !== null) {
-                const btn = el.closest('button, [role="switch"]') || el.parentElement;
-                if (btn instanceof HTMLElement) {
-                  btn.click();
-                  return 'toggled';
+          try {
+            const searchResult = await page.evaluate(() => {
+              const allEls = document.querySelectorAll('*');
+              let candidates: Array<{ element: Element; text: string; tag: string; class: string; visible: boolean }> = [];
+
+              for (const el of allEls) {
+                const text = el.textContent?.trim() || '';
+                if ((text === '联网搜索' || text === '搜索' || text.includes('Search'))
+                    && el.children.length <= 3) {
+                  const rect = el.getBoundingClientRect();
+                  candidates.push({
+                    element: el,
+                    text,
+                    tag: el.tagName,
+                    class: el.className,
+                    visible: rect.width > 0 && rect.height > 0
+                  });
                 }
               }
+
+              // 优先选择可见的元素
+              const visibleCandidates = candidates.filter(c => c.visible);
+              const candidate = visibleCandidates.length > 0 ? visibleCandidates[0] : candidates[0];
+
+              if (!candidate) {
+                return { found: false, count: 0 };
+              }
+
+              const btn = candidate.element.closest('button, [role="switch"]') || candidate.element.parentElement;
+              if (btn && btn instanceof HTMLElement) {
+                btn.click();
+                return { found: true, text: candidate.text, count: candidates.length };
+              }
+              return { found: false, count: candidates.length };
+            });
+
+            if (searchResult.found) {
+              tips.push(`已开启联网搜索 (找到 ${searchResult.count} 个候选元素)`);
+              await page.waitForTimeout(1000);
+            } else {
+              tips.push(`⚠ 未找到联网搜索开关 (搜索到 ${searchResult.count} 个候选元素)`);
             }
-            return 'not_found';
-          });
-          if (searchEnabled !== 'not_found') {
-            tips.push('已开启联网搜索');
-            await page.waitForTimeout(500);
-          } else {
-            tips.push('⚠ 未找到联网搜索开关');
+          } catch (err) {
+            tips.push(`⚠ 开启联网搜索失败: ${err instanceof Error ? err.message : '未知错误'}`);
           }
         }
 

@@ -25,7 +25,11 @@ async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
   const url = page.url();
   if (!url.includes('chatgpt.com') && !url.includes('chat.openai.com')) {
     await page.goto(CG_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await page.waitForTimeout(2000);
+  }
+  try {
+    await page.waitForSelector('#prompt-textarea', { state: 'attached', timeout: 15000 });
+  } catch {
+    await page.waitForTimeout(3000);
   }
   if (ctx) {
     const isLogin = (ctx as unknown as Record<string, unknown>).__loginChecked as boolean;
@@ -49,17 +53,17 @@ async function checkChatGPTLogin(page: Page): Promise<boolean> {
   try {
     const url = page.url();
     if (url.includes('/auth') || url.includes('/login') || url.includes('/signup')) return false;
-    const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '');
-    if (bodyText.includes('Log in') && bodyText.includes('Sign up') && !bodyText.includes('ChatGPT')) return false;
-    if (bodyText.includes('登录') && bodyText.includes('注册') && !bodyText.includes('ChatGPT')) return false;
-    const hasAvatar = await page.evaluate(() => {
-      return !!document.querySelector('[data-testid="user-avatar"], img[alt*="User"], [class*="avatar"]');
+    const hasProfileBtn = await page.evaluate(() => {
+      return !!document.querySelector('[data-testid="accounts-profile-button"]');
     });
-    if (hasAvatar) return true;
+    if (hasProfileBtn) return true;
     const hasInput = await page.evaluate(() => {
-      return !!document.querySelector('#prompt-textarea, [data-testid="chat-input"], textarea[id*="prompt"]');
+      return !!document.querySelector('#prompt-textarea, [data-testid="chat-input"]');
     });
-    return hasInput;
+    if (hasInput) return true;
+    const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '');
+    if ((bodyText.includes('Log in') || bodyText.includes('登录')) && !bodyText.includes('ChatGPT')) return false;
+    return false;
   } catch {
     return false;
   }
@@ -67,13 +71,13 @@ async function checkChatGPTLogin(page: Page): Promise<boolean> {
 
 const SEL = {
   input: '#prompt-textarea',
-  inputFallback: '[data-testid="chat-input"], textarea[id*="prompt"]',
-  newChat: 'button[aria-label="New chat"], nav a:first-child, [data-testid="create-new-chat-button"]',
+  inputFallback: '[data-testid="chat-input"], [contenteditable="true"][role="textbox"]',
+  newChat: '[data-testid="create-new-chat-button"], button[aria-label="New chat"], nav a:first-child',
   conversationLinks: 'nav a[href*="/c/"], aside a[href*="/c/"]',
-  sendButton: '[data-testid="send-button"], button[aria-label="Send"]',
+  sendButton: '[data-testid="send-button"]',
   fileInput: 'input[type="file"]',
-  messageContainer: '[data-message-author-role="assistant"], .markdown, [class*="message-content"]',
-  stopButton: '[data-testid="stop-button"], button[aria-label="Stop generating"]',
+  messageContainer: 'section[data-testid^="conversation-turn-"]',
+  stopButton: '[data-testid="stop-button"]',
 } as const;
 
 const HELP = {
@@ -354,6 +358,14 @@ export default function (xcli: XCLIAPI): void {
         await sendMessage(page);
         tips.push('消息已发送，等待 AI 回复...');
 
+        let conversationUrl = '';
+        try {
+          await page.waitForFunction(() => location.href.includes('/c/'), { timeout: 15000 });
+          conversationUrl = page.url();
+        } catch {
+          conversationUrl = page.url();
+        }
+
         await page.waitForTimeout(2000);
         const hasFile = !!(params as Record<string, unknown>).attach;
         const wantSources = !!(params as Record<string, unknown>).showSources;
@@ -371,40 +383,63 @@ export default function (xcli: XCLIAPI): void {
         let responseText = '';
         const startTime = Date.now();
         while (Date.now() - startTime < 120000) {
-          await page.waitForTimeout(1500);
+          await page.waitForTimeout(2000);
           try {
-            responseText = await page.evaluate((fileMode: boolean) => {
+            const stopBtnExists = await page.evaluate(() => {
+              return !!document.querySelector('[data-testid="stop-button"]');
+            });
+            if (stopBtnExists) continue;
+
+            responseText = await page.evaluate(({ fileMode: fm }) => {
               const allText = document.body.textContent || '';
-              const stopBtn = document.querySelector('[data-testid="stop-button"], button[aria-label="Stop generating"]');
-              if (stopBtn) return '';
-              if (fileMode && allText.includes('Processing')) return '';
+              if (fm && allText.includes('Processing')) return '';
 
-              const messages = document.querySelectorAll('[data-message-author-role="assistant"], .markdown, [class*="message-content"]');
-              for (let i = messages.length - 1; i >= 0; i--) {
-                const el = messages[i];
-                const txt = el.textContent?.trim() || '';
-                if (txt.length > 30 && !el.closest('[class*="loading"], [class*="typing"]')) {
-                  return txt.slice(0, 3000);
+              const turns = document.querySelectorAll('section[data-testid^="conversation-turn-"]');
+              if (turns.length >= 2) {
+                const lastTurn = turns[turns.length - 1];
+                const md = lastTurn.querySelector('.markdown');
+                if (md) {
+                  const txt = md.textContent?.trim() || '';
+                  if (txt.length > 0) return txt.slice(0, 3000);
                 }
+                const clone = lastTurn.cloneNode(true) as HTMLElement;
+                clone.querySelectorAll('button, [class*="sr-only"], .sr-only, [data-testid="copy-turn-action-button"]').forEach(h => h.remove());
+                let txt = clone.textContent?.trim() || '';
+                txt = txt.replace(/^ChatGPT\s*(said:|：)\s*/, '');
+                const noisePatterns = [
+                  'Is this conversation helpful so far?',
+                  '这次对话有帮助吗？',
+                  'Was this response better',
+                  '这个回答更好吗',
+                  'Good response', 'Bad response',
+                ];
+                for (const noise of noisePatterns) {
+                  const idx = txt.indexOf(noise);
+                  if (idx > 0) txt = txt.slice(0, idx).trim();
+                }
+                if (txt.length > 0) return txt.slice(0, 3000);
               }
 
-              const textBlocks = document.querySelectorAll('article p, article li, article pre code');
-              let combined = '';
-              for (let i = textBlocks.length - 1; i >= Math.max(0, textBlocks.length - 20); i--) {
-                combined += (textBlocks[i].textContent || '').trim() + '\n';
+              const messages = document.querySelectorAll('[data-message-author-role="assistant"]');
+              for (let i = messages.length - 1; i >= 0; i--) {
+                const txt = messages[i].textContent?.trim() || '';
+                if (txt.length > 0) return txt.slice(0, 3000);
               }
-              if (combined.trim().length > 50) return combined.trim().slice(0, 3000);
 
-              if (fileMode) {
+              if (fm) {
                 if (allText.includes('error') || allText.includes('Error') || allText.includes('错误')) {
                   return '[系统提示] 检测到错误信息';
                 }
-                return '';
               }
 
               return '';
-            }, hasFile);
+            }, { fileMode: hasFile });
             if (responseText) break;
+
+            if (conversationUrl.includes('/c/')) {
+              await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+              await page.waitForTimeout(3000);
+            }
           } catch {
             // ignore
           }
@@ -612,7 +647,13 @@ export default function (xcli: XCLIAPI): void {
 }
 
 async function fillInput(page: Page, message: string): Promise<boolean> {
-  const selectors = [SEL.input, SEL.inputFallback, 'textarea[placeholder*="Message"]', 'textarea[placeholder*="message"]', '[contenteditable="true"][role="textbox"]'];
+  const selectors = [
+    '#prompt-textarea',
+    '[data-testid="chat-input"]',
+    '[contenteditable="true"][role="textbox"]',
+    'textarea[placeholder*="Message"]',
+    'textarea[placeholder*="message"]',
+  ];
   for (const sel of selectors) {
     try {
       const loc = page.locator(sel).first();
@@ -620,7 +661,7 @@ async function fillInput(page: Page, message: string): Promise<boolean> {
         await loc.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
         await loc.click();
         await page.waitForTimeout(200);
-        await page.keyboard.type(message, { delay: 20 });
+        await loc.fill(message);
         return true;
       }
     } catch {
@@ -631,18 +672,6 @@ async function fillInput(page: Page, message: string): Promise<boolean> {
 }
 
 async function sendMessage(page: Page): Promise<void> {
-  const sendSelectors = [SEL.sendButton, 'button[data-testid="send-button"]', 'button[aria-label="Send"]'];
-  for (const sel of sendSelectors) {
-    try {
-      const btn = page.locator(sel).first();
-      if (await btn.count() > 0 && await btn.isVisible()) {
-        await btn.click();
-        return;
-      }
-    } catch {
-      continue;
-    }
-  }
   await page.keyboard.press('Enter');
 }
 

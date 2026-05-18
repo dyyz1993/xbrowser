@@ -415,6 +415,7 @@ export default function (xcli: XCLIAPI): void {
           }
         }
 
+        await page.waitForSelector('textarea, [contenteditable="true"], [role="textbox"]', { timeout: 15000 }).catch(() => {});
         const inputLocators = [
           'textarea', '[contenteditable="true"]', '[role="textbox"]',
           'textarea[class*="input"]', '[class*="chat-input"] textarea',
@@ -434,19 +435,8 @@ export default function (xcli: XCLIAPI): void {
 
         if (!inputEl || !inputSel) throw new Error('找不到消息输入框');
 
-        await safeClickSelector(page, inputSel);
-        await page.evaluate(({ sel, msg }: { sel: string; msg: string }) => {
-          const el = document.querySelector(sel) as HTMLTextAreaElement;
-          if (!el) return;
-          el.focus();
-          if ('value' in el) {
-            el.value = msg;
-          } else {
-            el.textContent = msg;
-          }
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-        }, { sel: inputSel, msg: params.message });
+        await inputEl.click();
+        await inputEl.fill(params.message);
         await page.waitForTimeout(500);
 
         const wantSources = !!params.showSources;
@@ -474,38 +464,50 @@ export default function (xcli: XCLIAPI): void {
               const getText = (el: Element) => el.textContent?.trim() || '';
               const pageTxt = document.body.textContent || '';
 
-              // 检查 AI 是否仍在生成
               if (pageTxt.includes('停止生成') || pageTxt.includes('思考中') || pageTxt.includes('生成中')) return '';
 
-              // 策略 1：对话区域（min-h-100）中找 container-
-              const chatArea = document.querySelector('[class*="min-h-100"]');
-              if (chatArea) {
-                const containers = chatArea.querySelectorAll('div[class*="container-"]');
-                if (containers.length > 0) {
-                  const last = containers[containers.length - 1];
+              // 策略 1：message-list 中找 md-box-root（豆包 AI 回复的 markdown 渲染容器）
+              const msgList = document.querySelector('[class*="message-list"]');
+              if (msgList) {
+                const mdBoxes = msgList.querySelectorAll('[class*="md-box-root"]');
+                if (mdBoxes.length > 0) {
+                  const last = mdBoxes[mdBoxes.length - 1];
                   const txt = getText(last);
-                  if (txt.length > 0 && !txt.includes(msg)) return txt.slice(0, 1000);
-                }
-                const mdBody = chatArea.querySelector('[class*="flow-markdown-body"]');
-                if (mdBody) {
-                  const txt = getText(mdBody);
-                  if (txt.length > 0) return txt.slice(0, 1000);
+                  if (txt.length > 0 && !txt.includes(msg)) return txt.slice(0, 8000);
                 }
               }
-              // 策略 2：全局 container-
-              const allContainers = document.querySelectorAll('div[class*="container-"]');
-              if (allContainers.length > 0) {
-                const last = allContainers[allContainers.length - 1];
-                const txt = getText(last);
-                if (txt.length > 0 && !txt.includes(msg)) return txt.slice(0, 1000);
+
+              // 策略 2：message-list 中找 container-h3Yzeb（markdown body wrapper）
+              if (msgList) {
+                const wrappers = msgList.querySelectorAll('[class*="container-h3"]') ||
+                  msgList.querySelectorAll('[class*="md-box"]');
+                if (wrappers.length > 0) {
+                  const last = wrappers[wrappers.length - 1];
+                  const txt = getText(last);
+                  if (txt.length > 0 && !txt.includes(msg)) return txt.slice(0, 8000);
+                }
               }
-              // 策略 3：全局 flow-markdown-body
-              const allMd = document.querySelectorAll('[class*="flow-markdown-body"]');
-              if (allMd.length > 0) {
-                const last = allMd[allMd.length - 1];
+
+              // 策略 3：全局 md-box-root
+              const allMdBox = document.querySelectorAll('[class*="md-box-root"]');
+              if (allMdBox.length > 0) {
+                const last = allMdBox[allMdBox.length - 1];
                 const txt = getText(last);
-                if (txt.length > 0) return txt.slice(0, 1000);
+                if (txt.length > 0 && !txt.includes(msg)) return txt.slice(0, 8000);
               }
+
+              // 策略 4：data-target-id message-box 中找非用户消息（AI 回复）
+              const msgBoxes = document.querySelectorAll('[data-target-id="message-box-target-id"]');
+              if (msgBoxes.length > 0) {
+                for (let i = msgBoxes.length - 1; i >= 0; i--) {
+                  const box = msgBoxes[i];
+                  const userBubble = box.querySelector('[class*="whitespace-pre-wrap"][class*="bg-g-send"]');
+                  if (userBubble) continue;
+                  const txt = getText(box);
+                  if (txt.length > 0 && !txt.includes(msg)) return txt.slice(0, 8000);
+                }
+              }
+
               return '';
             }, params.message);
             if (responseText) break;

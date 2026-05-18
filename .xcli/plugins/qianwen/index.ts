@@ -394,24 +394,28 @@ export default function (xcli: XCLIAPI): void {
               const answerCards = document.querySelectorAll('div.answer-common-card');
               for (let i = answerCards.length - 1; i >= 0; i--) {
                 const txt = (answerCards[i].textContent || '').trim();
-                if (txt.length > 10) return txt.slice(0, 2000);
+                if (txt.length > 10) {
+                  const lines = txt.split('\n').filter(l => !l.includes('思考已完成') && !l.includes('Qwen3-Max-Thinking') && l.trim().length > 0);
+                  if (lines.length > 0) return lines.join('\n').slice(0, 2000);
+                }
               }
 
               const chatAnswers = document.querySelectorAll('div.chat-answers-card-wrap');
               for (let i = chatAnswers.length - 1; i >= 0; i--) {
                 const txt = (chatAnswers[i].textContent || '').trim();
                 if (txt.length > msg.length + 20) {
-                  const lines = txt.split('\n').filter(l => !l.includes('Qwen3') && !l.includes('思考已完成') && l.trim().length > 5);
+                  const lines = txt.split('\n').filter(l => !l.includes('Qwen3') && !l.includes('思考已完成') && !l.includes('用户发送了一条') && l.trim().length > 5);
                   if (lines.length > 0) return lines.join('\n').slice(0, 2000);
                 }
               }
 
-              const sels = ['[class*="markdown"]', '[class*="message"]'];
-              for (const sel of sels) {
-                const els = document.querySelectorAll(sel);
-                for (let i = els.length - 1; i >= 0; i--) {
-                  const txt = (els[i].textContent || '').trim();
-                  if (txt.length > 10 && !txt.includes(msg)) return txt.slice(0, 2000);
+              const markdownEls = document.querySelectorAll('[class*="markdown"]');
+              for (let i = markdownEls.length - 1; i >= 0; i--) {
+                const txt = (markdownEls[i].textContent || '').trim();
+                const parentText = markdownEls[i].parentElement?.textContent || '';
+                if (txt.length > 10 && !txt.includes(msg) && !parentText.includes('Qwen3-Max-Thinking')) {
+                  const lines = txt.split('\n').filter(l => !l.includes('思考已完成') && l.trim().length > 0);
+                  if (lines.length > 0) return lines.join('\n').slice(0, 2000);
                 }
               }
 

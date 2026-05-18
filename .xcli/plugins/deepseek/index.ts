@@ -213,17 +213,17 @@ export default function (xcli: XCLIAPI): void {
         await ensurePage(page, ctx);
         await page.waitForTimeout(1000);
 
-        const clicked = await page.evaluate((title: string) => {
+        const clicked = await page.evaluate(({ searchTitle }) => {
           const links = document.querySelectorAll('a[href*="/a/chat/s/"]');
           for (const link of links) {
             const text = (link.textContent || '').trim();
-            if (text.includes(title)) {
+            if (text.includes(searchTitle)) {
               (link as HTMLAnchorElement).click();
               return { found: true, title: text };
             }
           }
           return { found: false, title: '' };
-        }, params.title);
+        }, { searchTitle: params.title });
 
         if (!clicked.found) throw new Error(`未找到包含"${params.title}"的会话`);
 
@@ -275,7 +275,7 @@ export default function (xcli: XCLIAPI): void {
 
         // 切换对话模式（快速/专家）
         if (params.mode) {
-          const modeToggled = await page.evaluate((targetMode) => {
+          const modeToggled = await page.evaluate(({ targetMode }) => {
             const allElements = document.querySelectorAll('*');
             for (const el of allElements) {
               const text = el.textContent?.trim() || '';
@@ -295,7 +295,7 @@ export default function (xcli: XCLIAPI): void {
               }
             }
             return 'not_found';
-          }, params.mode);
+          }, { targetMode: params.mode });
           if (modeToggled !== 'not_found') {
             tips.push(`已切换到${params.mode === 'expert' ? '专家' : '快速'}模式`);
             await page.waitForTimeout(500);
@@ -411,38 +411,31 @@ export default function (xcli: XCLIAPI): void {
         while (Date.now() - startTime < 60000) {
           await page.waitForTimeout(1500);
           try {
-            responseText = await page.evaluate((fileMode: boolean) => {
+            responseText = await page.evaluate(({ fileMode }) => {
               const allText = document.body.textContent || '';
-              // 有附件时：等"文件解析中"消失
               if (fileMode && allText.includes('文件解析中')) return '';
-              // 通用：等 loading 消失
               const loading = document.querySelector('[class*="loading"], [class*="typing"], [class*="spinner"], [class*="skeleton"]');
               if (loading) return '';
               if (allText.includes('深度思考') && allText.includes('...')) return '';
-              // 主路径：等 markdown 内容（正常回复）
-              const answers = document.querySelectorAll('[class*="ds-markdown"]');
+              const answers = document.querySelectorAll('[class*="ds-assistant-message-main-content"]');
               for (let i = answers.length - 1; i >= 0; i--) {
                 const txt = answers[i].textContent?.trim() || '';
-                if (txt.length > 30) return txt.slice(0, 2000);
+                if (txt.length > 0) return txt.slice(0, 2000);
               }
-              // 有附件时：markdown 未出现但 loading 没了 → 可能有错误/提示消息
+              const fallbackAnswers = document.querySelectorAll('[class*="ds-markdown"]');
+              for (let i = fallbackAnswers.length - 1; i >= 0; i--) {
+                const txt = fallbackAnswers[i].textContent?.trim() || '';
+                if (txt.length > 0) return txt.slice(0, 2000);
+              }
               if (fileMode) {
-                // 等文件相关的提示文字出现
                 if (allText.includes('异常') || allText.includes('错误') || allText.includes('删除')) {
                   const idx = allText.indexOf('异常');
                   return '[系统提示] ' + allText.slice(Math.max(0, idx-40), idx+60).trim().slice(0, 200);
                 }
                 return '';
               }
-              // 无附件时：等引用链接出现（联网搜索完成）
-              const links = document.querySelectorAll('a[href*="http"]');
-              if (links.length === 0) return '';
-              for (let i = answers.length - 1; i >= 0; i--) {
-                const txt = answers[i].textContent?.trim() || '';
-                if (txt.length > 50) return txt.slice(0, 2000);
-              }
               return '';
-            }, hasFile);
+            }, { fileMode: hasFile });
             if (responseText) break;
           } catch {
             // ignore
@@ -574,7 +567,7 @@ export default function (xcli: XCLIAPI): void {
 
         const label = params.mode === 'expert' ? '专家模式' : '快速模式';
         await page.waitForTimeout(2000);
-        const clicked = await page.evaluate((targetLabel: string) => {
+        const clicked = await page.evaluate(({ targetLabel }) => {
           const radios = document.querySelectorAll('[role="radio"]');
           for (const radio of radios) {
             const text = radio.textContent?.trim().replace(/\s+/g, '') || '';
@@ -587,7 +580,7 @@ export default function (xcli: XCLIAPI): void {
             }
           }
           return 'not_found';
-        }, label);
+        }, { targetLabel: label });
 
         await page.waitForTimeout(500);
 
@@ -633,7 +626,7 @@ export default function (xcli: XCLIAPI): void {
       return 'clicked';
     }
     // 兜底：遍历 role=button 元素
-    return await page.evaluate(([text, on]) => {
+    return await page.evaluate(({ text, on }) => {
       const all = document.querySelectorAll('[role="button"]');
       for (const el of all) {
         if (el.textContent?.trim().includes(text)) {
@@ -644,7 +637,7 @@ export default function (xcli: XCLIAPI): void {
         }
       }
       return 'not_found';
-    }, [buttonText, wanted]);
+    }, { text: buttonText, on: wanted });
   }
 
   site.command('think', {

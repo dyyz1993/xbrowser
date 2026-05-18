@@ -52,21 +52,47 @@ async function safeClick(page: Page, selector: string): Promise<boolean> {
 
 /** 确保在知乎知答页面且已登录 */
 async function ensureZhidaPage(page: Page, ctx?: CommandContext): Promise<void> {
-  if (!page.url().includes('zhida.zhihu.com')) {
+  const currentUrl = page.url();
+
+  // 如果不在知乎知答页面，导航过去
+  if (!currentUrl.includes('zhida.zhihu.com')) {
+    console.log(`  [nav] 导航到知乎知答: ${ZHIDA_URL}`);
     await page.goto(ZHIDA_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    // 等待页面加载
+    await page.waitForLoadState('domcontentloaded').catch(() => {});
     await page.waitForTimeout(3000);
+
+    // 再次检查 URL
+    const finalUrl = page.url();
+    console.log(`  [nav] 最终 URL: ${finalUrl}`);
   }
 
   // 检查是否跳转到登录页
-  const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 500) || '');
-  if (bodyText.includes('登录') && bodyText.includes('注册') && !bodyText.includes('知乎直答') && !bodyText.includes('知答')) {
+  const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 1000) || '');
+  const isLoginPage = bodyText.includes('登录') && bodyText.includes('注册');
+
+  // 如果有知乎相关的文字，说明不是纯登录页
+  const hasZhihuContent = bodyText.includes('知乎直答') || bodyText.includes('知答') || bodyText.includes('AI 搜索');
+
+  if (isLoginPage && !hasZhihuContent) {
     const cdp = (ctx as unknown as Record<string, unknown>)?.cdpEndpoint;
     throw new Error(
       '知乎知答 (zhida) 未登录！\n' +
       (cdp
-        ? '  使用 --cdp 连接的浏览器未登录知乎，请先在浏览器中登录。\n  或运行: xbrowser zhihu login'
+        ? '  使用 --cdp 连接的浏览器未登录知乎，请先在浏览器中登录。\n  请手动打开 https://zhida.zhihu.com 登录后再试。'
         : '  请使用 --cdp 参数连接已登录的浏览器:\n    xbrowser zhihu chat "你的问题" --cdp http://localhost:9221')
     );
+  }
+
+  // 验证输入框是否存在
+  const editorExists = await page.evaluate(() => {
+    const editor = document.querySelector('.public-DraftEditor-content');
+    return !!editor;
+  });
+
+  if (!editorExists) {
+    console.log('  [nav] ⚠ 输入框未找到，页面可能仍在加载...');
   }
 }
 
@@ -209,6 +235,14 @@ async function typeInDraftEditor(page: Page, text: string): Promise<void> {
   }
   await page.waitForTimeout(500);
 
+  // 清空输入框（先全选再删除）
+  await page.keyboard.down('Control');
+  await page.keyboard.press('a');
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(100);
+  await page.keyboard.press('Backspace');
+  await page.waitForTimeout(200);
+
   // 使用 keyboard 输入（DraftJS 兼容）
   await page.keyboard.type(text, { delay: 10 });
   await page.waitForTimeout(300);
@@ -218,33 +252,57 @@ async function typeInDraftEditor(page: Page, text: string): Promise<void> {
 async function clickSendButton(page: Page): Promise<boolean> {
   // 发送按钮通常是输入框右侧的向上箭头图标 (SVG)
   const sent = await page.evaluate(() => {
-    // 方法1: 查找包含 SVG 上箭头的按钮
+    // 获取输入框位置
+    const editor = document.querySelector('.public-DraftEditor-content');
+    if (!editor) return 'editor_not_found';
+
+    const editorRect = editor.getBoundingClientRect();
+
+    // 查找附近的 SVG，优先找较大的那个（发送按钮通常比选项图标大）
     const svgs = document.querySelectorAll('svg');
+    let bestSvg: Element | null = null;
+    let bestScore = -1;
+
     for (const svg of svgs) {
       const rect = svg.getBoundingClientRect();
-      const parent = svg.parentElement;
-      // 发送按钮通常在右侧、大小适中
-      if (rect.width > 20 && rect.width < 60 && rect.height > 20 && rect.height < 60 && rect.top > 50) {
-        // 检查是否像发送箭头（通常有 path d 包含 M 和向上的方向）
-        (svg.closest('button') || svg.parentElement || svg as HTMLElement).click();
-        return `clicked svg at (${Math.round(rect.x)}, ${Math.round(rect.y)})`;
+      // 发送按钮应该在输入框右侧，且大小适中
+      if (
+        rect.width > 10 && rect.width < 80 &&
+        rect.height > 10 && rect.height < 80 &&
+        Math.abs(rect.y - editorRect.y) < 150 &&
+        rect.x > editorRect.x
+      ) {
+        // 计算分数：距离输入框越近、尺寸越大越好
+        const dx = rect.x - (editorRect.x + editorRect.width);
+        const dy = Math.abs(rect.y - editorRect.y);
+        const size = rect.width + rect.height;
+
+        // 优先找距离较远（在右侧）且较大的图标
+        const score = size * 2 - (dx + dy) * 0.1;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestSvg = svg;
+        }
       }
     }
 
-    // 方法2: 查找 button 或 role=button 在输入区域附近
-    const buttons = document.querySelectorAll('button, [role="button"]');
-    for (const btn of buttons) {
-      const cls = btn.getAttribute('class') || '';
-      const rect = btn.getBoundingClientRect();
-      if ((cls.includes('send') || cls.includes('submit') || cls.includes('arrow')) && rect.width > 0) {
-        (btn as HTMLElement).click();
-        return `clicked button.${cls}`;
+    if (bestSvg) {
+      const parent = bestSvg.parentElement;
+      if (parent) {
+        (parent as HTMLElement).click();
+        return 'clicked';
       }
     }
 
-    // 方法3: 按 Enter 键作为备选
+    // 备选：按 Enter 键
     return 'not_found';
   });
+
+  if (sent === 'editor_not_found') {
+    console.log('  [send] ⚠ 未找到输入框');
+    return false;
+  }
 
   if (sent === 'not_found') {
     // 用 Enter 键发送
@@ -253,60 +311,111 @@ async function clickSendButton(page: Page): Promise<boolean> {
     return true;
   }
 
-  console.log(`  [send] ✓ ${sent}`);
+  console.log('  [send] ✓ 已点击发送按钮');
   return true;
 }
 
 /** 等待 AI 回复并提取文本 */
 async function waitForResponse(page: Page, query: string, maxWaitMs: number = 60000): Promise<string> {
   const startTime = Date.now();
+  let lastCandidateCount = 0;
+  let lastCandidateText = '';
+  let hasQueryInPage = false;
 
   while (Date.now() - startTime < maxWaitMs) {
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(2000);
     try {
-      const responseText = await page.evaluate((q: string) => {
-        const getText = (el: Element) => el.textContent?.trim() || '';
+      const result = await page.evaluate((q: string) => {
         const pageTxt = document.body?.textContent || '';
 
-        // 如果还在生成中，等待
-        if (pageTxt.includes('停止生成') || pageTxt.includes('思考中') || pageTxt.includes('生成中') || pageTxt.includes('正在思考')) {
-          return '';
+        // 检查查询是否已在页面中
+        const hasQuery = pageTxt.includes(q);
+
+        // 查找可能的回复内容
+        const allDivs = document.querySelectorAll('div');
+        const candidates: Array<{ text: string; y: number; className: string }> = [];
+
+        for (let i = allDivs.length - 1; i >= Math.max(0, allDivs.length - 150); i--) {
+          const div = allDivs[i];
+          const txt = div.textContent?.trim() || '';
+          // 排除：输入框占位符、页面底部版权信息、导航
+          if (
+            txt.length > 15 &&
+            !txt.includes('结果由 AI 大模型生成') &&
+            !txt.includes('想来知乎工作') &&
+            !txt.includes('用户协议') &&
+            !txt.includes('隐私政策') &&
+            !txt.includes('备案号') &&
+            !txt.includes('输入你的问题，或使用') &&
+            div.offsetParent !== null
+          ) {
+            const rect = div.getBoundingClientRect();
+            // 过滤掉页面顶部和底部的内容（y 坐标）
+            if (rect.y > 100 && rect.y < window.innerHeight - 100) {
+              candidates.push({
+                text: txt.slice(0, 1000),
+                y: rect.y,
+                className: div.className,
+              });
+            }
+          }
         }
 
-        // 策略1: 查找回复区域 - 知乎知答的回复容器
-        const answerContainers = document.querySelectorAll(
-          '[class*="answer"], [class*="response"], [class*="result"], ' +
-          '[class*="markdown"], [class*="content"], [class*="reply"]'
+        // 按 y 坐标排序（从上到下）
+        candidates.sort((a, b) => a.y - b.y);
+
+        // 过滤掉可能是导航/菜单/选项的内容
+        const meaningfulCandidates = candidates.filter(c =>
+          !c.text.includes('智能思考') &&
+          !c.text.includes('智能决策') &&
+          !c.text.includes('深度思考') &&
+          !c.text.includes('快速回答') &&
+          !c.text.includes('跳过推理直达结果') &&
+          !c.text.includes('知识库') &&
+          !c.text.includes('推荐') &&
+          c.text.length > 20
         );
 
-        for (const container of Array.from(answerContainers)) {
-          const txt = getText(container);
-          // 排除输入框内容，找到足够长的回复
-          if (txt.length > 30 && !txt.includes(q.slice(0, 20))) {
-            return txt.slice(0, 2000);
-          }
-        }
-
-        // 策略2: 查找页面后半部分的新增内容
-        const allDivs = document.querySelectorAll('div');
-        for (let i = allDivs.length - 1; i >= Math.max(0, allDivs.length - 20); i--) {
-          const div = allDivs[i];
-          const txt = getText(div);
-          if (txt.length > 30 && !txt.includes(q.slice(0, 20)) && div.offsetParent !== null) {
-            return txt.slice(0, 2000);
-          }
-        }
-
-        return '';
+        return {
+          hasQuery,
+          candidateCount: meaningfulCandidates.length,
+          candidates: meaningfulCandidates.map(c => c.text),
+        };
       }, query);
 
-      if (responseText) return responseText;
+      // 查询出现在页面中，说明输入成功
+      if (result.hasQuery) {
+        hasQueryInPage = true;
+      }
+
+      // 如果候选数量增加，说明有新内容
+      if (result.candidateCount > lastCandidateCount) {
+        console.log(`  [wait] 找到 ${result.candidateCount} 个候选回复`);
+      }
+
+      // 检查是否有新的或更长的内容
+      if (result.candidates.length > 0) {
+        const longest = result.candidates.reduce((a, b) => (a.length > b.length ? a : b));
+
+        // 如果内容变化，返回最长的
+        if (longest !== lastCandidateText) {
+          lastCandidateText = longest;
+
+          // 如果查询已在页面，且找到了不同的内容，返回
+          if (hasQueryInPage && !longest.includes(query)) {
+            return longest;
+          }
+        }
+      }
+
+      lastCandidateCount = result.candidateCount;
     } catch {
       // ignore errors during polling
     }
   }
 
-  return '';
+  // 返回最后找到的内容
+  return lastCandidateText;
 }
 
 /** 从回复中提取引用来源 URL */
@@ -599,6 +708,23 @@ export default function (xcli: XCLIAPI): void {
         await ensureZhidaPage(page, ctx);
         tips.push(`已打开知乎知答`);
 
+        // 1.5. 点击"新对话"按钮，清除历史
+        const newConversationClicked = await page.evaluate(() => {
+          const buttons = document.querySelectorAll('button, [role="button"]');
+          for (const btn of buttons) {
+            const text = btn.textContent?.trim() || '';
+            if (text.includes('新对话') || text.includes('New')) {
+              (btn as HTMLElement).click();
+              return true;
+            }
+          }
+          return false;
+        });
+        if (newConversationClicked) {
+          console.log('  [conv] 已点击"新对话"按钮');
+          await page.waitForTimeout(1000);
+        }
+
         // 2. 选择思考模式
         if (params.mode && params.mode !== 'smart') {
           await selectThinkingMode(page, params.mode);
@@ -613,7 +739,24 @@ export default function (xcli: XCLIAPI): void {
         await typeInDraftEditor(page, params.query);
         tips.push(`已输入: ${params.query.slice(0, 50)}${params.query.length > 50 ? '...' : ''}`);
 
-        // 5. 拦截 API 调用（可选，用于提取来源）
+        // 5. 拦截 AI 响应
+        let aiResponse = '';
+        const responsePromise = new Promise<void>(resolve => {
+          page.on('response', async (response) => {
+            const url = response.url();
+            if (url.includes('ai_ingress/stream/completion')) {
+              try {
+                const body = await response.text();
+                aiResponse += body;
+                console.log('  [api] 捕获 AI 响应:', body.slice(0, 200));
+              } catch {
+                // ignore errors
+              }
+            }
+          });
+        });
+
+        // 6. 拦截 API 调用（可选，用于提取来源）
         let capturedStream = '';
         if (params.showSources) {
           await page.route('**/zhida.zhihu.com/**', async (route) => {
@@ -621,33 +764,33 @@ export default function (xcli: XCLIAPI): void {
               const resp = await route.fetch();
               const body = await resp.text();
               capturedStream += body;
-              await route.fulfill({ body, headers: resp.headers(), status: resp.status() });
+              await route.fulfill({ body, headers: resp.headers(), status: resp.status });
             } catch {
               await route.continue();
             }
           }).catch(() => {});
         }
 
-        // 6. 点击发送
+        // 7. 点击发送
         await clickSendButton(page);
         tips.push('查询已发送，等待 AI 回复...');
         await page.waitForTimeout(2000);
 
-        // 7. 等待回复
-        const responseText = await waitForResponse(page, params.query);
+        // 8. 等待回复（优先使用拦截的 AI 响应）
+        await page.waitForTimeout(5000);
+        const responseText = aiResponse || await waitForResponse(page, params.query);
 
-        // 8. 清理路由拦截
+        // 9. 清理路由拦截
         if (params.showSources) {
           await page.unroute('**/zhida.zhihu.com/**').catch(() => {});
         }
 
-        // 9. 构建返回结果
+        // 10. 构建返回结果
         const result: Record<string, unknown> = {
           query: params.query,
           mode: THINKING_MODE_MAP[params.mode] || params.mode,
           source: SOURCE_MAP[params.source] || params.source,
           response: responseText || '等待回复中（可能需要更长时间）',
-          duration: `${((Date.now() - (await page.evaluate(() => performance.now()))) / 1000).toFixed(1)}s`,
         };
 
         // 10. 提取引用来源（如果请求了）
