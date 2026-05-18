@@ -92,7 +92,7 @@ export async function executeCommand(
   commandName: string,
   params: Record<string, unknown>,
   sessionName: string = 'default',
-  extraOpts?: { cdpEndpoint?: string }
+  extraOpts?: { cdpEndpoint?: string; skipCleanup?: boolean }
 ): Promise<ExecutionResult> {
   const command = getCommand(commandName);
   if (!command) {
@@ -254,7 +254,7 @@ export async function executeCommand(
       duration,
     };
   } finally {
-    if (autoCreated) {
+    if (autoCreated && !extraOpts?.skipCleanup) {
       await destroyBrowser();
     }
   }
@@ -466,9 +466,10 @@ export async function executeChain(
         }
 
         const start = Date.now();
-        const result = options?.cdpEndpoint
-          ? await executeCommand(cmdName, params, sessionName, { cdpEndpoint: options.cdpEndpoint })
-          : await executeCommand(cmdName, params, sessionName);
+        const result = await executeCommand(cmdName, params, sessionName, {
+          cdpEndpoint: options?.cdpEndpoint,
+          skipCleanup: true, // executeChain's finally handles cleanup
+        });
         const duration = Date.now() - start;
 
         const stepResult: ChainStepResult = {
@@ -511,7 +512,13 @@ export async function executeChain(
       totalDuration: Date.now() - totalStart,
     };
   } finally {
-    if (createdSession) {
+    // CLI mode: always clean up so process can exit.
+    // Daemon mode: keep sessions alive for reuse.
+    if (process.env.XBROWSER_DAEMON_WORKER !== '1') {
+      await destroyBrowser();
+    } else if (createdSession) {
+      // Daemon mode: only clean up if this chain created a new session
+      // (sessions created by explicit 'session open' should persist)
       await destroyBrowser();
     }
   }

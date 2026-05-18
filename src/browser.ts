@@ -88,6 +88,11 @@ function resetIdleTimer(): void {
       await destroyBrowser().catch(() => {         });
     }
   }, IDLE_TIMEOUT_MS);
+  // unref() so idleTimer does not prevent process exit.
+  // Daemon mode keeps itself alive via its own setInterval.
+  if (idleTimer && typeof idleTimer.unref === 'function') {
+    idleTimer.unref();
+  }
 }
 
 export function touchSession(id: string): void {
