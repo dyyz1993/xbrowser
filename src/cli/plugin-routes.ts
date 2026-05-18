@@ -7,6 +7,7 @@ import { startDaemonProcess, stopDaemonProcess, getDaemonProcessStatus } from '.
 import { outputResult, outputError } from './output.js';
 import { DEFAULT_MARKETPLACE_URL, NPM_REGISTRY_URL } from '../config.js';
 import { ensureProxyFetch } from '../utils/proxy-fetch.js';
+import { getPluginLoader as getGlobalPluginLoader } from '../utils/plugin-singleton.js';
 import {
   handlePublish,
   handlePluginLogin,
@@ -20,6 +21,23 @@ let pluginLoader: XBrowserPluginLoader | null = null;
 function getPluginLoader(): XBrowserPluginLoader {
   if (!pluginLoader) pluginLoader = new XBrowserPluginLoader();
   return pluginLoader;
+}
+
+/**
+ * Load all plugins and build a map of plugin-name → command names from runtime.
+ * This captures commands even for plugins without package.json metadata.
+ */
+async function buildRuntimeCommandsMap(): Promise<Map<string, string[]>> {
+  const loader = await getGlobalPluginLoader();
+  const sites = loader.getCore().loader.getSites();
+  const map = new Map<string, string[]>();
+  for (const site of sites) {
+    const cmds = site.getAllCommands().map(c => c.name);
+    if (cmds.length > 0) {
+      map.set(site.name, cmds);
+    }
+  }
+  return map;
 }
 
 function applyRegistryOverride(options: Record<string, unknown>): void {
@@ -190,7 +208,44 @@ export async function handlePlugin(
     }
     case 'list': {
       const plugins = await installer.list();
-      outputResult({ plugins }, mode);
+
+      // Load runtime commands from all plugins (including bare ones without package.json)
+      const runtimeCommands = await buildRuntimeCommandsMap();
+
+      // Merge static metadata + runtime commands into enriched plugin list
+      const enrichedPlugins = plugins.map(p => {
+        const metadata = p.metadata as Record<string, unknown> | undefined;
+        const staticCommands = metadata?.commands as string[] | undefined;
+        const dynamicCommands = runtimeCommands.get(p.name);
+        // Runtime commands take precedence (more accurate), fallback to static metadata
+        const commands = dynamicCommands || staticCommands;
+        return {
+          ...p,
+          commands,
+          version: metadata?.version as string | undefined,
+          description: metadata?.description as string | undefined,
+        };
+      });
+
+      if (mode === 'json') {
+        outputResult({ plugins: enrichedPlugins }, mode);
+      } else {
+        if (enrichedPlugins.length === 0) {
+          console.log('No plugins installed');
+          return;
+        }
+        for (const p of enrichedPlugins) {
+          if (p.version && p.description) {
+            console.log(`${p.name} (${p.version}) - ${p.description}`);
+          } else {
+            console.log(p.name);
+          }
+          if (p.commands && p.commands.length > 0) {
+            console.log(`  ${p.commands.join(', ')}`);
+          }
+        }
+        console.log(`\nTotal: ${enrichedPlugins.length} plugins`);
+      }
       break;
     }
     case 'reload': {
