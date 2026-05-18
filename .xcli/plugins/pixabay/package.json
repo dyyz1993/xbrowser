@@ -1,0 +1,20 @@
+{
+  "name": "xbrowser-plugin-pixabay",
+  "version": "1.0.0",
+  "description": "Pixabay - Free images, royalty free stock photos",
+  "main": "index.ts",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "pixabay"
+  ],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://pixabay.com",
+    "requiresLogin": false,
+    "commands": [
+      "search-image"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "xbrowser-plugin-gettyimages",
+  "version": "1.0.0",
+  "description": "Getty Images - Stock Photos & Pictures",
+  "main": "index.ts",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "gettyimages"
+  ],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://www.gettyimages.com",
+    "requiresLogin": false,
+    "commands": [
+      "search-image"
+    ]
+  }
+}

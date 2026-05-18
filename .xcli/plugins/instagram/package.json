@@ -1,0 +1,20 @@
+{
+  "name": "xbrowser-plugin-instagram",
+  "version": "1.0.0",
+  "description": "Instagram 图片搜索",
+  "main": "index.ts",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "instagram"
+  ],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://www.instagram.com",
+    "requiresLogin": true,
+    "commands": [
+      "search-image"
+    ]
+  }
+}

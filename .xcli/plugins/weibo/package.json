@@ -1,0 +1,20 @@
+{
+  "name": "xbrowser-plugin-weibo",
+  "version": "1.0.0",
+  "description": "微博图片搜索",
+  "main": "index.ts",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "weibo"
+  ],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://s.weibo.com",
+    "requiresLogin": false,
+    "commands": [
+      "search-image"
+    ]
+  }
+}

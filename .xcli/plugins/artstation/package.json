@@ -1,0 +1,20 @@
+{
+  "name": "xbrowser-plugin-artstation",
+  "version": "1.0.0",
+  "description": "Artstation Artwork Search",
+  "main": "index.ts",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "artstation"
+  ],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://www.artstation.com",
+    "requiresLogin": false,
+    "commands": [
+      "search-image"
+    ]
+  }
+}

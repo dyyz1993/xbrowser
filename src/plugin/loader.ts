@@ -9,6 +9,7 @@ import {
 import { resolve } from 'path';
 import { existsSync, readdirSync } from 'fs';
 import { homedir } from 'os';
+import { PluginMetadataParser } from './metadata-parser.js';
 
 export type { PluginInstance, PluginStatus, XCLIAPI };
 
@@ -118,6 +119,15 @@ export class XBrowserPluginLoader {
         }
         if (!existsSync(indexPath)) continue;
         try {
+          // Warn if plugin lacks package.json metadata
+          if (!existsSync(resolve(pluginDir, 'package.json'))) {
+            console.warn(`⚠️  Plugin "${entry.name}" has no package.json. Use "xbrowser create ${entry.name} --template static" for proper structure.`);
+          } else {
+            const metadata = PluginMetadataParser.parseFromPackageJson(pluginDir);
+            if (!metadata) {
+              console.warn(`⚠️  Plugin "${entry.name}" has package.json but no xbrowser metadata. Add { "xbrowser": { "description": "..." } } to package.json.`);
+            }
+          }
           const instance = await this.loadPlugin(indexPath, entry.name);
           loaded.push(instance);
         } catch {

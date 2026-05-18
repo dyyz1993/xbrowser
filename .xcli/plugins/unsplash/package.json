@@ -1,0 +1,20 @@
+{
+  "name": "xbrowser-plugin-unsplash",
+  "version": "1.0.0",
+  "description": "Unsplash - Free high-resolution photos",
+  "main": "index.ts",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "unsplash"
+  ],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://unsplash.com",
+    "requiresLogin": false,
+    "commands": [
+      "search-image"
+    ]
+  }
+}

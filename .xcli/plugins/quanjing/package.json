@@ -1,0 +1,20 @@
+{
+  "name": "xbrowser-plugin-quanjing",
+  "version": "1.0.0",
+  "description": "全景创意图片搜索",
+  "main": "index.ts",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "quanjing"
+  ],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://www.quanjing.com",
+    "requiresLogin": false,
+    "commands": [
+      "search-image"
+    ]
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "name": "xbrowser-plugin-699pic",
+  "version": "1.0.0",
+  "description": "摄图网 - 正版高清图片素材库",
+  "main": "index.ts",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "699pic"
+  ],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://www.699pic.com",
+    "requiresLogin": false,
+    "commands": [
+      "search-image"
+    ]
+  }
+}

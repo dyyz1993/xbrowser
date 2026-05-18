@@ -1,0 +1,20 @@
+{
+  "name": "xbrowser-plugin-behance",
+  "version": "1.0.0",
+  "description": "Behance Creative Portfolio Search",
+  "main": "index.ts",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "behance"
+  ],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://www.behance.net",
+    "requiresLogin": false,
+    "commands": [
+      "search-image"
+    ]
+  }
+}

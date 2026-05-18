@@ -25,12 +25,39 @@ fi
 echo "✅ any check passed: $ANY_COUNT/100"
 
 echo "🔍 [pre-commit] Checking command param consumption..."
-node scripts/check-command-params.mjs
+node lint-scripts/check-command-params.mjs
 if [ $? -ne 0 ]; then
   echo "❌ Command param check failed. Fix unconsumed parameters before committing."
-  echo "   → See rules/command-param-audit.mdc for guidelines."
+  echo "   → See lint-scripts/RULES.md for guidelines."
   exit 1
 fi
 echo "✅ Command param check passed"
+
+echo "🔍 [pre-commit] Checking result schema..."
+node lint-scripts/check-result-schema.mjs
+if [ $? -ne 0 ]; then
+  echo "❌ Result schema check failed. Add result schema to all commands."
+  echo "   → See lint-scripts/RULES.md for guidelines."
+  exit 1
+fi
+echo "✅ Result schema check passed"
+
+echo "🔍 [pre-commit] Checking output convention..."
+node lint-scripts/check-output-convention.mjs
+if [ $? -ne 0 ]; then
+  echo "❌ Output convention check failed. Fix violations before committing."
+  echo "   → See lint-scripts/RULES.md for guidelines."
+  exit 1
+fi
+echo "✅ Output convention check passed"
+
+echo "🔍 [pre-commit] Checking plugin metadata..."
+node lint-scripts/check-plugin-metadata.mjs
+if [ $? -ne 0 ]; then
+  echo "❌ Plugin metadata check failed. Add package.json with xbrowser metadata."
+  echo "   → See lint-scripts/RULES.md for guidelines."
+  exit 1
+fi
+echo "✅ Plugin metadata check passed"
 
 echo "✅ [pre-commit] All checks passed!"

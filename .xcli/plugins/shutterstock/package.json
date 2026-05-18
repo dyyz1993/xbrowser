@@ -1,0 +1,20 @@
+{
+  "name": "xbrowser-plugin-shutterstock",
+  "version": "1.0.0",
+  "description": "Shutterstock - Stock Photos, Images & Vectors",
+  "main": "index.ts",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "shutterstock"
+  ],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://www.shutterstock.com",
+    "requiresLogin": false,
+    "commands": [
+      "search-image"
+    ]
+  }
+}

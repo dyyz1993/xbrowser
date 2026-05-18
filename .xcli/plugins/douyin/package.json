@@ -6,6 +6,7 @@
   "main": "index.ts",
   "keywords": [
     "xbrowser",
+    "xbrowser-plugin",
     "douyin",
     "tiktok",
     "scraper",
@@ -20,5 +21,10 @@
   },
   "peerDependencies": {
     "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "site": "https://www.douyin.com",
+    "requiresLogin": true,
+    "commands": ["videos", "profile", "detail", "comments", "user-comments", "search", "ai-subtitle"]
   }
 }

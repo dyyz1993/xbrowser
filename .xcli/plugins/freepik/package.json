@@ -1,0 +1,20 @@
+{
+  "name": "xbrowser-plugin-freepik",
+  "version": "1.0.0",
+  "description": "Freepik - Free vectors, photos and PSD downloads",
+  "main": "index.ts",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "freepik"
+  ],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://www.freepik.com",
+    "requiresLogin": false,
+    "commands": [
+      "search-image"
+    ]
+  }
+}

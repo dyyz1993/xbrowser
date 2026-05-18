@@ -1,0 +1,20 @@
+{
+  "name": "xbrowser-plugin-58pic",
+  "version": "1.0.0",
+  "description": "58pic - 千图网 免费设计素材",
+  "main": "index.ts",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "58pic"
+  ],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://www.58pic.com",
+    "requiresLogin": false,
+    "commands": [
+      "search-image"
+    ]
+  }
+}
