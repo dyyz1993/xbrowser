@@ -33,13 +33,16 @@ export async function forwardExec(
   command: string,
   params: Record<string, unknown>,
   session: string = 'default',
+  cdpEndpoint?: string,
 ): Promise<ExecutionResult> {
+  const rpcParams: Record<string, unknown> = { command, params, session };
+  if (cdpEndpoint) rpcParams.cdpEndpoint = cdpEndpoint;
   const resp = await fetch(`${DAEMON_BASE}/rpc`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       method: 'exec',
-      params: { command, params, session },
+      params: rpcParams,
     }),
     signal: AbortSignal.timeout(60000),
   });
@@ -55,13 +58,16 @@ export async function forwardExec(
 export async function forwardChain(
   input: string,
   session: string = 'default',
+  cdpEndpoint?: string,
 ): Promise<unknown> {
+  const params: Record<string, unknown> = { chain: input, session };
+  if (cdpEndpoint) params.cdpEndpoint = cdpEndpoint;
   const resp = await fetch(`${DAEMON_BASE}/rpc`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       method: 'chain',
-      params: { chain: input, session },
+      params,
     }),
     signal: AbortSignal.timeout(120000),
   });

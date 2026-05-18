@@ -118,7 +118,7 @@ export async function executeCommand(
   if (extraOpts?.cdpEndpoint && command.scope === 'page' && !process.env.XBROWSER_DAEMON_WORKER) {
     const { isDaemonRunning, forwardExec } = await import('./client/daemon-client.js');
     if (await isDaemonRunning()) {
-      return forwardExec(commandName, params, sessionName);
+      return forwardExec(commandName, params, sessionName, extraOpts.cdpEndpoint);
     }
   }
 

@@ -114,30 +114,33 @@ async function resolveCDPEndpoint(raw: string): Promise<string> {
 
 async function main() {
   process.env.XBROWSER_DAEMON_WORKER = '1';
-  const cdpEndpoint = process.env.XBROWSER_CDP_ENDPOINT || 'auto';
   const daemonPort = parseInt(process.env.XBROWSER_DAEMON_PORT || '9224', 10);
 
-  const endpoint = await resolveCDPEndpoint(cdpEndpoint);
-  log(`Daemon worker starting (pid=${process.pid}, cdp=${cdpEndpoint}, endpoint=${endpoint})`);
+  log(`Daemon worker starting (pid=${process.pid}) — no sessions at startup`);
 
-  const existing = findSession('default');
-  if (!existing) {
-    log('Creating default session...');
-    const session = await createSession('default', undefined, { cdpEndpoint: endpoint });
-    log('Default session created, injecting recording JS...');
-    await injectRecording(session.page);
-    log('Recording JS injected');
-  }
+  let previewWS: WSServer;
 
   const server = startHttpServer({
     port: daemonPort,
     rpcHandler: async (method, params) => {
       log(`RPC: ${method} from ${params.session || 'default'}`);
       switch (method) {
+        case 'session:create': {
+          const name = (params.name as string) || 'default';
+          const cdp = params.cdpEndpoint as string;
+          const url = params.url as string | undefined;
+          log(`RPC session:create name=${name} cdp=${cdp}`);
+          const endpoint = await resolveCDPEndpoint(cdp || 'auto');
+          const session = await createSession(name, url, { cdpEndpoint: endpoint });
+          await injectRecording(session.page);
+          previewWS.registerSession(session.name, session.page);
+          return { id: session.id, name: session.name, url: session.page.url() };
+        }
         case 'exec': {
           const command = params.command as string;
           const cmdParams = (params.params || {}) as Record<string, unknown>;
           const sessionName = (params.session as string) || 'default';
+          const cdp = params.cdpEndpoint as string | undefined;
           log(`RPC exec: command=${command} session=${sessionName}`);
           commandLogStore.add(sessionName, {
             timestamp: Date.now(),
@@ -145,15 +148,16 @@ async function main() {
             params: cmdParams,
             session: sessionName,
           });
-          const result = await executeCommand(command, cmdParams, sessionName, { cdpEndpoint: endpoint });
+          const result = await executeCommand(command, cmdParams, sessionName, { cdpEndpoint: cdp });
           log(`RPC exec done: command=${command} success=${result.success}`);
           return result;
         }
         case 'chain': {
           const input = params.chain as string;
           const sessionName = (params.session as string) || 'default';
+          const cdp = params.cdpEndpoint as string | undefined;
           log(`RPC chain: session=${sessionName} input=${input.substring(0, 80)}`);
-          const result = await executeChain(input, { cdpEndpoint: endpoint, sessionName });
+          const result = await executeChain(input, { cdpEndpoint: cdp, sessionName });
           return result;
         }
         case 'session:list':
@@ -347,15 +351,10 @@ async function main() {
   });
 
   // --- Attach preview WebSocket to the same HTTP server ---
-  const previewWS = new WSServer();
+  previewWS = new WSServer();
   await previewWS.attachToServer(server, '/preview');
   log(`Preview WS attached to HTTP server on /preview`);
 
-  // Register all existing sessions for preview
-  for (const session of getAllSessions()) {
-    previewWS.registerSession(session.name, session.page);
-    log(`Preview registered session: ${session.name}`);
-  }
   previewWS.on('screencast-started', (sid: string) => log(`Preview screencast started: ${sid}`));
   previewWS.on('screencast-stopped', (sid: string) => log(`Preview screencast stopped: ${sid}`));
 
@@ -364,7 +363,6 @@ async function main() {
     port: daemonPort,
     pid: process.pid,
     startedAt: Date.now(),
-    cdpEndpoint: endpoint,
   }, null, 2));
 
   console.log(`xbrowser daemon worker started (pid: ${process.pid}, port: ${daemonPort})`);

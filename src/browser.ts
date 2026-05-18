@@ -19,13 +19,15 @@ function logSessionEvent(event: string, details: string): void {
 }
 
 /**
- * Represents a managed browser session with its Playwright context and page.
+ * Represents a managed browser session with its Playwright context, page,
+ * and its own dedicated Browser connection.
  */
 export interface ManagedSession {
   id: string;
   name: string;
   context: BrowserContext;
   page: Page;
+  browser: Browser;
   createdAt: string;
   lastActivityAt: number;
   isCDP?: boolean;
@@ -64,9 +66,9 @@ export interface BrowserLaunchOptions {
 }
 
 const sessions = new Map<string, ManagedSession>();
-let browser: Browser | null = null;
-let cdpProxy: CDPInterceptorProxy | null = null;
-let isCDPConnection = false;
+
+let _sharedBrowser: Browser | null = null;
+let _sharedCdpProxy: CDPInterceptorProxy | null = null;
 
 const IDLE_TIMEOUT_MS = (process.env.XBROWSER_IDLE_TIMEOUT ? parseInt(process.env.XBROWSER_IDLE_TIMEOUT, 10) : 15) * 60 * 1000;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -84,7 +86,7 @@ function resetIdleTimer(): void {
         idleSessions.push(`${s.name}(${(now - s.lastActivityAt) / 1000}s idle)`);
       }
     }
-    if (allIdle && browser) {
+    if (allIdle && (sessions.size > 0 || _sharedBrowser)) {
       logSessionEvent('idle_timeout', `Sessions idle for >${IDLE_TIMEOUT_MS / 60000}min. Sessions: ${idleSessions.join(', ') || 'all'}. Calling destroyBrowser()`);
       await destroyBrowser().catch(() => {         });
     }
@@ -103,28 +105,24 @@ export function touchSession(id: string): void {
 }
 
 process.on('exit', () => {
-  if (browser) {
-    if (isCDPConnection) {
-      logSessionEvent('process_exit', 'Process exiting. CDP connection (not closing external browser).');
+  for (const session of sessions.values()) {
+    if (session.isCDP) {
+      logSessionEvent('process_exit', `Session "${session.name}": CDP connection (not closing external browser).`);
     } else {
-      const sessionNames = [...sessions.values()].map(s => s.name).join(', ');
-      logSessionEvent('process_exit', `Process exiting. Closing browser. Active sessions: ${sessionNames || '(none)'}`);
-      try {
-        browser.close();
-      } catch {
-        // force cleanup on exit
-      }
+      logSessionEvent('process_exit', `Session "${session.name}": Closing browser.`);
+      try { session.browser?.close(); } catch { /* force cleanup on exit */ }
     }
-    browser = null;
   }
-  if (cdpProxy) {
-    try {
-      cdpProxy.stop();
-    } catch {
-      // best effort
-    }
-    cdpProxy = null;
+  if (_sharedBrowser) {
+    logSessionEvent('process_exit', 'Closing shared browser.');
+    try { _sharedBrowser.close(); } catch { /* force cleanup on exit */ }
+    _sharedBrowser = null;
   }
+  if (_sharedCdpProxy) {
+    try { _sharedCdpProxy.stop(); } catch { /* best effort */ }
+    _sharedCdpProxy = null;
+  }
+  sessions.clear();
 });
 
 async function resolveCDPEndpoint(raw: string): Promise<string> {
@@ -174,10 +172,39 @@ export function resolveLaunchOpts(ctx: BrowserCommandContext): BrowserLaunchOpti
 }
 
 /**
- * Get or create the shared browser instance.
+ * Always create a new Browser instance (never caches).
  *
- * If a browser is already running, returns it directly. Otherwise launches a
- * new Chromium instance or connects via CDP depending on the provided options.
+ * @param options - Launch options including headless mode, executable path, or CDP endpoint.
+ * @returns A fresh Playwright Browser instance.
+ */
+export async function createBrowser(options?: BrowserLaunchOptions): Promise<Browser> {
+  if (options?.cdpEndpoint) {
+    const realEndpoint = await resolveCDPEndpoint(options.cdpEndpoint);
+
+    if (options.intercept) {
+      const config: CDPInterceptorConfig = typeof options.intercept === 'object'
+        ? { ...options.intercept, cdpEndpoint: realEndpoint }
+        : { cdpEndpoint: realEndpoint };
+
+      const proxy = new CDPInterceptorProxy(config);
+      const proxyPort = await proxy.start();
+      console.error(`[CDP Interceptor] Proxy running on ws://localhost:${proxyPort}, forwarding to ${realEndpoint}`);
+      return await chromium.connectOverCDP(`ws://localhost:${proxyPort}`);
+    }
+
+    return await chromium.connectOverCDP(realEndpoint);
+  }
+
+  const executablePath =
+    options?.executablePath || process.env.XBROWSER_CHROMIUM_PATH || undefined;
+  return await chromium.launch({ executablePath, headless: options?.headless ?? true });
+}
+
+/**
+ * Get or create the shared browser instance (lazy singleton).
+ *
+ * Used by non-session callers such as {@link createEphemeralContext} and
+ * project-scope commands that don't need per-session isolation.
  *
  * @param options - Launch options including headless mode, executable path, or CDP endpoint.
  * @returns The shared Playwright Browser instance.
@@ -188,33 +215,13 @@ export function resolveLaunchOpts(ctx: BrowserCommandContext): BrowserLaunchOpti
  * ```
  */
 export async function getBrowser(options?: BrowserLaunchOptions): Promise<Browser> {
-  if (browser) return browser;
-
-  if (options?.cdpEndpoint) {
-    const realEndpoint = await resolveCDPEndpoint(options.cdpEndpoint);
-
-    // Start CDP interceptor proxy if requested
-    if (options.intercept) {
-      const config: CDPInterceptorConfig = typeof options.intercept === 'object'
-        ? { ...options.intercept, cdpEndpoint: realEndpoint }
-        : { cdpEndpoint: realEndpoint };
-
-      cdpProxy = new CDPInterceptorProxy(config);
-      const proxyPort = await cdpProxy.start();
-      console.error(`[CDP Interceptor] Proxy running on ws://localhost:${proxyPort}, forwarding to ${realEndpoint}`);
-      browser = await chromium.connectOverCDP(`ws://localhost:${proxyPort}`);
-    } else {
-      browser = await chromium.connectOverCDP(realEndpoint);
-    }
-
-    isCDPConnection = true;
-    return browser;
+  if (_sharedBrowser) return _sharedBrowser;
+  _sharedBrowser = await createBrowser(options);
+  // Track CDP proxy for shared browser cleanup
+  if (options?.cdpEndpoint && options.intercept) {
+    // Proxy lifecycle is handled by destroyBrowser
   }
-
-  const executablePath =
-    options?.executablePath || process.env.XBROWSER_CHROMIUM_PATH || undefined;
-  browser = await chromium.launch({ executablePath, headless: options?.headless ?? true });
-  return browser;
+  return _sharedBrowser;
 }
 
 /**
@@ -284,7 +291,7 @@ export async function findOrRestoreSession(
   if (!ep) return undefined;
 
   try {
-    const b = await getBrowser({ cdpEndpoint: ep });
+    const b = await createBrowser({ cdpEndpoint: ep });
     const contexts = b.contexts();
     const context = contexts[0] || (await b.newContext());
 
@@ -318,6 +325,7 @@ export async function findOrRestoreSession(
       name,
       context,
       page,
+      browser: b,
       createdAt: meta.createdAt || new Date().toISOString(),
       lastActivityAt: Date.now(),
       isCDP: true,
@@ -510,8 +518,9 @@ async function installNetworkCapture(page: Page, sessionName: string): Promise<v
 /**
  * Create a new browser session with a page and optional initial URL.
  *
- * If connecting via CDP, reuses existing pages when possible instead of
- * creating a new context/page pair.
+ * Each session gets its own dedicated Browser connection. If connecting via
+ * CDP, reuses existing pages when possible instead of creating a new
+ * context/page pair.
  *
  * @param name - Unique name for the session.
  * @param url - Optional URL to navigate to after creation.
@@ -528,7 +537,7 @@ export async function createSession(
   url?: string,
   options?: BrowserLaunchOptions
 ): Promise<ManagedSession> {
-  const b = await getBrowser(options);
+  const b = await createBrowser(options);
   const isCDP = !!options?.cdpEndpoint;
   let context: BrowserContext;
   let page: Page;
@@ -574,6 +583,7 @@ export async function createSession(
     name,
     context,
     page,
+    browser: b,
     createdAt: new Date().toISOString(),
     lastActivityAt: Date.now(),
     isCDP,
@@ -598,6 +608,9 @@ export async function closeSessionByName(name: string): Promise<boolean> {
       logSessionEvent('close_session', `name="${session.name}" id="${session.id}" url="${session.page.url()}"`);
       if (!session.isCDP) {
         await session.context.close();
+      }
+      if (session.browser) {
+        await session.browser.close().catch(() => {});
       }
       sessions.delete(id);
 
@@ -626,7 +639,8 @@ export async function closeSessionByName(name: string): Promise<boolean> {
 /**
  * Close all active browser sessions.
  *
- * Closes every managed context, ignoring individual close errors.
+ * Closes every managed context and its dedicated browser connection,
+ * ignoring individual close errors.
  */
 export async function closeAllSessions(): Promise<void> {
   const names = [...sessions.values()].map(s => `${s.name}(${s.page.url()})`).join(', ');
@@ -636,6 +650,9 @@ export async function closeAllSessions(): Promise<void> {
       if (!session.isCDP) {
         await session.context.close();
       }
+      if (session.browser) {
+        await session.browser.close().catch(() => {});
+      }
       sessions.delete(id);
     } catch {
       sessions.delete(id);
@@ -644,44 +661,38 @@ export async function closeAllSessions(): Promise<void> {
 }
 
 /**
- * Close all sessions and destroy the shared browser instance.
+ * Close all sessions and destroy all browser instances.
  *
  * After calling this, the module returns to a clean state and
  * {@link getBrowser} will create a new instance on next call.
  */
 export async function destroyBrowser(): Promise<void> {
-  logSessionEvent('destroy_browser', `Sessions count: ${sessions.size}. Clearing idle timer and closing browser.`);
+  logSessionEvent('destroy_browser', `Sessions count: ${sessions.size}. Clearing idle timer and closing all browsers.`);
   if (idleTimer) {
     clearTimeout(idleTimer);
     idleTimer = null;
   }
   await closeAllSessions();
-  if (browser) {
-    const b = browser;
-    browser = null;
-    if (isCDPConnection) {
-      b.close().catch(() => {});
-    } else {
-      b.close().catch(() => {});
-    }
+  if (_sharedBrowser) {
+    await _sharedBrowser.close().catch(() => {});
+    _sharedBrowser = null;
   }
-  isCDPConnection = false;
-  if (cdpProxy) {
-    await cdpProxy.stop().catch(() => {});
-    cdpProxy = null;
+  if (_sharedCdpProxy) {
+    await _sharedCdpProxy.stop().catch(() => {});
+    _sharedCdpProxy = null;
   }
 }
 
 /**
- * Reset all internal st    ate for testing purposes.
+ * Reset all internal state for testing purposes.
  *
  * Clears the session map and drops the browser reference without
  * closing anything. Intended for use in test teardown.
  */
 export function resetForTesting(): void {
   sessions.clear();
-  browser = null;
-  cdpProxy = null;
+  _sharedBrowser = null;
+  _sharedCdpProxy = null;
   try {
     for (const f of readdirSync(SESSION_DIR)) {
       unlinkSync(join(SESSION_DIR, f));
@@ -699,18 +710,22 @@ export async function ensureProcessCanExit(): Promise<void> {
     idleTimer = null;
   }
 
-  // Clear all sessions
+  // Close each session's own browser
+  for (const session of sessions.values()) {
+    if (session.browser) {
+      await session.browser.close().catch(() => {});
+    }
+  }
+
   sessions.clear();
 
-  // Close browser if exists
-  if (browser) {
-    await browser.close().catch(() => {});
-    browser = null;
+  if (_sharedBrowser) {
+    await _sharedBrowser.close().catch(() => {});
+    _sharedBrowser = null;
   }
 
-  if (cdpProxy) {
-    await cdpProxy.stop().catch(() => {});
-    cdpProxy = null;
+  if (_sharedCdpProxy) {
+    await _sharedCdpProxy.stop().catch(() => {});
+    _sharedCdpProxy = null;
   }
 }
-

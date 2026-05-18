@@ -299,9 +299,8 @@ export function handleDaemon(
   const sub = args[0];
   switch (sub) {
     case 'start': {
-      const cdpEndpoint = (options.cdp as string) || 'auto';
       const port = options.port ? Number(options.port) : 9224;
-      startDaemonProcess(cdpEndpoint, port)
+      startDaemonProcess(port)
         .then((config) =>
           outputResult({ ok: true, pid: config.pid, port: config.port }, mode)
         )
@@ -327,6 +326,6 @@ export function handleDaemon(
       break;
     }
     default:
-      console.log('Usage: xbrowser daemon <start|stop|status> [--cdp <endpoint>] [--port <port>]');
+      console.log('Usage: xbrowser daemon <start|stop|status> [--port <port>]');
   }
 }

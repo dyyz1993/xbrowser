@@ -50,7 +50,6 @@ function isProcessRunning(pid: number): boolean {
 }
 
 export async function startDaemonProcess(
-  cdpEndpoint: string,
   port: number = 9224,
 ): Promise<DaemonInfo> {
   const existing = readConfig();
@@ -63,7 +62,6 @@ export async function startDaemonProcess(
     stdio: 'ignore',
     env: {
       ...process.env,
-      XBROWSER_CDP_ENDPOINT: cdpEndpoint,
       XBROWSER_DAEMON_PORT: String(port),
     },
   });
