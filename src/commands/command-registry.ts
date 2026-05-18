@@ -47,7 +47,8 @@ const registry = new Map<string, RegisteredCommand>();
  *   name: 'click',
  *   description: 'Click an element',
  *   scope: 'element',
- *   handler: async (params, ctx) => { await ctx.page.click(params.selector); },
+ *   result: z.object({ success: z.boolean() }),
+ *   handler: async (params, ctx) => { await ctx.page.click(params.selector); return ok({ success: true }); },
  * });
  * ```
  */
