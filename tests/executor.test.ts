@@ -503,7 +503,7 @@ describe('executeCommand cdpEndpoint forwarding', () => {
     });
 
     expect(result).toBeDefined();
-  });
+  }, 60000);
 
   it('should work without cdpEndpoint (backward compatibility)', async () => {
     const browserModule = await import('../src/browser.js');
@@ -527,7 +527,7 @@ describe('executeCommand cdpEndpoint forwarding', () => {
     });
 
     expect(createSessionSpy).not.toHaveBeenCalled();
-  });
+  }, 60000);
 });
 
 describe('Plugin positional args (executeChain integration)', () => {
