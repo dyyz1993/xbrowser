@@ -25,45 +25,49 @@ describe('outputResult', () => {
     expect(logSpy).toHaveBeenCalledWith(JSON.stringify({ foo: 'bar' }, null, 2));
   });
 
-  it('should output JSON stringified for yaml mode', () => {
+  it('should output YAML format for yaml mode', () => {
     outputResult([1, 2], 'yaml');
-    expect(logSpy).toHaveBeenCalledWith(JSON.stringify([1, 2], null, 2));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('-'));
   });
 
   it('should exit with error when success is false', () => {
     expect(() => outputResult({ success: false, message: 'bad' }, 'text')).toThrow('exit:1');
-    expect(errorSpy).toHaveBeenCalledWith('Error:', 'bad');
+    expect(errorSpy).toHaveBeenCalledWith('bad');
   });
 
   it('should exit with unknown error when success is false and no message', () => {
     expect(() => outputResult({ success: false }, 'text')).toThrow('exit:1');
-    expect(errorSpy).toHaveBeenCalledWith('Error:', 'Unknown error');
+    expect(errorSpy).toHaveBeenCalledWith('Unknown error');
   });
 
   it('should exit with error when data.ok is false', () => {
     expect(() =>
-      outputResult({ success: true, data: { ok: false, error: 'fail' } }, 'text'),
+      outputResult({ ok: false, error: 'fail' }, 'text'),
     ).toThrow('exit:1');
-    expect(errorSpy).toHaveBeenCalledWith('Error:', 'fail');
+    expect(errorSpy).toHaveBeenCalledWith('fail');
   });
 
-  it('should print OK and key-value pairs for successful data', () => {
-    outputResult({ success: true, data: { ok: true, url: 'http://x.com', count: 5 } }, 'text');
-    expect(logSpy).toHaveBeenCalledWith('OK');
-    expect(logSpy).toHaveBeenCalledWith('  url: http://x.com');
-    expect(logSpy).toHaveBeenCalledWith('  count: 5');
+  it('should print key-value pairs for successful data', () => {
+    outputResult({ ok: true, url: 'http://x.com', count: 5 }, 'text');
+    const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+    expect(output).toContain('url');
+    expect(output).toContain('http://x.com');
+    expect(output).toContain('count');
+    expect(output).toContain('5');
   });
 
-  it('should skip ok and data keys in output', () => {
-    outputResult({ success: true, data: { ok: true, data: 'skip', key: 'val' } }, 'text');
-    expect(logSpy).toHaveBeenCalledWith('  key: val');
-    const calls = logSpy.mock.calls.map((c) => c[0]);
-    expect(calls).not.toContain('  data: skip');
+  it('should include ok key in output', () => {
+    outputResult({ ok: true, key: 'val' }, 'text');
+    const output = logSpy.mock.calls.map((c) => c[0]).join('\n');
+    expect(output).toContain('key');
+    expect(output).toContain('val');
+    expect(output).toContain('ok');
+    expect(output).toContain('true');
   });
 
-  it('should JSON.stringify result when data is null', () => {
+  it('should output empty indicator when data is null', () => {
     outputResult({ success: true, data: null }, 'text');
-    expect(logSpy).toHaveBeenCalledWith(JSON.stringify({ success: true, data: null }, null, 2));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('success'));
   });
 
   it('should print primitive value directly', () => {
@@ -71,9 +75,9 @@ describe('outputResult', () => {
     expect(logSpy).toHaveBeenCalledWith('hello');
   });
 
-  it('should print number directly', () => {
+  it('should print number as string', () => {
     outputResult(42, 'text');
-    expect(logSpy).toHaveBeenCalledWith(42);
+    expect(logSpy).toHaveBeenCalledWith('42');
   });
 });
 

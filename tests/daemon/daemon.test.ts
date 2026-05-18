@@ -80,7 +80,7 @@ describe('Daemon API', () => {
       (spawn as ReturnType<typeof vi.fn>).mockReturnValue(mockProcess);
 
       const { startDaemonProcess } = await import('../../src/daemon/daemon.js');
-      const promise = startDaemonProcess('auto', 9224);
+      const promise = startDaemonProcess(9224);
       vi.advanceTimersByTime(500);
       const config = await promise;
 
@@ -104,7 +104,7 @@ describe('Daemon API', () => {
       (spawn as ReturnType<typeof vi.fn>).mockReturnValue(mockProcess);
 
       const { startDaemonProcess } = await import('../../src/daemon/daemon.js');
-      await expect(startDaemonProcess('auto', 9224)).rejects.toThrow('spawn failed');
+      await expect(startDaemonProcess(9224)).rejects.toThrow('spawn failed');
     });
   });
 

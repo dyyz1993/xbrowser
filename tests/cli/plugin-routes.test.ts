@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockOutputResult, mockOutputError, mockInstallerInstall, mockInstallerInstallFromMarketplace, mockInstallerUninstall, mockInstallerList, mockReloadPlugin } = vi.hoisted(() => ({
+const { mockOutputResult, mockOutputError, mockInstallerInstall, mockInstallerInstallFromMarketplace, mockInstallerUninstall, mockInstallerList, mockReloadPlugin, mockGetPluginLoader } = vi.hoisted(() => ({
   mockOutputResult: vi.fn(),
   mockOutputError: vi.fn(),
   mockInstallerInstall: vi.fn(),
@@ -8,6 +8,13 @@ const { mockOutputResult, mockOutputError, mockInstallerInstall, mockInstallerIn
   mockInstallerUninstall: vi.fn(),
   mockInstallerList: vi.fn(),
   mockReloadPlugin: vi.fn(),
+  mockGetPluginLoader: vi.fn().mockResolvedValue({
+    getCore: () => ({
+      loader: {
+        getSites: () => [],
+      },
+    }),
+  }),
 }));
 
 vi.mock('../../src/cli/output.js', () => ({
@@ -28,6 +35,10 @@ vi.mock('../../src/plugin/loader.js', () => ({
   XBrowserPluginLoader: vi.fn().mockImplementation(() => ({
     reloadPlugin: mockReloadPlugin,
   })),
+}));
+
+vi.mock('../../src/utils/plugin-singleton.js', () => ({
+  getPluginLoader: mockGetPluginLoader,
 }));
 
 vi.mock('../../src/builtins/index.js', () => ({
@@ -217,9 +228,9 @@ describe('plugin-routes', () => {
 
       handleDaemon(['unknown'], {}, 'text');
 
-      expect(consoleSpy).toHaveBeenCalledWith(
-        'Usage: xbrowser daemon <start|stop|status> [--cdp <endpoint>] [--port <port>]'
-      );
+        expect(consoleSpy).toHaveBeenCalledWith(
+          'Usage: xbrowser daemon <start|stop|status> [--port <port>]'
+        );
       consoleSpy.mockRestore();
     });
 
@@ -376,7 +387,7 @@ describe('plugin-routes', () => {
       handleDaemon(['start'], {}, 'json');
 
       await vi.waitFor(() => {
-        expect(startDaemonProcess).toHaveBeenCalledWith('auto', 9224);
+        expect(startDaemonProcess).toHaveBeenCalledWith(9224);
       });
     });
 

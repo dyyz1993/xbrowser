@@ -136,6 +136,7 @@ describe('Executor', () => {
       data: null,
       message: expect.stringContaining('Session'),
       duration: 0,
+      tips: [],
     });
   });
 });
