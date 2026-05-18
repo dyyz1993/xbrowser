@@ -114,11 +114,11 @@ export async function executeCommand(
     params = result.data as Record<string, unknown>;
   }
 
-  // If daemon is running and CDP is being used, forward to daemon
-  if (extraOpts?.cdpEndpoint && command.scope === 'page' && !process.env.XBROWSER_DAEMON_WORKER) {
+  // If daemon is running, forward to daemon — session memory has cdpEndpoint
+  if (command.scope === 'page' && !process.env.XBROWSER_DAEMON_WORKER) {
     const { isDaemonRunning, forwardExec } = await import('./client/daemon-client.js');
     if (await isDaemonRunning()) {
-      return forwardExec(commandName, params, sessionName, extraOpts.cdpEndpoint);
+      return forwardExec(commandName, params, sessionName, extraOpts?.cdpEndpoint);
     }
   }
 

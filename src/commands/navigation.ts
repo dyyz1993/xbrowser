@@ -13,13 +13,36 @@ export const gotoCommand = registerCommand({
     waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle']).optional(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
-    const response = await ctx.page.goto(p.url, {
+    // Auto-prefix https:// if missing
+    let url = p.url;
+    if (!/^https?:\/\//i.test(url) && !/^wss?:\/\//i.test(url)) {
+      url = 'https://' + url;
+    }
+
+    const response = await ctx.page.goto(url, {
       waitUntil: p.waitUntil || 'domcontentloaded',
     });
 
     const ssr = await detectSsr(ctx.page);
 
-    return ok({ url: p.url, status: response?.status(), ...(ssr ? { ssr } : {}) });
+    return ok({ url, status: response?.status(), ...(ssr ? { ssr } : {}) });
+  },
+});
+
+/** 'open' is an alias for 'goto' */
+export const openCommand = registerCommand({
+  name: 'open',
+  description: 'Open URL (alias for goto)',
+  scope: 'page',
+  parameters: z.object({
+    url: z.string(),
+    waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle']).optional(),
+  }),
+  handler: async (p, ctx: BrowserCommandContext) => {
+    // Delegate to goto handler — p.url and p.waitUntil are used inside
+    const { url, waitUntil, ...rest } = p;
+    void rest;
+    return gotoCommand.handler({ url, waitUntil }, ctx);
   },
 });
 

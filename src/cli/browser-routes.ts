@@ -112,10 +112,11 @@ export async function handleBrowserCommand(
   } else {
     switch (command) {
       case 'goto':
-        if (!args[0]) outputError('Usage: xbrowser goto <url>');
+      case 'open':
+        if (!args[0]) outputError(`Usage: xbrowser ${command} <url>`);
         cmdName = 'goto';
         params = {
-          url: args[0],
+          url: /^https?:\/\//i.test(args[0]) || /^wss?:\/\//i.test(args[0]) ? args[0] : 'https://' + args[0],
           waitUntil: options.waitUntil as string | undefined,
         };
         break;

@@ -278,6 +278,7 @@ interface CommandDef {
 
 const commandDefCache: Record<string, CommandDef> = {
   goto: { positional: ['url'] },
+  open: { positional: ['url'] },
   click: { positional: ['selector'] },
   fill: { positional: ['selector', 'value'] },
   type: { positional: ['selector', 'text'] },
