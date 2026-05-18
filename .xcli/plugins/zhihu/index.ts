@@ -479,6 +479,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser zhihu search --query "AI 编程"', description: '搜索 AI 编程相关内容' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -531,6 +532,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser zhihu trending', description: '获取知乎热榜前 20' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -581,6 +583,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser zhihu question --url "https://www.zhihu.com/question/xxx"', description: '获取问题回答' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -636,6 +639,7 @@ export default function (xcli: XCLIAPI): void {
         description: '回答问题并附带外链',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -700,6 +704,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser zhihu chat --query "2024年房价走势" --mode fast --showSources', description: '快速回答+显示来源' },
       { cmd: 'xbrowser zhihu chat --query "我的收藏里关于Python的内容" --source my', description: '搜索个人知识库' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const { page, tips } = resolvePage(ctx as Record<string, unknown>);
@@ -853,6 +858,7 @@ export default function (xcli: XCLIAPI): void {
         description: '发布带外链的知乎文章',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 

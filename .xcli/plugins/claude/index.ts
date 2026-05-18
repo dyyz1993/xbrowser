@@ -103,6 +103,7 @@ export default function (xcli: XCLIAPI): void {
     description: '列出所有历史会话',
     scope: 'page',
     parameters: z.object({}),
+    result: z.any(),
     examples: [
       { cmd: 'xbrowser claude list', description: '列出所有会话' },
       { cmd: 'xbrowser claude list --json', description: 'JSON 格式输出' },
@@ -143,6 +144,7 @@ export default function (xcli: XCLIAPI): void {
     description: '创建新的空白对话',
     scope: 'browser',
     parameters: z.object({}),
+    result: z.any(),
     examples: [
       { cmd: 'xbrowser claude new', description: '新建对话' },
     ],
@@ -205,6 +207,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       title: z.string().describe('会话标题（支持模糊匹配）'),
     }),
+    result: z.any(),
     examples: [
       { cmd: 'xbrowser claude open "1加1等于2"', description: '打开指定会话' },
       { cmd: 'xbrowser claude open "股票"', description: '模糊匹配打开' },
@@ -257,6 +260,7 @@ export default function (xcli: XCLIAPI): void {
       search: z.boolean().optional().describe('开启联网搜索'),
       showSources: z.boolean().optional().describe('显示联网搜索引用的来源 URL 和域名'),
     }),
+    result: z.any(),
     examples: [
       { cmd: 'xbrowser claude chat "你好"', description: '发送消息' },
       { cmd: 'xbrowser claude chat "分析这张图" --attach /path/to/img.jpg', description: '发送消息+图片' },
@@ -520,6 +524,7 @@ export default function (xcli: XCLIAPI): void {
       type: z.enum(['image', 'file', 'url']).describe('附件类型'),
       path: z.string().describe('文件路径 或 URL 链接'),
     }),
+    result: z.any(),
     examples: [
       { cmd: 'xbrowser claude attach image ~/photo.jpg', description: '上传图片' },
       { cmd: 'xbrowser claude attach url "https://example.com"', description: '发送 URL 链接' },

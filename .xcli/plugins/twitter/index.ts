@@ -70,6 +70,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser twitter search --query "OpenAI"', description: '搜索 OpenAI 相关推文' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx as Record<string, unknown>);
       const tips = buildTips(ctx as Record<string, unknown>);
@@ -119,6 +120,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser twitter profile --username "elonmusk"', description: '获取 Elon Musk 资料' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx as Record<string, unknown>);
       const tips = buildTips(ctx as Record<string, unknown>);
@@ -193,6 +195,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser twitter timeline --username "elonmusk"', description: '获取 Elon Musk 最新推文' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx as Record<string, unknown>);
       const tips = buildTips(ctx as Record<string, unknown>);
@@ -276,6 +279,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser twitter replies --id "123456789"', description: '获取推文回复' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx as Record<string, unknown>);
       const tips = buildTips(ctx as Record<string, unknown>);
@@ -327,6 +331,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser twitter liked --username "elonmusk"', description: '获取 Elon Musk 点赞' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx as Record<string, unknown>);
       const tips = buildTips(ctx as Record<string, unknown>);
@@ -369,6 +374,7 @@ export default function (xcli: XCLIAPI): void {
       page: z.any().optional(),
       timeout: z.number().optional().default(20000),
     }),
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (params.page as import('playwright').Page) || (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');

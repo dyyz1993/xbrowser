@@ -28,6 +28,7 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser csdn login', description: '登录 CSDN' }],
+    result: z.any(),
     handler: async (_params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -87,6 +88,7 @@ export default function (xcli: XCLIAPI): void {
         description: '发布带外链的博客文章',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -179,6 +181,7 @@ export default function (xcli: XCLIAPI): void {
         description: '保存为草稿',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -246,6 +249,7 @@ export default function (xcli: XCLIAPI): void {
         description: '更新 Profile 添加外链',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -307,6 +311,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser csdn fetch-articles --keyword "React"', description: '搜索 React 相关文章' },
       { cmd: 'xbrowser csdn fetch-articles --username "zhangsan"', description: '获取指定用户的文章' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 

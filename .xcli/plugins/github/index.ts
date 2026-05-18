@@ -45,12 +45,7 @@ export default function (xcli: XCLIAPI): void {
       name: z.string().optional().describe('显示名称'),
       hireable: z.boolean().optional().describe('是否开放招聘'),
     }),
-    examples: [
-      {
-        cmd: 'xbrowser github update-profile --bio "Full-stack developer" --blog "https://example.com"',
-        description: '更新简介和网站链接',
-      },
-    ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips } = buildCtxTips(ctx);
@@ -120,12 +115,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       url: z.string().describe('社交链接 URL'),
     }),
-    examples: [
-      {
-        cmd: 'xbrowser github add-social-link --url "https://twitter.com/yourname"',
-        description: '添加 Twitter 链接',
-      },
-    ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips } = buildCtxTips(ctx);
@@ -196,12 +186,7 @@ export default function (xcli: XCLIAPI): void {
       description: z.string().optional().describe('Gist 描述'),
       public: z.boolean().optional().default(true).describe('是否公开'),
     }),
-    examples: [
-      {
-        cmd: 'xbrowser github create-gist --filename "seo.md" --content "# My Project\\nhttps://example.com" --description "Project info"',
-        description: '创建带外链的 Gist',
-      },
-    ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips } = buildCtxTips(ctx);
@@ -280,6 +265,7 @@ export default function (xcli: XCLIAPI): void {
       username: z.string().optional().describe('GitHub 用户名，不填则获取自己的'),
     }),
     examples: [{ cmd: 'xbrowser github get-profile', description: '获取 Profile 信息' }],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips } = buildCtxTips(ctx);
@@ -355,12 +341,7 @@ export default function (xcli: XCLIAPI): void {
       private: z.boolean().optional().default(false).describe('是否私有'),
       readme: z.boolean().optional().default(true).describe('是否初始化 README'),
     }),
-    examples: [
-      {
-        cmd: 'xbrowser github create-repo --name "my-project" --description "My project" --readme true',
-        description: '创建公开仓库',
-      },
-    ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips } = buildCtxTips(ctx);
@@ -440,12 +421,7 @@ export default function (xcli: XCLIAPI): void {
       content: z.string().describe('README 内容（Markdown）'),
       message: z.string().optional().describe('提交信息'),
     }),
-    examples: [
-      {
-        cmd: 'xbrowser github edit-readme --repo "user/my-project" --content "# My Project\\nhttps://example.com" --message "Update README"',
-        description: '编辑仓库 README 添加外链',
-      },
-    ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips } = buildCtxTips(ctx);

@@ -206,6 +206,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('create', {
     description: '在 Suno 上生成音乐。传 --prompt 使用简单模式，传 --lyric+--style 使用高级模式。--wait 同步等待结果',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       prompt: z.string().optional().describe('简单模式：描述你想创作的音乐（如 "A gentle piano melody with soft strings"）'),
       lyric: z.string().optional().describe('高级模式：自定义歌词文本'),
@@ -449,6 +450,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('result', {
     description: '获取最新生成的音乐音频 URL（被动拦截页面 feed 数据）',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(10).describe('返回条数（默认 10）'),
     }),
@@ -504,6 +506,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('status', {
     description: '检查当前页面音乐生成状态（被动拦截 feed 数据）',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({}),
     examples: [
       { cmd: 'xbrowser suno status --cdp 9221', description: '检查状态' },
@@ -558,6 +561,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('library', {
     description: '查看 Suno 创作历史/歌曲列表',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(20).describe('返回条数（默认 20）'),
     }),

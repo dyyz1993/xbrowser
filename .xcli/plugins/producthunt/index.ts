@@ -12,6 +12,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('login', {
     description: '登录 Product Hunt（Google OAuth）',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser producthunt login', description: '登录 Product Hunt' }],
     handler: async (params, ctx) => {
@@ -55,6 +56,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('submit-product', {
     description: '提交新产品（含 dofollow 外链）',
     scope: 'page',
+    result: z.any(),
     parameters: z.object({
       name: z.string().describe('产品名称'),
       tagline: z.string().describe('一句话描述'),
@@ -152,6 +154,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('comment', {
     description: '在产品页面评论（含外链）',
     scope: 'page',
+    result: z.any(),
     parameters: z.object({
       productUrl: z.string().describe('产品页面 URL'),
       content: z.string().describe('评论内容（可含链接）'),
@@ -209,6 +212,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('update-profile', {
     description: '更新 Product Hunt 个人资料（添加外链）',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       url: z.string().describe('要添加到 Profile 的网站 URL'),
       bio: z.string().optional().describe('个人简介文本'),

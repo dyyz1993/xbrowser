@@ -12,6 +12,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('extract', {
     description: '从指定URL提取页面结构化内容',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       url: z.string().describe('目标页面URL'),
       selector: z.string().optional().default('body').describe('CSS选择器，默认body'),
@@ -94,6 +95,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('paginate', {
     description: '分页采集：自动翻页并提取数据',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       url: z.string().describe('起始页URL'),
       nextSelector: z
@@ -176,6 +178,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('fill-and-submit', {
     description: '填写表单并提交',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       url: z.string().describe('表单页面URL'),
       fields: z
@@ -240,6 +243,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('screenshot', {
     description: '截取网页截图',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       url: z.string().describe('目标URL'),
       fullPage: z.boolean().optional().default(false).describe('是否全页截图'),

@@ -98,6 +98,7 @@ export default function (xcli: XCLIAPI): void {
     description: '列出所有历史会话',
     scope: 'page',
     parameters: z.object({}),
+    result: z.any(),
     examples: [
       { cmd: 'xbrowser deepseek list', description: '列出所有会话' },
       { cmd: 'xbrowser deepseek list --json', description: 'JSON 格式输出' },
@@ -141,6 +142,7 @@ export default function (xcli: XCLIAPI): void {
     description: '创建新的空白对话',
     scope: 'browser',
     parameters: z.object({}),
+    result: z.any(),
     examples: [
       { cmd: 'xbrowser deepseek new', description: '新建对话' },
     ],
@@ -203,6 +205,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       title: z.string().describe('会话标题（支持模糊匹配）'),
     }),
+    result: z.any(),
     examples: [
       { cmd: 'xbrowser deepseek open "1加1等于2"', description: '打开指定会话' },
       { cmd: 'xbrowser deepseek open "股票"', description: '模糊匹配打开' },
@@ -258,6 +261,7 @@ export default function (xcli: XCLIAPI): void {
       search: z.boolean().optional().describe('开启联网搜索'),
       showSources: z.boolean().optional().describe('显示联网搜索引用的来源 URL 和域名'),
     }),
+    result: z.any(),
     examples: [
       { cmd: 'xbrowser deepseek chat "你好"', description: '发送消息' },
       { cmd: 'xbrowser deepseek chat "分析这张图" --attach /path/to/img.jpg', description: '发送消息+图片' },
@@ -555,6 +559,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       mode: z.enum(['normal', 'expert']).describe('模式：normal=快速模式, expert=专家模式'),
     }),
+    result: z.any(),
     examples: [
       { cmd: 'xbrowser deepseek mode expert', description: '专家模式' },
       { cmd: 'xbrowser deepseek mode normal', description: '快速模式' },
@@ -646,6 +651,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       state: z.enum(['on', 'off']).describe('on=开启, off=关闭'),
     }),
+    result: z.any(),
     examples: [
       { cmd: 'xbrowser deepseek think on', description: '开启深度思考' },
       { cmd: 'xbrowser deepseek think off', description: '关闭深度思考' },
@@ -691,6 +697,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       state: z.enum(['on', 'off']).describe('on=开启, off=关闭'),
     }),
+    result: z.any(),
     examples: [
       { cmd: 'xbrowser deepseek search on', description: '开启智能搜索' },
       { cmd: 'xbrowser deepseek search off', description: '关闭智能搜索' },
@@ -737,6 +744,7 @@ export default function (xcli: XCLIAPI): void {
       type: z.enum(['image', 'file', 'url']).describe('附件类型'),
       path: z.string().describe('文件路径 或 URL 链接'),
     }),
+    result: z.any(),
     examples: [
       { cmd: 'xbrowser deepseek attach image ~/photo.jpg', description: '上传图片' },
       { cmd: 'xbrowser deepseek attach url "https://example.com"', description: '发送 URL 链接' },

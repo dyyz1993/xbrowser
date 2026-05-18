@@ -208,13 +208,7 @@ export default function (xcli: XCLIAPI): void {
         .default('qrcode')
         .describe('登录方式：qrcode=扫码, password=账号密码'),
     }),
-    examples: [
-      { cmd: 'xbrowser taobao login', description: '扫码登录淘宝' },
-      {
-        cmd: 'xbrowser taobao login --method password',
-        description: '账号密码登录',
-      },
-    ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips } = buildCtxTips(ctx);
@@ -311,6 +305,7 @@ export default function (xcli: XCLIAPI): void {
         description: '按销量排序搜索',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -454,6 +449,7 @@ export default function (xcli: XCLIAPI): void {
         description: '搜索100-500元销量最高的机械键盘',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -605,6 +601,7 @@ export default function (xcli: XCLIAPI): void {
         description: '通过商品 ID 获取详情',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -795,6 +792,7 @@ export default function (xcli: XCLIAPI): void {
         description: '获取商品完整详情',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -1010,6 +1008,7 @@ export default function (xcli: XCLIAPI): void {
         description: '获取有图评价',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -1200,6 +1199,7 @@ export default function (xcli: XCLIAPI): void {
         description: '通过店铺 ID 获取信息',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -1323,6 +1323,7 @@ export default function (xcli: XCLIAPI): void {
         description: '获取店铺销量排序商品',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -1438,6 +1439,7 @@ export default function (xcli: XCLIAPI): void {
         description: '获取商品优惠券',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -1569,6 +1571,7 @@ export default function (xcli: XCLIAPI): void {
         description: '更新店铺信息',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -1650,6 +1653,7 @@ export default function (xcli: XCLIAPI): void {
       page: z.any().optional(),
       timeout: z.number().optional().default(20000),
     }),
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (params.page as import('playwright').Page) || (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');

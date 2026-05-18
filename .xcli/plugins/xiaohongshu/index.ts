@@ -200,6 +200,7 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({ noteId: z.string().describe('笔记 ID') }),
     examples: [{ cmd: 'xbrowser xiaohongshu detail --noteId "67xxxxxxxxxxxxxx"', description: '获取笔记详情' }],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -242,6 +243,7 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({ userId: z.string().describe('用户 ID'), maxPages: z.number().default(5).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu notes --userId "5xxxxxxxxxxxx"', description: '采集用户笔记' }],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -273,6 +275,7 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({ userId: z.string().describe('用户 ID') }),
     examples: [{ cmd: 'xbrowser xiaohongshu profile --userId "5xxxxxxxxxxxx"', description: '获取用户资料' }],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -326,6 +329,7 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({ keyword: z.string().describe('搜索关键词'), maxPages: z.number().default(3).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu search --keyword "美食推荐"', description: '搜索笔记' }],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -357,6 +361,7 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({ noteId: z.string().describe('笔记 ID'), maxPages: z.number().default(8).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu comments --noteId "67xxxxxxxxxxxxxx"', description: '获取笔记评论' }],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -392,6 +397,7 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({ maxPages: z.number().default(3).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu feed', description: '获取首页推荐' }],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -423,6 +429,7 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({ url: z.string().describe('短链 URL') }),
     examples: [{ cmd: 'xbrowser xiaohongshu resolve-url --url "https://xhslink.com/xxx"', description: '解析短链' }],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -459,6 +466,7 @@ export default function (xcli: XCLIAPI): void {
       page: z.any().optional(),
       timeout: z.number().optional().default(20000),
     }),
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (params.page as import('playwright').Page) || (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');

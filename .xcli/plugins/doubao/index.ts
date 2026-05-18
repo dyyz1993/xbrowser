@@ -165,6 +165,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao list', description: '列出所有会话' },
       { cmd: 'xbrowser doubao list --json', description: 'JSON 格式输出' },
     ],
+    result: z.any(),
     handler: async (_params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -205,6 +206,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao new', description: '新建对话' },
     ],
+    result: z.any(),
     handler: async (_params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -264,6 +266,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao open "工作计划"', description: '打开指定会话' },
       { cmd: 'xbrowser doubao open "代码"', description: '模糊匹配打开' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -318,6 +321,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao chat "2024年新闻" --search --showSources', description: '联网搜索+显示来源' },
       { cmd: 'xbrowser doubao chat "深度研究AI趋势" --think --search --showSources', description: '深度思考+联网搜索+来源' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -620,6 +624,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao image --prompt "赛博朋克城市" --model Seedance --ratio 16:9', description: '指定模型和比例' },
       { cmd: 'xbrowser doubao image --prompt "油画风格的花园" --style 水彩 --ref /path/to/ref.jpg', description: '指定风格+参考图' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -729,6 +734,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao image-edit --action erase --image /path/to/img.jpg', description: '擦除' },
       { cmd: 'xbrowser doubao image-edit --action enhance --image /path/to/img.jpg', description: '增强' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -824,6 +830,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao image-cutout --image /path/to/img.jpg', description: 'AI 抠图' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -898,6 +905,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao image-vary --image /path/to/img.jpg', description: '图片衍生' },
       { cmd: 'xbrowser doubao image-vary --image /path/to/img.jpg --prompt "更亮色调"', description: '带提示词的衍生' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -963,6 +971,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao my-creations', description: '查看所有创作' },
       { cmd: 'xbrowser doubao my-creations --type image', description: '只看图片' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1033,6 +1042,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao video --prompt "一只猫在草地上奔跑"', description: '提交视频生成' },
       { cmd: 'xbrowser doubao video --prompt "赛博朋克城市夜景" --model Seedance2.0', description: '指定模型' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1102,6 +1112,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao video-status --task abc123', description: '检查状态' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1154,6 +1165,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao video-result --task abc123', description: '获取视频 URL' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1221,6 +1233,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao music --lyric "明月几时有，把酒问青天" --style 古风 --mood 激昂 --timeout 90', description: '自定义歌词模式' },
       { cmd: 'xbrowser doubao music --description "草原牧歌" --debug --timeout 60', description: '带 debug 模式，记录 API 结构' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1628,6 +1641,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao music-status --task my-music --session music-session --cdp 9221', description: '检查音乐状态' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1695,6 +1709,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao music-result --session music-session --cdp 9221', description: '获取音乐 URL' },
       { cmd: 'xbrowser doubao music-result --task my-track --session music-session --cdp 9221', description: '带标记获取' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1774,6 +1789,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao upload --path /path/to/document.pdf', description: '上传文件' },
       { cmd: 'xbrowser doubao upload --path ~/photo.jpg', description: '上传图片' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1841,6 +1857,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao cloud-drive --list', description: '列出云盘文件' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1905,6 +1922,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao mode --model 豆包Pro', description: '切换到豆包Pro' },
       { cmd: 'xbrowser doubao mode --model Seedream', description: '切换到 Seedream' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1971,6 +1989,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao search --query "今日热搜"', description: '联网搜索' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -2166,6 +2185,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao attach file ~/document.pdf', description: '上传文件' },
       { cmd: 'xbrowser doubao attach file ~/report.xlsx', description: '上传 Excel 文件' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);

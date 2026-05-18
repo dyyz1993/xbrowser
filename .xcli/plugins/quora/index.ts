@@ -14,6 +14,7 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser quora login', description: '登录 Quora' }],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
@@ -65,6 +66,7 @@ export default function (xcli: XCLIAPI): void {
         description: '回答问题并插入外链',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
@@ -130,6 +132,7 @@ export default function (xcli: XCLIAPI): void {
         description: '在 Quora 发布文章',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
@@ -193,6 +196,7 @@ export default function (xcli: XCLIAPI): void {
         description: '更新 Profile 添加外链',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');

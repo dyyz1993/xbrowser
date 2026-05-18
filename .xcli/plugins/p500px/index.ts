@@ -18,6 +18,7 @@ export default function (xcli: XCLIAPI): void {
       page: z.any().optional(),
       timeout: z.number().optional().default(20000),
     }),
+    result: z.any(),
     handler: async (params, ctx) => {
       const browserPage = (params.page as import('playwright').Page)
         || (ctx as Record<string, unknown>).page as import('playwright').Page;

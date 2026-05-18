@@ -226,6 +226,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('shop', {
     description: '获取1688店铺信息',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       url: z.string().optional().describe('店铺 URL，如 https://ouyimei.1688.com/'),
       memberId: z.string().optional().describe('店铺 memberId（与 url 二选一）'),
@@ -455,6 +456,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('products', {
     description: '获取1688店铺商品列表',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       url: z.string().optional().describe('店铺 URL'),
       memberId: z.string().optional().describe('店铺 memberId（与 url 二选一）'),
@@ -617,6 +619,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('product-detail', {
     description: '获取1688商品详情',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       url: z.string().optional().describe('商品 URL'),
       offerId: z.string().optional().describe('商品 offerId（与 url 二选一）'),
@@ -883,6 +886,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('search', {
     description: '搜索1688商品',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       query: z.string().describe('搜索关键词'),
       limit: z.number().optional().default(20).describe('获取商品数量'),
@@ -1038,6 +1042,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('categories', {
     description: '获取1688店铺分类列表',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       url: z.string().optional().describe('店铺 URL'),
       memberId: z.string().optional().describe('店铺 memberId（与 url 二选一）'),

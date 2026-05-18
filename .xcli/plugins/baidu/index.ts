@@ -54,6 +54,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser baidu search --query "AI"', description: '搜索 AI 相关内容' },
       { cmd: 'xbrowser baidu search --query "编程" --pages 3', description: '搜索编程并采集前3页' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -164,6 +165,7 @@ export default function (xcli: XCLIAPI): void {
         .describe('热搜分类'),
     }),
     examples: [{ cmd: 'xbrowser baidu hotsearch', description: '获取热搜榜单' }],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -241,6 +243,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser baidu suggest --query "编程"', description: '获取编程的搜索建议' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -282,6 +285,7 @@ export default function (xcli: XCLIAPI): void {
       limit: z.number().optional().default(10).describe('结果数量'),
     }),
     examples: [{ cmd: 'xbrowser baidu news --query "AI"', description: '获取 AI 相关新闻' }],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -358,6 +362,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser baidu seo-rank --domain "github.com" --keyword "代码托管"', description: '查询 GitHub 在"代码托管"的排名' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -446,6 +451,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser baidu search-image --query "风景" --size large --limit 10', description: '搜索大尺寸风景图片' },
       { cmd: 'xbrowser baidu search-image --query "logo" --size icon --color red', description: '搜索红色图标' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (params.page || (ctx as Record<string, unknown>).page) as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');

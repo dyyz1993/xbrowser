@@ -14,6 +14,7 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser medium login', description: '登录 Medium' }],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
@@ -65,6 +66,7 @@ export default function (xcli: XCLIAPI): void {
         description: '发布带外链的文章',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
@@ -136,6 +138,7 @@ export default function (xcli: XCLIAPI): void {
         description: '保存为草稿',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
@@ -193,6 +196,7 @@ export default function (xcli: XCLIAPI): void {
         description: '导入文章并设置 canonical',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
@@ -250,6 +254,7 @@ export default function (xcli: XCLIAPI): void {
         description: '更新 Profile 添加外链',
       },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');

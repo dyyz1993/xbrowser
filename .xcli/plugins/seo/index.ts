@@ -21,6 +21,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('ping', {
     description: '通过 sitemap ping 通知搜索引擎抓取站点地图',
     scope: 'project',
+    result: z.any(),
     parameters: z.object({
       sitemap: z.string().describe('sitemap.xml 的完整 URL'),
       engines: z.string().optional().describe('目标引擎，逗号分隔 (google,bing)，默认全部'),
@@ -74,6 +75,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('submit', {
     description: '通过 IndexNow 协议提交 URL 给搜索引擎（Bing/Yandex/Seznam 等）',
     scope: 'project',
+    result: z.any(),
     parameters: z.object({
       url: z.string().describe('要提交的完整 URL'),
       key: z.string().describe('IndexNow key（先运行 setup-indexnow 生成）'),
@@ -123,6 +125,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('bulk-submit', {
     description: '批量提交多个 URL 到 IndexNow（最多 10000 条）',
     scope: 'project',
+    result: z.any(),
     parameters: z.object({
       urls: z.string().describe('逗号分隔的 URL 列表'),
       key: z.string().describe('IndexNow key'),
@@ -194,6 +197,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('setup-indexnow', {
     description: '生成 IndexNow key — 配置后 xbrowser seo submit 才能工作',
     scope: 'project',
+    result: z.any(),
     parameters: z.object({
       domain: z.string().describe('你的域名'),
     }),
@@ -228,6 +232,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('check', {
     description: '检查域名的 IndexNow / robots.txt / sitemap 等 SEO 基础配置',
     scope: 'project',
+    result: z.any(),
     parameters: z.object({
       domain: z.string().describe('域名'),
     }),
@@ -336,6 +341,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('analyze', {
     description: '分析页面 SEO 因素，给出评分和优化建议',
     scope: 'project',
+    result: z.any(),
     parameters: z.object({
       url: z.string().describe('要分析的页面 URL'),
       html: z.string().optional().describe('直接传入 HTML 字符串，跳过网络抓取'),
@@ -492,6 +498,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('setup-guide', {
     description: '输出完整的搜索引擎收录配置指南',
     scope: 'project',
+    result: z.any(),
     parameters: z.object({
       domain: z.string().describe('你的域名'),
     }),
@@ -529,6 +536,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('backlinks', {
     description: '列出外链提交平台及精确入口 URL（57 个平台，11 个类别）',
     scope: 'project',
+    result: z.any(),
     parameters: z.object({
       category: z.string().optional().describe('按类别筛选: ' + categories.join('/')),
       search: z.string().optional().describe('按名称或网址搜索'),
@@ -595,6 +603,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('login', {
     description: '在浏览器中登录外链平台，保存登录状态',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       platform: z.string().describe('平台名称（模糊匹配，如 github / linkedin）'),
     }),
@@ -655,6 +664,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('logout', {
     description: '清除平台的登录状态',
     scope: 'project',
+    result: z.any(),
     parameters: z.object({
       platform: z.string().optional().describe('平台名称或 "all" 清除全部'),
     }),
@@ -907,6 +917,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('submit-backlink', {
     description: '在浏览器中打开外链平台的外链提交入口页面，可选自动填写 URL',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       platform: z.string().describe('平台名称（模糊匹配，如 linkedin / github / medium）'),
       url: z.string().optional().describe('要填写的网站 URL（提供后自动填写并保存）'),
@@ -1026,6 +1037,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('submit-guest-post', {
     description: '在浏览器中提交客座文章到支持 Guest Post 的平台',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       platform: z.string().describe('平台名称（如 css-tricks / smashing-magazine / search-engine-journal）'),
       name: z.string().describe('你的姓名'),
@@ -1266,6 +1278,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('setup-email', {
     description: '配置邮箱 IMAP 授权（用于自动获取验证码，支持 QQ 邮箱等）',
     scope: 'project',
+    result: z.any(),
     parameters: z.object({
       user: z.string().describe('邮箱地址（如 dyyz1993@qq.com）'),
       pass: z.string().describe('IMAP 授权码（非邮箱密码，QQ邮箱需在设置中开启 IMAP 并生成授权码）'),
@@ -1312,6 +1325,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('verify-email', {
     description: '从 Gmail 获取最新的验证邮件，提取验证码或验证链接',
     scope: 'project',
+    result: z.any(),
     parameters: z.object({
       from: z.string().describe('发件人过滤（域名或邮箱地址）'),
       maxAge: z.number().optional().describe('最大回溯时间（秒），默认 300').default(300),
@@ -1357,6 +1371,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('register', {
     description: '在浏览器中自动注册外链平台账号',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       platform: z.string().describe('平台名称（模糊匹配）'),
       email: z.string().describe('注册邮箱'),
@@ -1522,6 +1537,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('batch-submit', {
     description: '批量提交网站 URL 到多个外链平台（自动填写并保存）',
     scope: 'browser',
+    result: z.any(),
     parameters: z.object({
       url: z.string().describe('要提交的网站 URL'),
       platforms: z.string().optional().describe('平台组: google/github/oauth27/all 或逗号分隔的平台名称，默认 oauth27'),

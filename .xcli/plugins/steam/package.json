@@ -1,0 +1,21 @@
+{
+  "name": "xbrowser-plugin-steam",
+  "version": "1.0.0",
+  "description": "Steam 游戏评论抓取 — 通过 Steam Review API 批量获取所有语言评论",
+  "main": "index.ts",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "steam",
+    "reviews"
+  ],
+  "author": "dyyz1993",
+  "license": "MIT",
+  "xbrowser": {
+    "site": "https://store.steampowered.com",
+    "requiresLogin": false,
+    "commands": [
+      "reviews"
+    ]
+  }
+}

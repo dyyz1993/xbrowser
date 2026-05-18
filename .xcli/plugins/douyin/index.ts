@@ -215,6 +215,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser douyin videos --url "https://www.douyin.com/user/xxx"', description: '采集用户作品' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -259,6 +260,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser douyin profile --url "https://www.douyin.com/user/xxx"', description: '获取用户资料' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -308,6 +310,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser douyin detail --awemeId "7xxxxxxxxxxxxx"', description: '获取视频详情' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -363,6 +366,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser douyin comments --awemeId "7xxxxxxxxxxxxx"', description: '获取视频评论' },
       { cmd: 'xbrowser douyin comments --awemeId "7xxxxxxxxxxxxx" --maxPages 10', description: '获取更多评论' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -411,6 +415,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser douyin user-comments --uid "xxx"', description: '获取用户喜欢的视频' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -466,6 +471,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser douyin search --keyword "潮汕美食"', description: '搜索视频' },
       { cmd: 'xbrowser douyin search --keyword "潮汕美食" --maxPages 3', description: '搜索并翻页' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -654,6 +660,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser douyin ai-subtitle --url "https://www.douyin.com/video/7xxx" --manual', description: '手动模式提取字幕' },
       { cmd: 'xbrowser douyin ai-subtitle --url "https://www.douyin.com/user/xxx" --videoIndex 0', description: '提取用户第一个作品字幕' },
     ],
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as Page;
       if (!page) throw new Error('需要浏览器页面');

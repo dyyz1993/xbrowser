@@ -14,6 +14,7 @@ export default function (xcli: XCLIAPI): void {
       query: z.string(), limit: z.number().optional().default(20),
       page: z.any().optional(), timeout: z.number().optional().default(20000),
     }),
+    result: z.any(),
     handler: async (params, ctx) => {
       const page = (params.page as import('playwright').Page) || (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
