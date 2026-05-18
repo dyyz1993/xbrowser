@@ -15,6 +15,9 @@ describe('ScreencastCapturer', () => {
     screenshot: vi.fn(),
     url: vi.fn(),
     viewportSize: vi.fn(),
+    context: vi.fn().mockReturnValue({
+      newCDPSession: vi.fn().mockRejectedValue(new Error('no CDP')),
+    }),
   };
 
   beforeEach(async () => {
@@ -54,9 +57,10 @@ describe('ScreencastCapturer', () => {
     mockPage.url.mockReturnValue('https://example.com');
     mockPage.viewportSize.mockReturnValue(null);
 
+    const mockEvaluate = vi.fn().mockRejectedValue(new Error('no evaluate'));
     const capturer = new ScreencastCapturer();
-    const frame = await capturer.captureFrame(mockPage as any, 's1');
-    expect(frame.viewport).toEqual({ width: 0, height: 0 });
+    const frame = await (capturer as any).captureFrame({ ...mockPage, evaluate: mockEvaluate } as any, 's1');
+    expect(frame.viewport).toEqual({ width: 1280, height: 720 });
   });
 
   it('should start capture and invoke callback', async () => {
@@ -76,15 +80,15 @@ describe('ScreencastCapturer', () => {
     vi.useRealTimers();
   });
 
-  it('should throw when starting capture while already capturing', () => {
+  it('should throw when starting capture while already capturing', async () => {
     mockPage.screenshot.mockResolvedValue(Buffer.from('img'));
     mockPage.url.mockReturnValue('https://example.com');
     mockPage.viewportSize.mockReturnValue({ width: 800, height: 600 });
 
     const capturer = new ScreencastCapturer();
-    capturer.startCapture(mockPage as any, 's1', vi.fn());
-    expect(() => capturer.startCapture(mockPage as any, 's1', vi.fn())).toThrow('already capturing');
-    capturer.stopCapture();
+    await capturer.startCapture(mockPage as any, 's1', vi.fn());
+    await expect(capturer.startCapture(mockPage as any, 's1', vi.fn())).rejects.toThrow('already capturing');
+    await capturer.stopCapture();
   });
 
   it('should stop capture and clear state', async () => {
@@ -115,10 +119,11 @@ describe('ScreencastCapturer', () => {
     mockPage.viewportSize.mockReturnValue({ width: 800, height: 600 });
 
     const capturer = new ScreencastCapturer({ interval: 1000 });
-    capturer.startCapture(mockPage as any, 's1', vi.fn());
+    await capturer.startCapture(mockPage as any, 's1', vi.fn());
     expect(capturer.isActive()).toBe(true);
     capturer.setInterval(500);
-    expect(capturer.isActive()).toBe(false);
+    expect(capturer.isActive()).toBe(true);
+    await capturer.stopCapture();
     vi.useRealTimers();
   });
 

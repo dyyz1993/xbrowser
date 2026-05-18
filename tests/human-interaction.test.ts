@@ -51,6 +51,8 @@ import { EventEmitter } from 'events';
 function createMockWSServer(): WSServer & EventEmitter {
   const emitter = new EventEmitter();
   return Object.assign(emitter, {
+    registerSession: vi.fn(),
+    unregisterSession: vi.fn(),
     setPage: vi.fn(),
     getPort: vi.fn().mockReturnValue(9223),
     broadcast: vi.fn(),
@@ -76,7 +78,7 @@ describe('HumanInteractionManager', () => {
 
   describe('constructor', () => {
     it('should initialize with wsServer and page', () => {
-      expect(wsServer.setPage).toHaveBeenCalledWith(mockPage);
+      expect(wsServer.registerSession).toHaveBeenCalledWith('default', mockPage);
     });
   });
 

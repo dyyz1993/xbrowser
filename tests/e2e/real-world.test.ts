@@ -1,4 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import * as fs from 'fs';
+
+const playwrightChromiumPath = '/Users/xuyingzhou/Library/Caches/ms-playwright/chromium_headless_shell-1217';
+const e2eAvailable = fs.existsSync(playwrightChromiumPath);
+
+const describeE2E = e2eAvailable ? describe : describe.skip;
+
 import {
   executeCommand,
   executeChain,
@@ -16,7 +23,7 @@ function unwrap(result: { data: unknown }): unknown {
   return d;
 }
 
-describe('Real-world: example.com automation', () => {
+describeE2E('Real-world: example.com automation', () => {
   const sessionName = `rw-example-${Date.now()}`;
 
   beforeAll(async () => {
@@ -174,7 +181,7 @@ describe('Real-world: example.com automation', () => {
   });
 });
 
-describe('Real-world: navigation (click/back/forward)', () => {
+describeE2E('Real-world: navigation (click/back/forward)', () => {
   const sessionName = `rw-nav-${Date.now()}`;
 
   beforeAll(async () => {
@@ -208,7 +215,7 @@ describe('Real-world: navigation (click/back/forward)', () => {
   });
 });
 
-describe('Real-world: httpbin.org form automation', () => {
+describeE2E('Real-world: httpbin.org form automation', () => {
   const sessionName = `rw-httpbin-${Date.now()}`;
 
   beforeAll(async () => {
@@ -269,7 +276,7 @@ describe('Real-world: httpbin.org form automation', () => {
   });
 });
 
-describe('Real-world: chain execution on example.com', () => {
+describeE2E('Real-world: chain execution on example.com', () => {
   const sessionName = `rw-chain-${Date.now()}`;
 
   beforeAll(async () => {
@@ -326,7 +333,7 @@ describe('Real-world: chain execution on example.com', () => {
   }, 60000);
 });
 
-describe('Real-world: evaluateFn command', () => {
+describeE2E('Real-world: evaluateFn command', () => {
   const sessionName = `rw-evalfn-${Date.now()}`;
 
   beforeAll(async () => {

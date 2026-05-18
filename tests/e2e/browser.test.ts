@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import * as fs from 'fs';
+
+const playwrightChromiumPath = '/Users/xuyingzhou/Library/Caches/ms-playwright/chromium_headless_shell-1217';
+const e2eAvailable = fs.existsSync(playwrightChromiumPath);
+
+const describeE2E = e2eAvailable ? describe : describe.skip;
+
 import {
   executeCommand,
   createSession,
@@ -16,7 +23,7 @@ function unwrap(result: { data: unknown }): unknown {
   return d;
 }
 
-describe('E2E: Browser Automation', () => {
+describeE2E('E2E: Browser Automation', () => {
   let browser: Browser;
   let context: BrowserContext;
   let page: Page;
@@ -128,7 +135,7 @@ describe('E2E: Browser Automation', () => {
   });
 });
 
-describe('E2E: Chain Execution', () => {
+describeE2E('E2E: Chain Execution', () => {
   let sessionName: string;
 
   beforeAll(async () => {

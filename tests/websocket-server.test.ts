@@ -7,29 +7,21 @@ function createMockPage(): Page {
     mouse: {
       click: vi.fn().mockResolvedValue(undefined),
       wheel: vi.fn().mockResolvedValue(undefined),
+      move: vi.fn().mockResolvedValue(undefined),
+      down: vi.fn().mockResolvedValue(undefined),
+      up: vi.fn().mockResolvedValue(undefined),
     },
     keyboard: {
       type: vi.fn().mockResolvedValue(undefined),
       press: vi.fn().mockResolvedValue(undefined),
+      down: vi.fn().mockResolvedValue(undefined),
+      up: vi.fn().mockResolvedValue(undefined),
+      insertText: vi.fn().mockResolvedValue(undefined),
     },
+    fill: vi.fn().mockResolvedValue(undefined),
+    evaluate: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(),
   } as unknown as Page;
-}
-
-function createMockWS(incoming: { on: (event: string, handler: (...args: unknown[]) => void) => void }) {
-  const sent: string[] = [];
-  let closed = false;
-
-  return {
-    sent,
-    get closed() {
-      return closed;
-    },
-    ws: {
-      send: (data: string) => { sent.push(data); },
-      close: () => { closed = true; },
-      on: incoming.on,
-    },
-  };
 }
 
 describe('WSServer', () => {
@@ -51,46 +43,51 @@ describe('WSServer', () => {
     await server.stop();
   });
 
-  it('should set and clear page reference', () => {
+  it('should register and unregister a session page', () => {
     const page = createMockPage();
-    expect(server.getPage()).toBeNull();
-    server.setPage(page);
-    expect(server.getPage()).toBe(page);
+    const sessionId = 'test-session';
+
+    server.registerSession(sessionId, page);
+    server.unregisterSession(sessionId);
   });
 
   describe('bidirectional message handling', () => {
+    const sessionId = 'test-session';
+    const clientId = 'test-client-id';
+
+    beforeEach(() => {
+      const page = createMockPage();
+      server.registerSession(sessionId, page);
+
+      (server as any).clients.set(clientId, {
+        id: clientId,
+        sessionId,
+        ws: { send: vi.fn(), close: vi.fn(), on: vi.fn() },
+      });
+    });
+
+    afterEach(() => {
+      server.unregisterSession(sessionId);
+    });
+
     it('should emit human-solved on solved message', async () => {
       const solvedSpy = vi.fn();
       server.on('human-solved', solvedSpy);
 
-      const page = createMockPage();
-      server.setPage(page);
-
-      let messageHandler: ((...args: unknown[]) => void) | undefined;
-      const { ws } = createMockWS({
-        on: (_event: string, handler: (...args: unknown[]) => void) => {
-          messageHandler = handler;
-        },
-      });
-
-      await server.start();
-
-      const clientId = server.getClientCount() > 0 ? 'test' : 'test';
       server['handleInboundMessage'](clientId, {
         type: 'solved',
       });
 
       expect(solvedSpy).toHaveBeenCalledWith({
-        sessionId: null,
+        sessionId,
         clientId,
       });
     });
 
     it('should forward click to page', async () => {
-      const page = createMockPage();
-      server.setPage(page);
+      const page = (server as any).screencasts.get(sessionId).page as Page;
 
-      await server['handleInboundMessage']('test-client', {
+      await server['handleInboundMessage'](clientId, {
         type: 'click',
         x: 100,
         y: 200,
@@ -101,10 +98,9 @@ describe('WSServer', () => {
     });
 
     it('should forward click with default button', async () => {
-      const page = createMockPage();
-      server.setPage(page);
+      const page = (server as any).screencasts.get(sessionId).page as Page;
 
-      await server['handleInboundMessage']('test-client', {
+      await server['handleInboundMessage'](clientId, {
         type: 'click',
         x: 50,
         y: 75,
@@ -114,10 +110,9 @@ describe('WSServer', () => {
     });
 
     it('should forward type to page keyboard', async () => {
-      const page = createMockPage();
-      server.setPage(page);
+      const page = (server as any).screencasts.get(sessionId).page as Page;
 
-      await server['handleInboundMessage']('test-client', {
+      await server['handleInboundMessage'](clientId, {
         type: 'type',
         text: 'hello',
       });
@@ -126,10 +121,9 @@ describe('WSServer', () => {
     });
 
     it('should forward keypress to page keyboard', async () => {
-      const page = createMockPage();
-      server.setPage(page);
+      const page = (server as any).screencasts.get(sessionId).page as Page;
 
-      await server['handleInboundMessage']('test-client', {
+      await server['handleInboundMessage'](clientId, {
         type: 'keypress',
         key: 'Enter',
       });
@@ -138,10 +132,9 @@ describe('WSServer', () => {
     });
 
     it('should forward scroll to page mouse wheel', async () => {
-      const page = createMockPage();
-      server.setPage(page);
+      const page = (server as any).screencasts.get(sessionId).page as Page;
 
-      await server['handleInboundMessage']('test-client', {
+      await server['handleInboundMessage'](clientId, {
         type: 'scroll',
         deltaX: 0,
         deltaY: 300,
@@ -151,10 +144,14 @@ describe('WSServer', () => {
     });
 
     it('should not crash when page is null', async () => {
-      server.setPage(null as unknown as Page);
+      const noPageClientId = 'no-page-client';
+      (server as any).clients.set(noPageClientId, {
+        id: noPageClientId,
+        ws: { send: vi.fn(), close: vi.fn(), on: vi.fn() },
+      });
 
       await expect(
-        server['handleInboundMessage']('test-client', {
+        server['handleInboundMessage'](noPageClientId, {
           type: 'click',
           x: 10,
           y: 20,

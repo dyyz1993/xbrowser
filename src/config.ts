@@ -3,17 +3,21 @@ import { join } from 'path';
 import { homedir, tmpdir } from 'os';
 import { readJsonFile } from './utils/json-file.js';
 
-const CONFIG_FILE = join(homedir() || tmpdir(), '.xbrowser', 'config.json');
+function getConfigFile(): string {
+  return join(homedir() || tmpdir(), '.xbrowser', 'config.json');
+}
 
 export function loadConfig(): Record<string, unknown> {
-  if (!existsSync(CONFIG_FILE)) return {};
-  return readJsonFile(CONFIG_FILE, {});
+  const configFile = getConfigFile();
+  if (!existsSync(configFile)) return {};
+  return readJsonFile(configFile, {});
 }
 
 export function saveConfig(config: Record<string, unknown>): void {
   const dir = join(homedir() || tmpdir(), '.xbrowser');
+  const configFile = getConfigFile();
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  writeFileSync(configFile, JSON.stringify(config, null, 2), 'utf-8');
 }
 
 export function getConfigValue(key: string): unknown {
