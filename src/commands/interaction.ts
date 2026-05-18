@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
+import { detectCaptcha, waitForCaptchaSolved } from '../lib/captcha.js';
 
 export const clickCommand = registerCommand({
   name: 'click',
@@ -12,10 +13,13 @@ export const clickCommand = registerCommand({
     button: z.enum(['left', 'right', 'middle']).optional(),
     clickCount: z.number().optional(),
     delay: z.number().optional(),
+    waitCaptcha: z.boolean().optional().default(false).describe('点击后检测 captcha 并等待解决'),
+    waitCaptchaTimeout: z.number().int().optional().default(180000).describe('Captcha 等待超时（毫秒）'),
   }),
   result: z.object({
     selector: z.string(),
     newTab: z.object({ url: z.string(), title: z.string() }).optional(),
+    captcha: z.any().optional(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
     // 用 Promise 监听新 Tab 打开事件（target="_blank" 链接等）
@@ -54,6 +58,8 @@ export const clickCommand = registerCommand({
 
     void cleanup;
 
+    const page = ctx.page;
+
     if (detectedNewPage) {
       const np = detectedNewPage;
       await np.waitForLoadState('domcontentloaded').catch(() => {});
@@ -64,6 +70,21 @@ export const clickCommand = registerCommand({
         newTab: { url: newUrl, title: newTitle },
       });
       result.tips = [`新 Tab 已打开: ${newTitle ? newTitle + ' — ' : ''}${newUrl}`];
+      return result;
+    }
+
+    const captchaInfo = await detectCaptcha(page);
+    if (captchaInfo) {
+      const tips: string[] = [
+        `⚠️ CAPTCHA detected: ${captchaInfo.type}`,
+        `Please solve it in the browser or viewer`,
+      ];
+      if (p.waitCaptcha) {
+        const solved = await waitForCaptchaSolved(page, captchaInfo, p.waitCaptchaTimeout || 180000);
+        tips.push(solved ? '✅ CAPTCHA solved!' : '❌ CAPTCHA timeout');
+      }
+      const result = ok({ selector: p.selector, captcha: captchaInfo });
+      result.tips = tips;
       return result;
     }
 
@@ -84,13 +105,53 @@ export const fillCommand = registerCommand({
     selector: z.string(),
     value: z.string(),
     cleared: z.boolean(),
+    reactMode: z.boolean().optional(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
+    const page = ctx.page;
+
     if (p.clear) {
-      await ctx.page.fill(p.selector, '');
+      await page.fill(p.selector, '');
     }
-    await ctx.page.fill(p.selector, p.value);
-    return ok({ selector: p.selector, value: p.value, cleared: p.clear || false });
+
+    const isReact = await page.evaluate(() => {
+      if (document.querySelector('[data-reactroot]') || document.querySelector('[data-reactid]')) return true;
+      if ((window as unknown as Record<string, unknown>).__REACT_DEVTOOLS_GLOBAL_HOOK__) return true;
+      const scripts = document.querySelectorAll('script[src]');
+      for (const s of scripts) {
+        const src = s.getAttribute('src') || '';
+        if (src.includes('react') || src.includes('react-dom')) return true;
+      }
+      const sample = Array.from(document.querySelectorAll('*')).slice(0, 50);
+      return sample.some(el => {
+        const keys = Object.keys(el);
+        return keys.some(k => k.startsWith('__reactFiber') || k.startsWith('__reactInternalInstance'));
+      });
+    }).catch(() => false);
+
+    if (isReact) {
+      await page.evaluate(({ selector, value }) => {
+        const el = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement;
+        if (!el) throw new Error(`Element not found: ${selector}`);
+
+        const proto = el instanceof HTMLTextAreaElement
+          ? HTMLTextAreaElement.prototype
+          : HTMLInputElement.prototype;
+        const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+
+        if (nativeSetter) {
+          nativeSetter.call(el, value);
+        } else {
+          el.value = value;
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }, { selector: p.selector, value: p.value });
+    } else {
+      await page.fill(p.selector, p.value);
+    }
+
+    return ok({ selector: p.selector, value: p.value, cleared: p.clear || false, reactMode: !!isReact });
   },
 });
 

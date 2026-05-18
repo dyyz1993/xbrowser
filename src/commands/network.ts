@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ok } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { createEphemeralContext, closeEphemeralContext, resolveLaunchOpts } from '../browser.js';
@@ -33,6 +33,14 @@ interface NetworkSummaryResult {
   total: number;
   filtered: number;
   timestamp: number;
+  websockets?: Array<{ url: string; direction: string; data: string }>;
+}
+
+interface WSCapture {
+  url: string;
+  direction: 'sent' | 'received';
+  data: string;
+  timestamp: number;
 }
 
 interface NetworkJsonResult {
@@ -41,6 +49,7 @@ interface NetworkJsonResult {
   console: string[];
   total: number;
   timestamp: number;
+  websockets?: WSCapture[];
 }
 
 function extractPath(url: string): string {
@@ -75,8 +84,9 @@ function buildSummaryOutput(
   captures: NetworkCapture[],
   consoleMessages: string[],
   totalCount: number,
+  wsCaptures?: WSCapture[],
 ): NetworkSummaryResult {
-  return {
+  const result: NetworkSummaryResult = {
     url,
     duration,
     captures: captures.map((c) => ({
@@ -92,6 +102,16 @@ function buildSummaryOutput(
     filtered: captures.length,
     timestamp: Date.now(),
   };
+
+  if (wsCaptures && wsCaptures.length > 0) {
+    result.websockets = wsCaptures.map(ws => ({
+      url: ws.url.slice(0, 100),
+      direction: ws.direction,
+      data: ws.data.slice(0, 200),
+    }));
+  }
+
+  return result;
 }
 
 function buildJsonOutput(
@@ -99,6 +119,7 @@ function buildJsonOutput(
   captures: NetworkCapture[],
   consoleMessages: string[],
   totalCount: number,
+  wsCaptures?: WSCapture[],
   searchResults?: unknown,
 ): NetworkJsonResult & { searchResults?: unknown } {
   return {
@@ -107,6 +128,7 @@ function buildJsonOutput(
     console: consoleMessages,
     total: totalCount,
     timestamp: Date.now(),
+    ...(wsCaptures && wsCaptures.length > 0 ? { websockets: wsCaptures } : {}),
     searchResults,
   };
 }
@@ -164,77 +186,154 @@ export const networkCommand = registerCommand({
     wait: z.number().default(3000),
     limit: z.number().default(50),
     format: z.enum(['summary', 'json']).default('summary'),
+    ws: z.boolean().optional().default(false).describe('Only show WebSocket messages'),
+    listen: z.boolean().optional().default(false).describe('监听模式：使用现有 session 的 page，等待指定时间捕获请求'),
+    duration: z.number().int().optional().default(15000).describe('监听模式等待时长（毫秒，默认 15000）'),
   }),
   handler: async (p, ctx: BrowserCommandContext): Promise<ReturnType<typeof ok>> => {
-    const { context, page } = await createEphemeralContext(resolveLaunchOpts(ctx));
     const startTime = Date.now();
 
-    try {
-      const captures: NetworkCapture[] = [];
-      const consoleMessages: string[] = [];
+    const responseHandler = async (response: Response, captures: NetworkCapture[], limit: number) => {
+      if (captures.length >= limit) return;
 
-      page.on('response', async (response: Response) => {
-        if (captures.length >= p.limit) return;
+      const responseUrl = response.url();
 
-        const responseUrl = response.url();
+      if (p.filter && !responseUrl.includes(p.filter)) return;
 
-        if (p.filter && !responseUrl.includes(p.filter)) return;
+      const contentType = response.headers()['content-type'] || '';
+      const headers: Record<string, string> = {};
+      for (const [k, v] of Object.entries(response.headers())) {
+        headers[k] = v;
+      }
 
-        const contentType = response.headers()['content-type'] || '';
-        const headers: Record<string, string> = {};
-        for (const [k, v] of Object.entries(response.headers())) {
-          headers[k] = v;
-        }
+      let body: unknown = undefined;
+      let size = 0;
 
-        let body: unknown = undefined;
-        let size = 0;
-
-        const isJsonish = contentType.includes('json') || contentType.includes('javascript');
-        if (isJsonish) {
-          try {
-            body = await response.json();
-          } catch {
-            try {
-              const text = await response.text();
-              size = text.length;
-              try {
-                body = JSON.parse(text);
-              } catch {
-                body = text;
-              }
-            } catch {
-              // unable to read body
-            }
-          }
-          if (body !== undefined && size === 0) {
-            size = JSON.stringify(body).length;
-          }
-        } else {
+      const isJsonish = contentType.includes('json') || contentType.includes('javascript');
+      if (isJsonish) {
+        try {
+          body = await response.json();
+        } catch {
           try {
             const text = await response.text();
             size = text.length;
+            try {
+              body = JSON.parse(text);
+            } catch {
+              body = text;
+            }
           } catch {
-            size = 0;
+            // unable to read body
           }
         }
+        if (body !== undefined && size === 0) {
+          size = JSON.stringify(body).length;
+        }
+      } else {
+        try {
+          const text = await response.text();
+          size = text.length;
+        } catch {
+          size = 0;
+        }
+      }
 
-        captures.push({
-          method: response.request().method(),
-          url: responseUrl,
-          path: extractPath(responseUrl),
-          status: response.status(),
-          size,
-          contentType,
-          headers,
-          body,
-        });
+      captures.push({
+        method: response.request().method(),
+        url: responseUrl,
+        path: extractPath(responseUrl),
+        status: response.status(),
+        size,
+        contentType,
+        headers,
+        body,
       });
+    };
+
+    if (p.listen) {
+      const page = ctx.page;
+      if (!page) return fail('No active page. Use --cdp to connect first.');
+
+      const captures: NetworkCapture[] = [];
+      const consoleMessages: string[] = [];
+      const wsCaptures: WSCapture[] = [];
+
+      const handler = (response: Response) => responseHandler(response, captures, p.limit);
+      page.on('response', handler);
 
       if (p.console) {
         page.on('console', (msg) => {
           consoleMessages.push(`${msg.type()}: ${msg.text()}`);
         });
       }
+
+      page.on('websocket', (ws) => {
+        const wsUrl = ws.url();
+        ws.on('framesent', ({ payload }) => {
+          const dataStr = typeof payload === 'string' ? payload.slice(0, 500) : `[binary ${(payload as Buffer).byteLength || 0} bytes]`;
+          wsCaptures.push({ url: wsUrl, direction: 'sent', data: dataStr, timestamp: Date.now() });
+        });
+        ws.on('framereceived', ({ payload }) => {
+          const dataStr = typeof payload === 'string' ? payload.slice(0, 500) : `[binary ${(payload as Buffer).byteLength || 0} bytes]`;
+          wsCaptures.push({ url: wsUrl, direction: 'received', data: dataStr, timestamp: Date.now() });
+        });
+      });
+
+      console.error(`[network] Listening for ${p.duration}ms...`);
+      await page.waitForTimeout(p.duration);
+
+      page.off('response', handler);
+
+      const duration = Date.now() - startTime;
+
+      if (p.ws && wsCaptures.length > 0) {
+        return ok({
+          url: '[listen mode]',
+          duration,
+          total: captures.length,
+          filtered: captures.length,
+          timestamp: Date.now(),
+          websockets: wsCaptures.map(ws => ({
+            url: ws.url.slice(0, 100),
+            direction: ws.direction,
+            data: ws.data.slice(0, 200),
+          })),
+        });
+      }
+
+      if (p.format === 'json') {
+        return ok(buildJsonOutput('[listen mode]', captures, consoleMessages, captures.length, wsCaptures));
+      }
+
+      return ok(buildSummaryOutput('[listen mode]', duration, captures, consoleMessages, captures.length, wsCaptures));
+    }
+
+    const { context, page } = await createEphemeralContext(resolveLaunchOpts(ctx));
+
+    try {
+      const captures: NetworkCapture[] = [];
+      const consoleMessages: string[] = [];
+      const wsCaptures: WSCapture[] = [];
+
+      page.on('response', (response: Response) => responseHandler(response, captures, p.limit));
+
+      if (p.console) {
+        page.on('console', (msg) => {
+          consoleMessages.push(`${msg.type()}: ${msg.text()}`);
+        });
+      }
+
+      page.on('websocket', (ws) => {
+        const wsUrl = ws.url();
+        ws.on('framesent', ({ payload }) => {
+          const dataStr = typeof payload === 'string' ? payload.slice(0, 500) : `[binary ${(payload as Buffer).byteLength || 0} bytes]`;
+          wsCaptures.push({ url: wsUrl, direction: 'sent', data: dataStr, timestamp: Date.now() });
+        });
+        ws.on('framereceived', ({ payload }) => {
+          const dataStr = typeof payload === 'string' ? payload.slice(0, 500) : `[binary ${(payload as Buffer).byteLength || 0} bytes]`;
+          wsCaptures.push({ url: wsUrl, direction: 'received', data: dataStr, timestamp: Date.now() });
+        });
+      });
 
       await page.goto(p.url, {
         waitUntil: 'domcontentloaded',
@@ -272,11 +371,26 @@ export const networkCommand = registerCommand({
 
       const duration = Date.now() - startTime;
 
-      if (p.format === 'json') {
-        return ok(buildJsonOutput(p.url, results, consoleMessages, totalCount, searchResults));
+      if (p.ws && wsCaptures.length > 0) {
+        return ok({
+          url: p.url,
+          duration,
+          total: captures.length,
+          filtered: captures.length,
+          timestamp: Date.now(),
+          websockets: wsCaptures.map(ws => ({
+            url: ws.url.slice(0, 100),
+            direction: ws.direction,
+            data: ws.data.slice(0, 200),
+          })),
+        });
       }
 
-      return ok(buildSummaryOutput(p.url, duration, results, consoleMessages, totalCount));
+      if (p.format === 'json') {
+        return ok(buildJsonOutput(p.url, results, consoleMessages, totalCount, wsCaptures, searchResults));
+      }
+
+      return ok(buildSummaryOutput(p.url, duration, results, consoleMessages, totalCount, wsCaptures));
     } finally {
       await closeEphemeralContext(context);
     }

@@ -125,6 +125,24 @@ process.on('exit', () => {
   sessions.clear();
 });
 
+async function getCDPTargets(cdpEndpoint: string): Promise<Array<{ id: string; url: string; webSocketDebuggerUrl: string }>> {
+  try {
+    let host = 'localhost';
+    let port = '9222';
+    if (cdpEndpoint.startsWith('http://') || cdpEndpoint.startsWith('https://')) {
+      const u = new URL(cdpEndpoint);
+      host = u.hostname;
+      port = u.port || '9222';
+    } else if (/^\d+$/.test(cdpEndpoint)) {
+      port = cdpEndpoint;
+    }
+    const resp = await fetch(`http://${host}:${port}/json/list`);
+    return (await resp.json()) as Array<{ id: string; url: string; webSocketDebuggerUrl: string }>;
+  } catch {
+    return [];
+  }
+}
+
 async function resolveCDPEndpoint(raw: string): Promise<string> {
   if (raw === 'auto') {
     const httpResp = await fetch('http://localhost:9222/json/version');
@@ -292,10 +310,10 @@ export async function findOrRestoreSession(
 
   try {
     const b = await createBrowser({ cdpEndpoint: ep });
+    await new Promise(r => setTimeout(r, 300));
     const contexts = b.contexts();
     const context = contexts[0] || (await b.newContext());
 
-    // Reuse an existing page (same logic as createSession) instead of creating a new one
     let page: Page | null = null;
     for (const ctx of contexts) {
       const pages = ctx.pages();
@@ -310,14 +328,25 @@ export async function findOrRestoreSession(
     }
 
     if (!page) {
+      const targets = await getCDPTargets(ep);
+      const matchTarget = targets.find(t =>
+        t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://') &&
+        (meta.conversationUrl || meta.url ? t.url.includes(new URL(meta.conversationUrl || meta.url).hostname) : true)
+      );
+      if (matchTarget && matchTarget.url) {
+        page = await context.newPage();
+        await page.goto(matchTarget.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+      }
+    }
+
+    if (!page) {
       const pages = context.pages();
       page = pages.length > 0 ? pages[0] : await context.newPage();
     }
 
-    // Navigate to conversationUrl (specific page) or url (generic) if needed
     const targetUrl = meta.conversationUrl || meta.url;
-    if (targetUrl && page.url() !== targetUrl) {
-      await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => { });
+    if (targetUrl && page.url() !== targetUrl && !page.url().includes(new URL(targetUrl).hostname)) {
+      await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
     }
 
     const session: ManagedSession = {
@@ -543,10 +572,13 @@ export async function createSession(
   let page: Page;
 
   if (isCDP) {
+    await new Promise(r => setTimeout(r, 300));
+
     const contexts = b.contexts();
     context = contexts[0] || (await b.newContext());
 
     let targetPage: Page | null = null;
+
     for (const ctx of contexts) {
       const pages = ctx.pages();
       for (const p of pages) {
@@ -559,16 +591,28 @@ export async function createSession(
       if (targetPage) break;
     }
 
-    if (targetPage) {
-      page = targetPage;
-    } else {
-      const pages = context.pages();
-      if (pages.length > 0) {
-        page = pages[0];
-      } else {
-        page = await context.newPage();
+    if (!targetPage && options?.cdpEndpoint) {
+      const targets = await getCDPTargets(options.cdpEndpoint);
+      const matchTarget = targets.find(t =>
+        t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://') &&
+        (url ? t.url.includes(new URL(url).hostname) : true)
+      );
+      if (matchTarget && matchTarget.url) {
+        targetPage = await context.newPage();
+        await targetPage.goto(matchTarget.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
       }
     }
+
+    if (!targetPage) {
+      const pages = context.pages();
+      if (pages.length > 0) {
+        targetPage = pages[0];
+      } else {
+        targetPage = await context.newPage();
+      }
+    }
+
+    page = targetPage;
   } else {
     context = await b.newContext();
     page = await context.newPage();
@@ -614,9 +658,10 @@ export async function closeSessionByName(name: string): Promise<boolean> {
       }
       sessions.delete(id);
 
-      // Clean up disk metadata for this session
-      const file = sessionFile(session.name);
-      try { unlinkSync(file); } catch { /* file may not exist */ }
+      if (!session.isCDP) {
+        const file = sessionFile(session.name);
+        try { unlinkSync(file); } catch { /* file may not exist */ }
+      }
 
       // Clear associated network captures from memory
       try {
