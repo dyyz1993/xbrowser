@@ -33,6 +33,16 @@ if [ $? -ne 0 ]; then
 fi
 echo "✅ Command param check passed"
 
+echo "🔍 [pre-commit] Checking help auto-generation..."
+node lint-scripts/check-help-auto-gen.mjs
+if [ $? -ne 0 ]; then
+  echo "❌ Help auto-gen check failed. Do not use hand-written help files."
+  echo "   → Use helpGenerator from @dyyz1993/xcli-core instead."
+  echo "   → See lint-scripts/RULES.md for guidelines."
+  exit 1
+fi
+echo "✅ Help auto-gen check passed"
+
 echo "🔍 [pre-commit] Checking result schema..."
 node lint-scripts/check-result-schema.mjs
 if [ $? -ne 0 ]; then

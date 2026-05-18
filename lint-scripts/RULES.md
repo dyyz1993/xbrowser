@@ -204,3 +204,47 @@ npx xbrowser create my-plugin --template static
 **错误做法**：
 - 只有 `index.ts`，没有 `package.json`
 - `package.json` 中没有 `xbrowser` 字段
+
+### 5. Help 自动生成（help-auto-gen）
+
+**执行方式**：
+- Husky pre-commit：`lint-scripts/check-help-auto-gen.mjs`
+
+**规则**：
+- 禁止手写 `src/cli/help.ts` — `--help` 必须从 Zod schema 自动推导
+- 框架 `Core.run()` 和 `HelpGenerator` 自动处理 `<command> --help`
+- 如果存在 `help.ts`，必须使用 `helpGenerator` 而不是硬编码文本
+
+**原因**：
+手写 help 文本会很快过时，与 Zod schema 声明不同步。
+框架已经提供了 `HelpGenerator`，能从 `registerCommand()` 的 `parameters` 和 `result` 自动生成完整参数说明。
+
+**正确做法**：
+```typescript
+// ✅ 注册命令时声明 Zod schema，--help 自动可用
+import { helpGenerator } from '@dyyz1993/xcli-core';
+import { registerCommand } from './command-registry.js';
+
+registerCommand({
+  name: 'screenshot',
+  description: 'Take a screenshot',
+  parameters: z.object({
+    selector: z.string().optional(),
+    type: z.enum(['png', 'jpeg']).optional(),
+    fullPage: z.boolean().optional(),
+    output: z.string().optional(),
+  }),
+  handler: async (params, ctx) => { /* ... */ },
+});
+
+// 用户执行 "xbrowser screenshot --help" → 自动输出完整参数说明
+```
+
+**错误做法**：
+```typescript
+// ❌ 手写 help 文本 — 新增参数时容易忘记更新
+export function showMainHelp(): void {
+  console.log(`screenshot [--full-page]  Take screenshot`);
+  // 丢了 --selector, --type, --output 三个参数
+}
+```
