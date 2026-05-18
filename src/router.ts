@@ -1,4 +1,4 @@
-import { parseArgs, outputFormatter, isCommandResult, type CommandResult } from '@dyyz1993/xcli-core';
+import { parseArgs, outputFormatter, isCommandResult, type CommandResult, helpGenerator } from '@dyyz1993/xcli-core';
 import { mapPositionalValues } from './utils/positional-params.js';
 import { version } from './version.js';
 import { executeChain, isChainInput } from './executor.js';
@@ -24,15 +24,13 @@ import { getPluginLoader } from './utils/plugin-singleton.js';
 import { findOrRestoreSession, createSession, saveSessionDiskMeta, destroyBrowser } from './browser.js';
 import { HTTPServer } from './server/http-server.js';
 
-/** Show help for a specific plugin command with parameter details */
 function showCommandHelp(siteName: string, cmd: unknown, siteConfig: { description?: string; name: string; url: string }, mode: string): void {
   const c = cmd as { name: string; description: string; scope: string; parameters?: unknown; examples?: Array<{ cmd: string; description: string }> };
-  const zodShape = c.parameters;
 
   if (mode === 'json') {
     const paramsList: Array<{ name: string; type: string; required: boolean; default_: unknown; description: string; enumValues?: string[] }> = [];
-    if (zodShape) {
-      const def = (zodShape as unknown as { _def: { shape?: () => Record<string, unknown> } })._def;
+    if (c.parameters) {
+      const def = (c.parameters as unknown as { _def: { shape?: () => Record<string, unknown> } })._def;
       const shape = def.shape?.() as Record<string, unknown> | undefined;
       if (shape) {
         for (const [key, value] of Object.entries(shape)) {
@@ -57,38 +55,13 @@ function showCommandHelp(siteName: string, cmd: unknown, siteConfig: { descripti
     }, mode);
   } else {
     console.log(`\n  ${siteConfig.description || siteConfig.name} (${siteConfig.url})`);
-    console.log(`\n  Command: ${siteName} ${c.name}`);
-    console.log(`  ${c.description}\n`);
-
-    if (zodShape) {
-      const def = (zodShape as unknown as { _def: { shape?: () => Record<string, unknown> } })._def;
-      const shape = def.shape?.() as Record<string, unknown> | undefined;
-      if (shape && Object.keys(shape).length > 0) {
-        console.log('  Parameters:');
-        for (const [key, value] of Object.entries(shape)) {
-          const info = extractZodFieldInfo(value);
-          const reqStr = info.isOptional ? 'optional' : 'required';
-          const defaultStr = info.defaultValue !== undefined ? ` (default: ${JSON.stringify(info.defaultValue)})` : '';
-          const enumStr = info.enumValues ? ` [${info.enumValues.join('/')}]` : '';
-
-          console.log(`    --${key.padEnd(16)} ${info.cleanType}${enumStr}  ${reqStr}${defaultStr}${info.description ? '  ' + info.description : ''}`);
-        }
-      } else {
-        console.log('    (no parameters)');
-      }
-    } else {
-      console.log('    (no parameters)');
-    }
-
-    // Show examples if available
-    if (c.examples && c.examples.length > 0) {
-      console.log('\n  Examples:');
-      for (const ex of c.examples) {
-        console.log(`    ${ex.cmd}`);
-        console.log(`      ${ex.description}`);
-      }
-    }
-
+    const text = helpGenerator.generate({
+      name: `${siteName} ${c.name}`,
+      description: c.description,
+      parameters: c.parameters as Parameters<typeof helpGenerator.generate>[0]['parameters'],
+      examples: c.examples,
+    }, { color: false, emoji: false });
+    console.log(text);
     console.log('');
   }
 }
@@ -724,105 +697,7 @@ export async function routeCommand(
           // Check for --help on specific command: "xbrowser zhihu chat --help"
           const cmdArgsForPlugin = cmdArgs.slice(1);
           if (cmdArgsForPlugin.includes('--help') || cmdArgsForPlugin.includes('-h')) {
-            const zodShape = cmdEntry.parameters;
-            if (mode === 'json') {
-              const paramsList: Array<{ name: string; type: string; required: boolean; default_: unknown; description: string; enumValues?: string[] }> = [];
-              if (zodShape && (zodShape as unknown as { _def: unknown })._def) {
-                const def = (zodShape as unknown as { _def: { shape?: () => Record<string, unknown>; typeName?: string } })._def;
-                const shape = def.shape?.() as Record<string, unknown> | undefined;
-                if (shape) {
-                  for (const [key, value] of Object.entries(shape)) {
-                    const field = value as { _def?: { typeName?: string; defaultValue?: () => unknown; innerType?: unknown; values?: unknown[]; description?: string } };
-                    const fieldDef = field._def;
-                    let typeName = fieldDef?.typeName || 'unknown';
-                    let isOptional = typeName === 'ZodOptional';
-                    let innerType = fieldDef?.innerType;
-                    let enumValues: string[] | undefined;
-
-                    // Unwrap optional
-                    while (isOptional && innerType) {
-                      const inner = (innerType as { _def?: { typeName?: string; defaultValue?: () => unknown; innerType?: unknown; values?: unknown[] } })._def;
-                      if (inner?.defaultValue !== undefined) isOptional = true;
-                      typeName = inner?.typeName || typeName;
-                      enumValues = inner?.values as string[] | undefined;
-                      innerType = inner?.innerType;
-                    }
-
-                    if (typeName === 'ZodEnum' && fieldDef?.values) {
-                      enumValues = fieldDef.values as string[];
-                    }
-
-                    const desc = fieldDef?.description || '';
-                    // Clean Zod type name
-                    const cleanType = typeName.replace('Zod', '').toLowerCase();
-
-                    paramsList.push({
-                      name: key,
-                      type: cleanType,
-                      required: !isOptional,
-                      default_: fieldDef?.defaultValue?.(),
-                      description: desc,
-                      ...(enumValues ? { enumValues } : {}),
-                    });
-                  }
-                }
-              }
-              outputResult({
-                site: command,
-                command: cmdEntry.name,
-                description: cmdEntry.description,
-                scope: cmdEntry.scope,
-                parameters: paramsList,
-              }, mode);
-            } else {
-              console.log(`\n  ${site.config.description || site.name} (${site.url})`);
-              console.log(`\n  Command: ${command} ${cmdEntry.name}`);
-              console.log(`  ${cmdEntry.description}\n`);
-
-              if (zodShape && (zodShape as unknown as { _def: unknown })._def) {
-                const def = (zodShape as unknown as { _def: { shape?: () => Record<string, unknown> } })._def;
-                const shape = def.shape?.() as Record<string, unknown> | undefined;
-                if (shape && Object.keys(shape).length > 0) {
-                  console.log('  Parameters:');
-                  for (const [key, value] of Object.entries(shape)) {
-                    const field = value as { _def?: { typeName?: string; defaultValue?: () => unknown; innerType?: unknown; values?: unknown[]; description?: string } };
-                    const fieldDef = field._def;
-                    let typeName = fieldDef?.typeName || 'unknown';
-                    let isOptional = typeName === 'ZodOptional';
-                    let innerType = fieldDef?.innerType;
-                    let enumValues: string[] | undefined;
-
-                    // Unwrap optional
-                    while (isOptional && innerType) {
-                      const inner = (innerType as { _def?: { typeName?: string; defaultValue?: () => unknown; innerType?: unknown; values?: unknown[] } })._def;
-                      if (inner?.defaultValue !== undefined) isOptional = true;
-                      typeName = inner?.typeName || typeName;
-                      enumValues = inner?.values as string[] | undefined;
-                      innerType = inner?.innerType;
-                    }
-
-                    if (typeName === 'ZodEnum' && fieldDef?.values) {
-                      enumValues = fieldDef.values as string[];
-                    }
-
-                    const desc = fieldDef?.description || '';
-                    const cleanType = typeName.replace('Zod', '').toLowerCase();
-                    const reqStr = isOptional ? 'optional' : 'required';
-                    const defaultStr = isOptional && fieldDef?.defaultValue
-                      ? ` (default: ${JSON.stringify(fieldDef.defaultValue())})`
-                      : '';
-                    const enumStr = enumValues ? ` [${enumValues.join('/')}]` : '';
-
-                    console.log(`    --${key.padEnd(16)} ${cleanType}${enumStr}  ${reqStr}${defaultStr}${desc ? '  ' + desc : ''}`);
-                  }
-                } else {
-                  console.log('    (no parameters)');
-                }
-              } else {
-                console.log('    (no parameters)');
-              }
-              console.log('');
-            }
+            showCommandHelp(command, cmdEntry, { description: site.config.description, name: site.name, url: site.url }, mode);
             return;
           }
           const rawParams: Record<string, unknown> = { ...options };
@@ -924,7 +799,7 @@ export async function routeCommand(
                   for (const tip of tips) console.error(`\u{1F4A1} ${tip}`);
                 }
               } else {
-                if (obj.data) console.log(JSON.stringify(obj.data, null, 2));
+                if (obj.data) outputResult(obj.data, mode);
                 const tips = obj.tips as string[] | undefined;
                 if (tips?.length) {
                   for (const tip of tips) console.log(`  \u{1F4A1} ${tip}`);
@@ -1113,7 +988,7 @@ async function handleRemote(
         outputResult(data, mode);
       } else {
         if (data.success) {
-          if (data.data) console.log(JSON.stringify(data.data, null, 2));
+          if (data.data) outputResult(data.data, mode);
         } else {
           outputError(data.message || 'Command failed');
         }

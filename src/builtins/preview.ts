@@ -1,6 +1,7 @@
 import { networkInterfaces } from 'os';
 import type { BuiltinCommand, BuiltinContext } from './session.js';
 import { getDaemonProcessStatus } from '../daemon/daemon.js';
+import { outputResult } from '../cli/output.js';
 
 function getLANIP(): string {
   const nets = networkInterfaces();
@@ -44,7 +45,7 @@ const previewBuiltin: BuiltinCommand = {
 
     if (!daemon.running) {
       if (options.json) {
-        console.log(JSON.stringify({ running: false }));
+        outputResult({ running: false }, 'json');
       } else {
         console.log('Daemon is not running. Start with: xbrowser daemon start');
         console.log('');
@@ -59,13 +60,13 @@ const previewBuiltin: BuiltinCommand = {
     const previewURL = `http://${lanIP}:${port}/preview/${sessionId}`;
 
     if (options.json) {
-      console.log(JSON.stringify({
+      outputResult({
         running: true,
         pid: daemon.pid,
         port,
         sessionId,
         url: previewURL,
-      }));
+      }, 'json');
       return;
     }
 

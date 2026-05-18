@@ -1,4 +1,4 @@
-import { isCommandResult, type CommandResult } from '@dyyz1993/xcli-core';
+import { ok, fail, isCommandResult, type CommandResult } from '@dyyz1993/xcli-core';
 import { mapPositionalValues } from './utils/positional-params.js';
 import { getCommand, getAllCommands } from './commands/index.js';
 import type { BrowserCommandContext } from './context.js';
@@ -48,7 +48,7 @@ export interface ChainExecutionResult {
 }
 
 function errorResult(message: string): ExecutionResult {
-  return { success: false, data: null, message, duration: 0 };
+  return { ...fail(message), duration: 0 };
 }
 
 let wsServer: WSServer | null = null;
@@ -226,10 +226,10 @@ export async function executeCommand(
 
     if (isCommandResult(raw)) {
       const merged = [...(raw.tips || []), ...(smartTips || [])];
-      return { ...raw, duration, tips: merged.length > 0 ? merged : raw.tips };
+      return { ...ok(raw.data, merged.length > 0 ? merged : raw.tips), duration };
     }
 
-    return { success: true, data: raw, duration, tips: smartTips };
+    return { ...ok(raw, smartTips), duration };
   } catch (err) {
     const end = Date.now();
     const duration = end - start;
@@ -247,14 +247,9 @@ export async function executeCommand(
       });
     }
 
-    return {
-      success: false,
-      data: null,
-      message: errorMessage,
-      duration,
-    };
+    return { ...fail(errorMessage), duration };
   } finally {
-    if (autoCreated && !extraOpts?.skipCleanup) {
+    if (autoCreated && !extraOpts?.skipCleanup && !extraOpts?.cdpEndpoint) {
       await destroyBrowser();
     }
   }
@@ -319,9 +314,7 @@ export async function executeChain(
             results.push({
               command: cmdName,
               raw: cmdStr,
-              success: false,
-              data: null,
-              message: `Plugin "${cmdName}" requires a sub-command`,
+              ...fail(`Plugin "${cmdName}" requires a sub-command`),
               duration: 0,
             });
             if (type === 'and') {
@@ -341,9 +334,7 @@ export async function executeChain(
             results.push({
               command: cmdName,
               raw: cmdStr,
-              success: false,
-              data: null,
-              message: `Unknown command "${subCommand}" for plugin "${cmdName}"`,
+              ...fail(`Unknown command "${subCommand}" for plugin "${cmdName}"`),
               duration: 0,
             });
             if (type === 'and') {
@@ -416,9 +407,7 @@ export async function executeChain(
             results.push({
               command: `${cmdName} ${subCommand}`,
               raw: cmdStr,
-              success: true,
-              data,
-              message: undefined,
+              ...ok(data),
               duration,
             });
             if (type === 'or') {
@@ -436,9 +425,7 @@ export async function executeChain(
             results.push({
               command: `${cmdName} ${subCommand}`,
               raw: cmdStr,
-              success: false,
-              data: null,
-              message: errorMessage,
+              ...fail(errorMessage),
               duration,
             });
             if (type === 'and') {

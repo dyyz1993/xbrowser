@@ -1,6 +1,6 @@
 {
   "name": "@dyyz1993/xbrowser",
-  "version": "0.8.0",
+  "version": "0.9.4",
   "description": "A self-contained browser automation CLI tool — navigate, click, fill forms, extract data, record & replay sessions via YAML scripts",
   "type": "module",
   "bin": {
@@ -49,7 +49,7 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@dyyz1993/xcli-core": "^0.8.0",
+    "@dyyz1993/xcli-core": "^0.8.2",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/turndown": "^5.0.6",
     "cheerio": "^1.2.0",

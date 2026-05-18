@@ -1,5 +1,6 @@
 import tseslint from '@typescript-eslint/eslint-plugin';
 import tsparser from '@typescript-eslint/parser';
+import noRawOutputRule from './lint-scripts/eslint-no-raw-output.mjs';
 
 export default [
   {
@@ -15,6 +16,22 @@ export default [
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       'no-empty': ['error', { allowEmptyCatch: false }],
       '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
+  {
+    files: ['src/cli/**/*.ts'],
+    languageOptions: {
+      parser: tsparser,
+    },
+    plugins: {
+      'xbrowser-rules': {
+        rules: {
+          'no-raw-output': noRawOutputRule,
+        },
+      },
+    },
+    rules: {
+      'xbrowser-rules/no-raw-output': 'error',
     },
   },
   {

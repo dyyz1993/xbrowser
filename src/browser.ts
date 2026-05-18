@@ -66,6 +66,7 @@ export interface BrowserLaunchOptions {
 const sessions = new Map<string, ManagedSession>();
 let browser: Browser | null = null;
 let cdpProxy: CDPInterceptorProxy | null = null;
+let isCDPConnection = false;
 
 const IDLE_TIMEOUT_MS = (process.env.XBROWSER_IDLE_TIMEOUT ? parseInt(process.env.XBROWSER_IDLE_TIMEOUT, 10) : 15) * 60 * 1000;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -103,12 +104,16 @@ export function touchSession(id: string): void {
 
 process.on('exit', () => {
   if (browser) {
-    const sessionNames = [...sessions.values()].map(s => s.name).join(', ');
-    logSessionEvent('process_exit', `Process exiting. Closing browser. Active sessions: ${sessionNames || '(none)'}`);
-    try {
-      browser.close();
-    } catch {
-      // force cleanup on exit
+    if (isCDPConnection) {
+      logSessionEvent('process_exit', 'Process exiting. CDP connection (not closing external browser).');
+    } else {
+      const sessionNames = [...sessions.values()].map(s => s.name).join(', ');
+      logSessionEvent('process_exit', `Process exiting. Closing browser. Active sessions: ${sessionNames || '(none)'}`);
+      try {
+        browser.close();
+      } catch {
+        // force cleanup on exit
+      }
     }
     browser = null;
   }
@@ -202,6 +207,7 @@ export async function getBrowser(options?: BrowserLaunchOptions): Promise<Browse
       browser = await chromium.connectOverCDP(realEndpoint);
     }
 
+    isCDPConnection = true;
     return browser;
   }
 
@@ -653,10 +659,13 @@ export async function destroyBrowser(): Promise<void> {
   if (browser) {
     const b = browser;
     browser = null;
-    // close() on a CDP-connected browser only disconnects the WebSocket,
-    // it does NOT shut down the remote browser.
-    b.close().catch(() => {});
+    if (isCDPConnection) {
+      b.close().catch(() => {});
+    } else {
+      b.close().catch(() => {});
+    }
   }
+  isCDPConnection = false;
   if (cdpProxy) {
     await cdpProxy.stop().catch(() => {});
     cdpProxy = null;

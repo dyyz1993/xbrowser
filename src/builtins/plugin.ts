@@ -3,6 +3,7 @@ import { XBrowserPluginLoader } from '../plugin/loader.js';
 import { PluginInstaller } from '../plugin/installer.js';
 import { PluginMetadataParser } from '../plugin/metadata-parser.js';
 import type { PluginListOptions } from '../plugin/types.js';
+import { outputResult } from '../cli/output.js';
 
 let pluginLoader: XBrowserPluginLoader | null = null;
 let pluginInstaller: PluginInstaller | null = null;
@@ -175,7 +176,7 @@ export const pluginListBuiltin: BuiltinCommand = {
       const plugins = await installer.list(listOptions);
 
       if (listOptions.json) {
-        console.log(JSON.stringify(plugins, null, 2));
+        outputResult(plugins, 'json');
         return;
       }
 
