@@ -310,8 +310,15 @@ export async function findOrRestoreSession(
 
   try {
     const b = await createBrowser({ cdpEndpoint: ep });
-    await new Promise(r => setTimeout(r, 300));
-    const contexts = b.contexts();
+    await new Promise(r => setTimeout(r, 500)); // 等待 contexts 填充
+    let contexts = b.contexts();
+    
+    // 如果 contexts 仍为空，尝试等待更长时间
+    if (contexts.length === 0) {
+      await new Promise(r => setTimeout(r, 500));
+      contexts = b.contexts();
+    }
+    
     const context = contexts[0] || (await b.newContext());
 
     let page: Page | null = null;
@@ -572,9 +579,13 @@ export async function createSession(
   let page: Page;
 
   if (isCDP) {
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 500)); // 等待 contexts 填充
+    let contexts = b.contexts();
+    if (contexts.length === 0) {
+      await new Promise(r => setTimeout(r, 500));
+      contexts = b.contexts();
+    }
 
-    const contexts = b.contexts();
     context = contexts[0] || (await b.newContext());
 
     let targetPage: Page | null = null;

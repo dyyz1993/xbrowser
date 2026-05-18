@@ -135,12 +135,17 @@ async function captureApis(
         }
 
         if (opts.apis.includes('models') && url.includes('/api/pgc/model/list')) {
-          const raw = json.data || json;
-          result.models = Array.isArray(raw)
-            ? raw as Array<Record<string, unknown>>
-            : Array.isArray((raw as Record<string, unknown>)?.models)
-              ? ((raw as Record<string, unknown>).models as Array<Record<string, unknown>>)
-              : [];
+          // Mureka API 返回 { code: 0, msg: "OK", data: { official_models: [...] } }
+          const respData = json.data || json;
+          let modelList: unknown[] = [];
+          if (Array.isArray(respData)) {
+            modelList = respData;
+          } else if (respData && typeof respData === 'object') {
+            const dataObj = respData as Record<string, unknown>;
+            modelList = (dataObj.official_models || dataObj.model_list || dataObj.models || dataObj.list || dataObj.items || []) as unknown[];
+            if (!Array.isArray(modelList)) modelList = [];
+          }
+          result.models = modelList as Array<Record<string, unknown>>;
         }
 
         if (opts.apis.includes('feed') && url.includes('/api/pgc/feed/list')) {
