@@ -1,0 +1,32 @@
+{
+  "name": "xbrowser-plugin-suno",
+  "version": "1.0.0",
+  "description": "Suno AI Music Generation - 音乐生成、创作管理，支持自定义歌词/风格/同步异步",
+  "type": "module",
+  "main": "index.ts",
+  "keywords": [
+    "xbrowser",
+    "suno",
+    "ai",
+    "music-generation",
+    "cdp",
+    "playwright"
+  ],
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "suno",
+    "description": "Suno AI 音乐生成",
+    "commands": [
+      "create",
+      "status",
+      "result",
+      "library"
+    ],
+    "sites": ["suno"]
+  }
+}
