@@ -13,6 +13,10 @@ export const clickCommand = registerCommand({
     clickCount: z.number().optional(),
     delay: z.number().optional(),
   }),
+  result: z.object({
+    selector: z.string(),
+    newTab: z.object({ url: z.string(), title: z.string() }).optional(),
+  }),
   handler: async (p, ctx: BrowserCommandContext) => {
     // 用 Promise 监听新 Tab 打开事件（target="_blank" 链接等）
     let detectedNewPage: import('playwright').Page | undefined;
@@ -76,6 +80,11 @@ export const fillCommand = registerCommand({
     value: z.string(),
     clear: z.boolean().optional(),
   }),
+  result: z.object({
+    selector: z.string(),
+    value: z.string(),
+    cleared: z.boolean(),
+  }),
   handler: async (p, ctx: BrowserCommandContext) => {
     if (p.clear) {
       await ctx.page.fill(p.selector, '');
@@ -94,6 +103,9 @@ export const typeCommand = registerCommand({
     text: z.string(),
     delay: z.number().optional(),
   }),
+  result: z.object({
+    selector: z.string(),
+  }),
   handler: async (p, ctx: BrowserCommandContext) => {
     await ctx.page.type(p.selector, p.text, { delay: p.delay });
     return ok({ selector: p.selector });
@@ -109,6 +121,9 @@ export const pressCommand = registerCommand({
     key: z.string(),
     delay: z.number().optional(),
   }),
+  result: z.object({
+    key: z.string(),
+  }),
   handler: async (p, ctx: BrowserCommandContext) => {
     await ctx.page.press(p.selector || 'body', p.key, { delay: p.delay });
     return ok({ key: p.key });
@@ -120,6 +135,10 @@ export const selectCommand = registerCommand({
   description: 'Select option in dropdown',
   scope: 'element',
   parameters: z.object({
+    selector: z.string(),
+    value: z.union([z.string(), z.array(z.string())]),
+  }),
+  result: z.object({
     selector: z.string(),
     value: z.union([z.string(), z.array(z.string())]),
   }),
@@ -137,6 +156,9 @@ export const checkCommand = registerCommand({
   parameters: z.object({
     selector: z.string(),
   }),
+  result: z.object({
+    selector: z.string(),
+  }),
   handler: async (p, ctx: BrowserCommandContext) => {
     await ctx.page.check(p.selector);
     return ok({ selector: p.selector });
@@ -150,6 +172,9 @@ export const hoverCommand = registerCommand({
   parameters: z.object({
     selector: z.string(),
     modifiers: z.array(z.enum(['Alt', 'Control', 'Meta', 'Shift'])).optional(),
+  }),
+  result: z.object({
+    selector: z.string(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
     await ctx.page.hover(p.selector, { modifiers: p.modifiers });
@@ -165,6 +190,9 @@ export const dblclickCommand = registerCommand({
     selector: z.string(),
     button: z.enum(['left', 'right', 'middle']).optional(),
     delay: z.number().optional(),
+  }),
+  result: z.object({
+    selector: z.string(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
     await ctx.page.dblclick(p.selector, {

@@ -217,4 +217,8 @@ export const mapCommand = registerCommand({
       await closeEphemeralContext(context);
     }
   },
+  result: z.object({
+    links: z.array(z.object({ url: z.string() })),
+    success: z.boolean(),
+  }),
 });

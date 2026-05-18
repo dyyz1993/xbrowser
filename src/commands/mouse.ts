@@ -14,6 +14,11 @@ export const mouseCommand = registerCommand({
     button: z.enum(['left', 'right', 'middle']).optional(),
     steps: z.number().optional(),
   }),
+  result: z.object({
+    action: z.enum(['move', 'down', 'up', 'click', 'dblclick']),
+    x: z.number(),
+    y: z.number(),
+  }),
   handler: async (p, ctx: BrowserCommandContext) => {
     const button = p.button || 'left';
     switch (p.action) {

@@ -12,6 +12,10 @@ export const scrollCommand = registerCommand({
     distance: z.number().optional(),
     selector: z.string().optional(),
   }),
+  result: z.object({
+    direction: z.enum(['up', 'down', 'left', 'right']),
+    distance: z.number(),
+  }),
   handler: async (p, ctx: BrowserCommandContext) => {
     const distance = p.distance ?? 500;
     const deltas: Record<string, [number, number]> = {

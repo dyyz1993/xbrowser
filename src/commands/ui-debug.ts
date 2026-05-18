@@ -13,6 +13,16 @@ export const consoleCheckCommand = registerCommand({
     filter: z.enum(['all', 'error', 'warning', 'info', 'log']).optional().default('all'),
     includeStackTraces: z.boolean().optional().default(true),
   }),
+  result: z.object({
+    url: z.string(),
+    duration: z.number(),
+    total: z.number(),
+    errors: z.number(),
+    warnings: z.number(),
+    messages: z.array(z.record(z.unknown())),
+    summary: z.string(),
+    passed: z.boolean(),
+  }),
   handler: async (p, ctx: BrowserCommandContext) => {
     const { page } = ctx;
 
@@ -113,6 +123,18 @@ export const networkCheckCommand = registerCommand({
     duration: z.number().optional().default(5000).describe('How long to monitor (ms)'),
     filter: z.enum(['all', 'failed', 'slow', 'error', 'xhr', 'fetch', 'document', 'stylesheet', 'script', 'image']).optional().default('all'),
     slowThreshold: z.number().optional().default(3000).describe('Threshold for "slow" requests (ms)'),
+  }),
+  result: z.object({
+    url: z.string(),
+    duration: z.number(),
+    totalRequests: z.number(),
+    failedRequests: z.number(),
+    slowRequests: z.number(),
+    errorRequests: z.number(),
+    totalSizeKB: z.number(),
+    requests: z.array(z.record(z.unknown())),
+    summary: z.string(),
+    passed: z.boolean(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
     const { page } = ctx;
@@ -239,6 +261,14 @@ export const perfCheckCommand = registerCommand({
     url: z.string().optional().describe('URL to navigate (uses current page if omitted)'),
     iterations: z.number().optional().default(1).describe('Number of iterations to average'),
   }),
+  result: z.object({
+    url: z.string(),
+    iterations: z.number(),
+    metrics: z.record(z.unknown()),
+    allIterations: z.array(z.record(z.unknown())).optional(),
+    passed: z.boolean(),
+    summary: z.string(),
+  }),
   handler: async (p, ctx: BrowserCommandContext) => {
     const { page } = ctx;
     const allMetrics: Array<Record<string, unknown>> = [];
@@ -338,6 +368,17 @@ export const healthCheckCommand = registerCommand({
     checkImages: z.boolean().optional().default(true).describe('Check for missing/broken images'),
     checkMeta: z.boolean().optional().default(true).describe('Check SEO meta tags'),
     maxLinks: z.number().optional().default(50).describe('Max links to check'),
+  }),
+  result: z.object({
+    url: z.string(),
+    title: z.string(),
+    passed: z.boolean(),
+    totalIssues: z.number(),
+    errors: z.number(),
+    warnings: z.number(),
+    info: z.number(),
+    issues: z.array(z.record(z.unknown())),
+    summary: z.string(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
     const { page } = ctx;

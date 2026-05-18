@@ -14,6 +14,18 @@ export const screenshotCommand = registerCommand({
     fullPage: z.boolean().optional(),
     output: z.string().optional(),
   }),
+  result: z.union([
+    z.object({
+      data: z.string(),
+      format: z.string(),
+      size: z.number(),
+    }),
+    z.object({
+      output: z.string(),
+      format: z.string(),
+      size: z.number(),
+    }),
+  ]),
   handler: async (p, ctx: BrowserCommandContext) => {
     const options: Record<string, unknown> = {
       type: p.type || 'png',
@@ -48,6 +60,15 @@ export const snapshotCommand = registerCommand({
   parameters: z.object({
     selector: z.string().optional(),
     interactiveOnly: z.boolean().optional(),
+  }),
+  result: z.object({
+    elements: z.array(z.object({
+      ref: z.string(),
+      tag: z.string(),
+      role: z.string(),
+      text: z.string(),
+      attrs: z.record(z.string()),
+    })),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
     const elements = await ctx.page.evaluate(

@@ -49,4 +49,9 @@ export const scrapeCommand = registerCommand({
       await closeEphemeralContext(context);
     }
   },
+  result: z.object({
+    content: z.string(),
+    title: z.string(),
+    url: z.string(),
+  }),
 });

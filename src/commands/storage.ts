@@ -7,6 +7,9 @@ export const getCookiesCommand = registerCommand({
   name: 'getCookies',
   description: 'Get all cookies for the current page',
   scope: 'page',
+  result: z.object({
+    cookies: z.array(z.record(z.unknown())),
+  }),
   handler: async (_p, ctx: BrowserCommandContext) => {
     const cookies = await ctx.browserContext.cookies();
     return ok({ cookies });
@@ -27,6 +30,7 @@ export const setCookieCommand = registerCommand({
     secure: z.boolean().optional(),
     sameSite: z.enum(['Strict', 'Lax', 'None']).optional(),
   }),
+  result: z.object({ name: z.string() }),
   handler: async (p, ctx: BrowserCommandContext) => {
     await ctx.browserContext.addCookies([p]);
     return ok({ name: p.name });
@@ -37,6 +41,7 @@ export const clearCookiesCommand = registerCommand({
   name: 'clearCookies',
   description: 'Clear all cookies',
   scope: 'page',
+  result: z.object({ cleared: z.boolean() }),
   handler: async (_p, ctx: BrowserCommandContext) => {
     await ctx.browserContext.clearCookies();
     return ok({ cleared: true });
@@ -50,6 +55,10 @@ export const getLocalStorageCommand = registerCommand({
   parameters: z.object({
     key: z.string().optional(),
   }),
+  result: z.union([
+    z.object({ key: z.string(), value: z.string().nullable() }),
+    z.object({ data: z.record(z.string()) }),
+  ]),
   handler: async (p, ctx: BrowserCommandContext) => {
     if (p.key) {
       const value = await ctx.page.evaluate((k) => localStorage.getItem(k), p.key);
@@ -75,6 +84,7 @@ export const setLocalStorageCommand = registerCommand({
     key: z.string(),
     value: z.string(),
   }),
+  result: z.object({ key: z.string() }),
   handler: async (p, ctx: BrowserCommandContext) => {
     await ctx.page.evaluate(
       (args) => {
@@ -90,6 +100,7 @@ export const clearLocalStorageCommand = registerCommand({
   name: 'clearLocalStorage',
   description: 'Clear all localStorage entries',
   scope: 'page',
+  result: z.object({ cleared: z.boolean() }),
   handler: async (_p, ctx: BrowserCommandContext) => {
     await ctx.page.evaluate(() => localStorage.clear());
     return ok({ cleared: true });

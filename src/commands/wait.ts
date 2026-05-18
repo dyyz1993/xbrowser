@@ -11,6 +11,10 @@ const waitForSelectorDef = {
     state: z.enum(['attached', 'detached', 'visible', 'hidden']).optional(),
     timeout: z.number().optional(),
   }),
+  result: z.object({
+    selector: z.string(),
+    found: z.boolean(),
+  }),
   handler: async (p: { selector: string; state?: string; timeout?: number }, ctx: BrowserCommandContext) => {
     await ctx.page.waitForSelector(p.selector, {
       state: (p.state || 'visible') as 'attached' | 'detached' | 'visible' | 'hidden',
@@ -30,6 +34,7 @@ export const waitForTimeoutCommand = registerCommand({
   parameters: z.object({
     timeout: z.number(),
   }),
+  result: z.object({ waited: z.number() }),
   handler: async (p, ctx: BrowserCommandContext) => {
     await ctx.page.waitForTimeout(p.timeout);
     return ok({ waited: p.timeout });

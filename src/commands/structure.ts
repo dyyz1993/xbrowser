@@ -11,6 +11,9 @@ export const structureCommand = registerCommand({
     selector: z.string().optional(),
     depth: z.number().optional(),
   }),
+  result: z.object({
+    structure: z.record(z.unknown()),
+  }),
   handler: async (p, ctx: BrowserCommandContext) => {
     const structure = await ctx.page.evaluate(
       (args) => {

@@ -25,6 +25,13 @@ export const assertCommand = registerCommand({
     expected: z.union([z.string(), z.number()]).optional().describe('Expected value (for count/type comparisons)'),
     timeout: z.number().optional().default(5000).describe('Max wait time in ms'),
   }),
+  result: z.object({
+    passed: z.boolean(),
+    type: z.string(),
+    actual: z.string(),
+    message: z.string(),
+    expected: z.string().optional(),
+  }),
   handler: async (p, ctx: BrowserCommandContext) => {
     const { page } = ctx;
     let passed = false;
@@ -138,6 +145,23 @@ export const visualDiffCommand = registerCommand({
     fullPage: z.boolean().optional().default(false),
     output: z.string().optional().describe('Path to save diff image'),
   }),
+  result: z.union([
+    z.object({
+      passed: z.literal(false),
+      message: z.string(),
+      diffPercentage: z.number(),
+      tip: z.string(),
+    }),
+    z.object({
+      passed: z.boolean(),
+      diffPercentage: z.number(),
+      diffPixels: z.number(),
+      totalPixels: z.number(),
+      threshold: z.number(),
+      message: z.string(),
+      diffImage: z.string(),
+    }),
+  ]),
   handler: async (p, ctx: BrowserCommandContext) => {
     const { page } = ctx;
 
@@ -260,6 +284,20 @@ export const testSuiteCommand = registerCommand({
       timeout: z.number().optional(),
     })).describe('Array of test steps'),
     stopOnFailure: z.boolean().optional().default(true),
+  }),
+  result: z.object({
+    passed: z.boolean(),
+    totalSteps: z.number(),
+    passedSteps: z.number(),
+    failedSteps: z.number(),
+    results: z.array(z.object({
+      step: z.number(),
+      action: z.string(),
+      passed: z.boolean(),
+      message: z.string(),
+      duration: z.number(),
+    })),
+    summary: z.string(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
     const { page } = ctx;

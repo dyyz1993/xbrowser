@@ -14,6 +14,13 @@ export const setViewportCommand = registerCommand({
     isMobile: z.boolean().optional(),
     hasTouch: z.boolean().optional(),
   }),
+  result: z.object({
+    width: z.number(),
+    height: z.number(),
+    deviceScaleFactor: z.number().optional(),
+    isMobile: z.boolean().optional(),
+    hasTouch: z.boolean().optional(),
+  }),
   handler: async (p, ctx: BrowserCommandContext) => {
     const viewport = ctx.page.viewportSize();
     const width = p.width ?? viewport?.width ?? 1280;

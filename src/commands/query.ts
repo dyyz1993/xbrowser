@@ -10,6 +10,7 @@ export const htmlCommand = registerCommand({
   parameters: z.object({
     selector: z.string().optional(),
   }),
+  result: z.object({ html: z.string() }),
   handler: async (p, ctx: BrowserCommandContext) => {
     if (p.selector) {
       const html = await ctx.page.innerHTML(p.selector);
@@ -27,6 +28,7 @@ export const textCommand = registerCommand({
   parameters: z.object({
     selector: z.string().optional(),
   }),
+  result: z.object({ text: z.string() }),
   handler: async (p, ctx: BrowserCommandContext) => {
     if (p.selector) {
       const text = await ctx.page.textContent(p.selector);
@@ -44,6 +46,11 @@ export const getPropertyCommand = registerCommand({
   parameters: z.object({
     selector: z.string(),
     property: z.string(),
+  }),
+  result: z.object({
+    property: z.string(),
+    selector: z.string(),
+    value: z.string().nullable(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
     const value = await ctx.page.getAttribute(p.selector, p.property);

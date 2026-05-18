@@ -7,6 +7,13 @@ export const framesCommand = registerCommand({
   name: 'frames',
   description: 'List all frames in the current page',
   scope: 'page',
+  result: z.object({
+    frames: z.array(z.object({
+      index: z.number(),
+      name: z.string().nullable(),
+      url: z.string(),
+    })),
+  }),
   handler: async (_p, ctx: BrowserCommandContext) => {
     const frameList = ctx.page.frames().map((frame, index) => ({
       index,
@@ -24,6 +31,11 @@ export const frameCommand = registerCommand({
   parameters: z.object({
     index: z.number().optional(),
     name: z.string().optional(),
+  }),
+  result: z.object({
+    name: z.string().nullable(),
+    url: z.string(),
+    error: z.string().optional(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
     const allFrames = ctx.page.frames();
