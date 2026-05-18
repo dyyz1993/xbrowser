@@ -1,18 +1,12 @@
 {
-  "name": "xbrowser-yuanbao",
+  "name": "xbrowser-plugin-yuanbao",
   "version": "1.0.0",
-  "description": "腾讯元宝 (Yuanbao) plugin for xbrowser",
+  "description": "腾讯元宝 (Yuanbao) - 会话管理、消息发送、文件附件",
   "type": "module",
   "main": "index.ts",
-  "keywords": [
-    "xbrowser",
-    "yuanbao",
-    "tencent",
-    "ai",
-    "chat",
-    "cdp",
-    "playwright"
-  ],
+  "keywords": ["xbrowser", "yuanbao", "tencent", "ai", "cdp"],
+  "author": "XBrowser Team",
+  "license": "MIT",
   "dependencies": {
     "zod": "^3.24.0"
   },
@@ -22,13 +16,7 @@
   "xbrowser": {
     "name": "yuanbao",
     "description": "腾讯元宝 AI 助手",
-    "commands": [
-      "list",
-      "new",
-      "open",
-      "chat",
-      "attach"
-    ],
+    "commands": ["list", "new", "open", "chat", "attach"],
     "sites": ["yuanbao"]
   }
 }

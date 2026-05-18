@@ -20,6 +20,15 @@
 - [调试技巧](#调试技巧)
 - [发布插件](#发布插件)
 - [常见问题](#常见问题)
+- [插件分类](#插件分类)
+- [package.json 规范](#packagejson-规范)
+- [代码规范](#代码规范)
+- [测试规范](#测试规范)
+- [本地开发 → 全局可用](#本地开发--全局可用)
+- [Marketplace CLI](#marketplace-cli)
+- [Changelog 规范](#changelog-规范)
+- [规范文件清单](#规范文件清单)
+- [CDP 模式踩坑速查](#cdp-模式踩坑速查)
 
 ---
 
@@ -977,3 +986,318 @@ await page.waitForFunction(() => {
 4. `~/.xbrowser/plugins/`
 
 同名插件：本地优先于全局，后加载覆盖先加载。
+
+---
+
+## 插件分类
+
+### 站点插件（Site Plugin）
+
+- **定义**：封装特定网站操作的插件（如 chatgpt、douyin、qianwen）
+- **特征**：`site.command()` 注册命令，绑定到网站 URL
+- **用法**：`xbrowser <site> <command>`
+- **示例**：`chatgpt list`、`douyin comments`、`qianwen chat`
+
+```typescript
+export default (api: XCLIAPI) => {
+  const site = api.site('douyin');
+  site.command('comments', { ... });
+  site.command('videos', { ... });
+};
+```
+
+### 扩展命令插件（Extension Plugin）
+
+- **定义**：为 xbrowser 添加新的底层能力的插件（如 web-automation）
+- **特征**：`registerCommand()` 注册全局命令，不绑定网站
+- **用法**：`xbrowser <command>`
+- **示例**：web-automation 的各种通用命令
+
+```typescript
+export default (api: XCLIAPI) => {
+  api.registerCommand('automate', { ... });
+};
+```
+
+### 聚合能力插件（Aggregate Plugin）
+
+- **定义**：聚合多个底层命令，提供更高层抽象的插件（如 seo）
+- **特征**：组合多个命令形成工作流
+- **用法**：`xbrowser <plugin> <workflow>`
+
+### 特殊命令说明
+
+- `search`、`map`、`crawl`、`scrape`、`network` 等是**内置命令**，不属于任何插件
+- 这些命令在 `src/commands/` 下实现，通过 `registerCommand()` 注册
+- 插件可以调用这些内置命令的能力（通过 `ctx.page` 操作页面）
+
+---
+
+## package.json 规范
+
+### 必需字段
+
+| 字段 | 说明 |
+|------|------|
+| `name` | 包名，统一 `xbrowser-plugin-<site>` 前缀 |
+| `version` | 遵循 semver（`MAJOR.MINOR.PATCH`） |
+| `description` | 简短描述 |
+| `type` | 固定为 `"module"` |
+| `main` | 入口文件，通常为 `"index.ts"` |
+| `keywords` | 关键词数组，便于搜索 |
+| `dependencies` | 插件自身依赖 |
+| `peerDependencies` | 对 `@dyyz1993/xcli-core` 的依赖 |
+| `xbrowser` | xbrowser 元数据（见下文） |
+
+### 版本号规则
+
+- **MAJOR**（`x.0.0`）：不兼容的 API 变更
+- **MINOR**（`1.x.0`）：新增功能（向后兼容）
+- **PATCH**（`1.0.x`）：Bug 修复
+
+### xbrowser 元数据字段
+
+```json
+{
+  "xbrowser": {
+    "name": "站点标识（CLI 调用时的名称）",
+    "description": "简短描述",
+    "commands": ["命令列表"],
+    "sites": ["匹配的域名"]
+  }
+}
+```
+
+完整示例（参考 douyin 插件）：
+
+```json
+{
+  "name": "xbrowser-plugin-douyin",
+  "version": "2.0.0",
+  "description": "抖音数据采集插件",
+  "type": "module",
+  "main": "index.ts",
+  "keywords": ["xbrowser", "plugin", "douyin", "tiktok"],
+  "dependencies": {},
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "douyin",
+    "description": "抖音数据采集",
+    "commands": ["comments", "user-comments", "video-stats", "videos", "profile", "detail"],
+    "sites": ["douyin.com", "www.douyin.com"]
+  }
+}
+```
+
+---
+
+## 代码规范
+
+### ESLint
+
+- 插件代码应遵循项目根目录的 ESLint 配置
+- 检查命令：`npx eslint .xcli/plugins/<name>/index.ts --ext .ts`
+- 常见规则：禁止 `any`、禁止 `console.log`、强制类型注解
+- 插件可以有自己的 `.eslintrc.json` 覆盖特定规则
+
+### TypeScript
+
+- 使用 `strict` 模式
+- 所有函数参数和返回值必须有类型注解
+- 优先使用 `interface` 定义对象类型，`type` 定义联合类型
+- 避免使用 `any`，使用 `unknown` 并收窄
+
+### Husky / Git Hooks
+
+- 插件代码在 xbrowser 仓库内，共享项目的 pre-commit hooks
+- **pre-commit** 自动运行：typecheck + ESLint + 命令参数检查
+- **pre-push** 自动运行：vitest 测试套件
+- 插件代码也受这些 hooks 保护
+
+---
+
+## 测试规范
+
+### 测试路径
+
+```
+tests/
+├── plugins/
+│   ├── chatgpt.test.ts      # 插件单元测试
+│   ├── qianwen.test.ts
+│   └── yuanbao.test.ts
+└── e2e/
+    └── plugins/
+        ├── chatgpt.e2e.ts   # E2E 测试（需要浏览器）
+        └── ...
+```
+
+### 测试策略
+
+- **单元测试**：Mock Page 对象，测试命令逻辑
+- **集成测试**：用 `--cdp http://localhost:9222` 连接真实浏览器
+- **E2E 测试**：需要 `--cdp http://localhost:9221`（带登录态），测试真实用户场景
+
+### 手动验证流程
+
+```bash
+# 1. 构建并 link
+npm run build && npm link
+
+# 2. 测试不需要登录态的命令
+npx xbrowser <site> list --cdp http://localhost:9222 --json
+
+# 3. 测试需要登录态的命令
+npx xbrowser <site> list --cdp http://localhost:9221 --json
+
+# 4. 验证进程正常退出
+echo "EXIT_CODE=$?"
+```
+
+---
+
+## 本地开发 → 全局可用
+
+### 方式 1：自动加载（开发推荐）
+
+插件放在 `.xcli/plugins/` 下，xbrowser 启动时自动加载，**无需 npm link**：
+
+```
+.xcli/plugins/chatgpt/   ← 直接编辑即可生效
+```
+
+### 方式 2：npm link（发布前验证）
+
+```bash
+# 在插件目录下
+cd .xcli/plugins/chatgpt
+npm link
+
+# 全局可用（其他项目也能用）
+xbrowser chatgpt list --json
+```
+
+### 方式 3：marketplace 安装
+
+```bash
+xbrowser plugin install chatgpt
+```
+
+---
+
+## Marketplace CLI
+
+### 前置条件
+
+```bash
+# 设置代理（必需，marketplace 在 Cloudflare Workers 上）
+export https_proxy=http://127.0.0.1:7890
+export http_proxy=http://127.0.0.1:7890
+export all_proxy=socks5://127.0.0.1:7890
+```
+
+### 命令列表
+
+| 命令 | 说明 |
+|------|------|
+| `xbrowser plugin list` | 列出已安装的插件 |
+| `xbrowser plugin search <keyword>` | 搜索 marketplace 上的插件 |
+| `xbrowser plugin install <name>` | 从 marketplace 安装插件 |
+| `xbrowser plugin uninstall <name>` | 卸载插件 |
+| `xbrowser plugin publish <name>` | 发布插件到 marketplace |
+| `xbrowser plugin whoami` | 查看当前登录状态 |
+| `xbrowser plugin reload` | 重新加载所有插件 |
+
+### 发布流程
+
+1. 确保插件在 `.xcli/plugins/` 下开发和测试通过
+2. 补全规范文件（README、CHANGELOG、MARKET_DESCRIPTION）
+3. 更新 `package.json` 版本号
+4. 设置代理环境变量
+5. 执行 `npx xbrowser plugin publish <name>`
+
+---
+
+## Changelog 规范
+
+### 格式（Keep a Changelog）
+
+```markdown
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.1.0] - 2026-05-20
+
+### Added
+- 新增 attach 命令支持文件上传
+
+### Fixed
+- 修复 contenteditable 输入框无法输入的问题
+
+## [1.0.0] - 2026-05-18
+
+### Added
+- 初始版本
+- list/new/open/chat/attach 五个命令
+```
+
+### 版本号规则
+
+- 遵循 [Semantic Versioning](https://semver.org/)
+- `1.0.0`：首个正式发布版本
+- `1.x.0`：新增功能（向后兼容）
+- `1.0.x`：Bug 修复
+- `x.0.0`：不兼容的 API 变更
+
+---
+
+## 规范文件清单
+
+成熟的插件应包含以下文件：
+
+| 文件 | 必需 | 说明 |
+|------|------|------|
+| `index.ts` | ✅ | 插件入口 |
+| `package.json` | ✅ | 包配置（遵循上述规范） |
+| `README.md` | ✅ | 使用说明、命令文档、示例 |
+| `CHANGELOG.md` | ✅ | 版本变更记录 |
+| `MARKET_DESCRIPTION.md` | 发布时必需 | Marketplace 展示用简介 |
+| `LICENSE` | 发布时必需 | 开源协议（推荐 MIT） |
+| `RELEASE_NOTES.md` | 可选 | 当前版本详细发布说明 |
+| `RELEASE_CHECKLIST.md` | 可选 | 发布前检查清单（参考 douyin 插件） |
+
+---
+
+## CDP 模式踩坑速查
+
+### contenteditable 输入框
+
+- ❌ 不要用 `fill()` — 不会触发 React/ProseMirror 状态更新
+- ✅ 用 `keyboard.type({ delay: 30 })` 模拟真实键盘输入
+
+### CDP 模式下点击
+
+- ❌ 不要用 `locator().click()` — 可能导致 context 丢失
+- ✅ 用 `evaluateHandle` + `mouse.click()` 模式（见 xbrowser-agent.md 踩坑速查）
+
+### CDP 模式下不能关闭浏览器
+
+- ❌ 绝不能 `browser.close()` — 会杀掉用户的整个浏览器
+- ✅ 插件 handler 执行完自动断开，xbrowser 框架负责清理
+
+### 选择器稳定性
+
+- ✅ 用 class、placeholder、id 等属性定位
+- ✅ 用 `evaluateHandle` + JS 函数精确匹配
+- ❌ 避免 `:has-text("xxx")` 文本搜索（SPA 文本可能延迟加载）
+
+### 回复检测
+
+- 每个网站的回复 DOM 结构不同，必须**定制选择器**
+- ❌ 不要用通用 `[class*="message"]` — 会匹配到 UI 组件
