@@ -1,0 +1,8 @@
+{
+  "engine": "metaso",
+  "status": "zero_urls",
+  "duration": "25.1s",
+  "totalUrls": 0,
+  "totalDomains": 0,
+  "note": "有搜索结果内容但未提取到 URL"
+}

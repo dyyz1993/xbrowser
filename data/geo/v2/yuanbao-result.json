@@ -1,0 +1,11 @@
+{
+  "engine": "yuanbao",
+  "status": "success",
+  "duration": "17.0s",
+  "totalUrls": 2,
+  "totalDomains": 2,
+  "domains": [
+    { "domain": "corp.efu.com.cn", "count": 1, "urls": ["http://corp.efu.com.cn/list-1-0-0-2-440000-0-1.html"] },
+    { "domain": "tianyancha.com", "count": 1, "urls": ["https://www.tianyancha.com/company/3228419557"] }
+  ]
+}

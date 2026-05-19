@@ -1,0 +1,11 @@
+{
+  "engine": "chatglm",
+  "status": "minimal",
+  "duration": "19.1s",
+  "totalUrls": 1,
+  "totalDomains": 1,
+  "domains": [
+    { "domain": "beian.miit.gov.cn", "count": 1, "urls": ["https://beian.miit.gov.cn/"] }
+  ],
+  "note": "仅提取到备案网站，非有效外链"
+}

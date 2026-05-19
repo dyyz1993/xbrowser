@@ -22,4 +22,11 @@ export default defineConfig([
     clean: false,
     external: ['playwright', 'playwright-core', 'undici'],
   },
+  {
+    entry: ['src/data-collector/index.ts'],
+    format: ['esm'],
+    dts: true,
+    clean: false,
+    external: ['playwright', 'playwright-core', 'undici'],
+  },
 ]);

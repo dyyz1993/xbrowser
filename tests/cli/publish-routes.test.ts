@@ -133,7 +133,7 @@ describe('publish-routes', () => {
       logSpy.mockRestore();
     });
 
-    it('should fallback to metadata-only publish on R2 storage error', async () => {
+    it('should exit on R2 storage error', async () => {
       mockExistsSync.mockReturnValue(true);
       mockReadJsonFile.mockReturnValue({ token: 'tok', registry: 'https://xbrowser.dev' });
       mockCreateTarball.mockResolvedValue({
@@ -154,17 +154,13 @@ describe('publish-routes', () => {
           status: 500,
           statusText: 'R2 storage error',
           json: () => Promise.resolve({ error: 'R2 storage unavailable' }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: () => Promise.resolve({ data: { slug: 'p', status: 'pending' } }),
         });
       vi.stubGlobal('fetch', mockFetch);
-      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-      await handlePublish(['/p'], {}, 'json');
-      expect(mockFetch).toHaveBeenCalledTimes(2);
-      expect(mockOutputResult).toHaveBeenCalled();
-      logSpy.mockRestore();
+      const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit'); }) as never);
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      await expect(handlePublish(['/p'], {}, 'json')).rejects.toThrow('exit');
+      exitSpy.mockRestore();
+      errSpy.mockRestore();
     });
   });
 

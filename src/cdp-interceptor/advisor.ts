@@ -84,17 +84,23 @@ function getBaseAdvice(decision: DecisionResult, method: string): { title: strin
       };
 
     case 'input-keystroke':
+      if (method === 'Input.insertText') {
+        return {
+          title: 'Input.insertText detected (logged, not blocked)',
+          detail: 'Input.insertText bypasses native keyDown→keyPress→input→keyUp events. Playwright uses this internally for page.fill(). Logged for observability.',
+        };
+      }
       return {
         title: 'Unnatural keystroke timing blocked',
-        detail: `Your ${method} calls have unnaturally constant timing (exact 50ms intervals) or used Input.insertText which bypasses all keyboard events.`,
+        detail: `Your ${method} calls have unnaturally constant timing (e.g., exact 50ms intervals). Human typing always has variation (CV > 0.2).`,
         codeExample: [
           '# ❌ BLOCKED — exact constant delay:',
           "page.type('#input', 'hello', {delay: 50})  # every keystroke exactly 50ms apart",
           '',
           '# ✅ USE INSTEAD — variable delay (human-like):',
-          "page.fill('#input', 'hello')               # fastest, dispatches events properly",
+          "page.fill('#input', 'hello')               # recommended, dispatches events properly",
           '# OR: type with randomized delay',
-          "page.type('#input', 'hello', {delay: r.randint(30, 120)})",
+          "page.type('#input', 'hello', {delay: 50 + Math.floor(Math.random() * 80)})",
         ].join('\n'),
       };
 

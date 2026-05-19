@@ -1,0 +1,361 @@
+{
+  "timestamp": "2026-05-19T10:23:05.040Z",
+  "totalEngines": 7,
+  "success": 5,
+  "fail": 2,
+  "totalUrls": 200,
+  "totalDomains": 46,
+  "domains": [
+    {
+      "domain": "eb-static.cdn.bcebos.com",
+      "count": 98
+    },
+    {
+      "domain": "eb118-file.cdn.bcebos.com",
+      "count": 33
+    },
+    {
+      "domain": "bat.bing.com",
+      "count": 7
+    },
+    {
+      "domain": "googletagmanager.com",
+      "count": 6
+    },
+    {
+      "domain": "hy-openapi-pulbic.hunyuan.tencent.com",
+      "count": 6
+    },
+    {
+      "domain": "cdn-hybrid-prod.hunyuan.tencent.com",
+      "count": 2
+    },
+    {
+      "domain": "cdn-yb.icon.qq.com",
+      "count": 2
+    },
+    {
+      "domain": "beian.miit.gov.cn",
+      "count": 2
+    },
+    {
+      "domain": "o.alicdn.com",
+      "count": 2
+    },
+    {
+      "domain": "res.wx.qq.com",
+      "count": 2
+    },
+    {
+      "domain": "clarity.ms",
+      "count": 2
+    },
+    {
+      "domain": "snap.licdn.com",
+      "count": 2
+    },
+    {
+      "domain": "js.stripe.com",
+      "count": 2
+    },
+    {
+      "domain": "static-s3.skyworkcdn.com",
+      "count": 2
+    },
+    {
+      "domain": "snowflake.qq.com",
+      "count": 1
+    },
+    {
+      "domain": "rumt-zh.com",
+      "count": 1
+    },
+    {
+      "domain": "rdelivery.qq.com",
+      "count": 1
+    },
+    {
+      "domain": "mapapi.qq.com",
+      "count": 1
+    },
+    {
+      "domain": "hunyuan-prod-1258344703.cos.ap-guangzhou.myqcloud.com",
+      "count": 1
+    },
+    {
+      "domain": "hy-openapi-public-1258344703.cos.ap-nanjing.myqcloud.com",
+      "count": 1
+    },
+    {
+      "domain": "at.alicdn.com",
+      "count": 1
+    },
+    {
+      "domain": "lf3-data.volccdn.com",
+      "count": 1
+    },
+    {
+      "domain": "hm.baidu.com",
+      "count": 1
+    },
+    {
+      "domain": "ppui-static-wap.cdn.bcebos.com",
+      "count": 1
+    },
+    {
+      "domain": "wappass.baidu.com",
+      "count": 1
+    },
+    {
+      "domain": "hercules.cdn.bcebos.com",
+      "count": 1
+    },
+    {
+      "domain": "banti-static.cdn.bcebos.com",
+      "count": 1
+    },
+    {
+      "domain": "dlswbr.baidu.com",
+      "count": 1
+    },
+    {
+      "domain": "xlab.baidu.com",
+      "count": 1
+    },
+    {
+      "domain": "himg.bdimg.com",
+      "count": 1
+    },
+    {
+      "domain": "metaso-static.oss-accelerate.aliyuncs.com",
+      "count": 1
+    },
+    {
+      "domain": "163.com",
+      "count": 1
+    },
+    {
+      "domain": "s.wanfangdata.com.cn",
+      "count": 1
+    },
+    {
+      "domain": "m.itouchtv.cn",
+      "count": 1
+    },
+    {
+      "domain": "pdfs.cir.cn",
+      "count": 1
+    },
+    {
+      "domain": "gd.gov.cn",
+      "count": 1
+    },
+    {
+      "domain": "g.alicdn.com",
+      "count": 1
+    },
+    {
+      "domain": "uranus-static.oss-cn-beijing.aliyuncs.com",
+      "count": 1
+    },
+    {
+      "domain": "static.airwallex.com",
+      "count": 1
+    },
+    {
+      "domain": "scripts.clarity.ms",
+      "count": 1
+    },
+    {
+      "domain": "connect.facebook.net",
+      "count": 1
+    },
+    {
+      "domain": "business.yingliangads.com",
+      "count": 1
+    },
+    {
+      "domain": "js.live.net",
+      "count": 1
+    },
+    {
+      "domain": "retcode.alicdn.com",
+      "count": 1
+    },
+    {
+      "domain": "static-us-img.skywork.ai",
+      "count": 1
+    },
+    {
+      "domain": "s.yimg.jp",
+      "count": 1
+    }
+  ],
+  "engines": {
+    "qianwen-tongyi": {
+      "status": "fail",
+      "urlCount": 0,
+      "domainCount": 0,
+      "error": "Input not found",
+      "urls": []
+    },
+    "yuanbao": {
+      "status": "success",
+      "urlCount": 18,
+      "domainCount": 10,
+      "error": null,
+      "urls": [
+        "https://snowflake.qq.com",
+        "https://rumt-zh.com",
+        "https://rdelivery.qq.com",
+        "https://www.googletagmanager.com",
+        "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/writing/aiwriting-dark-icon-20250926.svg",
+        "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/writing/aiwriting-light-icon-20250926.svg",
+        "https://cdn-hybrid-prod.hunyuan.tencent.com/static/application-config/aicoding-dark-icon-20250929.svg",
+        "https://cdn-hybrid-prod.hunyuan.tencent.com/static/application-config/aicoding-light-icon-20250929.svg",
+        "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/icon2025/dark/icon_jieti_dark_20250926.svg",
+        "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/icon2025/light/icon_jieti_light_20250926.svg",
+        "https://mapapi.qq.com/web/lbs/h5-components/geolocation/geolocation.min.js",
+        "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/search_guide/icon_link_260324.png",
+        "https://hunyuan-prod-1258344703.cos.ap-guangzhou.myqcloud.com/videoBox/REDACTED.png",
+        "https://hy-openapi-public-1258344703.cos.ap-nanjing.myqcloud.com/app/icon/icon2025/certify/wx-corp-unofficial.png",
+        "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/search_guide/icon_gzh_260324.png",
+        "https://cdn-yb.icon.qq.com/zuowei_dir/www_jobui_com.ico",
+        "https://cdn-yb.icon.qq.com/zuowei_dir/www_zbnews_net.ico",
+        "https://www.googletagmanager.com/gtag/js?id=G-6P1G7NCG3R"
+      ]
+    },
+    "chatglm": {
+      "status": "success",
+      "urlCount": 6,
+      "domainCount": 5,
+      "error": null,
+      "urls": [
+        "https://beian.miit.gov.cn/",
+        "https://at.alicdn.com/t/c/font_3037642_p7k3f0r1vds.css",
+        "https://beian.miit.gov.cn",
+        "https://o.alicdn.com/frontend-lib/common-lib/jquery.min.js",
+        "https://lf3-data.volccdn.com/obj/data-static/log-sdk/collect/collect-autotrack-rangers.js",
+        "https://res.wx.qq.com/connect/zh_CN/htmledition/js/wxLogin.js"
+      ]
+    },
+    "yiyan": {
+      "status": "success",
+      "urlCount": 139,
+      "domainCount": 10,
+      "error": null,
+      "urls": [
+        "https://eb-static.cdn.bcebos.com/logo/favicon.ico",
+        "https://eb-static.cdn.bcebos.com/static/eb/css/npm-antd.fcb4f1dd.css",
+        "https://eb-static.cdn.bcebos.com/static/eb/css/npm-video.767e02cb.css",
+        "https://eb-static.cdn.bcebos.com/static/eb/css/npm-vendor.82b743fe.css",
+        "https://eb-static.cdn.bcebos.com/static/eb/css/index.1d228c0f.css",
+        "https://hm.baidu.com/hm.js?01e907653ac089993ee83ed00ef9c2f3",
+        "https://ppui-static-wap.cdn.bcebos.com/static/sdk-machine/js/mkd_v2.js?_=1",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/runtime.18c5ca01.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-antd.d9164f8d.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-core.0951b166.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-video.5333c4ba.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-echarts.e2b46a1a.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__univerjs-core-7c6d1d65.7eac0b31.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__univerjs-core-72ce3cdf.d2885ea2.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__rxjs.2c7d0a3f.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__tslib.7f6b3a78.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__wendellhu-redi.f911bd83.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__ant-design-icons.c30ec30c.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__refractor-5defb1c4.66d70236.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__refractor-1f8b9a66.8762cfb7.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__refractor-d8c32a2b.ad670db9.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__refractor-5d3f66f5.a93d4268.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__refractor-e2568443.4b720235.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__refractor-1df7d16d.81928273.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__refractor-954365d7.1f153e2d.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__refractor-c64a800c.0c4a1828.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__refractor-9f3dcbaf.56ba4c21.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__antd-mobile.82d95666.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__property-information.8cb16d99.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__mdast-util-to-markdown.765b43c0.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__babel-runtime.fee8f7b0.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__crypto-js-8379da61.5fd672a8.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__crypto-js-a9ad56f8.5633b67c.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__rc-util.f9b34307.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__swiper-52988ef0.80b56c31.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__swiper-030ae778.1e702519.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__mdast-util-to-hast.803bd498.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__rc-select.5241297d.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__rc-menu.b8f486ae.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__juggle-resize-observer.18145eb7.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__micromark-core-commonmark.bbe63464.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__animejs.2232df12.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__react-pdf.57bb0918.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__baidu-weirwood-error.afb42e7f.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__rc-virtual-list.fccbdefa.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__rc-cascader.be2c99f9.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__rc-field-form.7d361699.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__parse5-5097e0d7.bda5188c.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__parse5-8790ff7d.3197a5da.js",
+        "https://eb-static.cdn.bcebos.com/static/eb/js/npm-others__parse5-a7560f74.c657fa47.js"
+      ]
+    },
+    "metaso": {
+      "status": "success",
+      "urlCount": 10,
+      "domainCount": 10,
+      "error": null,
+      "urls": [
+        "https://o.alicdn.com/captcha-frontend/aliyunFP/fp.min.js",
+        "https://res.wx.qq.com/connect/zh_CN/htmledition/js/wxLogin.js",
+        "https://metaso-static.oss-accelerate.aliyuncs.com",
+        "https://www.163.com/dy/article/J7NGEAQ30538RY7X.html",
+        "https://s.wanfangdata.com.cn/paper?q=%E4%B8%AD%E5%9B%BD%E6%9C%8D%E8%A3%85%E5%8D%8F%E4%BC%9A%E5%8F%91%E5%B8%832023%E5%B9%B4%E4%B8%AD%E5%9B%BD%E6%9C%8D%E8%A3%85%E8%A1%8C%E4%B8%9A%E7%99%BE%E5%BC%BA%E4%BC%81%E4%B8%9A%E5%90%8D%E5%8D%95%20%20%E5%8C%97%E4%BA%AC%E5%8D%81%E5%AE%B6%E4%BC%81%E4%B8%9A%E8%8D%A3%E7%99%BB%E6%A6%9C%E5%8D%95",
+        "https://m.itouchtv.cn/article/f7bf73fceae3fcbddf62e1e78440f127",
+        "https://pdfs.cir.cn/pdf.ashx?id=2067685",
+        "http://www.gd.gov.cn/attachment/0/544/544370/4384218.pdf",
+        "https://g.alicdn.com/captcha-frontend/FeiLin/1.4.2/feilin049.98aeded2eee374b7f59cf312fa9ac8f8e869605ed009140b419c5f86cffb67b7.js?v=1",
+        "https://uranus-static.oss-cn-beijing.aliyuncs.com/avt/user_6.png"
+      ]
+    },
+    "tiangong": {
+      "status": "success",
+      "urlCount": 27,
+      "domainCount": 14,
+      "error": null,
+      "urls": [
+        "https://static.airwallex.com/widgets/sdk-controller/sdk/v1/index.js?ts=1779186143214",
+        "https://scripts.clarity.ms/0.8.59/clarity.js",
+        "https://www.googletagmanager.com/gtag/destination?id=G-Y0S784F87Q&cx=c&gtm=4e65i0h2",
+        "https://www.googletagmanager.com/gtag/js?id=G-1CVQKJYTBB&cx=c&gtm=4e65i0h2",
+        "https://www.googletagmanager.com/gtag/js?id=G-WEFE7MXDCE&cx=c&gtm=4e65i0h2",
+        "https://www.clarity.ms/tag/uet/187211039",
+        "https://www.clarity.ms/tag/uet/343207774?conversions=1",
+        "https://snap.licdn.com/li.lms-analytics/insight.old.min.js",
+        "https://connect.facebook.net/en_US/fbevents.js",
+        "https://snap.licdn.com/li.lms-analytics/insight.min.js",
+        "https://www.googletagmanager.com/gtm.js?id=GTM-M8PGPGJ8",
+        "https://bat.bing.com/p/action/343206983.js",
+        "https://js.stripe.com/basil/stripe.js",
+        "https://business.yingliangads.com/track_v3.js?pid=151&u1=99&u2=&u3=&u4=&pt=fb&id=657863736336640",
+        "https://js.live.net/v7.2/OneDrive.js",
+        "https://bat.bing.com/p/action/343207774.js",
+        "https://bat.bing.com/p/action/187211039.js",
+        "https://retcode.alicdn.com/retcode/bl.js",
+        "https://static-s3.skyworkcdn.com/fe/skywork-site-assets/images/title-bg-light.webp",
+        "https://static-s3.skyworkcdn.com/fe/skywork-site-assets/images/skybot/avatar1-new.png",
+        "https://static-us-img.skywork.ai/prod/static/inner_url/message-icon/ic_notice_fill.png",
+        "https://bat.bing.com/action/0?ti=343206983&Ver=2&mid=915bfc68-dedb-4d03-a75c-1c611977d5f8&bo=1&sid=c3aec0c0533d11f18518ad431bb2164b&vid=c3aee700533d11f1a0c777f7cd943035&vids=0&msclkid=N&pi=918639831&lg=zh-CN&sw=1280&sh=720&sc=24&tl=AI%E5%8A%9E%E5%85%AC%E6%99%BA%E8%83%BD%E4%BD%93%E5%85%88%E8%A1%8C%E8%80%85&kw=%E5%A4%A9%E5%B7%A5,Skywork,%E6%99%BA%E8%83%BD%E4%BD%93,Agent,AI,%E5%8A%9E%E5%85%AC,Office,%E5%BE%AE%E8%BD%AF,Microsoft,WPS,Word,Excel,PPT,%E6%96%87%E6%A1%A3,%E5%B9%BB%E7%81%AF%E7%89%87,%E6%BC%94%E7%A4%BA%E6%96%87%E7%A8%BF,%E7%BD%91%E9%A1%B5,html,%E7%A0%94%E7%A9%B6%E6%8A%A5%E5%91%8A,deep%20research,AI%E8%A7%86%E9%A2%91,AI%E9%9F%B3%E4%B9%90,AI%E5%86%99%E6%AD%8C,AI%E7%BB%98%E6%9C%AC,MCP,A2A&p=https%3A%2F%2Fwww.tiangong.cn%2Fchat%2F0ec23881-97c4-490a-9d34-1f7e59fb6da7%3Fmode%3D1&r=&evt=pageLoad&sv=2&cdb=AQAQ&rn=351837",
+        "https://bat.bing.com/action/0?ti=343206983&Ver=2&mid=f5730bac-348d-4915-a0b5-456211ab269b&bo=1&sid=c3aec0c0533d11f18518ad431bb2164b&vid=c3aee700533d11f1a0c777f7cd943035&vids=0&msclkid=N&page_path=%2Fchat%2F0ec23881-97c4-490a-9d34-1f7e59fb6da7&spa=Y&p=https%3A%2F%2Fwww.tiangong.cn%2Fchat%2F0ec23881-97c4-490a-9d34-1f7e59fb6da7&pi=918639831&lg=zh-CN&sw=1280&sh=720&sc=24&tl=%E6%96%B0%E9%A1%B9%E7%9B%AE_3870&kw=%E5%A4%A9%E5%B7%A5,Skywork,%E6%99%BA%E8%83%BD%E4%BD%93,Agent,AI,%E5%8A%9E%E5%85%AC,Office,%E5%BE%AE%E8%BD%AF,Microsoft,WPS,Word,Excel,PPT,%E6%96%87%E6%A1%A3,%E5%B9%BB%E7%81%AF%E7%89%87,%E6%BC%94%E7%A4%BA%E6%96%87%E7%A8%BF,%E7%BD%91%E9%A1%B5,html,%E7%A0%94%E7%A9%B6%E6%8A%A5%E5%91%8A,deep%20research,AI%E8%A7%86%E9%A2%91,AI%E9%9F%B3%E4%B9%90,AI%E5%86%99%E6%AD%8C,AI%E7%BB%98%E6%9C%AC,MCP,A2A&r=https%3A%2F%2Fwww.tiangong.cn%2Fchat%2F0ec23881-97c4-490a-9d34-1f7e59fb6da7%3Fmode%3D1&evt=pageLoad&sv=2&cdb=AQAQ&rn=769534",
+        "https://js.stripe.com/v3/m-outer-3437aaddcdf6922d623e172c2d6f9278.html#url=https%3A%2F%2Fwww.tiangong.cn%2Fchat%2F0ec23881-97c4-490a-9d34-1f7e59fb6da7%3Fmode%3D1&title=%E6%96%B0%E9%A1%B9%E7%9B%AE_3870&referrer=&muid=3d0250dd-491d-4375-a2da-30230b74e67efad83c&sid=5887ca98-4003-4d82-bdb0-69ed17d35bd9212bdc&version=6&preview=false&__shared_params__[version]=basil",
+        "https://bat.bing.com/action/0?ti=343207774&Ver=2&mid=51745f91-1400-4b42-b4c7-c2507c99bfdf&bo=1&sid=c3aec0c0533d11f18518ad431bb2164b&vid=c3aee700533d11f1a0c777f7cd943035&vids=0&msclkid=N&pi=918639831&lg=zh-CN&sw=1280&sh=720&sc=24&tl=%E6%96%B0%E9%A1%B9%E7%9B%AE_3870&kw=%E5%A4%A9%E5%B7%A5,Skywork,%E6%99%BA%E8%83%BD%E4%BD%93,Agent,AI,%E5%8A%9E%E5%85%AC,Office,%E5%BE%AE%E8%BD%AF,Microsoft,WPS,Word,Excel,PPT,%E6%96%87%E6%A1%A3,%E5%B9%BB%E7%81%AF%E7%89%87,%E6%BC%94%E7%A4%BA%E6%96%87%E7%A8%BF,%E7%BD%91%E9%A1%B5,html,%E7%A0%94%E7%A9%B6%E6%8A%A5%E5%91%8A,deep%20research,AI%E8%A7%86%E9%A2%91,AI%E9%9F%B3%E4%B9%90,AI%E5%86%99%E6%AD%8C,AI%E7%BB%98%E6%9C%AC,MCP,A2A&p=https%3A%2F%2Fwww.tiangong.cn%2Fchat%2F0ec23881-97c4-490a-9d34-1f7e59fb6da7&r=&lt=873&evt=pageLoad&sv=2&cdb=AQAQ&rn=149356",
+        "https://bat.bing.com/action/0?ti=187211039&Ver=2&mid=03b01c16-e393-4e76-807c-bb1947a9ffeb&bo=1&sid=c3aec0c0533d11f18518ad431bb2164b&vid=c3aee700533d11f1a0c777f7cd943035&vids=0&msclkid=N&pi=918639831&lg=zh-CN&sw=1280&sh=720&sc=24&tl=%E6%96%B0%E9%A1%B9%E7%9B%AE_3870&kw=%E5%A4%A9%E5%B7%A5,Skywork,%E6%99%BA%E8%83%BD%E4%BD%93,Agent,AI,%E5%8A%9E%E5%85%AC,Office,%E5%BE%AE%E8%BD%AF,Microsoft,WPS,Word,Excel,PPT,%E6%96%87%E6%A1%A3,%E5%B9%BB%E7%81%AF%E7%89%87,%E6%BC%94%E7%A4%BA%E6%96%87%E7%A8%BF,%E7%BD%91%E9%A1%B5,html,%E7%A0%94%E7%A9%B6%E6%8A%A5%E5%91%8A,deep%20research,AI%E8%A7%86%E9%A2%91,AI%E9%9F%B3%E4%B9%90,AI%E5%86%99%E6%AD%8C,AI%E7%BB%98%E6%9C%AC,MCP,A2A&p=https%3A%2F%2Fwww.tiangong.cn%2Fchat%2F0ec23881-97c4-490a-9d34-1f7e59fb6da7&r=&lt=873&evt=pageLoad&sv=2&cdb=AQAQ&rn=100483",
+        "https://s.yimg.jp/images/listing/tool/cv/ytag.js"
+      ]
+    },
+    "360ai": {
+      "status": "fail",
+      "urlCount": 0,
+      "domainCount": 0,
+      "error": "Input not found",
+      "urls": []
+    }
+  }
+}

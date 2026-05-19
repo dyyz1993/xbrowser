@@ -1,0 +1,12 @@
+{
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "xbrowser": {
+    "name": "cmf-seats",
+    "description": "座椅CMF评论查询（颜色/材质/触感）- 从821条真实车主评论中提取"
+  },
+  "dependencies": {
+    "zod": "^3.22.4"
+  }
+}

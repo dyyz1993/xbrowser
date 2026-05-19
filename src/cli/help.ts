@@ -76,6 +76,11 @@ Commands:
   help                              Show this help
   --version, -v                     Show version
 
+Plugin Commands:
+  Installed plugins provide additional commands.
+  Use 'xbrowser plugin list' to see installed plugins and their commands.
+  Use 'xbrowser <command> --help' for details on any specific command.
+
 Chain Execution (shell-safe, no quotes needed):
    xbrowser goto https://example.com , title , click btn
    xbrowser goto https://example.com + title + screenshot
@@ -116,5 +121,5 @@ Global Flags:
   --session <name>                  Use specific session
   --cdp <endpoint>                  Connect via CDP (url, port, or 'auto')
   --help, -h                        Show help
-`);
+  `);
 }

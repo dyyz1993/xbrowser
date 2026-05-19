@@ -1,0 +1,139 @@
+{
+  "engine": "yuanbao",
+  "status": "success",
+  "error": null,
+  "contentLength": 2224,
+  "urlCount": 18,
+  "domainCount": 10,
+  "domains": [
+    {
+      "domain": "snowflake.qq.com",
+      "count": 1,
+      "urls": [
+        "https://snowflake.qq.com"
+      ]
+    },
+    {
+      "domain": "rumt-zh.com",
+      "count": 1,
+      "urls": [
+        "https://rumt-zh.com"
+      ]
+    },
+    {
+      "domain": "rdelivery.qq.com",
+      "count": 1,
+      "urls": [
+        "https://rdelivery.qq.com"
+      ]
+    },
+    {
+      "domain": "googletagmanager.com",
+      "count": 2,
+      "urls": [
+        "https://www.googletagmanager.com",
+        "https://www.googletagmanager.com/gtag/js?id=G-6P1G7NCG3R"
+      ]
+    },
+    {
+      "domain": "hy-openapi-pulbic.hunyuan.tencent.com",
+      "count": 6,
+      "urls": [
+        "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/writing/aiwriting-dark-icon-20250926.svg",
+        "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/writing/aiwriting-light-icon-20250926.svg",
+        "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/icon2025/dark/icon_jieti_dark_20250926.svg",
+        "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/icon2025/light/icon_jieti_light_20250926.svg",
+        "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/search_guide/icon_link_260324.png"
+      ]
+    },
+    {
+      "domain": "cdn-hybrid-prod.hunyuan.tencent.com",
+      "count": 2,
+      "urls": [
+        "https://cdn-hybrid-prod.hunyuan.tencent.com/static/application-config/aicoding-dark-icon-20250929.svg",
+        "https://cdn-hybrid-prod.hunyuan.tencent.com/static/application-config/aicoding-light-icon-20250929.svg"
+      ]
+    },
+    {
+      "domain": "mapapi.qq.com",
+      "count": 1,
+      "urls": [
+        "https://mapapi.qq.com/web/lbs/h5-components/geolocation/geolocation.min.js"
+      ]
+    },
+    {
+      "domain": "hunyuan-prod-1258344703.cos.ap-guangzhou.myqcloud.com",
+      "count": 1,
+      "urls": [
+        "https://hunyuan-prod-1258344703.cos.ap-guangzhou.myqcloud.com/videoBox/REDACTED.png"
+      ]
+    },
+    {
+      "domain": "hy-openapi-public-1258344703.cos.ap-nanjing.myqcloud.com",
+      "count": 1,
+      "urls": [
+        "https://hy-openapi-public-1258344703.cos.ap-nanjing.myqcloud.com/app/icon/icon2025/certify/wx-corp-unofficial.png"
+      ]
+    },
+    {
+      "domain": "cdn-yb.icon.qq.com",
+      "count": 2,
+      "urls": [
+        "https://cdn-yb.icon.qq.com/zuowei_dir/www_jobui_com.ico",
+        "https://cdn-yb.icon.qq.com/zuowei_dir/www_zbnews_net.ico"
+      ]
+    }
+  ],
+  "urls": [
+    "https://snowflake.qq.com",
+    "https://rumt-zh.com",
+    "https://rdelivery.qq.com",
+    "https://www.googletagmanager.com",
+    "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/writing/aiwriting-dark-icon-20250926.svg",
+    "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/writing/aiwriting-light-icon-20250926.svg",
+    "https://cdn-hybrid-prod.hunyuan.tencent.com/static/application-config/aicoding-dark-icon-20250929.svg",
+    "https://cdn-hybrid-prod.hunyuan.tencent.com/static/application-config/aicoding-light-icon-20250929.svg",
+    "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/icon2025/dark/icon_jieti_dark_20250926.svg",
+    "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/icon2025/light/icon_jieti_light_20250926.svg",
+    "https://mapapi.qq.com/web/lbs/h5-components/geolocation/geolocation.min.js",
+    "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/search_guide/icon_link_260324.png",
+    "https://hunyuan-prod-1258344703.cos.ap-guangzhou.myqcloud.com/videoBox/REDACTED.png",
+    "https://hy-openapi-public-1258344703.cos.ap-nanjing.myqcloud.com/app/icon/icon2025/certify/wx-corp-unofficial.png",
+    "https://hy-openapi-pulbic.hunyuan.tencent.com/app/icon/search_guide/icon_gzh_260324.png",
+    "https://cdn-yb.icon.qq.com/zuowei_dir/www_jobui_com.ico",
+    "https://cdn-yb.icon.qq.com/zuowei_dir/www_zbnews_net.ico",
+    "https://www.googletagmanager.com/gtag/js?id=G-6P1G7NCG3R"
+  ],
+  "allLinks": [
+    "https://static.yuanbao.tencent.com/m/yuanbao-web/favicon_new@32.png",
+    "https://yuanbao.tencent.com",
+    "https://static.yuanbao.tencent.com",
+    "https://snowflake.qq.com",
+    "https://rumt-zh.com",
+    "https://rdelivery.qq.com",
+    "https://www.googletagmanager.com",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/c602c5cded9be7af.css?qb_c_bid=98",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/558391955e67ca78.css?qb_c_bid=98",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/7f28a41030e17c81.css?qb_c_bid=98",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/b514db52670b7454.css?qb_c_bid=98",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/d6029f64e48c8ec5.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/0e53548e4fc4505c.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/5ba1787eda974a6a.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/4e56cf7e766c7108.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/8117867629b2c410.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/02dfb83490b48ec9.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/f45f00c46647647a.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/6852e5c6bdd4d4b0.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/6505369e65271b6d.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/89b1357123698bab.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/83d4bbb687729f19.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/6b294c3b370536cd.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/549032c607dc866c.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/f5607095e655e1f4.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/94846ca850533f5a.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/6ed9a694cfa76ade.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/77bf269b0c69ce5b.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/1665f4f950f06a82.css",
+    "https://static.yuanbao.tencent.com/modern/_next/static/css/a18943a89080a6fd.css"
+  ]
+}

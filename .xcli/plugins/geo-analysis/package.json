@@ -1,0 +1,66 @@
+{
+  "name": "geo-analysis",
+  "version": "2.3.0",
+  "description": "GEO 外链排名分析插件 - 一键搜索所有 AI 搜索引擎，提取引用外链，按域名/平台聚合排名，生成发帖策略报告",
+  "main": "index.ts",
+  "type": "module",
+  "author": "xbrowser",
+  "license": "MIT",
+  "keywords": [
+    "geo",
+    "seo",
+    "ai-search",
+    "外链分析",
+    "搜索引擎优化",
+    "发帖策略"
+  ],
+  "category": "analytics",
+  "repository": "https://github.com/dyyz1993/xbrowser",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "commands": [
+    { "name": "all", "description": "一键聚合搜索所有 AI 引擎并提取外链" },
+    { "name": "collect", "description": "单引擎采集外链数据" },
+    { "name": "batch", "description": "批量采集多个引擎" },
+    { "name": "rank", "description": "域名/平台排名" },
+    { "name": "company", "description": "企业排名" },
+    { "name": "trend", "description": "趋势分析" },
+    { "name": "report", "description": "导出完整报告" },
+    { "name": "history", "description": "查看采集历史" },
+    { "name": "status", "description": "系统状态" }
+  ],
+  "sites": [
+    "deepseek.com",
+    "doubao.com",
+    "kimi.moonshot.cn",
+    "tongyi.aliyun.com",
+    "yuanbao.tencent.com",
+    "chatglm.cn",
+    "yiyan.baidu.com",
+    "metaso.cn",
+    "tiangong.cn",
+    "ai.360.com"
+  ],
+  "xbrowser": {
+    "commands": [
+      "collect",
+      "batch",
+      "rank",
+      "all",
+      "company",
+      "trend",
+      "report",
+      "history",
+      "status"
+    ],
+    "sites": [
+      "multi-engine"
+    ],
+    "name": "geo-analysis",
+    "description": "GEO 外链排名分析"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "engine": "tiangong",
+  "status": "error",
+  "duration": "N/A",
+  "totalUrls": 0,
+  "totalDomains": 0,
+  "error": "locator.click: Timeout 30000ms exceeded - 元素在视口外无法点击"
+}

@@ -1,0 +1,73 @@
+{
+  "timestamp": "2026-05-19T10:17:54.511Z",
+  "totalEngines": 7,
+  "success": 4,
+  "fail": 3,
+  "totalUrls": 0,
+  "totalDomains": 0,
+  "engines": {
+    "qianwen-tongyi": {
+      "engine": "qianwen-tongyi",
+      "url": "https://tongyi.aliyun.com/",
+      "status": "fail",
+      "urls": [],
+      "domains": [],
+      "contentLength": 0,
+      "error": "Input element not found"
+    },
+    "yuanbao": {
+      "engine": "yuanbao",
+      "url": "https://yuanbao.tencent.com/",
+      "status": "success",
+      "urls": [],
+      "domains": [],
+      "contentLength": 766,
+      "error": null
+    },
+    "chatglm": {
+      "engine": "chatglm",
+      "url": "https://chatglm.cn/",
+      "status": "success",
+      "urls": [],
+      "domains": [],
+      "contentLength": 562,
+      "error": null
+    },
+    "yiyan": {
+      "engine": "yiyan",
+      "url": "https://yiyan.baidu.com/",
+      "status": "fail",
+      "urls": [],
+      "domains": [],
+      "contentLength": 0,
+      "error": "page.screenshot: Target page, context or browser has been closed"
+    },
+    "metaso": {
+      "engine": "metaso",
+      "url": "https://metaso.cn/",
+      "status": "success",
+      "urls": [],
+      "domains": [],
+      "contentLength": 426,
+      "error": null
+    },
+    "tiangong": {
+      "engine": "tiangong",
+      "url": "https://www.tiangong.cn/",
+      "status": "success",
+      "urls": [],
+      "domains": [],
+      "contentLength": 574,
+      "error": null
+    },
+    "360ai": {
+      "engine": "360ai",
+      "url": "https://ai.360.com/",
+      "status": "fail",
+      "urls": [],
+      "domains": [],
+      "contentLength": 0,
+      "error": "Input element not found"
+    }
+  }
+}

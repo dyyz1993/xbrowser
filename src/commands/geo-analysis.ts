@@ -45,7 +45,7 @@ export interface GeoAnalysisResult {
   };
 }
 
-async function calculateCompanyRankings(
+export async function calculateCompanyRankings(
   results: SearchResult[]
 ): Promise<CompanyRank[]> {
   const analyzer = new ResultAnalyzer(results);
@@ -99,7 +99,7 @@ function getPlatformType(domain: string): string {
   return 'enterprise';
 }
 
-async function analyzeTrends(
+export async function analyzeTrends(
   results: SearchResult[]
 ): Promise<TrendData[]> {
 

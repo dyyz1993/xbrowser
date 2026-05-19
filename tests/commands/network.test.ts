@@ -166,6 +166,7 @@ describe('network command - utility functions', () => {
         captures,
         ['console log'],
         1,
+        undefined,
         { searchResults: ['match1', 'match2'] },
       );
 

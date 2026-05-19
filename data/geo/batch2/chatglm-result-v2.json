@@ -1,0 +1,67 @@
+{
+  "engine": "chatglm",
+  "status": "success",
+  "error": null,
+  "contentLength": 791,
+  "urlCount": 6,
+  "domainCount": 5,
+  "domains": [
+    {
+      "domain": "beian.miit.gov.cn",
+      "count": 2,
+      "urls": [
+        "https://beian.miit.gov.cn/",
+        "https://beian.miit.gov.cn"
+      ]
+    },
+    {
+      "domain": "at.alicdn.com",
+      "count": 1,
+      "urls": [
+        "https://at.alicdn.com/t/c/font_3037642_p7k3f0r1vds.css"
+      ]
+    },
+    {
+      "domain": "o.alicdn.com",
+      "count": 1,
+      "urls": [
+        "https://o.alicdn.com/frontend-lib/common-lib/jquery.min.js"
+      ]
+    },
+    {
+      "domain": "lf3-data.volccdn.com",
+      "count": 1,
+      "urls": [
+        "https://lf3-data.volccdn.com/obj/data-static/log-sdk/collect/collect-autotrack-rangers.js"
+      ]
+    },
+    {
+      "domain": "res.wx.qq.com",
+      "count": 1,
+      "urls": [
+        "https://res.wx.qq.com/connect/zh_CN/htmledition/js/wxLogin.js"
+      ]
+    }
+  ],
+  "urls": [
+    "https://beian.miit.gov.cn/",
+    "https://at.alicdn.com/t/c/font_3037642_p7k3f0r1vds.css",
+    "https://beian.miit.gov.cn",
+    "https://o.alicdn.com/frontend-lib/common-lib/jquery.min.js",
+    "https://lf3-data.volccdn.com/obj/data-static/log-sdk/collect/collect-autotrack-rangers.js",
+    "https://res.wx.qq.com/connect/zh_CN/htmledition/js/wxLogin.js"
+  ],
+  "allLinks": [
+    "https://beian.miit.gov.cn/",
+    "https://chatglm.cn/agreement",
+    "https://chatglm.cn/privacypolicy",
+    "https://analysis.chatglm.cn/",
+    "https://chatglm.cn/favicon.ico",
+    "https://at.alicdn.com/t/c/font_3037642_p7k3f0r1vds.css",
+    "https://beian.miit.gov.cn",
+    "https://o.alicdn.com/frontend-lib/common-lib/jquery.min.js",
+    "https://lf3-data.volccdn.com/obj/data-static/log-sdk/collect/collect-autotrack-rangers.js",
+    "https://res.wx.qq.com/connect/zh_CN/htmledition/js/wxLogin.js",
+    "https://sfile.chatglm.cn/activeimg/bdms/66135a5a1bfb5b0037b2bd52"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "engine": "360ai",
+  "status": "minimal",
+  "duration": "51.2s",
+  "totalUrls": 2,
+  "totalDomains": 2,
+  "domains": [
+    { "domain": "qcdn4.zhaomi.cn", "count": 1, "urls": ["https://qcdn4.zhaomi.cn/dr/512__/t11de45881603f7cbc15ab10b34.png"] },
+    { "domain": "ns.chat.360.cn", "count": 1, "urls": ["https://ns.chat.360.cn/zhaomi-so/admin-test-resource/2ac4dd7fe9847125b2ad7330f6a147b5.png"] }
+  ],
+  "note": "仅提取到图片资源 URL，非内容外链"
+}

@@ -63,6 +63,18 @@ export type { WaitForHumanOptions, WaitForHumanResult } from './human-interactio
 export { WebhookNotifier } from './webhook.js';
 export type { WebhookPayload } from './webhook.js';
 export { getCaptchaConfig } from './config.js';
+
+export { DataCollector, DataStorage, ResultAnalyzer, getPlatformName, getCompanyType } from './data-collector/index.js';
+export type {
+  SearchResult,
+  DomainStat,
+  CompanyInfo,
+  CollectResult,
+  AnalysisResult,
+  StorageConfig,
+  CollectorConfig,
+  BatchCollectResult,
+} from './data-collector/index.js';
 export {
   parseCommandChain,
   splitCommand,
