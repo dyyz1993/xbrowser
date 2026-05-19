@@ -97,7 +97,8 @@ export const pluginSearchBuiltin: BuiltinCommand = {
             console.log(`   NPM: ${result.links.npm}`);
           }
 
-          console.log(`   Install: xbrowser plugin install ${result.name}`);
+          const shortName = result.name.replace(/^@[^/]+\//, '');
+          console.log(`   Install: xbrowser plugin install ${shortName}`);
           console.log('');
         });
       }

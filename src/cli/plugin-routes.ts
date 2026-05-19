@@ -5,7 +5,7 @@ import { MarketplaceSearcher } from '../plugin/marketplace-search.js';
 import { NPMSearcher } from '../plugin/npm-search.js';
 import { startDaemonProcess, stopDaemonProcess, getDaemonProcessStatus } from '../daemon/daemon.js';
 import { outputResult, outputError } from './output.js';
-import { DEFAULT_MARKETPLACE_URL, NPM_REGISTRY_URL } from '../config.js';
+import { DEFAULT_MARKETPLACE_URL, NPM_REGISTRY_URL, resolveNpmPackageName } from '../config.js';
 import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 import { getPluginLoader as getGlobalPluginLoader } from '../utils/plugin-singleton.js';
 import {
@@ -54,6 +54,7 @@ async function handleSearch(
 ): Promise<void> {
   const query = args[0] || '';
   applyRegistryOverride(options);
+  await ensureProxyFetch();
 
   const searchLimit = options.limit ? Number(options.limit) : 20;
   const searchOpts = { query, tag: options.tag as string | undefined, site: options.site as string | undefined, limit: searchLimit };
@@ -138,7 +139,8 @@ async function handlePluginInfo(
   }
 
   try {
-    const resp = await fetch(`${NPM_REGISTRY_URL}/${encodeURIComponent(slug)}`);
+    const npmName = resolveNpmPackageName(slug);
+    const resp = await fetch(`${NPM_REGISTRY_URL}/${encodeURIComponent(npmName)}`);
     if (resp.ok) {
       const data = (await resp.json()) as Record<string, unknown>;
       const distTags = data['dist-tags'] as Record<string, string> | undefined;
@@ -181,17 +183,20 @@ export async function handlePlugin(
       const source = subArgs[0];
       if (!source)
         outputError(
-          'Usage: xbrowser plugin install <source> [--name <name>] [--force] [--from-marketplace]'
+          'Usage: xbrowser plugin install <source> [--name <name>] [--force] [--from-marketplace] [--source marketplace|npm]'
         );
       const installOpts = {
         name: options.name as string | undefined,
         force: !!options.force,
       };
+      const sourceFlag = options.source as string | undefined;
       let result;
-      if (options['from-marketplace']) {
+      if (options['from-marketplace'] || sourceFlag === 'marketplace') {
         result = await installer.installFromMarketplace(source, installOpts);
-      } else {
+      } else if (sourceFlag === 'npm') {
         result = await installer.install(source, installOpts);
+      } else {
+        result = await installer.installWithMarketplaceFallback(source, installOpts);
       }
       outputResult(
         { ok: true, name: result.name, source: result.source, path: result.path },

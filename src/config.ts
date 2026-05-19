@@ -50,6 +50,12 @@ interface ConfigRoot {
 
 export const DEFAULT_MARKETPLACE_URL = 'https://xbrowser-marketplace.dyyz1993.workers.dev';
 export const NPM_REGISTRY_URL = 'https://registry.npmjs.org';
+export const NPM_SCOPE = '@xbrowser/';
+
+export function resolveNpmPackageName(name: string): string {
+  if (name.startsWith('@')) return name;
+  return `${NPM_SCOPE}${name}`;
+}
 
 export function getCaptchaConfig(): CaptchaConfig {
   const config = loadConfig() as ConfigRoot;

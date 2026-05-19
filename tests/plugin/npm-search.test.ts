@@ -39,7 +39,7 @@ describe('NPMSearcher', () => {
       const results = await NPMSearcher.search({ query: 'test' });
 
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://registry.npmjs.org/-/v1/search?text=test%20keywords%3Axbrowser-plugin%20keywords%3Axbrowser&size=20'
+        'https://registry.npmjs.org/-/v1/search?text=scope%3A%40xbrowser%20test%20keywords%3Axbrowser-plugin%20keywords%3Axbrowser&size=20'
       );
       expect(results).toHaveLength(1);
       expect(results[0].name).toBe('xbrowser-plugin-test');

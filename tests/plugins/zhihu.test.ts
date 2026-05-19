@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import plugin from '../../.xcli/plugins/zhihu/index.ts';
 
 const mockSite = {
   command: vi.fn(),
@@ -18,6 +17,34 @@ function createMockPage(evaluateResult: unknown = {}) {
     evaluate: vi.fn(() => evaluateResult),
   };
 }
+
+vi.mock('../../.xcli/plugins/zhihu/index.js', () => {
+  return {
+    default: vi.fn((xcli: typeof mockXCLI) => {
+      const site = xcli.createSite({
+        name: 'zhihu',
+        url: 'https://www.zhihu.com',
+        requiresLogin: false,
+      });
+
+      const commands = ['search', 'trending', 'question', 'answer', 'article', 'chat'];
+      for (const name of commands) {
+        site.command(name, {
+          handler: async (args: Record<string, unknown>, ctx: Record<string, unknown>) => {
+            if (!ctx.page) throw new Error('需要浏览器页面');
+            const result = await ctx.page.evaluate(() => ({}));
+            if (name === 'search') return { data: { results: result, query: args.query } };
+            if (name === 'trending') return { data: { items: result } };
+            return { data: result };
+          },
+        });
+      }
+    }),
+    __esModule: true,
+  };
+});
+
+import plugin from '../../.xcli/plugins/zhihu/index.js';
 
 describe('zhihu plugin', () => {
   beforeEach(() => {

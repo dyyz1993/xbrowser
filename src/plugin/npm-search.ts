@@ -1,5 +1,5 @@
 import type { NPMPluginSearchResult, SearchOptions } from './types.js';
-import { NPM_REGISTRY_URL } from '../config.js';
+import { NPM_REGISTRY_URL, NPM_SCOPE } from '../config.js';
 import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 
 export class NPMSearcher {
@@ -33,6 +33,8 @@ export class NPMSearcher {
 
   private static buildQuery(query: string, tag?: string, site?: string): string {
     const parts: string[] = [];
+
+    parts.push(`scope:${NPM_SCOPE.slice(0, -1)}`);
 
     if (query) {
       parts.push(query);

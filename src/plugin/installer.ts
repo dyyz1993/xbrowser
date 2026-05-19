@@ -15,6 +15,9 @@ import { installFromNpm } from './install-sources/npm.js';
 import { installFromGit } from './install-sources/git.js';
 import { installFromUrl } from './install-sources/url.js';
 import { installFromMarketplace } from './install-sources/marketplace.js';
+import { ensureProxyFetch } from '../utils/proxy-fetch.js';
+import { getMarketplaceUrl } from './install-utils.js';
+import { resolveNpmPackageName } from '../config.js';
 
 export type { InstalledPlugin, InstallOptions } from './installer-types.js';
 
@@ -53,11 +56,13 @@ export class PluginInstaller {
 
     mkdirSync(targetDir, { recursive: true });
 
+    const resolvedSource = type === 'npm' ? resolveNpmPackageName(source) : source;
+
     switch (type) {
       case 'local':
         return installFromLocal(source, name, targetDir);
       case 'npm':
-        return installFromNpm(source, name, targetDir);
+        return installFromNpm(resolvedSource, name, targetDir);
       case 'git':
         return installFromGit(source, name, targetDir);
       case 'url':
@@ -67,6 +72,28 @@ export class PluginInstaller {
 
   async installFromMarketplace(slug: string, options?: InstallOptions): Promise<InstalledPlugin> {
     return installFromMarketplace(this.pluginsDir, slug, options);
+  }
+
+  async installWithMarketplaceFallback(source: string, options?: InstallOptions): Promise<InstalledPlugin> {
+    const type = this.detectSourceType(source);
+    if (type !== 'npm') {
+      return this.install(source, options);
+    }
+    try {
+      await ensureProxyFetch();
+      const baseUrl = getMarketplaceUrl();
+      const detailUrl = `${baseUrl}/api/plugins/${source}`;
+      const resp = await fetch(detailUrl);
+      if (resp.ok) {
+        const data = (await resp.json()) as { success?: boolean; data?: Record<string, unknown> };
+        if (data.success !== false && data.data) {
+          return installFromMarketplace(this.pluginsDir, source, options);
+        }
+      }
+    } catch {
+      // marketplace unavailable, fallback to npm
+    }
+    return this.install(source, options);
   }
 
   /**
