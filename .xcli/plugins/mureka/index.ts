@@ -82,17 +82,31 @@ async function setReactInput(page: Page, selector: string, value: string): Promi
 }
 
 function mapSong(item: Record<string, unknown>) {
+  // Mureka API: feed item 包含 songs 数组，需要展平
+  // 或者直接是 song 对象
+  if ((item as Record<string, unknown>).songs) {
+    // 这是一个 feed item，提取 songs
+    const songs = (item as Record<string, unknown>).songs as Array<Record<string, unknown>>;
+    return songs.map(s => mapSong(s));
+  }
+  // 这是一个单独的 song 对象
+  const mp3Url = (item.mp3_url || item.audio_url || item.play_url || '') as string;
+  const fullAudioUrl = mp3Url && !mp3Url.startsWith('http') ? `https://static-web.mureka.cn/${mp3Url}` : mp3Url;
+  const coverUrl = (item.cover || item.cover_url || '') as string;
+  const fullCoverUrl = coverUrl && !coverUrl.startsWith('http') ? `https://static-web.mureka.cn/${coverUrl}` : coverUrl;
   return {
-    id: (item.id || item.song_id || item.task_id || '') as string,
-    title: (item.title || item.name || item.song_name || '') as string,
-    status: (item.status || item.state || '') as string,
-    audioUrl: (item.audio_url || item.play_url || item.url || '') as string,
-    imageUrl: (item.cover_url || item.image_url || item.img_url || '') as string,
-    duration: (item.duration || 0) as number,
+    id: String(item.song_id || item.id || item.task_id || ''),
+    title: (item.title || item.name || '') as string,
+    status: (item.generate_state || item.status || item.state || '') as string | number,
+    audioUrl: fullAudioUrl,
+    imageUrl: fullCoverUrl,
+    duration: (item.duration_milliseconds || item.duration || 0) as number,
     model: (item.model || '') as string,
-    style: (item.style || item.tags || '') as string,
-    prompt: (item.prompt || item.description || '') as string,
-    createdAt: (item.created_at || item.create_time || '') as string,
+    style: ((item.genres || []) as string[]).join(', '),
+    moods: ((item.moods || []) as string[]).join(', '),
+    prompt: (item.description || item.prompt || '') as string,
+    bpm: (item.bpm || 0) as number,
+    createdAt: (item.generate_at ? new Date((item.generate_at as number) * 1000).toISOString() : '') as string,
   };
 }
 
@@ -183,6 +197,54 @@ async function ensureCreatePage(page: Page): Promise<void> {
     await page.goto(CREATE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
     await page.waitForTimeout(3000);
   }
+}
+
+async function waitForChatAction(
+  page: Page,
+  timeoutMs: number,
+): Promise<{ type: 'option' | 'create'; text: string; count: number } | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const result = await page.evaluate(() => {
+      const optionSelectors = [
+        '.suggestion-chips__item',
+        '.chat-option-item',
+        '[class*="suggestion-chips"] .suggestion-chips__item',
+        '[class*="chat-option"]',
+        '[class*="reply-item"]',
+        '[class*="quick-reply"]',
+        '[class*="option-card"]',
+      ];
+      for (const sel of optionSelectors) {
+        const options = Array.from(document.querySelectorAll<HTMLElement>(sel))
+          .filter(el => el.offsetParent !== null);
+        if (options.length > 0) {
+          const first = options[0];
+          const text = (first.textContent || '').trim().slice(0, 80);
+          first.click();
+          return { type: 'option' as const, text, count: options.length };
+        }
+      }
+
+      const createBtns = Array.from(document.querySelectorAll<HTMLElement>('button, [role="button"]'))
+        .filter(el => {
+          const text = (el.textContent || '').trim();
+          return (text === '创作' || text === '生成' || text === 'Create' || text === 'Generate')
+            && el.offsetParent !== null;
+        });
+      if (createBtns.length > 0) {
+        const first = createBtns[0];
+        const text = (first.textContent || '').trim();
+        first.click();
+        return { type: 'create' as const, text, count: createBtns.length };
+      }
+
+      return null;
+    });
+    if (result) return result;
+    await page.waitForTimeout(1000);
+  }
+  return null;
 }
 
 /* ───────── plugin entry ───────── */
@@ -290,13 +352,22 @@ export default function (xcli: XCLIAPI): void {
         const page = getPage(ctx);
         const tips = buildTips(ctx);
 
-        const data = await captureApis(page, {
-          url: CREATE_URL,
-          apis: ['feed'],
-          timeoutMs: 15000,
-        });
+        if (!page.url().includes('mureka.cn')) {
+          await page.goto(CREATE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+          await page.waitForTimeout(2000);
+        }
 
-        const songs = data.feed.slice(0, params.limit!).map(mapSong);
+        const feedItems = await page.evaluate(async () => {
+          try {
+            const resp = await fetch('/api/pgc/feed/list?listRenderType=createdresult&page=1&pageSize=50', { credentials: 'include' });
+            const json = await resp.json();
+            const data = json.data || {};
+            const items = (data as Record<string, unknown>).list || (data as Record<string, unknown>).items || [];
+            return Array.isArray(items) ? items : [];
+          } catch { return []; }
+        }) as Array<Record<string, unknown>>;
+
+        const songs = feedItems.slice(0, params.limit!).flatMap(mapSong);
         const withUrl = songs.filter(s => s.audioUrl);
 
         return {
@@ -368,12 +439,16 @@ export default function (xcli: XCLIAPI): void {
         }
         tips.push('✅ 已确认登录');
 
-        const beforeFeed = await captureApis(page, {
-          url: CREATE_URL,
-          apis: ['feed'],
-          timeoutMs: 8000,
-        });
-        const beforeIds = new Set(beforeFeed.feed.map(s => String(s.id || s.song_id || s.task_id)));
+        const beforeFeedItems = await page.evaluate(async () => {
+          try {
+            const resp = await fetch('/api/pgc/feed/list?listRenderType=createdresult&page=1&pageSize=10', { credentials: 'include' });
+            const json = await resp.json();
+            const data = json.data || {};
+            const items = (data as Record<string, unknown>).list || (data as Record<string, unknown>).items || [];
+            return Array.isArray(items) ? items : [];
+          } catch { return []; }
+        }) as Array<Record<string, unknown>>;
+        const beforeIds = new Set(beforeFeedItems.map(s => String(s.id || s.song_id || s.task_id)));
         tips.push(`已有 ${beforeIds.size} 首已知歌曲`);
 
         if (mode !== '简易') {
@@ -452,6 +527,32 @@ export default function (xcli: XCLIAPI): void {
           tips.push('✅ 已点击发送');
         }
 
+        if (mode === '简易') {
+          tips.push('⏳ 等待 AI 回复 ...');
+          const chatAction = await waitForChatAction(page, 20000);
+
+          if (chatAction) {
+            if (chatAction.type === 'create') {
+              tips.push(`✅ AI 已生成创作方案，已点击"${chatAction.text}"按钮`);
+            } else {
+              tips.push(`✅ AI 回复了追问，已自动选择: "${chatAction.text}"`);
+              await page.waitForTimeout(3000);
+
+              const chatAction2 = await waitForChatAction(page, 15000);
+              if (chatAction2) {
+                if (chatAction2.type === 'create') {
+                  tips.push(`✅ 已点击"${chatAction2.text}"按钮开始生成`);
+                } else {
+                  tips.push(`✅ AI 追问第二轮，已自动选择: "${chatAction2.text}"`);
+                  await page.waitForTimeout(2000);
+                }
+              }
+            }
+          } else {
+            tips.push('⚠ AI 未回复，可能直接开始生成或未收到响应');
+          }
+        }
+
         if (waitSeconds > 0) {
           tips.push(`⏳ 等待生成（最长 ${waitSeconds} 秒）...`);
 
@@ -461,16 +562,22 @@ export default function (xcli: XCLIAPI): void {
               if (Date.now() > deadline) { resolve([]); return; }
 
               try {
-                const data = await captureApis(page, {
-                  url: CREATE_URL,
-                  apis: ['feed'],
-                  timeoutMs: 8000,
+                const feedData = await page.evaluate(async () => {
+                  try {
+                    const resp = await fetch('/api/pgc/feed/list?listRenderType=createdresult&page=1&pageSize=10', { credentials: 'include' });
+                    const json = await resp.json();
+                    const data = json.data || {};
+                    const items = (data as Record<string, unknown>).list || (data as Record<string, unknown>).items || [];
+                    return Array.isArray(items) ? items : [];
+                  } catch { return []; }
                 });
-                const newItems = data.feed.filter(s => {
-                  const id = String(s.id || s.song_id || s.task_id);
-                  return id && !beforeIds.has(id);
-                });
-                if (newItems.length > 0) { resolve(newItems); return; }
+                if (feedData.length > 0) {
+                  const newItems = (feedData as Array<Record<string, unknown>>).filter(s => {
+                    const id = String(s.id || s.song_id || s.task_id);
+                    return id && !beforeIds.has(id);
+                  });
+                  if (newItems.length > 0) { resolve(newItems); return; }
+                }
               } catch { /* ignore */ }
 
               await page.waitForTimeout(5000);
@@ -480,7 +587,7 @@ export default function (xcli: XCLIAPI): void {
           });
 
           if (pollResult.length > 0) {
-            const songs = pollResult.map(mapSong);
+            const songs = pollResult.flatMap(mapSong);
             const withUrl = songs.filter(s => s.audioUrl);
 
             return {
@@ -554,13 +661,22 @@ export default function (xcli: XCLIAPI): void {
         const page = getPage(ctx);
         const tips = buildTips(ctx);
 
-        const data = await captureApis(page, {
-          url: page.url().includes('mureka.cn') ? undefined : CREATE_URL,
-          apis: ['feed'],
-          timeoutMs: 10000,
-        });
+        if (!page.url().includes('mureka.cn')) {
+          await page.goto(CREATE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+          await page.waitForTimeout(2000);
+        }
 
-        if (data.feed.length === 0) {
+        const feedItems = await page.evaluate(async () => {
+          try {
+            const resp = await fetch('/api/pgc/feed/list?listRenderType=createdresult&page=1&pageSize=10', { credentials: 'include' });
+            const json = await resp.json();
+            const data = json.data || {};
+            const items = (data as Record<string, unknown>).list || (data as Record<string, unknown>).items || [];
+            return Array.isArray(items) ? items : [];
+          } catch { return []; }
+        }) as Array<Record<string, unknown>>;
+
+        if (feedItems.length === 0) {
           let domStatus = 'unknown';
           try {
             domStatus = await page.evaluate(() => {
@@ -580,7 +696,7 @@ export default function (xcli: XCLIAPI): void {
           };
         }
 
-        const songs = data.feed.slice(0, 5).map(mapSong);
+        const songs = feedItems.slice(0, 5).flatMap(mapSong);
         const statusSummary = songs.map(s => `${s.title || '未命名'}[${s.status}]`).join(', ');
 
         return {
@@ -617,13 +733,22 @@ export default function (xcli: XCLIAPI): void {
         const page = getPage(ctx);
         const tips = buildTips(ctx);
 
-        const data = await captureApis(page, {
-          url: CREATE_URL,
-          apis: ['feed'],
-          timeoutMs: 12000,
-        });
+        if (!page.url().includes('mureka.cn')) {
+          await page.goto(CREATE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+          await page.waitForTimeout(2000);
+        }
 
-        if (data.feed.length === 0) {
+        const feedItems = await page.evaluate(async () => {
+          try {
+            const resp = await fetch('/api/pgc/feed/list?listRenderType=createdresult&page=1&pageSize=10', { credentials: 'include' });
+            const json = await resp.json();
+            const data = json.data || {};
+            const items = (data as Record<string, unknown>).list || (data as Record<string, unknown>).items || [];
+            return Array.isArray(items) ? items : [];
+          } catch { return []; }
+        }) as Array<Record<string, unknown>>;
+
+        if (feedItems.length === 0) {
           return {
             data: { songs: [], total: 0 },
             tips: [...tips, '未获取到歌曲数据。可能未登录或没有创作记录'],
@@ -631,7 +756,7 @@ export default function (xcli: XCLIAPI): void {
           };
         }
 
-        const songs = data.feed.slice(0, params.limit!).map(mapSong);
+        const songs = feedItems.slice(0, params.limit!).flatMap(mapSong);
         const withUrl = songs.filter(s => s.audioUrl);
 
         return {
