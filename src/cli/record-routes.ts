@@ -1,106 +1,11 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as yaml from 'yaml';
-import { PlaybackEngine } from '../recorder/player.js';
-import { generateJSScript, generatePythonScript, generateBashScript } from '../commands/convert.js';
-import { extractAndSave, printExtractSummary } from '../commands/extract.js';
-import { filterRecording, parseExcludeTypes } from '../commands/filter.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { SessionRecorder } from '../recorder/session-recorder.js';
+import type { RecordingControlFile, RecordingSummary } from '../recorder/session-recorder.js';
 import { outputResult, outputError } from './output.js';
 
-const INJECTED_RECORDING_JS = `
-(function() {
-  if (window.__xb_recording_active) return;
-  window.__xb_recording_active = true;
-  window.__xb_events = [];
-  window.__xb_recording_start = Date.now();
-
-  function describe(el) {
-    if (!el || !el.tagName) return { tag: 'unknown' };
-    const info = {
-      tag: el.tagName.toLowerCase(),
-      text: (el.textContent || '').trim().substring(0, 80),
-      role: el.getAttribute('role'),
-      type: el.getAttribute('type'),
-      placeholder: el.getAttribute('placeholder'),
-      ariaLabel: el.getAttribute('aria-label'),
-      href: el.getAttribute('href')?.substring(0, 100),
-      id: el.id || undefined,
-      className: (typeof el.className === 'string' ? el.className : '').substring(0, 80) || undefined,
-      contentEditable: el.contentEditable === 'true' ? true : undefined,
-    };
-    Object.keys(info).forEach(k => info[k] === undefined && delete info[k]);
-    return info;
-  }
-
-  function pushEvent(type, detail) {
-    window.__xb_events.push({
-      type,
-      ts: Date.now() - window.__xb_recording_start,
-      url: location.href,
-      ...detail,
-    });
-  }
-
-  document.addEventListener('click', function(e) {
-    pushEvent('click', { target: describe(e.target), x: e.clientX, y: e.clientY });
-  }, true);
-
-  document.addEventListener('dblclick', function(e) {
-    pushEvent('dblclick', { target: describe(e.target), x: e.clientX, y: e.clientY });
-  }, true);
-
-  document.addEventListener('input', function(e) {
-    const el = e.target;
-    pushEvent('input', {
-      target: describe(el),
-      value: (el.value || el.textContent || '').substring(0, 200),
-    });
-  }, true);
-
-  document.addEventListener('change', function(e) {
-    pushEvent('change', { target: describe(e.target), value: (e.target.value || '').substring(0, 100) });
-  }, true);
-
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' || e.key === 'Tab' || e.key === 'Escape' || e.key.startsWith('Arrow')) {
-      pushEvent('keydown', { key: e.key, target: describe(e.target) });
-    }
-  }, true);
-
-  document.addEventListener('submit', function(e) {
-    pushEvent('submit', { target: describe(e.target) });
-  }, true);
-
-  document.addEventListener('focus', function(e) {
-    const tag = e.target.tagName?.toLowerCase();
-    if (tag === 'input' || tag === 'textarea' || e.target.contentEditable === 'true') {
-      pushEvent('focus', { target: describe(e.target) });
-    }
-  }, true);
-
-  var observer = new MutationObserver(function(mutations) {
-    for (var m of mutations) {
-      for (var node of m.addedNodes) {
-        if (node.nodeType === 1 && node.tagName) {
-          var text = (node.textContent || '').trim().substring(0, 60);
-          if (text && text.length > 1) {
-            pushEvent('dom_added', {
-              tag: node.tagName.toLowerCase(),
-              role: node.getAttribute?.('role'),
-              text: text,
-              id: node.id || undefined,
-            });
-          }
-        }
-      }
-    }
-  });
-  observer.observe(document.body, { childList: true, subtree: true });
-
-  pushEvent('recording_started', { url: location.href });
-  console.log('[xb-recorder] Recording active. Events stored in window.__xb_events');
-})();
-`;
+// ─── Helper: resolve session ──────────────────────────────────────
 
 async function resolveSession(cdpEndpoint?: string, url?: string) {
   const { findOrRestoreSession, createSession } = await import('../browser.js');
@@ -111,97 +16,273 @@ async function resolveSession(cdpEndpoint?: string, url?: string) {
   return session;
 }
 
+function getControlFilePath(sessionName: string): string {
+  return join(homedir(), '.xbrowser', 'sessions', sessionName, 'recordings', '.control.json');
+}
+
+function readControlFile(sessionName: string): RecordingControlFile | null {
+  const path = getControlFilePath(sessionName);
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+// ─── record start ─────────────────────────────────────────────────
+//
+// Blocks the process. Continuously captures CDP events until
+// `record stop` writes a .stop signal file.
+
 export async function handleRecord(
   args: string[],
   options: Record<string, unknown>,
-  mode: string
+  mode: string,
 ): Promise<void> {
   const sub = args[0];
+
   switch (sub) {
     case 'start': {
       const url = options.url as string;
-      if (!url) outputError('Usage: xbrowser record start --url <url> [--cdp <endpoint>]');
       const cdpEndpoint = options.cdp as string | undefined;
-      const session = await resolveSession(cdpEndpoint, url);
-      const page = session.page;
+      const sessionName = (options.session as string) || 'default';
 
-      if (page.url() !== url && !page.url().startsWith('about:blank')) {
-        // already on a page, inject directly
-      } else if (page.url() === 'about:blank' || !page.url().startsWith('http')) {
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      }
-
-      await page.evaluate(INJECTED_RECORDING_JS);
-      await page.context().addInitScript(INJECTED_RECORDING_JS);
-
-      outputResult({ ok: true, url, message: 'Recording injected into page. Interact with browser, then run: xbrowser record stop --cdp <endpoint>', injected: true }, mode);
-      break;
-    }
-    case 'stop': {
-      const cdpEndpoint = options.cdp as string | undefined;
-      const session = await resolveSession(cdpEndpoint);
-      const page = session.page;
-
-      let events: unknown[] = [];
-      try {
-        const raw = await page.evaluate(() => (window as unknown as Record<string, unknown>).__xb_events || []);
-        events = raw as unknown[];
-      } catch {
-        outputError('Could not read events from page. Page may have navigated away.');
-      }
-
-      if (events.length === 0) {
-        outputResult({ ok: true, events: 0, message: 'No events captured' }, mode);
+      if (!cdpEndpoint) {
+        outputError('CDP endpoint is required for recording. Use --cdp <endpoint>');
         return;
       }
 
-      const recording = {
-        startUrl: page.url(),
-        recordedAt: new Date().toISOString(),
-        events,
-      };
+      // Check if already recording
+      const existing = readControlFile(sessionName);
+      if (existing) {
+        outputResult({
+          ok: false,
+          error: 'Recording already in progress',
+          pid: existing.pid,
+          startedAt: existing.startedAt,
+          startUrl: existing.startUrl,
+        }, mode);
+        return;
+      }
 
-      const recordingsDir = path.join(process.env.HOME || '', '.xbrowser', 'recordings');
-      if (!fs.existsSync(recordingsDir)) fs.mkdirSync(recordingsDir, { recursive: true });
+      const session = await resolveSession(cdpEndpoint, url);
+      const recorder = new SessionRecorder(session.context, session.page, sessionName);
 
-      const outPath = options.output as string || path.join(recordingsDir, `recording-${new Date().toISOString().replace(/[:.]/g, '-')}.yaml`);
-      fs.writeFileSync(outPath, yaml.stringify(recording), 'utf8');
+      await recorder.start(url);
 
-      const duration = events.length > 0 ? (events[events.length - 1] as Record<string, unknown>).ts : 0;
       outputResult({
         ok: true,
-        path: outPath,
-        events: events.length,
-        duration: `${Math.round(Number(duration) / 1000)}s`,
+        message: 'Recording started. Process will block until stopped.',
+        pid: process.pid,
+        sessionName,
+        startUrl: recorder.startUrl || url || session.page.url(),
+        hint: 'Run: xbrowser record stop --session ' + sessionName + ' --cdp ' + cdpEndpoint,
+      }, mode);
+
+      // ── BLOCK here: wait for stop signal ──
+      await recorder.waitForStopSignal();
+
+      // Stop and flush
+      const { data, summary } = await recorder.stop();
+
+      // Output summary
+      console.log('');
+      console.log('=== Recording Summary ===');
+      console.log(`  Duration: ${Math.round(summary.durationMs / 1000)}s`);
+      console.log(`  Actions:  ${summary.totalActions}`);
+      console.log(`  Network:  ${summary.totalNetworkRequests}`);
+      console.log(`  Steps:    ${summary.steps.length}`);
+      console.log('');
+      console.log(`  Recording: ${recorder.recordingsDir}/recording.json`);
+      console.log(`  Summary:   ${recorder.recordingsDir}/summary.json`);
+
+      // Close the session connection (CDP: just disconnect)
+      const { ensureProcessCanExit } = await import('../browser.js');
+      await ensureProcessCanExit();
+      break;
+    }
+
+    case 'stop': {
+      const sessionName = (options.session as string) || 'default';
+
+      const control = await SessionRecorder.sendStopSignal(sessionName);
+
+      if (!control) {
+        // No active recording — check if there's a recording.json on disk already
+        const existingData = SessionRecorder.readData(sessionName);
+        if (existingData) {
+          outputResult({
+            ok: true,
+            message: 'Recorder process already exited. Recording data found on disk.',
+            sessionName,
+            actions: existingData.actions.length,
+            network: existingData.network.length,
+          }, mode);
+        } else {
+          outputResult({
+            ok: false,
+            error: 'No active recording found for session: ' + sessionName,
+          }, mode);
+        }
+        return;
+      }
+
+      outputResult({
+        ok: true,
+        message: 'Stop signal sent to recording process',
+        pid: control.pid,
+        sessionName: control.sessionName,
+      }, mode);
+
+      // Wait a moment for the recorder to finish writing
+      await new Promise(r => setTimeout(r, 2000));
+
+      // Read and display the summary
+      const summary = SessionRecorder.readSummary(sessionName);
+      if (summary) {
+        console.log('');
+        console.log('=== Recording Summary ===');
+        console.log(`  Start URL: ${summary.startUrl}`);
+        console.log(`  Duration:  ${Math.round(summary.durationMs / 1000)}s`);
+        console.log(`  Actions:   ${summary.totalActions}`);
+        console.log(`  Network:   ${summary.totalNetworkRequests}`);
+        console.log(`  Steps:     ${summary.steps.length}`);
+
+        for (const step of summary.steps) {
+          console.log(`  ${step.step}. ${step.action.type}` +
+            (step.action.element ? ` <${step.action.element.tag}> "${step.action.element.text?.substring(0, 30)}"` : '') +
+            (step.action.value ? ` value="${step.action.value.substring(0, 30)}"` : '') +
+            (step.network.length > 0 ? ` → ${step.network.length} network requests` : '') +
+            (step.matchedInputs.length > 0 ? ` [${step.matchedInputs.length} input→API matches]` : ''),
+          );
+        }
+
+        console.log('');
+        console.log(`  Files: ${SessionRecorder.getRecordingsDir(sessionName)}/`);
+      }
+      break;
+    }
+
+    case 'status': {
+      const sessionName = (options.session as string) || 'default';
+      const control = readControlFile(sessionName);
+
+      if (!control) {
+        outputResult({ recording: false, sessionName }, mode);
+        return;
+      }
+
+      // Check if the process is still alive
+      let alive = false;
+      try {
+        process.kill(control.pid, 0);
+        alive = true;
+      } catch {
+        alive = false;
+      }
+
+      outputResult({
+        recording: alive,
+        sessionName,
+        pid: control.pid,
+        startedAt: control.startedAt,
+        startUrl: control.startUrl,
       }, mode);
       break;
     }
-    case 'status': {
-      const cdpEndpoint = options.cdp as string | undefined;
-      const { findOrRestoreSession } = await import('../browser.js');
-      const session = await findOrRestoreSession('default', cdpEndpoint);
-      if (!session) {
-        outputResult({ recording: false, message: 'No session found' }, mode);
+
+    case 'summary': {
+      const sessionName = (options.session as string) || 'default';
+      const summary = SessionRecorder.readSummary(sessionName);
+      if (!summary) {
+        outputError('No recording summary found for session: ' + sessionName);
         return;
       }
-      try {
-        const active = await session.page.evaluate(() => !!(window as unknown as Record<string, unknown>).__xb_recording_active);
-        const count = await session.page.evaluate(() => ((window as unknown as Record<string, unknown>).__xb_events as unknown[])?.length || 0);
-        outputResult({ recording: active, events: count, url: session.page.url() }, mode);
-      } catch {
-        outputResult({ recording: false, message: 'Cannot reach page' }, mode);
+
+      if (options.json || mode === 'json') {
+        outputResult(summary, mode);
+      } else {
+        printHumanReadableSummary(summary);
       }
       break;
     }
+
     default:
-      console.log('Usage: xbrowser record <start|stop|status> [--url <url>] [--cdp <endpoint>]');
+      console.log('Usage:');
+      console.log('  xbrowser record start --cdp <endpoint> [--url <url>] [--session <name>]');
+      console.log('  xbrowser record stop  [--session <name>]');
+      console.log('  xbrowser record status [--session <name>]');
+      console.log('  xbrowser record summary [--session <name>] [--json]');
   }
 }
+
+// ─── Human-readable summary printer ───────────────────────────────
+
+function printHumanReadableSummary(summary: RecordingSummary): void {
+  console.log(`Start URL: ${summary.startUrl}`);
+  console.log(`Recorded:  ${summary.recordedAt}`);
+  console.log(`Duration:  ${Math.round(summary.durationMs / 1000)}s`);
+  console.log(`Actions:   ${summary.totalActions}`);
+  console.log(`Network:   ${summary.totalNetworkRequests}`);
+  console.log('');
+
+  for (const step of summary.steps) {
+    const a = step.action;
+    const el = a.element;
+    const parts: string[] = [];
+
+    parts.push(`Step ${step.step}: [${a.type}]`);
+
+    if (el) {
+      parts.push(`<${el.tag}>`);
+      if (el.text) parts.push(`"${el.text.substring(0, 40)}"`);
+      if (el.id) parts.push(`#${el.id}`);
+      if (el.type) parts.push(`type=${el.type}`);
+      if (el.placeholder) parts.push(`placeholder="${el.placeholder}"`);
+    }
+
+    if (a.value) parts.push(`value="${a.value.substring(0, 50)}"`);
+    if (a.key) parts.push(`key=${a.key}`);
+    if (a.x !== undefined && a.y !== undefined) parts.push(`@(${a.x},${a.y})`);
+
+    console.log(parts.join(' '));
+
+    // Network requests
+    for (const net of step.network) {
+      console.log(`    → ${net.method} ${net.path} [${net.status}] ${net.resourceType}`);
+      if (net.requestBody && typeof net.requestBody === 'object') {
+        const bodyStr = JSON.stringify(net.requestBody);
+        if (bodyStr.length <= 200) {
+          console.log(`      body: ${bodyStr}`);
+        } else {
+          console.log(`      body: ${bodyStr.substring(0, 200)}... (${bodyStr.length} bytes)`);
+        }
+      }
+    }
+
+    // Matched inputs
+    for (const match of step.matchedInputs) {
+      console.log(`    🔗 input "${match.inputValue}" → network #${match.networkId} param "${match.paramName}"`);
+    }
+
+    // Context changes
+    for (const ctx of step.contextChanges) {
+      if (ctx.type === 'navigate') {
+        console.log(`    ↗ navigate → ${ctx.url}`);
+      } else if (ctx.type === 'new_tab') {
+        console.log(`    ↗ new tab: ${ctx.url}`);
+      }
+    }
+  }
+}
+
+// ─── Legacy commands (replay, convert, extract, filter) ───────────
+// Keep these as-is for backward compatibility.
 
 export async function handleReplay(
   args: string[],
   options: Record<string, unknown>,
-  mode: string
+  mode: string,
 ): Promise<void> {
   const filePath = args[0];
   if (!filePath) outputError('Usage: xbrowser replay <file>');
@@ -210,6 +291,7 @@ export async function handleReplay(
   if (!session) {
     session = await createSession('default', undefined, options.cdp ? { cdpEndpoint: options.cdp as string } : {});
   }
+  const { PlaybackEngine } = await import('../recorder/player.js');
   const engine = PlaybackEngine.fromFile(session.page, filePath);
   const result = await engine.play({
     slowMo: options['slow-mo'] ? Number(options['slow-mo']) : 1,
@@ -225,6 +307,13 @@ export function handleConvert(args: string[], _mode: string): void {
     console.error('Usage: xbrowser convert <recording.yaml> <output.{js,py,sh}>');
     process.exit(1);
   }
+
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const yaml = require('yaml');
+
+  const { generateJSScript, generatePythonScript, generateBashScript } = require('../commands/convert.js') as
+    typeof import('../commands/convert.js');
 
   const content = fs.readFileSync(filePath, 'utf-8');
   const recording = yaml.parse(content);
@@ -257,6 +346,9 @@ export function handleExtract(args: string[], _mode: string): void {
     process.exit(1);
   }
 
+  const { extractAndSave, printExtractSummary } = require('../commands/extract.js') as
+    typeof import('../commands/extract.js');
+
   const { summary, outputPath } = extractAndSave(filePath);
   printExtractSummary(summary);
   console.log(`\nSaved LLM summary: ${outputPath}`);
@@ -270,6 +362,9 @@ export function handleFilter(args: string[], _mode: string): void {
     console.error('Usage: xbrowser filter <input.yaml> <output.yaml> [--exclude-types=type1,type2]');
     process.exit(1);
   }
+
+  const { filterRecording, parseExcludeTypes } = require('../commands/filter.js') as
+    typeof import('../commands/filter.js');
 
   const excludeTypes = parseExcludeTypes(args.slice(2));
   const result = filterRecording(filePath, outputPath, excludeTypes);
