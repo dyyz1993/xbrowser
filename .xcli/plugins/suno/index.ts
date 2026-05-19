@@ -598,6 +598,96 @@ export default function (xcli: XCLIAPI): void {
   });
 
   /* ════════════════════════════════════════════
+     4.5 download — 下载音乐到本地
+     ════════════════════════════════════════════ */
+  site.command('download', {
+    description: '下载音乐到本地（返回 curl 命令或直接下载）',
+    scope: 'browser',
+    result: z.any(),
+    parameters: z.object({
+      url: z.string().describe('音频 URL'),
+      output: z.string().optional().describe('输出路径（默认 ./downloads/）'),
+      format: z.enum(['url', 'curl']).default('url').describe('输出格式: url=仅返回URL, curl=返回curl命令'),
+    }),
+    examples: [
+      { cmd: 'xbrowser suno download --url "https://cdn1.suno.ai/xxx" --cdp 9221', description: '获取下载信息' },
+      { cmd: 'xbrowser suno download --url "https://cdn1.suno.ai/xxx" --format curl --cdp 9221', description: '返回 curl 命令' },
+    ],
+    handler: async (params, ctx) => {
+      try {
+        const page = getPage(ctx);
+        const tips = buildTips(ctx);
+
+        if (!params.url) {
+          return {
+            data: null,
+            tips: [...tips, '需要提供音频 URL'],
+            message: '❌ 缺少 --url 参数',
+          };
+        }
+
+        const outputPath = params.output || './downloads/song.mp3';
+
+        if (params.format === 'curl') {
+          return {
+            data: { url: params.url, curlCmd: `curl -L "${params.url}" -o "${outputPath}"` },
+            tips: [
+              ...tips,
+              `💡 运行以下命令下载:`,
+              `curl -L "${params.url}" -o "${outputPath}"`,
+            ],
+            message: `📥 返回 curl 下载命令`,
+          };
+        }
+
+        try {
+          const resp = await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => null);
+          if (!resp) {
+            return {
+              data: { url: params.url },
+              tips: [...tips, '无法访问音频 URL，请检查 URL 是否有效或是否过期'],
+              message: '⚠️ 无法访问音频 URL',
+            };
+          }
+          const buffer = await resp.body();
+          if (!buffer) {
+            return {
+              data: { url: params.url },
+              tips: [...tips, '响应体为空'],
+              message: '⚠️ 音频数据为空',
+            };
+          }
+          const fs = await import('fs');
+          const pathMod = await import('path');
+          const dir = pathMod.dirname(outputPath);
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(outputPath, buffer);
+          return {
+            data: { size: buffer.length, path: outputPath, url: params.url },
+            tips: [
+              ...tips,
+              `✅ 已下载: ${outputPath} (${(buffer.length / 1024).toFixed(1)} KB)`,
+            ],
+            message: `📥 下载完成: ${(buffer.length / 1024).toFixed(1)} KB`,
+          };
+        } catch (e) {
+          return {
+            data: { url: params.url },
+            tips: [...tips, `下载失败: ${e instanceof Error ? e.message : '未知错误'}`],
+            message: `❌ 下载失败`,
+          };
+        }
+      } catch (error) {
+        return {
+          data: null,
+          tips: ['下载命令失败'],
+          message: error instanceof Error ? error.message : '未知错误',
+        };
+      }
+    },
+  });
+
+  /* ════════════════════════════════════════════
      Login / Logout
      ════════════════════════════════════════════ */
   site.login(async (ctx) => {

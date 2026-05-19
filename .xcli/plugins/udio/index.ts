@@ -243,40 +243,18 @@ export default function (xcli: XCLIAPI): void {
         const page = getPage(ctx);
         const tips = buildTips(ctx);
 
-        const songs: Array<Record<string, unknown>> = [];
+        if (!page.url().includes('udio.com')) {
+          await page.goto(CREATE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+          await page.waitForTimeout(2000);
+        }
 
-        const apiData = await new Promise<CapturedApiData>(async (resolve) => {
-          const timer = setTimeout(() => {
-            page.off('response', handler);
-            resolve({ songs });
-          }, 15000);
-
-          let settled = false;
-          const handler = async (resp: Response) => {
-            if (settled) return;
-            const url = resp.url();
-            if (!url.includes('/api/songs/me')) return;
-            if (resp.status() !== 200) return;
-
-            try {
-              const json = (await resp.json()) as Record<string, unknown>;
-              const list = (json.songs || json.data || []) as Array<Record<string, unknown>>;
-              if (list.length > 0) {
-                settled = true;
-                clearTimeout(timer);
-                page.off('response', handler);
-                resolve({ songs: list });
-              }
-            } catch {
-              /* ignore */
-            }
-          };
-
-          page.on('response', handler);
-          await page.goto(CREATE_URL, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
-        });
-
-        const rawSongs = apiData.songs || [];
+        const rawSongs = await page.evaluate(async () => {
+          try {
+            const resp = await fetch('/api/songs/me?likedOnly=false&publishedOnly=false&page=1', { credentials: 'include' });
+            const json = await resp.json();
+            return (json.songs || json.data || []) as Array<Record<string, unknown>>;
+          } catch { return []; }
+        }) as Array<Record<string, unknown>>;
         const mapped = rawSongs.slice(0, params.limit!).map(mapSong);
 
         return {
@@ -554,6 +532,7 @@ export default function (xcli: XCLIAPI): void {
           };
         }
         tips.push('✅ 已点击 Create');
+        const clickTime = Date.now();
 
         // ── Check captcha ──
         captchaRequired = await captchaPromise;
@@ -612,12 +591,47 @@ export default function (xcli: XCLIAPI): void {
               tips.push('✅ Captcha 已通过');
             } else {
               return {
-                data: { status: 'captcha_timeout' },
+                data: { status: 'captcha_timeout', captchaDetected: true, captchaSolved: false },
                 tips: [...tips, '❌ Captcha 等待超时（3分钟）', '请完成后重新执行'],
                 message: '❌ Captcha 验证超时',
               };
             }
           }
+        }
+
+        // ── Re-register generate listener if captcha consumed too much time ──
+        if (captchaRequired && waitSeconds > 0) {
+          const elapsedSinceClick = Date.now() - clickTime;
+          const remainingMs = Math.max(waitSeconds * 1000 - elapsedSinceClick, 30000);
+
+          tips.push(`🔄 Captcha 已解决，重新监听生成响应（剩余 ${Math.round(remainingMs / 1000)}s）...`);
+
+          generatePromise = new Promise<Record<string, unknown> | null>(async (resolve) => {
+            const timer = setTimeout(() => resolve(null), remainingMs);
+            const handler = async (resp: Response) => {
+              const url = resp.url();
+              if (url.includes('/api/generate-proxy') && !url.includes('captcha')) {
+                if (resp.status() === 200) {
+                  try {
+                    const json = (await resp.json()) as Record<string, unknown>;
+                    clearTimeout(timer);
+                    page.off('response', handler);
+                    resolve(json);
+                  } catch { /* keep waiting */ }
+                } else if (resp.status() >= 400) {
+                  clearTimeout(timer);
+                  page.off('response', handler);
+                  try {
+                    const json = (await resp.json()) as Record<string, unknown>;
+                    resolve({ error: true, status: resp.status(), detail: json });
+                  } catch {
+                    resolve({ error: true, status: resp.status() });
+                  }
+                }
+              }
+            };
+            page.on('response', handler);
+          });
         }
 
         // ── Wait for generate response ──
@@ -648,6 +662,14 @@ export default function (xcli: XCLIAPI): void {
                   lyrics: params.lyrics || null,
                   style: params.style || null,
                   instrumental: !!params.instrumental,
+                  captchaDetected: captchaRequired,
+                  captchaSolved: captchaRequired ? true : undefined,
+                  retryAfterCaptcha: captchaRequired && waitSeconds > 0,
+                  songId: newSong.id,
+                  audioUrl: newSong.audioUrl || null,
+                  nextSteps: newSong.audioUrl
+                    ? ['xbrowser udio download --url "' + newSong.audioUrl + '" --cdp 9221']
+                    : ['xbrowser udio result --cdp 9221', 'xbrowser udio status --cdp 9221'],
                 },
                 tips: [
                   ...tips,
@@ -664,6 +686,10 @@ export default function (xcli: XCLIAPI): void {
                 status: 'submitted',
                 generateResponse: generateResp,
                 prompt: params.prompt,
+                captchaDetected: captchaRequired,
+                captchaSolved: captchaRequired ? true : undefined,
+                retryAfterCaptcha: captchaRequired && waitSeconds > 0,
+                nextSteps: ['xbrowser udio result --cdp 9221', 'xbrowser udio status --cdp 9221'],
               },
               tips: [
                 ...tips,
@@ -676,7 +702,13 @@ export default function (xcli: XCLIAPI): void {
           }
 
           return {
-            data: { status: 'timeout' },
+            data: {
+              status: 'timeout',
+              captchaDetected: captchaRequired,
+              captchaSolved: captchaRequired ? true : undefined,
+              retryAfterCaptcha: captchaRequired && waitSeconds > 0,
+              nextSteps: ['xbrowser udio status --cdp 9221', 'xbrowser udio result --cdp 9221'],
+            },
             tips: [
               ...tips,
               `⏱ 等待 ${waitSeconds}s 超时`,
@@ -695,6 +727,8 @@ export default function (xcli: XCLIAPI): void {
             lyrics: params.lyrics || null,
             style: params.style || null,
             instrumental: !!params.instrumental,
+            captchaDetected: captchaRequired,
+            nextSteps: ['xbrowser udio status --cdp 9221', 'xbrowser udio result --cdp 9221'],
           },
           tips: [
             ...tips,
@@ -731,38 +765,18 @@ export default function (xcli: XCLIAPI): void {
         const page = getPage(ctx);
         const tips = buildTips(ctx);
 
-        const apiData = await new Promise<CapturedApiData>(async (resolve) => {
-          const timer = setTimeout(() => {
-            page.off('response', handler);
-            resolve({});
-          }, 12000);
+        if (!page.url().includes('udio.com')) {
+          await page.goto(CREATE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+          await page.waitForTimeout(2000);
+        }
 
-          let settled = false;
-          const handler = async (resp: Response) => {
-            if (settled) return;
-            const url = resp.url();
-            if (!url.includes('/api/songs/me')) return;
-            if (resp.status() !== 200) return;
-
-            try {
-              const json = (await resp.json()) as Record<string, unknown>;
-              const songs = (json.songs || json.data || []) as Array<Record<string, unknown>>;
-              if (songs.length > 0) {
-                settled = true;
-                clearTimeout(timer);
-                page.off('response', handler);
-                resolve({ songs });
-              }
-            } catch {
-              /* ignore */
-            }
-          };
-
-          page.on('response', handler);
-          await page.goto(CREATE_URL, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
-        });
-
-        const songs = apiData.songs || [];
+        const songs = await page.evaluate(async () => {
+          try {
+            const resp = await fetch('/api/songs/me?likedOnly=false&publishedOnly=false&page=1', { credentials: 'include' });
+            const json = await resp.json();
+            return (json.songs || json.data || []) as Array<Record<string, unknown>>;
+          } catch { return []; }
+        }) as Array<Record<string, unknown>>;
         if (songs.length === 0) {
           const domStatus = await page.evaluate(() => {
             const text = document.body?.textContent || '';
@@ -804,7 +818,97 @@ export default function (xcli: XCLIAPI): void {
   });
 
   /* ════════════════════════════════════════════
-     5. result — 获取音频 URL
+     5. download — 下载音乐到本地
+     ════════════════════════════════════════════ */
+  site.command('download', {
+    description: '下载音乐到本地（返回 curl 命令或直接下载）',
+    scope: 'browser',
+    result: z.any(),
+    parameters: z.object({
+      url: z.string().describe('音频 URL'),
+      output: z.string().optional().describe('输出路径（默认 ./downloads/）'),
+      format: z.enum(['url', 'curl']).default('url').describe('输出格式: url=仅返回URL, curl=返回curl命令'),
+    }),
+    examples: [
+      { cmd: 'xbrowser udio download --url "https://audio.udio.com/xxx" --cdp 9221', description: '获取下载信息' },
+      { cmd: 'xbrowser udio download --url "https://audio.udio.com/xxx" --format curl --cdp 9221', description: '返回 curl 命令' },
+    ],
+    handler: async (params, ctx) => {
+      try {
+        const page = getPage(ctx);
+        const tips = buildTips(ctx);
+
+        if (!params.url) {
+          return {
+            data: null,
+            tips: [...tips, '需要提供音频 URL'],
+            message: '❌ 缺少 --url 参数',
+          };
+        }
+
+        const outputPath = params.output || './downloads/song.mp3';
+
+        if (params.format === 'curl') {
+          return {
+            data: { url: params.url, curlCmd: `curl -L "${params.url}" -o "${outputPath}"` },
+            tips: [
+              ...tips,
+              `💡 运行以下命令下载:`,
+              `curl -L "${params.url}" -o "${outputPath}"`,
+            ],
+            message: `📥 返回 curl 下载命令`,
+          };
+        }
+
+        try {
+          const resp = await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => null);
+          if (!resp) {
+            return {
+              data: { url: params.url },
+              tips: [...tips, '无法访问音频 URL，请检查 URL 是否有效或是否过期'],
+              message: '⚠️ 无法访问音频 URL',
+            };
+          }
+          const buffer = await resp.body();
+          if (!buffer) {
+            return {
+              data: { url: params.url },
+              tips: [...tips, '响应体为空'],
+              message: '⚠️ 音频数据为空',
+            };
+          }
+          const fs = await import('fs');
+          const pathMod = await import('path');
+          const dir = pathMod.dirname(outputPath);
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(outputPath, buffer);
+          return {
+            data: { size: buffer.length, path: outputPath, url: params.url },
+            tips: [
+              ...tips,
+              `✅ 已下载: ${outputPath} (${(buffer.length / 1024).toFixed(1)} KB)`,
+            ],
+            message: `📥 下载完成: ${(buffer.length / 1024).toFixed(1)} KB`,
+          };
+        } catch (e) {
+          return {
+            data: { url: params.url },
+            tips: [...tips, `下载失败: ${e instanceof Error ? e.message : '未知错误'}`],
+            message: `❌ 下载失败`,
+          };
+        }
+      } catch (error) {
+        return {
+          data: null,
+          tips: ['下载命令失败'],
+          message: error instanceof Error ? error.message : '未知错误',
+        };
+      }
+    },
+  });
+
+  /* ════════════════════════════════════════════
+     6. result — 获取音频 URL
      ════════════════════════════════════════════ */
   site.command('result', {
     description: '获取 Udio 最新生成的音乐音频 URL',
@@ -822,38 +926,20 @@ export default function (xcli: XCLIAPI): void {
         const page = getPage(ctx);
         const tips = buildTips(ctx);
 
-        const apiData = await new Promise<CapturedApiData>(async (resolve) => {
-          const timer = setTimeout(() => {
-            page.off('response', handler);
-            resolve({});
-          }, 12000);
+        if (!page.url().includes('udio.com')) {
+          await page.goto(CREATE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+          await page.waitForTimeout(2000);
+        }
 
-          let settled = false;
-          const handler = async (resp: Response) => {
-            if (settled) return;
-            const url = resp.url();
-            if (!url.includes('/api/songs/me')) return;
-            if (resp.status() !== 200) return;
+        const songsRaw = await page.evaluate(async () => {
+          try {
+            const resp = await fetch('/api/songs/me?likedOnly=false&publishedOnly=false&page=1', { credentials: 'include' });
+            const json = await resp.json();
+            return (json.songs || json.data || []) as Array<Record<string, unknown>>;
+          } catch { return []; }
+        }) as Array<Record<string, unknown>>;
 
-            try {
-              const json = (await resp.json()) as Record<string, unknown>;
-              const songs = (json.songs || json.data || []) as Array<Record<string, unknown>>;
-              if (songs.length > 0) {
-                settled = true;
-                clearTimeout(timer);
-                page.off('response', handler);
-                resolve({ songs });
-              }
-            } catch {
-              /* ignore */
-            }
-          };
-
-          page.on('response', handler);
-          await page.goto(CREATE_URL, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
-        });
-
-        const songs = (apiData.songs || []).slice(0, params.limit!).map(mapSong);
+        const songs = songsRaw.slice(0, params.limit!).map(mapSong);
         const withUrl = songs.filter((s) => s.audioUrl);
 
         if (songs.length === 0) {
@@ -930,36 +1016,20 @@ async function pollForNewSong(
   for (let attempt = 0; attempt < 12; attempt++) {
     await page.waitForTimeout(5000);
 
-    const song = await new Promise<ReturnType<typeof mapSong> | null>(async (resolve) => {
-      const timer = setTimeout(() => {
-        page.off('response', handler);
-        resolve(null);
-      }, 8000);
-
-      const handler = async (resp: Response) => {
-        const url = resp.url();
-        if (!url.includes('/api/songs/me')) return;
-        if (resp.status() !== 200) return;
-
+    try {
+      const songs = await page.evaluate(async () => {
         try {
-          const json = (await resp.json()) as Record<string, unknown>;
-          const songs = (json.songs || json.data || []) as Array<Record<string, unknown>>;
-          if (songs.length > 0) {
-            clearTimeout(timer);
-            page.off('response', handler);
-            const mapped = mapSong(songs[0]);
-            resolve(mapped.audioUrl ? mapped : null);
-          }
-        } catch {
-          /* ignore */
-        }
-      };
+          const resp = await fetch('/api/songs/me', { credentials: 'include' });
+          const json = await resp.json();
+          return (json.songs || json.data || []) as Array<Record<string, unknown>>;
+        } catch { return []; }
+      }) as Array<Record<string, unknown>>;
 
-      page.on('response', handler);
-      await page.reload({ waitUntil: 'load', timeout: 30000 }).catch(() => {});
-    });
-
-    if (song) return song;
+      if (songs.length > 0) {
+        const mapped = mapSong(songs[0]);
+        if (mapped.audioUrl) return mapped;
+      }
+    } catch { /* ignore */ }
   }
 
   return null;

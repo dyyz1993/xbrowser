@@ -370,12 +370,18 @@ export default function (xcli: XCLIAPI): void {
         const songs = feedItems.slice(0, params.limit!).flatMap(mapSong);
         const withUrl = songs.filter(s => s.audioUrl);
 
+        const extraTips: string[] = [];
+        if (withUrl.some(s => s.audioUrl?.includes('static-web.mureka.cn'))) {
+          extraTips.push('💡 提示: 音频下载可能需要消耗 20 金币(V9模型)或免费(V8模型)，使用 xbrowser mureka download --url "URL" --cdp 9221 查看');
+        }
+
         return {
           data: { songs, total: songs.length },
           tips: [
             ...tips,
             `共 ${songs.length} 首，${withUrl.length} 首可播放`,
             ...withUrl.slice(0, 3).map(s => `🎵 ${s.title || '未命名'} → ${s.audioUrl}`),
+            ...extraTips,
           ],
           message: `📚 找到 ${songs.length} 首歌曲`,
         };
@@ -590,6 +596,11 @@ export default function (xcli: XCLIAPI): void {
             const songs = pollResult.flatMap(mapSong);
             const withUrl = songs.filter(s => s.audioUrl);
 
+          const extraTips: string[] = [];
+          if (withUrl.some(s => s.audioUrl?.includes('static-web.mureka.cn'))) {
+            extraTips.push('💡 提示: 音频下载可能需要消耗 20 金币(V9模型)或免费(V8模型)，使用 xbrowser mureka download --url "URL" --cdp 9221 查看');
+          }
+
             return {
               data: {
                 songs,
@@ -603,6 +614,7 @@ export default function (xcli: XCLIAPI): void {
                 `✅ 生成完成！共 ${songs.length} 首${withUrl.length > 0 ? `，${withUrl.length} 首可播放` : ''}`,
                 ...withUrl.slice(0, 2).map(s => `🎵 ${s.title || '未命名'} → ${s.audioUrl}`),
                 '💡 URL 有时效，建议尽快下载',
+                ...extraTips,
               ],
               message: '✅ 音乐生成完成！',
             };
@@ -708,6 +720,104 @@ export default function (xcli: XCLIAPI): void {
         return {
           data: null,
           tips: ['检查状态失败'],
+          message: error instanceof Error ? error.message : '未知错误',
+        };
+      }
+    },
+  });
+
+  /* ════════════════════════════════════════════
+     4.5 download — 下载音乐到本地
+     ════════════════════════════════════════════ */
+  site.command('download', {
+    description: '下载音乐到本地（返回 curl 命令或直接下载）',
+    scope: 'browser',
+    result: z.any(),
+    parameters: z.object({
+      url: z.string().describe('音频 URL'),
+      output: z.string().optional().describe('输出路径（默认 ./downloads/）'),
+      format: z.enum(['url', 'curl']).default('url').describe('输出格式: url=仅返回URL, curl=返回curl命令'),
+    }),
+    examples: [
+      { cmd: 'xbrowser mureka download --url "https://static-web.mureka.cn/xxx" --cdp 9221', description: '获取下载信息' },
+      { cmd: 'xbrowser mureka download --url "https://static-web.mureka.cn/xxx" --format curl --cdp 9221', description: '返回 curl 命令' },
+    ],
+    handler: async (params, ctx) => {
+      try {
+        const page = getPage(ctx);
+        const tips = buildTips(ctx);
+
+        if (params.url && params.url.includes('static-web.mureka.cn')) {
+          tips.push('⚠️ Mureka 下载限制说明:');
+          tips.push('  • V9/V10 模型歌曲下载需消耗 20 金币/首');
+          tips.push('  • V8 模型歌曲可免费下载（创建时指定 --model V8）');
+          tips.push('  • 当前账户金币可通过"听歌得金币"活动获取');
+          tips.push('  • 或使用 --format curl 获取命令后在浏览器中手动下载');
+        }
+
+        if (!params.url) {
+          return {
+            data: null,
+            tips: [...tips, '需要提供音频 URL'],
+            message: '❌ 缺少 --url 参数',
+          };
+        }
+
+        const outputPath = params.output || './downloads/song.mp3';
+
+        if (params.format === 'curl') {
+          return {
+            data: { url: params.url, curlCmd: `curl -L "${params.url}" -o "${outputPath}"` },
+            tips: [
+              ...tips,
+              `💡 运行以下命令下载:`,
+              `curl -L "${params.url}" -o "${outputPath}"`,
+            ],
+            message: `📥 返回 curl 下载命令`,
+          };
+        }
+
+        try {
+          const resp = await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => null);
+          if (!resp) {
+            return {
+              data: { url: params.url },
+              tips: [...tips, '无法访问音频 URL，请检查 URL 是否有效或是否过期'],
+              message: '⚠️ 无法访问音频 URL',
+            };
+          }
+          const buffer = await resp.body();
+          if (!buffer) {
+            return {
+              data: { url: params.url },
+              tips: [...tips, '响应体为空'],
+              message: '⚠️ 音频数据为空',
+            };
+          }
+          const fs = await import('fs');
+          const pathMod = await import('path');
+          const dir = pathMod.dirname(outputPath);
+          fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(outputPath, buffer);
+          return {
+            data: { size: buffer.length, path: outputPath, url: params.url },
+            tips: [
+              ...tips,
+              `✅ 已下载: ${outputPath} (${(buffer.length / 1024).toFixed(1)} KB)`,
+            ],
+            message: `📥 下载完成: ${(buffer.length / 1024).toFixed(1)} KB`,
+          };
+        } catch (e) {
+          return {
+            data: { url: params.url },
+            tips: [...tips, `下载失败: ${e instanceof Error ? e.message : '未知错误'}`],
+            message: `❌ 下载失败`,
+          };
+        }
+      } catch (error) {
+        return {
+          data: null,
+          tips: ['下载命令失败'],
           message: error instanceof Error ? error.message : '未知错误',
         };
       }

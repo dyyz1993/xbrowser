@@ -15,6 +15,14 @@ export interface AISearchResultItem {
   aiSummary?: string;
 }
 
+export interface DomainExtraction {
+  domain: string;
+  count: number;
+  urls: string[];
+  /** 推断的平台名称（如 zhihu.com → 知乎） */
+  platform?: string;
+}
+
 export interface AISearchResult {
   query: string;
   engine: string;
@@ -26,6 +34,13 @@ export interface AISearchResult {
     total: number;
     domains: string[];
     urls: Array<{ url: string; domain: string }>;
+  };
+  /** 按域名聚合的 URL 提取结果 (--extractUrls) */
+  domainExtraction?: {
+    query: string;
+    totalUrls: number;
+    totalDomains: number;
+    domains: DomainExtraction[];
   };
   duration?: string;
 }
@@ -333,11 +348,13 @@ export const aiSearchCommand = registerCommand({
     limit: z.number().default(10).describe('最大结果数'),
     full: z.boolean().default(false).describe('是否包含完整 AI 回复'),
     showSources: z.boolean().default(false).describe('显示引用来源'),
+    extractUrls: z.boolean().default(false).describe('提取所有 URL 并按域名聚合，输出可发帖平台清单'),
     format: z.enum(['markdown', 'json', 'text']).default('markdown'),
     timeout: z.number().default(60000).describe('AI 回复超时（毫秒）'),
   }),
   handler: async (params, ctx: BrowserCommandContext): Promise<ReturnType<typeof ok>> => {
     const { context, page } = await createEphemeralContext(resolveLaunchOpts(ctx));
+    // params.format is consumed below for output format selection (markdown/json/text)
 
     const engineKey: AIEngineKey = (params.engine || 'deepseek') as AIEngineKey;
     const engineConfig = AI_SEARCH_ENGINES[engineKey];
@@ -386,12 +403,199 @@ export const aiSearchCommand = registerCommand({
         aiSearchResult.sources = await extractSourcesFromPage(page);
       }
 
+      // --extractUrls: 聚合所有 URL 按域名分组，输出可发帖平台清单
+      if (params.extractUrls) {
+        const allUrls = new Map<string, string[]>(); // domain → urls
+
+        // 1) 从 AI 回复文本中提取 URL
+        const urlRegex = /https?:\/\/[^\s\)\]"'`>\}]+/g;
+        let urlMatch: RegExpExecArray | null;
+        const rawText = rawResponse || '';
+        while ((urlMatch = urlRegex.exec(rawText)) !== null) {
+          const rawUrl = urlMatch[0].replace(/[.,;:!?\)\]}>]+$/, ''); // trim trailing punctuation
+          try {
+            const u = new URL(rawUrl);
+            const domain = u.hostname.replace(/^www\./, '');
+            if (!allUrls.has(domain)) allUrls.set(domain, []);
+            const list = allUrls.get(domain)!;
+            if (!list.includes(rawUrl)) list.push(rawUrl);
+          } catch { /* skip invalid */ }
+        }
+
+        // 2) 从页面 DOM 中提取 URL（补充来源）
+        const pageSources = await extractSourcesFromPage(page);
+        if (pageSources) {
+          for (const item of pageSources.urls) {
+            if (!allUrls.has(item.domain)) allUrls.set(item.domain, []);
+            const list = allUrls.get(item.domain)!;
+            if (!list.includes(item.url)) list.push(item.url);
+          }
+        }
+
+        // 3) 去除搜索引擎/AI 自身域名，按出现次数排序
+        const excludeDomains = new Set([
+          'deepseek.com', 'chat.deepseek.com',
+          'doubao.com', 'www.doubao.com',
+          'openai.com', 'chat.openai.com',
+          'claude.ai', 'www.claude.ai', 'anthropic.com',
+          'google.com', 'www.google.com', 'bing.com', 'www.bing.com',
+          'baidu.com', 'www.baidu.com',
+        ]);
+
+        // 根域名 → 平台中文名（后缀匹配：zhuanlan.zhihu.com 能匹配 zhihu.com）
+        const PLATFORM_SUFFIX_MAP: Array<{ suffix: string; name: string }> = [
+          // === 中文内容平台 ===
+          { suffix: 'zhihu.com', name: '知乎' },
+          { suffix: 'juejin.cn', name: '掘金' },
+          { suffix: 'juejin.im', name: '掘金' },
+          { suffix: 'csdn.net', name: 'CSDN' },
+          { suffix: 'mp.weixin.qq.com', name: '微信公众号' },
+          { suffix: 'weixin.qq.com', name: '微信' },
+          { suffix: 'toutiao.com', name: '今日头条' },
+          { suffix: 'douyin.com', name: '抖音' },
+          { suffix: 'xiaohongshu.com', name: '小红书' },
+          { suffix: 'bilibili.com', name: 'B站' },
+          { suffix: 'weibo.com', name: '微博' },
+          { suffix: 'weibo.cn', name: '微博' },
+          { suffix: '36kr.com', name: '36氪' },
+          { suffix: 'ithome.com', name: 'IT之家' },
+          { suffix: 'sspai.com', name: '少数派' },
+          { suffix: 'baijiahao.baidu.com', name: '百家号' },
+          { suffix: 'sohu.com', name: '搜狐号' },
+          { suffix: '163.com', name: '网易号' },
+          { suffix: 'segmentfault.com', name: '思否' },
+          { suffix: 'cnblogs.com', name: '博客园' },
+          { suffix: 'jianshu.com', name: '简书' },
+          { suffix: '51cto.com', name: '51CTO' },
+          { suffix: 'oschina.net', name: '开源中国' },
+          { suffix: 'infoq.cn', name: 'InfoQ 中文' },
+          { suffix: 'infoq.com', name: 'InfoQ' },
+          { suffix: 'mp.toutiao.com', name: '今日头条号' },
+          { suffix: 'cloud.tencent.com', name: '腾讯云社区' },
+          { suffix: 'tencent.com', name: '腾讯' },
+          { suffix: 'developer.aliyun.com', name: '阿里云开发者社区' },
+          { suffix: 'aliyun.com', name: '阿里云' },
+          { suffix: 'huaweicloud.com', name: '华为云社区' },
+          { suffix: 'qianfan.cloud.baidu.com', name: '百度千帆社区' },
+          { suffix: 'aistudio.baidu.com', name: '百度 AI Studio' },
+          { suffix: 'baidu.com', name: '百度' },
+          { suffix: 'thepaper.cn', name: '澎湃新闻' },
+          { suffix: 'guancha.cn', name: '观察者网' },
+          { suffix: 'ifeng.com', name: '凤凰网' },
+          { suffix: 'qq.com', name: '腾讯网' },
+          { suffix: 'sina.com.cn', name: '新浪' },
+          { suffix: 'chinaz.com', name: '站长之家' },
+          { suffix: 'iteye.com', name: 'ITEye' },
+          { suffix: 'cnbeta.com', name: 'cnBeta' },
+          { suffix: 'freebuf.com', name: 'FreeBuf' },
+          { suffix: 'ruanyifeng.com', name: '阮一峰博客' },
+          { suffix: 'phodal.com', name: 'Phodal 博客' },
+          { suffix: 'aibook.ren', name: 'AI Book' },
+          { suffix: 'manus.im', name: 'Manus' },
+          { suffix: 'aider.chat', name: 'Aider' },
+
+          // === 国际内容平台 ===
+          { suffix: 'medium.com', name: 'Medium' },
+          { suffix: 'dev.to', name: 'DEV' },
+          { suffix: 'reddit.com', name: 'Reddit' },
+          { suffix: 'youtube.com', name: 'YouTube' },
+          { suffix: 'tiktok.com', name: 'TikTok' },
+          { suffix: 'twitter.com', name: 'Twitter/X' },
+          { suffix: 'x.com', name: 'X' },
+          { suffix: 'linkedin.com', name: 'LinkedIn' },
+          { suffix: 'facebook.com', name: 'Facebook' },
+          { suffix: 'instagram.com', name: 'Instagram' },
+          { suffix: 'quora.com', name: 'Quora' },
+          { suffix: 'producthunt.com', name: 'Product Hunt' },
+          { suffix: 'hackernews.com', name: 'Hacker News' },
+          { suffix: 'news.ycombinator.com', name: 'Hacker News' },
+          { suffix: 'stackshare.io', name: 'StackShare' },
+          { suffix: 'substack.com', name: 'Substack' },
+          { suffix: 'hashnode.dev', name: 'Hashnode' },
+          { suffix: 'dzone.com', name: 'DZone' },
+          { suffix: 'techcrunch.com', name: 'TechCrunch' },
+          { suffix: 'theverge.com', name: 'The Verge' },
+          { suffix: 'wired.com', name: 'Wired' },
+          { suffix: 'arstechnica.com', name: 'Ars Technica' },
+          { suffix: 'venturebeat.com', name: 'VentureBeat' },
+
+          // === 开发者/技术平台 ===
+          { suffix: 'github.com', name: 'GitHub' },
+          { suffix: 'stackoverflow.com', name: 'Stack Overflow' },
+          { suffix: 'stackexchange.com', name: 'Stack Exchange' },
+          { suffix: 'developer.mozilla.org', name: 'MDN' },
+          { suffix: 'npmjs.com', name: 'npm' },
+          { suffix: 'pypi.org', name: 'PyPI' },
+          { suffix: 'crates.io', name: 'crates.io' },
+          { suffix: 'docs.python.org', name: 'Python Docs' },
+          { suffix: 'docs.rs', name: 'Rust Docs' },
+          { suffix: 'kubernetes.io', name: 'Kubernetes' },
+          { suffix: 'docker.com', name: 'Docker Hub' },
+          { suffix: 'huggingface.co', name: 'Hugging Face' },
+          { suffix: 'arxiv.org', name: 'arXiv' },
+          { suffix: 'paperswithcode.com', name: 'Papers With Code' },
+          { suffix: 'openai.com', name: 'OpenAI' },
+          { suffix: 'anthropic.com', name: 'Anthropic' },
+          { suffix: 'deepseek.com', name: 'DeepSeek' },
+        ];
+
+        /** 后缀匹配：zhuanlan.zhihu.com 匹配 zhihu.com */
+        function matchPlatform(domain: string): string | undefined {
+          for (const { suffix, name } of PLATFORM_SUFFIX_MAP) {
+            if (domain === suffix || domain.endsWith('.' + suffix)) {
+              return name;
+            }
+          }
+          return undefined;
+        }
+
+        const domainEntries = Array.from(allUrls.entries())
+          .filter(([domain]) => !excludeDomains.has(domain))
+          .map(([domain, urls]) => ({
+            domain,
+            count: urls.length,
+            urls,
+            platform: matchPlatform(domain),
+          }))
+          .sort((a, b) => b.count - a.count);
+
+        const totalUrls = domainEntries.reduce((sum, d) => sum + d.urls.length, 0);
+
+        aiSearchResult.domainExtraction = {
+          query: params.query,
+          totalUrls,
+          totalDomains: domainEntries.length,
+          domains: domainEntries,
+        };
+      }
+
       if (params.format === 'markdown') {
         const lines = [
           `## AI Search: ${aiSearchResult.query}`,
           `_Engine: ${aiSearchResult.engine} | Total: ${aiSearchResult.total} | Duration: ${duration}_`,
           '',
         ];
+
+        // extractUrls 模式：输出域名聚合清单
+        if (aiSearchResult.domainExtraction) {
+          const ext = aiSearchResult.domainExtraction;
+          lines.push(`### 📊 URL/域名提取结果`);
+          lines.push(`_共提取 ${ext.totalUrls} 个 URL，来自 ${ext.totalDomains} 个域名_`);
+          lines.push('');
+          lines.push('| # | 域名 | 平台 | URL数 | 链接 |');
+          lines.push('|---|------|------|-------|------|');
+          for (let i = 0; i < ext.domains.length; i++) {
+            const d = ext.domains[i];
+            const firstUrl = d.urls[0];
+            lines.push(`| ${i + 1} | ${d.platform ? `**${d.platform}** (${d.domain})` : d.domain} | ${d.platform || '-'} | ${d.count} | [打开](${firstUrl}) |`);
+          }
+          lines.push('');
+          lines.push(`---`);
+          lines.push(`_💡 提示：以上平台是 AI 搜索"${params.query}"的数据来源，在这些平台发帖可被 AI 引擎引用_`);
+          lines.push('');
+        }
+
+        // 常规搜索结果
         for (const r of aiSearchResult.results) {
           lines.push(`### ${r.position}. [${r.title}](${r.url})`);
           lines.push(`> ${r.snippet}`);
@@ -409,6 +613,27 @@ export const aiSearchCommand = registerCommand({
           `AI Search: ${aiSearchResult.query} (Engine: ${aiSearchResult.engine}, Total: ${aiSearchResult.total}, Duration: ${duration})`,
           '',
         ];
+
+        // extractUrls 模式：纯文本域名清单
+        if (aiSearchResult.domainExtraction) {
+          const ext = aiSearchResult.domainExtraction;
+          lines.push(`=== URL/域名提取结果 ===`);
+          lines.push(`共提取 ${ext.totalUrls} 个 URL，来自 ${ext.totalDomains} 个域名`);
+          lines.push('');
+          for (let i = 0; i < ext.domains.length; i++) {
+            const d = ext.domains[i];
+            const platformLabel = d.platform ? ` [${d.platform}]` : '';
+            lines.push(`${i + 1}. ${d.domain}${platformLabel} (${d.count} URLs)`);
+            for (const url of d.urls.slice(0, 3)) {
+              lines.push(`   → ${url}`);
+            }
+            if (d.urls.length > 3) {
+              lines.push(`   ... 还有 ${d.urls.length - 3} 个 URL`);
+            }
+          }
+          lines.push('');
+        }
+
         for (const r of aiSearchResult.results) {
           lines.push(`${r.position}. ${r.title}`);
           lines.push(`   ${r.url}`);
