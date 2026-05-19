@@ -11,4 +11,5 @@ export type {
   RecordingSummary,
   RecordingData,
   RecordingControlFile,
+  ElementRef,
 } from './session-recorder.js';

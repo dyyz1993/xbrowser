@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { SessionRecorder } from '../recorder/session-recorder.js';
@@ -6,15 +6,6 @@ import type { RecordingControlFile, RecordingSummary } from '../recorder/session
 import { outputResult, outputError } from './output.js';
 
 // ─── Helper: resolve session ──────────────────────────────────────
-
-async function resolveSession(cdpEndpoint?: string, url?: string) {
-  const { findOrRestoreSession, createSession } = await import('../browser.js');
-  let session = await findOrRestoreSession('default', cdpEndpoint);
-  if (!session) {
-    session = await createSession('default', url, cdpEndpoint ? { cdpEndpoint } : {});
-  }
-  return session;
-}
 
 function getControlFilePath(sessionName: string): string {
   return join(homedir(), '.xbrowser', 'sessions', sessionName, 'recordings', '.control.json');
@@ -65,9 +56,79 @@ export async function handleRecord(
         return;
       }
 
-      const session = await resolveSession(cdpEndpoint, url);
-      const recorder = new SessionRecorder(session.context, session.page, sessionName);
+      // Connect directly via CDP and find the right page
+      const { chromium } = await import('playwright');
+      const rawEp = String(cdpEndpoint || '');
+      // Resolve CDP WebSocket URL
+      let wsEndpoint = rawEp;
+      if (rawEp.startsWith('http://') || rawEp.startsWith('https://')) {
+        try {
+          const resp = await fetch(`${rawEp}/json/version`);
+          const data = await resp.json() as { webSocketDebuggerUrl?: string };
+          if (data.webSocketDebuggerUrl) wsEndpoint = data.webSocketDebuggerUrl;
+        } catch { /* use as-is */ }
+      } else if (/^\d+$/.test(rawEp)) {
+        try {
+          const resp = await fetch(`http://localhost:${rawEp}/json/version`);
+          const data = await resp.json() as { webSocketDebuggerUrl?: string };
+          if (data.webSocketDebuggerUrl) wsEndpoint = data.webSocketDebuggerUrl;
+        } catch { /* use as-is */ }
+      }
 
+      const browser = await chromium.connectOverCDP(wsEndpoint);
+      await new Promise(r => setTimeout(r, 1000)); // wait for contexts to populate
+
+      const contexts = browser.contexts();
+      const context = contexts[0] || await browser.newContext();
+
+      // Try to find an existing page matching the target URL
+      let page = null;
+      if (url) {
+        const hostname = new URL(url).hostname;
+        for (const ctx of contexts) {
+          for (const p of ctx.pages()) {
+            if (p.url().includes(hostname)) { page = p; break; }
+          }
+          if (page) break;
+        }
+      }
+
+      // If no matching page, use the first non-blank page, or create one
+      if (!page) {
+        for (const ctx of contexts) {
+          for (const p of ctx.pages()) {
+            if (p.url() && p.url() !== 'about:blank' && !p.url().startsWith('chrome://')) {
+              page = p; break;
+            }
+          }
+          if (page) break;
+        }
+      }
+
+      if (!page) {
+        // Try CDP targets as last resort
+        try {
+          const ep = rawEp.startsWith('http') ? rawEp : `http://localhost:${rawEp}`;
+          const resp = await fetch(`${ep}/json/list`);
+          const targets = await resp.json() as Array<{url: string; type: string}>;
+          const target = targets.find(t => t.type === 'page' && t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://'));
+          if (target) {
+            page = await context.newPage();
+            await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (!page) {
+        page = await context.newPage();
+      }
+
+      // Navigate to target URL if needed
+      if (url && page.url() !== url && !page.url().includes(new URL(url).hostname)) {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+      }
+
+      const recorder = new SessionRecorder(context, page, sessionName);
       await recorder.start(url);
 
       outputResult({
@@ -75,7 +136,7 @@ export async function handleRecord(
         message: 'Recording started. Process will block until stopped.',
         pid: process.pid,
         sessionName,
-        startUrl: recorder.startUrl || url || session.page.url(),
+        startUrl: url || page.url(),
         hint: 'Run: xbrowser record stop --session ' + sessionName + ' --cdp ' + cdpEndpoint,
       }, mode);
 
@@ -83,7 +144,7 @@ export async function handleRecord(
       await recorder.waitForStopSignal();
 
       // Stop and flush
-      const { data, summary } = await recorder.stop();
+      const { summary } = await recorder.stop();
 
       // Output summary
       console.log('');
@@ -236,7 +297,7 @@ function printHumanReadableSummary(summary: RecordingSummary): void {
     if (el) {
       parts.push(`<${el.tag}>`);
       if (el.text) parts.push(`"${el.text.substring(0, 40)}"`);
-      if (el.id) parts.push(`#${el.id}`);
+      if (el.selector) parts.push(`(${el.selector})`);
       if (el.type) parts.push(`type=${el.type}`);
       if (el.placeholder) parts.push(`placeholder="${el.placeholder}"`);
     }

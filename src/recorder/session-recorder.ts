@@ -10,7 +10,7 @@
  *   record stop  → signal file written, recording process flushes & exits
  *   session close → recordings directory cleaned up
  */
-import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync, watchFile, unwatchFile } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { BrowserContext, Frame, Page, Request, Response } from 'playwright';
@@ -25,13 +25,12 @@ export interface UserAction {
   pageTitle: string;
   element?: {
     tag: string;
+    selector?: string;  // unique short CSS selector for replay
     text: string;
     role?: string;
     type?: string;
     placeholder?: string;
     ariaLabel?: string;
-    id?: string;
-    className?: string;
     href?: string;
   };
   value?: string;
@@ -64,8 +63,20 @@ export interface ContextChange {
   detail?: string;
 }
 
+export interface ElementRef {
+  selector: string;
+  tag: string;
+  text: string;
+  role?: string;
+  type?: string;
+  placeholder?: string;
+  ariaLabel?: string;
+  href?: string;
+}
+
 export interface RecordingStep {
   step: number;
+  ref: string;       // e.g. "e1", "e2" — reference into elements map
   action: UserAction;
   network: NetworkEntry[];
   contextChanges: ContextChange[];
@@ -83,6 +94,8 @@ export interface RecordingSummary {
   totalActions: number;
   totalNetworkRequests: number;
   steps: RecordingStep[];
+  /** Ref → element descriptor map. Steps reference elements via ref to reduce size. */
+  elements: Record<string, ElementRef>;
 }
 
 export interface RecordingData {
@@ -111,18 +124,104 @@ const ACTION_SIGNAL_SCRIPT = `
   window.__xb_action_signal = true;
   window.__xb_pending_actions = [];
 
+  // --- Unique short selector generator ---
+  function uniqueSelector(el) {
+    if (!el || !el.tagName) return null;
+    var doc = el.ownerDocument || document;
+
+    function isUnique(sel) {
+      try { return doc.querySelectorAll(sel).length === 1; } catch(e) { return false; }
+    }
+
+    // 1. #id (shortest, globally unique)
+    if (el.id) {
+      var idSel = '#' + CSS.escape(el.id);
+      if (isUnique(idSel)) return idSel;
+    }
+
+    // 2. [data-testid="..."]
+    var testId = el.getAttribute('data-testid') || el.getAttribute('data-test-id');
+    if (testId) {
+      var sel = '[data-testid="' + testId + '"]';
+      if (isUnique(sel)) return sel;
+    }
+
+    // 3. [name="..."]
+    var name = el.getAttribute('name');
+    if (name) {
+      var sel = el.tagName.toLowerCase() + '[name="' + name + '"]';
+      if (isUnique(sel)) return sel;
+    }
+
+    // 4. [aria-label="..."]
+    var aria = el.getAttribute('aria-label');
+    if (aria) {
+      var sel = '[aria-label="' + aria.substring(0, 50) + '"]';
+      if (isUnique(sel)) return sel;
+    }
+
+    // 5. [placeholder="..."]
+    var ph = el.getAttribute('placeholder');
+    if (ph) {
+      var sel = el.tagName.toLowerCase() + '[placeholder="' + ph.substring(0, 50) + '"]';
+      if (isUnique(sel)) return sel;
+    }
+
+    // 6. tag.class — pick shortest combo that's unique
+    var tag = el.tagName.toLowerCase();
+    if (typeof el.className === 'string' && el.className.trim()) {
+      var classes = el.className.trim().split(/\\s+/).filter(function(c) {
+        return c && !/^(ng-|_|css-|sc-|styled-|emotion-)/.test(c);
+      });
+      // Sort by rarity (less common class first)
+      classes.sort(function(a, b) {
+        return doc.querySelectorAll('.' + a).length - doc.querySelectorAll('.' + b).length;
+      });
+      // Try tag + single class
+      for (var i = 0; i < classes.length; i++) {
+        var sel = tag + '.' + CSS.escape(classes[i]);
+        if (isUnique(sel)) return sel;
+      }
+      // Try tag + two classes
+      if (classes.length >= 2) {
+        var sel = tag + '.' + CSS.escape(classes[0]) + '.' + CSS.escape(classes[1]);
+        if (isUnique(sel)) return sel;
+      }
+    }
+
+    // 7. parent > tag  (one level up)
+    var parent = el.parentElement;
+    if (parent) {
+      var parentSel = parent.id ? '#' + CSS.escape(parent.id) : parent.tagName.toLowerCase();
+      var sel = parentSel + ' > ' + tag;
+      if (isUnique(sel)) return sel;
+    }
+
+    // 8. :nth-child fallback (tag:nth-child(n) under parent)
+    if (parent) {
+      var siblings = Array.from(parent.children);
+      var idx = siblings.indexOf(el) + 1;
+      var parentSel = parent.id ? '#' + CSS.escape(parent.id) : parent.tagName.toLowerCase();
+      var sel = parentSel + ' > ' + tag + ':nth-child(' + idx + ')';
+      if (isUnique(sel)) return sel;
+    }
+
+    // 9. Last resort: full tag
+    return tag;
+  }
+
+  // --- Element descriptor ---
   function describe(el) {
     if (!el || !el.tagName) return null;
     return {
       tag: el.tagName.toLowerCase(),
-      text: (el.textContent || '').trim().substring(0, 80),
-      role: el.getAttribute('role'),
-      type: el.getAttribute('type'),
-      placeholder: el.getAttribute('placeholder'),
-      ariaLabel: el.getAttribute('aria-label'),
-      href: el.getAttribute('href') ? el.getAttribute('href').substring(0, 100) : undefined,
-      id: el.id || undefined,
-      className: (typeof el.className === 'string' ? el.className : '').substring(0, 80) || undefined,
+      selector: uniqueSelector(el),
+      text: (el.textContent || '').trim().substring(0, 40),
+      role: el.getAttribute('role') || undefined,
+      type: el.getAttribute('type') || undefined,
+      placeholder: el.getAttribute('placeholder') || undefined,
+      ariaLabel: el.getAttribute('aria-label') || undefined,
+      href: el.getAttribute('href') ? el.getAttribute('href').substring(0, 80) : undefined,
     };
   }
 
@@ -610,14 +709,44 @@ export class SessionRecorder {
     };
   }
 
-  // ─── Summary builder with input→network matching ────────────────
+  // ─── Summary builder with ref compression + input→network matching ──
 
   private buildSummary(data: RecordingData): RecordingSummary {
     const TIME_WINDOW = 2000; // ±2s
     const steps: RecordingStep[] = [];
 
+    // Ref compression: deduplicate elements by selector
+    const selectorToRef = new Map<string, string>();
+    const elements: Record<string, ElementRef> = {};
+    let refCounter = 0;
+
+    function getRef(action: UserAction): string {
+      const sel = action.element?.selector || action.element?.tag || '_none';
+      if (selectorToRef.has(sel)) return selectorToRef.get(sel)!;
+
+      refCounter++;
+      const ref = 'e' + refCounter;
+      selectorToRef.set(sel, ref);
+
+      if (action.element) {
+        elements[ref] = {
+          selector: action.element.selector || action.element.tag,
+          tag: action.element.tag,
+          text: action.element.text,
+          role: action.element.role,
+          type: action.element.type,
+          placeholder: action.element.placeholder,
+          ariaLabel: action.element.ariaLabel,
+          href: action.element.href,
+        };
+      } else {
+        elements[ref] = { selector: '_none', tag: '_', text: '' };
+      }
+      return ref;
+    }
+
     for (const action of data.actions) {
-      if (action.type === 'scroll') continue; // too noisy for summary
+      if (action.type === 'scroll') continue;
 
       const nearbyNetwork = data.network.filter(n =>
         Math.abs(n.timestamp - action.timestamp) <= TIME_WINDOW,
@@ -629,6 +758,7 @@ export class SessionRecorder {
 
       steps.push({
         step: steps.length + 1,
+        ref: getRef(action),
         action,
         network: nearbyNetwork.map(n => ({
           ...n,
@@ -648,6 +778,7 @@ export class SessionRecorder {
       totalActions: data.actions.length,
       totalNetworkRequests: data.network.length,
       steps,
+      elements,
     };
   }
 
