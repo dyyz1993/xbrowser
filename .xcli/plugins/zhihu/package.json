@@ -41,6 +41,9 @@
     "test": "test"
   },
   "license": "MIT",
+  "xbrowser": {
+    "description": "Zhihu API, 获取知乎平台信息数据的接口"
+  },
   "_npmSource": {
     "name": "zhihu",
     "version": "1.4.3"
