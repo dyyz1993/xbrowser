@@ -84,6 +84,7 @@ vi.mock('fs', () => ({
 }));
 
 vi.mock('yaml', () => ({
+  default: { parse: mockYamlParse, stringify: vi.fn((obj: unknown) => JSON.stringify(obj)) },
   parse: mockYamlParse,
   stringify: vi.fn((obj: unknown) => JSON.stringify(obj)),
 }));
@@ -292,23 +293,23 @@ describe('record-routes', () => {
   });
 
   describe('handleConvert', () => {
-    it('should exit when file path missing', () => {
+    it('should exit when file path missing', async () => {
       const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('EXIT'); });
-      expect(() => handleConvert([], 'text')).toThrow('EXIT');
+      await expect(handleConvert([], 'text')).rejects.toThrow('EXIT');
       exitSpy.mockRestore();
     });
 
-    it('should exit when output path missing', () => {
+    it('should exit when output path missing', async () => {
       const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('EXIT'); });
-      expect(() => handleConvert(['rec.yaml'], 'text')).toThrow('EXIT');
+      await expect(handleConvert(['rec.yaml'], 'text')).rejects.toThrow('EXIT');
       exitSpy.mockRestore();
     });
 
-    it('should convert recording to JS script', () => {
+    it('should convert recording to JS script', async () => {
       mockFsReadFileSync.mockReturnValue('events:\n  - type: click');
       mockYamlParse.mockReturnValue({ startUrl: 'https://example.com', events: [{ type: 'click' }] });
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-      handleConvert(['rec.yaml', 'out.js'], 'text');
+      await handleConvert(['rec.yaml', 'out.js'], 'text');
       expect(mockFsWriteFileSync).toHaveBeenCalledWith('out.js', expect.any(String));
       expect(mockFsChmodSync).toHaveBeenCalledWith('out.js', 0o755);
       expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Converted'));
@@ -317,16 +318,16 @@ describe('record-routes', () => {
   });
 
   describe('handleExtract', () => {
-    it('should exit when no file path provided', () => {
+    it('should exit when no file path provided', async () => {
       const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('EXIT'); });
-      expect(() => handleExtract([], 'text')).toThrow('EXIT');
+      await expect(handleExtract([], 'text')).rejects.toThrow('EXIT');
       exitSpy.mockRestore();
     });
 
-    it('should extract and save summary', () => {
+    it('should extract and save summary', async () => {
       mockExtractAndSave.mockReturnValue({ summary: { startUrl: 'https://a.com' }, outputPath: '/tmp/out.md' });
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-      handleExtract(['rec.yaml'], 'text');
+      await handleExtract(['rec.yaml'], 'text');
       expect(mockExtractAndSave).toHaveBeenCalledWith('rec.yaml');
       expect(mockPrintExtractSummary).toHaveBeenCalledWith({ startUrl: 'https://a.com' });
       logSpy.mockRestore();
@@ -334,17 +335,17 @@ describe('record-routes', () => {
   });
 
   describe('handleFilter', () => {
-    it('should exit when file path missing', () => {
+    it('should exit when file path missing', async () => {
       const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('EXIT'); });
-      expect(() => handleFilter([], 'text')).toThrow('EXIT');
+      await expect(handleFilter([], 'text')).rejects.toThrow('EXIT');
       exitSpy.mockRestore();
     });
 
-    it('should filter recording and output result', () => {
+    it('should filter recording and output result', async () => {
       mockParseExcludeTypes.mockReturnValue(['click']);
       mockFilterRecording.mockReturnValue({ originalCount: 10, filteredCount: 5, removed: 5, percentage: 50 });
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-      handleFilter(['in.yaml', 'out.yaml', '--exclude-types=click'], 'text');
+      await handleFilter(['in.yaml', 'out.yaml', '--exclude-types=click'], 'text');
       expect(mockFilterRecording).toHaveBeenCalledWith('in.yaml', 'out.yaml', ['click']);
       expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Filtered'));
       logSpy.mockRestore();

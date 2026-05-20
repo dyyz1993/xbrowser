@@ -360,7 +360,7 @@ export async function handleReplay(
   outputResult(result, mode);
 }
 
-export function handleConvert(args: string[], _mode: string): void {
+export async function handleConvert(args: string[], _mode: string): Promise<void> {
   const filePath = args[0];
   const outputPath = args[1];
 
@@ -369,12 +369,11 @@ export function handleConvert(args: string[], _mode: string): void {
     process.exit(1);
   }
 
-  const fs = require('node:fs');
-  const path = require('node:path');
-  const yaml = require('yaml');
+  const fs = await import('node:fs');
+  const path = await import('node:path');
+  const { default: yaml } = await import('yaml');
 
-  const { generateJSScript, generatePythonScript, generateBashScript } = require('../commands/convert.js') as
-    typeof import('../commands/convert.js');
+  const { generateJSScript, generatePythonScript, generateBashScript } = await import('../commands/convert.js');
 
   const content = fs.readFileSync(filePath, 'utf-8');
   const recording = yaml.parse(content);
@@ -399,7 +398,7 @@ export function handleConvert(args: string[], _mode: string): void {
   console.log(`  Run: ${ext === '.py' ? 'python' : ext === '.sh' ? './' : 'node'} ${outputPath}`);
 }
 
-export function handleExtract(args: string[], _mode: string): void {
+export async function handleExtract(args: string[], _mode: string): Promise<void> {
   const filePath = args[0];
 
   if (!filePath) {
@@ -407,15 +406,14 @@ export function handleExtract(args: string[], _mode: string): void {
     process.exit(1);
   }
 
-  const { extractAndSave, printExtractSummary } = require('../commands/extract.js') as
-    typeof import('../commands/extract.js');
+  const { extractAndSave, printExtractSummary } = await import('../commands/extract.js');
 
   const { summary, outputPath } = extractAndSave(filePath);
   printExtractSummary(summary);
   console.log(`\nSaved LLM summary: ${outputPath}`);
 }
 
-export function handleFilter(args: string[], _mode: string): void {
+export async function handleFilter(args: string[], _mode: string): Promise<void> {
   const filePath = args[0];
   const outputPath = args[1];
 
@@ -424,8 +422,7 @@ export function handleFilter(args: string[], _mode: string): void {
     process.exit(1);
   }
 
-  const { filterRecording, parseExcludeTypes } = require('../commands/filter.js') as
-    typeof import('../commands/filter.js');
+  const { filterRecording, parseExcludeTypes } = await import('../commands/filter.js');
 
   const excludeTypes = parseExcludeTypes(args.slice(2));
   const result = filterRecording(filePath, outputPath, excludeTypes);
