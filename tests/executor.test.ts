@@ -27,6 +27,27 @@ vi.mock('playwright', () => ({
 
 const mockGetSite = vi.fn(() => null);
 
+// Mock daemon modules so tests don't wait for real daemon timeouts
+const mockIsDaemonRunning = vi.fn().mockResolvedValue(false);
+const mockStartDaemon = vi.fn().mockRejectedValue(new Error('no daemon in test'));
+
+vi.mock('../src/client/daemon-client.js', () => ({
+  isDaemonRunning: mockIsDaemonRunning,
+  forwardExec: vi.fn(),
+  forwardChain: vi.fn(),
+}));
+
+vi.mock('../src/daemon/daemon.js', () => ({
+  startDaemonProcess: mockStartDaemon,
+  stopDaemonProcess: vi.fn(),
+  getDaemonProcessStatus: vi.fn(),
+}));
+
+// Isolate homedir to a temp dir so stale session files don't affect tests
+vi.mock('os', () => ({
+  homedir: vi.fn().mockReturnValue('/tmp/xbrowser-test-executor'),
+}));
+
 vi.mock('../src/plugin/loader.js', () => {
   const mockLoader = {
     getCore: () => ({
