@@ -25,7 +25,7 @@ function mockFetchError(message: string) {
   return vi.fn(() => Promise.reject(new Error(message)));
 }
 
-const ALL_COMMANDS = ['ping', 'submit', 'bulk-submit', 'setup-indexnow', 'check', 'analyze', 'setup-guide', 'backlinks', 'login', 'logout', 'submit-backlink', 'submit-guest-post', 'setup-email', 'verify-email', 'register', 'batch-submit'];
+const ALL_COMMANDS = ['ping', 'submit', 'bulk-submit', 'setup-indexnow', 'check', 'analyze', 'setup-guide', 'backlinks', 'login', 'logout', 'submit-backlink', 'submit-guest-post', 'setup-email', 'verify-email', 'register', 'batch-submit', 'sms', 'register-phone', 'batch-submit-cn'];
 
 describe('seo plugin', () => {
   let originalFetch: typeof globalThis.fetch;
@@ -47,7 +47,7 @@ describe('seo plugin', () => {
   });
 
   it('should register 16 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(16);
+    expect(mockSite.command).toHaveBeenCalledTimes(19);
   });
 
   it('should register expected command names', () => {

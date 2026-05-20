@@ -3,10 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const {
   mockOutputResult,
   mockOutputError,
-  mockReadFileSync,
-  mockWriteFileSync,
-  mockExistsSync,
-  mockMkdirSync,
+  mockFsReadFileSync,
+  mockFsWriteFileSync,
+  mockFsExistsSync,
+  mockFsMkdirSync,
   mockFsChmodSync,
   mockYamlParse,
   mockPlay,
@@ -14,8 +14,6 @@ const {
   mockPrintExtractSummary,
   mockFilterRecording,
   mockParseExcludeTypes,
-  mockFsReadFileSync,
-  mockFsWriteFileSync,
   mockSendStopSignal,
   mockReadSummary,
   mockReadData,
@@ -23,10 +21,10 @@ const {
 } = vi.hoisted(() => ({
   mockOutputResult: vi.fn(),
   mockOutputError: vi.fn(),
-  mockReadFileSync: vi.fn(),
-  mockWriteFileSync: vi.fn(),
-  mockExistsSync: vi.fn(),
-  mockMkdirSync: vi.fn(),
+  mockFsReadFileSync: vi.fn(),
+  mockFsWriteFileSync: vi.fn(),
+  mockFsExistsSync: vi.fn(),
+  mockFsMkdirSync: vi.fn(),
   mockFsChmodSync: vi.fn(),
   mockYamlParse: vi.fn(),
   mockPlay: vi.fn(),
@@ -34,12 +32,10 @@ const {
   mockPrintExtractSummary: vi.fn(),
   mockFilterRecording: vi.fn(),
   mockParseExcludeTypes: vi.fn(),
-  mockFsReadFileSync: vi.fn(),
-  mockFsWriteFileSync: vi.fn(),
   mockSendStopSignal: vi.fn(),
   mockReadData: vi.fn(),
   mockReadSummary: vi.fn(),
-  mockGetRecordingsDir: vi.fn(),
+  mockGetRecordingsDir: vi.fn((name: string) => `/home/.xbrowser/sessions/${name}/recordings`),
 }));
 
 vi.mock('../../src/cli/output.js', () => ({
@@ -72,12 +68,12 @@ vi.mock('../../src/commands/filter.js', () => ({
   parseExcludeTypes: mockParseExcludeTypes,
 }));
 
-vi.mock('fs', () => ({
-  readFileSync: mockReadFileSync,
-  writeFileSync: mockWriteFileSync,
-  existsSync: mockExistsSync,
+vi.mock('node:fs', () => ({
+  readFileSync: mockFsReadFileSync,
+  writeFileSync: mockFsWriteFileSync,
+  existsSync: mockFsExistsSync,
   chmodSync: mockFsChmodSync,
-  mkdirSync: mockMkdirSync,
+  mkdirSync: mockFsMkdirSync,
 }));
 
 vi.mock('yaml', () => ({
