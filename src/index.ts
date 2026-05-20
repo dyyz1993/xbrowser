@@ -47,6 +47,17 @@ export { RecorderController } from './recorder/recorder.js';
 export type { RecordedEvent, RecordingSession, RecorderStatus } from './recorder/recorder.js';
 export { PlaybackEngine } from './recorder/player.js';
 export type { PlaybackOptions, PlaybackResult } from './recorder/player.js';
+export { SessionRecorder } from './recorder/session-recorder.js';
+export type {
+  UserAction,
+  NetworkEntry,
+  ContextChange,
+  RecordingStep,
+  RecordingSummary,
+  RecordingData,
+  RecordingControlFile,
+  ElementRef,
+} from './recorder/session-recorder.js';
 export {
   startDaemonProcess,
   stopDaemonProcess,
