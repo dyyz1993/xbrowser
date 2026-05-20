@@ -1,2 +1,4 @@
-/** Current version of the xbrowser package. */
-export const version = '0.10.0';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const pkg = require('../package.json');
+export const version = pkg.version;

@@ -1,10 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockOutputResult, mockOutputError, mockInstallerInstall, mockInstallerInstallFromMarketplace, mockInstallerUninstall, mockInstallerList, mockReloadPlugin, mockGetPluginLoader } = vi.hoisted(() => ({
+const { mockOutputResult, mockOutputError, mockInstallerInstall, mockInstallerInstallFromMarketplace, mockInstallerInstallWithMarketplaceFallback, mockInstallerUninstall, mockInstallerList, mockReloadPlugin, mockGetPluginLoader } = vi.hoisted(() => ({
   mockOutputResult: vi.fn(),
   mockOutputError: vi.fn(),
   mockInstallerInstall: vi.fn(),
   mockInstallerInstallFromMarketplace: vi.fn(),
+  mockInstallerInstallWithMarketplaceFallback: vi.fn(),
   mockInstallerUninstall: vi.fn(),
   mockInstallerList: vi.fn(),
   mockReloadPlugin: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock('../../src/plugin/installer.js', () => ({
   PluginInstaller: vi.fn().mockImplementation(() => ({
     install: mockInstallerInstall,
     installFromMarketplace: mockInstallerInstallFromMarketplace,
+    installWithMarketplaceFallback: mockInstallerInstallWithMarketplaceFallback,
     uninstall: mockInstallerUninstall,
     list: mockInstallerList,
   })),
@@ -81,7 +83,7 @@ describe('plugin-routes', () => {
 
   describe('handlePlugin - install', () => {
     it('should install plugin from source', async () => {
-      mockInstallerInstall.mockResolvedValueOnce({
+      mockInstallerInstallWithMarketplaceFallback.mockResolvedValueOnce({
         name: 'my-plugin',
         source: 'npm',
         path: '/tmp/my-plugin',
@@ -89,7 +91,7 @@ describe('plugin-routes', () => {
 
       await handlePlugin(['install', 'my-plugin'], {}, 'text');
 
-      expect(mockInstallerInstall).toHaveBeenCalledWith('my-plugin', { name: undefined, force: false });
+      expect(mockInstallerInstallWithMarketplaceFallback).toHaveBeenCalledWith('my-plugin', { name: undefined, force: false });
       expect(mockOutputResult).toHaveBeenCalledWith(
         { ok: true, name: 'my-plugin', source: 'npm', path: '/tmp/my-plugin' },
         'text'
@@ -97,7 +99,7 @@ describe('plugin-routes', () => {
     });
 
     it('should install plugin with --name and --force options', async () => {
-      mockInstallerInstall.mockResolvedValueOnce({
+      mockInstallerInstallWithMarketplaceFallback.mockResolvedValueOnce({
         name: 'custom-name',
         source: 'npm',
         path: '/tmp/custom-name',
@@ -105,7 +107,7 @@ describe('plugin-routes', () => {
 
       await handlePlugin(['install', 'some-pkg'], { name: 'custom-name', force: true }, 'json');
 
-      expect(mockInstallerInstall).toHaveBeenCalledWith('some-pkg', {
+      expect(mockInstallerInstallWithMarketplaceFallback).toHaveBeenCalledWith('some-pkg', {
         name: 'custom-name',
         force: true,
       });

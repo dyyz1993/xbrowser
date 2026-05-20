@@ -1,0 +1,44 @@
+{
+  "engine": "deepseek",
+  "prompt": "广东服装加工企业排名",
+  "totalUrls": 7,
+  "totalDomains": 6,
+  "domains": [
+    {
+      "domain": "puning.gov.cn",
+      "count": 2,
+      "urls": ["http://www.puning.gov.cn/jypngxj/gkmlpt/content/1/1000/mpost_1000625.html#1989", "http://www.puning.gov.cn/xwzx/pnxw/content/post_1017987.html"]
+    },
+    {
+      "domain": "gdfashionweek.com",
+      "count": 2,
+      "urls": ["http://gdfashionweek.com/subjects/gfwsubjects_details.aspx?id=68", "http://gdfashionweek.com/subjects/gfwsubjects_details.aspx?id=67"]
+    },
+    {
+      "domain": "m.itouchtv.cn",
+      "count": 1,
+      "urls": ["https://m.itouchtv.cn/article/f7bf73fceae3fcbddf62e1e78440f127"]
+    },
+    {
+      "domain": "163.com",
+      "count": 1,
+      "urls": ["https://www.163.com/dy/article/J7NGEAQ30538RY7X_pdya11y.html"]
+    },
+    {
+      "domain": "wenku.baidu.com",
+      "count": 1,
+      "urls": ["https://wenku.baidu.com/view/878d19717fd5360cba1adb28.html"]
+    },
+    {
+      "domain": "dg.gov.cn",
+      "count": 1,
+      "urls": ["http://www.dg.gov.cn/dgfgz/gkmlpt/content/4/4456/post_4456870.html#2689"]
+    }
+  ],
+  "platforms": {
+    "网易号": ["163.com"],
+    "百度": ["wenku.baidu.com"]
+  },
+  "duration": "35.1s",
+  "status": "success"
+}

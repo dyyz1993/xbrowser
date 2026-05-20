@@ -58,24 +58,26 @@ export const pluginInstallBuiltin: BuiltinCommand = {
   name: 'plugin install',
   description: 'Install a plugin',
   help: {
-    usage: 'xbrowser plugin install <source> [--name <name>] [--force] [--from-marketplace]',
-    description: 'Install a plugin from local path, npm, git, URL, or marketplace',
+    usage: 'xbrowser plugin install <source> [--name <name>] [--force] [--from-marketplace] [--source marketplace|npm]',
+    description: 'Install a plugin from local path, npm, git, URL, or marketplace (defaults to marketplace-first)',
     options: [
       { name: '--name <name>', description: 'Custom plugin name' },
       { name: '--force', description: 'Overwrite existing plugin' },
       { name: '--from-marketplace', description: 'Install from marketplace by slug' },
+      { name: '--source <type>', description: 'Force source: marketplace or npm' },
     ],
     examples: [
-      { cmd: 'xbrowser plugin install xbrowser-plugin-scraper', description: 'Install from npm' },
+      { cmd: 'xbrowser plugin install deepseek', description: 'Auto: tries marketplace first, then npm' },
       { cmd: 'xbrowser plugin install ./my-plugin', description: 'Install from local path' },
       { cmd: 'xbrowser plugin install my-plugin --from-marketplace', description: 'Install from marketplace' },
+      { cmd: 'xbrowser plugin install my-plugin --source npm', description: 'Force install from npm' },
     ],
   },
   execute: async (args, options) => {
     const source = args[0];
     if (!source) {
-      console.error('Usage: xbrowser plugin install <source> [--name <name>] [--from-marketplace]');
-      process.exit(1);
+        console.error('Usage: xbrowser plugin install <source> [--name <name>] [--from-marketplace] [--source marketplace|npm]');
+        process.exit(1);
     }
     try {
       const installer = getInstaller();
@@ -85,10 +87,13 @@ export const pluginInstallBuiltin: BuiltinCommand = {
       };
 
       let result;
-      if (options['from-marketplace']) {
+      const sourceFlag = options['source'] as string | undefined;
+      if (options['from-marketplace'] || sourceFlag === 'marketplace') {
         result = await installer.installFromMarketplace(source, installOpts);
-      } else {
+      } else if (sourceFlag === 'npm') {
         result = await installer.install(source, installOpts);
+      } else {
+        result = await installer.installWithMarketplaceFallback(source, installOpts);
       }
 
       console.log(`Plugin "${result.name}" installed from ${result.source}`);

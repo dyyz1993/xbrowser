@@ -766,19 +766,24 @@ export async function routeCommand(
             params[camelKey] = v;
           }
 
-          let session = await findOrRestoreSession(sessionName, cdpEndpoint);
-          if (!session) {
-            session = await createSession(sessionName, undefined, cdpEndpoint ? { cdpEndpoint } : {});
+          const needsBrowser = cmdEntry.scope !== 'global';
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          let session: any = undefined;
+          if (needsBrowser) {
+            session = await findOrRestoreSession(sessionName, cdpEndpoint);
+            if (!session) {
+              session = await createSession(sessionName, undefined, cdpEndpoint ? { cdpEndpoint } : {});
+            }
           }
 
           const ctx = {
             args: cmdArgsForPlugin,
             options,
             cwd: process.cwd(),
-            page: session.page,
-            browser: session.context.browser()!,
-            browserContext: session.context,
-            sessionId: session.id,
+            page: needsBrowser ? session!.page : null,
+            browser: needsBrowser ? session!.context.browser()! : null,
+            browserContext: needsBrowser ? session!.context : null,
+            sessionId: needsBrowser ? session!.id : '',
             storage: {
               get: async <T>(_key: string): Promise<T | null> => null,
               set: async <T>(_key: string, _value: T): Promise<void> => { },

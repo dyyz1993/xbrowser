@@ -1,0 +1,15 @@
+{
+  "engine": "chatglm",
+  "url": "https://chatglm.cn/",
+  "status": "partial",
+  "allUrls": [
+    "https://beian.miit.gov.cn/",
+    "https://chatglm.cn/agreement",
+    "https://chatglm.cn/privacypolicy"
+  ],
+  "contentUrls": [],
+  "contentLength": 866,
+  "domains": [],
+  "error": null,
+  "responseScreenshot": null
+}

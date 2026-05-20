@@ -9,6 +9,9 @@ coverage/
 .DS_Store
 .codenomad/
 
+# Archive
+.archive/
+
 # Debug scripts & temp outputs
 debug-*
 crawl-*.ts

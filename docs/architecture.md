@@ -132,7 +132,7 @@ xbrowser 的核心设计原则：
    - 按管线类型执行（`and` / `or` / `sequence`）
    - `&&` 管线中任一命令失败即停止
    - `||` 管线中任一命令成功即停止
-   - 执行完毕后清理自动创建的会话
+    - 执行完毕后会话保留，由 process.on('exit') 或 session close 清理
 
 3. **isChainInput(input)** — 检测输入是否为命令链
 
@@ -194,7 +194,7 @@ browser.ts
 ├── findSession(name)         → 按名称查找会话
 ├── closeSessionByName(name)  → 关闭指定会话
 ├── closeAllSessions()        → 关闭所有会话
-└── destroyBrowser()          → 关闭浏览器和所有会话
+└── destroyBrowser()          → 关闭浏览器和所有会话（仅由 session close/kill 和 idle timer 调用）
 ```
 
 **浏览器启动策略**：
@@ -498,7 +498,6 @@ executeChain('goto https://a.com && title && screenshot')
     │   ├── 'title' → page.title() → OK
     │   └── 'screenshot' → page.screenshot() → OK
     │
-    ├── 自动创建的会话 → destroyBrowser()
     │
     ▼
 返回 ChainExecutionResult {

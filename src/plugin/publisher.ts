@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'fs';
 import { resolve, relative, basename, posix } from 'path';
 import { createHash } from 'crypto';
+import { gzipSync } from 'zlib';
 import { PluginMetadataParser } from './metadata-parser.js';
 import { NPM_REGISTRY_URL } from '../config.js';
 import { readJsonFile } from '../utils/json-file.js';
@@ -196,18 +197,20 @@ export async function createTarball(
 
   if (storage === 'r2') {
     const files = collectFiles(pluginDir);
-    totalSize = files.reduce((sum, f) => sum + f.content.length, 0);
+    const manifest = files.map(f => ({
+      path: f.path,
+      content: f.content.toString('base64'),
+    }));
+    const manifestJson = JSON.stringify(manifest);
+    const gzipped = gzipSync(Buffer.from(manifestJson));
+    totalSize = gzipped.length;
 
     const hash = createHash('sha256');
-    for (const f of files) {
-      hash.update(f.content);
-    }
+    hash.update(gzipped);
     checksum = `sha256-${hash.digest('hex').slice(0, 16)}`;
 
-    for (const file of files) {
-      const blob = new Blob([new Uint8Array(file.content)]);
-      formData.append('files', blob, file.path);
-    }
+    const blob = new Blob([new Uint8Array(gzipped)]);
+    formData.append('files', blob, `${slug}-${version}.tar.gz`);
 
     formData.append('checksum', checksum);
 

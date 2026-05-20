@@ -200,43 +200,9 @@ export async function handlePublish(
       const errMsg = (errBody as { error?: string }).error || response.statusText;
 
       if (errMsg.includes('R2 storage')) {
-        console.log('  File upload unavailable, publishing metadata only...');
-        const jsonRes = await fetch(`${registryUrl}/api/plugins`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${auth.token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            name: result.name,
-            slug: result.slug,
-            version: result.version,
-            description: result.description,
-            commands: result.commands,
-            tags: result.tags,
-            siteUrls: result.sites,
-            license: result.tags.includes('MIT') ? 'MIT' : undefined,
-          }),
-        });
-
-        if (!jsonRes.ok) {
-          const jsonErr = await jsonRes.json().catch(() => ({})) as { error?: string };
-          console.error(`Publish failed (${jsonRes.status}): ${jsonErr.error || jsonRes.statusText}`);
-          process.exit(1);
-        }
-
-        const jsonBody = await jsonRes.json() as { data?: { slug?: string; name?: string; status?: string } };
-        const slug = jsonBody.data?.slug || result.slug;
-
-        console.log(`\n  Published: ${result.name}@${result.version}`);
-        console.log(`  URL: ${registryUrl}/plugins/${slug}`);
-        if (jsonBody.data?.status === 'pending') {
-          console.log('  Status: pending review (file upload not available, metadata only)');
-        }
-
-        const { outputResult } = await import('./output.js');
-        outputResult({ ok: true, name: result.name, version: result.version, slug }, mode);
-        return;
+        console.error('  ❌ R2 storage unavailable. Cannot publish plugin without source code.');
+        console.error('  Please configure R2 bucket or use --storage local');
+        process.exit(1);
       }
 
       console.error(`Publish failed (${response.status}): ${errMsg}`);

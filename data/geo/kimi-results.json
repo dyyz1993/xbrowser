@@ -1,0 +1,45 @@
+{
+  "engine": "kimi",
+  "prompt": "广东服装加工企业排名",
+  "totalUrls": 9,
+  "totalDomains": 6,
+  "domains": [
+    {
+      "domain": "app.mokahr.com",
+      "count": 2,
+      "urls": ["https://app.mokahr.com/su/phmkug", "https://app.mokahr.com/su/gblcus"]
+    },
+    {
+      "domain": "moonshot.ai",
+      "count": 1,
+      "urls": ["https://www.moonshot.ai/"]
+    },
+    {
+      "domain": "platform.kimi.ai",
+      "count": 1,
+      "urls": ["https://platform.kimi.ai/"]
+    },
+    {
+      "domain": "163.com",
+      "count": 2,
+      "urls": ["https://www.163.com/dy/article/...", "https://www.163.com/dy/article/..."]
+    },
+    {
+      "domain": "toutiao.com",
+      "count": 2,
+      "urls": ["https://www.toutiao.com/article/...", "https://www.toutiao.com/article/..."]
+    },
+    {
+      "domain": "baijiahao.baidu.com",
+      "count": 1,
+      "urls": ["https://baijiahao.baidu.com/s..."]
+    }
+  ],
+  "platforms": {
+    "网易号": ["163.com"],
+    "今日头条": ["toutiao.com"],
+    "百家号": ["baijiahao.baidu.com"]
+  },
+  "duration": "45.1s",
+  "status": "success"
+}

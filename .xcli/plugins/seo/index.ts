@@ -3,6 +3,7 @@ import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import type { Page } from 'playwright';
 import { backlinkPlatforms, categories } from './backlinks-data.js';
 import { fetchVerificationCode, initEmailAuth, setupEmailConfig } from './email-helper.js';
+import { readSMS, getLatestCode, waitForSMSCode } from './sms-reader.js';
 
 function proxyFetch(url: string, init?: RequestInit): Promise<Response> {
   const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '';
@@ -1824,6 +1825,439 @@ export default function (xcli: XCLIAPI): void {
           '',
           ...(loggedCount < reachableCount ? ['⚠️ Some platforms need manual login or account creation first'] : []),
           ...(filledCount < loggedCount ? ['⚠️ Some logged-in platforms did not have a detectable URL input field'] : []),
+        ],
+      };
+    },
+  });
+
+  seo.command('sms', {
+    description: '读取 macOS 短信验证码（从 Messages app）',
+    scope: 'project',
+    result: z.any(),
+    parameters: z.object({
+      filter: z.string().optional().describe('过滤关键词（如平台名称）'),
+      limit: z.number().optional().describe('返回条数，默认 20').default(20),
+      maxAge: z.number().optional().describe('最大回溯时间（秒），默认 3600').default(3600),
+    }),
+    examples: [
+      { cmd: 'xbrowser seo sms', description: '读取最近验证码短信' },
+      { cmd: 'xbrowser seo sms --filter "百度"', description: '过滤百度相关验证码' },
+    ],
+    handler: async (params) => {
+      const messages = readSMS({ filter: params.filter, limit: params.limit, maxAgeSeconds: params.maxAge });
+      if (messages.length === 0) {
+        return {
+          data: { messages: [], total: 0 },
+          tips: ['未找到验证码短信', '请确认: 1. Messages app 有短信 2. 终端有全盘访问权限'],
+        };
+      }
+      return {
+        data: { messages, total: messages.length },
+        tips: [
+          `找到 ${messages.length} 条验证码短信:`,
+          ...messages.map((m, i) => `${i + 1}. [${m.time}] ${m.code ? `验证码: ${m.code}` : '无验证码'} | ${m.text.slice(0, 80)}`),
+        ],
+      };
+    },
+  });
+
+  seo.command('register-phone', {
+    description: '使用手机号注册外链平台（自动填短信验证码）',
+    scope: 'browser',
+    result: z.any(),
+    parameters: z.object({
+      url: z.string().describe('注册页面 URL'),
+      phone: z.string().describe('手机号'),
+      password: z.string().optional().describe('密码'),
+      name: z.string().optional().describe('显示名称'),
+      waitForCode: z.boolean().optional().describe('是否等待短信验证码').default(true),
+      codeTimeout: z.number().optional().describe('等待验证码超时（毫秒），默认 60000').default(60000),
+    }),
+    examples: [
+      { cmd: 'xbrowser seo register-phone --url "https://example.com/signup" --phone "13751880018"', description: '手机号注册' },
+    ],
+    handler: async (params, ctx) => {
+      const page = (ctx as Record<string, unknown>).page as Page | undefined;
+      if (!page) return { data: null, tips: ['需要浏览器页面'], message: '缺少浏览器页面' };
+
+      const password = params.password || (() => {
+        const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
+        let pw = '';
+        for (let i = 0; i < 16; i++) pw += chars[Math.floor(Math.random() * chars.length)];
+        return pw;
+      })();
+
+      try {
+        await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(3000);
+
+        const phoneSelectors = [
+          'input[name*="phone"]', 'input[name*="mobile"]', 'input[name*="tel"]',
+          'input[placeholder*="手机"]', 'input[placeholder*="phone"]', 'input[placeholder*="Phone"]',
+          'input[type="tel"]', 'input[name*="cell"]',
+        ];
+        for (const sel of phoneSelectors) {
+          const el = page.locator(sel).first();
+          if (await el.isVisible({ timeout: 2000 }).catch(() => false)) {
+            await el.fill(params.phone);
+            break;
+          }
+        }
+
+        const emailInput = page.locator('input[type="email"], input[name*="email"]').first();
+        if (await emailInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await emailInput.fill('support@omnivideo.net');
+        }
+
+        const pwdInput = page.locator('input[type="password"]').first();
+        if (await pwdInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+          await pwdInput.fill(password);
+        }
+
+        if (params.name) {
+          const nameInput = page.locator('input[name*="name"], input[name*="user"]').first();
+          if (await nameInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+            await nameInput.fill(params.name);
+          }
+        }
+
+        const sendCodeBtns = [
+          'button:has-text("发送")', 'button:has-text("获取")', 'button:has-text("Send")',
+          'button:has-text("Get")', 'button:has-text("发送验证码")', 'button:has-text("获取验证码")',
+          'a:has-text("发送")', 'a:has-text("Send")',
+        ];
+        for (const sel of sendCodeBtns) {
+          const btn = page.locator(sel).first();
+          if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+            await btn.click();
+            break;
+          }
+        }
+
+        let smsCode: string | null = null;
+        if (params.waitForCode) {
+          await page.waitForTimeout(3000);
+          smsCode = await waitForSMSCode(undefined, params.codeTimeout, 3000);
+        }
+
+        if (smsCode) {
+          const codeInputs = [
+            'input[name*="code"]', 'input[name*="verify"]', 'input[name*="otp"]',
+            'input[placeholder*="验证码"]', 'input[placeholder*="code"]', 'input[placeholder*="Code"]',
+            'input[name*="captcha"]', 'input[maxlength="4"]', 'input[maxlength="6"]',
+          ];
+          for (const sel of codeInputs) {
+            const el = page.locator(sel).first();
+            if (await el.isVisible({ timeout: 2000 }).catch(() => false)) {
+              await el.fill(smsCode);
+              break;
+            }
+          }
+        }
+
+        const submitBtns = [
+          'button[type="submit"]', 'input[type="submit"]',
+          'button:has-text("注册")', 'button:has-text("Register")', 'button:has-text("Sign up")',
+          'button:has-text("提交")', 'button:has-text("Submit")',
+        ];
+        for (const sel of submitBtns) {
+          const btn = page.locator(sel).first();
+          if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+            await btn.click();
+            break;
+          }
+        }
+
+        await page.waitForTimeout(3000);
+
+        const host = new URL(params.url).hostname;
+        const storageKey = `seo_reg_${host.replace(/\./g, '_')}`;
+        await ctx.storage.set(storageKey, {
+          phone: params.phone,
+          email: 'support@omnivideo.net',
+          password,
+          url: page.url(),
+          smsCode,
+          at: Date.now(),
+        });
+
+        return {
+          data: { phone: params.phone, password, smsCode, currentUrl: page.url() },
+          tips: [
+            `注册页面: ${params.url}`,
+            `手机号: ${params.phone}`,
+            `密码: ${password}`,
+            smsCode ? `验证码: ${smsCode}` : '⚠️ 未获取到短信验证码',
+            `凭据已保存到 ${storageKey}`,
+          ],
+        };
+      } catch (e) {
+        return { data: null, tips: [`注册失败: ${(e as Error).message}`], message: `注册失败` };
+      }
+    },
+  });
+
+  seo.command('batch-submit-cn', {
+    description: '批量提交外链到支持手机号注册的中文站点（从 CSV 筛选的高质量站点）',
+    scope: 'browser',
+    result: z.any(),
+    parameters: z.object({
+      siteUrl: z.string().describe('要提交的网站 URL').default('https://omnivideo.net'),
+      siteName: z.string().describe('网站名称').default('OmniVideo'),
+      description: z.string().describe('网站描述').default('Seedance 2.0 AI Video Generator - Create stunning videos from text and images with multimodal AI'),
+      phone: z.string().describe('手机号').default('13751880018'),
+      email: z.string().describe('邮箱').default('support@omnivideo.net'),
+      delay: z.number().optional().describe('平台间延迟（毫秒）').default(5000),
+      maxSites: z.number().optional().describe('最多处理站点数').default(10),
+      startFrom: z.number().optional().describe('从第几个开始').default(0),
+    }),
+    examples: [
+      { cmd: 'xbrowser seo batch-submit-cn', description: '一键批量提交外链' },
+      { cmd: 'xbrowser seo batch-submit-cn --maxSites 5 --startFrom 3', description: '从第4个开始处理5个' },
+    ],
+    handler: async (params, ctx) => {
+      const page = (ctx as Record<string, unknown>).page as Page | undefined;
+      if (!page) return { data: null, tips: ['需要浏览器页面'], message: '缺少浏览器页面' };
+
+      const sites = [
+        { name: 'Pinterest', url: 'https://www.pinterest.com', entryUrl: 'https://www.pinterest.com/settings', dr: 96, traffic: '1.35B', type: 'profile' },
+        { name: 'Issuu', url: 'https://issuu.com', entryUrl: 'https://issuu.com/signup', dr: 93, traffic: '14.3M', type: 'profile' },
+        { name: 'Disqus', url: 'https://disqus.com', entryUrl: 'https://disqus.com/profile/signup', dr: 92, traffic: '7.5M', type: 'profile' },
+        { name: 'Substack', url: 'https://substack.com', entryUrl: 'https://substack.com/signup', dr: 93, traffic: '153M', type: 'blog' },
+        { name: 'Cal.com', url: 'https://cal.com', entryUrl: 'https://cal.com/signup', dr: 92, traffic: '3M', type: 'profile' },
+        { name: 'Clutch.co', url: 'https://clutch.co', entryUrl: 'https://clutch.co/profile/omnivideo', dr: 91, traffic: '1.1M', type: 'directory' },
+        { name: 'ProvenExpert', url: 'https://www.provenexpert.com', entryUrl: 'https://www.provenexpert.com/signup/', dr: 91, traffic: '534K', type: 'profile' },
+        { name: 'Kaggle', url: 'https://www.kaggle.com', entryUrl: 'https://www.kaggle.com/account/login?phase=startRegisterTab', dr: 90, traffic: '10.4M', type: 'profile' },
+        { name: 'About.me', url: 'https://about.me', entryUrl: 'https://about.me/signup', dr: 90, traffic: '1.8M', type: 'profile' },
+        { name: 'Dev.to', url: 'https://dev.to', entryUrl: 'https://dev.to/enter', dr: 90, traffic: '5.8M', type: 'blog' },
+        { name: 'LeetCode', url: 'https://leetcode.com', entryUrl: 'https://leetcode.com/accounts/signup/', dr: 87, traffic: '34.1M', type: 'profile' },
+        { name: 'OpenCollective', url: 'https://opencollective.com', entryUrl: 'https://opencollective.com/signin', dr: 88, traffic: '606K', type: 'profile' },
+        { name: 'Blog.udn.com', url: 'https://blog.udn.com', entryUrl: 'https://blog.udn.com/', dr: 88, traffic: '1.6M', type: 'blog' },
+        { name: 'Hashnode', url: 'https://hashnode.com', entryUrl: 'https://hashnode.com/onboard', dr: 83, traffic: '337K', type: 'blog' },
+        { name: 'Teletype', url: 'https://teletype.in', entryUrl: 'https://teletype.in/', dr: 82, traffic: '4.6M', type: 'blog' },
+        { name: 'F6S', url: 'https://www.f6s.com', entryUrl: 'https://www.f6s.com/signup', dr: 82, traffic: '1.6M', type: 'profile' },
+        { name: 'Vocal.media', url: 'https://vocal.media', entryUrl: 'https://vocal.media/login', dr: 82, traffic: '3M', type: 'profile' },
+        { name: 'StackShare', url: 'https://stackshare.io', entryUrl: 'https://stackshare.io/signup', dr: 79, traffic: '170K', type: 'directory' },
+        { name: 'GreasyFork', url: 'https://greasyfork.org', entryUrl: 'https://greasyfork.org/zh-CN/users/sign_up', dr: 78, traffic: '3.6M', type: 'profile' },
+        { name: 'Gettr', url: 'https://gettr.com', entryUrl: 'https://gettr.com/signup', dr: 77, traffic: '1M', type: 'social' },
+        { name: 'Velog', url: 'https://velog.io', entryUrl: 'https://v2.velog.io/signup', dr: 76, traffic: '2.9M', type: 'blog' },
+        { name: 'Peerlist', url: 'https://peerlist.io', entryUrl: 'https://peerlist.io/auth/signup', dr: 76, traffic: '541K', type: 'profile' },
+        { name: 'Daily.dev', url: 'https://app.daily.dev', entryUrl: 'https://app.daily.dev/signup', dr: 75, traffic: '933K', type: 'profile' },
+        { name: 'SeaArt', url: 'https://www.seaart.ai', entryUrl: 'https://www.seaart.ai/user/register', dr: 70, traffic: '13.5M', type: 'profile' },
+        { name: 'RoutineHub', url: 'https://routinehub.co', entryUrl: 'https://routinehub.co/signup', dr: 71, traffic: '191K', type: 'profile' },
+        { name: 'AI138', url: 'https://www.ai138.com', entryUrl: 'https://www.ai138.com/submit', dr: 64, traffic: '21K', type: 'tool' },
+        { name: 'AINav', url: 'https://www.ainav.cn', entryUrl: 'https://www.ainav.cn/%e6%8f%90%e4%ba%a4%e7%bd%91%e7%ab%99', dr: 56, traffic: '50K', type: 'tool' },
+        { name: 'SeaArt.ai', url: 'https://www.seaart.ai', entryUrl: 'https://www.seaart.ai/zhCN/articleDetail', dr: 70, traffic: '13.5M', type: 'blog' },
+        { name: 'HackerNoon', url: 'https://app.hackernoon.com', entryUrl: 'https://app.hackernoon.com/signup', dr: 88, traffic: '15.7K', type: 'forum' },
+        { name: 'MagCloud', url: 'https://www.magcloud.com', entryUrl: 'https://www.magcloud.com/user/register', dr: 83, traffic: '210K', type: 'profile' },
+      ];
+
+      const password = (() => {
+        const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
+        let pw = 'Omni';
+        for (let i = 0; i < 12; i++) pw += chars[Math.floor(Math.random() * chars.length)];
+        return pw;
+      })();
+
+      const startIdx = params.startFrom || 0;
+      const endIdx = Math.min(startIdx + (params.maxSites || 10), sites.length);
+      const targets = sites.slice(startIdx, endIdx);
+
+      const results: Array<{
+        site: string;
+        dr: number;
+        loaded: boolean;
+        registered: boolean;
+        submitted: boolean;
+        code: string | null;
+        notes: string;
+      }> = [];
+
+      for (const site of targets) {
+        const result = { site: site.name, dr: site.dr, loaded: false, registered: false, submitted: false, code: null as string | null, notes: '' };
+
+        try {
+          await page.goto(site.entryUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
+          await page.waitForTimeout(3000);
+          result.loaded = true;
+
+          const oauthResult = await tryGoogleOAuth(page);
+          if (oauthResult.loggedIn) {
+            result.registered = true;
+            result.notes = `OAuth: ${oauthResult.method}`;
+            await page.waitForTimeout(2000);
+            const currentUrl = page.url();
+            const siteHost = new URL(site.url).hostname;
+            if (!currentUrl.includes(siteHost) || currentUrl.includes('accounts.google.com')) {
+              await page.goto(site.entryUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+              await page.waitForTimeout(3000);
+            }
+          } else {
+            const emailInput = page.locator('input[type="email"], input[name*="email"], input[name*="mail"]').first();
+            if (await emailInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+              await emailInput.fill(params.email);
+            }
+
+            const phoneInput = page.locator('input[name*="phone"], input[name*="mobile"], input[name*="tel"], input[type="tel"]').first();
+            if (await phoneInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+              await phoneInput.fill(params.phone);
+            }
+
+            const pwdInput = page.locator('input[type="password"], input[name*="password"]').first();
+            if (await pwdInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+              await pwdInput.fill(password);
+            }
+
+            const nameInput = page.locator('input[name*="name"], input[name*="user"], input[name*="username"]').first();
+            if (await nameInput.isVisible({ timeout: 2000 }).catch(() => false)) {
+              await nameInput.fill(params.siteName);
+            }
+
+            for (const sel of ['button[type="submit"]', 'input[type="submit"]', 'button:has-text("Sign up")', 'button:has-text("Register")', 'button:has-text("注册")']) {
+              const btn = page.locator(sel).first();
+              if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+                await btn.click();
+                await page.waitForTimeout(3000);
+                result.registered = true;
+                break;
+              }
+            }
+
+            const codeInput = page.locator('input[name*="code"], input[name*="verify"], input[name*="otp"], input[placeholder*="验证码"], input[placeholder*="code"]').first();
+            if (await codeInput.isVisible({ timeout: 3000 }).catch(() => false) && params.phone) {
+              result.code = await waitForSMSCode(site.name, 45000, 3000);
+              if (result.code) {
+                await codeInput.fill(result.code);
+                const confirmBtn = page.locator('button[type="submit"], button:has-text("Verify"), button:has-text("确认")').first();
+                if (await confirmBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+                  await confirmBtn.click();
+                  await page.waitForTimeout(3000);
+                }
+              }
+            }
+
+            const emailVerifyInput = page.locator('input[name*="code"], input[name*="verify"], input[placeholder*="code"], input[placeholder*="Code"]').first();
+            if (await emailVerifyInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+              try {
+                const domain = new URL(site.url).hostname.replace('www.', '');
+                const emailResult = await fetchVerificationCode(domain, 60);
+                if (emailResult.code) {
+                  await emailVerifyInput.fill(emailResult.code);
+                  const confirmBtn = page.locator('button[type="submit"]').first();
+                  if (await confirmBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+                    await confirmBtn.click();
+                    await page.waitForTimeout(2000);
+                  }
+                } else if (emailResult.link) {
+                  await page.goto(emailResult.link, { waitUntil: 'domcontentloaded', timeout: 15000 });
+                  await page.waitForTimeout(2000);
+                }
+              } catch {}
+            }
+          }
+
+          if (result.registered) {
+            const currentUrl = page.url();
+            const hasSettings = currentUrl.includes('settings') || currentUrl.includes('edit') || currentUrl.includes('profile');
+            if (!hasSettings) {
+              const settingsPaths = ['/settings', '/settings/profile', '/account/edit', '/profile/edit', '/dashboard'];
+              const baseHost = new URL(site.url).origin;
+              for (const path of settingsPaths) {
+                try {
+                  const resp = await page.goto(`${baseHost}${path}`, { waitUntil: 'domcontentloaded', timeout: 10000 });
+                  if (resp && resp.ok()) {
+                    await page.waitForTimeout(2000);
+                    break;
+                  }
+                } catch {}
+              }
+            }
+          }
+
+          let filled = false;
+          let saved = false;
+
+          // Try URL filling with site URL
+          const autoResult = await tryAutoFill(page, params.siteUrl);
+          filled = autoResult.filled;
+          saved = autoResult.saved;
+
+          // Broader search for URL inputs
+          if (!filled) {
+            const allInputs = await page.locator('input[type="text"], input[type="url"], input:not([type]), textarea').all();
+            for (const input of allInputs) {
+              try {
+                const visible = await input.isVisible({ timeout: 500 }).catch(() => false);
+                if (!visible) continue;
+                const placeholder = (await input.getAttribute('placeholder').catch(() => '')) || '';
+                const inputName = (await input.getAttribute('name').catch(() => '')) || '';
+                const inputId = (await input.getAttribute('id').catch(() => '')) || '';
+                const ariaLabel = (await input.getAttribute('aria-label').catch(() => '')) || '';
+                const label = `${placeholder} ${inputName} ${inputId} ${ariaLabel}`.toLowerCase();
+                if (/url|website|web|blog|link|site|homepage|主页|网址|链接|博客/.test(label)) {
+                  await input.click();
+                  await input.fill('');
+                  await input.fill(params.siteUrl);
+                  filled = true;
+                  break;
+                }
+              } catch {}
+            }
+          }
+
+          // Try saving
+          if (filled) {
+            for (const saveSel of SAVE_SELECTORS) {
+              try {
+                const saveBtn = page.locator(saveSel).first();
+                if (await saveBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+                  await saveBtn.click();
+                  saved = true;
+                  await page.waitForTimeout(2000);
+                  break;
+                }
+              } catch {}
+            }
+          }
+
+          result.submitted = saved;
+          if (filled && !saved) result.notes += ' | URL filled but not saved';
+          if (!filled) result.notes += ' | no URL field found';
+
+          const storageKey = `seo_reg_${site.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+          await ctx.storage.set(storageKey, {
+            site: site.name, email: params.email, phone: params.phone, password,
+            registered: result.registered, submitted: result.submitted,
+            code: result.code, at: Date.now(),
+          });
+        } catch (e) {
+          result.notes = `Error: ${(e as Error).message.slice(0, 60)}`;
+        }
+
+        results.push(result);
+        if (params.delay > 0) await page.waitForTimeout(params.delay);
+      }
+
+      const loaded = results.filter(r => r.loaded).length;
+      const registered = results.filter(r => r.registered).length;
+      const submitted = results.filter(r => r.submitted).length;
+
+      return {
+        data: {
+          siteUrl: params.siteUrl,
+          password,
+          total: results.length,
+          summary: { loaded, registered, submitted },
+          results,
+        },
+        tips: [
+          `Batch Submit Report: ${params.siteUrl}`,
+          `Sites ${startIdx + 1}-${endIdx} of ${sites.length} | Loaded: ${loaded} | Registered: ${registered} | Submitted: ${submitted}`,
+          `Password: ${password}`,
+          '',
+          ...results.map(r => `${r.registered ? '✅' : '❌'} ${r.site} (DR${r.dr}) ${r.code ? `SMS:${r.code}` : ''} ${r.notes}`),
+          '',
+          `Continue: xbrowser seo batch-submit-cn --startFrom ${endIdx}`,
         ],
       };
     },

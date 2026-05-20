@@ -1,0 +1,8 @@
+{
+  "engine": "qianwen",
+  "status": "timeout",
+  "duration": "60s+",
+  "totalUrls": 0,
+  "totalDomains": 0,
+  "error": "AI 引擎未返回有效回复（超时 60000ms）"
+}

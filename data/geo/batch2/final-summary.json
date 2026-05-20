@@ -1,0 +1,150 @@
+{
+  "timestamp": "2026-05-19T10:30:44.120Z",
+  "query": "广东服装加工企业排名",
+  "totalEngines": 7,
+  "summary": {
+    "success": 1,
+    "partial": 4,
+    "fail": 2,
+    "totalUrls": 5,
+    "totalDomains": 5,
+    "domains": [
+      {
+        "domain": "163.com",
+        "count": 1
+      },
+      {
+        "domain": "s.wanfangdata.com.cn",
+        "count": 1
+      },
+      {
+        "domain": "m.itouchtv.cn",
+        "count": 1
+      },
+      {
+        "domain": "pdfs.cir.cn",
+        "count": 1
+      },
+      {
+        "domain": "gd.gov.cn",
+        "count": 1
+      }
+    ],
+    "platforms": [
+      "网易",
+      "艾瑞咨询",
+      "万方数据",
+      "广东省政府",
+      "中经网"
+    ]
+  },
+  "engines": {
+    "360ai": {
+      "status": "fail",
+      "error": "Input not found",
+      "urlCount": 0,
+      "domainCount": 0,
+      "domains": [],
+      "platforms": [],
+      "note": "落地页模式，需先登录360账号才能使用。导航栏有\"登录后即可体验\"提示"
+    },
+    "chatglm": {
+      "status": "partial",
+      "error": null,
+      "urlCount": 0,
+      "domainCount": 0,
+      "domains": [],
+      "platforms": [],
+      "responseLength": 866,
+      "responsePreview": "新对话 学习搭子 AI画图 AI阅读 AI生视频 AgentMore 云知识库 智能体 最近对话 广东服装加工企业排名 回答中 广东服装加工企业排名 广东服装加工企业排名 广东服装加工企业搜索 广东服装加工企业搜索 1+1等于几 中心构图 下载手机应用 GLM-5.1 广东服装加工企业排名 升级 用户_G9Eojw 广东服装加工企业排名 ChatGLM 思考结束 广东省是中国乃至全球最重要的服装生"
+    },
+    "metaso": {
+      "status": "success",
+      "error": null,
+      "urlCount": 5,
+      "domainCount": 5,
+      "domains": [
+        {
+          "domain": "163.com",
+          "count": 1,
+          "urls": [
+            "https://www.163.com/dy/article/J7NGEAQ30538RY7X.html"
+          ]
+        },
+        {
+          "domain": "s.wanfangdata.com.cn",
+          "count": 1,
+          "urls": [
+            "https://s.wanfangdata.com.cn/paper?q=%E4%B8%AD%E5%9B%BD%E6%9C%8D%E8%A3%85%E5%8D%8F%E4%BC%9A%E5%8F%91%E5%B8%832023%E5%B9%B4%E4%B8%AD%E5%9B%BD%E6%9C%8D%E8%A3%85%E8%A1%8C%E4%B8%9A%E7%99%BE%E5%BC%BA%E4%BC%81%E4%B8%9A%E5%90%8D%E5%8D%95%20%20%E5%8C%97%E4%BA%AC%E5%8D%81%E5%AE%B6%E4%BC%81%E4%B8%9A%E8%8D%A3%E7%99%BB%E6%A6%9C%E5%8D%95"
+          ]
+        },
+        {
+          "domain": "m.itouchtv.cn",
+          "count": 1,
+          "urls": [
+            "https://m.itouchtv.cn/article/f7bf73fceae3fcbddf62e1e78440f127"
+          ]
+        },
+        {
+          "domain": "pdfs.cir.cn",
+          "count": 1,
+          "urls": [
+            "https://pdfs.cir.cn/pdf.ashx?id=2067685"
+          ]
+        },
+        {
+          "domain": "gd.gov.cn",
+          "count": 1,
+          "urls": [
+            "http://www.gd.gov.cn/attachment/0/544/544370/4384218.pdf"
+          ]
+        }
+      ],
+      "platforms": [
+        "网易",
+        "艾瑞咨询",
+        "万方数据",
+        "广东省政府",
+        "中经网",
+        "中经网"
+      ],
+      "responseLength": 1678,
+      "responsePreview": "文本 好看 广东服装加工企业排名 全网 文库 学术 图片 视频 播客 思考了27.00s 42 根据搜索结果，关于广东服装加工企业排名，以下是搜索明确支持的信息： 一、中国服装协会官方权威榜单 1. 2023年中国服装行业百强企业（广东13家上榜） 根据2024年7月22日中国服装协会正式发布的榜单 ： 广东共有13家企业上榜中国服装行业百强 已确认的广东企业名称包括： 广州纺织工贸企业集团有限公"
+    },
+    "qianwen-tongyi": {
+      "status": "fail",
+      "error": "Input not found",
+      "urlCount": 0,
+      "domainCount": 0,
+      "domains": [],
+      "platforms": [],
+      "note": "落地页模式，需登录后才能显示对话界面。通义千问改用 https://tongyi.aliyun.com/qianwen/ 或通过\"体验千问\"进入"
+    },
+    "tiangong": {
+      "status": "partial",
+      "error": null,
+      "urlCount": 0,
+      "domainCount": 0,
+      "domains": [],
+      "platforms": []
+    },
+    "yiyan": {
+      "status": "partial",
+      "error": null,
+      "urlCount": 0,
+      "domainCount": 0,
+      "domains": [],
+      "platforms": [],
+      "responseLength": 4411,
+      "responsePreview": "新对话 创意写作 智慧绘图 超级智能体 更多 我的收藏 项目 对话 广东服装加工企业排名 广东服装加工企业排名 你是一个搜索引擎。请搜索关于\" 1+1等于几 dyyz1993 人一天说的话能写满多少张A4纸 ﻿广东服装加工企业排名 深度分析需求并解答，你需要什么帮助？ 文心 5.1 思考 通用写作 阅读分析 智慧绘图 网页工坊 智能翻译 案例推荐 代码编程 如何拥有自己的个人网站？ 用一个纯 HT"
+    },
+    "yuanbao": {
+      "status": "partial",
+      "error": null,
+      "urlCount": 0,
+      "domainCount": 0,
+      "domains": [],
+      "platforms": []
+    }
+  }
+}

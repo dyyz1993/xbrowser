@@ -1,0 +1,77 @@
+{
+  "query": "广东服装加工企业",
+  "engine": "deepseek",
+  "total": 8,
+  "timestamp": 1779177745047,
+  "duration": "27.1s",
+  "engineInfo": {
+    "name": "DeepSeek",
+    "loginStatus": "unknown",
+    "internetSearch": {
+      "enabled": false
+    }
+  },
+  "domainExtraction": {
+    "query": "广东服装加工企业",
+    "totalUrls": 8,
+    "totalDomains": 8,
+    "domains": [
+      {
+        "domain": "news.qq.com",
+        "count": 1,
+        "urls": [
+          "https://news.qq.com"
+        ]
+      },
+      {
+        "domain": "xjrb.com",
+        "count": 1,
+        "urls": [
+          "https://www.xjrb.com"
+        ]
+      },
+      {
+        "domain": "cnr.cn",
+        "count": 1,
+        "urls": [
+          "https://www.cnr.cn"
+        ]
+      },
+      {
+        "domain": "huacheng.gz-cmc.com",
+        "count": 1,
+        "urls": [
+          "https://huacheng.gz-cmc.com"
+        ]
+      },
+      {
+        "domain": "static.nfnews.com",
+        "count": 1,
+        "urls": [
+          "https://static.nfnews.com"
+        ]
+      },
+      {
+        "domain": "sohu.com",
+        "count": 1,
+        "urls": [
+          "https://www.sohu.com"
+        ]
+      },
+      {
+        "domain": "new.chinareports.org.cn",
+        "count": 1,
+        "urls": [
+          "https://new.chinareports.org.cn"
+        ]
+      },
+      {
+        "domain": "ctie.webtex.cn",
+        "count": 1,
+        "urls": [
+          "https://ctie.webtex.cn"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,64 @@
+{
+  "query": "广东服装加工企业",
+  "engine": "chatgpt",
+  "total": 7,
+  "timestamp": 1779177894922,
+  "duration": "28.1s",
+  "engineInfo": {
+    "name": "ChatGPT",
+    "loginStatus": "unknown",
+    "internetSearch": {
+      "enabled": false
+    }
+  },
+  "domainExtraction": {
+    "query": "广东服装加工企业",
+    "totalUrls": 7,
+    "totalDomains": 6,
+    "domains": [
+      {
+        "domain": "b2bdata.baidu.com",
+        "count": 2,
+        "urls": [
+          "https://b2bdata.baidu.com/rank/guangdong/mechanical-equipment/industry-specific-equipment/garment-processing-equipment",
+          "https://b2bdata.baidu.com/rank/k/guangdong/workwear"
+        ]
+      },
+      {
+        "domain": "qiye.tianyancha.com",
+        "count": 1,
+        "urls": [
+          "https://qiye.tianyancha.com/llfzjgc/gd/"
+        ]
+      },
+      {
+        "domain": "view.inews.qq.com",
+        "count": 1,
+        "urls": [
+          "https://view.inews.qq.com/a/20260422A085GL00"
+        ]
+      },
+      {
+        "domain": "cnblogs.com",
+        "count": 1,
+        "urls": [
+          "https://www.cnblogs.com/pinpaituijian/p/20011700"
+        ]
+      },
+      {
+        "domain": "gd.people.com.cn",
+        "count": 1,
+        "urls": [
+          "https://gd.people.com.cn/n2/2026/0423/c123932-41561382.html"
+        ]
+      },
+      {
+        "domain": "douyin.com",
+        "count": 1,
+        "urls": [
+          "https://www.douyin.com/search/%E5%B9%BF%E4%B8%9C%E6%9C%8D%E8%A3%85%E5%B7%A5%E5%8E%82%E6%8E%92%E5%90%8D%E5%89%8D%E5%8D%81%E7%9A%84%E4%BC%81%E4%B8%9A"
+        ]
+      }
+    ]
+  }
+}

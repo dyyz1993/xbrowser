@@ -1,0 +1,61 @@
+{
+  "timestamp": "2026-05-19T10:27:17.485Z",
+  "totalEngines": 7,
+  "success": 0,
+  "partial": 3,
+  "fail": 4,
+  "totalUrls": 0,
+  "totalDomains": 0,
+  "domains": [],
+  "engines": {
+    "qianwen-tongyi": {
+      "status": "fail",
+      "urlCount": 0,
+      "domainCount": 0,
+      "error": "Input not found",
+      "urls": []
+    },
+    "yuanbao": {
+      "status": "fail",
+      "urlCount": 0,
+      "domainCount": 0,
+      "error": "Input not found",
+      "urls": []
+    },
+    "chatglm": {
+      "status": "partial",
+      "urlCount": 0,
+      "domainCount": 0,
+      "error": null,
+      "urls": []
+    },
+    "yiyan": {
+      "status": "partial",
+      "urlCount": 0,
+      "domainCount": 0,
+      "error": null,
+      "urls": []
+    },
+    "metaso": {
+      "status": "partial",
+      "urlCount": 0,
+      "domainCount": 0,
+      "error": null,
+      "urls": []
+    },
+    "tiangong": {
+      "status": "fail",
+      "urlCount": 0,
+      "domainCount": 0,
+      "error": "Input not found",
+      "urls": []
+    },
+    "360ai": {
+      "status": "fail",
+      "urlCount": 0,
+      "domainCount": 0,
+      "error": "Input not found",
+      "urls": []
+    }
+  }
+}

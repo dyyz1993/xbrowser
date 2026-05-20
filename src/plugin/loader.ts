@@ -59,6 +59,14 @@ export class XBrowserPluginLoader {
     return this.loader.getAPI();
   }
 
+  /**
+   * Get the core instance for external use.
+   * @returns The xcli-core Core instance.
+   */
+  getCore(): Core {
+    return this.core;
+  }
+
   getPlugin(id: string): PluginInstance | undefined {
     return this.loader.getPlugin(id);
   }
@@ -87,15 +95,6 @@ export class XBrowserPluginLoader {
     return this.loader.loadFromFunction(setup);
   }
 
-  /**
-   * Scan configured plugin directories and load all discovered plugins.
-   *
-   * Searches project-local `.xcli/plugins`, user-level `~/.xcli/plugins`,
-   * and global `~/.xbrowser/plugins` directories. Plugins without an
-   * `index.ts` entry file are skipped.
-   *
-   * @returns Array of successfully loaded plugin instances.
-   */
   async scanAndLoad(): Promise<PluginInstance[]> {
     const cwd = this.options.cwd || process.cwd();
     const dirs = [
@@ -119,7 +118,6 @@ export class XBrowserPluginLoader {
         }
         if (!existsSync(indexPath)) continue;
         try {
-          // Warn if plugin lacks package.json metadata
           if (!existsSync(resolve(pluginDir, 'package.json'))) {
             console.warn(`⚠️  Plugin "${entry.name}" has no package.json. Use "xbrowser create ${entry.name} --template static" for proper structure.`);
           } else {
@@ -142,8 +140,13 @@ export class XBrowserPluginLoader {
   async unload(): Promise<void> {
     return this.loader.unload();
   }
+}
 
-  getCore(): Core {
-    return this.core;
-  }
+export function getPluginLoader(): XBrowserPluginLoader {
+  return new XBrowserPluginLoader();
+}
+
+export function getCore(): Core {
+  const loader = getPluginLoader();
+  return loader.getCore();
 }

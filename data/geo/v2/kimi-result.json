@@ -1,0 +1,17 @@
+{
+  "engine": "kimi",
+  "status": "success",
+  "duration": "60.2s",
+  "totalUrls": 12,
+  "totalDomains": 8,
+  "domains": [
+    { "domain": "m.jobui.com", "count": 4, "urls": ["https://m.jobui.com/rank/company/view/guangdong/fuzhuang/", "https://m.jobui.com/rank/company/view/guangzhou/fuzhuangchang/", "https://m.jobui.com/rank/company/view/Dongguan/fuzhuangzhizaoshang/", "https://m.jobui.com/rank/company/view/shenzhen/fuzhuangchang/"] },
+    { "domain": "app.mokahr.com", "count": 2, "urls": ["https://app.mokahr.com/su/phmkug", "https://app.mokahr.com/su/gblcus"] },
+    { "domain": "moonshot.ai", "count": 1, "urls": ["https://www.moonshot.ai/"] },
+    { "domain": "platform.kimi.ai", "count": 1, "urls": ["https://platform.kimi.ai/"] },
+    { "domain": "epaper.nfnews.com", "count": 1, "urls": ["https://epaper.nfnews.com/nfdaily/html/202604/18/content_10168355.html"] },
+    { "domain": "dayaotex.com", "count": 1, "urls": ["https://www.dayaotex.com/chtc/news/37232.html"] },
+    { "domain": "oxfordfabrics.com", "count": 1, "urls": ["https://www.oxfordfabrics.com/index.php/post/16188.html"] },
+    { "domain": "jiangmen.gov.cn", "count": 1, "urls": ["http://www.jiangmen.gov.cn/home/sqdt/kpzx/content/post_3390545.html"] }
+  ]
+}
