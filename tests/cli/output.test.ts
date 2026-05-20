@@ -32,19 +32,19 @@ describe('outputResult', () => {
 
   it('should exit with error when success is false', () => {
     expect(() => outputResult({ success: false, message: 'bad' }, 'text')).toThrow('exit:1');
-    expect(errorSpy).toHaveBeenCalledWith('bad');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('bad'));
   });
 
   it('should exit with unknown error when success is false and no message', () => {
     expect(() => outputResult({ success: false }, 'text')).toThrow('exit:1');
-    expect(errorSpy).toHaveBeenCalledWith('Unknown error');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Unknown error'));
   });
 
   it('should exit with error when data.ok is false', () => {
     expect(() =>
       outputResult({ ok: false, error: 'fail' }, 'text'),
     ).toThrow('exit:1');
-    expect(errorSpy).toHaveBeenCalledWith('fail');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('fail'));
   });
 
   it('should print key-value pairs for successful data', () => {
@@ -99,6 +99,6 @@ describe('outputError', () => {
 
   it('should print error and exit with code 1', () => {
     expect(() => outputError('Something went wrong')).toThrow('exit:1');
-    expect(errorSpy).toHaveBeenCalledWith('Something went wrong');
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Something went wrong'));
   });
 });

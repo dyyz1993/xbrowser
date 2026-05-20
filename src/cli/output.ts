@@ -1,4 +1,6 @@
-import { outputFormatter } from '@dyyz1993/xcli-core';
+import { outputFormatter, OutputFormatter } from '@dyyz1993/xcli-core';
+
+const formatter = new OutputFormatter();
 
 /**
  * 统一输出函数 — 委托给 xcli-core 的 outputFormatter。
@@ -27,6 +29,16 @@ export function outputResult(result: unknown, mode: string = 'text'): void {
 }
 
 export function outputError(message: string): void {
-  console.error(message);
+  const formatted = formatter.formatError(message, { color: true, emoji: false });
+  console.error(formatted);
   process.exit(1);
+}
+
+/**
+ * Output a success message with optional formatting.
+ * Uses xcli-core 0.9.0 OutputFormatter.formatSuccess().
+ */
+export function outputSuccess(message: string): void {
+  const formatted = formatter.formatSuccess(message, { color: true, emoji: false });
+  console.log(formatted);
 }
