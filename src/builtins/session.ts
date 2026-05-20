@@ -5,6 +5,9 @@ import {
   closeAllSessions,
 } from '../session/session-client.js';
 
+// Note: daemon forwarding is handled in cli/session-routes.ts for the main CLI path.
+// This builtin is only used for help text and fallback.
+
 /**
  * A built-in CLI command with help text and an execute function.
  */
