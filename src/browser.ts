@@ -681,6 +681,12 @@ export async function closeSessionByName(name: string): Promise<boolean> {
         commandLogStore.clear(session.name);
       } catch { /* stores may not be loaded */ }
 
+      // Clean up session recordings
+      try {
+        const { SessionRecorder } = await import('./recorder/session-recorder.js');
+        SessionRecorder.cleanup(session.name);
+      } catch { /* recorder module may not be loaded */ }
+
       return true;
     }
   }

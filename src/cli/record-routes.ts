@@ -1,581 +1,349 @@
-import * as fs from 'fs';
-import * as path from 'path';
-import * as yaml from 'yaml';
-import { homedir } from 'os';
-import type { Page } from 'playwright';
-import { PlaybackEngine } from '../recorder/player.js';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 import { SessionRecorder } from '../recorder/session-recorder.js';
-import { generateJSScript, generatePythonScript, generateBashScript } from '../commands/convert.js';
-import { extractAndSave, printExtractSummary } from '../commands/extract.js';
-import { filterRecording, parseExcludeTypes } from '../commands/filter.js';
+import type { RecordingControlFile, RecordingSummary } from '../recorder/session-recorder.js';
 import { outputResult, outputError } from './output.js';
-import { getSelectorGeneratorScript } from '../recorder/selector-utils.js';
-import type { UserAction } from '../recorder/session-recorder.js';
 
-const RECORDINGS_BASE = () => path.join(homedir(), '.xbrowser', 'sessions', 'default', 'recordings');
-const CONTROL_FILE = () => path.join(RECORDINGS_BASE(), '.control.json');
-const STOP_FILE = () => path.join(RECORDINGS_BASE(), '.stop');
+// ─── Helper: resolve session ──────────────────────────────────────
 
-const ACTION_SIGNAL_INJECT = getSelectorGeneratorScript() + `
-(function() {
-  if (window.__xb_action_signal) return;
-  window.__xb_action_signal = true;
-  window.__xb_pending_actions = [];
-  window.__xb_recording_active = true;
-  window.__xb_recording_start = Date.now();
-  window.__xb_events = [];
-
-  function describe(el) {
-    if (!el || !el.tagName) return null;
-    var selResult = window.__xb_generateSelector ? window.__xb_generateSelector(el) : null;
-    return {
-      tag: el.tagName.toLowerCase(),
-      text: (el.textContent || '').trim().substring(0, 80),
-      role: el.getAttribute('role'),
-      type: el.getAttribute('type'),
-      placeholder: el.getAttribute('placeholder'),
-      ariaLabel: el.getAttribute('aria-label'),
-      href: el.getAttribute('href') ? el.getAttribute('href').substring(0, 100) : undefined,
-      id: el.id || undefined,
-      className: (typeof el.className === 'string' ? el.className : '').substring(0, 80) || undefined,
-      contentEditable: el.contentEditable === 'true' ? true : undefined,
-      selector: selResult ? selResult.selector : undefined,
-      selectorStrategy: selResult ? selResult.strategy : undefined,
-      selectorConfidence: selResult ? selResult.confidence : undefined,
-    };
-  }
-
-  function pushAction(type, detail) {
-    var entry = {
-      type: type,
-      ts: Date.now(),
-      url: location.href,
-      title: document.title,
-      detail: detail,
-    };
-    window.__xb_pending_actions.push(entry);
-    window.__xb_events.push({
-      type: type,
-      ts: Date.now() - window.__xb_recording_start,
-      url: location.href,
-      ...detail,
-    });
-  }
-
-  document.addEventListener('click', function(e) {
-    pushAction('click', { target: describe(e.target), element: describe(e.target), x: e.clientX, y: e.clientY });
-  }, true);
-
-  document.addEventListener('dblclick', function(e) {
-    pushAction('click', { target: describe(e.target), element: describe(e.target), x: e.clientX, y: e.clientY });
-  }, true);
-
-  document.addEventListener('input', function(e) {
-    var val = e.target.value || e.target.textContent || '';
-    pushAction('input', { target: describe(e.target), element: describe(e.target), value: val.substring(0, 200) });
-  }, true);
-
-  document.addEventListener('change', function(e) {
-    var val = e.target.value || '';
-    pushAction('change', { target: describe(e.target), element: describe(e.target), value: val.substring(0, 100) });
-  }, true);
-
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' || e.key === 'Tab' || e.key === 'Escape' || e.key.indexOf('Arrow') === 0) {
-      pushAction('keydown', { key: e.key, target: describe(e.target), element: describe(e.target) });
-    }
-  }, true);
-
-  document.addEventListener('submit', function(e) {
-    pushAction('submit', { target: describe(e.target), element: describe(e.target) });
-  }, true);
-
-  document.addEventListener('focus', function(e) {
-    var tag = e.target.tagName ? e.target.tagName.toLowerCase() : '';
-    if (tag === 'input' || tag === 'textarea' || e.target.contentEditable === 'true') {
-      pushAction('focus', { target: describe(e.target), element: describe(e.target) });
-    }
-  }, true);
-
-  var __xb_last_scroll = 0;
-  document.addEventListener('scroll', function() {
-    if (Date.now() - __xb_last_scroll > 500) {
-      __xb_last_scroll = Date.now();
-      pushAction('scroll', { scrollX: window.scrollX, scrollY: window.scrollY });
-    }
-  }, true);
-
-  var observer = new MutationObserver(function(mutations) {
-    for (var m of mutations) {
-      for (var node of m.addedNodes) {
-        if (node.nodeType === 1 && node.tagName) {
-          var text = (node.textContent || '').trim().substring(0, 60);
-          if (text && text.length > 1) {
-            window.__xb_events.push({
-              type: 'dom_added',
-              ts: Date.now() - window.__xb_recording_start,
-              url: location.href,
-              tag: node.tagName.toLowerCase(),
-              role: node.getAttribute ? node.getAttribute('role') : undefined,
-              text: text,
-              id: node.id || undefined,
-            });
-          }
-        }
-      }
-    }
-  });
-  if (document.body) observer.observe(document.body, { childList: true, subtree: true });
-
-  console.log('[xb-recorder] Recording active with selector generation. Events in window.__xb_events / window.__xb_pending_actions');
-})();
-`;
-
-interface ControlFile {
-  sessionName: string;
-  cdpEndpoint?: string;
-  startedAt: number;
-  startUrl: string;
+function getControlFilePath(sessionName: string): string {
+  return join(homedir(), '.xbrowser', 'sessions', sessionName, 'recordings', '.control.json');
 }
 
-function readControlFile(): ControlFile | null {
-  const cp = CONTROL_FILE();
-  if (!fs.existsSync(cp)) return null;
+function readControlFile(sessionName: string): RecordingControlFile | null {
+  const path = getControlFilePath(sessionName);
   try {
-    return JSON.parse(fs.readFileSync(cp, 'utf-8')) as ControlFile;
+    return JSON.parse(readFileSync(path, 'utf-8'));
   } catch {
     return null;
   }
 }
 
-function writeControlFile(data: ControlFile): void {
-  const dir = RECORDINGS_BASE();
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(CONTROL_FILE(), JSON.stringify(data, null, 2), 'utf-8');
-}
-
-function removeControlFile(): void {
-  const cp = CONTROL_FILE();
-  if (fs.existsSync(cp)) fs.unlinkSync(cp);
-}
-
-function waitForSignalFile(signalPath: string, checkIntervalMs = 500): Promise<void> {
-  return new Promise((resolve) => {
-    const check = () => {
-      if (fs.existsSync(signalPath)) {
-        resolve();
-        return;
-      }
-      setTimeout(check, checkIntervalMs);
-    };
-    check();
-  });
-}
-
-function waitForFile(filePath: string, timeoutMs = 10000, checkIntervalMs = 500): Promise<boolean> {
-  return new Promise((resolve) => {
-    const start = Date.now();
-    const check = () => {
-      if (fs.existsSync(filePath)) { resolve(true); return; }
-      if (Date.now() - start > timeoutMs) { resolve(false); return; }
-      setTimeout(check, checkIntervalMs);
-    };
-    check();
-  });
-}
-
-async function resolveSession(cdpEndpoint?: string, url?: string) {
-  const { findOrRestoreSession, createSession } = await import('../browser.js');
-  let session = await findOrRestoreSession('default', cdpEndpoint);
-  if (!session) {
-    session = await createSession('default', url, cdpEndpoint ? { cdpEndpoint } : {});
-  }
-  return session;
-}
-
-/**
- * For cdp-tunnel (9221) where Playwright pages() returns empty,
- * we bypass the session system and connect directly via CDP.
- * Returns a Page object we can actually use.
- */
-async function resolvePageDirect(cdpEndpoint: string, url?: string): Promise<Page> {
-  const { chromium } = await import('playwright');
-  const browser = await chromium.connectOverCDP(cdpEndpoint);
-  const contexts = browser.contexts();
-  const ctx = contexts[0] || await browser.newContext();
-
-  // Try to find an existing page with matching URL
-  let page: Page | undefined;
-  const pages = ctx.pages();
-
-  if (url && pages.length > 0) {
-    page = pages.find(p => p.url().includes(new URL(url).hostname));
-  }
-
-  // If no matching page, try any non-blank page
-  if (!page && pages.length > 0) {
-    page = pages.find(p => p.url().startsWith('http'));
-  }
-
-  // If still no page, try fetching from /json/list (cdp-tunnel fallback)
-  if (!page) {
-    try {
-      const resp = await fetch(`${cdpEndpoint}/json/list`);
-      const targets = await resp.json() as Array<{ type: string; url: string; id: string; webSocketDebuggerUrl: string }>;
-      const pageTargets = targets.filter(t => t.type === 'page' && t.url.startsWith('http'));
-
-      if (url) {
-        const hostname = new URL(url).hostname;
-        const match = pageTargets.find(t => t.url.includes(hostname));
-        if (match) {
-          // CDP tunnel exposes targets but Playwright can't see them.
-          // Create a new page and navigate to the target URL.
-          page = await ctx.newPage();
-          await page.goto(match.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-        }
-      }
-
-      if (!page && pageTargets.length > 0) {
-        page = await ctx.newPage();
-        await page.goto(pageTargets[0].url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-      }
-    } catch {
-      // /json/list failed
-    }
-  }
-
-  // Last resort: create new page and navigate
-  if (!page) {
-    page = await ctx.newPage();
-    if (url) {
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    }
-  }
-
-  // Navigate if URL specified and not already there
-  if (url && page.url() !== url && !page.url().includes(new URL(url).hostname)) {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-  }
-
-  return page;
-}
-
-function rawActionToUserAction(raw: Record<string, unknown>, id: number): UserAction {
-  const detail = raw.detail as Record<string, unknown> | undefined;
-  const elementInfo = detail?.element as Record<string, unknown> | undefined;
-  const targetInfo = detail?.target as Record<string, unknown> | undefined;
-  const el = elementInfo || targetInfo;
-
-  return {
-    id,
-    type: raw.type as UserAction['type'],
-    timestamp: (raw.ts as number) || Date.now(),
-    url: (raw.url as string) || '',
-    pageTitle: (raw.title as string) || '',
-    element: el ? {
-      tag: (el.tag as string) || 'unknown',
-      text: (el.text as string) || '',
-      role: el.role as string | undefined,
-      type: el.type as string | undefined,
-      placeholder: el.placeholder as string | undefined,
-      ariaLabel: el.ariaLabel as string | undefined,
-      id: el.id as string | undefined,
-      className: el.className as string | undefined,
-      href: el.href as string | undefined,
-    } : undefined,
-    value: (detail?.value as string) || undefined,
-    key: (detail?.key as string) || undefined,
-    x: (detail?.x as number) || undefined,
-    y: (detail?.y as number) || undefined,
-    scrollX: (detail?.scrollX as number) || undefined,
-    scrollY: (detail?.scrollY as number) || undefined,
-    selector: el?.selector as string | undefined,
-    selectorStrategy: el?.selectorStrategy as string | undefined,
-    selectorConfidence: el?.selectorConfidence as UserAction['selectorConfidence'],
-  };
-}
+// ─── record start ─────────────────────────────────────────────────
+//
+// Blocks the process. Continuously captures CDP events until
+// `record stop` writes a .stop signal file.
 
 export async function handleRecord(
   args: string[],
   options: Record<string, unknown>,
-  mode: string
+  mode: string,
 ): Promise<void> {
   const sub = args[0];
+
   switch (sub) {
     case 'start': {
       const url = options.url as string;
-      if (!url) outputError('Usage: xbrowser record start --url <url> [--cdp <endpoint>]');
       const cdpEndpoint = options.cdp as string | undefined;
+      const sessionName = (options.session as string) || 'default';
 
-      if (cdpEndpoint) {
-        const page = await resolvePageDirect(cdpEndpoint, url);
-        if (page.url() === 'about:blank' || !page.url().startsWith('http')) {
-          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        }
-
-        const recorder = new SessionRecorder(page.context(), page, 'default');
-        await recorder.start(url);
-
-        writeControlFile({
-          sessionName: 'default',
-          cdpEndpoint,
-          startedAt: Date.now(),
-          startUrl: url,
-        });
-
-        console.log(`\x1b[32m[xb-recorder]\x1b[0m Recording started on ${url}`);
-        console.log(`\x1b[32m[xb-recorder]\x1b[0m Interact with browser, then run: \x1b[1mxbrowser record stop --cdp ${cdpEndpoint}\x1b[0m`);
-        console.log(`\x1b[90m[xb-recorder]\x1b[0m Recording data is periodically flushed to disk.`);
-
-        await waitForSignalFile(STOP_FILE());
-
-        const { summary } = await recorder.stop();
-
-        console.log(`\n\x1b[32m[xb-recorder]\x1b[0m Recording stopped.`);
-        console.log(`  Duration: ${Math.round(summary.durationMs / 1000)}s`);
-        console.log(`  Actions: ${summary.totalActions}`);
-        console.log(`  Network requests: ${summary.totalNetworkRequests}`);
-        console.log(`  Steps with selectors: ${summary.steps.filter(s => s.action.selector).length}`);
-        console.log(`  Saved to: ${recorder.getRecordingsDir()}`);
-
-        if (fs.existsSync(STOP_FILE())) fs.unlinkSync(STOP_FILE());
-      } else {
-        const session = await resolveSession(cdpEndpoint, url);
-        const page = session.page;
-
-        if (page.url() === 'about:blank' || !page.url().startsWith('http')) {
-          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        }
-
-        await page.evaluate(ACTION_SIGNAL_INJECT);
-        await page.context().addInitScript(ACTION_SIGNAL_INJECT);
-
-        writeControlFile({
-          sessionName: 'default',
-          cdpEndpoint,
-          startedAt: Date.now(),
-          startUrl: url,
-        });
-
-        outputResult({
-          ok: true,
-          url,
-          message: 'Recording started. Interact with browser, then run: xbrowser record stop',
-        }, mode);
+      if (!cdpEndpoint) {
+        outputError('CDP endpoint is required for recording. Use --cdp <endpoint>');
+        return;
       }
+
+      // Check if already recording
+      const existing = readControlFile(sessionName);
+      if (existing) {
+        outputResult({
+          ok: false,
+          error: 'Recording already in progress',
+          pid: existing.pid,
+          startedAt: existing.startedAt,
+          startUrl: existing.startUrl,
+        }, mode);
+        return;
+      }
+
+      // Connect directly via CDP and find the right page
+      const { chromium } = await import('playwright');
+      const rawEp = String(cdpEndpoint || '');
+      // Resolve CDP WebSocket URL
+      let wsEndpoint = rawEp;
+      if (rawEp.startsWith('http://') || rawEp.startsWith('https://')) {
+        try {
+          const resp = await fetch(`${rawEp}/json/version`);
+          const data = await resp.json() as { webSocketDebuggerUrl?: string };
+          if (data.webSocketDebuggerUrl) wsEndpoint = data.webSocketDebuggerUrl;
+        } catch { /* use as-is */ }
+      } else if (/^\d+$/.test(rawEp)) {
+        try {
+          const resp = await fetch(`http://localhost:${rawEp}/json/version`);
+          const data = await resp.json() as { webSocketDebuggerUrl?: string };
+          if (data.webSocketDebuggerUrl) wsEndpoint = data.webSocketDebuggerUrl;
+        } catch { /* use as-is */ }
+      }
+
+      const browser = await chromium.connectOverCDP(wsEndpoint);
+      await new Promise(r => setTimeout(r, 1000)); // wait for contexts to populate
+
+      const contexts = browser.contexts();
+      const context = contexts[0] || await browser.newContext();
+
+      // Try to find an existing page matching the target URL
+      let page = null;
+      if (url) {
+        const hostname = new URL(url).hostname;
+        for (const ctx of contexts) {
+          for (const p of ctx.pages()) {
+            if (p.url().includes(hostname)) { page = p; break; }
+          }
+          if (page) break;
+        }
+      }
+
+      // If no matching page, use the first non-blank page, or create one
+      if (!page) {
+        for (const ctx of contexts) {
+          for (const p of ctx.pages()) {
+            if (p.url() && p.url() !== 'about:blank' && !p.url().startsWith('chrome://')) {
+              page = p; break;
+            }
+          }
+          if (page) break;
+        }
+      }
+
+      if (!page) {
+        // Try CDP targets as last resort
+        try {
+          const ep = rawEp.startsWith('http') ? rawEp : `http://localhost:${rawEp}`;
+          const resp = await fetch(`${ep}/json/list`);
+          const targets = await resp.json() as Array<{url: string; type: string}>;
+          const target = targets.find(t => t.type === 'page' && t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://'));
+          if (target) {
+            page = await context.newPage();
+            await page.goto(target.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (!page) {
+        page = await context.newPage();
+      }
+
+      // Navigate to target URL if needed
+      if (url && page.url() !== url && !page.url().includes(new URL(url).hostname)) {
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+      }
+
+      const recorder = new SessionRecorder(context, page, sessionName);
+      await recorder.start(url);
+
+      outputResult({
+        ok: true,
+        message: 'Recording started. Process will block until stopped.',
+        pid: process.pid,
+        sessionName,
+        startUrl: url || page.url(),
+        hint: 'Run: xbrowser record stop --session ' + sessionName + ' --cdp ' + cdpEndpoint,
+      }, mode);
+
+      // ── BLOCK here: wait for stop signal ──
+      await recorder.waitForStopSignal();
+
+      // Stop and flush
+      const { summary } = await recorder.stop();
+
+      // Output summary
+      console.log('');
+      console.log('=== Recording Summary ===');
+      console.log(`  Duration: ${Math.round(summary.durationMs / 1000)}s`);
+      console.log(`  Actions:  ${summary.totalActions}`);
+      console.log(`  Network:  ${summary.totalNetworkRequests}`);
+      console.log(`  Steps:    ${summary.steps.length}`);
+      console.log('');
+      console.log(`  Recording: ${recorder.recordingsDir}/recording.json`);
+      console.log(`  Summary:   ${recorder.recordingsDir}/summary.json`);
+
+      // Close the session connection (CDP: just disconnect)
+      const { ensureProcessCanExit } = await import('../browser.js');
+      await ensureProcessCanExit();
       break;
     }
+
     case 'stop': {
-      const cdpEndpoint = options.cdp as string | undefined;
-      const control = readControlFile();
-      const effectiveCdp = cdpEndpoint || control?.cdpEndpoint;
+      const sessionName = (options.session as string) || 'default';
 
-      if (effectiveCdp && control) {
-        const stopFile = STOP_FILE();
-        const summaryPath = path.join(RECORDINGS_BASE(), 'summary.json');
+      const control = await SessionRecorder.sendStopSignal(sessionName);
 
-        const dir = path.dirname(stopFile);
-        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(stopFile, Date.now().toString(), 'utf-8');
-
-        console.log(`\x1b[32m[xb-recorder]\x1b[0m Stop signal sent. Waiting for recorder to finish...`);
-
-        const found = await waitForFile(summaryPath, 15000);
-        if (found) {
-          const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf-8'));
+      if (!control) {
+        // No active recording — check if there's a recording.json on disk already
+        const existingData = SessionRecorder.readData(sessionName);
+        if (existingData) {
           outputResult({
             ok: true,
-            summaryJson: summaryPath,
-            duration: `${Math.round(summary.durationMs / 1000)}s`,
-            actions: summary.totalActions,
-            networkRequests: summary.totalNetworkRequests,
-            stepsWithSelectors: summary.steps.filter((s: Record<string, unknown>) => {
-              const action = s.action as Record<string, unknown>;
-              return !!action.selector;
-            }).length,
+            message: 'Recorder process already exited. Recording data found on disk.',
+            sessionName,
+            actions: existingData.actions.length,
+            network: existingData.network.length,
           }, mode);
         } else {
-          outputError('Timeout waiting for recorder to stop. The recording process may have already exited.');
+          outputResult({
+            ok: false,
+            error: 'No active recording found for session: ' + sessionName,
+          }, mode);
         }
-      } else {
-        let page: Page;
-        if (effectiveCdp) {
-          page = await resolvePageDirect(effectiveCdp, control?.startUrl);
-        } else {
-          const session = await resolveSession(effectiveCdp);
-          page = session.page;
-        }
+        return;
+      }
 
-        const pendingRaw = await page.evaluate(() => {
-          const w = window as unknown as Record<string, unknown>;
-          const actions = (w.__xb_pending_actions as Array<Record<string, unknown>>) || [];
-          w.__xb_pending_actions = [];
-          return actions;
-        }) as Array<Record<string, unknown>>;
+      outputResult({
+        ok: true,
+        message: 'Stop signal sent to recording process',
+        pid: control.pid,
+        sessionName: control.sessionName,
+      }, mode);
 
-        let legacyEvents: unknown[] = [];
-        try {
-          legacyEvents = await page.evaluate(() =>
-            (window as unknown as Record<string, unknown>).__xb_events || []
-          ) as unknown[];
-        } catch {
-          // page may have navigated
-        }
+      // Wait a moment for the recorder to finish writing
+      await new Promise(r => setTimeout(r, 2000));
 
-        const userActions: UserAction[] = [];
-        let counter = 0;
-        for (const raw of pendingRaw) {
-          counter++;
-          userActions.push(rawActionToUserAction(raw, counter));
-        }
+      // Read and display the summary
+      const summary = SessionRecorder.readSummary(sessionName);
+      if (summary) {
+        console.log('');
+        console.log('=== Recording Summary ===');
+        console.log(`  Start URL: ${summary.startUrl}`);
+        console.log(`  Duration:  ${Math.round(summary.durationMs / 1000)}s`);
+        console.log(`  Actions:   ${summary.totalActions}`);
+        console.log(`  Network:   ${summary.totalNetworkRequests}`);
+        console.log(`  Steps:     ${summary.steps.length}`);
 
-        const startedAt = control?.startedAt || Date.now();
-        const startUrl = control?.startUrl || page.url();
-        const durationMs = Date.now() - startedAt;
-
-        const recordingData = {
-          startUrl,
-          sessionName: 'default',
-          startedAt: new Date(startedAt).toISOString(),
-          actions: userActions,
-          network: [],
-          contextChanges: [],
-        };
-
-        const legacyRecording = {
-          startUrl,
-          recordedAt: new Date().toISOString(),
-          events: legacyEvents,
-        };
-
-        const recordingsDir = path.join(homedir(), '.xbrowser', 'recordings');
-        const newRecordingsDir = RECORDINGS_BASE();
-        if (!fs.existsSync(recordingsDir)) fs.mkdirSync(recordingsDir, { recursive: true });
-        if (!fs.existsSync(newRecordingsDir)) fs.mkdirSync(newRecordingsDir, { recursive: true });
-
-        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-
-        const legacyOutPath = (options.output as string) ||
-          path.join(recordingsDir, `recording-${timestamp}.yaml`);
-        fs.writeFileSync(legacyOutPath, yaml.stringify(legacyRecording), 'utf8');
-
-        const jsonOutPath = path.join(newRecordingsDir, 'recording.json');
-        fs.writeFileSync(jsonOutPath, JSON.stringify(recordingData, null, 2), 'utf-8');
-
-        const summary = {
-          startUrl,
-          recordedAt: new Date().toISOString(),
-          durationMs,
-          totalActions: userActions.length,
-          totalNetworkRequests: 0,
-          steps: userActions
-            .filter(a => a.type !== 'scroll')
-            .map((action, i) => ({
-              step: i + 1,
-              action,
-              networkIds: [] as number[],
-              contextChanges: [],
-              matchedInputs: [],
-            })),
-        };
-
-        const summaryPath = path.join(newRecordingsDir, 'summary.json');
-        fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2), 'utf-8');
-
-        removeControlFile();
-
-        try {
-          await page.evaluate(() => {
-            const w = window as unknown as Record<string, unknown>;
-            w.__xb_recording_active = false;
-            w.__xb_action_signal = false;
-          });
-        } catch {
-          // ignore
+        for (const step of summary.steps) {
+          console.log(`  ${step.step}. ${step.action.type}` +
+            (step.action.element ? ` <${step.action.element.tag}> "${step.action.element.text?.substring(0, 30)}"` : '') +
+            (step.action.value ? ` value="${step.action.value.substring(0, 30)}"` : '') +
+            (step.network.length > 0 ? ` → ${step.network.length} network requests` : '') +
+            (step.matchedInputs.length > 0 ? ` [${step.matchedInputs.length} input→API matches]` : ''),
+          );
         }
 
-        outputResult({
-          ok: true,
-          path: legacyOutPath,
-          recordingJson: jsonOutPath,
-          summaryJson: summaryPath,
-          events: legacyEvents.length,
-          actions: userActions.length,
-          duration: `${Math.round(durationMs / 1000)}s`,
-          actionsWithSelectors: userActions.filter(a => a.selector).length,
-        }, mode);
+        console.log('');
+        console.log(`  Files: ${SessionRecorder.getRecordingsDir(sessionName)}/`);
       }
       break;
     }
+
     case 'status': {
-      const cdpEndpoint = options.cdp as string | undefined;
-      const control = readControlFile();
+      const sessionName = (options.session as string) || 'default';
+      const control = readControlFile(sessionName);
 
-      let statusPage: Page | undefined;
-      try {
-        if (cdpEndpoint) {
-          statusPage = await resolvePageDirect(cdpEndpoint, control?.startUrl);
-        } else {
-          const { findOrRestoreSession } = await import('../browser.js');
-          const session = await findOrRestoreSession('default', cdpEndpoint);
-          if (session) statusPage = session.page;
-        }
-      } catch {
-        // can't connect
-      }
-
-      if (!statusPage) {
-        outputResult({ recording: false, message: 'No session found' }, mode);
+      if (!control) {
+        outputResult({ recording: false, sessionName }, mode);
         return;
       }
 
+      // Check if the process is still alive
+      let alive = false;
       try {
-        const active = await statusPage.evaluate(() =>
-          !!(window as unknown as Record<string, unknown>).__xb_recording_active
-        );
-        const eventCount = await statusPage.evaluate(() =>
-          ((window as unknown as Record<string, unknown>).__xb_events as unknown[])?.length || 0
-        );
-        const pendingCount = await statusPage.evaluate(() =>
-          ((window as unknown as Record<string, unknown>).__xb_pending_actions as unknown[])?.length || 0
-        );
-        outputResult({
-          recording: active,
-          hasControlFile: !!control,
-          events: eventCount,
-          pendingActions: pendingCount,
-          url: statusPage!.url(),
-          startedAt: control?.startedAt ? new Date(control.startedAt).toISOString() : undefined,
-          startUrl: control?.startUrl,
-        }, mode);
+        process.kill(control.pid, 0);
+        alive = true;
       } catch {
-        outputResult({ recording: false, message: 'Cannot reach page' }, mode);
+        alive = false;
       }
+
+      outputResult({
+        recording: alive,
+        sessionName,
+        pid: control.pid,
+        startedAt: control.startedAt,
+        startUrl: control.startUrl,
+      }, mode);
       break;
     }
+
     case 'summary': {
-      const summaryPath = path.join(RECORDINGS_BASE(), 'summary.json');
-      if (!fs.existsSync(summaryPath)) {
-        outputError('No recording summary found. Run `xbrowser record stop` first.');
+      const sessionName = (options.session as string) || 'default';
+      const summary = SessionRecorder.readSummary(sessionName);
+      if (!summary) {
+        outputError('No recording summary found for session: ' + sessionName);
         return;
       }
-      try {
-        const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf-8'));
+
+      if (options.json || mode === 'json') {
         outputResult(summary, mode);
-      } catch {
-        outputError('Failed to read recording summary.');
+      } else {
+        printHumanReadableSummary(summary);
       }
       break;
     }
+
     default:
-      console.log('Usage: xbrowser record <start|stop|status|summary> [--url <url>] [--cdp <endpoint>]');
+      console.log('Usage:');
+      console.log('  xbrowser record start --cdp <endpoint> [--url <url>] [--session <name>]');
+      console.log('  xbrowser record stop  [--session <name>]');
+      console.log('  xbrowser record status [--session <name>]');
+      console.log('  xbrowser record summary [--session <name>] [--json]');
   }
 }
+
+// ─── Human-readable summary printer ───────────────────────────────
+
+function printHumanReadableSummary(summary: RecordingSummary): void {
+  console.log(`Start URL: ${summary.startUrl}`);
+  console.log(`Recorded:  ${summary.recordedAt}`);
+  console.log(`Duration:  ${Math.round(summary.durationMs / 1000)}s`);
+  console.log(`Actions:   ${summary.totalActions}`);
+  console.log(`Network:   ${summary.totalNetworkRequests}`);
+  console.log('');
+
+  for (const step of summary.steps) {
+    const a = step.action;
+    const el = a.element;
+    const parts: string[] = [];
+
+    parts.push(`Step ${step.step}: [${a.type}]`);
+
+    if (el) {
+      parts.push(`<${el.tag}>`);
+      if (el.text) parts.push(`"${el.text.substring(0, 40)}"`);
+      if (el.selector) parts.push(`(${el.selector})`);
+      if (el.type) parts.push(`type=${el.type}`);
+      if (el.placeholder) parts.push(`placeholder="${el.placeholder}"`);
+    }
+
+    if (a.value) parts.push(`value="${a.value.substring(0, 50)}"`);
+    if (a.key) parts.push(`key=${a.key}`);
+    if (a.x !== undefined && a.y !== undefined) parts.push(`@(${a.x},${a.y})`);
+
+    console.log(parts.join(' '));
+
+    // Network requests
+    for (const net of step.network) {
+      console.log(`    → ${net.method} ${net.path} [${net.status}] ${net.resourceType}`);
+      if (net.requestBody && typeof net.requestBody === 'object') {
+        const bodyStr = JSON.stringify(net.requestBody);
+        if (bodyStr.length <= 200) {
+          console.log(`      body: ${bodyStr}`);
+        } else {
+          console.log(`      body: ${bodyStr.substring(0, 200)}... (${bodyStr.length} bytes)`);
+        }
+      }
+    }
+
+    // Matched inputs
+    for (const match of step.matchedInputs) {
+      console.log(`    🔗 input "${match.inputValue}" → network #${match.networkId} param "${match.paramName}"`);
+    }
+
+    // Context changes
+    for (const ctx of step.contextChanges) {
+      if (ctx.type === 'navigate') {
+        console.log(`    ↗ navigate → ${ctx.url}`);
+      } else if (ctx.type === 'new_tab') {
+        console.log(`    ↗ new tab: ${ctx.url}`);
+      }
+    }
+  }
+}
+
+// ─── Legacy commands (replay, convert, extract, filter) ───────────
+// Keep these as-is for backward compatibility.
 
 export async function handleReplay(
   args: string[],
   options: Record<string, unknown>,
-  mode: string
+  mode: string,
 ): Promise<void> {
   const filePath = args[0];
   if (!filePath) outputError('Usage: xbrowser replay <file>');
@@ -584,6 +352,7 @@ export async function handleReplay(
   if (!session) {
     session = await createSession('default', undefined, options.cdp ? { cdpEndpoint: options.cdp as string } : {});
   }
+  const { PlaybackEngine } = await import('../recorder/player.js');
   const engine = PlaybackEngine.fromFile(session.page, filePath);
   const result = await engine.play({
     slowMo: options['slow-mo'] ? Number(options['slow-mo']) : 1,
@@ -599,6 +368,13 @@ export function handleConvert(args: string[], _mode: string): void {
     console.error('Usage: xbrowser convert <recording.yaml> <output.{js,py,sh}>');
     process.exit(1);
   }
+
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const yaml = require('yaml');
+
+  const { generateJSScript, generatePythonScript, generateBashScript } = require('../commands/convert.js') as
+    typeof import('../commands/convert.js');
 
   const content = fs.readFileSync(filePath, 'utf-8');
   const recording = yaml.parse(content);
@@ -631,6 +407,9 @@ export function handleExtract(args: string[], _mode: string): void {
     process.exit(1);
   }
 
+  const { extractAndSave, printExtractSummary } = require('../commands/extract.js') as
+    typeof import('../commands/extract.js');
+
   const { summary, outputPath } = extractAndSave(filePath);
   printExtractSummary(summary);
   console.log(`\nSaved LLM summary: ${outputPath}`);
@@ -644,6 +423,9 @@ export function handleFilter(args: string[], _mode: string): void {
     console.error('Usage: xbrowser filter <input.yaml> <output.yaml> [--exclude-types=type1,type2]');
     process.exit(1);
   }
+
+  const { filterRecording, parseExcludeTypes } = require('../commands/filter.js') as
+    typeof import('../commands/filter.js');
 
   const excludeTypes = parseExcludeTypes(args.slice(2));
   const result = filterRecording(filePath, outputPath, excludeTypes);

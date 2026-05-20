@@ -1,24 +1,36 @@
-import { mkdirSync, writeFileSync, existsSync, rmSync } from 'node:fs';
+/**
+ * SessionRecorder — Server-side CDP recording engine.
+ *
+ * Captures user actions, network requests, and context changes
+ * at the CDP level via Playwright listeners. Data is scoped to
+ * a session directory and cleaned up when the session closes.
+ *
+ * Lifecycle:
+ *   record start → process blocks, CDP listeners active
+ *   record stop  → signal file written, recording process flushes & exits
+ *   session close → recordings directory cleaned up
+ */
+import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import type { BrowserContext, Page, Request, Response, Frame } from 'playwright';
-import { getSelectorGeneratorScript } from './selector-utils.js';
+import type { BrowserContext, Frame, Page, Request, Response } from 'playwright';
+
+// ─── Types ───────────────────────────────────────────────────────
 
 export interface UserAction {
   id: number;
-  type: 'click' | 'input' | 'change' | 'keydown' | 'scroll' | 'submit' | 'focus';
+  type: 'click' | 'input' | 'change' | 'keydown' | 'submit' | 'scroll';
   timestamp: number;
   url: string;
   pageTitle: string;
   element?: {
     tag: string;
+    selector?: string;  // unique short CSS selector for replay
     text: string;
     role?: string;
     type?: string;
     placeholder?: string;
     ariaLabel?: string;
-    id?: string;
-    className?: string;
     href?: string;
   };
   value?: string;
@@ -27,9 +39,6 @@ export interface UserAction {
   y?: number;
   scrollX?: number;
   scrollY?: number;
-  selector?: string;
-  selectorStrategy?: string;
-  selectorConfidence?: 'high' | 'medium' | 'low';
 }
 
 export interface NetworkEntry {
@@ -49,16 +58,27 @@ export interface NetworkEntry {
 export interface ContextChange {
   id: number;
   timestamp: number;
-  type: 'navigate' | 'popup_appeared' | 'popup_dismissed' | 'new_tab' | 'toast' | 'dom_change';
+  type: 'navigate' | 'new_tab' | 'tab_closed';
   url?: string;
-  title?: string;
   detail?: string;
+}
+
+export interface ElementRef {
+  selector: string;
+  tag: string;
+  text: string;
+  role?: string;
+  type?: string;
+  placeholder?: string;
+  ariaLabel?: string;
+  href?: string;
 }
 
 export interface RecordingStep {
   step: number;
+  ref: string;       // e.g. "e1", "e2" — reference into elements map
   action: UserAction;
-  networkIds: number[];
+  network: NetworkEntry[];
   contextChanges: ContextChange[];
   matchedInputs: Array<{
     inputValue: string;
@@ -73,8 +93,9 @@ export interface RecordingSummary {
   durationMs: number;
   totalActions: number;
   totalNetworkRequests: number;
-  networkMap: Record<number, { id: number; method: string; url: string; path: string; status: number; resourceType: string }>;
   steps: RecordingStep[];
+  /** Ref → element descriptor map. Steps reference elements via ref to reduce size. */
+  elements: Record<string, ElementRef>;
 }
 
 export interface RecordingData {
@@ -86,28 +107,121 @@ export interface RecordingData {
   contextChanges: ContextChange[];
 }
 
-const ACTION_SIGNAL_SCRIPT = getSelectorGeneratorScript() + `
+/** Written to disk so `record stop` (separate process) can signal the recorder. */
+export interface RecordingControlFile {
+  pid: number;
+  startedAt: string;
+  startUrl: string;
+  sessionName: string;
+}
+
+// ─── Minimal frontend signal script ──────────────────────────────
+// Only captures action signals; all matching happens server-side.
+
+const ACTION_SIGNAL_SCRIPT = `
 (function() {
   if (window.__xb_action_signal) return;
   window.__xb_action_signal = true;
   window.__xb_pending_actions = [];
 
+  // --- Unique short selector generator ---
+  function uniqueSelector(el) {
+    if (!el || !el.tagName) return null;
+    var doc = el.ownerDocument || document;
+
+    function isUnique(sel) {
+      try { return doc.querySelectorAll(sel).length === 1; } catch(e) { return false; }
+    }
+
+    // 1. #id (shortest, globally unique)
+    if (el.id) {
+      var idSel = '#' + CSS.escape(el.id);
+      if (isUnique(idSel)) return idSel;
+    }
+
+    // 2. [data-testid="..."]
+    var testId = el.getAttribute('data-testid') || el.getAttribute('data-test-id');
+    if (testId) {
+      var sel = '[data-testid="' + testId + '"]';
+      if (isUnique(sel)) return sel;
+    }
+
+    // 3. [name="..."]
+    var name = el.getAttribute('name');
+    if (name) {
+      var sel = el.tagName.toLowerCase() + '[name="' + name + '"]';
+      if (isUnique(sel)) return sel;
+    }
+
+    // 4. [aria-label="..."]
+    var aria = el.getAttribute('aria-label');
+    if (aria) {
+      var sel = '[aria-label="' + aria.substring(0, 50) + '"]';
+      if (isUnique(sel)) return sel;
+    }
+
+    // 5. [placeholder="..."]
+    var ph = el.getAttribute('placeholder');
+    if (ph) {
+      var sel = el.tagName.toLowerCase() + '[placeholder="' + ph.substring(0, 50) + '"]';
+      if (isUnique(sel)) return sel;
+    }
+
+    // 6. tag.class — pick shortest combo that's unique
+    var tag = el.tagName.toLowerCase();
+    if (typeof el.className === 'string' && el.className.trim()) {
+      var classes = el.className.trim().split(/\\s+/).filter(function(c) {
+        return c && !/^(ng-|_|css-|sc-|styled-|emotion-)/.test(c);
+      });
+      // Sort by rarity (less common class first)
+      classes.sort(function(a, b) {
+        return doc.querySelectorAll('.' + a).length - doc.querySelectorAll('.' + b).length;
+      });
+      // Try tag + single class
+      for (var i = 0; i < classes.length; i++) {
+        var sel = tag + '.' + CSS.escape(classes[i]);
+        if (isUnique(sel)) return sel;
+      }
+      // Try tag + two classes
+      if (classes.length >= 2) {
+        var sel = tag + '.' + CSS.escape(classes[0]) + '.' + CSS.escape(classes[1]);
+        if (isUnique(sel)) return sel;
+      }
+    }
+
+    // 7. parent > tag  (one level up)
+    var parent = el.parentElement;
+    if (parent) {
+      var parentSel = parent.id ? '#' + CSS.escape(parent.id) : parent.tagName.toLowerCase();
+      var sel = parentSel + ' > ' + tag;
+      if (isUnique(sel)) return sel;
+    }
+
+    // 8. :nth-child fallback (tag:nth-child(n) under parent)
+    if (parent) {
+      var siblings = Array.from(parent.children);
+      var idx = siblings.indexOf(el) + 1;
+      var parentSel = parent.id ? '#' + CSS.escape(parent.id) : parent.tagName.toLowerCase();
+      var sel = parentSel + ' > ' + tag + ':nth-child(' + idx + ')';
+      if (isUnique(sel)) return sel;
+    }
+
+    // 9. Last resort: full tag
+    return tag;
+  }
+
+  // --- Element descriptor ---
   function describe(el) {
     if (!el || !el.tagName) return null;
-    var selResult = window.__xb_generateSelector ? window.__xb_generateSelector(el) : null;
     return {
       tag: el.tagName.toLowerCase(),
-      text: (el.textContent || '').trim().substring(0, 80),
-      role: el.getAttribute('role'),
-      type: el.getAttribute('type'),
-      placeholder: el.getAttribute('placeholder'),
-      ariaLabel: el.getAttribute('aria-label'),
-      href: el.getAttribute('href') ? el.getAttribute('href').substring(0, 100) : undefined,
-      id: el.id || undefined,
-      className: (typeof el.className === 'string' ? el.className : '').substring(0, 80) || undefined,
-      selector: selResult ? selResult.selector : undefined,
-      selectorStrategy: selResult ? selResult.strategy : undefined,
-      selectorConfidence: selResult ? selResult.confidence : undefined,
+      selector: uniqueSelector(el),
+      text: (el.textContent || '').trim().substring(0, 40),
+      role: el.getAttribute('role') || undefined,
+      type: el.getAttribute('type') || undefined,
+      placeholder: el.getAttribute('placeholder') || undefined,
+      ariaLabel: el.getAttribute('aria-label') || undefined,
+      href: el.getAttribute('href') ? el.getAttribute('href').substring(0, 80) : undefined,
     };
   }
 
@@ -117,7 +231,7 @@ const ACTION_SIGNAL_SCRIPT = getSelectorGeneratorScript() + `
       ts: Date.now(),
       url: location.href,
       title: document.title,
-      detail: detail,
+      ...detail,
     });
   }
 
@@ -126,17 +240,18 @@ const ACTION_SIGNAL_SCRIPT = getSelectorGeneratorScript() + `
   }, true);
 
   document.addEventListener('input', function(e) {
-    var val = e.target.value || e.target.textContent || '';
-    pushAction('input', { element: describe(e.target), value: val.substring(0, 200) });
+    pushAction('input', {
+      element: describe(e.target),
+      value: (e.target.value || e.target.textContent || '').substring(0, 200),
+    });
   }, true);
 
   document.addEventListener('change', function(e) {
-    var val = e.target.value || '';
-    pushAction('change', { element: describe(e.target), value: val.substring(0, 100) });
+    pushAction('change', { element: describe(e.target), value: (e.target.value || '').substring(0, 100) });
   }, true);
 
   document.addEventListener('keydown', function(e) {
-    if (e.key === 'Enter' || e.key === 'Tab' || e.key === 'Escape' || e.key.indexOf('Arrow') === 0) {
+    if (e.key === 'Enter' || e.key === 'Tab' || e.key === 'Escape' || e.key.startsWith('Arrow')) {
       pushAction('keydown', { key: e.key, element: describe(e.target) });
     }
   }, true);
@@ -145,15 +260,16 @@ const ACTION_SIGNAL_SCRIPT = getSelectorGeneratorScript() + `
     pushAction('submit', { element: describe(e.target) });
   }, true);
 
-  var __xb_last_scroll = 0;
   document.addEventListener('scroll', function() {
-    if (Date.now() - __xb_last_scroll > 500) {
-      __xb_last_scroll = Date.now();
+    if (!window.__xb_last_scroll || Date.now() - window.__xb_last_scroll > 500) {
+      window.__xb_last_scroll = Date.now();
       pushAction('scroll', { scrollX: window.scrollX, scrollY: window.scrollY });
     }
   }, true);
 })();
 `;
+
+// ─── SessionRecorder ─────────────────────────────────────────────
 
 export class SessionRecorder {
   private context: BrowserContext;
@@ -171,9 +287,9 @@ export class SessionRecorder {
   private contextCounter = 0;
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private flushTimer: ReturnType<typeof setInterval> | null = null;
   private lastActionTs = 0;
   private activePages = new Set<Page>();
-  private lastNavigateUrl = '';
 
   private _isRecording = false;
 
@@ -187,6 +303,27 @@ export class SessionRecorder {
     return this._isRecording;
   }
 
+  /** Directory for this session's recordings. */
+  get recordingsDir(): string {
+    return SessionRecorder.getRecordingsDir(this.sessionName);
+  }
+
+  static getRecordingsDir(sessionName: string): string {
+    return join(homedir(), '.xbrowser', 'sessions', sessionName, 'recordings');
+  }
+
+  /** Path to the control file (used by record stop to signal this process). */
+  get controlFilePath(): string {
+    return join(this.recordingsDir, '.control.json');
+  }
+
+  /** Path to the stop signal file (written by `record stop`). */
+  get stopSignalPath(): string {
+    return join(this.recordingsDir, '.stop');
+  }
+
+  // ─── Start ──────────────────────────────────────────────────────
+
   async start(url?: string): Promise<void> {
     if (this._isRecording) throw new Error('Already recording');
 
@@ -195,8 +332,8 @@ export class SessionRecorder {
     this.actions = [];
     this.network = [];
     this.contextChanges = [];
-    this.lastNavigateUrl = '';
 
+    // Navigate if URL provided
     if (url) {
       await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
       this.startUrl = url;
@@ -204,77 +341,165 @@ export class SessionRecorder {
       this.startUrl = this.page.url();
     }
 
+    // Ensure recordings directory exists
+    mkdirSync(this.recordingsDir, { recursive: true });
+
+    // Write control file (so record stop can find this process)
+    const control: RecordingControlFile = {
+      pid: process.pid,
+      startedAt: new Date(this.startedAt).toISOString(),
+      startUrl: this.startUrl,
+      sessionName: this.sessionName,
+    };
+    writeFileSync(this.controlFilePath, JSON.stringify(control, null, 2), 'utf-8');
+
+    // 1. Inject action signal script (minimal frontend footprint)
     await this.injectActionScript(this.page);
     await this.page.addInitScript(ACTION_SIGNAL_SCRIPT);
 
-    this.startNetworkCapture();
+    // 2. Network capture at context level (covers all pages/tabs)
+    this.context.on('request', this.handleRequest);
+    this.context.on('response', this.handleResponse);
 
+    // 3. Track new pages (tabs/popups)
     this.context.on('page', this.handleNewPage);
+
+    // 4. Track navigation on main page
     this.page.on('framenavigated', this.handleFrameNavigated);
 
-    this.pollTimer = setInterval(() => {
-      this.pollActions().catch(() => {});
-    }, 200);
+    // 5. Poll for frontend action signals
+    this.pollTimer = setInterval(() => void this.pollActions(), 200);
+
+    // 6. Periodic flush to disk (so data survives if process crashes)
+    this.flushTimer = setInterval(() => this.flushToDisk(), 5000);
   }
+
+  // ─── Stop ───────────────────────────────────────────────────────
 
   async stop(): Promise<{ data: RecordingData; summary: RecordingSummary }> {
     if (!this._isRecording) throw new Error('Not recording');
 
     this._isRecording = false;
 
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
-    }
+    // Stop timers
+    if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
+    if (this.flushTimer) { clearInterval(this.flushTimer); this.flushTimer = null; }
 
-    this.context.off('page', this.handleNewPage);
+    // Remove listeners
     this.context.off('request', this.handleRequest);
     this.context.off('response', this.handleResponse);
+    this.context.off('page', this.handleNewPage);
     this.page.off('framenavigated', this.handleFrameNavigated);
-
     for (const p of this.activePages) {
-      try {
-        p.off('framenavigated', this.handleFrameNavigated);
-      } catch {
-        // page may be closed
-      }
+      try { p.off('framenavigated', this.handleFrameNavigated); } catch { /* page may be closed */ }
     }
 
+    // Final flush of pending frontend actions
     await this.flushPendingActions(this.page);
+    for (const p of this.activePages) {
+      await this.flushPendingActions(p).catch(() => {});
+    }
 
-    const data: RecordingData = {
-      startUrl: this.startUrl,
-      sessionName: this.sessionName,
-      startedAt: new Date(this.startedAt).toISOString(),
-      actions: this.actions,
-      network: this.network,
-      contextChanges: this.contextChanges,
-    };
-
+    // Build final data + summary
+    const data = this.buildData();
     const summary = this.buildSummary(data);
 
-    const dir = this.getRecordingsDir();
-    mkdirSync(dir, { recursive: true });
+    // Write final files
+    this.writeFinalOutput(data, summary);
 
-    const dataPath = join(dir, 'recording.json');
-    const summaryPath = join(dir, 'summary.json');
-
-    writeFileSync(dataPath, JSON.stringify(data, null, 2), 'utf-8');
-    writeFileSync(summaryPath, JSON.stringify(summary, null, 2), 'utf-8');
+    // Clean up control & signal files
+    try { rmSync(this.controlFilePath); } catch { /* ok */ }
+    try { rmSync(this.stopSignalPath); } catch { /* ok */ }
 
     return { data, summary };
   }
 
-  getRecordingsDir(): string {
-    return join(homedir(), '.xbrowser', 'sessions', this.sessionName, 'recordings');
-  }
+  // ─── Cleanup (called on session close) ──────────────────────────
 
   static cleanup(sessionName: string): void {
-    const dir = join(homedir(), '.xbrowser', 'sessions', sessionName, 'recordings');
+    const dir = SessionRecorder.getRecordingsDir(sessionName);
     if (existsSync(dir)) {
       rmSync(dir, { recursive: true, force: true });
     }
   }
+
+  // ─── Wait for stop signal (blocks the process) ──────────────────
+
+  waitForStopSignal(): Promise<void> {
+    return new Promise((resolve) => {
+      const check = () => {
+        if (existsSync(this.stopSignalPath)) {
+          resolve();
+        } else {
+          setTimeout(check, 300);
+        }
+      };
+      check();
+    });
+  }
+
+  // ─── Static: send stop signal to a running recorder ─────────────
+
+  static async sendStopSignal(sessionName: string): Promise<RecordingControlFile | null> {
+    const dir = SessionRecorder.getRecordingsDir(sessionName);
+    const controlPath = join(dir, '.control.json');
+    const stopPath = join(dir, '.stop');
+
+    if (!existsSync(controlPath)) return null;
+
+    const control: RecordingControlFile = JSON.parse(readFileSync(controlPath, 'utf-8'));
+
+    // Check if the recorder process is still alive
+    let alive = false;
+    try { process.kill(control.pid, 0); alive = true; } catch { alive = false; }
+
+    if (!alive) {
+      // Recorder process is dead — clean up control file and return
+      try { rmSync(controlPath); } catch { /* ok */ }
+      return control;
+    }
+
+    // Write stop signal
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(stopPath, JSON.stringify({ stoppedAt: new Date().toISOString() }), 'utf-8');
+
+    // Wait for the recorder to finish (max 10s)
+    for (let i = 0; i < 50; i++) {
+      await new Promise(r => setTimeout(r, 200));
+      if (!existsSync(controlPath)) return control; // recorder cleaned up
+      // Also check if process died during wait
+      try { process.kill(control.pid, 0); } catch {
+        try { rmSync(controlPath); } catch { /* ok */ }
+        return control;
+      }
+    }
+
+    // Timeout — force cleanup
+    try { rmSync(controlPath); } catch { /* ok */ }
+    return control;
+  }
+
+  // ─── Static: read recording from disk ───────────────────────────
+
+  static readSummary(sessionName: string): RecordingSummary | null {
+    const path = join(SessionRecorder.getRecordingsDir(sessionName), 'summary.json');
+    try {
+      return JSON.parse(readFileSync(path, 'utf-8'));
+    } catch {
+      return null;
+    }
+  }
+
+  static readData(sessionName: string): RecordingData | null {
+    const path = join(SessionRecorder.getRecordingsDir(sessionName), 'recording.json');
+    try {
+      return JSON.parse(readFileSync(path, 'utf-8'));
+    } catch {
+      return null;
+    }
+  }
+
+  // ==================== Private ====================
 
   private async injectActionScript(page: Page): Promise<void> {
     try {
@@ -284,17 +509,14 @@ export class SessionRecorder {
     }
   }
 
-  private startNetworkCapture(): void {
-    this.context.on('request', this.handleRequest);
-    this.context.on('response', this.handleResponse);
-  }
+  // ─── Network capture ────────────────────────────────────────────
 
   private handleRequest = (request: Request): void => {
     const resourceType = request.resourceType();
     if (['image', 'stylesheet', 'font', 'manifest', 'other'].includes(resourceType)) return;
 
     const url = request.url();
-    if (url.startsWith('data:') || url.startsWith('chrome-extension://')) return;
+    if (url.startsWith('data:') || url.startsWith('chrome-extension://') || url.startsWith('blob:')) return;
 
     this.networkCounter++;
     const entry: NetworkEntry = {
@@ -309,8 +531,8 @@ export class SessionRecorder {
       responseSize: 0,
     };
 
-    const method = request.method();
-    if (['POST', 'PATCH', 'PUT'].includes(method)) {
+    // Capture request body for mutation methods
+    if (['POST', 'PATCH', 'PUT'].includes(request.method())) {
       try {
         const postData = request.postData();
         if (postData) {
@@ -320,9 +542,7 @@ export class SessionRecorder {
             entry.requestBody = postData.substring(0, 500);
           }
         }
-      } catch {
-        // ignore
-      }
+      } catch { /* ignore */ }
     }
 
     this.network.push(entry);
@@ -330,17 +550,18 @@ export class SessionRecorder {
 
   private handleResponse = async (response: Response): Promise<void> => {
     const url = response.url();
-    if (url.startsWith('data:') || url.startsWith('chrome-extension://')) return;
+    if (url.startsWith('data:') || url.startsWith('chrome-extension://') || url.startsWith('blob:')) return;
 
-    const entry = this.network.find(e => e.url === url && e.status === 0);
+    // Find matching request entry (status still 0)
+    const entry = [...this.network].reverse().find(e => e.url === url && e.status === 0);
     if (!entry) return;
 
     entry.status = response.status();
     entry.contentType = response.headers()['content-type'] || '';
 
+    // Only capture response body for API-like requests
     const resourceType = response.request().resourceType();
-    const isApi =
-      ['fetch', 'xhr'].includes(resourceType) ||
+    const isApi = ['fetch', 'xhr'].includes(resourceType) ||
       entry.contentType.includes('json') ||
       entry.contentType.includes('text/');
 
@@ -355,17 +576,15 @@ export class SessionRecorder {
             entry.responseBody = text.substring(0, 500);
           }
         }
-      } catch {
-        // unable to read body
-      }
+      } catch { /* unable to read */ }
     } else {
       try {
         entry.responseSize = parseInt(response.headers()['content-length'] || '0', 10);
-      } catch {
-        // ignore
-      }
+      } catch { /* ignore */ }
     }
   };
+
+  // ─── Page tracking ──────────────────────────────────────────────
 
   private handleNewPage = async (page: Page): Promise<void> => {
     this.activePages.add(page);
@@ -378,34 +597,26 @@ export class SessionRecorder {
       detail: 'New tab/popup opened',
     });
 
+    // Inject signal script into new page
     await page.addInitScript(ACTION_SIGNAL_SCRIPT);
-    try {
-      await this.injectActionScript(page);
-    } catch {
-      // page may not be ready
-    }
+    await this.injectActionScript(page).catch(() => {});
 
     page.on('framenavigated', this.handleFrameNavigated);
-    page.on('close', () => {
-      this.activePages.delete(page);
-    });
+    page.on('close', () => { this.activePages.delete(page); });
   };
 
   private handleFrameNavigated = (frame: Frame): void => {
     if (frame !== frame.page().mainFrame()) return;
-    const url = frame.url();
-    if (url === this.lastNavigateUrl) return;
-    if (url.startsWith('chrome-extension://') || url.startsWith('about:blank')) return;
-    this.lastNavigateUrl = url;
     this.contextCounter++;
     this.contextChanges.push({
       id: this.contextCounter,
       timestamp: Date.now(),
       type: 'navigate',
-      url,
-      title: '',
+      url: frame.url(),
     });
   };
+
+  // ─── Action polling ─────────────────────────────────────────────
 
   private async pollActions(): Promise<void> {
     const pages = [this.page, ...this.activePages];
@@ -420,76 +631,141 @@ export class SessionRecorder {
   }
 
   private async flushPendingActions(page: Page): Promise<void> {
-    let pending: Array<Record<string, unknown>> = [];
+    interface PendingAction {
+      type: string;
+      ts: number;
+      url: string;
+      title: string;
+      element?: UserAction['element'];
+      value?: string;
+      key?: string;
+      x?: number;
+      y?: number;
+      scrollX?: number;
+      scrollY?: number;
+    }
+
+    let pending: PendingAction[] = [];
     try {
-      pending = (await page.evaluate(() => {
+      pending = await page.evaluate(() => {
         const w = window as unknown as Record<string, unknown>;
-        const actions = (w.__xb_pending_actions as Array<Record<string, unknown>>) || [];
+        const actions = (w.__xb_pending_actions as PendingAction[]) || [];
         w.__xb_pending_actions = [];
         return actions;
-      })) as Array<Record<string, unknown>>;
+      });
     } catch {
       return;
     }
 
     for (const raw of pending) {
-      const ts = raw.ts as number;
-      if (ts <= this.lastActionTs) continue;
-
-      const detail = raw.detail as Record<string, unknown> | undefined;
-      const elementInfo = detail?.element as Record<string, unknown> | undefined;
+      if (raw.ts <= this.lastActionTs) continue;
 
       this.actionCounter++;
-      const action: UserAction = {
+      this.actions.push({
         id: this.actionCounter,
         type: raw.type as UserAction['type'],
-        timestamp: ts,
-        url: (raw.url as string) || page.url(),
-        pageTitle: (raw.title as string) || '',
-        element: raw.element as UserAction['element'],
-        value: raw.value as string | undefined,
-        key: raw.key as string | undefined,
-        x: raw.x as number | undefined,
-        y: raw.y as number | undefined,
-        scrollX: raw.scrollX as number | undefined,
-        scrollY: raw.scrollY as number | undefined,
-        selector: elementInfo?.selector as string | undefined,
-        selectorStrategy: elementInfo?.selectorStrategy as string | undefined,
-        selectorConfidence: elementInfo?.selectorConfidence as UserAction['selectorConfidence'],
-      };
-
-      this.actions.push(action);
-      this.lastActionTs = ts;
+        timestamp: raw.ts,
+        url: raw.url || page.url(),
+        pageTitle: raw.title || '',
+        element: raw.element,
+        value: raw.value,
+        key: raw.key,
+        x: raw.x,
+        y: raw.y,
+        scrollX: raw.scrollX,
+        scrollY: raw.scrollY,
+      });
+      this.lastActionTs = raw.ts;
     }
   }
 
-  private buildSummary(data: RecordingData): RecordingSummary {
-    const TIME_WINDOW = 2000;
+  // ─── Periodic disk flush ────────────────────────────────────────
 
+  private flushToDisk(): void {
+    const data = this.buildData();
+    try {
+      writeFileSync(
+        join(this.recordingsDir, 'recording.json'),
+        JSON.stringify(data, null, 2),
+        'utf-8',
+      );
+    } catch { /* best effort */ }
+  }
+
+  private writeFinalOutput(data: RecordingData, summary: RecordingSummary): void {
+    mkdirSync(this.recordingsDir, { recursive: true });
+    writeFileSync(join(this.recordingsDir, 'recording.json'), JSON.stringify(data, null, 2), 'utf-8');
+    writeFileSync(join(this.recordingsDir, 'summary.json'), JSON.stringify(summary, null, 2), 'utf-8');
+  }
+
+  private buildData(): RecordingData {
+    return {
+      startUrl: this.startUrl,
+      sessionName: this.sessionName,
+      startedAt: new Date(this.startedAt).toISOString(),
+      actions: [...this.actions],
+      network: [...this.network],
+      contextChanges: [...this.contextChanges],
+    };
+  }
+
+  // ─── Summary builder with ref compression + input→network matching ──
+
+  private buildSummary(data: RecordingData): RecordingSummary {
+    const TIME_WINDOW = 2000; // ±2s
     const steps: RecordingStep[] = [];
 
-    const networkMap: RecordingSummary['networkMap'] = {};
-    for (const n of data.network) {
-      networkMap[n.id] = { id: n.id, method: n.method, url: n.url, path: n.path, status: n.status, resourceType: n.resourceType };
+    // Ref compression: deduplicate elements by selector
+    const selectorToRef = new Map<string, string>();
+    const elements: Record<string, ElementRef> = {};
+    let refCounter = 0;
+
+    function getRef(action: UserAction): string {
+      const sel = action.element?.selector || action.element?.tag || '_none';
+      if (selectorToRef.has(sel)) return selectorToRef.get(sel)!;
+
+      refCounter++;
+      const ref = 'e' + refCounter;
+      selectorToRef.set(sel, ref);
+
+      if (action.element) {
+        elements[ref] = {
+          selector: action.element.selector || action.element.tag,
+          tag: action.element.tag,
+          text: action.element.text,
+          role: action.element.role,
+          type: action.element.type,
+          placeholder: action.element.placeholder,
+          ariaLabel: action.element.ariaLabel,
+          href: action.element.href,
+        };
+      } else {
+        elements[ref] = { selector: '_none', tag: '_', text: '' };
+      }
+      return ref;
     }
 
     for (const action of data.actions) {
       if (action.type === 'scroll') continue;
 
-      const nearbyNetwork = data.network.filter(
-        n => Math.abs(n.timestamp - action.timestamp) <= TIME_WINDOW,
+      const nearbyNetwork = data.network.filter(n =>
+        Math.abs(n.timestamp - action.timestamp) <= TIME_WINDOW,
       );
-
-      const nearbyContext = data.contextChanges.filter(
-        c => Math.abs(c.timestamp - action.timestamp) <= TIME_WINDOW,
+      const nearbyContext = data.contextChanges.filter(c =>
+        Math.abs(c.timestamp - action.timestamp) <= TIME_WINDOW,
       );
-
       const matchedInputs = this.matchInputsToNetwork(action, nearbyNetwork);
 
       steps.push({
         step: steps.length + 1,
+        ref: getRef(action),
         action,
-        networkIds: nearbyNetwork.map(n => n.id),
+        network: nearbyNetwork.map(n => ({
+          ...n,
+          responseBody: n.responseBody && JSON.stringify(n.responseBody).length > 1000
+            ? ('[truncated, ' + JSON.stringify(n.responseBody).length + ' bytes]')
+            : n.responseBody,
+        })),
         contextChanges: nearbyContext,
         matchedInputs,
       });
@@ -501,8 +777,8 @@ export class SessionRecorder {
       durationMs: Date.now() - this.startedAt,
       totalActions: data.actions.length,
       totalNetworkRequests: data.network.length,
-      networkMap,
       steps,
+      elements,
     };
   }
 
@@ -511,14 +787,11 @@ export class SessionRecorder {
     nearbyNetwork: NetworkEntry[],
   ): Array<{ inputValue: string; networkId: number; paramName: string }> {
     const matches: Array<{ inputValue: string; networkId: number; paramName: string }> = [];
-
     if (!action.value || !action.value.trim()) return matches;
 
     const inputValue = action.value.trim();
-
     for (const netEntry of nearbyNetwork) {
       if (!netEntry.requestBody || typeof netEntry.requestBody !== 'object') continue;
-
       this.searchObjectForValue(
         netEntry.requestBody as Record<string, unknown>,
         inputValue,
@@ -527,7 +800,6 @@ export class SessionRecorder {
         matches,
       );
     }
-
     return matches;
   }
 
@@ -540,21 +812,10 @@ export class SessionRecorder {
   ): void {
     for (const [key, value] of Object.entries(obj)) {
       const fullKey = prefix ? `${prefix}.${key}` : key;
-
       if (typeof value === 'string' && value.includes(targetValue)) {
-        results.push({
-          inputValue: targetValue,
-          networkId,
-          paramName: fullKey,
-        });
+        results.push({ inputValue: targetValue, networkId, paramName: fullKey });
       } else if (typeof value === 'object' && value !== null) {
-        this.searchObjectForValue(
-          value as Record<string, unknown>,
-          targetValue,
-          networkId,
-          fullKey,
-          results,
-        );
+        this.searchObjectForValue(value as Record<string, unknown>, targetValue, networkId, fullKey, results);
       }
     }
   }

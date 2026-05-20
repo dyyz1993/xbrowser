@@ -10,4 +10,6 @@ export type {
   RecordingStep,
   RecordingSummary,
   RecordingData,
+  RecordingControlFile,
+  ElementRef,
 } from './session-recorder.js';
