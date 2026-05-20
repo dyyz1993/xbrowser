@@ -16,10 +16,9 @@ const {
   mockYamlParse,
   mockFsExistsSync,
   mockFsMkdirSync,
-  mockPageEvaluate,
-  mockPageGoto,
-  mockPageUrl,
-  mockContextAddInitScript,
+  mockSendStopSignal,
+  mockReadSummary,
+  mockReadData,
 } = vi.hoisted(() => ({
   mockOutputResult: vi.fn(),
   mockOutputError: vi.fn(),
@@ -36,17 +35,16 @@ const {
   mockYamlParse: vi.fn(),
   mockFsExistsSync: vi.fn(),
   mockFsMkdirSync: vi.fn(),
-  mockPageEvaluate: vi.fn(),
-  mockPageGoto: vi.fn(),
-  mockPageUrl: vi.fn(),
-  mockContextAddInitScript: vi.fn(),
+  mockSendStopSignal: vi.fn(),
+  mockReadSummary: vi.fn(),
+  mockReadData: vi.fn(),
 }));
 
 const mockPage = {
-  evaluate: mockPageEvaluate,
-  goto: mockPageGoto,
-  url: mockPageUrl,
-  context: vi.fn().mockReturnValue({ addInitScript: mockContextAddInitScript }),
+  evaluate: vi.fn(),
+  goto: vi.fn(),
+  url: vi.fn(),
+  context: vi.fn().mockReturnValue({ addInitScript: vi.fn() }),
 };
 
 vi.mock('../../src/cli/output.js', () => ({
@@ -62,6 +60,15 @@ vi.mock('../../src/browser.js', () => ({
 vi.mock('../../src/recorder/player.js', () => ({
   PlaybackEngine: {
     fromFile: vi.fn().mockReturnValue({ play: mockPlay }),
+  },
+}));
+
+vi.mock('../../src/recorder/session-recorder.js', () => ({
+  SessionRecorder: {
+    sendStopSignal: mockSendStopSignal,
+    readSummary: mockReadSummary,
+    readData: mockReadData,
+    getRecordingsDir: vi.fn((name: string) => `/home/.xbrowser/sessions/${name}/recordings`),
   },
 }));
 
@@ -95,158 +102,166 @@ describe('record-routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockOutputError.mockImplementation(() => { throw new Error('EXIT'); });
-    mockPageUrl.mockReturnValue('about:blank');
-    mockPageEvaluate.mockResolvedValue(undefined);
-    mockPageGoto.mockResolvedValue(undefined);
-    mockContextAddInitScript.mockResolvedValue(undefined);
-    mockPage.context.mockReturnValue({ addInitScript: mockContextAddInitScript });
   });
 
   describe('handleRecord', () => {
-    it('should output error when record start has no --url', async () => {
+    // --- start subcommand ---
+    it('should output error when record start has no --cdp', async () => {
       await expect(handleRecord(['start'], {}, 'text')).rejects.toThrow('EXIT');
-      expect(mockOutputError).toHaveBeenCalledWith('Usage: xbrowser record start --url <url> [--cdp <endpoint>]');
+      expect(mockOutputError).toHaveBeenCalledWith('CDP endpoint is required for recording. Use --cdp <endpoint>');
     });
 
-    it('should start recording by injecting JS into page', async () => {
-      mockFindOrRestoreSession.mockResolvedValue({ page: mockPage });
-      mockPageUrl.mockReturnValue('about:blank');
+    it('should output error when recording already in progress', async () => {
+      // readControlFile reads from fs.readFileSync
+      mockFsReadFileSync.mockReturnValue(JSON.stringify({
+        pid: 1234,
+        startedAt: '2024-01-01T00:00:00Z',
+        startUrl: 'https://example.com',
+        sessionName: 'default',
+      }));
 
-      await handleRecord(['start'], { url: 'https://example.com' }, 'json');
+      await handleRecord(['start'], { cdp: 'http://localhost:9222' }, 'json');
 
-      expect(mockPageGoto).toHaveBeenCalledWith('https://example.com', expect.objectContaining({ waitUntil: 'domcontentloaded' }));
-      expect(mockPageEvaluate).toHaveBeenCalled();
-      expect(mockContextAddInitScript).toHaveBeenCalled();
       expect(mockOutputResult).toHaveBeenCalledWith(
-        expect.objectContaining({ ok: true, url: 'https://example.com', injected: true }),
+        expect.objectContaining({
+          ok: false,
+          error: 'Recording already in progress',
+          pid: 1234,
+        }),
         'json'
       );
     });
 
-    it('should start recording without goto when already on target page', async () => {
-      mockFindOrRestoreSession.mockResolvedValue({ page: mockPage });
-      mockPageUrl.mockReturnValue('https://example.com/page');
-
-      await handleRecord(['start'], { url: 'https://example.com' }, 'json');
-
-      expect(mockPageGoto).not.toHaveBeenCalled();
-      expect(mockPageEvaluate).toHaveBeenCalled();
-    });
-
-    it('should create session when none found for start', async () => {
-      mockFindOrRestoreSession.mockResolvedValue(null);
-      mockCreateSession.mockResolvedValue({ page: mockPage });
-      mockPageUrl.mockReturnValue('about:blank');
-
-      await handleRecord(['start'], { url: 'https://example.com' }, 'json');
-
-      expect(mockCreateSession).toHaveBeenCalledWith('default', 'https://example.com', {});
-      expect(mockPageEvaluate).toHaveBeenCalled();
-    });
-
-    it('should pass cdpEndpoint to resolveSession', async () => {
-      mockFindOrRestoreSession.mockResolvedValue({ page: mockPage });
-      mockPageUrl.mockReturnValue('https://example.com');
-
-      await handleRecord(['start'], { url: 'https://example.com', cdp: 'http://localhost:9222' }, 'json');
-
-      expect(mockFindOrRestoreSession).toHaveBeenCalledWith('default', 'http://localhost:9222');
-    });
-
-    it('should stop recording and extract events', async () => {
-      const events = [
-        { type: 'click', ts: 100 },
-        { type: 'input', ts: 500 },
-        { type: 'keydown', ts: 1200 },
-      ];
-      mockFindOrRestoreSession.mockResolvedValue({ page: mockPage });
-      mockPageUrl.mockReturnValue('https://example.com/page');
-      mockPageEvaluate.mockResolvedValue(events);
-      mockFsExistsSync.mockReturnValue(true);
+    // --- stop subcommand ---
+    it('should send stop signal and report success', async () => {
+      const control = {
+        pid: 1234,
+        startedAt: '2024-01-01T00:00:00Z',
+        startUrl: 'https://example.com',
+        sessionName: 'default',
+      };
+      mockSendStopSignal.mockResolvedValue(control);
+      mockReadSummary.mockReturnValue({
+        startUrl: 'https://example.com',
+        recordedAt: '2024-01-01',
+        durationMs: 5000,
+        totalActions: 3,
+        totalNetworkRequests: 10,
+        steps: [],
+      });
 
       await handleRecord(['stop'], {}, 'json');
 
-      expect(mockPageEvaluate).toHaveBeenCalledWith(expect.any(Function));
-      expect(mockFsWriteFileSync).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.any(String),
-        'utf8'
-      );
+      expect(mockSendStopSignal).toHaveBeenCalledWith('default');
       expect(mockOutputResult).toHaveBeenCalledWith(
-        expect.objectContaining({ ok: true, events: 3, duration: '1s' }),
+        expect.objectContaining({ ok: true, pid: 1234, sessionName: 'default' }),
         'json'
       );
     });
 
-    it('should stop recording with no events', async () => {
-      mockFindOrRestoreSession.mockResolvedValue({ page: mockPage });
-      mockPageEvaluate.mockResolvedValue([]);
+    it('should report no active recording when stop has no control file', async () => {
+      mockSendStopSignal.mockResolvedValue(null);
+      mockReadData.mockReturnValue(null);
 
       await handleRecord(['stop'], {}, 'json');
 
       expect(mockOutputResult).toHaveBeenCalledWith(
-        expect.objectContaining({ ok: true, events: 0, message: 'No events captured' }),
+        expect.objectContaining({ ok: false, error: expect.stringContaining('No active recording') }),
         'json'
       );
     });
 
-    it('should output error when stop cannot read events from page', async () => {
-      mockFindOrRestoreSession.mockResolvedValue({ page: mockPage });
-      mockPageEvaluate.mockRejectedValue(new Error('detached'));
+    it('should report existing data when recorder already exited', async () => {
+      mockSendStopSignal.mockResolvedValue(null);
+      mockReadData.mockReturnValue({ actions: [{ type: 'click' }], network: [{ url: '/api' }] });
 
-      await expect(handleRecord(['stop'], {}, 'text')).rejects.toThrow('EXIT');
-      expect(mockOutputError).toHaveBeenCalledWith(expect.stringContaining('Could not read events'));
+      await handleRecord(['stop'], {}, 'json');
+
+      expect(mockOutputResult).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ok: true,
+          actions: 1,
+          network: 1,
+        }),
+        'json'
+      );
     });
 
-    it('should use custom output path for stop', async () => {
-      mockFindOrRestoreSession.mockResolvedValue({ page: mockPage });
-      mockPageUrl.mockReturnValue('https://example.com');
-      mockPageEvaluate.mockResolvedValue([{ type: 'click', ts: 0 }]);
-      mockFsExistsSync.mockReturnValue(true);
+    it('should respect --session option for stop', async () => {
+      const control = { pid: 5678, startedAt: '', startUrl: '', sessionName: 'my-session' };
+      mockSendStopSignal.mockResolvedValue(control);
+      mockReadSummary.mockReturnValue(null);
 
-      await handleRecord(['stop'], { output: '/tmp/custom.yaml' }, 'json');
+      await handleRecord(['stop'], { session: 'my-session' }, 'json');
 
-      expect(mockFsWriteFileSync).toHaveBeenCalledWith('/tmp/custom.yaml', expect.any(String), 'utf8');
+      expect(mockSendStopSignal).toHaveBeenCalledWith('my-session');
     });
 
-    it('should return status when recording is active', async () => {
-      mockFindOrRestoreSession.mockResolvedValue({ page: mockPage });
-      mockPageUrl.mockReturnValue('https://example.com');
-      mockPageEvaluate
-        .mockResolvedValueOnce(true)
-        .mockResolvedValueOnce(5);
+    // --- status subcommand ---
+    it('should return status when recording is active (process alive)', async () => {
+      const controlFile = {
+        pid: process.pid, // use current pid — it's always alive
+        startedAt: '2024-01-01T00:00:00Z',
+        startUrl: 'https://example.com',
+        sessionName: 'default',
+      };
+      // readControlFile reads from fs.readFileSync
+      mockFsReadFileSync.mockReturnValue(JSON.stringify(controlFile));
 
       await handleRecord(['status'], {}, 'json');
 
       expect(mockOutputResult).toHaveBeenCalledWith(
-        expect.objectContaining({ recording: true, events: 5, url: 'https://example.com' }),
+        expect.objectContaining({
+          recording: true,
+          sessionName: 'default',
+          pid: process.pid,
+          startUrl: 'https://example.com',
+        }),
         'json'
       );
     });
 
-    it('should return recording false when no session found for status', async () => {
-      mockFindOrRestoreSession.mockResolvedValue(null);
+    it('should return recording false when no control file found', async () => {
+      // readControlFile catches and returns null
+      mockFsReadFileSync.mockImplementation(() => { throw new Error('ENOENT'); });
 
       await handleRecord(['status'], {}, 'json');
 
       expect(mockOutputResult).toHaveBeenCalledWith(
-        expect.objectContaining({ recording: false, message: 'No session found' }),
+        expect.objectContaining({ recording: false, sessionName: 'default' }),
         'json'
       );
     });
 
-    it('should return recording false when page evaluate fails for status', async () => {
-      mockFindOrRestoreSession.mockResolvedValue({ page: mockPage });
-      mockPageEvaluate.mockRejectedValue(new Error('disconnected'));
+    it('should return recording false when control file process is dead', async () => {
+      const controlFile = {
+        pid: 999999999, // impossible pid — process.kill will throw
+        startedAt: '2024-01-01T00:00:00Z',
+        startUrl: 'https://example.com',
+        sessionName: 'default',
+      };
+      mockFsReadFileSync.mockReturnValue(JSON.stringify(controlFile));
 
       await handleRecord(['status'], {}, 'json');
 
       expect(mockOutputResult).toHaveBeenCalledWith(
-        expect.objectContaining({ recording: false, message: 'Cannot reach page' }),
+        expect.objectContaining({ recording: false, sessionName: 'default' }),
         'json'
       );
     });
 
+    it('should respect --session option for status', async () => {
+      mockFsReadFileSync.mockImplementation(() => { throw new Error('ENOENT'); });
+
+      await handleRecord(['status'], { session: 'custom' }, 'json');
+
+      expect(mockOutputResult).toHaveBeenCalledWith(
+        expect.objectContaining({ recording: false, sessionName: 'custom' }),
+        'json'
+      );
+    });
+
+    // --- unknown subcommand ---
     it('should print usage for unknown record subcommand', async () => {
       const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
       await handleRecord(['unknown'], {}, 'text');
