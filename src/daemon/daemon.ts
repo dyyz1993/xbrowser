@@ -2,7 +2,7 @@ import { spawn } from 'child_process';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
-import { stopDaemon as xcliStopDaemon, getDaemonStatus } from '@dyyz1993/xcli-core';
+import { stopDaemon as xcliStopDaemon, isDaemonRunning, getDaemonStatus, killAllDaemon } from '@dyyz1993/xcli-core';
 import type { DaemonConfig } from '@dyyz1993/xcli-core';
 
 export interface DaemonInfo {
@@ -18,13 +18,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const WORKER_PATH = join(__dirname, 'daemon-main.js');
 
 /**
- * DaemonConfig compatible with xcli-core's daemon-manager API.
- *
- * Used by getDaemonStatus() and stopDaemon() which only read daemon.json
- * and use process.kill — no tsx dependency required.
- *
- * For startDaemonProcess(), we use our own spawn (without --import tsx)
- * since xbrowser's daemon-worker is compiled JS.
+ * DaemonConfig compatible with xcli-core 0.9.0 API.
+ * Used by isDaemonRunning(), getDaemonStatus(), stopDaemon(), killAllDaemon().
  */
 export function getDaemonConfig(): DaemonConfig {
   return {
@@ -37,18 +32,23 @@ export function getDaemonConfig(): DaemonConfig {
 /**
  * Start the daemon process. Spawns daemon-main.js as a detached child.
  *
- * Uses xcli-core's getDaemonStatus() for health polling (it reads
- * daemon.json which the daemon writes after initializing its HTTP server).
+ * Uses xcli-core's isDaemonRunning() for quick check, then getDaemonStatus()
+ * for detailed health polling after spawn.
  *
  * Does NOT use xcli-core's startDaemon() because that spawns with
  * --import tsx, which requires tsx to be installed. xbrowser's
  * daemon-main.js is compiled JS and loads without tsx.
  */
 export async function startDaemonProcess(port: number = 9224): Promise<DaemonInfo> {
-  // Check if daemon is already running using xcli-core's daemon.json reader
-  const status = getDaemonStatus(getDaemonConfig());
-  if (status.running && status.port === port && status.pid) {
-    return { pid: status.pid, port: status.port, startedAt: new Date().toISOString() };
+  // Quick check using xcli-core 0.9.0 isDaemonRunning()
+  const config = getDaemonConfig();
+  if (isDaemonRunning(config)) {
+    const status = getDaemonStatus(config);
+    if (status.port === port && status.pid) {
+      return { pid: status.pid, port: status.port, startedAt: new Date().toISOString() };
+    }
+    // Port mismatch — stop existing and restart
+    await xcliStopDaemon(config);
   }
 
   const child = spawn('node', [WORKER_PATH], {
@@ -72,12 +72,14 @@ export async function startDaemonProcess(port: number = 9224): Promise<DaemonInf
     }, 15000);
 
     const checkInterval = setInterval(() => {
-      const s = getDaemonStatus(getDaemonConfig());
-      if (s.running && s.port === port && s.pid) {
-        resolved = true;
-        clearTimeout(timeout);
-        clearInterval(checkInterval);
-        resolve({ pid: s.pid, port: s.port, startedAt: new Date().toISOString() });
+      if (isDaemonRunning(config)) {
+        const s = getDaemonStatus(config);
+        if (s.port === port && s.pid) {
+          resolved = true;
+          clearTimeout(timeout);
+          clearInterval(checkInterval);
+          resolve({ pid: s.pid, port: s.port, startedAt: new Date().toISOString() });
+        }
       }
     }, 200);
 
@@ -94,17 +96,21 @@ export async function startDaemonProcess(port: number = 9224): Promise<DaemonInf
 
 /**
  * Stop the daemon process using xcli-core's stopDaemon().
- * Sends SIGTERM, removes daemon.json, and stops the WebSocket server.
  */
 export async function stopDaemonProcess(): Promise<void> {
   await xcliStopDaemon(getDaemonConfig());
 }
 
 /**
- * Get daemon process status using xcli-core's getDaemonStatus().
- *
- * Returns both xcli-core's structured status and our own DaemonInfo
- * for backward compatibility.
+ * Kill ALL daemon processes using xcli-core 0.9.0 killAllDaemon().
+ * Useful for clean shutdown or troubleshooting.
+ */
+export async function killAllDaemonProcesses(): Promise<void> {
+  await killAllDaemon(getDaemonConfig());
+}
+
+/**
+ * Get daemon process status using xcli-core's isDaemonRunning() + getDaemonStatus().
  */
 export function getDaemonProcessStatus(): {
   running: boolean;
@@ -112,13 +118,16 @@ export function getDaemonProcessStatus(): {
   port: number;
   info: DaemonInfo | null;
 } {
-  const status = getDaemonStatus(getDaemonConfig());
+  const config = getDaemonConfig();
+  const running = isDaemonRunning(config);
+  if (!running) {
+    return { running: false, pid: 0, port: 0, info: null };
+  }
+  const status = getDaemonStatus(config);
   return {
-    running: status.running,
+    running: true,
     pid: status.pid,
     port: status.port,
-    info: status.running
-      ? { pid: status.pid, port: status.port, startedAt: new Date().toISOString() }
-      : null,
+    info: { pid: status.pid, port: status.port, startedAt: new Date().toISOString() },
   };
 }

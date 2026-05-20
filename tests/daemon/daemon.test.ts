@@ -9,8 +9,10 @@ vi.mock('child_process', () => ({
 }));
 
 const mockXcliCore = {
+  isDaemonRunning: vi.fn(),
   getDaemonStatus: vi.fn(),
   stopDaemon: vi.fn().mockResolvedValue(undefined),
+  killAllDaemon: vi.fn().mockResolvedValue(undefined),
 };
 
 vi.mock('@dyyz1993/xcli-core', () => mockXcliCore);
@@ -30,7 +32,7 @@ describe('Daemon API', () => {
 
   describe('getDaemonProcessStatus', () => {
     it('should return not running when no config', async () => {
-      mockXcliCore.getDaemonStatus.mockReturnValue({ running: false, port: 0, pid: 0 });
+      mockXcliCore.isDaemonRunning.mockReturnValue(false);
 
       const { getDaemonProcessStatus } = await import('../../src/daemon/daemon.js');
       const result = getDaemonProcessStatus();
@@ -41,6 +43,7 @@ describe('Daemon API', () => {
     });
 
     it('should return running status', async () => {
+      mockXcliCore.isDaemonRunning.mockReturnValue(true);
       mockXcliCore.getDaemonStatus.mockReturnValue({ running: true, port: 9224, pid: 12345 });
 
       const { getDaemonProcessStatus } = await import('../../src/daemon/daemon.js');
@@ -55,6 +58,7 @@ describe('Daemon API', () => {
 
   describe('startDaemonProcess', () => {
     it('should return existing daemon info when already running', async () => {
+      mockXcliCore.isDaemonRunning.mockReturnValue(true);
       mockXcliCore.getDaemonStatus.mockReturnValue({ running: true, port: 9224, pid: 54321 });
 
       const { startDaemonProcess } = await import('../../src/daemon/daemon.js');
@@ -66,10 +70,12 @@ describe('Daemon API', () => {
 
     it('should spawn worker process and wait for config', async () => {
       vi.useFakeTimers();
-      // First call: not running yet
-      // Second call: running
+      // First call: not running, then running on polling
+      mockXcliCore.isDaemonRunning
+        .mockReturnValueOnce(false)
+        .mockReturnValueOnce(false)
+        .mockReturnValueOnce(true);
       mockXcliCore.getDaemonStatus
-        .mockReturnValueOnce({ running: false, port: 0, pid: 0 })
         .mockReturnValueOnce({ running: true, port: 9224, pid: 54321 });
 
       const { spawn } = await import('child_process');
@@ -88,6 +94,7 @@ describe('Daemon API', () => {
 
     it('should reject on spawn error', async () => {
       vi.useRealTimers();
+      mockXcliCore.isDaemonRunning.mockReturnValue(false);
       mockXcliCore.getDaemonStatus.mockReturnValue({ running: false, port: 0, pid: 0 });
       const { spawn } = await import('child_process');
       let errorHandler: ((err: Error) => void) | null = null;
