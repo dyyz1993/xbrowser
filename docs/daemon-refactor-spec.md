@@ -333,13 +333,14 @@ process.on('message', (msg) => { ... }); // IPC 握手
 
 **注意**：xcli-core 的 SessionStore 是纯内存的，没有磁盘持久化。mpage 的持久化是用单独的 `storage.ts`（Unix socket session info 文件）。xbrowser 当前也需要跨进程恢复 session，需要保留一定的磁盘元数据。
 
-### Phase 5: 迁移网络分析/录制功能
+### Phase 5: 迁移网络分析/录制功能（暂缓）
 
-**目标**：把 `daemon-worker.ts` 里的网络分析 RPC 方法（`network:*`, `recording:*`, `command:log`）迁移到 worker 的 `execute()` 里。
+**状态**：⏳ 等待 WorkerManager 架构实施后再执行。
 
-**原因**：这些功能需要访问 `page` 对象，只有 worker 才持有。
+**原因**：当前 daemon 是单进程架构，所有 RPC handler 直接在 daemon 进程内访问 `page` 对象（通过 `findSession()`）。要改为 worker 子进程模式，需要先引入 xcli-core 的 `WorkerManager`（fork 子进程 + IPC 通信），这是一个更大的架构变更。
 
-**改动**：
+**将来实施时**：
+- 创建 `xbrowser-worker.ts` 实现 `WorkerEntryPoint`
 - `network:list/clear/top/analyze/curl/replay/like/dislike/export` → worker.execute()
 - `recording:status/events/clear/save` → worker.execute()
 - daemon-main.ts 的 RPC handler 只做 session 管理和命令路由
@@ -384,11 +385,11 @@ process.on('message', (msg) => { ... }); // IPC 握手
 
 ## 六、执行顺序
 
-1. **Phase 1** — 重构 daemon.ts（最简单，风险最低）
-2. **Phase 3** — 简化 daemon-client.ts（不依赖 Phase 2）
-3. **Phase 2** — 拆分 daemon-worker.ts（最大改动，需要仔细测试）
-4. **Phase 4** — 对齐 Session 管理（依赖 Phase 2）
-5. **Phase 5** — 迁移网络/录制功能（依赖 Phase 2）
+1. **Phase 1** ✅ — 重构 daemon.ts 用 xcli-core API（完成）
+2. **Phase 3** ✅ — 简化 daemon-client.ts（完成）
+3. **Phase 2** ✅ — 拆分 daemon-worker.ts 为 daemon-main + rpc-handlers（完成）
+4. **Phase 4** ✅ — 对齐 Session 管理，加入 xcli-core SessionStore（完成）
+5. **Phase 5** ⏳ — 迁移网络/录制功能到 xbrowser-worker（暂缓）
 
 每个 Phase 完成后：
 - `npm run build && npm link`
