@@ -1,5 +1,17 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import * as fs from 'fs';
+
+// Mock daemon to avoid 17s timeouts on every page-scope command
+vi.mock('../../src/client/daemon-client.js', () => ({
+  isDaemonRunning: vi.fn().mockResolvedValue(false),
+  forwardExec: vi.fn(),
+  forwardChain: vi.fn(),
+}));
+vi.mock('../../src/daemon/daemon.js', () => ({
+  startDaemonProcess: vi.fn().mockRejectedValue(new Error('no daemon')),
+  stopDaemonProcess: vi.fn(),
+  getDaemonProcessStatus: vi.fn(),
+}));
 
 const playwrightChromiumPath = '/Users/xuyingzhou/Library/Caches/ms-playwright/chromium_headless_shell-1217';
 const e2eAvailable = fs.existsSync(playwrightChromiumPath);
