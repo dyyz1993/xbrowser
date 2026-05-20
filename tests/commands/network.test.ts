@@ -166,7 +166,8 @@ describe('network command - utility functions', () => {
         captures,
         ['console log'],
         1,
-        { searchResults: ['match1', 'match2'] },
+        undefined, // wsCaptures
+        { searchResults: ['match1', 'match2'] }, // searchResults
       );
 
       expect(output).toMatchObject({
