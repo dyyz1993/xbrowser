@@ -7,6 +7,12 @@ const {
   mockCloseSession,
   mockListSessions,
   mockHandleSessionHelp,
+  mockIsDaemonRunning,
+  mockForwardSessionCreate,
+  mockForwardSessionClose,
+  mockForwardSessionList,
+  mockStartDaemonProcess,
+  mockStopDaemonProcess,
 } = vi.hoisted(() => ({
   mockOutputResult: vi.fn(),
   mockOutputError: vi.fn(),
@@ -14,6 +20,12 @@ const {
   mockCloseSession: vi.fn(),
   mockListSessions: vi.fn(),
   mockHandleSessionHelp: vi.fn().mockReturnValue('session help text'),
+  mockIsDaemonRunning: vi.fn().mockResolvedValue(true),
+  mockForwardSessionCreate: vi.fn(),
+  mockForwardSessionClose: vi.fn(),
+  mockForwardSessionList: vi.fn(),
+  mockStartDaemonProcess: vi.fn(),
+  mockStopDaemonProcess: vi.fn(),
 }));
 
 vi.mock('../../src/cli/output.js', () => ({
@@ -22,7 +34,6 @@ vi.mock('../../src/cli/output.js', () => ({
 }));
 
 vi.mock('../../src/session/session-client.js', () => ({
-  openSession: mockOpenSession,
   closeSession: mockCloseSession,
   listSessions: mockListSessions,
 }));
@@ -31,18 +42,34 @@ vi.mock('../../src/builtins/index.js', () => ({
   handleSessionHelp: mockHandleSessionHelp,
 }));
 
+vi.mock('../../src/client/daemon-client.js', () => ({
+  isDaemonRunning: mockIsDaemonRunning,
+  forwardSessionCreate: mockForwardSessionCreate,
+  forwardSessionClose: mockForwardSessionClose,
+  forwardSessionList: mockForwardSessionList,
+}));
+
+vi.mock('../../src/daemon/daemon.js', () => ({
+  startDaemonProcess: mockStartDaemonProcess,
+  stopDaemonProcess: mockStopDaemonProcess,
+}));
+
 import { handleSession } from '../../src/cli/session-routes.js';
 
 describe('session-routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockOutputError.mockImplementation(() => { throw new Error('EXIT'); });
+    // Daemon is running by default
+    mockIsDaemonRunning.mockResolvedValue(true);
   });
 
+  // ── open ──
+
   it('should open a session with url and default name', async () => {
-    mockOpenSession.mockResolvedValue({ id: '1', name: 'default', url: 'https://example.com' });
+    mockForwardSessionCreate.mockResolvedValue({ id: '1', name: 'default', url: 'https://example.com' });
     await handleSession(['open', 'https://example.com'], {}, 'json');
-    expect(mockOpenSession).toHaveBeenCalledWith('default', 'https://example.com', { cdpEndpoint: undefined });
+    expect(mockForwardSessionCreate).toHaveBeenCalledWith('default', 'https://example.com', undefined);
     expect(mockOutputResult).toHaveBeenCalledWith(
       expect.objectContaining({ ok: true, name: 'default' }),
       'json'
@@ -50,9 +77,9 @@ describe('session-routes', () => {
   });
 
   it('should open a session with custom name', async () => {
-    mockOpenSession.mockResolvedValue({ id: '2', name: 'my-session' });
+    mockForwardSessionCreate.mockResolvedValue({ id: '2', name: 'my-session', url: 'https://example.com' });
     await handleSession(['open', 'https://example.com'], { name: 'my-session' }, 'text');
-    expect(mockOpenSession).toHaveBeenCalledWith('my-session', 'https://example.com', { cdpEndpoint: undefined });
+    expect(mockForwardSessionCreate).toHaveBeenCalledWith('my-session', 'https://example.com', undefined);
   });
 
   it('should output error when open has no url', async () => {
@@ -60,55 +87,75 @@ describe('session-routes', () => {
     expect(mockOutputError).toHaveBeenCalledWith(expect.stringContaining('Usage'));
   });
 
+  it('should pass cdpEndpoint to forwardSessionCreate', async () => {
+    mockForwardSessionCreate.mockResolvedValue({ id: '3', name: 'default', url: 'https://example.com' });
+    await handleSession(['open', 'https://example.com'], {}, 'text', 'http://localhost:9222');
+    expect(mockForwardSessionCreate).toHaveBeenCalledWith('default', 'https://example.com', 'http://localhost:9222');
+  });
+
+  // ── close ──
+
   it('should close a session with default name', async () => {
-    mockCloseSession.mockResolvedValue(undefined);
+    mockForwardSessionClose.mockResolvedValue({ ok: true });
     await handleSession(['close'], {}, 'json');
+    expect(mockForwardSessionClose).toHaveBeenCalledWith('default');
     expect(mockCloseSession).toHaveBeenCalledWith('default');
     expect(mockOutputResult).toHaveBeenCalledWith({ ok: true, name: 'default' }, 'json');
   });
 
   it('should close a session with custom name', async () => {
-    mockCloseSession.mockResolvedValue(undefined);
+    mockForwardSessionClose.mockResolvedValue({ ok: true });
     await handleSession(['close'], { name: 'my-session' }, 'text');
+    expect(mockForwardSessionClose).toHaveBeenCalledWith('my-session');
     expect(mockCloseSession).toHaveBeenCalledWith('my-session');
     expect(mockOutputResult).toHaveBeenCalledWith({ ok: true, name: 'my-session' }, 'text');
   });
 
+  // ── list ──
+
   it('should list sessions', async () => {
-    mockListSessions.mockResolvedValue([{ id: '1', name: 'default' }]);
+    mockForwardSessionList.mockResolvedValue([{ id: '1', name: 'default', url: 'https://example.com' }]);
     await handleSession(['list'], {}, 'json');
-    expect(mockListSessions).toHaveBeenCalled();
+    expect(mockForwardSessionList).toHaveBeenCalled();
     expect(mockOutputResult).toHaveBeenCalledWith(
-      { sessions: [{ id: '1', name: 'default' }] },
+      { sessions: [{ id: '1', name: 'default', url: 'https://example.com' }] },
       'json'
     );
   });
 
   it('should list sessions with ls alias', async () => {
-    mockListSessions.mockResolvedValue([]);
+    mockForwardSessionList.mockResolvedValue([]);
     await handleSession(['ls'], {}, 'json');
+    expect(mockForwardSessionList).toHaveBeenCalled();
+  });
+
+  it('should fallback to session-client when daemon list fails', async () => {
+    mockForwardSessionList.mockRejectedValue(new Error('daemon down'));
+    mockListSessions.mockResolvedValue([{ id: '2', name: 'fallback' }]);
+    await handleSession(['list'], {}, 'json');
     expect(mockListSessions).toHaveBeenCalled();
   });
 
-  it('should kill a session', async () => {
-    mockCloseSession.mockResolvedValue(undefined);
+  // ── kill ──
+
+  it('should kill a session (close + daemon stop)', async () => {
+    mockForwardSessionClose.mockResolvedValue({ ok: true });
     await handleSession(['kill'], { name: 'test' }, 'json');
+    expect(mockForwardSessionClose).toHaveBeenCalledWith('test');
     expect(mockCloseSession).toHaveBeenCalledWith('test');
-    expect(mockOutputResult).toHaveBeenCalledWith({ ok: true, name: 'test', killed: true }, 'json');
+    expect(mockStopDaemonProcess).toHaveBeenCalled();
+    expect(mockOutputResult).toHaveBeenCalledWith(
+      { ok: true, name: 'test', killed: true, daemon: 'stopped' },
+      'json'
+    );
   });
+
+  // ── unknown subcommand ──
 
   it('should show help for unknown subcommand', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     await handleSession(['unknown'], {}, 'text');
     expect(mockHandleSessionHelp).toHaveBeenCalled();
     logSpy.mockRestore();
-  });
-
-  it('should pass cdpEndpoint to openSession', async () => {
-    mockOpenSession.mockResolvedValue({ id: '3', name: 'default' });
-    await handleSession(['open', 'https://example.com'], {}, 'text', 'http://localhost:9222');
-    expect(mockOpenSession).toHaveBeenCalledWith('default', 'https://example.com', {
-      cdpEndpoint: 'http://localhost:9222',
-    });
   });
 });

@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { execSync } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import { existsSync } from 'fs';
 
 const CHROMIUM_PATH = '/Applications/Chromium.app/Contents/MacOS/Chromium';
 const CDP_PORT = 9222;
 const CDP_ENDPOINT = `http://127.0.0.1:${CDP_PORT}`;
+const CHROMIUM_USER_DIR = '/tmp/xbrowser-test-chromium';
 const SESSION_NAME = 'test-daemon';
 const TEST_URL = 'https://www.baidu.com';
 
@@ -14,7 +15,9 @@ const NPX = `npx --prefix ${PROJECT_ROOT}`;
 const chromiumAvailable = existsSync(CHROMIUM_PATH);
 const describeE2E = chromiumAvailable ? describe : describe.skip;
 
-let chromiumPid: number | null = null;
+let chromiumChild: ReturnType<typeof spawn> | null = null;
+
+// ─── Helpers ────────────────────────────────────────────────────
 
 function run(cmd: string): string {
   return execSync(cmd, {
@@ -42,6 +45,30 @@ function runJson(cmd: string): Record<string, unknown> {
   }
 }
 
+function waitForPort(port: number, maxMs = 10000): void {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    try {
+      const pid = execSync(`lsof -ti :${port}`, { encoding: 'utf8' }).trim();
+      if (pid) return;
+    } catch { /* not ready */ }
+    execSync('sleep 0.3', { stdio: 'ignore' });
+  }
+  throw new Error(`Port ${port} did not open within ${maxMs}ms`);
+}
+
+function waitForDaemon(maxMs = 10000): void {
+  const start = Date.now();
+  while (Date.now() - start < maxMs) {
+    try {
+      const result = runJson(`${NPX} xbrowser daemon status --json`);
+      if (result.running === true) return;
+    } catch { /* not ready */ }
+    execSync('sleep 0.3', { stdio: 'ignore' });
+  }
+  throw new Error('Daemon did not start within timeout');
+}
+
 function killByPort(port: number): void {
   try {
     const pidStr = execSync(`lsof -ti :${port}`, { encoding: 'utf8' }).trim();
@@ -56,48 +83,50 @@ function killByPort(port: number): void {
   } catch { /* port not in use */ }
 }
 
-function waitForDaemon(maxMs = 10000): void {
-  const start = Date.now();
-  while (Date.now() - start < maxMs) {
-    try {
-      const result = runJson(`${NPX} xbrowser daemon status --json`);
-      if (result.running === true) return;
-    } catch { /* not ready */ }
-    execSync('sleep 0.5', { stdio: 'ignore' });
-  }
-  throw new Error('Daemon did not start within timeout');
-}
+// ─── E2E Tests ──────────────────────────────────────────────────
 
 describeE2E('Daemon Session E2E', () => {
   beforeAll(() => {
+    // Clean up any leftovers
     killByPort(CDP_PORT);
     killByPort(9224);
+    execSync(`rm -rf ${CHROMIUM_USER_DIR}`, { stdio: 'ignore' });
 
-    execSync(
-      `"${CHROMIUM_PATH}" --headless --remote-debugging-port=${CDP_PORT} --no-sandbox --disable-gpu --user-data-dir=/tmp/xbrowser-test-chromium &`,
-      { stdio: 'ignore', timeout: 5000 },
-    );
+    // Start Chromium with detached spawn (not execSync + & which is unreliable)
+    chromiumChild = spawn(CHROMIUM_PATH, [
+      '--headless',
+      `--remote-debugging-port=${CDP_PORT}`,
+      '--no-sandbox',
+      '--disable-gpu',
+      `--user-data-dir=${CHROMIUM_USER_DIR}`,
+    ], {
+      stdio: 'ignore',
+      detached: true,
+    });
+    chromiumChild.unref();
 
-    execSync('sleep 2', { stdio: 'ignore' });
+    // Wait for CDP port to be ready
+    waitForPort(CDP_PORT);
 
-    const pidStr = execSync(`lsof -ti :${CDP_PORT}`, { encoding: 'utf8' }).trim();
-    chromiumPid = parseInt(pidStr.split('\n')[0], 10) || null;
-
+    // Start daemon
     run(`${NPX} xbrowser daemon start --json`);
     waitForDaemon();
   }, 30000);
 
   afterAll(() => {
+    // Close session
     try { run(`${NPX} xbrowser session close --name ${SESSION_NAME} --cdp ${CDP_ENDPOINT} --json`); } catch { /* ok */ }
+    // Stop daemon
     try { run(`${NPX} xbrowser daemon stop --json`); } catch { /* ok */ }
     killByPort(9224);
-    if (chromiumPid) {
-      try { process.kill(chromiumPid, 'SIGKILL'); } catch { /* ok */ }
+    // Kill Chromium
+    if (chromiumChild?.pid) {
+      try { process.kill(chromiumChild.pid, 'SIGKILL'); } catch { /* ok */ }
     }
     killByPort(CDP_PORT);
   }, 15000);
 
-  it('should forward session open to daemon and return ok:true', () => {
+  it('should start daemon and open a session via daemon', () => {
     const result = runJson(
       `${NPX} xbrowser session open ${TEST_URL} --name ${SESSION_NAME} --cdp ${CDP_ENDPOINT} --json`,
     );
