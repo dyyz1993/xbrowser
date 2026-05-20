@@ -1,4 +1,13 @@
-import { ok, fail, isCommandResult, type CommandResult } from '@dyyz1993/xcli-core';
+import {
+  ok,
+  fail,
+  isCommandResult,
+  type CommandResult,
+  configureArchiveStore,
+  appendCommandToArchive,
+  type CommandArchiveEntry,
+  checkGuard,
+} from '@dyyz1993/xcli-core';
 import { mapPositionalValues } from './utils/positional-params.js';
 import { getCommand, getAllCommands } from './commands/index.js';
 import type { BrowserCommandContext } from './context.js';
@@ -11,6 +20,34 @@ import {
 import type { WSServer, CommandMessage } from './websocket-server.js';
 import { getPluginLoader } from './utils/plugin-singleton.js';
 import { getTipsManager } from './tips/index.js';
+import { homedir } from 'os';
+import { join } from 'path';
+
+let archiveInitialized = false;
+function ensureArchiveInit(): void {
+  if (!archiveInitialized) {
+    try {
+      configureArchiveStore({ archiveDir: join(homedir(), '.xbrowser', 'archives') });
+    } catch { /* archive init failure is non-fatal */ }
+    archiveInitialized = true;
+  }
+}
+
+function recordArchive(sessionId: string | undefined, sessionName: string, entry: CommandArchiveEntry): void {
+  if (!sessionId) return;
+  try {
+    ensureArchiveInit();
+    appendCommandToArchive(sessionId, sessionName, entry);
+  } catch { /* archive write failure is non-fatal */ }
+}
+
+async function guardCheck(commandName: string): Promise<{ blocked: boolean; message: string } | null> {
+  try {
+    const loader = await getPluginLoader();
+    const core = loader.getCore();
+    return checkGuard(core, commandName, process.env);
+  } catch { /* guard check failure should not block */ return null; }
+}
 
 /**
  * Result of a single command execution.
@@ -94,6 +131,11 @@ export async function executeCommand(
   sessionName: string = 'default',
   extraOpts?: { cdpEndpoint?: string; skipCleanup?: boolean }
 ): Promise<ExecutionResult> {
+  const guardResult = await guardCheck(commandName);
+  if (guardResult?.blocked) {
+    return errorResult(guardResult.message);
+  }
+
   const command = getCommand(commandName);
   if (!command) {
     const available = getAllCommands().map((c) => c.name);
@@ -229,9 +271,27 @@ export async function executeCommand(
 
     if (isCommandResult(raw)) {
       const merged = [...(raw.tips || []), ...(smartTips || [])];
+      recordArchive(session?.id, sessionName, {
+        step: 0,
+        command: commandName,
+        params,
+        result: { success: true, data: raw.data, tips: merged.length > 0 ? merged : raw.tips || [] },
+        toolCalls: [],
+        duration: duration,
+        timestamp: start,
+      });
       return { ...ok(raw.data, merged.length > 0 ? merged : raw.tips), duration };
     }
 
+    recordArchive(session?.id, sessionName, {
+      step: 0,
+      command: commandName,
+      params,
+      result: { success: true, data: raw, tips: smartTips || [] },
+      toolCalls: [],
+      duration: duration,
+      timestamp: start,
+    });
     return { ...ok(raw, smartTips), duration };
   } catch (err) {
     const end = Date.now();
@@ -250,6 +310,15 @@ export async function executeCommand(
       });
     }
 
+    recordArchive(session?.id, sessionName, {
+      step: 0,
+      command: commandName,
+      params,
+      result: { success: false, data: null, message: errorMessage, tips: [] },
+      toolCalls: [],
+      duration: duration,
+      timestamp: start,
+    });
     return { ...fail(errorMessage), duration };
   } finally {
     // Session lifecycle is managed by:
@@ -414,6 +483,15 @@ export async function executeChain(
             const raw = await cmdEntry.handler(pluginParams, pluginCtx) as CommandResult;
             const duration = Date.now() - start;
             const data = raw?.data ?? raw;
+            recordArchive(session!.id, sessionName, {
+              step: results.length,
+              command: `${cmdName} ${subCommand}`,
+              params: pluginParams,
+              result: { success: true, data, tips: raw?.tips || [] },
+              toolCalls: [],
+              duration,
+              timestamp: start,
+            });
             results.push({
               command: `${cmdName} ${subCommand}`,
               raw: cmdStr,
@@ -432,6 +510,15 @@ export async function executeChain(
           } catch (err) {
             const duration = Date.now() - start;
             const errorMessage = (err as Error).message;
+            recordArchive(session!.id, sessionName, {
+              step: results.length,
+              command: `${cmdName} ${subCommand}`,
+              params: pluginParams,
+              result: { success: false, data: null, message: errorMessage, tips: [] },
+              toolCalls: [],
+              duration,
+              timestamp: start,
+            });
             results.push({
               command: `${cmdName} ${subCommand}`,
               raw: cmdStr,
