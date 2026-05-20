@@ -114,10 +114,15 @@ export async function executeCommand(
     params = result.data as Record<string, unknown>;
   }
 
-  // If daemon is running, forward to daemon — session memory has cdpEndpoint
+  // Forward page-scope commands to daemon. Auto-start daemon if not running.
   if (command.scope === 'page' && !process.env.XBROWSER_DAEMON_WORKER) {
     const { isDaemonRunning, forwardExec } = await import('./client/daemon-client.js');
-    if (await isDaemonRunning()) {
+    let running = await isDaemonRunning().catch(() => false);
+    if (!running) {
+      const { startDaemonProcess } = await import('./daemon/daemon.js');
+      try { await startDaemonProcess(9224); running = true; } catch { /* fall through to local */ }
+    }
+    if (running) {
       return forwardExec(commandName, params, sessionName, extraOpts?.cdpEndpoint);
     }
   }
