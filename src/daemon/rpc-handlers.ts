@@ -9,6 +9,10 @@ import { join } from 'path';
 import { homedir } from 'os';
 
 import type { RPCHandler } from '@dyyz1993/xcli-core';
+import {
+  createSessionMeta,
+  removeSession,
+} from '@dyyz1993/xcli-core';
 
 import {
   createSession,
@@ -212,12 +216,20 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       createdAt: session.createdAt,
       cdpEndpoint: session.cdpEndpoint,
     });
+    // Also register in xcli-core session store for metadata queries
+    createSessionMeta(name, {
+      id: session.id,
+      url: session.page.url(),
+      createdAt: session.createdAt,
+      cdpEndpoint: session.cdpEndpoint,
+    });
     return { id: session.id, name: session.name, url: session.page.url() };
   }
 
   async function handleSessionClose(params: Record<string, unknown>) {
     const name = params.name as string;
     await closeSessionByName(name);
+    removeSession(name);
     return { ok: true };
   }
 
