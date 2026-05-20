@@ -1,0 +1,413 @@
+/**
+ * RPC method handlers for the daemon HTTP server.
+ *
+ * Each method is a separate handler function, grouped by domain.
+ * This replaces the giant switch/case in the old daemon-worker.ts.
+ */
+import { writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
+
+import type { RPCHandler } from '@dyyz1993/xcli-core';
+
+import {
+  createSession,
+  findSession,
+  closeSessionByName,
+  getAllSessions,
+  saveSessionDiskMeta,
+} from '../browser.js';
+import { executeCommand, executeChain } from '../executor.js';
+import { networkStore, commandLogStore } from './network-store.js';
+import { scoreEntries } from './network-scorer.js';
+import { enrichEntries } from './api-analyzer.js';
+import { generateCurl, replayEntry } from './curl-generator.js';
+import type { CurlOptions } from './curl-generator.js';
+import { feedbackStore } from './feedback-store.js';
+import { exportEntry } from './code-export.js';
+import type { ExportLang } from './code-export.js';
+import { WSServer } from '../websocket-server.js';
+
+const CONFIG_DIR = join(homedir(), '.xbrowser');
+
+// ─── Recording injection JS (injected on every session creation) ──
+
+const RECORDING_INJECT_JS = `
+(function(){
+  if(window.__xb_rec) return;
+  window.__xb_rec = true;
+  window.__xb_evts = [];
+  window.__xb_t0 = Date.now();
+  function d(el){
+    if(!el||!el.tagName) return {tag:'unknown'};
+    var o={tag:el.tagName.toLowerCase(),text:(el.textContent||'').trim().substring(0,80)};
+    if(el.getAttribute('role')) o.role=el.getAttribute('role');
+    if(el.id) o.id=el.id;
+    if(el.getAttribute('type')) o.type=el.getAttribute('type');
+    if(el.getAttribute('placeholder')) o.placeholder=el.getAttribute('placeholder');
+    if(el.getAttribute('aria-label')) o.ariaLabel=el.getAttribute('aria-label');
+    if(el.contentEditable==='true') o.contentEditable=true;
+    return o;
+  }
+  function p(t,det){
+    var e={type:t,ts:Date.now()-window.__xb_t0,url:location.href};
+    for(var k in det) e[k]=det[k];
+    window.__xb_evts.push(e);
+  }
+  document.addEventListener('click',function(e){p('click',{target:d(e.target),x:e.clientX,y:e.clientY})},true);
+  document.addEventListener('dblclick',function(e){p('dblclick',{target:d(e.target),x:e.clientX,y:e.clientY})},true);
+  document.addEventListener('input',function(e){var el=e.target;p('input',{target:d(el),value:(el.value||el.textContent||'').substring(0,200)})},true);
+  document.addEventListener('change',function(e){p('change',{target:d(e.target),value:(e.target.value||'').substring(0,100)})},true);
+  document.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key==='Tab'||e.key==='Escape'||e.key.startsWith('Arrow'))p('keydown',{key:e.key,target:d(e.target)})},true);
+  document.addEventListener('submit',function(e){p('submit',{target:d(e.target)})},true);
+  document.addEventListener('focus',function(e){var t=e.target.tagName;if(t==='INPUT'||t==='TEXTAREA'||e.target.contentEditable==='true')p('focus',{target:d(e.target)})},true);
+  var obs=new MutationObserver(function(mutations){
+    for(var m of mutations){
+      for(var node of m.addedNodes){
+        if(node.nodeType===1&&node.tagName){
+          var text=(node.textContent||'').trim().substring(0,60);
+          if(text&&text.length>1) p('dom_added',{tag:node.tagName.toLowerCase(),role:node.getAttribute&&node.getAttribute('role'),text:text});
+        }
+      }
+    }
+  });
+  if(document.body) obs.observe(document.body,{childList:true,subtree:true});
+  p('recording_started',{url:location.href});
+})();
+`;
+
+/**
+ * Injects recording JS into a page and registers auto-reinject on navigation.
+ */
+async function injectRecording(page: import('playwright').Page): Promise<void> {
+  try {
+    await page.evaluate(RECORDING_INJECT_JS);
+  } catch {
+    // page may be navigating
+  }
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: RECORDING_INJECT_JS });
+  } catch {
+    // CDP auto-reinject not available
+  }
+}
+
+/**
+ * Resolve a raw CDP endpoint string to a WebSocket URL.
+ */
+async function resolveCDPEndpoint(raw: string): Promise<string> {
+  if (raw === 'auto') {
+    const httpResp = await fetch('http://localhost:9222/json/version');
+    const data = (await httpResp.json()) as { webSocketDebuggerUrl?: string };
+    if (!data.webSocketDebuggerUrl) throw new Error('Could not auto-discover CDP from localhost:9222');
+    return data.webSocketDebuggerUrl;
+  }
+  if (/^\d+$/.test(raw)) {
+    const httpResp = await fetch(`http://localhost:${raw}/json/version`);
+    const data = (await httpResp.json()) as { webSocketDebuggerUrl?: string };
+    if (!data.webSocketDebuggerUrl) throw new Error(`Could not discover CDP from localhost:${raw}`);
+    return data.webSocketDebuggerUrl;
+  }
+  return raw;
+}
+
+/**
+ * RPC handler implementation.
+ *
+ * Groups handlers by domain (session, exec, network, recording).
+ * Returns the standard RPCHandler function expected by xcli-core's startHttpServer.
+ */
+export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) => void } {
+  let previewWS: WSServer | null = null;
+
+  const handler: RPCHandler & { setPreviewWS: (ws: WSServer) => void } = Object.assign(
+    async (method: string, params: Record<string, unknown>): Promise<unknown> => {
+      switch (method) {
+        // ── Session management ──
+        case 'session:create':
+          return handleSessionCreate(params);
+        case 'session:close':
+          return handleSessionClose(params);
+        case 'session:list':
+          return handleSessionList();
+
+        // ── Command execution ──
+        case 'exec':
+          return handleExec(params);
+        case 'chain':
+          return handleChain(params);
+
+        // ── Utility ──
+        case 'ping':
+          return { ok: true, pid: process.pid };
+
+        // ── Network analysis ──
+        case 'network:list':
+          return handleNetworkList(params);
+        case 'network:inspect':
+          return handleNetworkInspect(params);
+        case 'network:clear':
+          return handleNetworkClear(params);
+        case 'network:top':
+          return handleNetworkTop(params);
+        case 'network:around':
+          return handleNetworkAround(params);
+        case 'network:analyze':
+          return handleNetworkAnalyze(params);
+        case 'network:curl':
+          return handleNetworkCurl(params);
+        case 'network:replay':
+          return handleNetworkReplay(params);
+        case 'network:like':
+          return handleNetworkLike(params);
+        case 'network:dislike':
+          return handleNetworkDislike(params);
+        case 'network:feedback':
+          return handleNetworkFeedback(params);
+        case 'network:export':
+          return handleNetworkExport(params);
+
+        // ── Recording ──
+        case 'recording:status':
+          return handleRecordingStatus(params);
+        case 'recording:events':
+          return handleRecordingEvents(params);
+        case 'recording:clear':
+          return handleRecordingClear(params);
+        case 'recording:save':
+          return handleRecordingSave(params);
+
+        // ── Command log ──
+        case 'command:log':
+          return handleCommandLog(params);
+
+        default:
+          throw new Error(`Unknown method: ${method}`);
+      }
+    },
+    {
+      setPreviewWS(ws: WSServer) {
+        previewWS = ws;
+      },
+    },
+  );
+
+  return handler;
+
+  // ─── Handler implementations ─────────────────────────────────
+
+  async function handleSessionCreate(params: Record<string, unknown>) {
+    const name = (params.name as string) || 'default';
+    const cdp = params.cdpEndpoint as string;
+    const url = params.url as string | undefined;
+    const endpoint = await resolveCDPEndpoint(cdp || 'auto');
+    const session = await createSession(name, url, { cdpEndpoint: endpoint });
+    await injectRecording(session.page);
+    if (previewWS) previewWS.registerSession(session.name, session.page);
+    saveSessionDiskMeta(name, {
+      id: session.id,
+      name: session.name,
+      url: session.page.url(),
+      createdAt: session.createdAt,
+      cdpEndpoint: session.cdpEndpoint,
+    });
+    return { id: session.id, name: session.name, url: session.page.url() };
+  }
+
+  async function handleSessionClose(params: Record<string, unknown>) {
+    const name = params.name as string;
+    await closeSessionByName(name);
+    return { ok: true };
+  }
+
+  function handleSessionList() {
+    return getAllSessions().map((s) => ({
+      id: s.id,
+      name: s.name,
+      url: s.page?.url() ?? null,
+      createdAt: s.createdAt,
+    }));
+  }
+
+  async function handleExec(params: Record<string, unknown>) {
+    const command = params.command as string;
+    const cmdParams = (params.params || {}) as Record<string, unknown>;
+    const sessionName = (params.session as string) || 'default';
+    const cdp = params.cdpEndpoint as string | undefined;
+    commandLogStore.add(sessionName, {
+      timestamp: Date.now(),
+      command,
+      params: cmdParams,
+      session: sessionName,
+    });
+    const result = await executeCommand(command, cmdParams, sessionName, { cdpEndpoint: cdp });
+    return result;
+  }
+
+  async function handleChain(params: Record<string, unknown>) {
+    const input = params.chain as string;
+    const sessionName = (params.session as string) || 'default';
+    const cdp = params.cdpEndpoint as string | undefined;
+    const result = await executeChain(input, { cdpEndpoint: cdp, sessionName });
+    return result;
+  }
+
+  function handleNetworkList(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const opts: { filter?: string; method?: string; limit?: number; offset?: number } = {};
+    if (params.filter) opts.filter = params.filter as string;
+    if (params.method) opts.method = params.method as string;
+    if (params.limit) opts.limit = params.limit as number;
+    if (params.offset) opts.offset = params.offset as number;
+    return networkStore.list(sessionName, opts);
+  }
+
+  function handleNetworkInspect(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const id = params.id as number;
+    return networkStore.inspect(sessionName, id);
+  }
+
+  function handleNetworkClear(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    networkStore.clear(sessionName);
+    return { ok: true };
+  }
+
+  function handleNetworkTop(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const opts: { minScore?: number; limit?: number } = {};
+    if (params.minScore) opts.minScore = params.minScore as number;
+    if (params.limit) opts.limit = params.limit as number;
+    const feedbackFn = (path: string, method: string) => feedbackStore.getScoreAdjustment(path, method);
+    return networkStore.top(sessionName, { ...opts, feedbackFn });
+  }
+
+  function handleNetworkAround(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const commandId = params.commandId as number;
+    const windowMs = (params.window as number) || 5000;
+    return networkStore.around(sessionName, commandId, commandLogStore, windowMs);
+  }
+
+  function handleNetworkAnalyze(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const entries = networkStore.list(sessionName, { limit: 1000 }).captures;
+    const scored = scoreEntries(entries);
+    const analyzed = enrichEntries(scored);
+    return { session: sessionName, total: entries.length, analyzed };
+  }
+
+  function handleNetworkCurl(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const id = params.id as number;
+    const entry = networkStore.inspect(sessionName, id);
+    if (!entry.capture) return { error: `Entry #${id} not found` };
+    return generateCurl(entry.capture, params as unknown as CurlOptions);
+  }
+
+  async function handleNetworkReplay(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const id = params.id as number;
+    const entry = networkStore.inspect(sessionName, id);
+    if (!entry.capture) return { error: `Entry #${id} not found` };
+    return await replayEntry(entry.capture, params as unknown as CurlOptions);
+  }
+
+  function handleNetworkLike(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const id = params.id as number;
+    const entry = networkStore.inspect(sessionName, id);
+    if (!entry.capture) return { error: `Entry #${id} not found` };
+    feedbackStore.add(entry.capture, 'like');
+    return { ok: true, id, feedback: 'like' };
+  }
+
+  function handleNetworkDislike(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const id = params.id as number;
+    const entry = networkStore.inspect(sessionName, id);
+    if (!entry.capture) return { error: `Entry #${id} not found` };
+    feedbackStore.add(entry.capture, 'dislike');
+    return { ok: true, id, feedback: 'dislike' };
+  }
+
+  function handleNetworkFeedback(params: Record<string, unknown>) {
+    return { feedback: feedbackStore.list({ limit: params.limit as number | undefined }) };
+  }
+
+  function handleNetworkExport(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const id = params.id as number;
+    const lang = (params.lang as ExportLang) || 'ts';
+    const entry = networkStore.inspect(sessionName, id);
+    if (!entry.capture) return { error: `Entry #${id} not found` };
+    return exportEntry(entry.capture, lang);
+  }
+
+  async function handleRecordingStatus(params: Record<string, unknown>) {
+    const sess = findSession((params.session as string) || 'default');
+    if (!sess) return { recording: false, error: 'No session' };
+    try {
+      const result = await sess.page.evaluate(() => ({
+        active: !!(window as unknown as Record<string, unknown>).__xb_rec,
+        events: ((window as unknown as Record<string, unknown>).__xb_evts as unknown[])?.length || 0,
+        url: location.href,
+      }));
+      return { recording: true, ...result };
+    } catch {
+      return { recording: false, error: 'Page unreachable' };
+    }
+  }
+
+  async function handleRecordingEvents(params: Record<string, unknown>) {
+    const sess = findSession((params.session as string) || 'default');
+    if (!sess) return { events: [], error: 'No session' };
+    try {
+      const events = await sess.page.evaluate(() => (window as unknown as Record<string, unknown>).__xb_evts || []);
+      return { events, url: sess.page.url() };
+    } catch {
+      return { events: [], error: 'Page unreachable' };
+    }
+  }
+
+  async function handleRecordingClear(params: Record<string, unknown>) {
+    const sess = findSession((params.session as string) || 'default');
+    if (!sess) return { ok: false, error: 'No session' };
+    try {
+      await sess.page.evaluate(() => {
+        (window as unknown as Record<string, unknown>).__xb_evts = [];
+        (window as unknown as Record<string, unknown>).__xb_t0 = Date.now();
+      });
+      return { ok: true };
+    } catch {
+      return { ok: false, error: 'Page unreachable' };
+    }
+  }
+
+  async function handleRecordingSave(params: Record<string, unknown>) {
+    const sess = findSession((params.session as string) || 'default');
+    if (!sess) return { ok: false, error: 'No session' };
+    try {
+      const events = await sess.page.evaluate(() => (window as unknown as Record<string, unknown>).__xb_evts || []) as unknown[];
+      const recordingsDir = join(CONFIG_DIR, 'recordings');
+      mkdirSync(recordingsDir, { recursive: true });
+      const outPath = (params.path as string) || join(recordingsDir, `recording-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
+      writeFileSync(outPath, JSON.stringify({
+        startUrl: sess.page.url(),
+        recordedAt: new Date().toISOString(),
+        events,
+      }, null, 2));
+      return { ok: true, path: outPath, events: events.length };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  }
+
+  function handleCommandLog(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const limit = (params.limit as number) || 50;
+    return { session: sessionName, commands: commandLogStore.list(sessionName, { limit }) };
+  }
+}

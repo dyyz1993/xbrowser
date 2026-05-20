@@ -15,7 +15,7 @@ export interface DaemonInfo {
 const CONFIG_DIR = join(homedir(), '.xbrowser');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const WORKER_PATH = join(__dirname, 'daemon-worker.js');
+const WORKER_PATH = join(__dirname, 'daemon-main.js');
 
 /**
  * DaemonConfig compatible with xcli-core's daemon-manager API.
@@ -35,14 +35,14 @@ export function getDaemonConfig(): DaemonConfig {
 }
 
 /**
- * Start the daemon process. Spawns daemon-worker.js as a detached child.
+ * Start the daemon process. Spawns daemon-main.js as a detached child.
  *
  * Uses xcli-core's getDaemonStatus() for health polling (it reads
- * daemon.json which the worker writes after initializing its HTTP server).
+ * daemon.json which the daemon writes after initializing its HTTP server).
  *
  * Does NOT use xcli-core's startDaemon() because that spawns with
  * --import tsx, which requires tsx to be installed. xbrowser's
- * daemon-worker.js is compiled JS and loads without tsx.
+ * daemon-main.js is compiled JS and loads without tsx.
  */
 export async function startDaemonProcess(port: number = 9224): Promise<DaemonInfo> {
   // Check if daemon is already running using xcli-core's daemon.json reader

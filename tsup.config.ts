@@ -16,7 +16,7 @@ export default defineConfig([
     external: ['playwright', 'playwright-core', 'undici'],
   },
   {
-    entry: ['src/daemon/daemon-worker.ts'],
+    entry: ['src/daemon/daemon-main.ts'],
     format: ['esm'],
     dts: false,
     clean: false,

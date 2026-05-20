@@ -1,24 +1,21 @@
+/**
+ * Daemon process entry point.
+ *
+ * Sets up the HTTP RPC server, preview WebSocket, and recording injection.
+ * This is the file spawned by startDaemonProcess() in daemon.ts.
+ *
+ * RPC method handlers are delegated to createRPCHandler() in rpc-handlers.ts.
+ * This file handles only: HTTP server setup, preview WS, daemon.json writing,
+ * signal handling, and the keep-alive loop.
+ */
 import { writeFileSync, mkdirSync, appendFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import type { IncomingMessage, ServerResponse } from 'http';
 
 import { startHttpServer } from '@dyyz1993/xcli-core';
-import {
-  createSession,
-  findSession,
-  closeSessionByName,
-  getAllSessions,
-  saveSessionDiskMeta,
-} from '../browser.js';
-import { executeCommand, executeChain } from '../executor.js';
-import { networkStore, commandLogStore } from './network-store.js';
-import { scoreEntries } from './network-scorer.js';
-import { enrichEntries } from './api-analyzer.js';
-import { generateCurl, replayEntry } from './curl-generator.js';
-import { feedbackStore } from './feedback-store.js';
-import { exportEntry } from './code-export.js';
-import type { ExportLang } from './code-export.js';
+
+import { createRPCHandler } from './rpc-handlers.js';
 import { WSServer } from '../websocket-server.js';
 
 const CONFIG_DIR = join(homedir(), '.xbrowser');
@@ -34,302 +31,18 @@ function log(msg: string): void {
   }
 }
 
-// --- Built-in recording JS injected on every session creation ---
-const RECORDING_INJECT_JS = `
-(function(){
-  if(window.__xb_rec) return;
-  window.__xb_rec = true;
-  window.__xb_evts = [];
-  window.__xb_t0 = Date.now();
-  function d(el){
-    if(!el||!el.tagName) return {tag:'unknown'};
-    var o={tag:el.tagName.toLowerCase(),text:(el.textContent||'').trim().substring(0,80)};
-    if(el.getAttribute('role')) o.role=el.getAttribute('role');
-    if(el.id) o.id=el.id;
-    if(el.getAttribute('type')) o.type=el.getAttribute('type');
-    if(el.getAttribute('placeholder')) o.placeholder=el.getAttribute('placeholder');
-    if(el.getAttribute('aria-label')) o.ariaLabel=el.getAttribute('aria-label');
-    if(el.contentEditable==='true') o.contentEditable=true;
-    return o;
-  }
-  function p(t,det){
-    var e={type:t,ts:Date.now()-window.__xb_t0,url:location.href};
-    for(var k in det) e[k]=det[k];
-    window.__xb_evts.push(e);
-  }
-  document.addEventListener('click',function(e){p('click',{target:d(e.target),x:e.clientX,y:e.clientY})},true);
-  document.addEventListener('dblclick',function(e){p('dblclick',{target:d(e.target),x:e.clientX,y:e.clientY})},true);
-  document.addEventListener('input',function(e){var el=e.target;p('input',{target:d(el),value:(el.value||el.textContent||'').substring(0,200)})},true);
-  document.addEventListener('change',function(e){p('change',{target:d(e.target),value:(e.target.value||'').substring(0,100)})},true);
-  document.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key==='Tab'||e.key==='Escape'||e.key.startsWith('Arrow'))p('keydown',{key:e.key,target:d(e.target)})},true);
-  document.addEventListener('submit',function(e){p('submit',{target:d(e.target)})},true);
-  document.addEventListener('focus',function(e){var t=e.target.tagName;if(t==='INPUT'||t==='TEXTAREA'||e.target.contentEditable==='true')p('focus',{target:d(e.target)})},true);
-  var obs=new MutationObserver(function(mutations){
-    for(var m of mutations){
-      for(var node of m.addedNodes){
-        if(node.nodeType===1&&node.tagName){
-          var text=(node.textContent||'').trim().substring(0,60);
-          if(text&&text.length>1) p('dom_added',{tag:node.tagName.toLowerCase(),role:node.getAttribute&&node.getAttribute('role'),text:text});
-        }
-      }
-    }
-  });
-  if(document.body) obs.observe(document.body,{childList:true,subtree:true});
-  p('recording_started',{url:location.href});
-})();
-`;
-
-/** Inject recording JS into a page and set up auto-reinject on navigation */
-async function injectRecording(page: import('playwright').Page): Promise<void> {
-  try {
-    await page.evaluate(RECORDING_INJECT_JS);
-    log('Recording JS injected into current page');
-  } catch {
-    log('Could not inject recording JS (page may be navigating)');
-  }
-  // Auto-reinject on every new document load via CDP
-  try {
-    const cdp = await page.context().newCDPSession(page);
-    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: RECORDING_INJECT_JS });
-    log('Recording JS registered for auto-reinject on navigation');
-  } catch {
-    log('Could not register auto-reinject (CDP Page.addScriptToEvaluateOnNewDocument)');
-  }
-}
-
-async function resolveCDPEndpoint(raw: string): Promise<string> {
-  if (raw === 'auto') {
-    const httpResp = await fetch('http://localhost:9222/json/version');
-    const data = (await httpResp.json()) as { webSocketDebuggerUrl?: string };
-    if (!data.webSocketDebuggerUrl) throw new Error('Could not auto-discover CDP from localhost:9222');
-    return data.webSocketDebuggerUrl;
-  }
-  if (/^\d+$/.test(raw)) {
-    const httpResp = await fetch(`http://localhost:${raw}/json/version`);
-    const data = (await httpResp.json()) as { webSocketDebuggerUrl?: string };
-    if (!data.webSocketDebuggerUrl) throw new Error(`Could not discover CDP from localhost:${raw}`);
-    return data.webSocketDebuggerUrl;
-  }
-  return raw;
-}
-
 async function main() {
   process.env.XBROWSER_DAEMON_WORKER = '1';
   const daemonPort = parseInt(process.env.XBROWSER_DAEMON_PORT || '9224', 10);
 
-  log(`Daemon worker starting (pid=${process.pid}) — no sessions at startup`);
+  log(`Daemon main starting (pid=${process.pid})`);
 
-  let previewWS: WSServer;
+  // ── Create RPC handler and set up HTTP server ──
+  const rpcHandler = createRPCHandler();
 
   const server = startHttpServer({
     port: daemonPort,
-    rpcHandler: async (method, params) => {
-      log(`RPC: ${method} from ${params.session || 'default'}`);
-      switch (method) {
-        case 'session:create': {
-          const name = (params.name as string) || 'default';
-          const cdp = params.cdpEndpoint as string;
-          const url = params.url as string | undefined;
-          log(`RPC session:create name=${name} cdp=${cdp}`);
-          const endpoint = await resolveCDPEndpoint(cdp || 'auto');
-          const session = await createSession(name, url, { cdpEndpoint: endpoint });
-          await injectRecording(session.page);
-          previewWS.registerSession(session.name, session.page);
-          // Persist session meta so CLI clients can reference it
-          saveSessionDiskMeta(name, {
-            id: session.id,
-            name: session.name,
-            url: session.page.url(),
-            createdAt: session.createdAt,
-            cdpEndpoint: session.cdpEndpoint,
-          });
-          return { id: session.id, name: session.name, url: session.page.url() };
-        }
-        case 'exec': {
-          const command = params.command as string;
-          const cmdParams = (params.params || {}) as Record<string, unknown>;
-          const sessionName = (params.session as string) || 'default';
-          const cdp = params.cdpEndpoint as string | undefined;
-          log(`RPC exec: command=${command} session=${sessionName}`);
-          commandLogStore.add(sessionName, {
-            timestamp: Date.now(),
-            command,
-            params: cmdParams,
-            session: sessionName,
-          });
-          const result = await executeCommand(command, cmdParams, sessionName, { cdpEndpoint: cdp });
-          log(`RPC exec done: command=${command} success=${result.success}`);
-          return result;
-        }
-        case 'chain': {
-          const input = params.chain as string;
-          const sessionName = (params.session as string) || 'default';
-          const cdp = params.cdpEndpoint as string | undefined;
-          log(`RPC chain: session=${sessionName} input=${input.substring(0, 80)}`);
-          const result = await executeChain(input, { cdpEndpoint: cdp, sessionName });
-          return result;
-        }
-        case 'session:list':
-          return getAllSessions().map((s) => ({
-            id: s.id,
-            name: s.name,
-            url: s.page?.url() ?? null,
-            createdAt: s.createdAt,
-          }));
-        case 'session:close': {
-          const name = params.name as string;
-          log(`RPC session:close name=${name}`);
-          await closeSessionByName(name);
-          return { ok: true };
-        }
-        case 'ping':
-          return { ok: true, pid: process.pid };
-        case 'network:list': {
-          const sessionName = (params.session as string) || 'default';
-          const listOpts: { filter?: string; method?: string; limit?: number; offset?: number } = {};
-          if (params.filter) listOpts.filter = params.filter as string;
-          if (params.method) listOpts.method = params.method as string;
-          if (params.limit) listOpts.limit = params.limit as number;
-          if (params.offset) listOpts.offset = params.offset as number;
-          return networkStore.list(sessionName, listOpts);
-        }
-        case 'network:inspect': {
-          const sessionName = (params.session as string) || 'default';
-          const id = params.id as number;
-          return networkStore.inspect(sessionName, id);
-        }
-        case 'network:clear': {
-          const sessionName = (params.session as string) || 'default';
-          networkStore.clear(sessionName);
-          return { ok: true };
-        }
-        case 'network:top': {
-          const sessionName = (params.session as string) || 'default';
-          const topOpts: { minScore?: number; limit?: number; feedbackFn?: (path: string, method: string) => number } = {};
-          if (params.minScore) topOpts.minScore = params.minScore as number;
-          if (params.limit) topOpts.limit = params.limit as number;
-          topOpts.feedbackFn = (path, method) => feedbackStore.getScoreAdjustment(path, method);
-          return networkStore.top(sessionName, topOpts);
-        }
-        case 'command:log': {
-          const sessionName = (params.session as string) || 'default';
-          const limit = (params.limit as number) || 50;
-          return { session: sessionName, commands: commandLogStore.list(sessionName, { limit }) };
-        }
-        case 'network:around': {
-          const sessionName = (params.session as string) || 'default';
-          const commandId = params.commandId as number;
-          const windowMs = (params.window as number) || 5000;
-          return networkStore.around(sessionName, commandId, commandLogStore, windowMs);
-        }
-        case 'network:analyze': {
-          const sessionName = (params.session as string) || 'default';
-          const entries = networkStore.list(sessionName, { limit: 1000 }).captures;
-          const scored = scoreEntries(entries);
-          const analyzed = enrichEntries(scored);
-          return { session: sessionName, total: entries.length, analyzed };
-        }
-        case 'network:curl': {
-          const sessionName = (params.session as string) || 'default';
-          const id = params.id as number;
-          const entry = networkStore.inspect(sessionName, id);
-          if (!entry.capture) return { error: `Entry #${id} not found` };
-          return generateCurl(entry.capture, params as Record<string, unknown> as import('./curl-generator.js').CurlOptions);
-        }
-        case 'network:replay': {
-          const sessionName = (params.session as string) || 'default';
-          const id = params.id as number;
-          const entry = networkStore.inspect(sessionName, id);
-          if (!entry.capture) return { error: `Entry #${id} not found` };
-          return await replayEntry(entry.capture, params as Record<string, unknown> as import('./curl-generator.js').CurlOptions);
-        }
-        case 'network:like': {
-          const sessionName = (params.session as string) || 'default';
-          const id = params.id as number;
-          const entry = networkStore.inspect(sessionName, id);
-          if (!entry.capture) return { error: `Entry #${id} not found` };
-          feedbackStore.add(entry.capture, 'like');
-          return { ok: true, id, feedback: 'like' };
-        }
-        case 'network:dislike': {
-          const sessionName = (params.session as string) || 'default';
-          const id = params.id as number;
-          const entry = networkStore.inspect(sessionName, id);
-          if (!entry.capture) return { error: `Entry #${id} not found` };
-          feedbackStore.add(entry.capture, 'dislike');
-          return { ok: true, id, feedback: 'dislike' };
-        }
-        case 'network:feedback': {
-          return { feedback: feedbackStore.list({ limit: params.limit as number | undefined }) };
-        }
-        case 'network:export': {
-          const sessionName = (params.session as string) || 'default';
-          const id = params.id as number;
-          const lang = (params.lang as ExportLang) || 'ts';
-          const entry = networkStore.inspect(sessionName, id);
-          if (!entry.capture) return { error: `Entry #${id} not found` };
-          return exportEntry(entry.capture, lang);
-        }
-        case 'recording:status': {
-          const sess = findSession((params.session as string) || 'default');
-          if (!sess) return { recording: false, error: 'No session' };
-          try {
-            const result = await sess.page.evaluate(() => ({
-              active: !!(window as unknown as Record<string, unknown>).__xb_rec,
-              events: ((window as unknown as Record<string, unknown>).__xb_evts as unknown[])?.length || 0,
-              url: location.href,
-            }));
-            return { recording: true, ...result };
-          } catch {
-            return { recording: false, error: 'Page unreachable' };
-          }
-        }
-        case 'recording:events': {
-          const sess = findSession((params.session as string) || 'default');
-          if (!sess) return { events: [], error: 'No session' };
-          try {
-            const events = await sess.page.evaluate(() => (window as unknown as Record<string, unknown>).__xb_evts || []);
-            return { events, url: sess.page.url() };
-          } catch {
-            return { events: [], error: 'Page unreachable' };
-          }
-        }
-        case 'recording:clear': {
-          const sess = findSession((params.session as string) || 'default');
-          if (!sess) return { ok: false, error: 'No session' };
-          try {
-            await sess.page.evaluate(() => {
-              (window as unknown as Record<string, unknown>).__xb_evts = [];
-              (window as unknown as Record<string, unknown>).__xb_t0 = Date.now();
-            });
-            return { ok: true };
-          } catch {
-            return { ok: false, error: 'Page unreachable' };
-          }
-        }
-        case 'recording:save': {
-          const sess = findSession((params.session as string) || 'default');
-          if (!sess) return { ok: false, error: 'No session' };
-          try {
-            const events = await sess.page.evaluate(() => (window as unknown as Record<string, unknown>).__xb_evts || []) as unknown[];
-            const recordingsDir = join(CONFIG_DIR, 'recordings');
-            mkdirSync(recordingsDir, { recursive: true });
-            const outPath = (params.path as string) || join(recordingsDir, `recording-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
-            writeFileSync(outPath, JSON.stringify({
-              startUrl: sess.page.url(),
-              recordedAt: new Date().toISOString(),
-              events,
-            }, null, 2));
-            return { ok: true, path: outPath, events: events.length };
-          } catch (e) {
-            return { ok: false, error: (e as Error).message };
-          }
-        }
-        default:
-          log(`RPC unknown method: ${method}`);
-          throw new Error(`Unknown method: ${method}`);
-      }
-    },
+    rpcHandler,
     extraRoutes: [
       {
         pathname: '/health',
@@ -341,7 +54,7 @@ async function main() {
     ],
   });
 
-  // --- Serve preview viewer HTML on /preview/:sessionId ---
+  // ── Preview viewer HTTP routing ──
   // Must intercept BEFORE xcli-core's handler (which returns 404 for unknown routes)
   const originalListeners = server.listeners('request').slice();
   server.removeAllListeners('request');
@@ -359,14 +72,18 @@ async function main() {
     }
   });
 
-  // --- Attach preview WebSocket to the same HTTP server ---
-  previewWS = new WSServer();
+  // ── Preview WebSocket ──
+  const previewWS = new WSServer();
   await previewWS.attachToServer(server, '/preview');
   log(`Preview WS attached to HTTP server on /preview`);
+
+  // Connect WS to RPC handler so recording events can be forwarded
+  rpcHandler.setPreviewWS(previewWS);
 
   previewWS.on('screencast-started', (sid: string) => log(`Preview screencast started: ${sid}`));
   previewWS.on('screencast-stopped', (sid: string) => log(`Preview screencast stopped: ${sid}`));
 
+  // ── Write daemon.json for startDaemon() health polling ──
   mkdirSync(CONFIG_DIR, { recursive: true });
   writeFileSync(join(CONFIG_DIR, 'daemon.json'), JSON.stringify({
     port: daemonPort,
@@ -374,23 +91,21 @@ async function main() {
     startedAt: Date.now(),
   }, null, 2));
 
-  console.log(`xbrowser daemon worker started (pid: ${process.pid}, port: ${daemonPort})`);
+  console.log(`xbrowser daemon started (pid: ${process.pid}, port: ${daemonPort})`);
+  log('Daemon main started successfully');
 
-  process.on('SIGTERM', () => {
-    log('Received SIGTERM, shutting down');
+  // ── Signal handling ──
+  const shutdown = () => {
+    log('Received shutdown signal, stopping');
     previewWS.stop().catch(() => {});
     server.close();
     process.exit(0);
-  });
+  };
 
-  process.on('SIGINT', () => {
-    log('Received SIGINT, shutting down');
-    previewWS.stop().catch(() => {});
-    server.close();
-    process.exit(0);
-  });
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
 
-  log('Daemon worker started successfully');
+  // Keep alive — prevents the process from exiting
   setInterval(() => {}, 60000);
 }
 
@@ -565,12 +280,10 @@ function connectWS(){
         currentFocusedSelector=m.selector||'';
         currentFocusedValue=m.value||'';
         inputLabel.textContent=(m.tag||'input')+(m.placeholder?' — '+m.placeholder:'');
-        // Only show panel if not already showing, or update label without resetting field value
         if(deviceMode==='mobile'){
           if(inputPanel.style.display!=='flex'){
             showInputPanel(m.value||'');
           } else {
-            // Panel already open — just update label, don't reset user's input
             inputLabel.textContent=(m.tag||'input')+(m.placeholder?' — '+m.placeholder:'');
           }
         }
@@ -633,11 +346,8 @@ function sendMsg(obj){
 }
 
  // --- Virtual Cursor ---
- // FINGER_OFFSET: mobile only, shift cursor away from finger
  function setCursorAtRemote(rx,ry,state){
-  // Map remote coords → viewer screen coords
   const v=remoteToViewer(rx,ry);
-  // Clamp to image bounds
   const rect=img.getBoundingClientRect();
   const cx=clamp(v.x,rect.left,rect.right);
   const cy=clamp(v.y,rect.top,rect.bottom);
@@ -689,7 +399,6 @@ function focusHiddenInput(){
   if(hiddenInput&&document.activeElement!==inputField) hiddenInput.focus();
 }
 
-// Desktop mouse on viewport
 viewportEl.addEventListener('mousedown',(e)=>{
   if(deviceMode!=='desktop') return;
   const r=viewerToRemote(e.clientX,e.clientY);
@@ -732,14 +441,12 @@ let tpScrollCooldown=false;
 let tpCursorRemote={x:Math.round(remoteViewport.width/2),y:Math.round(remoteViewport.height/2)};
 
 function computeAcceleration(velocity){
-  // velocity = pixels/ms. Mac-like: slow=precise, fast=fly
-  // Exponential curve for natural feel
-  if(velocity<0.2) return 1.0;    // very slow: 1:1 precise
-  if(velocity<0.5) return 1.8;    // slow: 1.8x
-  if(velocity<1.0) return 3.0;    // normal: 3x
-  if(velocity<2.0) return 5.0;    // fast: 5x
-  if(velocity<4.0) return 8.0;    // quick: 8x
-  return 12.0;                    // very fast: 12x fly
+  if(velocity<0.2) return 1.0;
+  if(velocity<0.5) return 1.8;
+  if(velocity<1.0) return 3.0;
+  if(velocity<2.0) return 5.0;
+  if(velocity<4.0) return 8.0;
+  return 12.0;
 }
 function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
 
@@ -778,7 +485,7 @@ touchpadEl.addEventListener('touchmove',(e)=>{
     const now=Date.now();
     const dt=Math.max(now-tpStartTime,1);
     const dist=Math.sqrt(dx*dx+dy*dy);
-    const velocity=dist/dt; // pixels per ms
+    const velocity=dist/dt;
     const accel=computeAcceleration(velocity);
     const rect=touchpadEl.getBoundingClientRect();
     const sf=remoteViewport.width/(rect.width||300)*0.15;
@@ -1072,7 +779,7 @@ connectWS();
 
 main().catch((err) => {
   const msg = err instanceof Error ? err.message : String(err);
-  console.error('Daemon worker failed:', msg);
+  console.error('Daemon main failed:', msg);
   try { appendFileSync(LOG_FILE, `[DAEMON FATAL] ${msg}\n`); } catch { /* ignore */ }
   process.exit(1);
 });
