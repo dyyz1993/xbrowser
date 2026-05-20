@@ -237,3 +237,42 @@ export async function forwardNetworkInspect(sessionName: string, id: number): Pr
   if (!resp.ok) throw new Error(`Daemon error: ${resp.statusText}`);
   return resp.json();
 }
+
+export async function forwardSessionCreate(
+  name: string,
+  url: string,
+  cdpEndpoint?: string,
+): Promise<{ id: string; name: string; url: string }> {
+  const params: Record<string, unknown> = { name, url };
+  if (cdpEndpoint) params.cdpEndpoint = cdpEndpoint;
+  const resp = await fetch(`${DAEMON_BASE}/rpc`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ method: 'session:create', params }),
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!resp.ok) throw new Error(`Daemon error: ${resp.statusText}`);
+  return resp.json() as Promise<{ id: string; name: string; url: string }>;
+}
+
+export async function forwardSessionClose(name: string): Promise<{ ok: boolean }> {
+  const resp = await fetch(`${DAEMON_BASE}/rpc`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ method: 'session:close', params: { name } }),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!resp.ok) throw new Error(`Daemon error: ${resp.statusText}`);
+  return resp.json() as Promise<{ ok: boolean }>;
+}
+
+export async function forwardSessionList(): Promise<Array<{ id: string; name: string; url: string | null }>> {
+  const resp = await fetch(`${DAEMON_BASE}/rpc`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ method: 'session:list', params: {} }),
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!resp.ok) throw new Error(`Daemon error: ${resp.statusText}`);
+  return resp.json() as Promise<Array<{ id: string; name: string; url: string | null }>>;
+}

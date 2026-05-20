@@ -9,6 +9,7 @@ import {
   findSession,
   closeSessionByName,
   getAllSessions,
+  saveSessionDiskMeta,
 } from '../browser.js';
 import { executeCommand, executeChain } from '../executor.js';
 import { networkStore, commandLogStore } from './network-store.js';
@@ -134,6 +135,14 @@ async function main() {
           const session = await createSession(name, url, { cdpEndpoint: endpoint });
           await injectRecording(session.page);
           previewWS.registerSession(session.name, session.page);
+          // Persist session meta so CLI clients can reference it
+          saveSessionDiskMeta(name, {
+            id: session.id,
+            name: session.name,
+            url: session.page.url(),
+            createdAt: session.createdAt,
+            cdpEndpoint: session.cdpEndpoint,
+          });
           return { id: session.id, name: session.name, url: session.page.url() };
         }
         case 'exec': {
