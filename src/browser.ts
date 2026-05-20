@@ -321,24 +321,39 @@ export async function findOrRestoreSession(
     
     const context = contexts[0] || (await b.newContext());
 
+    const savedUrl = meta.conversationUrl || meta.url;
+    const targetHostname = savedUrl ? (() => { try { return new URL(savedUrl).hostname; } catch { return ''; } })() : '';
+
     let page: Page | null = null;
+    let fallbackPage: Page | null = null;
+
     for (const ctx of contexts) {
       const pages = ctx.pages();
       for (const p of pages) {
         const pUrl = p.url();
         if (pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome://')) {
-          page = p;
-          break;
+          // Prefer the page matching the session's saved hostname
+          if (targetHostname && pUrl.includes(targetHostname)) {
+            page = p;
+            break;
+          }
+          // Keep the first usable page as fallback
+          if (!fallbackPage) {
+            fallbackPage = p;
+          }
         }
       }
       if (page) break;
     }
 
+    // Use hostname-matched page, or fallback to first usable page
+    page = page || fallbackPage;
+
     if (!page) {
       const targets = await getCDPTargets(ep);
       const matchTarget = targets.find(t =>
         t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://') &&
-        (meta.conversationUrl || meta.url ? t.url.includes(new URL(meta.conversationUrl || meta.url).hostname) : true)
+        (targetHostname ? t.url.includes(targetHostname) : true)
       );
       if (matchTarget && matchTarget.url) {
         page = await context.newPage();
