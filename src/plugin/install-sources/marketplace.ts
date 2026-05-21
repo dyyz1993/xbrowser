@@ -6,8 +6,9 @@ import {
   rmSync,
   cpSync,
 } from 'fs';
-import { resolve, join } from 'path';
+import { resolve, join, dirname } from 'path';
 import { tmpdir } from 'os';
+import { gunzipSync } from 'zlib';
 import type { InstalledPlugin, InstallOptions } from '../installer-types.js';
 import {
   downloadToFile,
@@ -85,6 +86,44 @@ export async function installFromMarketplace(
   };
 }
 
+type ManifestFile = { path: string; content: string };
+
+function isManifestArray(data: unknown): data is ManifestFile[] {
+  return Array.isArray(data) && data.length > 0 && typeof data[0].path === 'string' && typeof data[0].content === 'string';
+}
+
+function extractManifestToDir(manifest: ManifestFile[], targetDir: string): void {
+  if (existsSync(targetDir)) {
+    rmSync(targetDir, { recursive: true, force: true });
+  }
+  mkdirSync(targetDir, { recursive: true });
+
+  for (const file of manifest) {
+    const filePath = resolve(targetDir, file.path);
+    mkdirSync(dirname(filePath), { recursive: true });
+    writeFileSync(filePath, Buffer.from(file.content, 'base64'));
+  }
+}
+
+function tryParseAsGzippedManifest(buffer: Buffer): ManifestFile[] | null {
+  try {
+    const gunzipped = gunzipSync(buffer);
+    const parsed = JSON.parse(gunzipped.toString('utf-8'));
+    if (isManifestArray(parsed)) return parsed;
+  } catch {
+    // not gzipped
+  }
+
+  try {
+    const parsed = JSON.parse(buffer.toString('utf-8'));
+    if (isManifestArray(parsed)) return parsed;
+  } catch {
+    // not json
+  }
+
+  return null;
+}
+
 async function downloadAndExtractMarketplaceTarball(
   baseUrl: string,
   slug: string,
@@ -103,6 +142,14 @@ async function downloadAndExtractMarketplaceTarball(
     const tarballPath = join(tmpDir, `${slug}.tar.gz`);
     await downloadToFile(redirectUrl, tarballPath);
 
+    const buffer = readFileSync(tarballPath);
+
+    const manifest = tryParseAsGzippedManifest(buffer);
+    if (manifest) {
+      extractManifestToDir(manifest, targetDir);
+      return;
+    }
+
     const extractDir = join(tmpDir, 'extracted');
     extractTarGz(tarballPath, extractDir);
     flattenPackageRoot(extractDir);
@@ -113,6 +160,13 @@ async function downloadAndExtractMarketplaceTarball(
     cpSync(extractDir, targetDir, { recursive: true, force: true });
   } else {
     const buffer = Buffer.from(await tarballRes.arrayBuffer());
+
+    const manifest = tryParseAsGzippedManifest(buffer);
+    if (manifest) {
+      extractManifestToDir(manifest, targetDir);
+      return;
+    }
+
     const tarballPath = join(tmpDir, `${slug}.tar.gz`);
     writeFileSync(tarballPath, buffer);
 
@@ -126,27 +180,9 @@ async function downloadAndExtractMarketplaceTarball(
       }
       cpSync(extractDir, targetDir, { recursive: true, force: true });
     } catch {
-      if (existsSync(targetDir)) {
-        rmSync(targetDir, { recursive: true, force: true });
-      }
-      mkdirSync(targetDir, { recursive: true });
-
-      let isJson = false;
-      try {
-        JSON.parse(buffer.toString('utf-8'));
-        isJson = true;
-      } catch {
-        // not json
-      }
-
-      if (isJson) {
-        writeFileSync(resolve(targetDir, 'package.json'), buffer.toString('utf-8'));
-      } else {
-        throw new Error(
-          `Downloaded tarball for "${slug}" is not a valid archive. ` +
-          `The marketplace backend may not support tarball generation yet.`
-        );
-      }
+      throw new Error(
+        `Downloaded tarball for "${slug}" is neither a gzipped JSON manifest nor a valid tar.gz archive.`
+      );
     }
   }
 }
