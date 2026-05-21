@@ -181,6 +181,27 @@ export async function handlePublish(
       console.log(`  Description: ${result.description}`);
       if (result.commands?.length) console.log(`  Commands: ${result.commands.join(', ')}`);
       if (result.tags?.length) console.log(`  Tags: ${result.tags.join(', ')}`);
+      if (result.sites?.length) console.log(`  Sites: ${result.sites.join(', ')}`);
+      if (result.commandsDocs?.length) {
+        console.log('  Command Docs:');
+        for (const cmd of result.commandsDocs) {
+          console.log(`    ${cmd.name}: ${cmd.description}`);
+          for (const p of cmd.parameters) {
+            const req = p.required ? 'required' : 'optional';
+            const def = p.default !== undefined ? `, default: ${JSON.stringify(p.default)}` : '';
+            console.log(`      - ${p.name} (${p.type}, ${req}${def}): ${p.description}`);
+          }
+          if (cmd.examples?.length) {
+            for (const ex of cmd.examples) {
+              console.log(`      example: ${ex.cmd} — ${ex.description}`);
+            }
+          }
+        }
+      }
+      if (result.readme) {
+        const preview = result.readme.slice(0, 200).replace(/\n/g, '\\n');
+        console.log(`  README: ${preview.length < result.readme.length ? preview + '...' : preview}`);
+      }
       console.log(`  Files: ${result.fileCount} files, ${(result.size / 1024).toFixed(1)}KB`);
       return;
     }
