@@ -27,3 +27,6 @@ scripts/debug-*
 
 # IDE / editor
 .opencode/opencode.jsonc.bak*
+# OpenCode runtime files
+.opencode/session-registry.json
+.opencode/opencode.jsonc.bak*
