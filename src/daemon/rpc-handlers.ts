@@ -275,7 +275,8 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const cmdParams = (params.params || {}) as Record<string, unknown>;
     const sessionName = (params.session as string) || 'default';
     const cdp = params.cdpEndpoint as string | undefined;
-    const endpoint = cdp || await resolveCDPEndpoint('auto');
+    const existingSession = findSession(sessionName);
+    const endpoint = cdp || existingSession?.cdpEndpoint || await resolveCDPEndpoint('auto');
     commandLogStore.add(sessionName, {
       timestamp: Date.now(),
       command,

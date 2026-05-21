@@ -156,8 +156,8 @@ export async function executeCommand(
     params = result.data as Record<string, unknown>;
   }
 
-  // Forward page/project-scope commands to daemon (auto-starts daemon if not running).
-  if ((command.scope === 'page' || command.scope === 'project') && !process.env.XBROWSER_DAEMON_WORKER) {
+  // Forward browser-dependent commands to daemon (auto-starts daemon if not running).
+  if (command.scope !== 'cli' && !process.env.XBROWSER_DAEMON_WORKER) {
     const { forwardExec } = await import('./client/daemon-client.js');
     const result = await forwardExec(commandName, params, sessionName, extraOpts?.cdpEndpoint);
     if (result) return result;

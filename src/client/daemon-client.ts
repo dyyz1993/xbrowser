@@ -7,17 +7,16 @@ const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`;
 let _ensurePromise: Promise<void> | null = null;
 
 async function ensureDaemonRunning(): Promise<void> {
-  if (_ensurePromise) return _ensurePromise;
-  _ensurePromise = (async () => {
-    try {
-      const resp = await fetch(`${DAEMON_BASE}/health`, { signal: AbortSignal.timeout(2000) });
-      if (resp.ok) {
-        const data = (await resp.json()) as { status?: string };
-        if (data.status === 'ok') return;
-      }
-    } catch { /* daemon not reachable */ }
-    await startDaemonProcess(DAEMON_PORT);
-  })();
+  if (_ensurePromise) {
+    try { await _ensurePromise; } catch { /* will retry */ }
+    _ensurePromise = null;
+  }
+  const healthOk = await fetch(`${DAEMON_BASE}/health`, { signal: AbortSignal.timeout(2000) })
+    .then(r => r.ok ? r.json() : null)
+    .then((d: { status?: string } | null) => d?.status === 'ok')
+    .catch(() => false);
+  if (healthOk) return;
+  _ensurePromise = startDaemonProcess(DAEMON_PORT).then(() => {});
   _ensurePromise.catch(() => { _ensurePromise = null; });
   try {
     await _ensurePromise;

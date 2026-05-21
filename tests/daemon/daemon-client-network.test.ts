@@ -68,9 +68,11 @@ describe('forwardNetworkList', () => {
 
   it('should return parsed JSON response directly', async () => {
     const responseData = { captures: [{ id: 1, url: 'https://example.com' }] };
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => responseData,
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/health')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => responseData });
     });
 
     const result = await forwardNetworkList('s1');
@@ -92,9 +94,11 @@ describe('forwardNetworkList', () => {
   });
 
   it('should handle empty captures list', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ captures: [] }),
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/health')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => ({ captures: [] }) });
     });
 
     const result = (await forwardNetworkList('s1')) as { captures: unknown[] };
@@ -130,9 +134,11 @@ describe('forwardNetworkList', () => {
         },
       ],
     };
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => fullCaptures,
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/health')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+      }
+      return Promise.resolve({ ok: true, json: async () => fullCaptures });
     });
 
     const result = (await forwardNetworkList('s1', { filter: 'api' })) as { captures: unknown[] };
