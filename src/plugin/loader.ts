@@ -105,12 +105,17 @@ export class XBrowserPluginLoader {
     ];
 
     const loaded: PluginInstance[] = [];
+    const seen = new Set<string>();
 
     for (const dir of dirs) {
       if (!existsSync(dir)) continue;
       const entries = readdirSync(dir, { withFileTypes: true });
       for (const entry of entries) {
         if (!entry.isDirectory()) continue;
+        // Skip if already loaded from a higher-priority directory
+        if (seen.has(entry.name)) continue;
+        seen.add(entry.name);
+
         const pluginDir = resolve(dir, entry.name);
         let indexPath = resolve(pluginDir, 'index.js');
         if (!existsSync(indexPath)) {
