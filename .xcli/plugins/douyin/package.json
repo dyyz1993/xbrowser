@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-douyin",
-  "version": "2.1.0",
+  "version": "3.0.0",
   "description": "XBrowser 抖音数据采集插件 - 支持视频评论、用户评论、作品统计、AI 字幕提取等功能",
   "type": "module",
   "main": "index.ts",
@@ -25,6 +25,14 @@
   "xbrowser": {
     "site": "https://www.douyin.com",
     "requiresLogin": true,
-    "commands": ["videos", "profile", "detail", "comments", "user-comments", "search", "ai-subtitle"]
+    "commands": [
+      "videos",
+      "profile",
+      "detail",
+      "comments",
+      "user-comments",
+      "search",
+      "ai-subtitle"
+    ]
   }
 }

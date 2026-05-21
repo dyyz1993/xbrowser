@@ -1,14 +1,23 @@
 {
   "name": "xbrowser-plugin-quora",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Quora SEO 外链 - 问答平台 (DA 92, nofollow, 136M 月流量)",
   "main": "index.ts",
-  "keywords": ["xbrowser", "xbrowser-plugin", "quora.com"],
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "quora.com"
+  ],
   "author": "dyyz1993",
   "license": "MIT",
   "xbrowser": {
     "site": "https://www.quora.com",
     "requiresLogin": true,
-    "commands": ["login", "answer", "publish-article", "update-profile"]
+    "commands": [
+      "login",
+      "answer",
+      "publish-article",
+      "update-profile"
+    ]
   }
 }

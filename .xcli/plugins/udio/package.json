@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-udio",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Udio AI Music Generation - AI 音乐生成、Credits 查询、歌曲管理、hCaptcha 处理",
   "type": "module",
   "main": "index.ts",
@@ -28,6 +28,8 @@
       "library",
       "billing"
     ],
-    "sites": ["udio"]
+    "sites": [
+      "udio"
+    ]
   }
 }

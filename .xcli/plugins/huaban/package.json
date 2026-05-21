@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-huaban",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "花瓣网 - 设计灵感采集",
   "main": "index.ts",
   "keywords": [

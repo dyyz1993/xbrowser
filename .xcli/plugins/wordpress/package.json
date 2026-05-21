@@ -1,14 +1,24 @@
 {
   "name": "xbrowser-plugin-wordpress",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "WordPress.com SEO 外链 - 博客平台 (DA 93, dofollow)",
   "main": "index.ts",
-  "keywords": ["xbrowser", "xbrowser-plugin", "wordpress.com"],
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "wordpress.com"
+  ],
   "author": "dyyz1993",
   "license": "MIT",
   "xbrowser": {
     "site": "https://wordpress.com",
     "requiresLogin": true,
-    "commands": ["login", "publish", "draft", "update-profile", "create-page"]
+    "commands": [
+      "login",
+      "publish",
+      "draft",
+      "update-profile",
+      "create-page"
+    ]
   }
 }

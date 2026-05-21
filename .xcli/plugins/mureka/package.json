@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-mureka",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Mureka AI Music Generation - AI 音乐生成、创作管理、积分查询",
   "type": "module",
   "main": "index.ts",
@@ -28,6 +28,8 @@
       "library",
       "billing"
     ],
-    "sites": ["mureka"]
+    "sites": [
+      "mureka"
+    ]
   }
 }

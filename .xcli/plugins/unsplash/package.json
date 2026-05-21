@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-unsplash",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Unsplash - Free high-resolution photos",
   "main": "index.ts",
   "keywords": [

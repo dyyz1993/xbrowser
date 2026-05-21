@@ -1,14 +1,24 @@
 {
   "name": "xbrowser-plugin-medium",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Medium SEO 外链 - 内容平台 (DA 96, nofollow, 241M 月流量)",
   "main": "index.ts",
-  "keywords": ["xbrowser", "xbrowser-plugin", "medium.com"],
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "medium.com"
+  ],
   "author": "dyyz1993",
   "license": "MIT",
   "xbrowser": {
     "site": "https://medium.com",
     "requiresLogin": true,
-    "commands": ["login", "publish", "draft", "import", "update-profile"]
+    "commands": [
+      "login",
+      "publish",
+      "draft",
+      "import",
+      "update-profile"
+    ]
   }
 }

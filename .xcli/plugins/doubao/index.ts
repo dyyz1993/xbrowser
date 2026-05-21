@@ -1306,6 +1306,38 @@ export default function (xcli: XCLIAPI): void {
           }
         }
 
+        if (params.duration) {
+          const durSpanHandle = await page.evaluateHandle(() => {
+            for (const s of document.querySelectorAll('span')) {
+              const text = s.textContent.trim();
+              if (['30', '60', '90', '120'].includes(text) && s.className.includes('px-6')) return s;
+            }
+            return null;
+          });
+          const durSpan = durSpanHandle.asElement();
+          if (durSpan) {
+            const durBox = await durSpan.boundingBox();
+            if (durBox) await page.mouse.click(durBox.x + durBox.width / 2, durBox.y + durBox.height / 2);
+            await page.waitForTimeout(800);
+            const durLabel = `${params.duration}`;
+            const durSelected = await page.evaluateHandle((dur: string) => {
+              const el = Array.from(document.querySelectorAll('div')).find(e => e.textContent.trim() === dur && e.children.length === 0);
+              return el || null;
+            }, durLabel);
+            const durOpt = durSelected.asElement();
+            if (durOpt) {
+              const optBox = await durOpt.boundingBox();
+              if (optBox) await page.mouse.click(optBox.x + optBox.width / 2, optBox.y + optBox.height / 2);
+              tips.push(`已选择时长: ${params.duration}秒`);
+            } else {
+              tips.push(`⚠ 未找到时长"${params.duration}秒"选项，使用默认`);
+            }
+            await page.waitForTimeout(500);
+          } else {
+            tips.push(`⚠ 未找到时长下拉入口，使用默认`);
+          }
+        }
+
         if (params.voice) {
           const voiceSpanHandle = await page.evaluateHandle(() => {
             for (const s of document.querySelectorAll('span')) {

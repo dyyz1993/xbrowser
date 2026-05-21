@@ -6,7 +6,6 @@ export http_proxy=http://127.0.0.1:7890
 export all_proxy=socks5://127.0.0.1:7890
 
 PLUGINS_DIR=".xcli/plugins"
-EXCLUDE=("web-automation")
 DRY_RUN=false
 START_FROM=""
 
@@ -18,20 +17,21 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-EXCLUDE_PATTERN=""
-for name in "${EXCLUDE[@]}"; do
-  EXCLUDE_PATTERN+=" -not -name '$name'"
-done
-
-mapfile -t PLUGINS < <(eval "find '$PLUGINS_DIR' -maxdepth 1 -mindepth 1 -type d $EXCLUDE_PATTERN -exec basename {} \;" | sort)
-
-skipping=$([[ -n "$START_FROM" ]] && echo true || echo false)
-
 success=()
 failed=()
 skipped=()
+skipping=false
+if [[ -n "$START_FROM" ]]; then skipping=true; fi
 
-for dir in "${PLUGINS[@]}"; do
+for dir in $(ls "$PLUGINS_DIR" | sort); do
+  # Skip web-automation (too large)
+  if [[ "$dir" == "web-automation" ]]; then
+    skipped+=("$dir")
+    echo "[SKIP] $dir (excluded)"
+    continue
+  fi
+
+  # Skip until start-from
   if [[ "$skipping" == true ]]; then
     if [[ "$dir" == "$START_FROM" ]]; then
       skipping=false
@@ -42,21 +42,27 @@ for dir in "${PLUGINS[@]}"; do
     fi
   fi
 
-  cmd="npx xbrowser plugin publish \"$PLUGINS_DIR/$dir\""
+  # Check if index.ts exists
+  if [[ ! -f "$PLUGINS_DIR/$dir/index.ts" ]]; then
+    skipped+=("$dir")
+    echo "[SKIP] $dir (no index.ts)"
+    continue
+  fi
+
   if $DRY_RUN; then
-    cmd+=" --dry-run"
-  fi
-
-  echo "[PUBLISH] $dir"
-  if eval "$cmd"; then
-    success+=("$dir")
-    echo "[OK] $dir"
+    echo "[DRY-RUN] $dir"
+    npx xbrowser plugin publish "$PLUGINS_DIR/$dir" --dry-run 2>&1 && success+=("$dir") || failed+=("$dir")
   else
-    failed+=("$dir")
-    echo "[FAIL] $dir"
+    echo "[PUBLISH] $dir"
+    if npx xbrowser plugin publish "$PLUGINS_DIR/$dir" 2>&1; then
+      success+=("$dir")
+      echo "[OK] $dir"
+    else
+      failed+=("$dir")
+      echo "[FAIL] $dir"
+    fi
+    sleep 2
   fi
-
-  sleep 2
 done
 
 echo ""

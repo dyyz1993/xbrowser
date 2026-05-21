@@ -1,14 +1,24 @@
 {
   "name": "xbrowser-plugin-baidu",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "百度搜索 - 真实浏览器操作",
   "main": "index.ts",
-  "keywords": ["xbrowser", "xbrowser-plugin", "baidu.com"],
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "baidu.com"
+  ],
   "author": "dyyz1993",
   "license": "MIT",
   "xbrowser": {
     "site": "https://www.baidu.com",
     "requiresLogin": false,
-    "commands": ["search", "hotsearch", "suggest", "news", "seo-rank"]
+    "commands": [
+      "search",
+      "hotsearch",
+      "suggest",
+      "news",
+      "seo-rank"
+    ]
   }
 }

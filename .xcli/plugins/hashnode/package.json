@@ -1,14 +1,23 @@
 {
   "name": "xbrowser-plugin-hashnode",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Hashnode SEO 外链 - 开发者博客平台 (DA 80+, 自定义域名 dofollow)",
   "main": "index.ts",
-  "keywords": ["xbrowser", "xbrowser-plugin", "hashnode.com"],
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "hashnode.com"
+  ],
   "author": "dyyz1993",
   "license": "MIT",
   "xbrowser": {
     "site": "https://hashnode.com",
     "requiresLogin": true,
-    "commands": ["login", "publish", "draft", "update-profile"]
+    "commands": [
+      "login",
+      "publish",
+      "draft",
+      "update-profile"
+    ]
   }
 }

@@ -1,14 +1,23 @@
 {
   "name": "xbrowser-plugin-blogger",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Blogger.com SEO 外链 - Google 免费博客平台 (DA 89, dofollow)",
   "main": "index.ts",
-  "keywords": ["xbrowser", "xbrowser-plugin", "blogger.com"],
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "blogger.com"
+  ],
   "author": "dyyz1993",
   "license": "MIT",
   "xbrowser": {
     "site": "https://www.blogger.com",
     "requiresLogin": true,
-    "commands": ["login", "create-blog", "publish", "update-profile"]
+    "commands": [
+      "login",
+      "create-blog",
+      "publish",
+      "update-profile"
+    ]
   }
 }
