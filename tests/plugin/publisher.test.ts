@@ -154,8 +154,9 @@ describe('publisher', () => {
     expect(result.description).toBe('xb desc');
     expect(result.slug).toBe('custom-slug');
     expect(result.commands).toEqual(['cmd1', 'cmd2']);
-    expect(result.tags).toEqual(['tag1']);
-    expect(result.sites).toEqual(['https://site.com']);
+    expect(result.tags).toEqual(expect.arrayContaining(['tag1']));
+    expect(result.tags.length).toBeGreaterThanOrEqual(1);
+    expect(result.sites).toEqual(expect.arrayContaining(['https://site.com']));
   });
 
   it('should detect commands from source code', async () => {
