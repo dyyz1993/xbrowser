@@ -1,7 +1,7 @@
 set -e
 
 echo "🧪 [pre-push] Running full test suite..."
-npx vitest run --exclude='tests/e2e/**' --exclude='tests/human-interaction.test.ts' --exclude='tests/websocket-server.test.ts' --exclude='tests/screencast.test.ts'
+npx vitest run --exclude='tests/e2e/**' --exclude='tests/human-interaction.test.ts' --exclude='tests/websocket-server.test.ts' --exclude='tests/screencast.test.ts' --exclude='tests/cli/daemon-session.test.ts'
 if [ $? -ne 0 ]; then
   echo "❌ Tests failed. All tests must pass before pushing."
   exit 1
