@@ -213,10 +213,16 @@ const ACTION_SIGNAL_SCRIPT = `
   // --- Element descriptor ---
   function describe(el) {
     if (!el || !el.tagName) return null;
+    var tag = el.tagName.toLowerCase();
+    var isInputLike = (tag === 'input' || tag === 'textarea' || tag === 'select');
+    var displayText = isInputLike
+      ? (el.value || el.getAttribute('placeholder') || '').trim().substring(0, 40)
+      : (el.textContent || '').trim().substring(0, 40);
+    if (tag === 'a' && el.getAttribute('href')) displayText = el.textContent.trim().substring(0, 40);
     return {
-      tag: el.tagName.toLowerCase(),
+      tag: tag,
       selector: uniqueSelector(el),
-      text: (el.textContent || '').trim().substring(0, 40),
+      text: displayText,
       role: el.getAttribute('role') || undefined,
       type: el.getAttribute('type') || undefined,
       placeholder: el.getAttribute('placeholder') || undefined,
@@ -225,7 +231,39 @@ const ACTION_SIGNAL_SCRIPT = `
     };
   }
 
+  function actualTarget(e) {
+    var path = e.composedPath && e.composedPath();
+    return (path && path.length > 0) ? path[0] : e.target;
+  }
+
+  // --- Input debounce: coalesce rapid keystrokes on same element ---
+  var __xb_input_timer = null;
+  var __xb_input_pending = null;
+
+  function flushInputAction() {
+    if (__xb_input_pending) {
+      window.__xb_pending_actions.push(__xb_input_pending);
+      __xb_input_pending = null;
+    }
+    __xb_input_timer = null;
+  }
+
   function pushAction(type, detail) {
+    if (type === 'input') {
+      if (__xb_input_timer) clearTimeout(__xb_input_timer);
+      __xb_input_pending = {
+        type: type,
+        ts: Date.now(),
+        url: location.href,
+        title: document.title,
+        ...detail,
+      };
+      __xb_input_timer = setTimeout(flushInputAction, 800);
+      return;
+    }
+    if (type === 'click' || type === 'submit' || type === 'keydown') {
+      if (__xb_input_timer) { clearTimeout(__xb_input_timer); flushInputAction(); }
+    }
     window.__xb_pending_actions.push({
       type: type,
       ts: Date.now(),
@@ -236,28 +274,33 @@ const ACTION_SIGNAL_SCRIPT = `
   }
 
   document.addEventListener('click', function(e) {
-    pushAction('click', { element: describe(e.target), x: e.clientX, y: e.clientY });
+    pushAction('click', { element: describe(actualTarget(e)), x: e.clientX, y: e.clientY });
   }, true);
 
   document.addEventListener('input', function(e) {
+    var target = actualTarget(e);
     pushAction('input', {
-      element: describe(e.target),
-      value: (e.target.value || e.target.textContent || '').substring(0, 200),
+      element: describe(target),
+      value: (target.value || target.textContent || '').substring(0, 200),
     });
   }, true);
 
   document.addEventListener('change', function(e) {
-    pushAction('change', { element: describe(e.target), value: (e.target.value || '').substring(0, 100) });
+    var target = actualTarget(e);
+    var tag = target.tagName && target.tagName.toLowerCase();
+    if (tag === 'select') {
+      pushAction('change', { element: describe(target), value: (target.value || '').substring(0, 100) });
+    }
   }, true);
 
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Enter' || e.key === 'Tab' || e.key === 'Escape' || e.key.startsWith('Arrow')) {
-      pushAction('keydown', { key: e.key, element: describe(e.target) });
+      pushAction('keydown', { key: e.key, element: describe(actualTarget(e)) });
     }
   }, true);
 
   document.addEventListener('submit', function(e) {
-    pushAction('submit', { element: describe(e.target) });
+    pushAction('submit', { element: describe(actualTarget(e)) });
   }, true);
 
   document.addEventListener('scroll', function() {
@@ -724,10 +767,10 @@ export class SessionRecorder {
   // ─── Summary builder with ref compression + input→network matching ──
 
   private buildSummary(data: RecordingData): RecordingSummary {
-    const TIME_WINDOW = 2000; // ±2s
+    const POST_WINDOW = 3000;
+    const MERGE_WINDOW = 2000;
     const steps: RecordingStep[] = [];
 
-    // Ref compression: deduplicate elements by selector
     const selectorToRef = new Map<string, string>();
     const elements: Record<string, ElementRef> = {};
     let refCounter = 0;
@@ -757,21 +800,48 @@ export class SessionRecorder {
       return ref;
     }
 
-    for (const action of data.actions) {
-      if (action.type === 'scroll') continue;
+    const filtered = data.actions.filter(a => a.type !== 'scroll');
+
+    type ActionGroup = { actions: UserAction[]; primary: UserAction };
+    const groups: ActionGroup[] = [];
+    let current: ActionGroup | null = null;
+
+    for (const action of filtered) {
+      const sameElement = current
+        && current.primary.element?.selector
+        && current.primary.element.selector === action.element?.selector
+        && action.timestamp - current.primary.timestamp < MERGE_WINDOW;
+      const isInputLike = action.type === 'input' || action.type === 'keydown' || action.type === 'change';
+
+      if (current && (sameElement || (isInputLike && current.actions.some(a => a.type === 'input' || a.type === 'click')) && action.timestamp - current.primary.timestamp < MERGE_WINDOW)) {
+        current.actions.push(action);
+        if (action.type === 'input') current.primary = action;
+      } else {
+        current = { actions: [action], primary: action };
+        groups.push(current);
+      }
+    }
+
+    for (const group of groups) {
+      const primary = group.primary;
+      const tsStart = Math.min(...group.actions.map(a => a.timestamp));
+      const tsEnd = Math.max(...group.actions.map(a => a.timestamp));
+      const inputAction = group.actions.find(a => a.type === 'input');
 
       const nearbyNetwork = data.network.filter(n =>
-        Math.abs(n.timestamp - action.timestamp) <= TIME_WINDOW,
+        n.timestamp >= tsStart - 500 && n.timestamp <= tsEnd + POST_WINDOW,
       );
       const nearbyContext = data.contextChanges.filter(c =>
-        Math.abs(c.timestamp - action.timestamp) <= TIME_WINDOW,
+        c.timestamp >= tsStart - 500 && c.timestamp <= tsEnd + POST_WINDOW,
       );
-      const matchedInputs = this.matchInputsToNetwork(action, nearbyNetwork);
+      const matchedInputs = inputAction
+        ? this.matchInputsToNetwork(inputAction, nearbyNetwork)
+        : [];
 
       steps.push({
         step: steps.length + 1,
-        ref: getRef(action),
-        action,
+        ref: getRef(primary),
+        action: primary,
         network: nearbyNetwork.map(n => ({
           ...n,
           responseBody: n.responseBody && JSON.stringify(n.responseBody).length > 1000

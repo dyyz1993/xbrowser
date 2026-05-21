@@ -123,12 +123,27 @@ function printRecordingSummary(summary: RecordingSummary, sessionName: string): 
   console.log(`  Steps:     ${summary.steps.length}`);
 
   for (const step of summary.steps) {
-    console.log(`  ${step.step}. ${step.action.type}` +
-      (step.action.element ? ` <${step.action.element.tag}> "${step.action.element.text?.substring(0, 30)}"` : '') +
-      (step.action.value ? ` value="${step.action.value.substring(0, 30)}"` : '') +
-      (step.network.length > 0 ? ` → ${step.network.length} network requests` : '') +
-      (step.matchedInputs.length > 0 ? ` [${step.matchedInputs.length} input→API matches]` : ''),
-    );
+    const a = step.action;
+    const el = a.element;
+    const elDesc = el ? `<${el.tag}${el.selector ? ` ${el.selector}` : ''}>` : '';
+    const elText = el?.text ? `"${el.text.substring(0, 40)}"` : '';
+    let desc = '';
+    if (a.type === 'input' && a.value) {
+      desc = `type "${a.value.substring(0, 50)}" into ${elDesc}`;
+    } else if (a.type === 'click') {
+      desc = `click ${elDesc} ${elText}`;
+    } else if (a.type === 'keydown') {
+      desc = `press ${a.key} on ${elDesc}`;
+    } else if (a.type === 'change') {
+      desc = `change ${elDesc} to "${(a.value || '').substring(0, 30)}"`;
+    } else if (a.type === 'submit') {
+      desc = `submit ${elDesc}`;
+    } else {
+      desc = `${a.type} ${elDesc} ${elText}`.trim();
+    }
+    const navInfo = step.contextChanges.find(c => c.type === 'navigate');
+    if (navInfo) desc += ` → navigate to ${navInfo.url?.substring(0, 80)}`;
+    console.log(`  ${step.step}. ${desc}`);
   }
 
   console.log('');
