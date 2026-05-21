@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -24,7 +25,8 @@ export default function (xcli: XCLIAPI): void {
 
         const currentUrl = page.url();
         if (currentUrl.includes('/login') || currentUrl.includes('/signup')) {
-    return fail('Pinterest 需要登录。请使用 --cdp http://localhost:9221 连接带登录态的浏览器', []);
+          return fail('Pinterest 需要登录。请使用 --cdp http://localhost:9221 连接带登录态的浏览器');
+        }
 
         for (let i = 0; i < 5; i++) {
           await page.evaluate(() => window.scrollBy(0, 1000));
@@ -50,7 +52,8 @@ export default function (xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit);
 
-    return ok({ query: params.query, [`Pinterest "${params.query}"，共 ${results.length} 张`] };);
+        return ok({ query: params.query, engine: 'pinterest', results, total: results.length, timestamp: Date.now() }, [`Pinterest "${params.query}"，共 ${results.length} 张`]);
+      } catch (error) { return fail(error instanceof Error ? error.message : '未知错误'); }
     },
   });
 }

@@ -1,4 +1,5 @@
-import type { XCLIAPI, CommandContext, ok, fail } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
@@ -183,10 +184,13 @@ export default function (xcli: XCLIAPI): void {
 
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
-    return ok(conversations, []);
+        return {
+          data: conversations,
+          tips,
+          message: `找到 ${conversations.length} 个会话`,
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['获取会话列表失败']);
+        return fail('未知错误', ['获取会话列表失败']);
       }
     },
   });
@@ -233,12 +237,13 @@ export default function (xcli: XCLIAPI): void {
         }
 
         await page.waitForTimeout(1500);
-    return ok({ created: true }, []);
+        return {
+          data: { created: true },
           tips: buildTips(ctx),
           message: '✅ 已创建新对话',
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['创建新对话失败']);
+        return fail('未知错误', ['创建新对话失败']);
       }
     },
   });
@@ -276,12 +281,13 @@ export default function (xcli: XCLIAPI): void {
         if (!clicked.found) throw new Error(`未找到包含"${params.title}"的会话`);
 
         await page.waitForTimeout(2000);
-    return ok({ opened: clicked.title }, []);
+        return {
+          data: { opened: clicked.title },
           tips: buildTips(ctx),
           message: `✅ 已打开会话：${clicked.title}`,
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['打开会话失败']);
+        return fail('未知错误', ['打开会话失败']);
       }
     },
   });
@@ -564,17 +570,21 @@ export default function (xcli: XCLIAPI): void {
             tips.push(`搜索来源：${domains.size} 个域名, ${uniqueUrls.length} 条链接`);
           }
 
-    return ok(result, []);
+          return {
+            data: result,
+            tips,
+            message: `✅ AI 回复 (${((Date.now() - startTime) / 1000).toFixed(1)}s)`,
           };
         } else {
           tips.push('AI 回复超时或未检测到');
-    return ok({ response: '' }, []);
+          return {
+            data: { response: '' },
             tips,
             message: '⏱ AI 回复超时（60s），请检查页面',
           };
         }
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['发送消息失败']);
+        return fail('未知错误', ['发送消息失败']);
       }
     },
   });
@@ -673,18 +683,16 @@ export default function (xcli: XCLIAPI): void {
         }
 
         if (imageUrl) {
-    return ok({ url: imageUrl, []);
+          return {
+            data: { url: imageUrl, prompt, duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` },
             tips,
             message: `✅ 图片已生成 (${((Date.now() - startTime) / 1000).toFixed(1)}s)`,
           };
         }
 
-    return ok({ prompt }, []);
-          tips: [...tips, '图片可能还在生成中，请到豆包页面查看'],
-          message: '⏱ 图片生成超时',
-        };
+        return ok({ prompt }, [...tips, '图片可能还在生成中，请到豆包页面查看']);
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['文生图失败']);
+        return fail('未知错误', ['文生图失败']);
       }
     },
   });
@@ -774,12 +782,13 @@ export default function (xcli: XCLIAPI): void {
 
         await page.waitForTimeout(3000);
 
-    return ok({ action: params.action, []);
+        return {
+          data: { action: params.action, image: absPath, submitted: true },
           tips,
           message: `✅ 图片${label}请求已提交`,
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['图片编辑失败']);
+        return fail('未知错误', ['图片编辑失败']);
       }
     },
   });
@@ -842,12 +851,13 @@ export default function (xcli: XCLIAPI): void {
           if (resultUrl) break;
         }
 
-    return ok({ resultUrl: resultUrl || 'processing', []);
+        return {
+          data: { resultUrl: resultUrl || 'processing', source: absPath },
           tips,
           message: resultUrl ? '✅ 抠图完成' : '⏱ 抠图处理中，请到页面查看结果',
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['抠图失败']);
+        return fail('未知错误', ['抠图失败']);
       }
     },
   });
@@ -904,12 +914,13 @@ export default function (xcli: XCLIAPI): void {
           }
         }
 
-    return ok({ source: absPath, []);
+        return {
+          data: { source: absPath, prompt: params.prompt, submitted: true },
           tips,
           message: '✅ 图片衍生请求已提交',
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['图片衍生失败']);
+        return fail('未知错误', ['图片衍生失败']);
       }
     },
   });
@@ -965,11 +976,9 @@ export default function (xcli: XCLIAPI): void {
           }));
         });
 
-    return ok(creations, [...tips);
-          message: `找到 ${creations.length} 条创作记录`,
-        };
+        return ok(creations, [...tips, `共 ${creations.length} 条创作记录`]);
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['获取创作历史失败']);
+        return fail('未知错误', ['获取创作历史失败']);
       }
     },
   });
@@ -1033,14 +1042,15 @@ export default function (xcli: XCLIAPI): void {
           return urlParts ? urlParts[1] : '';
         });
 
-    return ok({ taskId: taskId || 'pending', []);
+        return {
+          data: { taskId: taskId || 'pending', prompt: params.prompt, status: 'submitted' },
           tips: taskId
             ? [...tips, `taskId: ${taskId}`]
             : [...tips, '无法提取 taskId，请使用 video-status 检查任务状态'],
           message: taskId ? `✅ 视频生成已提交，taskId: ${taskId}` : '✅ 视频生成已提交（未提取到 taskId）',
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['提交视频生成失败']);
+        return fail('未知错误', ['提交视频生成失败']);
       }
     },
   });
@@ -1083,12 +1093,13 @@ export default function (xcli: XCLIAPI): void {
           return 'unknown';
         }, params.task);
 
-    return ok({ taskId: params.task, []);
+        return {
+          data: { taskId: params.task, status },
           tips,
           message: `📊 任务 ${params.task} 状态: ${status}`,
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['检查状态失败']);
+        return fail('未知错误', ['检查状态失败']);
       }
     },
   });
@@ -1131,12 +1142,13 @@ export default function (xcli: XCLIAPI): void {
           tips.push(`状态提示: ${statusMatch?.[0] || '任务可能还在处理'}`);
         }
 
-    return ok({ taskId: params.task, []);
+        return {
+          data: { taskId: params.task, url: videoUrl || null },
           tips,
           message: videoUrl ? `✅ 视频地址: ${videoUrl}` : '⏱ 视频尚未生成完成',
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['获取视频结果失败']);
+        return fail('未知错误', ['获取视频结果失败']);
       }
     },
   });
@@ -1174,7 +1186,7 @@ export default function (xcli: XCLIAPI): void {
         const waitSeconds = typeof params.timeout === 'number' ? params.timeout : 0;
 
         if (!params.description && !params.lyric) {
-    return fail('❌ 缺少必要参数：需要 --description 或 --lyric', ['请提供 --description（AI 写歌词模式）或 --lyric（自定义歌词模式）']);
+          return fail('❌ 缺少必要参数：需要 --description 或 --lyric', ['请提供 --description（AI 写歌词模式）或 --lyric（自定义歌词模式）']);
         }
 
         if (params.debug) {
@@ -1458,18 +1470,32 @@ export default function (xcli: XCLIAPI): void {
           const audioUrl = await audioUrlPromise;
 
           if (audioUrl) {
-    return ok({, []);
-              tips: [...tips, '✅ 音乐生成完成！', '💡 URL 有签名有时效，建议尽快下载'],
-              message: `✅ 音乐已生成: ${audioUrl}`,
-            };
+            return ok({
+                url: audioUrl,
+                conversationUrl,
+                description: activeDescription,
+                style: params.style || null,
+                mood: params.mood || null,
+                voice: params.voice || null,
+                duration: params.duration || null,
+                lyric: params.lyric || null,
+                mode,
+              }, [...tips, '✅ 音乐生成完成！', '💡 URL 有签名有时效，建议尽快下载']);
           }
 
           const fallbackUrl = await extractPageAudio(page);
           if (fallbackUrl) {
-    return ok({, []);
-              tips: [...tips, '✅ 音乐生成完成（通过 DOM 提取）'],
-              message: `✅ 音乐已生成: ${fallbackUrl}`,
-            };
+            return ok({
+                url: fallbackUrl,
+                conversationUrl,
+                description: activeDescription,
+                style: params.style || null,
+                mood: params.mood || null,
+                voice: params.voice || null,
+                duration: params.duration || null,
+                lyric: params.lyric || null,
+                mode,
+              }, [...tips, '✅ 音乐生成完成（通过 DOM 提取）']);
           }
 
           const hasError = await page.evaluate(() => {
@@ -1488,35 +1514,36 @@ export default function (xcli: XCLIAPI): void {
             return /生成失败|出错了|无法生成|请求过于频繁|操作过于频繁|请稍后再试|抱歉/.test(body);
           });
           if (hasError) {
-    return ok({ error: '生成失败', []);
-              tips: [...tips, '❌ 音乐生成失败，请检查豆包页面'],
-              message: '❌ 音乐生成失败',
-            };
+            return ok({ error: '生成失败', conversationUrl, description: activeDescription, lyric: params.lyric || null, mode }, [...tips, '❌ 音乐生成失败，请检查豆包页面']);
           }
 
-    return ok({ status: 'timeout', []);
-            tips: [
+          return ok({ status: 'timeout', conversationUrl, description: activeDescription, lyric: params.lyric || null, mode }, [
               ...tips,
               `⏱ 等待超时（${waitSeconds}秒），音乐可能还在生成中`,
               `恢复查看: 使用相同 --cdp 重新执行命令会自动回到此对话`,
               `或查看创作历史: xbrowser doubao my-creations --type all${cdpSuffix ? ' --cdp ' + cdpFlag : ''}`,
-            ],
-            message: `⏱ 等待超时，音乐可能还在生成中`,
-          };
+            ]);
         }
 
-    return ok({, []);
-          tips: [
+        return ok({
+            status: 'submitted',
+            conversationUrl,
+            description: activeDescription,
+            style: params.style || null,
+            mood: params.mood || null,
+            voice: params.voice || null,
+            duration: params.duration || null,
+            lyric: params.lyric || null,
+            mode,
+          }, [
             ...tips,
             `✅ 音乐生成已提交！${params.lyric ? '模式: 自定义歌词' : `描述: "${activeDescription}"`}`,
             `⏱ 预计 25-60 秒后生成完成`,
             `恢复查看: 使用相同 --cdp 重新执行命令会自动回到此对话`,
             `或查看创作历史: xbrowser doubao my-creations --type all${cdpSuffix ? ' --cdp ' + cdpFlag : ''}`,
-          ],
-          message: `✅ 音乐生成已提交！${params.lyric ? '模式: 自定义歌词' : `描述: "${activeDescription}"`}`,
-        };
+          ]);
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['提交音乐生成失败']);
+        return fail('未知错误', ['提交音乐生成失败']);
       }
     },
   });
@@ -1541,7 +1568,8 @@ export default function (xcli: XCLIAPI): void {
         // Try to find audio first → completed
         const audioUrl = await extractPageAudio(page);
         if (audioUrl) {
-    return ok({ status: 'completed', []);
+          return {
+            data: { status: 'completed', url: audioUrl, taskId: params.task || null },
             tips,
             message: `✅ 音乐已生成: ${audioUrl}`,
           };
@@ -1564,8 +1592,7 @@ export default function (xcli: XCLIAPI): void {
         const sessionNameB = (optsB?.session as string) || 'default';
         const sessionSuffixB = ` --session ${sessionNameB}${cdpSuffixB}`;
 
-    return ok({ status, []);
-          tips: [
+        return ok({ status, taskId: params.task || null, url: null }, [
             ...tips,
             status === 'completed' ? '✅ 已完成' :
             status === 'processing' ? '⏳ 生成中，请稍候' :
@@ -1573,11 +1600,9 @@ export default function (xcli: XCLIAPI): void {
             '⏱ 状态未知，可能是新页面',
             `获取结果: xbrowser doubao music-result${sessionSuffixB}`,
             `查看创作: xbrowser doubao my-creations --type all${sessionSuffixB}`,
-          ],
-          message: `📊 状态: ${status}`,
-        };
+          ]);
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['检查状态失败']);
+        return fail('未知错误', ['检查状态失败']);
       }
     },
   });
@@ -1603,10 +1628,7 @@ export default function (xcli: XCLIAPI): void {
         const audioUrl = await extractPageAudio(page);
 
         if (audioUrl) {
-    return ok({ url: audioUrl, []);
-            tips: [...tips, '💡 可直接用浏览器打开此 URL 下载音频'],
-            message: `✅ 音频地址: ${audioUrl}`,
-          };
+          return ok({ url: audioUrl, taskId: params.task || null }, [...tips, '💡 可直接用浏览器打开此 URL 下载音频']);
         }
 
         // No audio found — give user actionable instructions
@@ -1623,30 +1645,24 @@ export default function (xcli: XCLIAPI): void {
         });
 
         if (hasSubmitted) {
-    return ok({ url: null, []);
-            tips: [
+          return ok({ url: null, taskId: params.task || null }, [
               ...tips,
               '⏱ 音乐还在生成中，请稍候再试',
               `重试: xbrowser doubao music-result${sessionSuffixC}`,
               `查看创作历史: xbrowser doubao my-creations --type all${sessionSuffixC}`,
-            ],
-            message: '⏱ 音频尚未生成完成，请稍后重试',
-          };
+            ]);
         }
 
-    return ok({ url: null, []);
-          tips: [
+        return ok({ url: null, taskId: params.task || null }, [
             ...tips,
             '⚠ 当前页面没有找到音乐结果。可能的原因:',
             '  1. 未提交音乐生成任务，请先执行 music 命令',
             '  2. 页面不是之前提交任务的页面，需使用同一 --session',
             `  确保: xbrowser doubao music --prompt "..."${sessionSuffixC}`,
             `  然后: xbrowser doubao music-result${sessionSuffixC}`,
-          ],
-          message: '⚠ 未找到音频，请先提交音乐生成任务',
-        };
+          ]);
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['获取音乐结果失败']);
+        return fail('未知错误', ['获取音乐结果失败']);
       }
     },
   });
@@ -1709,12 +1725,9 @@ export default function (xcli: XCLIAPI): void {
         }
 
         await page.waitForTimeout(1500);
-    return ok({ file: absPath, []);
-          tips: [...tips, `文件名: ${path.basename(absPath)}`],
-          message: `✅ 文件 "${path.basename(absPath)}" 已上传`,
-        };
+        return ok({ file: absPath, uploaded: true }, [...tips, `文件名: ${path.basename(absPath)}`]);
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['文件上传失败']);
+        return fail('未知错误', ['文件上传失败']);
       }
     },
   });
@@ -1764,12 +1777,9 @@ export default function (xcli: XCLIAPI): void {
           }));
         });
 
-    return ok({ files, []);
-          tips: [...tips, `云盘中共 ${files.length} 个文件`],
-          message: `云盘文件：${files.length} 项`,
-        };
+        return ok({ files, total: files.length }, [...tips, `云盘中共 ${files.length} 个文件`]);
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['获取云盘文件失败']);
+        return fail('未知错误', ['获取云盘文件失败']);
       }
     },
   });
@@ -1823,19 +1833,17 @@ export default function (xcli: XCLIAPI): void {
         }, modelName);
 
         if (!clicked) {
-    return ok({ model: modelName }, []);
-            tips: [...tips, '未找到模型选择器，可能页面结构不同'],
-            message: `⚠️ 未找到模型"${modelName}"`,
-          };
+          return ok({ model: modelName }, [...tips, '未找到模型选择器，可能页面结构不同']);
         }
 
         await page.waitForTimeout(1000);
-    return ok({ model: modelName, []);
+        return {
+          data: { model: modelName, switched: true },
           tips,
           message: `✅ 已切换到模型: ${modelName}`,
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['切换模型失败']);
+        return fail('未知错误', ['切换模型失败']);
       }
     },
   });
@@ -2007,15 +2015,9 @@ export default function (xcli: XCLIAPI): void {
           try { domains.add(new URL(u).hostname.replace(/^www\./, '')); } catch { /* ignore */ }
         }
 
-    return ok({, []);
-              })),
-            },
-          },
-          tips: [...tips, `搜索来源：${domains.size} 个域名, ${uniqueUrls.length} 条链接`],
-          message: responseText ? '✅ 搜索完成' : '⏱ 搜索请求已发送',
-        };
+        return fail('未知错误', [...tips, `搜索来源：${domains.size} 个域名, ${uniqueUrls.length} 条链接`]);
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['搜索失败']);
+        return fail('未知错误', ['搜索失败']);
       }
     },
   });
@@ -2084,12 +2086,9 @@ export default function (xcli: XCLIAPI): void {
         }
 
         await page.waitForTimeout(1000);
-    return ok({ type: params.type, []);
-          tips: [...tips, `附件: ${path.basename(absPath)}`],
-          message: `✅ 附件 "${path.basename(absPath)}" 已上传`,
-        };
+        return ok({ type: params.type, file: absPath, uploaded: true }, [...tips, `附件: ${path.basename(absPath)}`]);
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['上传附件失败']);
+        return fail('未知错误', ['上传附件失败']);
       }
     },
   });

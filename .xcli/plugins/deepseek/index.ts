@@ -1,4 +1,5 @@
-import type { XCLIAPI, CommandContext, ok, fail } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
@@ -120,10 +121,13 @@ export default function (xcli: XCLIAPI): void {
 
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
-    return ok(conversations, []);
+        return {
+          data: conversations,
+          tips,
+          message: `找到 ${conversations.length} 个会话`,
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['获取会话列表失败']);
+        return fail('未知错误', ['获取会话列表失败']);
       }
     },
   });
@@ -174,12 +178,13 @@ export default function (xcli: XCLIAPI): void {
         }
 
         await page.waitForTimeout(1500);
-    return ok({ created: true }, []);
+        return {
+          data: { created: true },
           tips: buildTips(ctx),
           message: '✅ 已创建新对话',
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['创建新对话失败']);
+        return fail('未知错误', ['创建新对话失败']);
       }
     },
   });
@@ -219,12 +224,13 @@ export default function (xcli: XCLIAPI): void {
         if (!clicked.found) throw new Error(`未找到包含"${params.title}"的会话`);
 
         await page.waitForTimeout(2000);
-    return ok({ opened: clicked.title }, []);
+        return {
+          data: { opened: clicked.title },
           tips: buildTips(ctx),
           message: `✅ 已打开会话：${clicked.title}`,
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['打开会话失败']);
+        return fail('未知错误', ['打开会话失败']);
       }
     },
   });
@@ -510,17 +516,21 @@ export default function (xcli: XCLIAPI): void {
             }
           }
 
-    return ok(result, []);
+          return {
+            data: result,
+            tips,
+            message: `✅ AI 回复 (${((Date.now() - startTime) / 1000).toFixed(1)}s)`,
           };
         } else {
           tips.push('AI 回复超时或未检测到');
-    return ok({ response: '' }, []);
+          return {
+            data: { response: '' },
             tips,
             message: '⏱ AI 回复超时（60s），请检查页面',
           };
         }
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['发送消息失败']);
+        return fail('未知错误', ['发送消息失败']);
       }
     },
   });
@@ -566,19 +576,17 @@ export default function (xcli: XCLIAPI): void {
 
         if (clicked === 'not_found') {
           // 可能已经进了具体对话，模式选择器不在页面上
-    return ok({ mode: params.mode }, []);
-            tips: [...buildTips(ctx), '提示：模式切换仅在首页可用，已进入对话时无法切换'],
-            message: 'ℹ️ 模式切换仅在首页可用',
-          };
+          return ok({ mode: params.mode }, [...buildTips(ctx), '提示：模式切换仅在首页可用，已进入对话时无法切换']);
         }
 
         const status = clicked === 'already' ? '已经是' : '已切换为';
-    return ok({ mode: params.mode, []);
+        return {
+          data: { mode: params.mode, action: clicked },
           tips: buildTips(ctx),
           message: `✅ ${status} ${label}`,
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['切换模式失败']);
+        return fail('未知错误', ['切换模式失败']);
       }
     },
   });
@@ -635,18 +643,16 @@ export default function (xcli: XCLIAPI): void {
 
         const stateName = params.state === 'on' ? '开启' : '关闭';
         if (result === 'not_found') {
-    return ok({ think: params.state }, []);
-            tips: [...buildTips(ctx), '提示：未找到深度思考按钮，可能页面尚未完全加载'],
-            message: '⚠️ 未找到深度思考按钮',
-          };
+          return ok({ think: params.state }, [...buildTips(ctx), '提示：未找到深度思考按钮，可能页面尚未完全加载']);
         }
         const status = result === 'already' ? `已经是${stateName}状态` : `已${stateName}`;
-    return ok({ think: params.state, []);
+        return {
+          data: { think: params.state, action: result },
           tips: buildTips(ctx),
           message: `✅ 深度思考：${status}`,
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['切换深度思考失败']);
+        return fail('未知错误', ['切换深度思考失败']);
       }
     },
   });
@@ -675,18 +681,16 @@ export default function (xcli: XCLIAPI): void {
 
         const stateName = params.state === 'on' ? '开启' : '关闭';
         if (result === 'not_found') {
-    return ok({ search: params.state }, []);
-            tips: [...buildTips(ctx), '提示：未找到智能搜索按钮，可能页面尚未完全加载'],
-            message: '⚠️ 未找到智能搜索按钮',
-          };
+          return ok({ search: params.state }, [...buildTips(ctx), '提示：未找到智能搜索按钮，可能页面尚未完全加载']);
         }
         const status = result === 'already' ? `已经是${stateName}状态` : `已${stateName}`;
-    return ok({ search: params.state, []);
+        return {
+          data: { search: params.state, action: result },
           tips: buildTips(ctx),
           message: `✅ 智能搜索：${status}`,
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['切换智能搜索失败']);
+        return fail('未知错误', ['切换智能搜索失败']);
       }
     },
   });
@@ -722,7 +726,8 @@ export default function (xcli: XCLIAPI): void {
           await page.waitForTimeout(300);
           await page.press(inputSel, 'Enter');
           tips.push(`URL "${params.path}" 已作为消息发送`);
-    return ok({ type: 'url', []);
+          return {
+            data: { type: 'url', sent: true },
             tips,
             message: `✅ URL 已发送`,
           };
@@ -739,12 +744,13 @@ export default function (xcli: XCLIAPI): void {
         }
         await page.waitForTimeout(1000);
         tips.push(`附件 "${path.basename(absPath)}" 已上传`);
-    return ok({ type: params.type, []);
+        return {
+          data: { type: params.type, file: absPath, uploaded: true },
           tips,
           message: `✅ 附件 "${path.basename(absPath)}" 已上传`,
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['上传附件失败']);
+        return fail('未知错误', ['上传附件失败']);
       }
     },
   });

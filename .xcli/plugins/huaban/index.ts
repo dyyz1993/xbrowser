@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -24,7 +25,8 @@ export default function (xcli: XCLIAPI): void {
 
         const pageContent = await page.evaluate(() => document.body?.innerText?.slice(0, 500) || '');
         if (pageContent.includes('安全验证') || pageContent.includes('请输入验证码') || pageContent.includes('验证')) {
-    return fail('花瓣网触发了安全验证，请在浏览器中手动完成验证后重试', ['建议：使用 --cdp 9221 连接已登录的浏览器，手动访问 huaban.com 完成验证后再执行搜索'] };);
+          return fail('花瓣网触发了安全验证，请在浏览器中手动完成验证后重试', ['建议：使用 --cdp 9221 连接已登录的浏览器，手动访问 huaban.com 完成验证后再执行搜索']);
+        }
 
         for (let i = 0; i < 3; i++) {
           await page.evaluate(() => window.scrollBy(0, 1000));
@@ -54,7 +56,8 @@ export default function (xcli: XCLIAPI): void {
           });
           return images.slice(0, limit);
         }, params.limit);
-    return ok({ query: params.query, [`花瓣网 "${params.query}"，共 ${results.length} 张`] };);
+        return ok({ query: params.query, engine: 'huaban', results, total: results.length, timestamp: Date.now() }, [`花瓣网 "${params.query}"，共 ${results.length} 张`]);
+      } catch (error) { return { data: null, message: error instanceof Error ? error.message : '未知错误' }; }
     },
   });
 }

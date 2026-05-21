@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -46,9 +47,7 @@ export default function (xcli: XCLIAPI): void {
 
       await ctx.storage.set('producthunt_login', { loggedIn, at: Date.now() });
 
-    return ok({ loggedIn, []);
-        tips: [loggedIn ? 'Product Hunt 登录成功' : '登录可能未完成，请检查页面'],
-      };
+      return ok({ loggedIn, url: page.url() }, [loggedIn ? 'Product Hunt 登录成功' : '登录可能未完成，请检查页面']);
     },
   });
 
@@ -139,9 +138,11 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(3000);
       }
 
-    return ok({, []);
-        tips: [`产品 "${params.name}" 已在 Product Hunt 提交（含 dofollow 链接: ${params.url}）`],
-      };
+      return ok({
+          name: params.name,
+          url: params.url,
+          pageUrl: page.url(),
+        }, [`产品 "${params.name}" 已在 Product Hunt 提交（含 dofollow 链接: ${params.url}）`]);
     },
   });
 
@@ -192,9 +193,11 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(2000);
       }
 
-    return ok({, []);
-        tips: [`评论已发布在 ${params.productUrl}`],
-      };
+      return ok({
+          productUrl: params.productUrl,
+          commented: true,
+          url: page.url(),
+        }, [`评论已发布在 ${params.productUrl}`]);
     },
   });
 
@@ -247,9 +250,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(2000);
       }
 
-    return ok({ url: params.url, []);
-        tips: ['Profile 已更新，包含外链'],
-      };
+      return ok({ url: params.url, updated: true }, ['Profile 已更新，包含外链']);
     },
   });
 

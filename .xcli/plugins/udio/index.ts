@@ -1,4 +1,5 @@
-import type { XCLIAPI, CommandContext, ok, fail } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 
 type Page = import('playwright-core').Page;
@@ -204,12 +205,12 @@ export default function (xcli: XCLIAPI): void {
           remaining: ((usage.monthly_limit as number) || 0) - ((usage.monthly_used as number) || 0),
         };
 
-    return ok(billingInfo, [);
+        return ok(billingInfo, [
+            ...tips,
+            `计划: ${billingInfo.plan || 'free'}`,
             `月度: ${billingInfo.monthlyUsed}/${billingInfo.monthlyLimit} (剩余 ${billingInfo.remaining})`,
             `今日: ${billingInfo.dailyUsed}/${billingInfo.dailyThrottleLimit}`,
-          ],
-          message: `📊 Credits: ${billingInfo.remaining} 剩余 (${billingInfo.monthlyUsed}/${billingInfo.monthlyLimit})`,
-        };
+          ]);
       } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['查询 Credits 失败']);
       }
@@ -628,7 +629,7 @@ export default function (xcli: XCLIAPI): void {
             const newSong = await pollForNewSong(page, tips);
 
             if (newSong) {
-    return ok({, []);
+    return ok({}, []);
                 tips: [
                   ...tips,
                   `🎵 ${newSong.title} — ${newSong.artist}`,
@@ -639,7 +640,7 @@ export default function (xcli: XCLIAPI): void {
               };
             }
 
-    return ok({, []);
+    return ok({}, []);
               tips: [
                 ...tips,
                 '✅ 生成请求已提交，歌曲可能还在处理',
@@ -650,7 +651,7 @@ export default function (xcli: XCLIAPI): void {
             };
           }
 
-    return ok({, []);
+    return ok({}, []);
             tips: [
               ...tips,
               `⏱ 等待 ${waitSeconds}s 超时`,
@@ -662,7 +663,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         // Async mode — return immediately after click
-    return ok({, []);
+    return ok({}, []);
           tips: [
             ...tips,
             '✅ 生成请求已提交（异步模式）',

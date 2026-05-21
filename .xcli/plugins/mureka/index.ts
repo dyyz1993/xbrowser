@@ -1,4 +1,5 @@
-import type { XCLIAPI, CommandContext, ok, fail } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 
 type Page = import('playwright-core').Page;
@@ -307,16 +308,18 @@ export default function (xcli: XCLIAPI): void {
             }))
           : [];
 
-    return ok({, []);
-          tips: [
-            ...tips,
-            `💰 积分余额: ${credits >= 0 ? credits : '未知'}`,
-            `🎵 可用模型: ${models.map(m => m.name).join(', ')}`,
-            ...models.filter(m => m.trialsRemaining !== null && m.trialsRemaining! > 0)
-              .map(m => `🎁 ${m.name}: 剩余 ${m.trialsRemaining} 次免费试用`),
-          ],
-          message: `💰 积分: ${credits >= 0 ? credits : '未知'}, 模型: ${models.length} 个`,
-        };
+    return ok({
+      credits,
+      freeTtsDuration: freeTts,
+      userStatus,
+      models,
+    }, [
+      ...tips,
+      `💰 积分余额: ${credits >= 0 ? credits : '未知'}`,
+      `🎵 可用模型: ${models.map(m => m.name).join(', ')}`,
+      ...models.filter(m => m.trialsRemaining !== null && m.trialsRemaining! > 0)
+        .map(m => `🎁 ${m.name}: 剩余 ${m.trialsRemaining} 次免费试用`),
+    ]);
       } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['查询积分失败']);
       }
@@ -582,7 +585,7 @@ export default function (xcli: XCLIAPI): void {
             extraTips.push('💡 提示: 音频下载可能需要消耗 20 金币(V9模型)或免费(V8模型)，使用 xbrowser mureka download --url "URL" --cdp 9221 查看');
           }
 
-    return ok({, []);
+    return ok({}, []);
               tips: [
                 ...tips,
                 `✅ 生成完成！共 ${songs.length} 首${withUrl.length > 0 ? `，${withUrl.length} 首可播放` : ''}`,
@@ -604,7 +607,7 @@ export default function (xcli: XCLIAPI): void {
           };
         }
 
-    return ok({, []);
+    return ok({}, []);
           tips: [
             ...tips,
             '✅ 生成请求已提交（异步模式）',

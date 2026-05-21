@@ -1,9 +1,9 @@
 import { z } from 'zod';
-import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from 'playwright';
 import { backlinkPlatforms, categories } from './backlinks-data.js';
 import { fetchVerificationCode, initEmailAuth, setupEmailConfig } from './email-helper.js';
-import { readSMS, getLatestCode, waitForSMSCode } from './sms-reader.js';
 
 function proxyFetch(url: string, init?: RequestInit): Promise<Response> {
   const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '';
@@ -69,7 +69,8 @@ export default function (xcli: XCLIAPI): void {
         tips.push('所有引擎已收到通知，将在近期抓取你的 sitemap。');
       }
 
-    return ok({ sitemap: params.sitemap, []);
+      return ok({ sitemap: params.sitemap, engines: results }, tips);
+    },
   });
 
   seo.command('submit', {
@@ -115,9 +116,7 @@ export default function (xcli: XCLIAPI): void {
         tips.push('先用 seo check 检查配置: xbrowser seo check --domain ' + host);
       }
 
-    return ok({ url: params.url, []);
-        tips,
-      };
+      return ok({ url: params.url, host, indexnow: apiResult }, tips);
     },
   });
 
@@ -137,16 +136,19 @@ export default function (xcli: XCLIAPI): void {
       const urlList = params.urls.split(',').map(u => u.trim()).filter(Boolean);
 
       if (urlList.length === 0) {
-    return fail('urls 参数不能为空', ['未提供有效 URL']);
+        return ok(null, ['未提供有效 URL']);
+      }
 
       if (urlList.length > 10000) {
-    return fail('单次最多提交 10000 个 URL', [`URL 数量 ${urlList.length} 超过上限 10000`]);
+        return ok(null, [`URL 数量 ${urlList.length} 超过上限 10000`]);
+      }
 
       for (const u of urlList) {
         try {
           new URL(u);
         } catch {
-    return fail(`URL 格式错误: ${u, [`无效 URL: ${u}`]);
+          return ok(null, [`无效 URL: ${u}`]);
+        }
       }
 
       const host = params.host || new URL(urlList[0]).hostname;
@@ -176,13 +178,9 @@ export default function (xcli: XCLIAPI): void {
           tips.push('常见原因: key 文件未部署、URL 格式错误、超出限额。');
         }
 
-    return ok({ host, []);
-          tips,
-        };
+        return ok({ host, submitted: urlList.length, ok, status: `${resp.status} ${resp.statusText}` }, tips);
       } catch (e) {
-    return ok(null, [`IndexNow 批量提交失败: ${(e as Error).message}`]);
-          message: `请求失败: ${(e as Error).message}`,
-        };
+        return fail('请求失败: ${(e as Error).message}', [`IndexNow 批量提交失败: ${(e as Error).message}`]);
       }
     },
   });
@@ -202,8 +200,7 @@ export default function (xcli: XCLIAPI): void {
       let key = '';
       for (let i = 0; i < 32; i++) key += chars[Math.floor(Math.random() * chars.length)];
 
-    return ok({ domain: params.domain, []);
-        tips: [
+      return ok({ domain: params.domain, key, keyUrl: `https://${params.domain}/${key}.txt` }, [
           `IndexNow Key: ${key}`,
           '',
           `配置步骤（只需做一次）:`,
@@ -216,8 +213,7 @@ export default function (xcli: XCLIAPI): void {
           '',
           `检查配置是否生效:`,
           `  xbrowser seo check --domain ${params.domain}`,
-        ],
-      };
+        ]);
     },
   });
 
@@ -313,12 +309,10 @@ export default function (xcli: XCLIAPI): void {
         checks.push({ item: 'IndexNow key', status: '⚠️ 未发现（运行 seo setup-indexnow 配置）' });
       }
 
-    return ok({, []);
-        tips: [
+      return fail('未知错误', [
           ...checks.map(c => `${c.item}: ${c.status}` + (c.detail ? ` (${c.detail})` : '')),
           keyFound ? '✅ IndexNow 已配置，可直接用 xbrowser seo submit 提交 URL' : '',
-        ].filter(Boolean),
-      };
+        ]);
     },
   });
 
@@ -346,10 +340,12 @@ export default function (xcli: XCLIAPI): void {
             signal: AbortSignal.timeout(15000),
           });
           if (!resp.ok) {
-    return fail(`无法获取页面: HTTP ${resp.status, [`页面请求失败: HTTP ${resp.status}`]);
+            return ok(null, [`页面请求失败: HTTP ${resp.status}`]);
+          }
           html = await resp.text();
         } catch (e) {
-    return fail(`请求失败: ${(e as Error).message, [`页面获取失败: ${(e as Error).message}`]);
+          return ok(null, [`页面获取失败: ${(e as Error).message}`]);
+        }
       }
 
       function extractTag(attr: string, content: string): string {
@@ -453,20 +449,18 @@ export default function (xcli: XCLIAPI): void {
       const total = Object.keys(scores).length;
       const percentage = Math.round((passed / total) * 100);
 
-    return ok({, []);
-          twitter: { card: twitterCard, title: twitterTitle, description: twitterDescription, image: twitterImage },
-          headings: { h1Count: h1s.length, h1s, h2Count: h2s.length },
-          images: { total: imgCount, withoutAlt: imgsWithoutAlt },
-          links: { total: linkMatches.length, internal: internalLinks, external: externalLinks },
-          structuredData,
-          score: { passed, total, percentage, details: scores },
-        },
-        tips: [
+      return ok({
+          url: params.url,
+          title,
+          description,
+          robots,
+          canonical,
+          openGraph: { title: ogTitle, description: ogDescription, image: ogImage, url: ogUrl },
+        }, [
           `SEO 评分: ${passed}/${total} (${percentage}%)`,
           ...scoreTips,
           ...(percentage === 100 ? ['✅ 页面 SEO 配置良好！'] : []),
-        ],
-      };
+        ]);
     },
   });
 
@@ -481,8 +475,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser seo setup-guide --domain mysite.com', description: 'SEO 收录配置指南' },
     ],
     handler: async (params) => {
-    return ok({ domain: params.domain }, []);
-        tips: [
+      return ok({ domain: params.domain }, [
           `=== ${params.domain} 搜索引擎收录配置指南 ===`,
           '',
           `Step 1: Google Search Console（需验证域名所有权）`,
@@ -501,8 +494,7 @@ export default function (xcli: XCLIAPI): void {
           `  xbrowser seo check --domain ${params.domain}        # 验证配置`,
           `  xbrowser seo submit --url "https://${params.domain}/page" --key "<key>"`,
           `  xbrowser seo ping --sitemap "https://${params.domain}/sitemap.xml"`,
-        ],
-      };
+        ]);
     },
   });
 
@@ -531,21 +523,21 @@ export default function (xcli: XCLIAPI): void {
         platforms = platforms.filter(p => p.name.toLowerCase().includes(q) || p.url.toLowerCase().includes(q));
       }
 
-    return ok({, []);
-        },
-        tips: [
+      return ok({
+          total: platforms.length,
+          filtered: params.category || params.search ? true : false,
+          categories: categories,
+          platforms: platforms.map(p => ({
+            name: p.name,
+            url: p.url,
+            entryUrl: p.entryUrl,
+            category: p.category,
+            steps: p.steps,
+          })),
+        }, [
           `共 ${platforms.length} 个外链提交平台` + (params.category ? ` (类别: ${params.category})` : ''),
           ...(params.search ? [`搜索过滤: "${params.search}"`] : []),
-          '',
-          '各平台提交入口:',
-          ...platforms.map(p =>
-            `  ${p.name}: ${p.entryUrl} [${p.category}]`
-          ),
-          '',
-          '打开提交入口: xbrowser seo submit-backlink --platform "平台名称"',
-          '按类别筛选: xbrowser seo backlinks --category "类别名称"',
-        ],
-      };
+        ]);
     },
   });
 
@@ -577,17 +569,15 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as Page | undefined;
       if (!page) {
-    return fail('缺少浏览器页面', ['需要浏览器页面']);
+        return ok(null, ['需要浏览器页面']);
+      }
 
       const match = matchPlatform(params.platform);
       if (!match) {
         const suggestions = platformSuggestions(params.platform);
-    return ok(null, [);
-            ...(suggestions.length > 0 ? [`相近平台: ${suggestions.map(s => s.name).join(', ')}`] : []),
-            `查看所有平台: xbrowser seo backlinks`,
-          ],
-          message: `平台 "${params.platform}" 不存在`,
-        };
+        return fail('平台', [
+            `未找到匹配平台: "${params.platform}"`,
+            ...(suggestions.length > 0 ? [`相近平台: ${suggestions.map(s => s.name).join(', ')}`]);
       }
 
       try {
@@ -602,17 +592,13 @@ export default function (xcli: XCLIAPI): void {
         const storageKey = `seo_login_${match.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
         await ctx.storage.set(storageKey, { loggedIn: true, at: Date.now() });
 
-    return ok({ platform: match.name, []);
-          tips: [
+        return ok({ platform: match.name, loggedIn: true }, [
             `✅ ${match.name} 登录完成`,
             `登录状态已保存，后续 submit-backlink 将自动检测`,
             `有效期 14 天，过期后建议重新登录`,
-          ],
-        };
+          ]);
       } catch (e) {
-    return ok(null, [`登录流程失败: ${(e as Error).message}`]);
-          message: `${match.name} 登录失败`,
-        };
+        return fail('${match.name} 登录失败', [`登录流程失败: ${(e as Error).message}`]);
       }
     },
   });
@@ -636,12 +622,9 @@ export default function (xcli: XCLIAPI): void {
           for (const key of loginKeys) {
             await ctx.storage.delete(key);
           }
-    return ok({ cleared: loginKeys.length, []);
-            tips: [
+          return ok({ cleared: loginKeys.length, keys: loginKeys }, [
               `✅ 已清除 ${loginKeys.length} 个平台的登录状态`,
-              ...(loginKeys.length === 0 ? ['当前无已保存的登录状态'] : []),
-            ],
-          };
+              ...(loginKeys.length === 0 ? ['当前无已保存的登录状态']);
         }
 
         const match = matchPlatform(params.platform);
@@ -650,18 +633,13 @@ export default function (xcli: XCLIAPI): void {
 
         const existing = await ctx.storage.get(storageKey);
         if (!existing) {
-    return ok(null, [`平台 "${params.platform}" 无已保存的登录状态`]);
-          };
+          return ok(null, [`平台 "${params.platform}" 无已保存的登录状态`]);
         }
 
         await ctx.storage.delete(storageKey);
-    return ok({ platform: params.platform, []);
-          tips: [`✅ 已清除 ${params.platform} 的登录状态`],
-        };
+        return ok({ platform: params.platform, cleared: true }, [`✅ 已清除 ${params.platform} 的登录状态`]);
       } catch (e) {
-    return ok(null, [`清除登录状态失败: ${(e as Error).message}`]);
-          message: `操作失败`,
-        };
+        return fail('操作失败', [`清除登录状态失败: ${(e as Error).message}`]);
       }
     },
   });
@@ -879,7 +857,8 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as Page | undefined;
       if (!page) {
-    return fail('缺少浏览器页面', ['需要浏览器页面']);
+        return ok(null, ['需要浏览器页面']);
+      }
 
       const q = params.platform.toLowerCase();
       const match = backlinkPlatforms.find(p =>
@@ -890,12 +869,9 @@ export default function (xcli: XCLIAPI): void {
         const suggestions = backlinkPlatforms
           .filter(p => p.name.toLowerCase().includes(q.slice(0, 3)))
           .slice(0, 5);
-    return ok(null, [);
-            ...(suggestions.length > 0 ? [`相近平台: ${suggestions.map(s => s.name).join(', ')}`] : []),
-            `查看所有平台: xbrowser seo backlinks`,
-          ],
-          message: `平台 "${params.platform}" 不存在`,
-        };
+        return fail('平台', [
+            `未找到匹配平台: "${params.platform}"`,
+            ...(suggestions.length > 0 ? [`相近平台: ${suggestions.map(s => s.name).join(', ')}`]);
       }
 
       const platformKey = match.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
@@ -930,9 +906,7 @@ export default function (xcli: XCLIAPI): void {
           }
         }
       } catch (e) {
-    return ok(null, [`页面加载失败: ${(e as Error).message}`);
-          message: `无法打开 ${match.name}`,
-        };
+        return fail('无法打开 ${match.name}', [`页面加载失败: ${(e as Error).message}`, `入口 URL: ${match.entryUrl}`, ...loginTips]);
       }
 
       let autoFillResult: { filled: boolean; saved: boolean } | undefined;
@@ -965,9 +939,13 @@ export default function (xcli: XCLIAPI): void {
 
       tips.push('', ...loginTips, '', '完成添加后，在浏览器中手动处理即可。');
 
-    return ok({, []);
-        tips,
-      };
+      return ok({
+          platform: match.name,
+          entryUrl: match.entryUrl,
+          category: match.category,
+          steps: match.steps,
+          autoFill: autoFillResult,
+        }, tips);
     },
   });
 
@@ -989,7 +967,8 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as Page | undefined;
       if (!page) {
-    return fail('缺少浏览器页面', ['需要浏览器页面']);
+        return ok(null, ['需要浏览器页面']);
+      }
 
       const guestPostPlatforms: Record<string, { url: string; formUrl: string; type: 'auto' | 'manual' | 'email' }> = {
         'css-tricks': { url: 'https://css-tricks.com', formUrl: 'https://css-tricks.com/contact/', type: 'auto' },
@@ -1007,11 +986,10 @@ export default function (xcli: XCLIAPI): void {
       }
 
       if (!matchedKey) {
-    return ok(null, [);
+        return fail('平台', [
+            `未找到匹配的 Guest Post 平台: "${params.platform}"`,
             `支持的平台: ${Object.keys(guestPostPlatforms).join(', ')}`,
-          ],
-          message: `平台 "${params.platform}" 不支持自动 Guest Post 提交`,
-        };
+          ]);
       }
 
       const target = guestPostPlatforms[matchedKey];
@@ -1074,38 +1052,30 @@ export default function (xcli: XCLIAPI): void {
 
             const confirmation = page.locator('.gform_confirmation_message, .success, [class*="confirm"]');
             if (await confirmation.isVisible().catch(() => false)) {
-    return ok({ platform: 'CSS-Tricks', []);
-                tips: [
+              return ok({ platform: 'CSS-Tricks', submitted: true, formUrl: target.formUrl }, [
                   `✅ CSS-Tricks 客座文章提案已提交`,
                   `提交者: ${params.name} (${params.email})`,
                   `主题: ${params.topic}`,
                   `编辑团队将在数天内回复`,
-                ],
-              };
+                ]);
             }
 
-    return ok({ platform: 'CSS-Tricks', []);
-              tips: [
+            return ok({ platform: 'CSS-Tricks', submitted: true, formUrl: target.formUrl }, [
                 `✅ 已填写并提交表单`,
                 `请检查浏览器确认提交状态`,
                 `提交者: ${params.name} (${params.email})`,
                 `主题: ${params.topic}`,
-              ],
-            };
+              ]);
           }
 
-    return ok({ platform: 'CSS-Tricks', []);
-            tips: [
+          return ok({ platform: 'CSS-Tricks', formUrl: target.formUrl }, [
               `已打开 CSS-Tricks 联系表单并填写信息`,
               `请在浏览器中手动检查并提交`,
               `姓名: ${params.name}, 邮箱: ${params.email}`,
               `主题: ${params.topic}`,
-            ],
-          };
+            ]);
         } catch (e) {
-    return ok(null, [`CSS-Tricks 表单填写失败: ${(e as Error).message}`);
-            message: `自动提交失败`,
-          };
+          return fail('自动提交失败', [`CSS-Tricks 表单填写失败: ${(e as Error).message}`, `请手动访问: ${target.formUrl}`]);
         }
       }
 
@@ -1114,8 +1084,7 @@ export default function (xcli: XCLIAPI): void {
           await page.goto(target.formUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
           await page.waitForTimeout(2000);
 
-    return ok({ platform: 'Smashing Magazine', []);
-            tips: [
+          return ok({ platform: 'Smashing Magazine', type: 'email', formUrl: target.formUrl }, [
               `已打开 Smashing Magazine 写作指南页面`,
               `Smashing Magazine 需要通过邮件提交提案`,
               '',
@@ -1126,13 +1095,9 @@ export default function (xcli: XCLIAPI): void {
               `     主题: ${params.topic}`,
               `     姓名: ${params.name}`,
               `     邮箱: ${params.email}`,
-              ...(params.url ? [`     文章链接: ${params.url}`] : []),
-            ],
-          };
+              ...(params.url ? [`     文章链接: ${params.url}`]);
         } catch (e) {
-    return ok(null, [`页面加载失败: ${(e as Error).message}`]);
-            message: `无法打开 Smashing Magazine`,
-          };
+          return fail('无法打开 Smashing Magazine', [`页面加载失败: ${(e as Error).message}`]);
         }
       }
 
@@ -1159,18 +1124,14 @@ export default function (xcli: XCLIAPI): void {
             await msgTextarea.fill(message);
           }
 
-    return ok({ platform: 'Search Engine Journal', []);
-            tips: [
+          return ok({ platform: 'Search Engine Journal', formUrl: target.formUrl }, [
               `已打开 Search Engine Journal 联系表单并填写信息`,
               `请在浏览器中检查并手动提交`,
               `姓名: ${params.name}, 邮箱: ${params.email}`,
               `主题: ${params.topic}`,
-            ],
-          };
+            ]);
         } catch (e) {
-    return ok(null, [`表单填写失败: ${(e as Error).message}`);
-            message: `自动提交失败`,
-          };
+          return fail('自动提交失败', [`表单填写失败: ${(e as Error).message}`, `请手动访问: ${target.formUrl}`]);
         }
       }
 
@@ -1178,18 +1139,14 @@ export default function (xcli: XCLIAPI): void {
         await page.goto(target.formUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForTimeout(2000);
 
-    return ok({ platform: matchedKey, []);
-          tips: [
+        return ok({ platform: matchedKey, formUrl: target.formUrl }, [
             `已打开 ${matchedKey} 的提交页面`,
             `请手动完成提交`,
             `姓名: ${params.name}, 邮箱: ${params.email}`,
             `主题: ${params.topic}`,
-          ],
-        };
+          ]);
       } catch (e) {
-    return ok(null, [`页面加载失败: ${(e as Error).message}`]);
-          message: `无法打开 ${matchedKey}`,
-        };
+        return fail('无法打开 ${matchedKey}', [`页面加载失败: ${(e as Error).message}`]);
       }
     },
   });
@@ -1217,22 +1174,15 @@ export default function (xcli: XCLIAPI): void {
           port: params.port,
         });
         if (result.success) {
-    return ok({ configured: true }, []);
-            tips: [
+          return ok({ configured: true }, [
               `✅ ${result.message}`,
               '现在可以使用 seo verify-email 获取验证码了',
               '使用 seo register 可自动注册平台并验证邮箱',
-            ],
-          };
+            ]);
         }
-    return ok({ configured: false }, []);
-          tips: [`❌ ${result.message}`],
-          message: result.message,
-        };
+        return ok({ configured: false }, [`❌ ${result.message}`]);
       } catch (e) {
-    return ok(null, [`邮箱配置失败: ${(e as Error).message}`]);
-          message: `配置失败: ${(e as Error).message}`,
-        };
+        return fail('配置失败: ${(e as Error).message}', [`邮箱配置失败: ${(e as Error).message}`]);
       }
     },
   });
@@ -1266,16 +1216,13 @@ export default function (xcli: XCLIAPI): void {
         if (!result.code && !result.link) {
           tips.push('⚠️ 未能自动提取验证码或链接，请手动查看邮件');
         }
-    return ok(result, []);
-    return ok(null, [);
+        return ok(result, [
+            `❌ 获取验证邮件失败: ${(e as Error).message}`,
             '请确认:',
             '  1. 已运行 seo setup-email 完成 IMAP 邮箱配置',
             `  2. 发件人 "${params.from}" 确实发送了验证邮件`,
             `  3. 邮件在 ${params.maxAge} 秒内送达`,
-          ],
-          message: `获取验证码失败: ${(e as Error).message}`,
-        };
-      }
+          ]);
     },
   });
 
@@ -1296,17 +1243,15 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as Page | undefined;
       if (!page) {
-    return fail('缺少浏览器页面', ['需要浏览器页面']);
+        return ok(null, ['需要浏览器页面']);
+      }
 
       const match = matchPlatform(params.platform);
       if (!match) {
         const suggestions = platformSuggestions(params.platform);
-    return ok(null, [);
-            ...(suggestions.length > 0 ? [`相近平台: ${suggestions.map(s => s.name).join(', ')}`] : []),
-            `查看所有平台: xbrowser seo backlinks`,
-          ],
-          message: `平台 "${params.platform}" 不存在`,
-        };
+        return fail('平台', [
+            `未找到匹配平台: "${params.platform}"`,
+            ...(suggestions.length > 0 ? [`相近平台: ${suggestions.map(s => s.name).join(', ')}`]);
       }
 
       const password = params.password || (() => {
@@ -1406,8 +1351,13 @@ export default function (xcli: XCLIAPI): void {
         const storageKey = `seo_login_${match.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
         await ctx.storage.set(storageKey, { loggedIn: true, at: Date.now(), email: params.email });
 
-    return ok({, []);
-          tips: [
+        return ok({
+            platform: match.name,
+            email: params.email,
+            password,
+            signupUrl: page.url(),
+            submitted,
+          }, [
             `✅ ${match.name} 注册流程已完成`,
             `邮箱: ${params.email}`,
             `密码: ${password}`,
@@ -1416,17 +1366,15 @@ export default function (xcli: XCLIAPI): void {
             submitted ? '已点击提交按钮' : '⚠️ 未找到提交按钮，请手动检查',
             '登录状态已自动保存',
             '如果需要邮箱验证，请检查收件箱或运行 seo verify-email',
-          ],
-        };
+          ]);
       } catch (e) {
-    return ok(null, [);
+        return fail('注册失败: ${(e as Error).message}', [
+            `❌ ${match.name} 注册失败: ${(e as Error).message}`,
             `注册页面: ${signupUrl}`,
             `邮箱: ${params.email}`,
             `密码: ${password}`,
             '请手动在浏览器中完成注册',
-          ],
-          message: `注册失败: ${(e as Error).message}`,
-        };
+          ]);
       }
     },
   });
@@ -1451,7 +1399,8 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as Page | undefined;
       if (!page) {
-    return fail('缺少浏览器页面', ['需要浏览器页面']);
+        return ok(null, ['需要浏览器页面']);
+      }
 
       const OAUTH_27 = [
         { name: 'Medium', url: 'https://medium.com', entryUrl: 'https://medium.com/me/settings' },
@@ -1523,7 +1472,7 @@ export default function (xcli: XCLIAPI): void {
       }
 
       if (targets.length === 0) {
-    return fail('没有可提交的平台', ['未找到匹配的平台');
+        return fail('没有可提交的平台', ['未找到匹配的平台', '查看所有平台: xbrowser seo backlinks']);
       }
 
       const delay = params.delay ?? 5000;
@@ -1699,10 +1648,10 @@ export default function (xcli: XCLIAPI): void {
         `| ${r.platform} | ${r.reachable ? '✅' : '❌'} | ${r.loggedIn ? '✅' : '❌'} | ${r.urlFilled ? '✅' : '❌'} | ${r.saved ? '✅' : '❌'} | ${r.notes} |`
       );
 
-    return ok({, []);
-          results,
-        },
-        tips: [
+      return ok({
+          url: params.url,
+          total: results.length,
+          summary: { reachable: reachableCount, logged: loggedCount, filled: filledCount, saved: savedCount }, [
           `Batch OAuth Submit Report for: ${params.url}`,
           `Total: ${results.length} | Reachable: ${reachableCount} | Logged In: ${loggedCount} | URL Filled: ${filledCount} | Saved: ${savedCount}`,
           '',
@@ -1710,434 +1659,7 @@ export default function (xcli: XCLIAPI): void {
           tableSep,
           ...tableRows,
           '',
-          ...(loggedCount < reachableCount ? ['⚠️ Some platforms need manual login or account creation first'] : []),
-          ...(filledCount < loggedCount ? ['⚠️ Some logged-in platforms did not have a detectable URL input field'] : []),
-        ],
-      };
-    },
-  });
-
-  seo.command('sms', {
-    description: '读取 macOS 短信验证码（从 Messages app）',
-    scope: 'project',
-    result: z.any(),
-    parameters: z.object({
-      filter: z.string().optional().describe('过滤关键词（如平台名称）'),
-      limit: z.number().optional().describe('返回条数，默认 20').default(20),
-      maxAge: z.number().optional().describe('最大回溯时间（秒），默认 3600').default(3600),
-    }),
-    examples: [
-      { cmd: 'xbrowser seo sms', description: '读取最近验证码短信' },
-      { cmd: 'xbrowser seo sms --filter "百度"', description: '过滤百度相关验证码' },
-    ],
-    handler: async (params) => {
-      const messages = readSMS({ filter: params.filter, limit: params.limit, maxAgeSeconds: params.maxAge });
-      if (messages.length === 0) {
-    return ok({ messages: [], []);
-          tips: ['未找到验证码短信', '请确认: 1. Messages app 有短信 2. 终端有全盘访问权限'],
-        };
-      }
-    return ok({ messages, []);
-        tips: [
-          `找到 ${messages.length} 条验证码短信:`,
-          ...messages.map((m, i) => `${i + 1}. [${m.time}] ${m.code ? `验证码: ${m.code}` : '无验证码'} | ${m.text.slice(0, 80)}`),
-        ],
-      };
-    },
-  });
-
-  seo.command('register-phone', {
-    description: '使用手机号注册外链平台（自动填短信验证码）',
-    scope: 'browser',
-    result: z.any(),
-    parameters: z.object({
-      url: z.string().describe('注册页面 URL'),
-      phone: z.string().describe('手机号'),
-      password: z.string().optional().describe('密码'),
-      name: z.string().optional().describe('显示名称'),
-      waitForCode: z.boolean().optional().describe('是否等待短信验证码').default(true),
-      codeTimeout: z.number().optional().describe('等待验证码超时（毫秒），默认 60000').default(60000),
-    }),
-    examples: [
-      { cmd: 'xbrowser seo register-phone --url "https://example.com/signup" --phone "13751880018"', description: '手机号注册' },
-    ],
-    handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as Page | undefined;
-      if (!page) return { data: null, tips: ['需要浏览器页面'], message: '缺少浏览器页面' };
-
-      const password = params.password || (() => {
-        const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
-        let pw = '';
-        for (let i = 0; i < 16; i++) pw += chars[Math.floor(Math.random() * chars.length)];
-        return pw;
-      })();
-
-      try {
-        await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await page.waitForTimeout(3000);
-
-        const phoneSelectors = [
-          'input[name*="phone"]', 'input[name*="mobile"]', 'input[name*="tel"]',
-          'input[placeholder*="手机"]', 'input[placeholder*="phone"]', 'input[placeholder*="Phone"]',
-          'input[type="tel"]', 'input[name*="cell"]',
-        ];
-        for (const sel of phoneSelectors) {
-          const el = page.locator(sel).first();
-          if (await el.isVisible({ timeout: 2000 }).catch(() => false)) {
-            await el.fill(params.phone);
-            break;
-          }
-        }
-
-        const emailInput = page.locator('input[type="email"], input[name*="email"]').first();
-        if (await emailInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-          await emailInput.fill('support@omnivideo.net');
-        }
-
-        const pwdInput = page.locator('input[type="password"]').first();
-        if (await pwdInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-          await pwdInput.fill(password);
-        }
-
-        if (params.name) {
-          const nameInput = page.locator('input[name*="name"], input[name*="user"]').first();
-          if (await nameInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-            await nameInput.fill(params.name);
-          }
-        }
-
-        const sendCodeBtns = [
-          'button:has-text("发送")', 'button:has-text("获取")', 'button:has-text("Send")',
-          'button:has-text("Get")', 'button:has-text("发送验证码")', 'button:has-text("获取验证码")',
-          'a:has-text("发送")', 'a:has-text("Send")',
-        ];
-        for (const sel of sendCodeBtns) {
-          const btn = page.locator(sel).first();
-          if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
-            await btn.click();
-            break;
-          }
-        }
-
-        let smsCode: string | null = null;
-        if (params.waitForCode) {
-          await page.waitForTimeout(3000);
-          smsCode = await waitForSMSCode(undefined, params.codeTimeout, 3000);
-        }
-
-        if (smsCode) {
-          const codeInputs = [
-            'input[name*="code"]', 'input[name*="verify"]', 'input[name*="otp"]',
-            'input[placeholder*="验证码"]', 'input[placeholder*="code"]', 'input[placeholder*="Code"]',
-            'input[name*="captcha"]', 'input[maxlength="4"]', 'input[maxlength="6"]',
-          ];
-          for (const sel of codeInputs) {
-            const el = page.locator(sel).first();
-            if (await el.isVisible({ timeout: 2000 }).catch(() => false)) {
-              await el.fill(smsCode);
-              break;
-            }
-          }
-        }
-
-        const submitBtns = [
-          'button[type="submit"]', 'input[type="submit"]',
-          'button:has-text("注册")', 'button:has-text("Register")', 'button:has-text("Sign up")',
-          'button:has-text("提交")', 'button:has-text("Submit")',
-        ];
-        for (const sel of submitBtns) {
-          const btn = page.locator(sel).first();
-          if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
-            await btn.click();
-            break;
-          }
-        }
-
-        await page.waitForTimeout(3000);
-
-        const host = new URL(params.url).hostname;
-        const storageKey = `seo_reg_${host.replace(/\./g, '_')}`;
-        await ctx.storage.set(storageKey, {
-          phone: params.phone,
-          email: 'support@omnivideo.net',
-          password,
-          url: page.url(),
-          smsCode,
-          at: Date.now(),
-        });
-
-    return ok({ phone: params.phone, []);
-          tips: [
-            `注册页面: ${params.url}`,
-            `手机号: ${params.phone}`,
-            `密码: ${password}`,
-            smsCode ? `验证码: ${smsCode}` : '⚠️ 未获取到短信验证码',
-            `凭据已保存到 ${storageKey}`,
-          ],
-        };
-      } catch (e) {
-    return fail(`注册失败`, [`注册失败: ${(e as Error).message}`]);
-    },
-  });
-
-  seo.command('batch-submit-cn', {
-    description: '批量提交外链到支持手机号注册的中文站点（从 CSV 筛选的高质量站点）',
-    scope: 'browser',
-    result: z.any(),
-    parameters: z.object({
-      siteUrl: z.string().describe('要提交的网站 URL').default('https://omnivideo.net'),
-      siteName: z.string().describe('网站名称').default('OmniVideo'),
-      description: z.string().describe('网站描述').default('Seedance 2.0 AI Video Generator - Create stunning videos from text and images with multimodal AI'),
-      phone: z.string().describe('手机号').default('13751880018'),
-      email: z.string().describe('邮箱').default('support@omnivideo.net'),
-      delay: z.number().optional().describe('平台间延迟（毫秒）').default(5000),
-      maxSites: z.number().optional().describe('最多处理站点数').default(10),
-      startFrom: z.number().optional().describe('从第几个开始').default(0),
-    }),
-    examples: [
-      { cmd: 'xbrowser seo batch-submit-cn', description: '一键批量提交外链' },
-      { cmd: 'xbrowser seo batch-submit-cn --maxSites 5 --startFrom 3', description: '从第4个开始处理5个' },
-    ],
-    handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as Page | undefined;
-      if (!page) return { data: null, tips: ['需要浏览器页面'], message: '缺少浏览器页面' };
-
-      const sites = [
-        { name: 'Pinterest', url: 'https://www.pinterest.com', entryUrl: 'https://www.pinterest.com/settings', dr: 96, traffic: '1.35B', type: 'profile' },
-        { name: 'Issuu', url: 'https://issuu.com', entryUrl: 'https://issuu.com/signup', dr: 93, traffic: '14.3M', type: 'profile' },
-        { name: 'Disqus', url: 'https://disqus.com', entryUrl: 'https://disqus.com/profile/signup', dr: 92, traffic: '7.5M', type: 'profile' },
-        { name: 'Substack', url: 'https://substack.com', entryUrl: 'https://substack.com/signup', dr: 93, traffic: '153M', type: 'blog' },
-        { name: 'Cal.com', url: 'https://cal.com', entryUrl: 'https://cal.com/signup', dr: 92, traffic: '3M', type: 'profile' },
-        { name: 'Clutch.co', url: 'https://clutch.co', entryUrl: 'https://clutch.co/profile/omnivideo', dr: 91, traffic: '1.1M', type: 'directory' },
-        { name: 'ProvenExpert', url: 'https://www.provenexpert.com', entryUrl: 'https://www.provenexpert.com/signup/', dr: 91, traffic: '534K', type: 'profile' },
-        { name: 'Kaggle', url: 'https://www.kaggle.com', entryUrl: 'https://www.kaggle.com/account/login?phase=startRegisterTab', dr: 90, traffic: '10.4M', type: 'profile' },
-        { name: 'About.me', url: 'https://about.me', entryUrl: 'https://about.me/signup', dr: 90, traffic: '1.8M', type: 'profile' },
-        { name: 'Dev.to', url: 'https://dev.to', entryUrl: 'https://dev.to/enter', dr: 90, traffic: '5.8M', type: 'blog' },
-        { name: 'LeetCode', url: 'https://leetcode.com', entryUrl: 'https://leetcode.com/accounts/signup/', dr: 87, traffic: '34.1M', type: 'profile' },
-        { name: 'OpenCollective', url: 'https://opencollective.com', entryUrl: 'https://opencollective.com/signin', dr: 88, traffic: '606K', type: 'profile' },
-        { name: 'Blog.udn.com', url: 'https://blog.udn.com', entryUrl: 'https://blog.udn.com/', dr: 88, traffic: '1.6M', type: 'blog' },
-        { name: 'Hashnode', url: 'https://hashnode.com', entryUrl: 'https://hashnode.com/onboard', dr: 83, traffic: '337K', type: 'blog' },
-        { name: 'Teletype', url: 'https://teletype.in', entryUrl: 'https://teletype.in/', dr: 82, traffic: '4.6M', type: 'blog' },
-        { name: 'F6S', url: 'https://www.f6s.com', entryUrl: 'https://www.f6s.com/signup', dr: 82, traffic: '1.6M', type: 'profile' },
-        { name: 'Vocal.media', url: 'https://vocal.media', entryUrl: 'https://vocal.media/login', dr: 82, traffic: '3M', type: 'profile' },
-        { name: 'StackShare', url: 'https://stackshare.io', entryUrl: 'https://stackshare.io/signup', dr: 79, traffic: '170K', type: 'directory' },
-        { name: 'GreasyFork', url: 'https://greasyfork.org', entryUrl: 'https://greasyfork.org/zh-CN/users/sign_up', dr: 78, traffic: '3.6M', type: 'profile' },
-        { name: 'Gettr', url: 'https://gettr.com', entryUrl: 'https://gettr.com/signup', dr: 77, traffic: '1M', type: 'social' },
-        { name: 'Velog', url: 'https://velog.io', entryUrl: 'https://v2.velog.io/signup', dr: 76, traffic: '2.9M', type: 'blog' },
-        { name: 'Peerlist', url: 'https://peerlist.io', entryUrl: 'https://peerlist.io/auth/signup', dr: 76, traffic: '541K', type: 'profile' },
-        { name: 'Daily.dev', url: 'https://app.daily.dev', entryUrl: 'https://app.daily.dev/signup', dr: 75, traffic: '933K', type: 'profile' },
-        { name: 'SeaArt', url: 'https://www.seaart.ai', entryUrl: 'https://www.seaart.ai/user/register', dr: 70, traffic: '13.5M', type: 'profile' },
-        { name: 'RoutineHub', url: 'https://routinehub.co', entryUrl: 'https://routinehub.co/signup', dr: 71, traffic: '191K', type: 'profile' },
-        { name: 'AI138', url: 'https://www.ai138.com', entryUrl: 'https://www.ai138.com/submit', dr: 64, traffic: '21K', type: 'tool' },
-        { name: 'AINav', url: 'https://www.ainav.cn', entryUrl: 'https://www.ainav.cn/%e6%8f%90%e4%ba%a4%e7%bd%91%e7%ab%99', dr: 56, traffic: '50K', type: 'tool' },
-        { name: 'SeaArt.ai', url: 'https://www.seaart.ai', entryUrl: 'https://www.seaart.ai/zhCN/articleDetail', dr: 70, traffic: '13.5M', type: 'blog' },
-        { name: 'HackerNoon', url: 'https://app.hackernoon.com', entryUrl: 'https://app.hackernoon.com/signup', dr: 88, traffic: '15.7K', type: 'forum' },
-        { name: 'MagCloud', url: 'https://www.magcloud.com', entryUrl: 'https://www.magcloud.com/user/register', dr: 83, traffic: '210K', type: 'profile' },
-      ];
-
-      const password = (() => {
-        const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%';
-        let pw = 'Omni';
-        for (let i = 0; i < 12; i++) pw += chars[Math.floor(Math.random() * chars.length)];
-        return pw;
-      })();
-
-      const startIdx = params.startFrom || 0;
-      const endIdx = Math.min(startIdx + (params.maxSites || 10), sites.length);
-      const targets = sites.slice(startIdx, endIdx);
-
-      const results: Array<{
-        site: string;
-        dr: number;
-        loaded: boolean;
-        registered: boolean;
-        submitted: boolean;
-        code: string | null;
-        notes: string;
-      }> = [];
-
-      for (const site of targets) {
-        const result = { site: site.name, dr: site.dr, loaded: false, registered: false, submitted: false, code: null as string | null, notes: '' };
-
-        try {
-          await page.goto(site.entryUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
-          await page.waitForTimeout(3000);
-          result.loaded = true;
-
-          const oauthResult = await tryGoogleOAuth(page);
-          if (oauthResult.loggedIn) {
-            result.registered = true;
-            result.notes = `OAuth: ${oauthResult.method}`;
-            await page.waitForTimeout(2000);
-            const currentUrl = page.url();
-            const siteHost = new URL(site.url).hostname;
-            if (!currentUrl.includes(siteHost) || currentUrl.includes('accounts.google.com')) {
-              await page.goto(site.entryUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-              await page.waitForTimeout(3000);
-            }
-          } else {
-            const emailInput = page.locator('input[type="email"], input[name*="email"], input[name*="mail"]').first();
-            if (await emailInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-              await emailInput.fill(params.email);
-            }
-
-            const phoneInput = page.locator('input[name*="phone"], input[name*="mobile"], input[name*="tel"], input[type="tel"]').first();
-            if (await phoneInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-              await phoneInput.fill(params.phone);
-            }
-
-            const pwdInput = page.locator('input[type="password"], input[name*="password"]').first();
-            if (await pwdInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-              await pwdInput.fill(password);
-            }
-
-            const nameInput = page.locator('input[name*="name"], input[name*="user"], input[name*="username"]').first();
-            if (await nameInput.isVisible({ timeout: 2000 }).catch(() => false)) {
-              await nameInput.fill(params.siteName);
-            }
-
-            for (const sel of ['button[type="submit"]', 'input[type="submit"]', 'button:has-text("Sign up")', 'button:has-text("Register")', 'button:has-text("注册")']) {
-              const btn = page.locator(sel).first();
-              if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
-                await btn.click();
-                await page.waitForTimeout(3000);
-                result.registered = true;
-                break;
-              }
-            }
-
-            const codeInput = page.locator('input[name*="code"], input[name*="verify"], input[name*="otp"], input[placeholder*="验证码"], input[placeholder*="code"]').first();
-            if (await codeInput.isVisible({ timeout: 3000 }).catch(() => false) && params.phone) {
-              result.code = await waitForSMSCode(site.name, 45000, 3000);
-              if (result.code) {
-                await codeInput.fill(result.code);
-                const confirmBtn = page.locator('button[type="submit"], button:has-text("Verify"), button:has-text("确认")').first();
-                if (await confirmBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-                  await confirmBtn.click();
-                  await page.waitForTimeout(3000);
-                }
-              }
-            }
-
-            const emailVerifyInput = page.locator('input[name*="code"], input[name*="verify"], input[placeholder*="code"], input[placeholder*="Code"]').first();
-            if (await emailVerifyInput.isVisible({ timeout: 3000 }).catch(() => false)) {
-              try {
-                const domain = new URL(site.url).hostname.replace('www.', '');
-                const emailResult = await fetchVerificationCode(domain, 60);
-                if (emailResult.code) {
-                  await emailVerifyInput.fill(emailResult.code);
-                  const confirmBtn = page.locator('button[type="submit"]').first();
-                  if (await confirmBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
-                    await confirmBtn.click();
-                    await page.waitForTimeout(2000);
-                  }
-                } else if (emailResult.link) {
-                  await page.goto(emailResult.link, { waitUntil: 'domcontentloaded', timeout: 15000 });
-                  await page.waitForTimeout(2000);
-                }
-              } catch {}
-            }
-          }
-
-          if (result.registered) {
-            const currentUrl = page.url();
-            const hasSettings = currentUrl.includes('settings') || currentUrl.includes('edit') || currentUrl.includes('profile');
-            if (!hasSettings) {
-              const settingsPaths = ['/settings', '/settings/profile', '/account/edit', '/profile/edit', '/dashboard'];
-              const baseHost = new URL(site.url).origin;
-              for (const path of settingsPaths) {
-                try {
-                  const resp = await page.goto(`${baseHost}${path}`, { waitUntil: 'domcontentloaded', timeout: 10000 });
-                  if (resp && resp.ok()) {
-                    await page.waitForTimeout(2000);
-                    break;
-                  }
-                } catch {}
-              }
-            }
-          }
-
-          let filled = false;
-          let saved = false;
-
-          // Try URL filling with site URL
-          const autoResult = await tryAutoFill(page, params.siteUrl);
-          filled = autoResult.filled;
-          saved = autoResult.saved;
-
-          // Broader search for URL inputs
-          if (!filled) {
-            const allInputs = await page.locator('input[type="text"], input[type="url"], input:not([type]), textarea').all();
-            for (const input of allInputs) {
-              try {
-                const visible = await input.isVisible({ timeout: 500 }).catch(() => false);
-                if (!visible) continue;
-                const placeholder = (await input.getAttribute('placeholder').catch(() => '')) || '';
-                const inputName = (await input.getAttribute('name').catch(() => '')) || '';
-                const inputId = (await input.getAttribute('id').catch(() => '')) || '';
-                const ariaLabel = (await input.getAttribute('aria-label').catch(() => '')) || '';
-                const label = `${placeholder} ${inputName} ${inputId} ${ariaLabel}`.toLowerCase();
-                if (/url|website|web|blog|link|site|homepage|主页|网址|链接|博客/.test(label)) {
-                  await input.click();
-                  await input.fill('');
-                  await input.fill(params.siteUrl);
-                  filled = true;
-                  break;
-                }
-              } catch {}
-            }
-          }
-
-          // Try saving
-          if (filled) {
-            for (const saveSel of SAVE_SELECTORS) {
-              try {
-                const saveBtn = page.locator(saveSel).first();
-                if (await saveBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
-                  await saveBtn.click();
-                  saved = true;
-                  await page.waitForTimeout(2000);
-                  break;
-                }
-              } catch {}
-            }
-          }
-
-          result.submitted = saved;
-          if (filled && !saved) result.notes += ' | URL filled but not saved';
-          if (!filled) result.notes += ' | no URL field found';
-
-          const storageKey = `seo_reg_${site.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-          await ctx.storage.set(storageKey, {
-            site: site.name, email: params.email, phone: params.phone, password,
-            registered: result.registered, submitted: result.submitted,
-            code: result.code, at: Date.now(),
-          });
-        } catch (e) {
-          result.notes = `Error: ${(e as Error).message.slice(0, 60)}`;
-        }
-
-        results.push(result);
-        if (params.delay > 0) await page.waitForTimeout(params.delay);
-      }
-
-      const loaded = results.filter(r => r.loaded).length;
-      const registered = results.filter(r => r.registered).length;
-      const submitted = results.filter(r => r.submitted).length;
-
-    return ok({, []);
-          results,
-        },
-        tips: [
-          `Batch Submit Report: ${params.siteUrl}`,
-          `Sites ${startIdx + 1}-${endIdx} of ${sites.length} | Loaded: ${loaded} | Registered: ${registered} | Submitted: ${submitted}`,
-          `Password: ${password}`,
-          '',
-          ...results.map(r => `${r.registered ? '✅' : '❌'} ${r.site} (DR${r.dr}) ${r.code ? `SMS:${r.code}` : ''} ${r.notes}`),
-          '',
-          `Continue: xbrowser seo batch-submit-cn --startFrom ${endIdx}`,
-        ],
-      };
+          ...(loggedCount < reachableCount ? ['⚠️ Some platforms need manual login or account creation first']);
     },
   });
 

@@ -1,4 +1,5 @@
-import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 import { detectSsr } from '../shared/ssr-detect.js';
 
@@ -189,7 +190,8 @@ function buildCtxTips(ctx: Record<string, unknown>): string[] {
 }
 
 function errResult(message: string, tips: string[]) {
-    return ok(null, []);
+  return fail(message, tips);
+}
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({ name: 'xiaohongshu', url: XHS_BASE, description: '小红书数据采集' });
@@ -228,10 +230,11 @@ export default function (xcli: XCLIAPI): void {
             await waitForHuman({ reason: '小红书笔记详情加载失败，可能需要登录或验证', timeout: 120 });
             raw = await waitForInterceptor(interceptor.get, 5000);
           }
-          if (!raw) return { data: null, tips: [...tips, '未获取到笔记数据，可能笔记不存在或需要登录'] };
+          if (!raw) return fail('未获取到笔记数据，可能笔记不存在或需要登录', [...tips, '未获取到笔记数据，可能笔记不存在或需要登录']);
           const note = parseNote(raw);
           tips.push(`笔记: ${note.title?.slice(0, 50) || note.desc?.slice(0, 50)}`);
-    return ok(note, []);
+          return ok(note, tips);
+        } finally { interceptor.dispose(); }
       } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['获取笔记详情失败']); }
     },
   });
@@ -262,7 +265,8 @@ export default function (xcli: XCLIAPI): void {
           await scrollAndCollect(page, params.maxPages || 5, () => interceptor.items().length, { waitForHuman });
           const notes = interceptor.items().map(parseNote);
           tips.push(`采集到 ${notes.length} 条笔记`);
-    return ok({ total: notes.length, []);
+          return ok({ total: notes.length, notes }, tips);
+        } finally { interceptor.dispose(); }
       } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['采集用户笔记失败']); }
     },
   });
@@ -298,7 +302,7 @@ export default function (xcli: XCLIAPI): void {
             await waitForHuman({ reason: '小红书用户资料加载失败，可能需要登录或验证', timeout: 120 });
             raw = await waitForInterceptor(interceptor.get, 5000);
           }
-          if (raw) { const user = parseUser(raw); tips.push(`用户: ${user.nickname}`); return { data: user, tips }; }
+          if (raw) { const user = parseUser(raw); tips.push(`用户: ${user.nickname}`); return ok(user, tips); }
           const domInfo = await page.evaluate(() => {
             const nickname =
               document.querySelector('[class*="nickname"]')?.textContent?.trim() ||
@@ -315,7 +319,8 @@ export default function (xcli: XCLIAPI): void {
             return { nickname, desc, avatar, stats };
           });
           tips.push(`用户(DOM): ${domInfo.nickname}`);
-    return ok({ userId: params.userId, []);
+          return ok({ userId: params.userId, ...domInfo }, tips);
+        } finally { interceptor.dispose(); }
       } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['获取用户资料失败']); }
     },
   });
@@ -346,7 +351,8 @@ export default function (xcli: XCLIAPI): void {
           await scrollAndCollect(page, params.maxPages || 3, () => interceptor.items().length, { waitForHuman });
           const notes = interceptor.items().map(parseNoteBrief);
           tips.push(`搜索到 ${notes.length} 条笔记`);
-    return ok({ keyword: params.keyword, []);
+          return ok({ keyword: params.keyword, total: notes.length, notes }, tips);
+        } finally { interceptor.dispose(); }
       } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['搜索笔记失败']); }
     },
   });
@@ -381,7 +387,8 @@ export default function (xcli: XCLIAPI): void {
           });
           const comments = interceptor.items().map(parseComment);
           tips.push(`采集到 ${comments.length} 条评论`);
-    return ok({ total: comments.length, []);
+          return ok({ total: comments.length, comments }, tips);
+        } finally { interceptor.dispose(); }
       } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['获取笔记评论失败']); }
     },
   });
@@ -412,7 +419,8 @@ export default function (xcli: XCLIAPI): void {
           await scrollAndCollect(page, params.maxPages || 3, () => interceptor.items().length, { waitForHuman });
           const notes = interceptor.items().map(parseNoteBrief);
           tips.push(`获取到 ${notes.length} 条推荐笔记`);
-    return ok({ total: notes.length, []);
+          return ok({ total: notes.length, notes }, tips);
+        } finally { interceptor.dispose(); }
       } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['获取首页推荐失败']); }
     },
   });
@@ -445,7 +453,8 @@ export default function (xcli: XCLIAPI): void {
         tips.push(`最终 URL: ${finalUrl}`);
         if (noteId) tips.push(`笔记 ID: ${noteId}`);
         if (userId) tips.push(`用户 ID: ${userId}`);
-    return ok({ originalUrl: params.url, []);
+        return ok({ originalUrl: params.url, finalUrl, noteId, userId }, tips);
+      } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['解析短链失败']); }
     },
   });
 
@@ -488,7 +497,8 @@ export default function (xcli: XCLIAPI): void {
           });
           return imgs;
         }, params.limit);
-    return ok({ query: params.query, [`小红书 "${params.query}"，共 ${results.length} 张`] };);
+        return ok({ query: params.query, engine: 'xiaohongshu', results, total: results.length, timestamp: Date.now() }, [`小红书 "${params.query}"，共 ${results.length} 张`]);
+      } catch (error) { return fail(error instanceof Error ? error.message : '未知错误'); }
     },
   });
 }

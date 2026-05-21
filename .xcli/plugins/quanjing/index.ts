@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 
 export default function (xcli: XCLIAPI): void {
   const quanjing = xcli.createSite({
@@ -53,13 +54,16 @@ export default function (xcli: XCLIAPI): void {
           return images;
         }, params.limit);
 
-    return ok({, []);
+        return ok({
+            query: params.query,
+            engine: 'quanjing',
+            results: results.map(r => ({ ...r, sourceSite: 'quanjing' })),
             total: results.length,
             timestamp: Date.now(),
-          },
-        };
+          });
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', []);
+        return fail(error instanceof Error ? error.message : '未知错误');
+      }
     },
   });
 }

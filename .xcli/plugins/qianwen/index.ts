@@ -1,4 +1,5 @@
-import type { XCLIAPI, CommandContext, ok, fail } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
@@ -151,10 +152,13 @@ export default function (xcli: XCLIAPI): void {
 
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
-    return ok(conversations, []);
+        return {
+          data: conversations,
+          tips,
+          message: `找到 ${conversations.length} 个会话`,
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['获取会话列表失败']);
+        return fail('未知错误', ['获取会话列表失败']);
       }
     },
   });
@@ -200,12 +204,13 @@ export default function (xcli: XCLIAPI): void {
         }
 
         await page.waitForTimeout(1500);
-    return ok({ created: true }, []);
+        return {
+          data: { created: true },
           tips: buildTips(ctx),
           message: '✅ 已创建新对话',
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['创建新对话失败']);
+        return fail('未知错误', ['创建新对话失败']);
       }
     },
   });
@@ -242,12 +247,13 @@ export default function (xcli: XCLIAPI): void {
         if (!clicked.found) throw new Error(`未找到包含"${params.title}"的会话`);
 
         await page.waitForTimeout(2000);
-    return ok({ opened: clicked.title }, []);
+        return {
+          data: { opened: clicked.title },
           tips: buildTips(ctx),
           message: `✅ 已打开会话：${clicked.title}`,
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['打开会话失败']);
+        return fail('未知错误', ['打开会话失败']);
       }
     },
   });
@@ -416,20 +422,24 @@ export default function (xcli: XCLIAPI): void {
 
         if (responseText) {
           tips.push('AI 回复已收到');
-    return ok({, []);
+          return {
+            data: {
+              response: responseText,
+              duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
             },
             tips,
             message: `✅ AI 回复 (${((Date.now() - startTime) / 1000).toFixed(1)}s)`,
           };
         } else {
           tips.push('AI 回复超时或未检测到');
-    return ok({ response: '' }, []);
+          return {
+            data: { response: '' },
             tips,
             message: '⏱ AI 回复超时（60s），请检查页面',
           };
         }
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['发送消息失败']);
+        return fail('未知错误', ['发送消息失败']);
       }
     },
   });
@@ -464,12 +474,13 @@ export default function (xcli: XCLIAPI): void {
 
         await page.waitForTimeout(1000);
         tips.push(`附件 "${path.basename(absPath)}" 已上传`);
-    return ok({ file: absPath, []);
+        return {
+          data: { file: absPath, uploaded: true },
           tips,
           message: `✅ 附件 "${path.basename(absPath)}" 已上传`,
         };
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['上传附件失败']);
+        return fail('未知错误', ['上传附件失败']);
       }
     },
   });

@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 
 export default function(xcli: XCLIAPI): void {
   const steam = xcli.createSite({
@@ -66,7 +67,8 @@ export default function(xcli: XCLIAPI): void {
             retries--;
             if (retries === 0) {
               const msg = err instanceof Error ? err.message : String(err);
-    return fail(`Page ${page, []);
+              return { success: false as const, data: null, message: `Page ${page} failed: ${msg}` };
+            }
             await sleep(3000);
           }
         }
@@ -117,16 +119,22 @@ export default function(xcli: XCLIAPI): void {
         langs[lang] = (langs[lang] ?? 0) + 1;
       }
 
-    return ok({, []);
-        tips: [
+      return ok({
+          app_id: params.appId,
+          scraped_at: new Date().toISOString(),
+          api_total: totalFromApi,
+          fetched: final.length,
+          positive,
+          negative,
+          positive_ratio: final.length > 0 ? ((positive / final.length) * 100).toFixed(1) + '%' : 'N/A',
+          language_breakdown: Object.entries(langs).sort((a, b) => b[1] - a[1]),
+          reviews: final,
+        }, [
           `Steam ${params.appId}: 抓取 ${final.length}/${totalFromApi} 条评论`,
           `👍${positive} 👎${negative} (${((positive / final.length) * 100).toFixed(1)}%)`,
           `语言分布: ${Object.entries(langs).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => `${k}(${v})`).join(', ')}`,
-        ],
-      };
+        ]);
     },
-  });
-}
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

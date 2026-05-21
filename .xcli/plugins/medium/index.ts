@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -46,9 +47,7 @@ export default function (xcli: XCLIAPI): void {
 
       await ctx.storage.set('medium_login', { loggedIn, at: Date.now() });
 
-    return ok({ loggedIn, []);
-        tips: [loggedIn ? 'Medium 登录成功' : '登录可能未完成，请检查页面'],
-      };
+      return ok({ loggedIn, url: page.url() }, [loggedIn ? 'Medium 登录成功' : '登录可能未完成，请检查页面']);
     },
   });
 
@@ -114,9 +113,10 @@ export default function (xcli: XCLIAPI): void {
         }
       }
 
-    return ok({, []);
-        tips: [`文章 "${params.title}" 已在 Medium 发布`],
-      };
+      return ok({
+          title: params.title,
+          url: page.url(),
+        }, [`文章 "${params.title}" 已在 Medium 发布`]);
     },
   });
 
@@ -168,9 +168,11 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(2000);
       }
 
-    return ok({, []);
-        tips: [`草稿 "${params.title}" 已保存`],
-      };
+      return ok({
+          title: params.title,
+          saved: true,
+          url: page.url(),
+        }, [`草稿 "${params.title}" 已保存`]);
     },
   });
 
@@ -221,9 +223,10 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(3000);
       }
 
-    return ok({, []);
-        tips: [`文章已从 ${params.url} 导入到 Medium（canonical 已设置）`],
-      };
+      return ok({
+          importedFrom: params.url,
+          url: page.url(),
+        }, [`文章已从 ${params.url} 导入到 Medium（canonical 已设置）`]);
     },
   });
 
@@ -276,9 +279,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(2000);
       }
 
-    return ok({ url: params.url, []);
-        tips: ['Profile 已更新，包含外链'],
-      };
+      return ok({ url: params.url, updated: true }, ['Profile 已更新，包含外链']);
     },
   });
 

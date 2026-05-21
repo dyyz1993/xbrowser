@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -105,7 +106,8 @@ export default function (xcli: XCLIAPI): void {
         return tweets;
       }, params.limit);
 
-    return ok({ query: params.query, []);
+      return ok({ query: params.query, count: results.length, tweets: results }, tips);
+    },
   });
 
   // ─── 2. profile ────────────────────────────────
@@ -178,7 +180,8 @@ export default function (xcli: XCLIAPI): void {
         }) as Record<string, unknown>;
       }
 
-    return ok(userData, [...tips);
+      return ok(userData, [...tips, `用户: ${userData?.name || params.username}`]);
+    },
   });
 
   // ─── 3. timeline ───────────────────────────────
@@ -255,11 +258,10 @@ export default function (xcli: XCLIAPI): void {
           });
           return items;
         }, params.limit);
-    return ok({ username: params.username, []);
+        return ok({ username: params.username, count: domTweets.length, tweets: domTweets, source: 'dom(api fallback)' }, tips);
+      }
 
-    return ok({ username: params.username, []);
-        tips: [...tips, `${params.username} 最近 ${tweets.length} 条推文（API 模式）`],
-      };
+      return ok({ username: params.username, count: tweets.length, tweets, source: 'api' }, [...tips, `${params.username} 最近 ${tweets.length} 条推文（API 模式）`]);
     },
   });
 
@@ -311,7 +313,8 @@ export default function (xcli: XCLIAPI): void {
       const replies = captured.slice(0, params.limit);
       tips.push(`找到 ${replies.length} 条回复`);
 
-    return ok({ tweetId: params.id, []);
+      return ok({ tweetId: params.id, count: replies.length, replies }, tips);
+    },
   });
 
   // ─── 5. liked ──────────────────────────────────
@@ -354,7 +357,8 @@ export default function (xcli: XCLIAPI): void {
         return items;
       }, params.limit);
 
-    return ok({ username: params.username, []);
+      return ok({ username: params.username, count: tweets.length, tweets }, tips);
+    },
   });
 
   // ─── 6. search-image ───────────────────────────
@@ -391,7 +395,8 @@ export default function (xcli: XCLIAPI): void {
           });
           return imgs;
         }, params.limit);
-    return ok({ query: params.query, [`Twitter "${params.query}"，共 ${results.length} 张`] };);
+        return ok({ query: params.query, engine: 'twitter', results, total: results.length, timestamp: Date.now() }, [`Twitter "${params.query}"，共 ${results.length} 张`]);
+      } catch (error) { return fail(error instanceof Error ? error.message : '未知错误'); }
     },
   });
 
