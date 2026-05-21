@@ -30,3 +30,5 @@ scripts/debug-*
 # OpenCode runtime files
 .opencode/session-registry.json
 .opencode/opencode.jsonc.bak*
+.opencode/session-registry.json
+.opencode/sessions/
