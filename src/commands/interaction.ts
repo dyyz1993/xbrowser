@@ -46,6 +46,8 @@ export const clickCommand = registerCommand({
         button: p.button,
         clickCount: p.clickCount,
         delay: p.delay,
+        force: true,
+        timeout: 10000,
       });
       detectedNewPage = await pagePromise;
     } else {
@@ -53,6 +55,8 @@ export const clickCommand = registerCommand({
         button: p.button,
         clickCount: p.clickCount,
         delay: p.delay,
+        force: true,
+        timeout: 10000,
       });
     }
 
@@ -111,7 +115,7 @@ export const fillCommand = registerCommand({
     const page = ctx.page;
 
     if (p.clear) {
-      await page.fill(p.selector, '');
+      await page.fill(p.selector, '', { force: true, timeout: 10000 });
     }
 
     const isReact = await page.evaluate(() => {
@@ -148,7 +152,7 @@ export const fillCommand = registerCommand({
         el.dispatchEvent(new Event('change', { bubbles: true }));
       }, { selector: p.selector, value: p.value });
     } else {
-      await page.fill(p.selector, p.value);
+      await page.fill(p.selector, p.value, { force: true, timeout: 10000 });
     }
 
     return ok({ selector: p.selector, value: p.value, cleared: p.clear || false, reactMode: !!isReact });
@@ -168,7 +172,7 @@ export const typeCommand = registerCommand({
     selector: z.string(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
-    await ctx.page.type(p.selector, p.text, { delay: p.delay });
+    await ctx.page.type(p.selector, p.text, { delay: p.delay, timeout: 10000 });
     return ok({ selector: p.selector });
   },
 });
@@ -186,7 +190,7 @@ export const pressCommand = registerCommand({
     key: z.string(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
-    await ctx.page.press(p.selector || 'body', p.key, { delay: p.delay });
+    await ctx.page.press(p.selector || 'body', p.key, { delay: p.delay, timeout: 10000 });
     return ok({ key: p.key });
   },
 });
@@ -205,7 +209,7 @@ export const selectCommand = registerCommand({
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
     const values = typeof p.value === 'string' ? [p.value] : p.value;
-    await ctx.page.selectOption(p.selector, values);
+    await ctx.page.selectOption(p.selector, values, { force: true, timeout: 10000 });
     return ok({ selector: p.selector, value: p.value });
   },
 });
@@ -221,7 +225,7 @@ export const checkCommand = registerCommand({
     selector: z.string(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
-    await ctx.page.check(p.selector);
+    await ctx.page.check(p.selector, { force: true, timeout: 10000 });
     return ok({ selector: p.selector });
   },
 });
@@ -238,7 +242,7 @@ export const hoverCommand = registerCommand({
     selector: z.string(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
-    await ctx.page.hover(p.selector, { modifiers: p.modifiers });
+    await ctx.page.hover(p.selector, { modifiers: p.modifiers, force: true, timeout: 10000 });
     return ok({ selector: p.selector });
   },
 });
@@ -259,6 +263,8 @@ export const dblclickCommand = registerCommand({
     await ctx.page.dblclick(p.selector, {
       button: p.button,
       delay: p.delay,
+      force: true,
+      timeout: 10000,
     });
     return ok({ selector: p.selector });
   },

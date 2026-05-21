@@ -413,6 +413,35 @@ export class WSServer extends EventEmitter {
     }
   }
 
+  async pauseScreencast(sessionId: string): Promise<void> {
+    const sc = this.screencasts.get(sessionId);
+    if (sc?.capturer.isActive()) {
+      await sc.capturer.stopCapture();
+    }
+  }
+
+  async resumeScreencast(sessionId: string): Promise<void> {
+    const sc = this.screencasts.get(sessionId);
+    if (sc && !sc.capturer.isActive() && sc.clientCount > 0) {
+      await sc.capturer.startCapture(sc.page, sessionId, (frame: ScreencastFrame) => {
+        const header = Buffer.from(JSON.stringify({
+          type: 'screenshot',
+          data: {
+            sessionId: frame.sessionId,
+            id: frame.id,
+            timestamp: frame.timestamp,
+            url: frame.url,
+            viewport: frame.viewport,
+          },
+        }), 'utf-8');
+        const headerLen = Buffer.alloc(4);
+        headerLen.writeUInt32BE(header.length, 0);
+        const payload = Buffer.concat([headerLen, header, frame.data]);
+        this.broadcastBinaryToSession(sessionId, payload);
+      }).catch(() => {});
+    }
+  }
+
   private sendToClient(clientId: string, message: WSMessage): void {
     const client = this.clients.get(clientId);
     if (!client) return;

@@ -131,6 +131,9 @@ async function resolveCDPEndpoint(raw: string): Promise<string> {
  */
 export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) => void } {
   let previewWS: WSServer | null = null;
+  const INTERACTION_COMMANDS = new Set([
+    'click', 'fill', 'type', 'press', 'select', 'check', 'hover', 'dblclick', 'scroll',
+  ]);
 
   const handler: RPCHandler & { setPreviewWS: (ws: WSServer) => void } = Object.assign(
     async (method: string, params: Record<string, unknown>): Promise<unknown> => {
@@ -283,9 +286,15 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       params: cmdParams,
       session: sessionName,
     });
-    const result = await executeCommand(command, cmdParams, sessionName, { cdpEndpoint: endpoint });
-    registerSessionIfNew(sessionName);
-    return result;
+    const needsPause = INTERACTION_COMMANDS.has(command) && !!previewWS;
+    if (needsPause) await previewWS!.pauseScreencast(sessionName);
+    try {
+      const result = await executeCommand(command, cmdParams, sessionName, { cdpEndpoint: endpoint });
+      registerSessionIfNew(sessionName);
+      return result;
+    } finally {
+      if (needsPause) await previewWS!.resumeScreencast(sessionName).catch(() => {});
+    }
   }
 
   async function handleChain(params: Record<string, unknown>) {
