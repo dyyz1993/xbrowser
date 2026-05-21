@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Recording Test Page</title>
+</head>
+<body>
+  <h1>Recording Test</h1>
+  <form id="test-form">
+    <input id="search-input" type="text" placeholder="Search..." name="q">
+    <button id="search-btn" type="submit">Search</button>
+  </form>
+  <div id="result"></div>
+  <script>
+    document.getElementById('test-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      var val = document.getElementById('search-input').value;
+      document.getElementById('result').textContent = 'Submitted: ' + val;
+    });
+  </script>
+</body>
+</html>
