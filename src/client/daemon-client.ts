@@ -11,11 +11,16 @@ async function ensureDaemonRunning(): Promise<void> {
     try { await _ensurePromise; } catch { /* will retry */ }
     _ensurePromise = null;
   }
-  const healthOk = await fetch(`${DAEMON_BASE}/health`, { signal: AbortSignal.timeout(2000) })
-    .then(r => r.ok ? r.json() : null)
-    .then((d: { status?: string } | null) => d?.status === 'ok')
-    .catch(() => false);
-  if (healthOk) return;
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const healthOk = await fetch(`${DAEMON_BASE}/health`, { signal: AbortSignal.timeout(2000) })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { status?: string } | null) => d?.status === 'ok')
+      .catch(() => false);
+    if (healthOk) return;
+    if (attempt < 2) await new Promise(r => setTimeout(r, 500));
+  }
+
   _ensurePromise = startDaemonProcess(DAEMON_PORT).then(() => {});
   _ensurePromise.catch(() => { _ensurePromise = null; });
   try {
