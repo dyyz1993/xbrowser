@@ -345,7 +345,7 @@ export default function (xcli: XCLIAPI): void {
               count: apiItems.length,
               source: 'api',
               results: apiItems,
-            }, [...ctxTips, `[API]);
+            }, [...ctxTips, `[API] 搜索到 ${apiItems.length} 个商品`]);
         }
 
         const results = await page.evaluate((limit) => {
@@ -488,9 +488,11 @@ export default function (xcli: XCLIAPI): void {
                 priceMin: params.priceMin,
                 priceMax: params.priceMax,
                 location: params.location,
-              }, [
-              ...ctxTips,
-              `[API]);
+              },
+              count: apiItems.length,
+              source: 'api',
+              results: apiItems,
+            }, [...ctxTips, `[API] 搜索到 ${apiItems.length} 个商品`]);
         }
 
         const results = await page.evaluate((limit) => {
@@ -544,9 +546,15 @@ export default function (xcli: XCLIAPI): void {
               priceMin: params.priceMin,
               priceMax: params.priceMax,
               location: params.location,
-            }, [
+            },
+            count: results.length,
+            source: 'dom',
+            results,
+          }, [
             ...ctxTips,
-            `[DOM] 高级搜索找到 ${results.length} 个商品`,      } finally {
+            `[DOM] 高级搜索找到 ${results.length} 个商品`,
+          ]);
+      } finally {
         interceptor?.dispose();
       }
     },
@@ -625,9 +633,8 @@ export default function (xcli: XCLIAPI): void {
                 name: String((detail.seller as Record<string, unknown>)?.shopName || ''),
                 shopId: String((detail.seller as Record<string, unknown>)?.shopId || ''),
                 rating: String((detail.seller as Record<string, unknown>)?.evaluates || ''),
-              }, [
-              ...ctxTips,
-              `[API]);
+              },
+            }, [...ctxTips, `[API] 商品详情获取成功`]);
         }
 
         const data = await page.evaluate(() => {
@@ -812,9 +819,8 @@ export default function (xcli: XCLIAPI): void {
                 shopUrl: String(seller.shopUrl || ''),
                 rating: String(seller.evaluates || ''),
                 location: String(seller.location || ''),
-              }, [
-              ...ctxTips,
-              `[API]);
+              },
+            }, [...ctxTips, `[API] 商品详情获取成功`]);
         }
 
         const data = await page.evaluate(() => {
@@ -901,7 +907,9 @@ export default function (xcli: XCLIAPI): void {
 
         return ok({ source: 'dom', itemId: params.itemId, ...data }, [
             ...ctxTips,
-            `[DOM] 商品: ${data.title}`,      } finally {
+            `[DOM] 商品: ${data.title}`,
+          ]);
+      } finally {
         interceptor.dispose();
       }
     },
@@ -1029,7 +1037,7 @@ export default function (xcli: XCLIAPI): void {
               count: apiReviews.length,
               source: 'api',
               reviews: apiReviews,
-            }, [...ctxTips, `[API]);
+            }, [...ctxTips, `[API] 获取 ${apiReviews.length} 条评价`]);
         }
 
         const reviews = await page.evaluate((limit) => {
@@ -1154,7 +1162,7 @@ export default function (xcli: XCLIAPI): void {
               itemCount: String(s.itemCount || s.allItemCount || ''),
               location: String(s.shopLocation || s.location || ''),
               logo: String(s.shopLogo || s.picUrl || ''),
-            }, [...ctxTips, `[API]);
+            }, [...ctxTips, `[API] 店铺信息获取成功`]);
         }
 
         const data = await page.evaluate(() => {
@@ -1210,7 +1218,9 @@ export default function (xcli: XCLIAPI): void {
 
         return ok({ source: 'dom', ...data }, [
             ...ctxTips,
-            `[DOM] 店铺: ${data.name}`,      } finally {
+            `[DOM] 店铺: ${data.name}`,
+          ]);
+      } finally {
         interceptor.dispose();
       }
     },
@@ -1283,7 +1293,7 @@ export default function (xcli: XCLIAPI): void {
               count: apiItems.length,
               source: 'api',
               results: apiItems,
-            }, [...ctxTips, `[API]);
+            }, [...ctxTips, `[API] 获取 ${apiItems.length} 个店铺商品`]);
         }
 
         const results = await page.evaluate((limit) => {
@@ -1396,9 +1406,7 @@ export default function (xcli: XCLIAPI): void {
               coupons,
               promotions,
               title: String(d.title || ''),
-            }, [
-              ...ctxTips,
-              `[API]);
+            }, [...ctxTips, `[API] 获取到 ${coupons.length} 个优惠`]);
         }
 
         await page.evaluate(() => {
@@ -1445,7 +1453,9 @@ export default function (xcli: XCLIAPI): void {
 
         return ok({ source: 'dom', itemId: params.itemId, ...data }, [
             ...ctxTips,
-            `[DOM] 优惠券 ${data.coupons.length} 张`,      } finally {
+            `[DOM] 优惠券 ${data.coupons.length} 张`,
+          ]);
+      } finally {
         interceptor.dispose();
       }
     },

@@ -577,7 +577,8 @@ export default function (xcli: XCLIAPI): void {
         const suggestions = platformSuggestions(params.platform);
         return fail('平台', [
             `未找到匹配平台: "${params.platform}"`,
-            ...(suggestions.length > 0 ? [`相近平台: ${suggestions.map(s => s.name).join(', ')}`]);
+            ...(suggestions.length > 0 ? [`相近平台: ${suggestions.map(s => s.name).join(', ')}`] : []),
+          ]);
       }
 
       try {
@@ -598,7 +599,7 @@ export default function (xcli: XCLIAPI): void {
             `有效期 14 天，过期后建议重新登录`,
           ]);
       } catch (e) {
-        return fail('${match.name} 登录失败', [`登录流程失败: ${(e as Error).message}`]);
+        return fail(`${match.name} 登录失败`, [`登录流程失败: ${(e as Error).message}`]);
       }
     },
   });
@@ -624,8 +625,9 @@ export default function (xcli: XCLIAPI): void {
           }
           return ok({ cleared: loginKeys.length, keys: loginKeys }, [
               `✅ 已清除 ${loginKeys.length} 个平台的登录状态`,
-              ...(loginKeys.length === 0 ? ['当前无已保存的登录状态']);
-        }
+              ...(loginKeys.length === 0 ? ['当前无已保存的登录状态'] : []),
+            ]);
+      }
 
         const match = matchPlatform(params.platform);
         const platformName = match ? match.name.toLowerCase().replace(/[^a-z0-9]/g, '_') : params.platform.toLowerCase().replace(/[^a-z0-9]/g, '_');
@@ -871,7 +873,8 @@ export default function (xcli: XCLIAPI): void {
           .slice(0, 5);
         return fail('平台', [
             `未找到匹配平台: "${params.platform}"`,
-            ...(suggestions.length > 0 ? [`相近平台: ${suggestions.map(s => s.name).join(', ')}`]);
+            ...(suggestions.length > 0 ? [`相近平台: ${suggestions.map(s => s.name).join(', ')}`] : []),
+          ]);
       }
 
       const platformKey = match.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
@@ -906,7 +909,7 @@ export default function (xcli: XCLIAPI): void {
           }
         }
       } catch (e) {
-        return fail('无法打开 ${match.name}', [`页面加载失败: ${(e as Error).message}`, `入口 URL: ${match.entryUrl}`, ...loginTips]);
+        return fail(`无法打开 ${match.name}`, [`页面加载失败: ${(e as Error).message}`, `入口 URL: ${match.entryUrl}`, ...loginTips]);
       }
 
       let autoFillResult: { filled: boolean; saved: boolean } | undefined;
@@ -1095,7 +1098,8 @@ export default function (xcli: XCLIAPI): void {
               `     主题: ${params.topic}`,
               `     姓名: ${params.name}`,
               `     邮箱: ${params.email}`,
-              ...(params.url ? [`     文章链接: ${params.url}`]);
+              ...(params.url ? [`     文章链接: ${params.url}`] : []),
+            ]);
         } catch (e) {
           return fail('无法打开 Smashing Magazine', [`页面加载失败: ${(e as Error).message}`]);
         }
@@ -1146,7 +1150,7 @@ export default function (xcli: XCLIAPI): void {
             `主题: ${params.topic}`,
           ]);
       } catch (e) {
-        return fail('无法打开 ${matchedKey}', [`页面加载失败: ${(e as Error).message}`]);
+        return fail(`无法打开 ${matchedKey}`, [`页面加载失败: ${(e as Error).message}`]);
       }
     },
   });
@@ -1182,7 +1186,7 @@ export default function (xcli: XCLIAPI): void {
         }
         return ok({ configured: false }, [`❌ ${result.message}`]);
       } catch (e) {
-        return fail('配置失败: ${(e as Error).message}', [`邮箱配置失败: ${(e as Error).message}`]);
+        return fail(`配置失败: ${(e as Error).message}`, [`邮箱配置失败: ${(e as Error).message}`]);
       }
     },
   });
@@ -1216,13 +1220,15 @@ export default function (xcli: XCLIAPI): void {
         if (!result.code && !result.link) {
           tips.push('⚠️ 未能自动提取验证码或链接，请手动查看邮件');
         }
-        return ok(result, [
-            `❌ 获取验证邮件失败: ${(e as Error).message}`,
+        return ok(result, tips);
+      } catch (e) {
+        return fail(`获取验证邮件失败: ${(e as Error).message}`, [
             '请确认:',
             '  1. 已运行 seo setup-email 完成 IMAP 邮箱配置',
             `  2. 发件人 "${params.from}" 确实发送了验证邮件`,
             `  3. 邮件在 ${params.maxAge} 秒内送达`,
           ]);
+      }
     },
   });
 
@@ -1251,7 +1257,8 @@ export default function (xcli: XCLIAPI): void {
         const suggestions = platformSuggestions(params.platform);
         return fail('平台', [
             `未找到匹配平台: "${params.platform}"`,
-            ...(suggestions.length > 0 ? [`相近平台: ${suggestions.map(s => s.name).join(', ')}`]);
+            ...(suggestions.length > 0 ? [`相近平台: ${suggestions.map(s => s.name).join(', ')}`] : []),
+          ]);
       }
 
       const password = params.password || (() => {
@@ -1368,7 +1375,7 @@ export default function (xcli: XCLIAPI): void {
             '如果需要邮箱验证，请检查收件箱或运行 seo verify-email',
           ]);
       } catch (e) {
-        return fail('注册失败: ${(e as Error).message}', [
+        return fail(`注册失败: ${(e as Error).message}`, [
             `❌ ${match.name} 注册失败: ${(e as Error).message}`,
             `注册页面: ${signupUrl}`,
             `邮箱: ${params.email}`,
@@ -1651,7 +1658,8 @@ export default function (xcli: XCLIAPI): void {
       return ok({
           url: params.url,
           total: results.length,
-          summary: { reachable: reachableCount, logged: loggedCount, filled: filledCount, saved: savedCount }, [
+          summary: { reachable: reachableCount, logged: loggedCount, filled: filledCount, saved: savedCount },
+        }, [
           `Batch OAuth Submit Report for: ${params.url}`,
           `Total: ${results.length} | Reachable: ${reachableCount} | Logged In: ${loggedCount} | URL Filled: ${filledCount} | Saved: ${savedCount}`,
           '',
@@ -1659,7 +1667,8 @@ export default function (xcli: XCLIAPI): void {
           tableSep,
           ...tableRows,
           '',
-          ...(loggedCount < reachableCount ? ['⚠️ Some platforms need manual login or account creation first']);
+          ...(loggedCount < reachableCount ? ['⚠️ Some platforms need manual login or account creation first'] : []),
+        ]);
     },
   });
 
