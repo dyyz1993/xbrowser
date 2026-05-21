@@ -57,12 +57,21 @@ export function resolveNpmPackageName(name: string): string {
   return `${NPM_SCOPE}${name}`;
 }
 
+/**
+ * Name aliases for plugins whose directory names are not valid npm package names.
+ * Key = local dir name, Value = npm package suffix (after @xbrowser/).
+ */
+const NPM_NAME_ALIASES: Record<string, string> = {
+  '1688': 'alibaba-1688',
+};
+
 export function generateNpmCandidates(name: string): string[] {
   if (name.startsWith('@')) return [name];
+  const resolved = NPM_NAME_ALIASES[name] ?? name;
   return [
-    `${NPM_SCOPE}xbrowser-plugin-${name}`,
-    `${NPM_SCOPE}${name}`,
-    `xbrowser-plugin-${name}`,
+    `${NPM_SCOPE}xbrowser-plugin-${resolved}`,
+    `${NPM_SCOPE}${resolved}`,
+    `xbrowser-plugin-${resolved}`,
   ];
 }
 
