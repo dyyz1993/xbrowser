@@ -231,6 +231,26 @@ const ACTION_SIGNAL_SCRIPT = `
     };
   }
 
+  function isMeaningful(el) {
+    if (!el || !el.tagName) return false;
+    var tag = el.tagName.toLowerCase();
+    if (tag === 'a' || tag === 'button' || tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+    if (el.getAttribute('role')) return true;
+    if (el.getAttribute('aria-label')) return true;
+    var text = (el.textContent || '').trim();
+    if (text.length > 0 && text.length <= 80) return true;
+    return false;
+  }
+
+  function resolveMeaningful(e) {
+    var path = e.composedPath ? e.composedPath() : [e.target];
+    for (var i = 0; i < Math.min(path.length, 8); i++) {
+      var el = path[i];
+      if (isMeaningful(el)) return el;
+    }
+    return path[0] || e.target;
+  }
+
   function actualTarget(e) {
     var path = e.composedPath && e.composedPath();
     return (path && path.length > 0) ? path[0] : e.target;
@@ -274,7 +294,7 @@ const ACTION_SIGNAL_SCRIPT = `
   }
 
   document.addEventListener('click', function(e) {
-    pushAction('click', { element: describe(actualTarget(e)), x: e.clientX, y: e.clientY });
+    pushAction('click', { element: describe(resolveMeaningful(e)), x: e.clientX, y: e.clientY });
   }, true);
 
   document.addEventListener('input', function(e) {
@@ -767,7 +787,7 @@ export class SessionRecorder {
   // ─── Summary builder with ref compression + input→network matching ──
 
   private buildSummary(data: RecordingData): RecordingSummary {
-    const POST_WINDOW = 3000;
+    const POST_WINDOW = 5000;
     const MERGE_WINDOW = 2000;
     const steps: RecordingStep[] = [];
 
@@ -800,6 +820,19 @@ export class SessionRecorder {
       return ref;
     }
 
+    const isNoiseNetwork = (n: NetworkEntry): boolean => {
+      const url = n.url || '';
+      const path = n.path || '';
+      const rt = n.resourceType || '';
+      if (['image', 'stylesheet', 'font', 'manifest', 'other'].includes(rt)) return true;
+      if (n.status === 0) return true;
+      if (/\/ztbox|\/mwb2\.gif|\/hmslog|\/log\.gif|\/tongji|hm\.baidu|clickstream|\/actionlog|\/collect\?|\/track|\/beacon/i.test(url)) return true;
+      if (/\/favicon\.ico|\/robots\.txt/i.test(path)) return true;
+      return false;
+    };
+
+    const meaningfulNetwork = data.network.filter(n => !isNoiseNetwork(n));
+
     const filtered = data.actions.filter(a => a.type !== 'scroll');
 
     type ActionGroup = { actions: UserAction[]; primary: UserAction };
@@ -828,14 +861,17 @@ export class SessionRecorder {
       const tsEnd = Math.max(...group.actions.map(a => a.timestamp));
       const inputAction = group.actions.find(a => a.type === 'input');
 
-      const nearbyNetwork = data.network.filter(n =>
+      const nearbyNetwork = meaningfulNetwork.filter(n =>
         n.timestamp >= tsStart - 500 && n.timestamp <= tsEnd + POST_WINDOW,
       );
       const nearbyContext = data.contextChanges.filter(c =>
         c.timestamp >= tsStart - 500 && c.timestamp <= tsEnd + POST_WINDOW,
       );
       const matchedInputs = inputAction
-        ? this.matchInputsToNetwork(inputAction, nearbyNetwork)
+        ? this.matchActionToNetwork(inputAction, nearbyNetwork)
+        : [];
+      const clickMatches = primary.type === 'click' && primary.element?.text
+        ? this.matchActionToNetwork(primary, nearbyNetwork)
         : [];
 
       steps.push({
@@ -849,7 +885,7 @@ export class SessionRecorder {
             : n.responseBody,
         })),
         contextChanges: nearbyContext,
-        matchedInputs,
+        matchedInputs: [...matchedInputs, ...clickMatches],
       });
     }
 
@@ -858,29 +894,33 @@ export class SessionRecorder {
       recordedAt: new Date(this.startedAt).toISOString(),
       durationMs: Date.now() - this.startedAt,
       totalActions: data.actions.length,
-      totalNetworkRequests: data.network.length,
+      totalNetworkRequests: meaningfulNetwork.length,
       steps,
       elements,
     };
   }
 
-  private matchInputsToNetwork(
+  private matchActionToNetwork(
     action: UserAction,
     nearbyNetwork: NetworkEntry[],
   ): Array<{ inputValue: string; networkId: number; paramName: string }> {
     const matches: Array<{ inputValue: string; networkId: number; paramName: string }> = [];
-    if (!action.value || !action.value.trim()) return matches;
+    const searchValue = (action.value || action.element?.text || '').trim();
+    if (!searchValue || searchValue.length < 2) return matches;
 
-    const inputValue = action.value.trim();
     for (const netEntry of nearbyNetwork) {
-      if (!netEntry.requestBody || typeof netEntry.requestBody !== 'object') continue;
-      this.searchObjectForValue(
-        netEntry.requestBody as Record<string, unknown>,
-        inputValue,
-        netEntry.id,
-        '',
-        matches,
-      );
+      if (netEntry.url.includes(encodeURIComponent(searchValue)) || netEntry.url.includes(searchValue)) {
+        matches.push({ inputValue: searchValue, networkId: netEntry.id, paramName: 'url' });
+      }
+      if (netEntry.requestBody && typeof netEntry.requestBody === 'object') {
+        this.searchObjectForValue(
+          netEntry.requestBody as Record<string, unknown>,
+          searchValue,
+          netEntry.id,
+          '',
+          matches,
+        );
+      }
     }
     return matches;
   }
