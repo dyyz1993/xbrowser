@@ -70,7 +70,7 @@ const RECORDING_INJECT_JS = `
   document.addEventListener('change',function(e){p('change',{target:d(e.target),value:(e.target.value||'').substring(0,100)})},true);
   document.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key==='Tab'||e.key==='Escape'||e.key.startsWith('Arrow'))p('keydown',{key:e.key,target:d(e.target)})},true);
   document.addEventListener('submit',function(e){p('submit',{target:d(e.target)})},true);
-  document.addEventListener('focus',function(e){var t=e.target.tagName;if(t==='INPUT'||t==='TEXTAREA'||e.target.contentEditable==='true')p('focus',{target:d(e.target)})},true);
+  var __xb_last_focus=null;document.addEventListener('focus',function(e){var t=e.target.tagName;if(t==='INPUT'||t==='TEXTAREA'||e.target.contentEditable==='true'){var sel=e.target.id||e.target.name||e.target.placeholder;if(sel===__xb_last_focus)return;__xb_last_focus=sel;p('input_focused',{target:d(e.target)})}},true);
   var obs=new MutationObserver(function(mutations){
     for(var m of mutations){
       for(var node of m.addedNodes){
@@ -474,9 +474,32 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       return { ok: false, error: 'Recording already in progress for session: ' + sessionName };
     }
 
-    const session = findSession(sessionName);
+    let session = findSession(sessionName);
     if (!session) {
-      return { ok: false, error: 'Session not found: ' + sessionName };
+      if (!url) {
+        return { ok: false, error: 'Session not found: ' + sessionName + '. Provide --url to auto-create.' };
+      }
+      try {
+        const endpoint = await resolveCDPEndpoint('auto');
+        session = await createSession(sessionName, url, { cdpEndpoint: endpoint });
+        await injectRecording(session.page);
+        if (previewWS) previewWS.registerSession(session.name, session.page);
+        saveSessionDiskMeta(sessionName, {
+          id: session.id,
+          name: session.name,
+          url: session.page.url(),
+          createdAt: session.createdAt,
+          cdpEndpoint: session.cdpEndpoint,
+        });
+        createSessionMeta(sessionName, {
+          id: session.id,
+          url: session.page.url(),
+          createdAt: session.createdAt,
+          cdpEndpoint: session.cdpEndpoint,
+        });
+      } catch (e) {
+        return { ok: false, error: 'Failed to auto-create session: ' + (e as Error).message };
+      }
     }
 
     try {

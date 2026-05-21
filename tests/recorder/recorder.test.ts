@@ -183,6 +183,7 @@ describe('PlaybackEngine', () => {
   it('should report errors when event fails', async () => {
     const failPage = createMockPage();
     (failPage.click as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('not found'));
+    (failPage.evaluate as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('not found'));
 
     const session: RecordingSession = {
       id: 'test',
@@ -204,6 +205,7 @@ describe('PlaybackEngine', () => {
   it('should continue on error when stopOnError is false', async () => {
     const failPage = createMockPage();
     (failPage.click as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('fail'));
+    (failPage.evaluate as ReturnType<typeof vi.fn>).mockRejectedValueOnce(new Error('fail'));
 
     const session: RecordingSession = {
       id: 'test',

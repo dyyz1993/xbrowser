@@ -143,11 +143,20 @@ export class PlaybackEngine {
     const data = event.data || {};
 
     switch (event.type) {
-      case 'click':
-        if (event.selector || data.selector) {
-          await this.page.click((event.selector || data.selector) as string, { force: true, timeout: 10000 });
+      case 'click': {
+        const sel = (event.selector || data.selector) as string;
+        if (sel) {
+          try {
+            await this.page.click(sel, { force: true, timeout: 10000 });
+          } catch {
+            await this.page.evaluate((s: string) => {
+              const el = document.querySelector(s);
+              if (el) (el as HTMLElement).click();
+            }, sel);
+          }
         }
         break;
+      }
 
       case 'type':
         if ((event.selector || data.selector) && data.value !== undefined) {
