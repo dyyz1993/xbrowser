@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page, BrowserContext } from 'playwright';
 import { execSync } from 'child_process';
 
@@ -600,7 +601,8 @@ export default function (xcli: XCLIAPI): void {
       tips.push(`结果文件: /Users/xuyingzhou/Downloads/backlink-results.json`);
       tips.push(`继续: xbrowser --cdp 9221 backlink-auto run --startFrom ${start + max}`);
 
-    return ok({ total: RESULTS.length, []);
+      return ok({ total: RESULTS.length, registered, submitted }, tips);
+    },
   });
 
   site.command('sms', {
@@ -612,8 +614,7 @@ export default function (xcli: XCLIAPI): void {
     result: z.any(),
     handler: async (params) => {
       const sms = readLatestSMS(params.filter);
-    return ok(sms, [sms ? `验证码: ${sms.code} (${sms.time})` : '未找到验证码短信']);
-      };
+      return ok(sms, [sms ? `验证码: ${sms.code} (${sms.time})` : '未找到验证码短信']);
     },
   });
 
@@ -630,9 +631,7 @@ export default function (xcli: XCLIAPI): void {
       if (!page) return { data: null, tips: ['需要浏览器页面'] };
 
       const code = await read163EmailCode(page, params.from, params.timeout);
-    return ok({ code, []);
-        tips: [code ? `验证码: ${code}` : `未从 ${params.from} 找到验证码`],
-      };
+      return ok({ code }, [code ? `验证码: ${code}` : `未从 ${params.from} 找到验证码`]);
     },
   });
 }

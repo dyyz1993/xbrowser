@@ -5,7 +5,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
  * 查询指定车型的座椅颜色/材质/触感相关评论
  */
 
-import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 
 // CMF相关关键词
@@ -139,9 +139,9 @@ export default function(api: XCLIAPI): void {
       // 查找车型ID
       const car = CARS.find(c => c.name === params.car);
       if (!car) {
-        return fail(data: null as any,
+        return fail({ data: null as any,
           tips: [`未找到车型 "${params.car}"，支持的车型：${CARS.slice(0, 10).map(c => c.name).join(', ')}等${CARS.length}个车型`]
-        };
+        });
       }
 
       // 从已爬取的数据中查询
@@ -155,12 +155,12 @@ export default function(api: XCLIAPI): void {
         const dataFile = path.join(__dirname, '..', '..', 'output', 'cmf_seat_reviews_batch.json');
 
         if (!fs.existsSync(dataFile)) {
-          return fail(data: null as any,
+          return fail({ data: null as any,
             tips: [`CMF评论数据文件不存在，请先运行批量爬取脚本`]
-          };
+          });
         }
 
-        const rawData  fs.readFileSync(dataFile, 'utf-8');
+        const rawData = fs.readFileSync(dataFile, 'utf-8');
         const data = JSON.parse(rawData);
 
         // 过滤指定车型的评论
@@ -177,7 +177,7 @@ export default function(api: XCLIAPI): void {
         // 限制返回数量
         const limitedReviews = reviews.slice(0, params.limit);
 
-        return ok(data: {
+        return ok({ data: {
             car: params.car,
             car_id: car.id,
             total: reviews.length,
@@ -194,11 +194,11 @@ export default function(api: XCLIAPI): void {
             `找到 ${reviews.length} 条${params.car}的CMF评论`,
             limitedReviews.length < reviews.length ? `（返回前${limitedReviews.length}条）` : ''
           ]
-        };
+        });
       } catch (error) {
-        return fail(data: null as any,
+        return fail({ data: null as any,
           tips: [`查询失败: ${(error as Error).message}`]
-        };
+        });
       }
     }
   });
@@ -221,7 +221,7 @@ export default function(api: XCLIAPI): void {
       tips: z.array(z.string())
     }),
     handler: async (params, ctx) => {
-      return ok(data: {
+      return ok({ data: {
   total: CARS.length,
           cars: CARS.map(c => ({
             id: c.id,
@@ -233,7 +233,7 @@ export default function(api: XCLIAPI): void {
           `共支持 ${CARS.length} 个车型`,
           `使用 "cmf-seats query --car <车型名称>" 查询CMF评论`
         ]
-      };
+      });
     }
   });
 
@@ -269,9 +269,9 @@ export default function(api: XCLIAPI): void {
         const dataFile = path.join(__dirname, '..', '..', 'output', 'cmf_seat_reviews_batch.json');
 
         if (!fs.existsSync(dataFile)) {
-          return fail(data: null as any,
+          return fail({ data: null as any,
             tips: [`CMF评论数据文件不存在，请先运行批量爬取脚本`]
-          };
+          });
         }
 
         const rawData = fs.readFileSync(dataFile, 'utf-8');
@@ -297,7 +297,7 @@ export default function(api: XCLIAPI): void {
           .sort((a, b) => b[1] - a[1])
           .slice(0, params.top);
 
-        return ok(data: {
+        return ok({ data: {
             car: params.car || 'all',
             total_reviews: reviews.length,
             total_keywords: keywordCounts.size,
@@ -308,11 +308,11 @@ export default function(api: XCLIAPI): void {
             `包含 ${keywordCounts.size} 个不同的CMF关键词`,
             `显示前 ${sortedKeywords.length} 个关键词`
           ]
-        };
+        });
       } catch (error) {
-        return fail(data: null as any,
+        return fail({ data: null as any,
           tips: [`统计失败: ${(error as Error).message}`]
-        };
+        });
       }
     }
   });

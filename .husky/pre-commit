@@ -70,4 +70,14 @@ if [ $? -ne 0 ]; then
 fi
 echo "✅ Plugin metadata check passed"
 
+echo "🔍 [pre-commit] Checking plugin code quality..."
+node lint-scripts/check-plugin-code.mjs
+if [ $? -ne 0 ]; then
+  echo "❌ Plugin code check failed. Fix ok()/fail() calls and syntax issues."
+  echo "   → ok()/fail() 参数必须用对象花括号: ok({ data: ... }, tips)"
+  echo "   → 不允许裸 return { data: null }，必须用 ok()/fail()"
+  exit 1
+fi
+echo "✅ Plugin code check passed"
+
 echo "✅ [pre-commit] All checks passed!"
