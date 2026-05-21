@@ -47,7 +47,34 @@ export class PlaybackEngine {
    */
   static fromFile(page: Page, filePath: string): PlaybackEngine {
     const content = fs.readFileSync(filePath, 'utf-8');
-    const recording = yaml.parse(content) as RecordingSession;
+    const raw = (filePath.endsWith('.json') ? JSON.parse(content) : yaml.parse(content)) as RecordingSession & {
+      actions?: Array<{ type: string; element?: { selector?: string }; value?: string; timestamp: number; key?: string; scrollX?: number; scrollY?: number }>;
+    };
+
+    let recording: RecordingSession;
+    if (raw.events && raw.events.length > 0) {
+      recording = raw;
+    } else if (raw.actions && raw.actions.length > 0) {
+      const events: RecordedEvent[] = raw.actions.map((a, i) => {
+        const mappedType = a.type === 'input' ? 'type' : a.type === 'keydown' ? 'keypress' : a.type === 'submit' ? 'click' : a.type;
+        const data: Record<string, unknown> = {};
+        if (a.value) data.value = a.value;
+        if (a.key) data.key = a.key;
+        if (a.scrollX !== undefined) data.scrollX = a.scrollX;
+        if (a.scrollY !== undefined) data.scrollY = a.scrollY;
+        return {
+          id: String(i),
+          type: mappedType as RecordedEvent['type'],
+          selector: a.element?.selector,
+          timestamp: a.timestamp,
+          data,
+        };
+      });
+      recording = { id: 'replay', name: 'replay', startUrl: raw.startUrl, startTime: new Date().toISOString(), duration: 0, events };
+    } else {
+      recording = { id: 'replay', name: 'replay', startUrl: raw.startUrl || '', startTime: new Date().toISOString(), duration: 0, events: [] };
+    }
+
     return new PlaybackEngine(page, recording);
   }
 
@@ -118,7 +145,7 @@ export class PlaybackEngine {
     switch (event.type) {
       case 'click':
         if (event.selector || data.selector) {
-          await this.page.click((event.selector || data.selector) as string);
+          await this.page.click((event.selector || data.selector) as string, { force: true, timeout: 10000 });
         }
         break;
 
@@ -126,7 +153,8 @@ export class PlaybackEngine {
         if ((event.selector || data.selector) && data.value !== undefined) {
           await this.page.fill(
             (event.selector || data.selector) as string,
-            data.value as string
+            data.value as string,
+            { force: true, timeout: 10000 },
           );
         }
         break;
