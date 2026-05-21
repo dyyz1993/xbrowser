@@ -186,3 +186,25 @@ export async function forwardNetworkExport(sessionName: string, id: number, lang
 export async function forwardNetworkInspect(sessionName: string, id: number): Promise<unknown> {
   return rpcCall('network:inspect', { session: sessionName, id }, 10000);
 }
+
+// ─── Recording management (via daemon) ────────────────────────────
+
+export async function forwardRecordStart(session: string, url?: string): Promise<unknown> {
+  return rpcCall('record:start', { session, url }, 15000);
+}
+
+export async function forwardRecordStop(session: string): Promise<unknown> {
+  return rpcCall('record:stop', { session }, 10000);
+}
+
+export async function forwardRecordStatus(session: string): Promise<unknown> {
+  return rpcCall('record:status', { session }, 5000);
+}
+
+export async function forwardRecordSummary(session: string): Promise<unknown> {
+  return rpcCall('record:summary', { session }, 5000);
+}
+
+export async function forwardReplay(file: string, session: string, slowMo?: number): Promise<unknown> {
+  return rpcCall('replay', { file, session, slowMo }, 120000);
+}

@@ -31,6 +31,12 @@ import { feedbackStore } from './feedback-store.js';
 import { exportEntry } from './code-export.js';
 import type { ExportLang } from './code-export.js';
 import { WSServer } from '../websocket-server.js';
+import { SessionRecorder } from '../recorder/session-recorder.js';
+import type { RecordingSummary } from '../recorder/session-recorder.js';
+import { PlaybackEngine } from '../recorder/player.js';
+import type { PlaybackResult } from '../recorder/player.js';
+
+const activeRecorders = new Map<string, SessionRecorder>();
 
 const CONFIG_DIR = join(homedir(), '.xbrowser');
 
@@ -186,6 +192,19 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
         // ── Command log ──
         case 'command:log':
           return handleCommandLog(params);
+
+        // ── Session recording ──
+        case 'record:start':
+          return handleRecordStart(params);
+        case 'record:stop':
+          return handleRecordStop(params);
+        case 'record:status':
+          return handleRecordStatus(params);
+        case 'record:summary':
+          return handleRecordSummary(params);
+
+        case 'replay':
+          return handleReplay(params);
 
         default:
           throw new Error(`Unknown method: ${method}`);
@@ -433,5 +452,127 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const sessionName = (params.session as string) || 'default';
     const limit = (params.limit as number) || 50;
     return { session: sessionName, commands: commandLogStore.list(sessionName, { limit }) };
+  }
+
+  // ─── Session recording handlers (daemon-managed) ─────────────────
+
+  async function handleRecordStart(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const url = params.url as string | undefined;
+
+    if (activeRecorders.has(sessionName)) {
+      return { ok: false, error: 'Recording already in progress for session: ' + sessionName };
+    }
+
+    const session = findSession(sessionName);
+    if (!session) {
+      return { ok: false, error: 'Session not found: ' + sessionName };
+    }
+
+    try {
+      const recorder = new SessionRecorder(session.context, session.page, sessionName);
+      await recorder.start(url);
+      activeRecorders.set(sessionName, recorder);
+      return { ok: true, session: sessionName, startUrl: url || session.page.url() };
+    } catch (e) {
+      return { ok: false, error: (e as Error).message };
+    }
+  }
+
+  async function handleRecordStop(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const recorder = activeRecorders.get(sessionName);
+
+    if (!recorder) {
+      const existingData = SessionRecorder.readData(sessionName);
+      if (existingData) {
+        return {
+          ok: true,
+          message: 'Recorder process already exited. Recording data found on disk.',
+          session: sessionName,
+          actions: existingData.actions.length,
+          network: existingData.network.length,
+        };
+      }
+      return { ok: false, error: 'No active recording found for session: ' + sessionName };
+    }
+
+    try {
+      const { data, summary } = await recorder.stop();
+      activeRecorders.delete(sessionName);
+      return {
+        ok: true,
+        session: sessionName,
+        actions: data.actions.length,
+        network: data.network.length,
+        durationMs: summary.durationMs,
+        steps: summary.steps.length,
+      };
+    } catch (e) {
+      activeRecorders.delete(sessionName);
+      return { ok: false, error: (e as Error).message };
+    }
+  }
+
+  function handleRecordStatus(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const recorder = activeRecorders.get(sessionName);
+
+    if (recorder && recorder.isRecording) {
+      return {
+        recording: true,
+        session: sessionName,
+        actions: recorder.actionCount,
+        network: recorder.networkCount,
+      };
+    }
+
+    const summary = SessionRecorder.readSummary(sessionName);
+    if (summary) {
+      return {
+        recording: false,
+        session: sessionName,
+        hasRecording: true,
+        totalActions: summary.totalActions,
+        totalNetworkRequests: summary.totalNetworkRequests,
+      };
+    }
+
+    return { recording: false, session: sessionName, hasRecording: false };
+  }
+
+  function handleRecordSummary(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const recorder = activeRecorders.get(sessionName);
+
+    if (recorder) {
+      const data = recorder.getLiveData();
+      return { ok: true, live: true, session: sessionName, actions: data.actions.length, network: data.network.length };
+    }
+
+    const summary: RecordingSummary | null = SessionRecorder.readSummary(sessionName);
+    if (!summary) {
+      return { ok: false, error: 'No recording summary found for session: ' + sessionName };
+    }
+    return { ok: true, live: false, summary };
+  }
+
+  async function handleReplay(params: Record<string, unknown>): Promise<PlaybackResult & { ok: boolean }> {
+    const file = params.file as string;
+    const sessionName = (params.session as string) || 'default';
+    const slowMo = (params.slowMo as number) || 1;
+
+    if (!file) {
+      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, event: {} as never, error: 'Missing file parameter' }] };
+    }
+
+    const session = findSession(sessionName);
+    if (!session) {
+      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, event: {} as never, error: 'Session not found: ' + sessionName }] };
+    }
+
+    const engine = PlaybackEngine.fromFile(session.page, file);
+    const result = await engine.play({ slowMo });
+    return { ok: result.success, ...result };
   }
 }

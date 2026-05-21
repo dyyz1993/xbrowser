@@ -156,8 +156,8 @@ export async function executeCommand(
     params = result.data as Record<string, unknown>;
   }
 
-  // Forward page-scope commands to daemon (auto-starts daemon if not running).
-  if (command.scope === 'page' && !process.env.XBROWSER_DAEMON_WORKER) {
+  // Forward page/project-scope commands to daemon (auto-starts daemon if not running).
+  if ((command.scope === 'page' || command.scope === 'project') && !process.env.XBROWSER_DAEMON_WORKER) {
     const { forwardExec } = await import('./client/daemon-client.js');
     const result = await forwardExec(commandName, params, sessionName, extraOpts?.cdpEndpoint);
     if (result) return result;
@@ -169,7 +169,7 @@ export async function executeCommand(
   const existing = await findOrRestoreSession(sessionName, extraOpts?.cdpEndpoint);
   if (existing) {
     session = existing;
-  } else if (command.scope === 'page' && params.url) {
+  } else if ((command.scope === 'page' || command.scope === 'project') && params.url) {
     session = await createSession(sessionName, params.url as string, {
       cdpEndpoint: extraOpts?.cdpEndpoint,
     });

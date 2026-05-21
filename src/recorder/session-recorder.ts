@@ -303,6 +303,18 @@ export class SessionRecorder {
     return this._isRecording;
   }
 
+  get actionCount(): number {
+    return this.actions.length;
+  }
+
+  get networkCount(): number {
+    return this.network.length;
+  }
+
+  getLiveData(): RecordingData {
+    return this.buildData();
+  }
+
   /** Directory for this session's recordings. */
   get recordingsDir(): string {
     return SessionRecorder.getRecordingsDir(this.sessionName);

@@ -3,6 +3,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const {
   mockOutputResult,
   mockOutputError,
+  mockForwardRecordStart,
+  mockForwardRecordStop,
+  mockForwardRecordStatus,
+  mockForwardRecordSummary,
+  mockForwardReplay,
+  mockReadSummary,
+  mockGetRecordingsDir,
   mockFsReadFileSync,
   mockFsWriteFileSync,
   mockFsExistsSync,
@@ -14,13 +21,16 @@ const {
   mockPrintExtractSummary,
   mockFilterRecording,
   mockParseExcludeTypes,
-  mockSendStopSignal,
-  mockReadSummary,
-  mockReadData,
-  mockGetRecordingsDir,
 } = vi.hoisted(() => ({
   mockOutputResult: vi.fn(),
   mockOutputError: vi.fn(),
+  mockForwardRecordStart: vi.fn(),
+  mockForwardRecordStop: vi.fn(),
+  mockForwardRecordStatus: vi.fn(),
+  mockForwardRecordSummary: vi.fn(),
+  mockForwardReplay: vi.fn(),
+  mockReadSummary: vi.fn(),
+  mockGetRecordingsDir: vi.fn((name: string) => `/home/.xbrowser/sessions/${name}/recordings`),
   mockFsReadFileSync: vi.fn(),
   mockFsWriteFileSync: vi.fn(),
   mockFsExistsSync: vi.fn(),
@@ -32,10 +42,6 @@ const {
   mockPrintExtractSummary: vi.fn(),
   mockFilterRecording: vi.fn(),
   mockParseExcludeTypes: vi.fn(),
-  mockSendStopSignal: vi.fn(),
-  mockReadData: vi.fn(),
-  mockReadSummary: vi.fn(),
-  mockGetRecordingsDir: vi.fn((name: string) => `/home/.xbrowser/sessions/${name}/recordings`),
 }));
 
 vi.mock('../../src/cli/output.js', () => ({
@@ -43,10 +49,17 @@ vi.mock('../../src/cli/output.js', () => ({
   outputError: mockOutputError,
 }));
 
+vi.mock('../../src/client/daemon-client.js', () => ({
+  forwardRecordStart: mockForwardRecordStart,
+  forwardRecordStop: mockForwardRecordStop,
+  forwardRecordStatus: mockForwardRecordStatus,
+  forwardRecordSummary: mockForwardRecordSummary,
+  forwardReplay: mockForwardReplay,
+  isDaemonRunning: vi.fn().mockResolvedValue(true),
+}));
+
 vi.mock('../../src/recorder/session-recorder.js', () => ({
   SessionRecorder: {
-    sendStopSignal: mockSendStopSignal,
-    readData: mockReadData,
     readSummary: mockReadSummary,
     getRecordingsDir: mockGetRecordingsDir,
   },
@@ -92,156 +105,169 @@ describe('record-routes', () => {
 
   describe('handleRecord', () => {
     // --- start subcommand ---
-    it('should output error when record start has no --cdp', async () => {
-      await expect(handleRecord(['start'], {}, 'text')).rejects.toThrow('EXIT');
-      expect(mockOutputError).toHaveBeenCalledWith('CDP endpoint is required for recording. Use --cdp <endpoint>');
-    });
-
-    it('should output error when recording already in progress', async () => {
-      mockFsReadFileSync.mockReturnValue(JSON.stringify({
-        pid: 1234,
-        startedAt: '2024-01-01T00:00:00Z',
+    it('should call forwardRecordStart and output success', async () => {
+      mockForwardRecordStart.mockResolvedValue({
+        ok: true,
         startUrl: 'https://example.com',
-        sessionName: 'default',
-      }));
-
-      await handleRecord(['start'], { cdp: 'http://localhost:9222' }, 'json');
-
-      expect(mockOutputResult).toHaveBeenCalledWith(
-        expect.objectContaining({
-          ok: false,
-          error: 'Recording already in progress',
-          pid: 1234,
-        }),
-        'json'
-      );
-    });
-
-    // --- stop subcommand ---
-    it('should send stop signal and report success', async () => {
-      const control = {
-        pid: 1234,
-        startedAt: '2024-01-01T00:00:00Z',
-        startUrl: 'https://example.com',
-        sessionName: 'default',
-      };
-      mockSendStopSignal.mockResolvedValue(control);
-      mockReadSummary.mockReturnValue({
-        startUrl: 'https://example.com',
-        recordedAt: '2024-01-01',
-        durationMs: 5000,
-        totalActions: 3,
-        totalNetworkRequests: 10,
-        steps: [],
       });
 
-      await handleRecord(['stop'], {}, 'json');
+      await handleRecord(['start'], { url: 'https://example.com' }, 'json');
 
-      expect(mockSendStopSignal).toHaveBeenCalledWith('default');
-      expect(mockOutputResult).toHaveBeenCalledWith(
-        expect.objectContaining({ ok: true, pid: 1234, sessionName: 'default' }),
-        'json'
-      );
-    });
-
-    it('should report no active recording when stop has no control file', async () => {
-      mockSendStopSignal.mockResolvedValue(null);
-      mockReadData.mockReturnValue(null);
-
-      await handleRecord(['stop'], {}, 'json');
-
-      expect(mockOutputResult).toHaveBeenCalledWith(
-        expect.objectContaining({ ok: false, error: expect.stringContaining('No active recording') }),
-        'json'
-      );
-    });
-
-    it('should report existing data when recorder already exited', async () => {
-      mockSendStopSignal.mockResolvedValue(null);
-      mockReadData.mockReturnValue({ actions: [{ type: 'click' }], network: [{ url: '/api' }] });
-
-      await handleRecord(['stop'], {}, 'json');
-
+      expect(mockForwardRecordStart).toHaveBeenCalledWith('default', 'https://example.com');
       expect(mockOutputResult).toHaveBeenCalledWith(
         expect.objectContaining({
           ok: true,
-          actions: 1,
-          network: 1,
+          sessionName: 'default',
+          startUrl: 'https://example.com',
         }),
-        'json'
+        'json',
       );
     });
 
+    it('should output error when daemon returns failure for start', async () => {
+      mockForwardRecordStart.mockResolvedValue({
+        ok: false,
+        error: 'Recording already in progress',
+        pid: 1234,
+      });
+
+      await expect(handleRecord(['start'], { url: 'https://example.com' }, 'json')).rejects.toThrow('EXIT');
+      expect(mockOutputError).toHaveBeenCalledWith('Recording already in progress');
+    });
+
+    // --- stop subcommand ---
+    it('should call forwardRecordStop and report success', async () => {
+      mockForwardRecordStop.mockResolvedValue({
+        ok: true,
+        actions: 5,
+        network: 3,
+        durationMs: 5000,
+        steps: [],
+      });
+      mockReadSummary.mockReturnValue(null);
+
+      await handleRecord(['stop'], {}, 'json');
+
+      expect(mockForwardRecordStop).toHaveBeenCalledWith('default');
+      expect(mockOutputResult).toHaveBeenCalledWith(
+        expect.objectContaining({ ok: true, sessionName: 'default', actions: 5 }),
+        'json',
+      );
+    });
+
+    it('should report error when daemon returns failure for stop', async () => {
+      mockForwardRecordStop.mockResolvedValue({
+        ok: false,
+        error: 'No active recording',
+      });
+
+      await expect(handleRecord(['stop'], {}, 'json')).rejects.toThrow('EXIT');
+      expect(mockOutputError).toHaveBeenCalledWith('No active recording');
+    });
+
+    it('should print summary when stop returns data with existing summary', async () => {
+      mockForwardRecordStop.mockResolvedValue({
+        ok: true,
+        actions: 3,
+        network: 1,
+        durationMs: 2000,
+        steps: [],
+      });
+      mockReadSummary.mockReturnValue({
+        startUrl: 'https://example.com',
+        recordedAt: '2024-01-01',
+        durationMs: 2000,
+        totalActions: 3,
+        totalNetworkRequests: 1,
+        steps: [],
+      });
+
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      await handleRecord(['stop'], {}, 'text');
+
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Recording Summary'));
+      logSpy.mockRestore();
+    });
+
     it('should respect --session option for stop', async () => {
-      const control = { pid: 5678, startedAt: '', startUrl: '', sessionName: 'my-session' };
-      mockSendStopSignal.mockResolvedValue(control);
+      mockForwardRecordStop.mockResolvedValue({
+        ok: true,
+        actions: 0,
+        network: 0,
+        durationMs: 0,
+        steps: [],
+      });
       mockReadSummary.mockReturnValue(null);
 
       await handleRecord(['stop'], { session: 'my-session' }, 'json');
 
-      expect(mockSendStopSignal).toHaveBeenCalledWith('my-session');
+      expect(mockForwardRecordStop).toHaveBeenCalledWith('my-session');
+      expect(mockOutputResult).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionName: 'my-session' }),
+        'json',
+      );
     });
 
     // --- status subcommand ---
-    it('should return status when recording is active (process alive)', async () => {
-      const controlFile = {
-        pid: process.pid,
-        startedAt: '2024-01-01T00:00:00Z',
-        startUrl: 'https://example.com',
+    it('should call forwardRecordStatus and output result', async () => {
+      mockForwardRecordStatus.mockResolvedValue({
+        recording: true,
         sessionName: 'default',
-      };
-      mockFsReadFileSync.mockReturnValue(JSON.stringify(controlFile));
+        pid: 1234,
+        startUrl: 'https://example.com',
+      });
 
       await handleRecord(['status'], {}, 'json');
 
+      expect(mockForwardRecordStatus).toHaveBeenCalledWith('default');
       expect(mockOutputResult).toHaveBeenCalledWith(
         expect.objectContaining({
           recording: true,
           sessionName: 'default',
-          pid: process.pid,
-          startUrl: 'https://example.com',
+          pid: 1234,
         }),
-        'json'
+        'json',
       );
     });
 
-    it('should return recording false when no control file found', async () => {
-      mockFsReadFileSync.mockImplementation(() => { throw new Error('ENOENT'); });
-
-      await handleRecord(['status'], {}, 'json');
-
-      expect(mockOutputResult).toHaveBeenCalledWith(
-        expect.objectContaining({ recording: false, sessionName: 'default' }),
-        'json'
-      );
-    });
-
-    it('should return recording false when control file process is dead', async () => {
-      const controlFile = {
-        pid: 999999999,
-        startedAt: '2024-01-01T00:00:00Z',
-        startUrl: 'https://example.com',
+    it('should return recording false from daemon RPC', async () => {
+      mockForwardRecordStatus.mockResolvedValue({
+        recording: false,
         sessionName: 'default',
-      };
-      mockFsReadFileSync.mockReturnValue(JSON.stringify(controlFile));
+      });
 
       await handleRecord(['status'], {}, 'json');
 
       expect(mockOutputResult).toHaveBeenCalledWith(
         expect.objectContaining({ recording: false, sessionName: 'default' }),
-        'json'
+        'json',
+      );
+    });
+
+    it('should handle dead process from daemon RPC status', async () => {
+      mockForwardRecordStatus.mockResolvedValue({
+        recording: false,
+        sessionName: 'default',
+        reason: 'process_dead',
+      });
+
+      await handleRecord(['status'], {}, 'json');
+
+      expect(mockOutputResult).toHaveBeenCalledWith(
+        expect.objectContaining({ recording: false }),
+        'json',
       );
     });
 
     it('should respect --session option for status', async () => {
-      mockFsReadFileSync.mockImplementation(() => { throw new Error('ENOENT'); });
+      mockForwardRecordStatus.mockResolvedValue({
+        recording: false,
+        sessionName: 'custom',
+      });
 
       await handleRecord(['status'], { session: 'custom' }, 'json');
 
-      expect(mockOutputResult).toHaveBeenCalledWith(
-        expect.objectContaining({ recording: false, sessionName: 'custom' }),
-        'json'
-      );
+      expect(mockForwardRecordStatus).toHaveBeenCalledWith('custom');
     });
 
     // --- unknown subcommand ---
@@ -256,34 +282,63 @@ describe('record-routes', () => {
   describe('handleReplay', () => {
     it('should output error when no file path provided', async () => {
       await expect(handleReplay([], {}, 'text')).rejects.toThrow('EXIT');
-      expect(mockOutputError).toHaveBeenCalledWith('Usage: xbrowser replay <file>');
+      expect(mockOutputError).toHaveBeenCalledWith('Usage: xbrowser replay <file> [--session <name>] [--slow-mo <ms>]');
     });
 
-    it('should replay recording with existing session', async () => {
-      const mockPage = { evaluate: vi.fn() };
-      const mockFindOrRestoreSession = vi.fn().mockResolvedValue({ page: mockPage });
-      const mockCreateSession = vi.fn();
+    it('should call forwardReplay with resolved absolute path', async () => {
+      mockForwardReplay.mockResolvedValue({
+        ok: true,
+        success: true,
+        duration: 500,
+        eventsPlayed: 3,
+        totalEvents: 3,
+        errors: [],
+      });
 
-      vi.doMock('../../src/browser.js', () => ({
-        findOrRestoreSession: mockFindOrRestoreSession,
-        createSession: mockCreateSession,
-      }));
+      await handleReplay(['recording.yaml'], {}, 'json');
 
-      const { handleReplay: replay } = await import('../../src/cli/record-routes.js');
-      mockPlay.mockResolvedValue({ success: true, eventsPlayed: 3 });
+      expect(mockForwardReplay).toHaveBeenCalledWith(
+        expect.stringContaining('recording.yaml'),
+        'default',
+        undefined,
+      );
+      expect(mockOutputResult).toHaveBeenCalledWith(
+        expect.objectContaining({ ok: true, success: true, eventsPlayed: 3 }),
+        'json',
+      );
     });
 
-    it('should replay recording with custom slow-mo option', async () => {
-      const mockPage = { evaluate: vi.fn() };
-      const mockFindOrRestoreSession = vi.fn().mockResolvedValue({ page: mockPage });
+    it('should forward --session and --slow-mo options', async () => {
+      mockForwardReplay.mockResolvedValue({
+        ok: true,
+        success: true,
+        duration: 1000,
+        eventsPlayed: 5,
+        totalEvents: 5,
+        errors: [],
+      });
 
-      vi.doMock('../../src/browser.js', () => ({
-        findOrRestoreSession: mockFindOrRestoreSession,
-        createSession: vi.fn(),
-      }));
+      await handleReplay(['test.yaml'], { session: 'my-session', 'slow-mo': '2' }, 'json');
 
-      const { handleReplay: replay } = await import('../../src/cli/record-routes.js');
-      mockPlay.mockResolvedValue({ success: true });
+      expect(mockForwardReplay).toHaveBeenCalledWith(
+        expect.stringContaining('test.yaml'),
+        'my-session',
+        2,
+      );
+    });
+
+    it('should output error when daemon returns failure', async () => {
+      mockForwardReplay.mockResolvedValue({
+        ok: false,
+        success: false,
+        duration: 0,
+        eventsPlayed: 0,
+        totalEvents: 0,
+        errors: [{ error: 'Session not found: missing' }],
+      });
+
+      await expect(handleReplay(['rec.yaml'], { session: 'missing' }, 'json')).rejects.toThrow('EXIT');
+      expect(mockOutputError).toHaveBeenCalledWith('Session not found: missing');
     });
   });
 

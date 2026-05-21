@@ -771,6 +771,28 @@ export async function routeCommand(
           }
 
           const needsBrowser = cmdEntry.scope !== 'global';
+          // Forward non-global plugin commands to daemon
+          if (needsBrowser && !process.env.XBROWSER_DAEMON_WORKER) {
+            const { forwardExec } = await import('./client/daemon-client.js');
+            const result = await forwardExec(command, params, sessionName, cdpEndpoint);
+            if (result) {
+              if (isCommandResult(result)) {
+                if (mode === 'json' || mode === 'yaml') {
+                  console.log(outputFormatter.format(result.data, { mode: mode as 'json' | 'yaml', color: false, emoji: false }));
+                  if (result.tips?.length) {
+                    for (const tip of result.tips) console.error(`\u{1F4A1} ${tip}`);
+                  }
+                } else {
+                  console.log(outputFormatter.format(result.data, { mode: 'text', color: true, emoji: true }));
+                  if (result.tips?.length) {
+                    for (const tip of result.tips) console.log(`  \u{1F4A1} ${tip}`);
+                  }
+                }
+              }
+              return;
+            }
+          }
+
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           let session: any = undefined;
           if (needsBrowser) {
