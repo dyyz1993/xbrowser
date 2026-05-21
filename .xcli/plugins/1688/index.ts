@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext, ok, fail } from '@dyyz1993/xcli-core';
 import type { Page, Response } from 'playwright';
 
 interface BrowserCtx extends CommandContext {
@@ -247,10 +247,7 @@ export default function (xcli: XCLIAPI): void {
 
       const memberId = params.memberId || (params.url ? extractMemberId(params.url) : null);
       if (!memberId) {
-        return {
-          data: null,
-          tips: [...ctxTips, '请提供 url 或 memberId 参数'],
-        };
+    return ok(null, [...ctxTips);
       }
 
       const shopUrl = `https://${memberId}.1688.com/`;
@@ -426,12 +423,7 @@ export default function (xcli: XCLIAPI): void {
           loginRequired.hasChat = true;
         }
 
-        return {
-          data: {
-            source: 'dom',
-            memberId,
-            ...data,
-            ...(loginState.isLoggedIn ? { loginState, loginRequired } : {}),
+    return ok({, []);
           },
           tips: [
             ...ctxTips,
@@ -442,11 +434,7 @@ export default function (xcli: XCLIAPI): void {
           ],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: [
-            ...ctxTips,
-            `获取店铺信息失败: ${error instanceof Error ? error.message : '未知错误'}`,
+    return fail('未知错误', [);
           ],
         };
       }
@@ -484,10 +472,7 @@ export default function (xcli: XCLIAPI): void {
 
       const memberId = params.memberId || (params.url ? extractMemberId(params.url) : null);
       if (!memberId) {
-        return {
-          data: null,
-          tips: [...ctxTips, '请提供 url 或 memberId 参数'],
-        };
+    return ok(null, [...ctxTips);
       }
 
       let listUrl: string;
@@ -534,14 +519,7 @@ export default function (xcli: XCLIAPI): void {
             };
           });
 
-          return {
-            data: {
-              memberId,
-              sort: params.sort,
-              count: apiItems.length,
-              source: 'api',
-              results: apiItems,
-            },
+    return ok({, []);
             tips: [...ctxTips, `[API] 店铺商品 ${apiItems.length} 个`],
           };
         }
@@ -600,14 +578,7 @@ export default function (xcli: XCLIAPI): void {
           return items;
         }, params.limit);
 
-        return {
-          data: {
-            memberId,
-            sort: params.sort,
-            count: results.length,
-            source: 'dom',
-            results,
-          },
+    return ok({, []);
           tips: [...ctxTips, `[DOM] 店铺商品 ${results.length} 个`],
         };
       } finally {
@@ -644,10 +615,7 @@ export default function (xcli: XCLIAPI): void {
           ? `https://detail.1688.com/offer/${params.offerId}.html`
           : '');
       if (!targetUrl) {
-        return {
-          data: null,
-          tips: [...ctxTips, '请提供 url 或 offerId 参数'],
-        };
+    return ok(null, [...ctxTips);
       }
 
       const offerId = params.offerId || extractOfferId(targetUrl) || '';
@@ -855,12 +823,7 @@ export default function (xcli: XCLIAPI): void {
           loginRequired.hasSampleBtn = true;
         }
 
-        return {
-          data: {
-            source: 'dom',
-            offerId,
-            ...data,
-            ...(loginState.isLoggedIn ? { loginState, loginRequired } : {}),
+    return ok({, []);
           },
           tips: [
             ...ctxTips,
@@ -871,11 +834,7 @@ export default function (xcli: XCLIAPI): void {
           ],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: [
-            ...ctxTips,
-            `获取商品详情失败: ${error instanceof Error ? error.message : '未知错误'}`,
+    return fail('未知错误', [);
             '1688详情页可能有反爬机制，建议重试',
           ],
         };
@@ -942,14 +901,7 @@ export default function (xcli: XCLIAPI): void {
               : '',
           }));
 
-          return {
-            data: {
-              query: params.query,
-              sort: params.sort,
-              count: apiItems.length,
-              source: 'api',
-              results: apiItems,
-            },
+    return ok({, []);
             tips: [...ctxTips, `[API] 找到 ${apiItems.length} 个商品`],
           };
         }
@@ -1023,14 +975,7 @@ export default function (xcli: XCLIAPI): void {
           return items;
         }, params.limit);
 
-        return {
-          data: {
-            query: params.query,
-            sort: params.sort,
-            count: results.length,
-            source: 'dom',
-            results,
-          },
+    return ok({, []);
           tips: [...ctxTips, `[DOM] 找到 ${results.length} 个商品`],
         };
       } finally {
@@ -1063,10 +1008,7 @@ export default function (xcli: XCLIAPI): void {
 
       const memberId = params.memberId || (params.url ? extractMemberId(params.url) : null);
       if (!memberId) {
-        return {
-          data: null,
-          tips: [...ctxTips, '请提供 url 或 memberId 参数'],
-        };
+    return ok(null, [...ctxTips);
       }
 
       const shopUrl = `https://${memberId}.1688.com/`;
@@ -1171,12 +1113,7 @@ export default function (xcli: XCLIAPI): void {
           return items;
         });
 
-        return {
-          data: {
-            memberId,
-            count: categories.length,
-            categories,
-          },
+    return ok({, []);
           tips: [
             ...ctxTips,
             `[DOM] 分类: ${categories.length} 个`,
@@ -1184,11 +1121,7 @@ export default function (xcli: XCLIAPI): void {
           ],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: [
-            ...ctxTips,
-            `获取分类失败: ${error instanceof Error ? error.message : '未知错误'}`,
+    return fail('未知错误', [);
           ],
         };
       }

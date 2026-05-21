@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext, ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from 'playwright';
 
 interface BrowserCtx extends CommandContext {
@@ -98,12 +98,7 @@ export default function (xcli: XCLIAPI): void {
       const currentUrl = page.url();
       const saved = !currentUrl.includes('error');
 
-      return {
-        data: {
-          url: currentUrl,
-          saved,
-          updatedFields,
-        },
+    return ok({, []);
         tips: [...ctxTips, saved ? 'Profile 更新成功' : 'Profile 更新可能失败，请检查页面'],
       };
     },
@@ -170,8 +165,7 @@ export default function (xcli: XCLIAPI): void {
         }
       }
 
-      return {
-        data: { url: params.url, filled },
+    return ok({ url: params.url, []);
         tips: [...ctxTips, filled ? `已添加社交链接: ${params.url}` : '没有可用的社交链接空位'],
       };
     },
@@ -246,13 +240,7 @@ export default function (xcli: XCLIAPI): void {
       const gistUrl = page.url();
       const created = gistUrl.includes('gist.github.com') && !gistUrl.endsWith('gist.github.com/');
 
-      return {
-        data: {
-          gistUrl,
-          filename: params.filename,
-          public: params.public,
-          created,
-        },
+    return ok({, []);
         tips: [...ctxTips, created ? `Gist 创建成功: ${gistUrl}` : 'Gist 创建可能失败，请检查'],
       };
     },
@@ -325,9 +313,7 @@ export default function (xcli: XCLIAPI): void {
         return { bio, name, username, location, company, website, socialLinks, avatar };
       });
 
-      return {
-        data: profile,
-        tips: [...ctxTips, `Profile: ${profile.name} (@${profile.username})`],
+    return ok(profile, [...ctxTips);
       };
     },
   });
@@ -401,13 +387,7 @@ export default function (xcli: XCLIAPI): void {
       const repoUrl = page.url();
       const created = repoUrl.includes(`/${params.name}`) && !repoUrl.includes('/new');
 
-      return {
-        data: {
-          repoUrl,
-          name: params.name,
-          private: params.private,
-          created,
-        },
+    return ok({, []);
         tips: [...ctxTips, created ? `仓库创建成功: ${repoUrl}` : '仓库创建可能失败，请检查'],
       };
     },
@@ -480,12 +460,7 @@ export default function (xcli: XCLIAPI): void {
       const currentUrl = page.url();
       const saved = !currentUrl.includes('/edit/');
 
-      return {
-        data: {
-          repo: params.repo,
-          saved,
-          url: currentUrl,
-        },
+    return ok({, []);
         tips: [...ctxTips, saved ? `README 已更新: ${params.repo}` : 'README 更新可能失败，请检查'],
       };
     },

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
 
 function buildCdpTips(ctx: Record<string, unknown>): string[] {
   const cdpEndpoint = ctx.cdpEndpoint as string | undefined;
@@ -59,16 +59,11 @@ export default function (xcli: XCLIAPI): void {
 
         await ctx.storage.set('juejin_login', { loggedIn, at: Date.now() });
 
-        return {
-          data: { loggedIn, url: page.url() },
+    return ok({ loggedIn, []);
           tips: [...cdpTips, loggedIn ? '掘金登录成功' : '登录可能未完成，请检查页面'],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -176,20 +171,11 @@ export default function (xcli: XCLIAPI): void {
           }
         }
 
-        return {
-          data: {
-            title: params.title,
-            tags: params.tags,
-            url: page.url(),
-          },
+    return ok({, []);
           tips: [...cdpTips, `文章 "${params.title}" 已在掘金发布`],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -246,20 +232,11 @@ export default function (xcli: XCLIAPI): void {
           await page.waitForTimeout(2000);
         }
 
-        return {
-          data: {
-            title: params.title,
-            saved: true,
-            url: page.url(),
-          },
+    return ok({, []);
           tips: [...cdpTips, `草稿 "${params.title}" 已保存`],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -315,16 +292,11 @@ export default function (xcli: XCLIAPI): void {
           await page.waitForTimeout(2000);
         }
 
-        return {
-          data: { url: params.url, updated: true },
+    return ok({ url: params.url, []);
           tips: [...cdpTips, 'Profile 已更新，包含外链'],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -400,19 +372,11 @@ export default function (xcli: XCLIAPI): void {
           return items;
         }, params.limit);
 
-        return {
-          data: articles,
-          tips: [
-            ...cdpTips,
-            `获取 ${articles.length} 篇文章`,
+    return ok(articles, [);
           ],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });

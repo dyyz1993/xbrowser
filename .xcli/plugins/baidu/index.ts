@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
 
 function buildCdpTips(ctx: Record<string, unknown>): string[] {
   const cdpEndpoint = ctx.cdpEndpoint as string | undefined;
@@ -136,20 +136,12 @@ export default function (xcli: XCLIAPI): void {
 
         const finalResults = limit ? allResults.slice(0, limit) : allResults;
 
-        return {
-          data: finalResults,
-          tips: [
-            ...cdpTips,
-            `关键词: "${query}"`,
+    return ok(finalResults, [);
             `采集 ${pages} 页，共 ${allResults.length} 条结果${limit ? `，截取前 ${limit} 条` : ''}`,
           ],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -220,16 +212,10 @@ export default function (xcli: XCLIAPI): void {
           return results;
         });
 
-        return {
-          data: items,
-          tips: [...cdpTips, `分类: ${params.category}`, `共获取 ${items.length} 条热搜`],
+    return ok(items, [...cdpTips);
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -263,16 +249,10 @@ export default function (xcli: XCLIAPI): void {
               .filter((s) => s.length > 0)
           : [];
 
-        return {
-          data: items,
-          tips: [...cdpTips, `关键词 "${params.query}" 的搜索建议共 ${items.length} 条`],
+    return ok(items, [...cdpTips);
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -337,16 +317,10 @@ export default function (xcli: XCLIAPI): void {
           return items.slice(0, maxItems);
         }, params.limit);
 
-        return {
-          data: news,
-          tips: [...cdpTips, `关键词 "${params.query}" 获取 ${news.length} 条新闻`],
+    return ok(news, [...cdpTips);
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -417,8 +391,7 @@ export default function (xcli: XCLIAPI): void {
 
         const topRank = rankings.length > 0 ? rankings[0] : null;
 
-        return {
-          data: { domain, keyword, topRank, rankings, checked: rankings.length > 0 },
+    return ok({ domain, []);
           tips: [
             ...cdpTips,
             `域名 ${domain} 在关键词 "${keyword}" 下${topRank ? `最高排名: 第${topRank.page}页第${topRank.position}位` : '未找到排名'}`,
@@ -426,11 +399,7 @@ export default function (xcli: XCLIAPI): void {
           ],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -564,22 +533,11 @@ export default function (xcli: XCLIAPI): void {
 
         const total = results.length;
 
-        return {
-          data: {
-            query,
-            engine: 'baidu-images',
-            results,
-            total,
-            timestamp: new Date().toISOString(),
-          },
+    return ok({, []);
           tips: [...cdpTips, `关键词 "${query}" 搜索到 ${total} 张图片`],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });

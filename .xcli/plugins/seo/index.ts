@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from 'playwright';
 import { backlinkPlatforms, categories } from './backlinks-data.js';
 import { fetchVerificationCode, initEmailAuth, setupEmailConfig } from './email-helper.js';
@@ -69,8 +69,7 @@ export default function (xcli: XCLIAPI): void {
         tips.push('所有引擎已收到通知，将在近期抓取你的 sitemap。');
       }
 
-      return { data: { sitemap: params.sitemap, engines: results }, tips };
-    },
+    return ok({ sitemap: params.sitemap, []);
   });
 
   seo.command('submit', {
@@ -116,8 +115,7 @@ export default function (xcli: XCLIAPI): void {
         tips.push('先用 seo check 检查配置: xbrowser seo check --domain ' + host);
       }
 
-      return {
-        data: { url: params.url, host, indexnow: apiResult },
+    return ok({ url: params.url, []);
         tips,
       };
     },
@@ -139,19 +137,16 @@ export default function (xcli: XCLIAPI): void {
       const urlList = params.urls.split(',').map(u => u.trim()).filter(Boolean);
 
       if (urlList.length === 0) {
-        return { data: null, tips: ['未提供有效 URL'], message: 'urls 参数不能为空' };
-      }
+    return fail('urls 参数不能为空', ['未提供有效 URL']);
 
       if (urlList.length > 10000) {
-        return { data: null, tips: [`URL 数量 ${urlList.length} 超过上限 10000`], message: '单次最多提交 10000 个 URL' };
-      }
+    return fail('单次最多提交 10000 个 URL', [`URL 数量 ${urlList.length} 超过上限 10000`]);
 
       for (const u of urlList) {
         try {
           new URL(u);
         } catch {
-          return { data: null, tips: [`无效 URL: ${u}`], message: `URL 格式错误: ${u}` };
-        }
+    return fail(`URL 格式错误: ${u, [`无效 URL: ${u}`]);
       }
 
       const host = params.host || new URL(urlList[0]).hostname;
@@ -181,14 +176,11 @@ export default function (xcli: XCLIAPI): void {
           tips.push('常见原因: key 文件未部署、URL 格式错误、超出限额。');
         }
 
-        return {
-          data: { host, submitted: urlList.length, ok, status: `${resp.status} ${resp.statusText}` },
+    return ok({ host, []);
           tips,
         };
       } catch (e) {
-        return {
-          data: null,
-          tips: [`IndexNow 批量提交失败: ${(e as Error).message}`],
+    return ok(null, [`IndexNow 批量提交失败: ${(e as Error).message}`]);
           message: `请求失败: ${(e as Error).message}`,
         };
       }
@@ -210,8 +202,7 @@ export default function (xcli: XCLIAPI): void {
       let key = '';
       for (let i = 0; i < 32; i++) key += chars[Math.floor(Math.random() * chars.length)];
 
-      return {
-        data: { domain: params.domain, key, keyUrl: `https://${params.domain}/${key}.txt` },
+    return ok({ domain: params.domain, []);
         tips: [
           `IndexNow Key: ${key}`,
           '',
@@ -322,15 +313,7 @@ export default function (xcli: XCLIAPI): void {
         checks.push({ item: 'IndexNow key', status: '⚠️ 未发现（运行 seo setup-indexnow 配置）' });
       }
 
-      return {
-        data: {
-          domain: params.domain,
-          checks,
-          sitemapUrl,
-          sitemapUrlCount,
-          indexnowKeyFound: keyFound,
-          indexnowKeyValue: keyFound ? keyValue : undefined,
-        },
+    return ok({, []);
         tips: [
           ...checks.map(c => `${c.item}: ${c.status}` + (c.detail ? ` (${c.detail})` : '')),
           keyFound ? '✅ IndexNow 已配置，可直接用 xbrowser seo submit 提交 URL' : '',
@@ -363,12 +346,10 @@ export default function (xcli: XCLIAPI): void {
             signal: AbortSignal.timeout(15000),
           });
           if (!resp.ok) {
-            return { data: null, tips: [`页面请求失败: HTTP ${resp.status}`], message: `无法获取页面: HTTP ${resp.status}` };
-          }
+    return fail(`无法获取页面: HTTP ${resp.status, [`页面请求失败: HTTP ${resp.status}`]);
           html = await resp.text();
         } catch (e) {
-          return { data: null, tips: [`页面获取失败: ${(e as Error).message}`], message: `请求失败: ${(e as Error).message}` };
-        }
+    return fail(`请求失败: ${(e as Error).message, [`页面获取失败: ${(e as Error).message}`]);
       }
 
       function extractTag(attr: string, content: string): string {
@@ -472,14 +453,7 @@ export default function (xcli: XCLIAPI): void {
       const total = Object.keys(scores).length;
       const percentage = Math.round((passed / total) * 100);
 
-      return {
-        data: {
-          url: params.url,
-          title,
-          description,
-          robots,
-          canonical,
-          openGraph: { title: ogTitle, description: ogDescription, image: ogImage, url: ogUrl },
+    return ok({, []);
           twitter: { card: twitterCard, title: twitterTitle, description: twitterDescription, image: twitterImage },
           headings: { h1Count: h1s.length, h1s, h2Count: h2s.length },
           images: { total: imgCount, withoutAlt: imgsWithoutAlt },
@@ -507,8 +481,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser seo setup-guide --domain mysite.com', description: 'SEO 收录配置指南' },
     ],
     handler: async (params) => {
-      return {
-        data: { domain: params.domain },
+    return ok({ domain: params.domain }, []);
         tips: [
           `=== ${params.domain} 搜索引擎收录配置指南 ===`,
           '',
@@ -558,18 +531,7 @@ export default function (xcli: XCLIAPI): void {
         platforms = platforms.filter(p => p.name.toLowerCase().includes(q) || p.url.toLowerCase().includes(q));
       }
 
-      return {
-        data: {
-          total: platforms.length,
-          filtered: params.category || params.search ? true : false,
-          categories: categories,
-          platforms: platforms.map(p => ({
-            name: p.name,
-            url: p.url,
-            entryUrl: p.entryUrl,
-            category: p.category,
-            steps: p.steps,
-          })),
+    return ok({, []);
         },
         tips: [
           `共 ${platforms.length} 个外链提交平台` + (params.category ? ` (类别: ${params.category})` : ''),
@@ -615,16 +577,12 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as Page | undefined;
       if (!page) {
-        return { data: null, tips: ['需要浏览器页面'], message: '缺少浏览器页面' };
-      }
+    return fail('缺少浏览器页面', ['需要浏览器页面']);
 
       const match = matchPlatform(params.platform);
       if (!match) {
         const suggestions = platformSuggestions(params.platform);
-        return {
-          data: null,
-          tips: [
-            `未找到匹配平台: "${params.platform}"`,
+    return ok(null, [);
             ...(suggestions.length > 0 ? [`相近平台: ${suggestions.map(s => s.name).join(', ')}`] : []),
             `查看所有平台: xbrowser seo backlinks`,
           ],
@@ -644,8 +602,7 @@ export default function (xcli: XCLIAPI): void {
         const storageKey = `seo_login_${match.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
         await ctx.storage.set(storageKey, { loggedIn: true, at: Date.now() });
 
-        return {
-          data: { platform: match.name, loggedIn: true },
+    return ok({ platform: match.name, []);
           tips: [
             `✅ ${match.name} 登录完成`,
             `登录状态已保存，后续 submit-backlink 将自动检测`,
@@ -653,9 +610,7 @@ export default function (xcli: XCLIAPI): void {
           ],
         };
       } catch (e) {
-        return {
-          data: null,
-          tips: [`登录流程失败: ${(e as Error).message}`],
+    return ok(null, [`登录流程失败: ${(e as Error).message}`]);
           message: `${match.name} 登录失败`,
         };
       }
@@ -681,8 +636,7 @@ export default function (xcli: XCLIAPI): void {
           for (const key of loginKeys) {
             await ctx.storage.delete(key);
           }
-          return {
-            data: { cleared: loginKeys.length, keys: loginKeys },
+    return ok({ cleared: loginKeys.length, []);
             tips: [
               `✅ 已清除 ${loginKeys.length} 个平台的登录状态`,
               ...(loginKeys.length === 0 ? ['当前无已保存的登录状态'] : []),
@@ -696,21 +650,16 @@ export default function (xcli: XCLIAPI): void {
 
         const existing = await ctx.storage.get(storageKey);
         if (!existing) {
-          return {
-            data: null,
-            tips: [`平台 "${params.platform}" 无已保存的登录状态`],
+    return ok(null, [`平台 "${params.platform}" 无已保存的登录状态`]);
           };
         }
 
         await ctx.storage.delete(storageKey);
-        return {
-          data: { platform: params.platform, cleared: true },
+    return ok({ platform: params.platform, []);
           tips: [`✅ 已清除 ${params.platform} 的登录状态`],
         };
       } catch (e) {
-        return {
-          data: null,
-          tips: [`清除登录状态失败: ${(e as Error).message}`],
+    return ok(null, [`清除登录状态失败: ${(e as Error).message}`]);
           message: `操作失败`,
         };
       }
@@ -930,8 +879,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as Page | undefined;
       if (!page) {
-        return { data: null, tips: ['需要浏览器页面'], message: '缺少浏览器页面' };
-      }
+    return fail('缺少浏览器页面', ['需要浏览器页面']);
 
       const q = params.platform.toLowerCase();
       const match = backlinkPlatforms.find(p =>
@@ -942,10 +890,7 @@ export default function (xcli: XCLIAPI): void {
         const suggestions = backlinkPlatforms
           .filter(p => p.name.toLowerCase().includes(q.slice(0, 3)))
           .slice(0, 5);
-        return {
-          data: null,
-          tips: [
-            `未找到匹配平台: "${params.platform}"`,
+    return ok(null, [);
             ...(suggestions.length > 0 ? [`相近平台: ${suggestions.map(s => s.name).join(', ')}`] : []),
             `查看所有平台: xbrowser seo backlinks`,
           ],
@@ -985,9 +930,7 @@ export default function (xcli: XCLIAPI): void {
           }
         }
       } catch (e) {
-        return {
-          data: null,
-          tips: [`页面加载失败: ${(e as Error).message}`, `入口 URL: ${match.entryUrl}`, ...loginTips],
+    return ok(null, [`页面加载失败: ${(e as Error).message}`);
           message: `无法打开 ${match.name}`,
         };
       }
@@ -1022,14 +965,7 @@ export default function (xcli: XCLIAPI): void {
 
       tips.push('', ...loginTips, '', '完成添加后，在浏览器中手动处理即可。');
 
-      return {
-        data: {
-          platform: match.name,
-          entryUrl: match.entryUrl,
-          category: match.category,
-          steps: match.steps,
-          autoFill: autoFillResult,
-        },
+    return ok({, []);
         tips,
       };
     },
@@ -1053,8 +989,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as Page | undefined;
       if (!page) {
-        return { data: null, tips: ['需要浏览器页面'], message: '缺少浏览器页面' };
-      }
+    return fail('缺少浏览器页面', ['需要浏览器页面']);
 
       const guestPostPlatforms: Record<string, { url: string; formUrl: string; type: 'auto' | 'manual' | 'email' }> = {
         'css-tricks': { url: 'https://css-tricks.com', formUrl: 'https://css-tricks.com/contact/', type: 'auto' },
@@ -1072,10 +1007,7 @@ export default function (xcli: XCLIAPI): void {
       }
 
       if (!matchedKey) {
-        return {
-          data: null,
-          tips: [
-            `未找到匹配的 Guest Post 平台: "${params.platform}"`,
+    return ok(null, [);
             `支持的平台: ${Object.keys(guestPostPlatforms).join(', ')}`,
           ],
           message: `平台 "${params.platform}" 不支持自动 Guest Post 提交`,
@@ -1142,8 +1074,7 @@ export default function (xcli: XCLIAPI): void {
 
             const confirmation = page.locator('.gform_confirmation_message, .success, [class*="confirm"]');
             if (await confirmation.isVisible().catch(() => false)) {
-              return {
-                data: { platform: 'CSS-Tricks', submitted: true, formUrl: target.formUrl },
+    return ok({ platform: 'CSS-Tricks', []);
                 tips: [
                   `✅ CSS-Tricks 客座文章提案已提交`,
                   `提交者: ${params.name} (${params.email})`,
@@ -1153,8 +1084,7 @@ export default function (xcli: XCLIAPI): void {
               };
             }
 
-            return {
-              data: { platform: 'CSS-Tricks', submitted: true, formUrl: target.formUrl },
+    return ok({ platform: 'CSS-Tricks', []);
               tips: [
                 `✅ 已填写并提交表单`,
                 `请检查浏览器确认提交状态`,
@@ -1164,8 +1094,7 @@ export default function (xcli: XCLIAPI): void {
             };
           }
 
-          return {
-            data: { platform: 'CSS-Tricks', formUrl: target.formUrl },
+    return ok({ platform: 'CSS-Tricks', []);
             tips: [
               `已打开 CSS-Tricks 联系表单并填写信息`,
               `请在浏览器中手动检查并提交`,
@@ -1174,9 +1103,7 @@ export default function (xcli: XCLIAPI): void {
             ],
           };
         } catch (e) {
-          return {
-            data: null,
-            tips: [`CSS-Tricks 表单填写失败: ${(e as Error).message}`, `请手动访问: ${target.formUrl}`],
+    return ok(null, [`CSS-Tricks 表单填写失败: ${(e as Error).message}`);
             message: `自动提交失败`,
           };
         }
@@ -1187,8 +1114,7 @@ export default function (xcli: XCLIAPI): void {
           await page.goto(target.formUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
           await page.waitForTimeout(2000);
 
-          return {
-            data: { platform: 'Smashing Magazine', type: 'email', formUrl: target.formUrl },
+    return ok({ platform: 'Smashing Magazine', []);
             tips: [
               `已打开 Smashing Magazine 写作指南页面`,
               `Smashing Magazine 需要通过邮件提交提案`,
@@ -1204,9 +1130,7 @@ export default function (xcli: XCLIAPI): void {
             ],
           };
         } catch (e) {
-          return {
-            data: null,
-            tips: [`页面加载失败: ${(e as Error).message}`],
+    return ok(null, [`页面加载失败: ${(e as Error).message}`]);
             message: `无法打开 Smashing Magazine`,
           };
         }
@@ -1235,8 +1159,7 @@ export default function (xcli: XCLIAPI): void {
             await msgTextarea.fill(message);
           }
 
-          return {
-            data: { platform: 'Search Engine Journal', formUrl: target.formUrl },
+    return ok({ platform: 'Search Engine Journal', []);
             tips: [
               `已打开 Search Engine Journal 联系表单并填写信息`,
               `请在浏览器中检查并手动提交`,
@@ -1245,9 +1168,7 @@ export default function (xcli: XCLIAPI): void {
             ],
           };
         } catch (e) {
-          return {
-            data: null,
-            tips: [`表单填写失败: ${(e as Error).message}`, `请手动访问: ${target.formUrl}`],
+    return ok(null, [`表单填写失败: ${(e as Error).message}`);
             message: `自动提交失败`,
           };
         }
@@ -1257,8 +1178,7 @@ export default function (xcli: XCLIAPI): void {
         await page.goto(target.formUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForTimeout(2000);
 
-        return {
-          data: { platform: matchedKey, formUrl: target.formUrl },
+    return ok({ platform: matchedKey, []);
           tips: [
             `已打开 ${matchedKey} 的提交页面`,
             `请手动完成提交`,
@@ -1267,9 +1187,7 @@ export default function (xcli: XCLIAPI): void {
           ],
         };
       } catch (e) {
-        return {
-          data: null,
-          tips: [`页面加载失败: ${(e as Error).message}`],
+    return ok(null, [`页面加载失败: ${(e as Error).message}`]);
           message: `无法打开 ${matchedKey}`,
         };
       }
@@ -1299,8 +1217,7 @@ export default function (xcli: XCLIAPI): void {
           port: params.port,
         });
         if (result.success) {
-          return {
-            data: { configured: true },
+    return ok({ configured: true }, []);
             tips: [
               `✅ ${result.message}`,
               '现在可以使用 seo verify-email 获取验证码了',
@@ -1308,15 +1225,12 @@ export default function (xcli: XCLIAPI): void {
             ],
           };
         }
-        return {
-          data: { configured: false },
+    return ok({ configured: false }, []);
           tips: [`❌ ${result.message}`],
           message: result.message,
         };
       } catch (e) {
-        return {
-          data: null,
-          tips: [`邮箱配置失败: ${(e as Error).message}`],
+    return ok(null, [`邮箱配置失败: ${(e as Error).message}`]);
           message: `配置失败: ${(e as Error).message}`,
         };
       }
@@ -1352,12 +1266,8 @@ export default function (xcli: XCLIAPI): void {
         if (!result.code && !result.link) {
           tips.push('⚠️ 未能自动提取验证码或链接，请手动查看邮件');
         }
-        return { data: result, tips };
-      } catch (e) {
-        return {
-          data: null,
-          tips: [
-            `❌ 获取验证邮件失败: ${(e as Error).message}`,
+    return ok(result, []);
+    return ok(null, [);
             '请确认:',
             '  1. 已运行 seo setup-email 完成 IMAP 邮箱配置',
             `  2. 发件人 "${params.from}" 确实发送了验证邮件`,
@@ -1386,16 +1296,12 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as Page | undefined;
       if (!page) {
-        return { data: null, tips: ['需要浏览器页面'], message: '缺少浏览器页面' };
-      }
+    return fail('缺少浏览器页面', ['需要浏览器页面']);
 
       const match = matchPlatform(params.platform);
       if (!match) {
         const suggestions = platformSuggestions(params.platform);
-        return {
-          data: null,
-          tips: [
-            `未找到匹配平台: "${params.platform}"`,
+    return ok(null, [);
             ...(suggestions.length > 0 ? [`相近平台: ${suggestions.map(s => s.name).join(', ')}`] : []),
             `查看所有平台: xbrowser seo backlinks`,
           ],
@@ -1500,14 +1406,7 @@ export default function (xcli: XCLIAPI): void {
         const storageKey = `seo_login_${match.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
         await ctx.storage.set(storageKey, { loggedIn: true, at: Date.now(), email: params.email });
 
-        return {
-          data: {
-            platform: match.name,
-            email: params.email,
-            password,
-            signupUrl: page.url(),
-            submitted,
-          },
+    return ok({, []);
           tips: [
             `✅ ${match.name} 注册流程已完成`,
             `邮箱: ${params.email}`,
@@ -1520,10 +1419,7 @@ export default function (xcli: XCLIAPI): void {
           ],
         };
       } catch (e) {
-        return {
-          data: null,
-          tips: [
-            `❌ ${match.name} 注册失败: ${(e as Error).message}`,
+    return ok(null, [);
             `注册页面: ${signupUrl}`,
             `邮箱: ${params.email}`,
             `密码: ${password}`,
@@ -1555,8 +1451,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as Page | undefined;
       if (!page) {
-        return { data: null, tips: ['需要浏览器页面'], message: '缺少浏览器页面' };
-      }
+    return fail('缺少浏览器页面', ['需要浏览器页面']);
 
       const OAUTH_27 = [
         { name: 'Medium', url: 'https://medium.com', entryUrl: 'https://medium.com/me/settings' },
@@ -1628,11 +1523,7 @@ export default function (xcli: XCLIAPI): void {
       }
 
       if (targets.length === 0) {
-        return {
-          data: null,
-          tips: ['未找到匹配的平台', '查看所有平台: xbrowser seo backlinks'],
-          message: '没有可提交的平台',
-        };
+    return fail('没有可提交的平台', ['未找到匹配的平台');
       }
 
       const delay = params.delay ?? 5000;
@@ -1808,11 +1699,7 @@ export default function (xcli: XCLIAPI): void {
         `| ${r.platform} | ${r.reachable ? '✅' : '❌'} | ${r.loggedIn ? '✅' : '❌'} | ${r.urlFilled ? '✅' : '❌'} | ${r.saved ? '✅' : '❌'} | ${r.notes} |`
       );
 
-      return {
-        data: {
-          url: params.url,
-          total: results.length,
-          summary: { reachable: reachableCount, logged: loggedCount, filled: filledCount, saved: savedCount },
+    return ok({, []);
           results,
         },
         tips: [
@@ -1846,13 +1733,11 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params) => {
       const messages = readSMS({ filter: params.filter, limit: params.limit, maxAgeSeconds: params.maxAge });
       if (messages.length === 0) {
-        return {
-          data: { messages: [], total: 0 },
+    return ok({ messages: [], []);
           tips: ['未找到验证码短信', '请确认: 1. Messages app 有短信 2. 终端有全盘访问权限'],
         };
       }
-      return {
-        data: { messages, total: messages.length },
+    return ok({ messages, []);
         tips: [
           `找到 ${messages.length} 条验证码短信:`,
           ...messages.map((m, i) => `${i + 1}. [${m.time}] ${m.code ? `验证码: ${m.code}` : '无验证码'} | ${m.text.slice(0, 80)}`),
@@ -1981,8 +1866,7 @@ export default function (xcli: XCLIAPI): void {
           at: Date.now(),
         });
 
-        return {
-          data: { phone: params.phone, password, smsCode, currentUrl: page.url() },
+    return ok({ phone: params.phone, []);
           tips: [
             `注册页面: ${params.url}`,
             `手机号: ${params.phone}`,
@@ -1992,8 +1876,7 @@ export default function (xcli: XCLIAPI): void {
           ],
         };
       } catch (e) {
-        return { data: null, tips: [`注册失败: ${(e as Error).message}`], message: `注册失败` };
-      }
+    return fail(`注册失败`, [`注册失败: ${(e as Error).message}`]);
     },
   });
 
@@ -2242,12 +2125,7 @@ export default function (xcli: XCLIAPI): void {
       const registered = results.filter(r => r.registered).length;
       const submitted = results.filter(r => r.submitted).length;
 
-      return {
-        data: {
-          siteUrl: params.siteUrl,
-          password,
-          total: results.length,
-          summary: { loaded, registered, submitted },
+    return ok({, []);
           results,
         },
         tips: [

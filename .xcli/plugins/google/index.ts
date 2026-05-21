@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
 
 export default function(xcli: XCLIAPI): void {
   const google = xcli.createSite({
@@ -132,17 +132,13 @@ export default function(xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit);
 
-        return {
-          data: {
-            query: params.query, engine: 'google-images',
-            results: results.map(r => ({ ...r, sourceSite: 'google', originalUrl: r.originalUrl || r.thumbnailUrl })),
+    return ok({, []);
             total: results.length, timestamp: Date.now(),
           },
           tips: [`Google Images "${params.query}"，共 ${results.length} 张`],
         };
       } catch (error) {
-        return { data: null, message: error instanceof Error ? error.message : '未知错误' };
-      }
+    return fail(error instanceof Error ? error.message : '未知错误', []);
     },
   });
 }

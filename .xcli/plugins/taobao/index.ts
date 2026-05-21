@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext, ok, fail } from '@dyyz1993/xcli-core';
 import type { Page, Response } from 'playwright';
 
 interface BrowserCtx extends CommandContext {
@@ -37,15 +37,7 @@ function cdpRequiredResponse(missingTips: string[]): {
   tips: string[];
   message: string;
 } {
-  return {
-    data: null,
-    tips: [
-      ...missingTips,
-      '请使用 --cdp 9221 连接到已登录的 Chrome 浏览器',
-      '确保 Chrome 浏览器已打开并登录淘宝',
-    ],
-    message: '未检测到 CDP 连接，淘宝功能需要登录态才能使用',
-  };
+    return fail('未检测到 CDP 连接，淘宝功能需要登录态才能使用', [);
 }
 
 function interceptApi(
@@ -228,8 +220,7 @@ export default function (xcli: XCLIAPI): void {
           at: Date.now(),
           method: params.method,
         });
-        return {
-          data: { loggedIn: true, message: '已经处于登录状态，无需重复登录' },
+    return ok({ loggedIn: true, []);
           tips: [...ctxTips, '淘宝已登录'],
         };
       }
@@ -269,8 +260,7 @@ export default function (xcli: XCLIAPI): void {
         });
       }
 
-      return {
-        data: { loggedIn, url: page.url() },
+    return ok({ loggedIn, []);
         tips: [
           ...ctxTips,
           loggedIn ? '淘宝登录成功' : '登录可能未完成，请检查页面',
@@ -348,14 +338,7 @@ export default function (xcli: XCLIAPI): void {
             imageUrl: String(raw.pic_url || ''),
           }));
 
-          return {
-            data: {
-              query: params.query,
-              sort: params.sort,
-              count: apiItems.length,
-              source: 'api',
-              results: apiItems,
-            },
+    return ok({, []);
             tips: [...ctxTips, `[API] 找到 ${apiItems.length} 个商品`],
           };
         }
@@ -412,14 +395,7 @@ export default function (xcli: XCLIAPI): void {
           return items;
         }, params.limit);
 
-        return {
-          data: {
-            query: params.query,
-            sort: params.sort,
-            count: results.length,
-            source: 'dom',
-            results,
-          },
+    return ok({, []);
           tips: [...ctxTips, `[DOM] 找到 ${results.length} 个商品`],
         };
       } finally {
@@ -496,15 +472,7 @@ export default function (xcli: XCLIAPI): void {
             imageUrl: String(raw.pic_url || ''),
           }));
 
-          return {
-            data: {
-              keyword: params.keyword,
-              filters: {
-                sort: params.sort,
-                priceMin: params.priceMin,
-                priceMax: params.priceMax,
-                location: params.location,
-              },
+    return ok({, []);
               count: apiItems.length,
               source: 'api',
               results: apiItems,
@@ -560,15 +528,7 @@ export default function (xcli: XCLIAPI): void {
           return items;
         }, params.limit);
 
-        return {
-          data: {
-            keyword: params.keyword,
-            filters: {
-              sort: params.sort,
-              priceMin: params.priceMin,
-              priceMax: params.priceMax,
-              location: params.location,
-            },
+    return ok({, []);
             count: results.length,
             source: 'dom',
             results,
@@ -616,10 +576,7 @@ export default function (xcli: XCLIAPI): void {
           ? `https://item.taobao.com/item.htm?id=${params.itemId}`
           : '');
       if (!targetUrl) {
-        return {
-          data: null,
-          tips: [...ctxTips, '请提供 url 或 itemId 参数'],
-        };
+    return ok(null, [...ctxTips);
       }
 
       const interceptor = interceptApi(page, TB_DETAIL_API, 'detail', 'itemId');
@@ -649,19 +606,7 @@ export default function (xcli: XCLIAPI): void {
               }))
             : [];
 
-          return {
-            data: {
-              source: 'api',
-              itemId: String(detail.itemId || params.itemId || ''),
-              title: String(detail.title || ''),
-              price: String(detail.price || ''),
-              originalPrice: String(detail.originalPrice || detail.reservePrice || ''),
-              sales: String(detail.totalSold || detail.sales || ''),
-              shop: {
-                name: String((detail.seller as Record<string, unknown>)?.shopName || ''),
-                shopId: String((detail.seller as Record<string, unknown>)?.shopId || ''),
-                rating: String((detail.seller as Record<string, unknown>)?.evaluates || ''),
-              },
+    return ok({, []);
               images: Array.isArray(detail.images)
                 ? (detail.images as string[])
                 : [],
@@ -770,8 +715,7 @@ export default function (xcli: XCLIAPI): void {
           };
         });
 
-        return {
-          data: { source: 'dom', ...data },
+    return ok({ source: 'dom', []);
           tips: [...ctxTips, `[DOM] 商品: ${data.title}`, `价格: ${data.price}`],
         };
       } finally {
@@ -847,24 +791,7 @@ export default function (xcli: XCLIAPI): void {
             }
           }
 
-          return {
-            data: {
-              source: 'api',
-              itemId: params.itemId,
-              title: String(d.title || ''),
-              price: String(d.price || ''),
-              originalPrice: String(d.originalPrice || d.reservePrice || ''),
-              sales: String(d.totalSold || ''),
-              images: Array.isArray(d.images) ? (d.images as string[]) : [],
-              skus: skuList,
-              props: propsList,
-              seller: {
-                shopName: String(seller.shopName || ''),
-                shopId: String(seller.shopId || ''),
-                shopUrl: String(seller.shopUrl || ''),
-                rating: String(seller.evaluates || ''),
-                location: String(seller.location || ''),
-              },
+    return ok({, []);
               rateSummary: {
                 total: String(rateInfo.totalCount || ''),
                 goodRate: String(rateInfo.goodRatePercent || ''),
@@ -965,8 +892,7 @@ export default function (xcli: XCLIAPI): void {
           };
         });
 
-        return {
-          data: { source: 'dom', itemId: params.itemId, ...data },
+    return ok({ source: 'dom', []);
           tips: [
             ...ctxTips,
             `[DOM] 商品: ${data.title}`,
@@ -1023,8 +949,7 @@ export default function (xcli: XCLIAPI): void {
           ? `https://item.taobao.com/item.htm?id=${params.itemId}`
           : '');
       if (!targetUrl) {
-        return { data: null, tips: [...ctxTips, '请提供 url 或 itemId 参数'] };
-      }
+    return ok(null, [...ctxTips);
 
       const interceptor = interceptApi(page, TB_RATE_API, 'rateList', 'rateId');
 
@@ -1095,15 +1020,7 @@ export default function (xcli: XCLIAPI): void {
             };
           });
 
-          return {
-            data: {
-              url: targetUrl,
-              type: params.type,
-              sort: params.sort,
-              count: apiReviews.length,
-              source: 'api',
-              reviews: apiReviews,
-            },
+    return ok({, []);
             tips: [...ctxTips, `[API] 获取 ${apiReviews.length} 条评价`],
           };
         }
@@ -1165,15 +1082,7 @@ export default function (xcli: XCLIAPI): void {
           return items;
         }, params.limit);
 
-        return {
-          data: {
-            url: targetUrl,
-            type: params.type,
-            sort: params.sort,
-            count: reviews.length,
-            source: 'dom',
-            reviews,
-          },
+    return ok({, []);
           tips: [...ctxTips, `[DOM] 获取 ${reviews.length} 条评价`],
         };
       } finally {
@@ -1223,18 +1132,7 @@ export default function (xcli: XCLIAPI): void {
         const apiShop = interceptor.items()[0];
         if (apiShop) {
           const s = apiShop as Record<string, unknown>;
-          return {
-            data: {
-              source: 'api',
-              name: String(s.shopName || s.title || ''),
-              shopId: String(s.shopId || params.shopId || ''),
-              description: String(s.shopDesc || s.description || ''),
-              rating: String(s.shopScore || s.evaluates || ''),
-              fans: String(s.fansCount || s.fans || ''),
-              itemCount: String(s.itemCount || s.allItemCount || ''),
-              location: String(s.shopLocation || s.location || ''),
-              logo: String(s.shopLogo || s.picUrl || ''),
-            },
+    return ok({, []);
             tips: [...ctxTips, `[API] 店铺: ${s.shopName}`],
           };
         }
@@ -1290,8 +1188,7 @@ export default function (xcli: XCLIAPI): void {
           };
         });
 
-        return {
-          data: { source: 'dom', ...data },
+    return ok({ source: 'dom', []);
           tips: [
             ...ctxTips,
             `[DOM] 店铺: ${data.name}`,
@@ -1366,14 +1263,7 @@ export default function (xcli: XCLIAPI): void {
             imageUrl: String(raw.picUrl || raw.image || ''),
           }));
 
-          return {
-            data: {
-              shopId: params.shopId,
-              sort: params.sort,
-              count: apiItems.length,
-              source: 'api',
-              results: apiItems,
-            },
+    return ok({, []);
             tips: [...ctxTips, `[API] 店铺商品 ${apiItems.length} 个`],
           };
         }
@@ -1411,14 +1301,7 @@ export default function (xcli: XCLIAPI): void {
           return items;
         }, params.limit);
 
-        return {
-          data: {
-            shopId: params.shopId,
-            sort: params.sort,
-            count: results.length,
-            source: 'dom',
-            results,
-          },
+    return ok({, []);
           tips: [...ctxTips, `[DOM] 店铺商品 ${results.length} 个`],
         };
       } finally {
@@ -1485,14 +1368,7 @@ export default function (xcli: XCLIAPI): void {
             }
           }
 
-          return {
-            data: {
-              source: 'api',
-              itemId: params.itemId,
-              coupons,
-              promotions,
-              title: String(d.title || ''),
-            },
+    return ok({, []);
             tips: [
               ...ctxTips,
               `[API] 优惠券 ${coupons.length} 张`,
@@ -1543,8 +1419,7 @@ export default function (xcli: XCLIAPI): void {
           return { coupons, promotions };
         });
 
-        return {
-          data: { source: 'dom', itemId: params.itemId, ...data },
+    return ok({ source: 'dom', []);
           tips: [
             ...ctxTips,
             `[DOM] 优惠券 ${data.coupons.length} 张`,
@@ -1582,8 +1457,7 @@ export default function (xcli: XCLIAPI): void {
 
       const loggedIn = await checkLoginState(page);
       if (!loggedIn) {
-        return {
-          data: { updated: false },
+    return ok({ updated: false }, []);
           tips: [...ctxTips, '需要先登录淘宝，请使用 login 命令'],
         };
       }
@@ -1637,8 +1511,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(2000);
       }
 
-      return {
-        data: { updated: true, shopName: params.shopName, url: page.url() },
+    return ok({ updated: true, []);
         tips: [...ctxTips, '店铺信息已更新'],
       };
     },
@@ -1677,8 +1550,7 @@ export default function (xcli: XCLIAPI): void {
           });
           return imgs;
         }, params.limit);
-        return { data: { query: params.query, engine: 'taobao', results, total: results.length, timestamp: Date.now() }, tips: [`淘宝 "${params.query}"，共 ${results.length} 张`] };
-      } catch (error) { return { data: null, message: error instanceof Error ? error.message : '未知错误' }; }
+    return ok({ query: params.query, [`淘宝 "${params.query}"，共 ${results.length} 张`] };);
     },
   });
 

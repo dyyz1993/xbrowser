@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -59,8 +59,7 @@ export default function (xcli: XCLIAPI): void {
 
       await ctx.storage.set('wordpress_login', { loggedIn, at: Date.now() });
 
-      return {
-        data: { loggedIn, url: page.url() },
+    return ok({ loggedIn, []);
         tips: [loggedIn ? 'WordPress.com 登录成功' : '登录可能未完成，请检查页面'],
       };
     },
@@ -170,13 +169,7 @@ export default function (xcli: XCLIAPI): void {
         }
       }
 
-      return {
-        data: {
-          title: params.title,
-          tags: params.tags,
-          categories: params.categories,
-          url: page.url(),
-        },
+    return ok({, []);
         tips: [`文章 "${params.title}" 已在 WordPress.com 发布`],
       };
     },
@@ -232,12 +225,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(3000);
       }
 
-      return {
-        data: {
-          title: params.title,
-          saved: true,
-          url: page.url(),
-        },
+    return ok({, []);
         tips: [`草稿 "${params.title}" 已保存`],
       };
     },
@@ -292,8 +280,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(2000);
       }
 
-      return {
-        data: { url: params.url, updated: true },
+    return ok({ url: params.url, []);
         tips: ['Profile 已更新，包含外链'],
       };
     },
@@ -361,11 +348,7 @@ export default function (xcli: XCLIAPI): void {
         }
       }
 
-      return {
-        data: {
-          title: params.title,
-          url: page.url(),
-        },
+    return ok({, []);
         tips: [`页面 "${params.title}" 已在 WordPress.com 发布`],
       };
     },

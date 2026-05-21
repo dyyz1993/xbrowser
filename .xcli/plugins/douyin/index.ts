@@ -1,4 +1,4 @@
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 import { detectSsr } from '../shared/ssr-detect.js';
 
@@ -237,16 +237,11 @@ export default function (xcli: XCLIAPI): void {
 
           const videos = interceptor.items().map(parseVideo);
           tips.push(`采集到 ${videos.length} 个作品`);
-          return { data: { total: videos.length, videos }, tips };
-        } finally {
+    return ok({ total: videos.length, []);
           interceptor.dispose();
         }
       } catch (error) {
-        return {
-          data: null,
-          tips: ['采集用户作品失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['采集用户作品失败']);
       }
     },
   });
@@ -290,13 +285,8 @@ export default function (xcli: XCLIAPI): void {
         });
 
         tips.push(`用户: ${userInfo.nickname}`);
-        return { data: userInfo, tips };
-      } catch (error) {
-        return {
-          data: null,
-          tips: ['获取用户资料失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return ok(userInfo, []);
+    return fail(error instanceof Error ? error.message : '未知错误', ['获取用户资料失败']);
       }
     },
   });
@@ -344,13 +334,8 @@ export default function (xcli: XCLIAPI): void {
         });
 
         tips.push(`视频: ${info.desc?.slice(0, 50)}`);
-        return { data: { awemeId: params.awemeId, ...info }, tips };
-      } catch (error) {
-        return {
-          data: null,
-          tips: ['获取视频详情失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return ok({ awemeId: params.awemeId, []);
+    return fail(error instanceof Error ? error.message : '未知错误', ['获取视频详情失败']);
       }
     },
   });
@@ -391,16 +376,11 @@ export default function (xcli: XCLIAPI): void {
 
           const comments = interceptor.items().map(parseComment);
           tips.push(`采集到 ${comments.length} 条评论`);
-          return { data: { total: comments.length, comments }, tips };
-        } finally {
+    return ok({ total: comments.length, []);
           interceptor.dispose();
         }
       } catch (error) {
-        return {
-          data: null,
-          tips: ['获取视频评论失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['获取视频评论失败']);
       }
     },
   });
@@ -443,19 +423,14 @@ export default function (xcli: XCLIAPI): void {
             tips.push('未采集到数据，可能该用户的喜欢列表为私密或需要登录');
           }
           tips.push(`采集到 ${videos.length} 个喜欢的视频`);
-          return {
-            data: { total: videos.length, favorites: videos },
+    return ok({ total: videos.length, []);
             tips,
           };
         } finally {
           interceptor.dispose();
         }
       } catch (error) {
-        return {
-          data: null,
-          tips: ['获取用户喜欢列表失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['获取用户喜欢列表失败']);
       }
     },
   });
@@ -625,22 +600,16 @@ export default function (xcli: XCLIAPI): void {
 
             if (collected.length > 0) {
               tips.push(`DOM 解析获取到 ${collected.length} 个结果`);
-              return { data: { total: collected.length, source: 'dom', keyword: params.keyword, videos: collected }, tips };
-            }
+    return ok({ total: collected.length, []);
           }
 
           const videos = collected.map(parseVideo);
           tips.push(`搜索到 ${videos.length} 个视频`);
-          return { data: { total: videos.length, source: 'api', keyword: params.keyword, videos }, tips };
-        } finally {
+    return ok({ total: videos.length, []);
           page.off('response', handler);
         }
       } catch (error) {
-        return {
-          data: null,
-          tips: ['搜索视频失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['搜索视频失败']);
       }
     },
   });
@@ -835,8 +804,7 @@ export default function (xcli: XCLIAPI): void {
 
             if (pageText) {
               tips.push('从页面元素提取到内容');
-              return {
-                data: { subtitle: pageText, prompt: '(manual mode)', videoUrl, mode: 'manual' },
+    return ok({ subtitle: pageText, []);
                 tips: [...tips, '字幕提取完成'],
               };
             }
@@ -870,8 +838,7 @@ export default function (xcli: XCLIAPI): void {
 
               if (stableCount >= 3) {
                 tips.push(`内容已稳定（${Math.round((Date.now() - startTime) / 1000)} 秒）`);
-                return {
-                  data: { subtitle: lastText, prompt: '(manual mode)', videoUrl, mode: 'manual' },
+    return ok({ subtitle: lastText, []);
                   tips: [...tips, '字幕提取完成'],
                 };
               }
@@ -885,8 +852,7 @@ export default function (xcli: XCLIAPI): void {
 
           if (lastText && lastText.length > 30) {
             tips.push('超时但已提取到部分内容');
-            return {
-              data: { subtitle: lastText, prompt: '(manual mode)', videoUrl, mode: 'manual' },
+    return ok({ subtitle: lastText, []);
               tips: [...tips, '字幕提取完成（可能不完整）'],
             };
           }
@@ -994,16 +960,11 @@ export default function (xcli: XCLIAPI): void {
           throw new Error(`AI 响应超时（${maxRounds * 5} 秒），可使用 --manual 模式重试`);
         }
 
-        return {
-          data: { subtitle, prompt: usedSummary ? "视频总结" : aiPrompt, videoUrl, mode: "auto" },
+    return ok({ subtitle, []);
           tips: [...tips, "字幕提取完成"],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', []);
       }
     },
   });

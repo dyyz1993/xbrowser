@@ -5,7 +5,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
  * 查询指定车型的座椅颜色/材质/触感相关评论
  */
 
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 
 // CMF相关关键词

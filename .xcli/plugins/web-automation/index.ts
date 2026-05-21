@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -58,9 +58,7 @@ export default function (xcli: XCLIAPI): void {
           });
         }, fields);
 
-        return {
-          data,
-          tips: [`从 ${url} 提取了 ${fields.length} 个字段`],
+    return ok(null, [`从 ${url} 提取了 ${fields.length} 个字段`]);
         };
       }
 
@@ -85,9 +83,7 @@ export default function (xcli: XCLIAPI): void {
         return items;
       }, selector);
 
-      return {
-        data: content,
-        tips: [`从 ${url} 的 "${selector}" 中提取了 ${content.length} 个元素`],
+    return ok(content, [`从 ${url} 的 "${selector}" 中提取了 ${content.length} 个元素`]);
       };
     },
   });
@@ -165,10 +161,7 @@ export default function (xcli: XCLIAPI): void {
         }
       }
 
-      return {
-        data: allData,
-        tips: [
-          `采集 ${Math.min(maxPages, Math.ceil(allData.length / 10))} 页，共 ${allData.length} 条数据`,
+    return ok(allData, [);
           `字段: ${fields.map((f) => f.name).join(', ')}`,
         ],
       };
@@ -228,13 +221,7 @@ export default function (xcli: XCLIAPI): void {
       const resultUrl = page.url();
       const resultTitle = await page.title();
 
-      return {
-        data: {
-          submittedUrl: url,
-          resultUrl,
-          resultTitle,
-          fieldsFilled: formFields.length,
-        },
+    return ok({, []);
         tips: [`表单已提交，跳转到: ${resultUrl}`],
       };
     },
@@ -275,13 +262,7 @@ export default function (xcli: XCLIAPI): void {
         base64 = buffer.toString('base64');
       }
 
-      return {
-        data: {
-          url,
-          fullPage,
-          imageBase64: base64,
-          size: base64.length,
-        },
+    return ok({, []);
         tips: [`截图完成，大小 ${(base64.length / 1024).toFixed(1)}KB`],
       };
     },

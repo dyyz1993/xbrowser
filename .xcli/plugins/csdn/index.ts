@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from 'playwright';
 
 function resolvePage(ctx: Record<string, unknown>): { page: Page; tips: string[] } {
@@ -60,16 +60,11 @@ export default function (xcli: XCLIAPI): void {
 
         await ctx.storage.set('csdn_login', { loggedIn, at: Date.now() });
 
-        return {
-          data: { loggedIn, url: page.url() },
+    return ok({ loggedIn, []);
           tips: [...tips, loggedIn ? 'CSDN 登录成功' : '登录可能未完成，请检查页面'],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', []);
       }
     },
   });
@@ -150,20 +145,11 @@ export default function (xcli: XCLIAPI): void {
           await page.waitForTimeout(3000);
         }
 
-        return {
-          data: {
-            title: params.title,
-            tags: params.tags,
-            url: page.url(),
-          },
+    return ok({, []);
           tips: [...tips, `文章 "${params.title}" 已在 CSDN 发布`],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', []);
       }
     },
   });
@@ -218,20 +204,11 @@ export default function (xcli: XCLIAPI): void {
           await page.waitForTimeout(2000);
         }
 
-        return {
-          data: {
-            title: params.title,
-            saved: true,
-            url: page.url(),
-          },
+    return ok({, []);
           tips: [...tips, `草稿 "${params.title}" 已保存`],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', []);
       }
     },
   });
@@ -285,16 +262,11 @@ export default function (xcli: XCLIAPI): void {
           await page.waitForTimeout(2000);
         }
 
-        return {
-          data: { url: params.url, updated: true },
+    return ok({ url: params.url, []);
           tips: [...tips, 'Profile 已更新，包含外链'],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', []);
       }
     },
   });
@@ -361,20 +333,11 @@ export default function (xcli: XCLIAPI): void {
           return items;
         }, params.limit);
 
-        return {
-          data: {
-            source: params.keyword ? 'search' : params.username ? 'user-blog' : 'manage',
-            count: articles.length,
-            articles,
-          },
+    return ok({, []);
           tips: [...tips, `获取到 ${articles.length} 篇文章`],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', []);
       }
     },
   });

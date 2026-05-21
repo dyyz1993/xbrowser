@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
 
 export default function (xcli: XCLIAPI): void {
   const facebook = xcli.createSite({
@@ -30,10 +30,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(5000);
 
         if (page.url().includes('/login/')) {
-          return {
-            data: null,
-            message: 'Facebook 需要登录，请使用 --cdp 连接已登录的浏览器（CDP 9221）',
-          };
+    return fail('Facebook 需要登录，请使用 --cdp 连接已登录的浏览器（CDP 9221）', []);
         }
 
         for (let i = 0; i < 3; i++) {
@@ -69,18 +66,13 @@ export default function (xcli: XCLIAPI): void {
           return images;
         }, params.limit);
 
-        return {
-          data: {
-            query: params.query,
-            engine: 'facebook',
-            results: results.map(r => ({ ...r, sourceSite: 'facebook' })),
+    return ok({, []);
             total: results.length,
             timestamp: Date.now(),
           },
         };
       } catch (error) {
-        return { data: null, message: error instanceof Error ? error.message : '未知错误' };
-      }
+    return fail(error instanceof Error ? error.message : '未知错误', []);
     },
   });
 }

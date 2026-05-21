@@ -1,4 +1,4 @@
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext, ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 
 type Page = import('playwright-core').Page;
@@ -307,13 +307,7 @@ export default function (xcli: XCLIAPI): void {
             }))
           : [];
 
-        return {
-          data: {
-            credits,
-            freeTtsDuration: freeTts,
-            userStatus,
-            models,
-          },
+    return ok({, []);
           tips: [
             ...tips,
             `💰 积分余额: ${credits >= 0 ? credits : '未知'}`,
@@ -324,11 +318,7 @@ export default function (xcli: XCLIAPI): void {
           message: `💰 积分: ${credits >= 0 ? credits : '未知'}, 模型: ${models.length} 个`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['查询积分失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['查询积分失败']);
       }
     },
   });
@@ -375,8 +365,7 @@ export default function (xcli: XCLIAPI): void {
           extraTips.push('💡 提示: 音频下载可能需要消耗 20 金币(V9模型)或免费(V8模型)，使用 xbrowser mureka download --url "URL" --cdp 9221 查看');
         }
 
-        return {
-          data: { songs, total: songs.length },
+    return ok({ songs, []);
           tips: [
             ...tips,
             `共 ${songs.length} 首，${withUrl.length} 首可播放`,
@@ -386,11 +375,7 @@ export default function (xcli: XCLIAPI): void {
           message: `📚 找到 ${songs.length} 首歌曲`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['获取歌曲列表失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['获取歌曲列表失败']);
       }
     },
   });
@@ -523,11 +508,7 @@ export default function (xcli: XCLIAPI): void {
           });
           if (altClicked) tips.push('✅ 已点击发送按钮（备用选择器）');
           else {
-            return {
-              data: null,
-              tips: [...tips, '❌ 发送按钮不可用（可能输入为空或正在生成中）'],
-              message: '❌ 无法点击发送按钮',
-            };
+    return fail('❌ 无法点击发送按钮', [...tips);
           }
         } else {
           tips.push('✅ 已点击发送');
@@ -601,14 +582,7 @@ export default function (xcli: XCLIAPI): void {
             extraTips.push('💡 提示: 音频下载可能需要消耗 20 金币(V9模型)或免费(V8模型)，使用 xbrowser mureka download --url "URL" --cdp 9221 查看');
           }
 
-            return {
-              data: {
-                songs,
-                title: params.title || null,
-                prompt: params.prompt,
-                mode,
-                model: params.model || null,
-              },
+    return ok({, []);
               tips: [
                 ...tips,
                 `✅ 生成完成！共 ${songs.length} 首${withUrl.length > 0 ? `，${withUrl.length} 首可播放` : ''}`,
@@ -620,8 +594,7 @@ export default function (xcli: XCLIAPI): void {
             };
           }
 
-          return {
-            data: { status: 'timeout', prompt: params.prompt },
+    return ok({ status: 'timeout', []);
             tips: [
               ...tips,
               `⏱ 等待 ${waitSeconds}s 超时，音乐可能还在生成`,
@@ -631,14 +604,7 @@ export default function (xcli: XCLIAPI): void {
           };
         }
 
-        return {
-          data: {
-            status: 'submitted',
-            title: params.title || null,
-            prompt: params.prompt,
-            mode,
-            model: params.model || null,
-          },
+    return ok({, []);
           tips: [
             ...tips,
             '✅ 生成请求已提交（异步模式）',
@@ -648,11 +614,7 @@ export default function (xcli: XCLIAPI): void {
           message: '✅ 生成请求已提交',
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['创建音乐失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['创建音乐失败']);
       }
     },
   });
@@ -701,8 +663,7 @@ export default function (xcli: XCLIAPI): void {
             });
           } catch { /* ignore */ }
 
-          return {
-            data: { status: domStatus, songs: [] },
+    return ok({ status: domStatus, []);
             tips: [...tips, '未捕获到歌曲数据', `DOM 状态提示: ${domStatus}`],
             message: `📊 DOM 状态: ${domStatus}`,
           };
@@ -711,17 +672,12 @@ export default function (xcli: XCLIAPI): void {
         const songs = feedItems.slice(0, 5).flatMap(mapSong);
         const statusSummary = songs.map(s => `${s.title || '未命名'}[${s.status}]`).join(', ');
 
-        return {
-          data: { songs, total: songs.length },
+    return ok({ songs, []);
           tips: [...tips, `共 ${songs.length} 首`],
           message: `📊 ${statusSummary}`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['检查状态失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['检查状态失败']);
       }
     },
   });
@@ -756,18 +712,13 @@ export default function (xcli: XCLIAPI): void {
         }
 
         if (!params.url) {
-          return {
-            data: null,
-            tips: [...tips, '需要提供音频 URL'],
-            message: '❌ 缺少 --url 参数',
-          };
+    return fail('❌ 缺少 --url 参数', [...tips);
         }
 
         const outputPath = params.output || './downloads/song.mp3';
 
         if (params.format === 'curl') {
-          return {
-            data: { url: params.url, curlCmd: `curl -L "${params.url}" -o "${outputPath}"` },
+    return ok({ url: params.url, []);
             tips: [
               ...tips,
               `💡 运行以下命令下载:`,
@@ -780,16 +731,14 @@ export default function (xcli: XCLIAPI): void {
         try {
           const resp = await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => null);
           if (!resp) {
-            return {
-              data: { url: params.url },
+    return ok({ url: params.url }, []);
               tips: [...tips, '无法访问音频 URL，请检查 URL 是否有效或是否过期'],
               message: '⚠️ 无法访问音频 URL',
             };
           }
           const buffer = await resp.body();
           if (!buffer) {
-            return {
-              data: { url: params.url },
+    return ok({ url: params.url }, []);
               tips: [...tips, '响应体为空'],
               message: '⚠️ 音频数据为空',
             };
@@ -799,8 +748,7 @@ export default function (xcli: XCLIAPI): void {
           const dir = pathMod.dirname(outputPath);
           fs.mkdirSync(dir, { recursive: true });
           fs.writeFileSync(outputPath, buffer);
-          return {
-            data: { size: buffer.length, path: outputPath, url: params.url },
+    return ok({ size: buffer.length, []);
             tips: [
               ...tips,
               `✅ 已下载: ${outputPath} (${(buffer.length / 1024).toFixed(1)} KB)`,
@@ -808,18 +756,13 @@ export default function (xcli: XCLIAPI): void {
             message: `📥 下载完成: ${(buffer.length / 1024).toFixed(1)} KB`,
           };
         } catch (e) {
-          return {
-            data: { url: params.url },
+    return ok({ url: params.url }, []);
             tips: [...tips, `下载失败: ${e instanceof Error ? e.message : '未知错误'}`],
             message: `❌ 下载失败`,
           };
         }
       } catch (error) {
-        return {
-          data: null,
-          tips: ['下载命令失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['下载命令失败']);
       }
     },
   });
@@ -859,8 +802,7 @@ export default function (xcli: XCLIAPI): void {
         }) as Array<Record<string, unknown>>;
 
         if (feedItems.length === 0) {
-          return {
-            data: { songs: [], total: 0 },
+    return ok({ songs: [], []);
             tips: [...tips, '未获取到歌曲数据。可能未登录或没有创作记录'],
             message: '⏱ 未获取到歌曲',
           };
@@ -869,8 +811,7 @@ export default function (xcli: XCLIAPI): void {
         const songs = feedItems.slice(0, params.limit!).flatMap(mapSong);
         const withUrl = songs.filter(s => s.audioUrl);
 
-        return {
-          data: { songs, total: songs.length },
+    return ok({ songs, []);
           tips: [
             ...tips,
             `共 ${songs.length} 首，${withUrl.length} 首可播放`,
@@ -880,11 +821,7 @@ export default function (xcli: XCLIAPI): void {
           message: `✅ 获取到 ${withUrl.length} 首可播放音乐`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['获取结果失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['获取结果失败']);
       }
     },
   });

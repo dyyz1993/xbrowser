@@ -1,4 +1,4 @@
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext, ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
@@ -183,17 +183,10 @@ export default function (xcli: XCLIAPI): void {
 
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
-        return {
-          data: conversations,
-          tips,
-          message: `找到 ${conversations.length} 个会话`,
+    return ok(conversations, []);
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['获取会话列表失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['获取会话列表失败']);
       }
     },
   });
@@ -240,17 +233,12 @@ export default function (xcli: XCLIAPI): void {
         }
 
         await page.waitForTimeout(1500);
-        return {
-          data: { created: true },
+    return ok({ created: true }, []);
           tips: buildTips(ctx),
           message: '✅ 已创建新对话',
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['创建新对话失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['创建新对话失败']);
       }
     },
   });
@@ -288,17 +276,12 @@ export default function (xcli: XCLIAPI): void {
         if (!clicked.found) throw new Error(`未找到包含"${params.title}"的会话`);
 
         await page.waitForTimeout(2000);
-        return {
-          data: { opened: clicked.title },
+    return ok({ opened: clicked.title }, []);
           tips: buildTips(ctx),
           message: `✅ 已打开会话：${clicked.title}`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['打开会话失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['打开会话失败']);
       }
     },
   });
@@ -581,25 +564,17 @@ export default function (xcli: XCLIAPI): void {
             tips.push(`搜索来源：${domains.size} 个域名, ${uniqueUrls.length} 条链接`);
           }
 
-          return {
-            data: result,
-            tips,
-            message: `✅ AI 回复 (${((Date.now() - startTime) / 1000).toFixed(1)}s)`,
+    return ok(result, []);
           };
         } else {
           tips.push('AI 回复超时或未检测到');
-          return {
-            data: { response: '' },
+    return ok({ response: '' }, []);
             tips,
             message: '⏱ AI 回复超时（60s），请检查页面',
           };
         }
       } catch (error) {
-        return {
-          data: null,
-          tips: ['发送消息失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['发送消息失败']);
       }
     },
   });
@@ -698,24 +673,18 @@ export default function (xcli: XCLIAPI): void {
         }
 
         if (imageUrl) {
-          return {
-            data: { url: imageUrl, prompt, duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` },
+    return ok({ url: imageUrl, []);
             tips,
             message: `✅ 图片已生成 (${((Date.now() - startTime) / 1000).toFixed(1)}s)`,
           };
         }
 
-        return {
-          data: { prompt },
+    return ok({ prompt }, []);
           tips: [...tips, '图片可能还在生成中，请到豆包页面查看'],
           message: '⏱ 图片生成超时',
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['文生图失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['文生图失败']);
       }
     },
   });
@@ -805,17 +774,12 @@ export default function (xcli: XCLIAPI): void {
 
         await page.waitForTimeout(3000);
 
-        return {
-          data: { action: params.action, image: absPath, submitted: true },
+    return ok({ action: params.action, []);
           tips,
           message: `✅ 图片${label}请求已提交`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['图片编辑失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['图片编辑失败']);
       }
     },
   });
@@ -878,17 +842,12 @@ export default function (xcli: XCLIAPI): void {
           if (resultUrl) break;
         }
 
-        return {
-          data: { resultUrl: resultUrl || 'processing', source: absPath },
+    return ok({ resultUrl: resultUrl || 'processing', []);
           tips,
           message: resultUrl ? '✅ 抠图完成' : '⏱ 抠图处理中，请到页面查看结果',
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['抠图失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['抠图失败']);
       }
     },
   });
@@ -945,17 +904,12 @@ export default function (xcli: XCLIAPI): void {
           }
         }
 
-        return {
-          data: { source: absPath, prompt: params.prompt, submitted: true },
+    return ok({ source: absPath, []);
           tips,
           message: '✅ 图片衍生请求已提交',
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['图片衍生失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['图片衍生失败']);
       }
     },
   });
@@ -1011,17 +965,11 @@ export default function (xcli: XCLIAPI): void {
           }));
         });
 
-        return {
-          data: creations,
-          tips: [...tips, `共 ${creations.length} 条创作记录`],
+    return ok(creations, [...tips);
           message: `找到 ${creations.length} 条创作记录`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['获取创作历史失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['获取创作历史失败']);
       }
     },
   });
@@ -1085,19 +1033,14 @@ export default function (xcli: XCLIAPI): void {
           return urlParts ? urlParts[1] : '';
         });
 
-        return {
-          data: { taskId: taskId || 'pending', prompt: params.prompt, status: 'submitted' },
+    return ok({ taskId: taskId || 'pending', []);
           tips: taskId
             ? [...tips, `taskId: ${taskId}`]
             : [...tips, '无法提取 taskId，请使用 video-status 检查任务状态'],
           message: taskId ? `✅ 视频生成已提交，taskId: ${taskId}` : '✅ 视频生成已提交（未提取到 taskId）',
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['提交视频生成失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['提交视频生成失败']);
       }
     },
   });
@@ -1140,17 +1083,12 @@ export default function (xcli: XCLIAPI): void {
           return 'unknown';
         }, params.task);
 
-        return {
-          data: { taskId: params.task, status },
+    return ok({ taskId: params.task, []);
           tips,
           message: `📊 任务 ${params.task} 状态: ${status}`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['检查状态失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['检查状态失败']);
       }
     },
   });
@@ -1193,17 +1131,12 @@ export default function (xcli: XCLIAPI): void {
           tips.push(`状态提示: ${statusMatch?.[0] || '任务可能还在处理'}`);
         }
 
-        return {
-          data: { taskId: params.task, url: videoUrl || null },
+    return ok({ taskId: params.task, []);
           tips,
           message: videoUrl ? `✅ 视频地址: ${videoUrl}` : '⏱ 视频尚未生成完成',
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['获取视频结果失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['获取视频结果失败']);
       }
     },
   });
@@ -1241,11 +1174,7 @@ export default function (xcli: XCLIAPI): void {
         const waitSeconds = typeof params.timeout === 'number' ? params.timeout : 0;
 
         if (!params.description && !params.lyric) {
-          return {
-            data: null,
-            tips: ['请提供 --description（AI 写歌词模式）或 --lyric（自定义歌词模式）'],
-            message: '❌ 缺少必要参数：需要 --description 或 --lyric',
-          };
+    return fail('❌ 缺少必要参数：需要 --description 或 --lyric', ['请提供 --description（AI 写歌词模式）或 --lyric（自定义歌词模式）']);
         }
 
         if (params.debug) {
@@ -1529,18 +1458,7 @@ export default function (xcli: XCLIAPI): void {
           const audioUrl = await audioUrlPromise;
 
           if (audioUrl) {
-            return {
-              data: {
-                url: audioUrl,
-                conversationUrl,
-                description: activeDescription,
-                style: params.style || null,
-                mood: params.mood || null,
-                voice: params.voice || null,
-                duration: params.duration || null,
-                lyric: params.lyric || null,
-                mode,
-              },
+    return ok({, []);
               tips: [...tips, '✅ 音乐生成完成！', '💡 URL 有签名有时效，建议尽快下载'],
               message: `✅ 音乐已生成: ${audioUrl}`,
             };
@@ -1548,18 +1466,7 @@ export default function (xcli: XCLIAPI): void {
 
           const fallbackUrl = await extractPageAudio(page);
           if (fallbackUrl) {
-            return {
-              data: {
-                url: fallbackUrl,
-                conversationUrl,
-                description: activeDescription,
-                style: params.style || null,
-                mood: params.mood || null,
-                voice: params.voice || null,
-                duration: params.duration || null,
-                lyric: params.lyric || null,
-                mode,
-              },
+    return ok({, []);
               tips: [...tips, '✅ 音乐生成完成（通过 DOM 提取）'],
               message: `✅ 音乐已生成: ${fallbackUrl}`,
             };
@@ -1581,15 +1488,13 @@ export default function (xcli: XCLIAPI): void {
             return /生成失败|出错了|无法生成|请求过于频繁|操作过于频繁|请稍后再试|抱歉/.test(body);
           });
           if (hasError) {
-            return {
-              data: { error: '生成失败', conversationUrl, description: activeDescription, lyric: params.lyric || null, mode },
+    return ok({ error: '生成失败', []);
               tips: [...tips, '❌ 音乐生成失败，请检查豆包页面'],
               message: '❌ 音乐生成失败',
             };
           }
 
-          return {
-            data: { status: 'timeout', conversationUrl, description: activeDescription, lyric: params.lyric || null, mode },
+    return ok({ status: 'timeout', []);
             tips: [
               ...tips,
               `⏱ 等待超时（${waitSeconds}秒），音乐可能还在生成中`,
@@ -1600,18 +1505,7 @@ export default function (xcli: XCLIAPI): void {
           };
         }
 
-        return {
-          data: {
-            status: 'submitted',
-            conversationUrl,
-            description: activeDescription,
-            style: params.style || null,
-            mood: params.mood || null,
-            voice: params.voice || null,
-            duration: params.duration || null,
-            lyric: params.lyric || null,
-            mode,
-          },
+    return ok({, []);
           tips: [
             ...tips,
             `✅ 音乐生成已提交！${params.lyric ? '模式: 自定义歌词' : `描述: "${activeDescription}"`}`,
@@ -1622,11 +1516,7 @@ export default function (xcli: XCLIAPI): void {
           message: `✅ 音乐生成已提交！${params.lyric ? '模式: 自定义歌词' : `描述: "${activeDescription}"`}`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['提交音乐生成失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['提交音乐生成失败']);
       }
     },
   });
@@ -1651,8 +1541,7 @@ export default function (xcli: XCLIAPI): void {
         // Try to find audio first → completed
         const audioUrl = await extractPageAudio(page);
         if (audioUrl) {
-          return {
-            data: { status: 'completed', url: audioUrl, taskId: params.task || null },
+    return ok({ status: 'completed', []);
             tips,
             message: `✅ 音乐已生成: ${audioUrl}`,
           };
@@ -1675,8 +1564,7 @@ export default function (xcli: XCLIAPI): void {
         const sessionNameB = (optsB?.session as string) || 'default';
         const sessionSuffixB = ` --session ${sessionNameB}${cdpSuffixB}`;
 
-        return {
-          data: { status, taskId: params.task || null, url: null },
+    return ok({ status, []);
           tips: [
             ...tips,
             status === 'completed' ? '✅ 已完成' :
@@ -1689,11 +1577,7 @@ export default function (xcli: XCLIAPI): void {
           message: `📊 状态: ${status}`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['检查状态失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['检查状态失败']);
       }
     },
   });
@@ -1719,8 +1603,7 @@ export default function (xcli: XCLIAPI): void {
         const audioUrl = await extractPageAudio(page);
 
         if (audioUrl) {
-          return {
-            data: { url: audioUrl, taskId: params.task || null },
+    return ok({ url: audioUrl, []);
             tips: [...tips, '💡 可直接用浏览器打开此 URL 下载音频'],
             message: `✅ 音频地址: ${audioUrl}`,
           };
@@ -1740,8 +1623,7 @@ export default function (xcli: XCLIAPI): void {
         });
 
         if (hasSubmitted) {
-          return {
-            data: { url: null, taskId: params.task || null },
+    return ok({ url: null, []);
             tips: [
               ...tips,
               '⏱ 音乐还在生成中，请稍候再试',
@@ -1752,8 +1634,7 @@ export default function (xcli: XCLIAPI): void {
           };
         }
 
-        return {
-          data: { url: null, taskId: params.task || null },
+    return ok({ url: null, []);
           tips: [
             ...tips,
             '⚠ 当前页面没有找到音乐结果。可能的原因:',
@@ -1765,11 +1646,7 @@ export default function (xcli: XCLIAPI): void {
           message: '⚠ 未找到音频，请先提交音乐生成任务',
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['获取音乐结果失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['获取音乐结果失败']);
       }
     },
   });
@@ -1832,17 +1709,12 @@ export default function (xcli: XCLIAPI): void {
         }
 
         await page.waitForTimeout(1500);
-        return {
-          data: { file: absPath, uploaded: true },
+    return ok({ file: absPath, []);
           tips: [...tips, `文件名: ${path.basename(absPath)}`],
           message: `✅ 文件 "${path.basename(absPath)}" 已上传`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['文件上传失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['文件上传失败']);
       }
     },
   });
@@ -1892,17 +1764,12 @@ export default function (xcli: XCLIAPI): void {
           }));
         });
 
-        return {
-          data: { files, total: files.length },
+    return ok({ files, []);
           tips: [...tips, `云盘中共 ${files.length} 个文件`],
           message: `云盘文件：${files.length} 项`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['获取云盘文件失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['获取云盘文件失败']);
       }
     },
   });
@@ -1956,25 +1823,19 @@ export default function (xcli: XCLIAPI): void {
         }, modelName);
 
         if (!clicked) {
-          return {
-            data: { model: modelName },
+    return ok({ model: modelName }, []);
             tips: [...tips, '未找到模型选择器，可能页面结构不同'],
             message: `⚠️ 未找到模型"${modelName}"`,
           };
         }
 
         await page.waitForTimeout(1000);
-        return {
-          data: { model: modelName, switched: true },
+    return ok({ model: modelName, []);
           tips,
           message: `✅ 已切换到模型: ${modelName}`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['切换模型失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['切换模型失败']);
       }
     },
   });
@@ -2146,16 +2007,7 @@ export default function (xcli: XCLIAPI): void {
           try { domains.add(new URL(u).hostname.replace(/^www\./, '')); } catch { /* ignore */ }
         }
 
-        return {
-          data: {
-            query: params.query,
-            response: responseText || '等待回复中',
-            sources: {
-              total: uniqueUrls.length,
-              domains: Array.from(domains).sort(),
-              urls: uniqueUrls.map(u => ({
-                url: u.slice(0, 300),
-                domain: (() => { try { return new URL(u).hostname; } catch { return ''; } })(),
+    return ok({, []);
               })),
             },
           },
@@ -2163,11 +2015,7 @@ export default function (xcli: XCLIAPI): void {
           message: responseText ? '✅ 搜索完成' : '⏱ 搜索请求已发送',
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['搜索失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['搜索失败']);
       }
     },
   });
@@ -2236,17 +2084,12 @@ export default function (xcli: XCLIAPI): void {
         }
 
         await page.waitForTimeout(1000);
-        return {
-          data: { type: params.type, file: absPath, uploaded: true },
+    return ok({ type: params.type, []);
           tips: [...tips, `附件: ${path.basename(absPath)}`],
           message: `✅ 附件 "${path.basename(absPath)}" 已上传`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['上传附件失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['上传附件失败']);
       }
     },
   });

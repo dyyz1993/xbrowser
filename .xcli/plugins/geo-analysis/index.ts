@@ -1,4 +1,4 @@
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext, ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 import fs from 'fs/promises';
 import path from 'path';
@@ -505,12 +505,7 @@ async function collectFromEngine(
   const config = getEngineConfig(engineKey);
 
   if (!config) {
-    return {
-      success: false,
-      engine: engineKey,
-      query,
-      data: null,
-      errors: [`Unknown engine: ${engineKey}. Available: ${ALL_ENGINES.join(', ')}`],
+    return ok(null, []);
       timestamp: Date.now(),
       duration: Date.now() - startTime,
     };
@@ -543,12 +538,7 @@ async function collectFromEngine(
     const loginStatus = await detectLoginStatus(page, config);
     if (loginStatus === 'logged_out') {
       page.off('response', responseListener);
-      return {
-        success: false,
-        engine: engineKey,
-        query,
-        data: null,
-        errors: [`[${config.name}] 未登录，请先手动登录 ${config.url}`],
+    return ok(null, []);
         timestamp: Date.now(),
         duration: Date.now() - startTime,
       };
@@ -558,12 +548,7 @@ async function collectFromEngine(
     const inputFilled = await findAndFillInput(page, config as EngineConfig & { key: string }, inputText);
     if (!inputFilled) {
       page.off('response', responseListener);
-      return {
-        success: false,
-        engine: engineKey,
-        query,
-        data: null,
-        errors: [`[${config.name}] 未找到输入框，请确认已登录`],
+    return ok(null, []);
         timestamp: Date.now(),
         duration: Date.now() - startTime,
       };
@@ -601,12 +586,7 @@ async function collectFromEngine(
     page.off('response', responseListener);
 
     if (!rawResponse || rawResponse.length < 10) {
-      return {
-        success: false,
-        engine: engineKey,
-        query,
-        data: null,
-        errors: [`[${config.name}] 未返回有效回复（超时 ${timeout}ms）`],
+    return ok(null, []);
         timestamp: Date.now(),
         duration: Date.now() - startTime,
       };
@@ -659,25 +639,10 @@ async function collectFromEngine(
 
     await saveResult(searchResult);
 
-    return {
-      success: true,
-      engine: engineKey,
-      query,
-      data: searchResult,
-      timestamp: Date.now(),
-      duration: Date.now() - startTime,
-    };
+    return ok(searchResult, []);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
-    return {
-      success: false,
-      engine: engineKey,
-      query,
-      data: null,
-      errors: [errorMessage],
-      timestamp: Date.now(),
-      duration: Date.now() - startTime,
-    };
+    return ok(null, []);
   }
 }
 
@@ -897,9 +862,7 @@ export default function (xcli: XCLIAPI): void {
         const result = await collectFromEngine(page, params.engine, params.keyword);
 
         if (!result.success) {
-          return { success: true,
-            data: null,
-            tips: [`采集失败: ${result.errors?.join(', ')}`],
+    return ok(null, [`采集失败: ${result.errors?.join(');
             message: `❌ ${params.engine} 采集失败`,
           };
         }
@@ -914,24 +877,17 @@ export default function (xcli: XCLIAPI): void {
             lastSeen: '',
             ...output.domainExtraction.domains.reduce((_, d) => d, {}),
           }] : undefined);
-          return { success: true,
-            data: { markdown: md, result: output },
+    return ok({ markdown: md, []);
             tips: [`引擎: ${params.engine}`, `域名数: ${output.domainExtraction?.totalDomains || 0}`, `URL数: ${output.domainExtraction?.totalUrls || 0}`],
             message: `✅ ${params.engine} 采集完成: ${output.domainExtraction?.totalDomains || 0} 个域名`,
           };
         }
 
-        return { success: true,
-          data: output,
-          tips: [`引擎: ${params.engine}`, `域名数: ${output?.domainExtraction?.totalDomains || 0}`, `URL数: ${output?.domainExtraction?.totalUrls || 0}`],
+    return ok(output, [`引擎: ${params.engine}`);
           message: `✅ ${params.engine} 采集完成`,
         };
       } catch (error) {
-        return { success: false,
-          data: null,
-          tips: ['采集失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['采集失败']);
       }
     },
   });
@@ -1007,24 +963,17 @@ export default function (xcli: XCLIAPI): void {
           const allResults = allData as SearchResult[];
           const domainRankings = analyzeDomainRankings(allResults);
           const md = buildMarkdownReport(params.keyword, batchResult, domainRankings);
-          return { success: true,
-            data: { markdown: md, batch: batchResult },
+    return ok({ markdown: md, []);
             tips: [`引擎: ${engineList.length}`, `成功: ${successful.length}`, `失败: ${failed.length}`, `域名: ${urlMap.size}`],
             message: `✅ 批量采集完成: ${successful.length}/${engineList.length} 引擎成功`,
           };
         }
 
-        return { success: true,
-          data: batchResult,
-          tips: [`引擎: ${engineList.length}`, `成功: ${successful.length}`, `失败: ${failed.length}`, `域名: ${urlMap.size}`],
+    return ok(batchResult, [`引擎: ${engineList.length}`);
           message: `✅ 批量采集完成: ${successful.length}/${engineList.length} 引擎成功`,
         };
       } catch (error) {
-        return { success: false,
-          data: null,
-          tips: ['批量采集失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['批量采集失败']);
       }
     },
   });
@@ -1045,11 +994,7 @@ export default function (xcli: XCLIAPI): void {
       try {
         const history = await loadAllHistory(500);
         if (history.length === 0) {
-          return { success: false,
-            data: [],
-            tips: ['无历史数据，请先使用 collect 或 batch 采集数据'],
-            message: '⚠ 无历史数据',
-          };
+    return ok([], ['无历史数据，请先使用 collect 或 batch 采集数据']);
         }
 
         const rankings = analyzeDomainRankings(history).slice(0, params.top);
@@ -1067,24 +1012,17 @@ export default function (xcli: XCLIAPI): void {
           rankings.forEach((d, i) => {
             lines.push(`| ${i + 1} | ${d.domain} | ${d.platform || '-'} | ${d.count} | ${new Date(d.firstSeen).toLocaleDateString()} | ${new Date(d.lastSeen).toLocaleDateString()} |`);
           });
-          return { success: true,
-            data: { markdown: lines.join('\n'), rankings },
+    return ok({ markdown: lines.join('\n'), []);
             tips: [`数据点: ${history.length}`, `域名数: ${rankings.length}`],
             message: `✅ 域名排名生成完成`,
           };
         }
 
-        return { success: true,
-          data: rankings,
-          tips: [`数据点: ${history.length}`, `域名数: ${rankings.length}`],
+    return ok(rankings, [`数据点: ${history.length}`);
           message: `✅ 域名排名生成完成`,
         };
       } catch (error) {
-        return { success: false,
-          data: null,
-          tips: ['排名生成失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['排名生成失败']);
       }
     },
   });
@@ -1255,24 +1193,17 @@ export default function (xcli: XCLIAPI): void {
             lines.push(`| ${status} | ${d.name} | ${d.urlCount} | ${d.domainCount} | ${d.duration || '-'} | ${d.error ? d.error.slice(0, 50) : '-'} |`);
           }
 
-          return { success: true,
-            data: { markdown: lines.join('\n'), aggregation: aggResult },
+    return ok({ markdown: lines.join('\n'), []);
             tips: [`引擎: ${aggResult.totalEngines}`, `成功: ${aggResult.successEngines}`, `域名: ${aggResult.uniqueDomains}`, `平台: ${platformRanking.length}`],
             message: `✅ 聚合搜索完成: ${aggResult.successEngines}/${aggResult.totalEngines} 引擎成功`,
           };
         }
 
-        return { success: true,
-          data: aggResult,
-          tips: [`引擎: ${aggResult.totalEngines}`, `成功: ${aggResult.successEngines}`, `域名: ${aggResult.uniqueDomains}`],
+    return ok(aggResult, [`引擎: ${aggResult.totalEngines}`);
           message: `✅ 聚合搜索完成: ${aggResult.successEngines}/${aggResult.totalEngines} 引擎成功`,
         };
       } catch (error) {
-        return { success: false,
-          data: null,
-          tips: ['聚合搜索失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['聚合搜索失败']);
       }
     },
   });
@@ -1293,11 +1224,7 @@ export default function (xcli: XCLIAPI): void {
       try {
         const history = await loadAllHistory(500);
         if (history.length === 0) {
-          return { success: false,
-            data: [],
-            tips: ['无历史数据，请先使用 collect 或 batch 采集数据'],
-            message: '⚠ 无历史数据',
-          };
+    return ok([], ['无历史数据，请先使用 collect 或 batch 采集数据']);
         }
 
         const rankings = calculateCompanyRankings(history).slice(0, params.top);
@@ -1315,24 +1242,17 @@ export default function (xcli: XCLIAPI): void {
           rankings.forEach((r, i) => {
             lines.push(`| ${i + 1} | ${r.name} | ${r.domain} | ${r.type} | ${r.score} | ${r.engines.join(',')} |`);
           });
-          return { success: true,
-            data: { markdown: lines.join('\n'), rankings },
+    return ok({ markdown: lines.join('\n'), []);
             tips: [`数据点: ${history.length}`, `企业数: ${rankings.length}`],
             message: `✅ 企业排名生成完成`,
           };
         }
 
-        return { success: true,
-          data: rankings,
-          tips: [`数据点: ${history.length}`, `企业数: ${rankings.length}`],
+    return ok(rankings, [`数据点: ${history.length}`);
           message: `✅ 企业排名生成完成`,
         };
       } catch (error) {
-        return { success: false,
-          data: null,
-          tips: ['企业排名生成失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['企业排名生成失败']);
       }
     },
   });
@@ -1353,11 +1273,7 @@ export default function (xcli: XCLIAPI): void {
       try {
         const history = await loadAllHistory(500);
         if (history.length === 0) {
-          return { success: false,
-            data: [],
-            tips: ['无历史数据，请先使用 collect 或 batch 采集数据'],
-            message: '⚠ 无历史数据',
-          };
+    return ok([], ['无历史数据，请先使用 collect 或 batch 采集数据']);
         }
 
         const trends = analyzeTrends(history).slice(0, params.top);
@@ -1376,24 +1292,17 @@ export default function (xcli: XCLIAPI): void {
             const arrow = t.trend === 'up' ? 'UP' : t.trend === 'down' ? 'DOWN' : 'STABLE';
             lines.push(`| ${t.domain} | ${t.growthRate.toFixed(1)}% | ${arrow} |`);
           });
-          return { success: true,
-            data: { markdown: lines.join('\n'), trends },
+    return ok({ markdown: lines.join('\n'), []);
             tips: [`数据点: ${history.length}`, `趋势数: ${trends.length}`],
             message: `✅ 趋势分析完成`,
           };
         }
 
-        return { success: true,
-          data: trends,
-          tips: [`数据点: ${history.length}`, `趋势数: ${trends.length}`],
+    return ok(trends, [`数据点: ${history.length}`);
           message: `✅ 趋势分析完成`,
         };
       } catch (error) {
-        return { success: false,
-          data: null,
-          tips: ['趋势分析失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['趋势分析失败']);
       }
     },
   });
@@ -1414,11 +1323,7 @@ export default function (xcli: XCLIAPI): void {
       try {
         const history = await loadAllHistory(1000);
         if (history.length === 0) {
-          return { success: false,
-            data: null,
-            tips: ['无历史数据，请先使用 collect 或 batch 采集数据'],
-            message: '⚠ 无历史数据',
-          };
+    return fail('⚠ 无历史数据', ['无历史数据，请先使用 collect 或 batch 采集数据']);
         }
 
         const domainRankings = analyzeDomainRankings(history);
@@ -1434,8 +1339,7 @@ export default function (xcli: XCLIAPI): void {
           const filepath = path.join(reportsDir, filename);
           await fs.writeFile(filepath, md, 'utf-8');
 
-          return { success: true,
-            data: { path: filepath, content: md },
+    return ok({ path: filepath, []);
             tips: [`报告已保存: ${filepath}`, `域名: ${domainRankings.length}`, `企业: ${companyRankings.length}`, `趋势: ${trends.length}`],
             message: `✅ 报告已生成: ${filepath}`,
           };
@@ -1458,17 +1362,12 @@ export default function (xcli: XCLIAPI): void {
         const filepath = path.join(reportsDir, filename);
         await fs.writeFile(filepath, JSON.stringify(reportData, null, 2), 'utf-8');
 
-        return { success: true,
-          data: { path: filepath, ...reportData },
+    return ok({ path: filepath, []);
           tips: [`报告已保存: ${filepath}`, `域名: ${domainRankings.length}`, `企业: ${companyRankings.length}`, `趋势: ${trends.length}`],
           message: `✅ 报告已生成: ${filepath}`,
         };
       } catch (error) {
-        return { success: false,
-          data: null,
-          tips: ['报告生成失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['报告生成失败']);
       }
     },
   });
@@ -1505,17 +1404,11 @@ export default function (xcli: XCLIAPI): void {
           timestamp: new Date(r.timestamp).toLocaleString('zh-CN'),
         }));
 
-        return { success: true,
-          data: items,
-          tips: [`总数: ${history.length}`, `显示: ${items.length}`, params.engine ? `过滤: ${params.engine}` : '无过滤'].filter(Boolean),
+    return ok(items, [`总数: ${history.length}`);
           message: `📋 ${items.length} 条历史记录`,
         };
       } catch (error) {
-        return { success: false,
-          data: [],
-          tips: ['获取历史失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return ok([], ['获取历史失败']);
       }
     },
   });
@@ -1588,17 +1481,11 @@ export default function (xcli: XCLIAPI): void {
           newestRecord: history.length > 0 ? new Date(history[0].timestamp).toLocaleString('zh-CN') : null,
         };
 
-        return { success: true,
-          data: status,
-          tips: [`版本: v2.0.0`, `记录数: ${status.totalRecords}`, `引擎数: ${status.totalEngines}`, `存储: ${status.storageSizeMB}MB`],
+    return ok(status, [`版本: v2.0.0`);
           message: `📊 GEO 系统状态 (v2.0.0)`,
         };
       } catch (error) {
-        return { success: false,
-          data: null,
-          tips: ['获取状态失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['获取状态失败']);
       }
     },
   });

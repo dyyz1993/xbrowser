@@ -1,4 +1,4 @@
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext, ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 
 type Page = import('playwright-core').Page;
@@ -204,22 +204,14 @@ export default function (xcli: XCLIAPI): void {
           remaining: ((usage.monthly_limit as number) || 0) - ((usage.monthly_used as number) || 0),
         };
 
-        return {
-          data: billingInfo,
-          tips: [
-            ...tips,
-            `计划: ${billingInfo.plan || 'free'}`,
+    return ok(billingInfo, [);
             `月度: ${billingInfo.monthlyUsed}/${billingInfo.monthlyLimit} (剩余 ${billingInfo.remaining})`,
             `今日: ${billingInfo.dailyUsed}/${billingInfo.dailyThrottleLimit}`,
           ],
           message: `📊 Credits: ${billingInfo.remaining} 剩余 (${billingInfo.monthlyUsed}/${billingInfo.monthlyLimit})`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['查询 Credits 失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['查询 Credits 失败']);
       }
     },
   });
@@ -257,8 +249,7 @@ export default function (xcli: XCLIAPI): void {
         }) as Array<Record<string, unknown>>;
         const mapped = rawSongs.slice(0, params.limit!).map(mapSong);
 
-        return {
-          data: { songs: mapped, total: mapped.length },
+    return ok({ songs: mapped, []);
           tips: [
             ...tips,
             `共 ${mapped.length} 首音乐`,
@@ -267,11 +258,7 @@ export default function (xcli: XCLIAPI): void {
           message: `📚 找到 ${mapped.length} 首音乐`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['获取歌曲库失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['获取歌曲库失败']);
       }
     },
   });
@@ -303,11 +290,7 @@ export default function (xcli: XCLIAPI): void {
         const waitSeconds = typeof params.wait === 'number' ? params.wait : 0;
 
         if (!params.prompt) {
-          return {
-            data: null,
-            tips: ['请提供 --prompt 参数'],
-            message: '❌ 缺少必要参数',
-          };
+    return fail('❌ 缺少必要参数', ['请提供 --prompt 参数']);
         }
 
         // ── Login check ──
@@ -316,11 +299,7 @@ export default function (xcli: XCLIAPI): void {
 
         const loggedIn = await checkLoggedIn(page);
         if (!loggedIn) {
-          return {
-            data: null,
-            tips: [...tips, '❌ 未检测到登录状态', '请使用 --cdp 连接已登录 Udio 的浏览器'],
-            message: '❌ 未登录，请先登录 Udio',
-          };
+    return fail('❌ 未登录，请先登录 Udio', [...tips);
         }
         tips.push('✅ 登录验证通过');
 
@@ -525,11 +504,7 @@ export default function (xcli: XCLIAPI): void {
         });
 
         if (!createClicked) {
-          return {
-            data: null,
-            tips: [...tips, '❌ Create 按钮不可用（可能积分不足或参数未正确填入）'],
-            message: '❌ 无法点击 Create',
-          };
+    return fail('❌ 无法点击 Create', [...tips);
         }
         tips.push('✅ 已点击 Create');
         const clickTime = Date.now();
@@ -590,8 +565,7 @@ export default function (xcli: XCLIAPI): void {
             if (captchaSolved) {
               tips.push('✅ Captcha 已通过');
             } else {
-              return {
-                data: { status: 'captcha_timeout', captchaDetected: true, captchaSolved: false },
+    return ok({ status: 'captcha_timeout', []);
                 tips: [...tips, '❌ Captcha 等待超时（3分钟）', '请完成后重新执行'],
                 message: '❌ Captcha 验证超时',
               };
@@ -640,8 +614,7 @@ export default function (xcli: XCLIAPI): void {
           generateResp = await generatePromise;
 
           if (generateResp && generateResp.error) {
-            return {
-              data: { error: true, detail: generateResp.detail, status: generateResp.status },
+    return ok({ error: true, []);
               tips: [...tips, '❌ 生成请求失败'],
               message: `❌ 生成失败 (HTTP ${generateResp.status})`,
             };
@@ -655,22 +628,7 @@ export default function (xcli: XCLIAPI): void {
             const newSong = await pollForNewSong(page, tips);
 
             if (newSong) {
-              return {
-                data: {
-                  song: newSong,
-                  prompt: params.prompt,
-                  lyrics: params.lyrics || null,
-                  style: params.style || null,
-                  instrumental: !!params.instrumental,
-                  captchaDetected: captchaRequired,
-                  captchaSolved: captchaRequired ? true : undefined,
-                  retryAfterCaptcha: captchaRequired && waitSeconds > 0,
-                  songId: newSong.id,
-                  audioUrl: newSong.audioUrl || null,
-                  nextSteps: newSong.audioUrl
-                    ? ['xbrowser udio download --url "' + newSong.audioUrl + '" --cdp 9221']
-                    : ['xbrowser udio result --cdp 9221', 'xbrowser udio status --cdp 9221'],
-                },
+    return ok({, []);
                 tips: [
                   ...tips,
                   `🎵 ${newSong.title} — ${newSong.artist}`,
@@ -681,16 +639,7 @@ export default function (xcli: XCLIAPI): void {
               };
             }
 
-            return {
-              data: {
-                status: 'submitted',
-                generateResponse: generateResp,
-                prompt: params.prompt,
-                captchaDetected: captchaRequired,
-                captchaSolved: captchaRequired ? true : undefined,
-                retryAfterCaptcha: captchaRequired && waitSeconds > 0,
-                nextSteps: ['xbrowser udio result --cdp 9221', 'xbrowser udio status --cdp 9221'],
-              },
+    return ok({, []);
               tips: [
                 ...tips,
                 '✅ 生成请求已提交，歌曲可能还在处理',
@@ -701,14 +650,7 @@ export default function (xcli: XCLIAPI): void {
             };
           }
 
-          return {
-            data: {
-              status: 'timeout',
-              captchaDetected: captchaRequired,
-              captchaSolved: captchaRequired ? true : undefined,
-              retryAfterCaptcha: captchaRequired && waitSeconds > 0,
-              nextSteps: ['xbrowser udio status --cdp 9221', 'xbrowser udio result --cdp 9221'],
-            },
+    return ok({, []);
             tips: [
               ...tips,
               `⏱ 等待 ${waitSeconds}s 超时`,
@@ -720,16 +662,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         // Async mode — return immediately after click
-        return {
-          data: {
-            status: 'submitted',
-            prompt: params.prompt,
-            lyrics: params.lyrics || null,
-            style: params.style || null,
-            instrumental: !!params.instrumental,
-            captchaDetected: captchaRequired,
-            nextSteps: ['xbrowser udio status --cdp 9221', 'xbrowser udio result --cdp 9221'],
-          },
+    return ok({, []);
           tips: [
             ...tips,
             '✅ 生成请求已提交（异步模式）',
@@ -740,11 +673,7 @@ export default function (xcli: XCLIAPI): void {
           message: '✅ 生成请求已提交',
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['生成失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['生成失败']);
       }
     },
   });
@@ -785,8 +714,7 @@ export default function (xcli: XCLIAPI): void {
             return 'unknown';
           });
 
-          return {
-            data: { status: domStatus, songs: [] },
+    return ok({ status: domStatus, []);
             tips: [...tips, '未捕获到歌曲数据', `DOM 状态提示: ${domStatus}`],
             message: `📊 DOM 状态: ${domStatus}`,
           };
@@ -796,8 +724,7 @@ export default function (xcli: XCLIAPI): void {
         const topSong = latest[0];
         const hasAudio = !!(topSong && topSong.audioUrl);
 
-        return {
-          data: { songs: latest, total: latest.length, hasAudio },
+    return ok({ songs: latest, []);
           tips: [
             ...tips,
             `最新: ${topSong?.title || '未命名'} — ${topSong?.artist || ''}`,
@@ -808,11 +735,7 @@ export default function (xcli: XCLIAPI): void {
             : `📊 ${topSong?.title || '歌曲'} 处理中`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['检查状态失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['检查状态失败']);
       }
     },
   });
@@ -839,18 +762,13 @@ export default function (xcli: XCLIAPI): void {
         const tips = buildTips(ctx);
 
         if (!params.url) {
-          return {
-            data: null,
-            tips: [...tips, '需要提供音频 URL'],
-            message: '❌ 缺少 --url 参数',
-          };
+    return fail('❌ 缺少 --url 参数', [...tips);
         }
 
         const outputPath = params.output || './downloads/song.mp3';
 
         if (params.format === 'curl') {
-          return {
-            data: { url: params.url, curlCmd: `curl -L "${params.url}" -o "${outputPath}"` },
+    return ok({ url: params.url, []);
             tips: [
               ...tips,
               `💡 运行以下命令下载:`,
@@ -863,16 +781,14 @@ export default function (xcli: XCLIAPI): void {
         try {
           const resp = await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => null);
           if (!resp) {
-            return {
-              data: { url: params.url },
+    return ok({ url: params.url }, []);
               tips: [...tips, '无法访问音频 URL，请检查 URL 是否有效或是否过期'],
               message: '⚠️ 无法访问音频 URL',
             };
           }
           const buffer = await resp.body();
           if (!buffer) {
-            return {
-              data: { url: params.url },
+    return ok({ url: params.url }, []);
               tips: [...tips, '响应体为空'],
               message: '⚠️ 音频数据为空',
             };
@@ -882,8 +798,7 @@ export default function (xcli: XCLIAPI): void {
           const dir = pathMod.dirname(outputPath);
           fs.mkdirSync(dir, { recursive: true });
           fs.writeFileSync(outputPath, buffer);
-          return {
-            data: { size: buffer.length, path: outputPath, url: params.url },
+    return ok({ size: buffer.length, []);
             tips: [
               ...tips,
               `✅ 已下载: ${outputPath} (${(buffer.length / 1024).toFixed(1)} KB)`,
@@ -891,18 +806,13 @@ export default function (xcli: XCLIAPI): void {
             message: `📥 下载完成: ${(buffer.length / 1024).toFixed(1)} KB`,
           };
         } catch (e) {
-          return {
-            data: { url: params.url },
+    return ok({ url: params.url }, []);
             tips: [...tips, `下载失败: ${e instanceof Error ? e.message : '未知错误'}`],
             message: `❌ 下载失败`,
           };
         }
       } catch (error) {
-        return {
-          data: null,
-          tips: ['下载命令失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['下载命令失败']);
       }
     },
   });
@@ -943,15 +853,13 @@ export default function (xcli: XCLIAPI): void {
         const withUrl = songs.filter((s) => s.audioUrl);
 
         if (songs.length === 0) {
-          return {
-            data: { songs: [], total: 0 },
+    return ok({ songs: [], []);
             tips: [...tips, '未获取到音乐数据。可能未登录或没有创作记录'],
             message: '⏱ 未获取到音乐',
           };
         }
 
-        return {
-          data: { songs, total: songs.length },
+    return ok({ songs, []);
           tips: [
             ...tips,
             `共 ${songs.length} 首，${withUrl.length} 首可播放`,
@@ -961,11 +869,7 @@ export default function (xcli: XCLIAPI): void {
           message: `✅ 获取到 ${withUrl.length} 首可播放音乐`,
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: ['获取结果失败'],
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+    return fail(error instanceof Error ? error.message : '未知错误', ['获取结果失败']);
       }
     },
   });

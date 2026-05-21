@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, ok, fail } from '@dyyz1993/xcli-core';
 
 export default function (xcli: XCLIAPI): void {
   const duitang = xcli.createSite({
@@ -32,8 +32,7 @@ export default function (xcli: XCLIAPI): void {
         try {
           const currentUrl = page.url();
           if (!currentUrl.includes('duitang.com')) {
-            return { data: null, message: '堆糖页面被重定向，请检查网络或使用 --cdp 连接已登录浏览器', tips: ['建议使用 CDP 9221 连接浏览器'] };
-          }
+    return fail('堆糖页面被重定向，请检查网络或使用 --cdp 连接已登录浏览器', ['建议使用 CDP 9221 连接浏览器'] };);
         } catch { /* page may have closed */ }
 
         for (let i = 0; i < 3; i++) {
@@ -75,19 +74,14 @@ export default function (xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit);
 
-        return {
-          data: {
-            query: params.query,
-            engine: 'duitang',
-            results: results.map(r => ({ ...r, sourceSite: 'duitang' })),
+    return ok({, []);
             total: results.length,
             timestamp: Date.now(),
           },
           tips: [`堆糖 "${params.query}"，共 ${results.length} 张`],
         };
       } catch (error) {
-        return { data: null, message: error instanceof Error ? error.message : '未知错误' };
-      }
+    return fail(error instanceof Error ? error.message : '未知错误', []);
     },
   });
 }
