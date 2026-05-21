@@ -166,21 +166,21 @@ export default function (xcli: XCLIAPI): void {
           signal: AbortSignal.timeout(30000),
         });
 
-        const ok = resp.ok;
+        const respOk = resp.ok;
         const tips = [
-          `IndexNow 批量提交: ${ok ? '✅ 成功' : '❌ ' + resp.status + ' ' + resp.statusText}`,
+          `IndexNow 批量提交: ${respOk ? '✅ 成功' : '❌ ' + resp.status + ' ' + resp.statusText}`,
           `提交 URL 数: ${urlList.length}`,
           `目标域名: ${host}`,
         ];
-        if (ok) {
+        if (respOk) {
           tips.push('搜索引擎将在数分钟内抓取并收录提交的 URL。');
         } else {
           tips.push('常见原因: key 文件未部署、URL 格式错误、超出限额。');
         }
 
-        return ok({ host, submitted: urlList.length, ok, status: `${resp.status} ${resp.statusText}` }, tips);
+        return ok({ host, submitted: urlList.length, ok: respOk, status: `${resp.status} ${resp.statusText}` }, tips);
       } catch (e) {
-        return fail('请求失败: ${(e as Error).message}', [`IndexNow 批量提交失败: ${(e as Error).message}`]);
+        return fail(`请求失败: ${(e as Error).message}`, [`IndexNow 批量提交失败: ${(e as Error).message}`]);
       }
     },
   });
@@ -309,7 +309,7 @@ export default function (xcli: XCLIAPI): void {
         checks.push({ item: 'IndexNow key', status: '⚠️ 未发现（运行 seo setup-indexnow 配置）' });
       }
 
-      return fail('未知错误', [
+      return ok({ domain: params.domain, checks, indexnowKeyFound: keyFound }, [
           ...checks.map(c => `${c.item}: ${c.status}` + (c.detail ? ` (${c.detail})` : '')),
           keyFound ? '✅ IndexNow 已配置，可直接用 xbrowser seo submit 提交 URL' : '',
         ]);
@@ -456,6 +456,12 @@ export default function (xcli: XCLIAPI): void {
           robots,
           canonical,
           openGraph: { title: ogTitle, description: ogDescription, image: ogImage, url: ogUrl },
+          twitter: { card: twitterCard, title: twitterTitle, description: twitterDescription, image: twitterImage },
+          headings: { h1Count: h1s.length, h1s, h2Count: h2s.length, h2s },
+          images: { total: imgCount, withoutAlt: imgsWithoutAlt },
+          links: { internal: internalLinks, external: externalLinks },
+          structuredData,
+          score: { passed, total, percentage },
         }, [
           `SEO 评分: ${passed}/${total} (${percentage}%)`,
           ...scoreTips,

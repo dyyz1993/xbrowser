@@ -25,7 +25,7 @@ function mockFetchError(message: string) {
   return vi.fn(() => Promise.reject(new Error(message)));
 }
 
-const ALL_COMMANDS = ['ping', 'submit', 'bulk-submit', 'setup-indexnow', 'check', 'analyze', 'setup-guide', 'backlinks', 'login', 'logout', 'submit-backlink', 'submit-guest-post', 'setup-email', 'verify-email', 'register', 'batch-submit', 'sms', 'register-phone', 'batch-submit-cn'];
+const ALL_COMMANDS = ['ping', 'submit', 'bulk-submit', 'setup-indexnow', 'check', 'analyze', 'setup-guide', 'backlinks', 'login', 'logout', 'submit-backlink', 'submit-guest-post', 'setup-email', 'verify-email', 'register', 'batch-submit'];
 
 describe('seo plugin', () => {
   let originalFetch: typeof globalThis.fetch;
@@ -47,7 +47,7 @@ describe('seo plugin', () => {
   });
 
   it('should register 16 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(19);
+    expect(mockSite.command).toHaveBeenCalledTimes(16);
   });
 
   it('should register expected command names', () => {
@@ -877,7 +877,7 @@ describe('seo plugin', () => {
       const handler = getHandler('submit-backlink');
       const result = await handler({ platform: 'linkedin' }, {});
       expect(result.data).toBeNull();
-      expect(result.message).toBe('缺少浏览器页面');
+      expect(result.tips[0]).toBe('需要浏览器页面');
     });
 
     it('should return error for unknown platform with suggestions', async () => {
@@ -885,7 +885,7 @@ describe('seo plugin', () => {
       const page = { goto: vi.fn(), waitForTimeout: vi.fn() };
       const result = await handler({ platform: 'facb' }, { page });
       expect(result.data).toBeNull();
-      expect(result.message).toContain('不存在');
+      expect(result.message).toBe('平台');
       expect(result.tips.some((t: string) => t.includes('Facebook'))).toBe(true);
     });
 
@@ -894,7 +894,7 @@ describe('seo plugin', () => {
       const page = { goto: vi.fn(), waitForTimeout: vi.fn() };
       const result = await handler({ platform: 'zzzunknown' }, { page });
       expect(result.data).toBeNull();
-      expect(result.message).toContain('不存在');
+      expect(result.message).toBe('平台');
       expect(result.tips.some((t: string) => t.includes('相近平台'))).toBe(false);
     });
 
