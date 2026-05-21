@@ -4,27 +4,39 @@ import { forwardNetworkList, forwardNetworkClear } from '../../src/client/daemon
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
+vi.mock('../../src/daemon/daemon.js', () => ({
+  startDaemonProcess: vi.fn().mockRejectedValue(new Error('no daemon in test')),
+  getDaemonConfig: vi.fn(),
+  stopDaemonProcess: vi.fn(),
+  killAllDaemonProcesses: vi.fn(),
+  getDaemonProcessStatus: vi.fn(),
+}));
+
 describe('forwardNetworkList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/health')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ captures: [] }),
+      });
+    });
   });
 
   it('should POST to /rpc with method network:list and session name', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ captures: [] }),
-    });
-
     await forwardNetworkList('my-session');
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      'http://localhost:9224/rpc',
-      expect.objectContaining({
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    );
-    const body = JSON.parse((mockFetch.mock.calls[0] as unknown[])[1]!.body as string);
+    const rpcCall = mockFetch.mock.calls.find((c: unknown[]) => (c as [string])[0].includes('/rpc'));
+    expect(rpcCall).toBeDefined();
+    expect(rpcCall![0]).toBe('http://localhost:9224/rpc');
+    expect(rpcCall![1]).toEqual(expect.objectContaining({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    const body = JSON.parse(rpcCall![1].body as string);
     expect(body).toEqual({
       method: 'network:list',
       params: { session: 'my-session' },
@@ -32,14 +44,20 @@ describe('forwardNetworkList', () => {
   });
 
   it('should include filter/method/limit options when provided', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ captures: [] }),
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/health')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ captures: [] }),
+      });
     });
 
     await forwardNetworkList('s1', { filter: 'google', method: 'GET', limit: 50 });
 
-    const body = JSON.parse((mockFetch.mock.calls[0] as unknown[])[1]!.body as string);
+    const rpcCall = mockFetch.mock.calls.find((c: unknown[]) => (c as [string])[0].includes('/rpc'));
+    const body = JSON.parse(rpcCall![1].body as string);
     expect(body.params).toEqual({
       session: 's1',
       filter: 'google',
@@ -60,9 +78,14 @@ describe('forwardNetworkList', () => {
   });
 
   it('should throw on non-OK response', async () => {
-    mockFetch.mockResolvedValue({
-      ok: false,
-      statusText: 'Internal Server Error',
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/health')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+      }
+      return Promise.resolve({
+        ok: false,
+        statusText: 'Internal Server Error',
+      });
     });
 
     await expect(forwardNetworkList('s1')).rejects.toThrow('Daemon error: Internal Server Error');
@@ -122,24 +145,28 @@ describe('forwardNetworkList', () => {
 describe('forwardNetworkClear', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/health')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ cleared: 5 }),
+      });
+    });
   });
 
   it('should POST to /rpc with method network:clear and session name', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({ cleared: 5 }),
-    });
-
     await forwardNetworkClear('my-session');
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      'http://localhost:9224/rpc',
-      expect.objectContaining({
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      }),
-    );
-    const body = JSON.parse((mockFetch.mock.calls[0] as unknown[])[1]!.body as string);
+    const rpcCall = mockFetch.mock.calls.find((c: unknown[]) => (c as [string])[0].includes('/rpc'));
+    expect(rpcCall).toBeDefined();
+    expect(rpcCall![0]).toBe('http://localhost:9224/rpc');
+    expect(rpcCall![1]).toEqual(expect.objectContaining({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    const body = JSON.parse(rpcCall![1].body as string);
     expect(body).toEqual({
       method: 'network:clear',
       params: { session: 'my-session' },
@@ -148,9 +175,14 @@ describe('forwardNetworkClear', () => {
 
   it('should return parsed JSON response directly', async () => {
     const responseData = { cleared: 3 };
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => responseData,
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/health')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(responseData),
+      });
     });
 
     const result = await forwardNetworkClear('s1');
@@ -158,9 +190,14 @@ describe('forwardNetworkClear', () => {
   });
 
   it('should throw on non-OK response', async () => {
-    mockFetch.mockResolvedValue({
-      ok: false,
-      statusText: 'Bad Gateway',
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/health')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+      }
+      return Promise.resolve({
+        ok: false,
+        statusText: 'Bad Gateway',
+      });
     });
 
     await expect(forwardNetworkClear('s1')).rejects.toThrow('Daemon error: Bad Gateway');

@@ -1,13 +1,13 @@
 import type { Page } from 'playwright';
 
 /**
- * A single screencast frame with base64-encoded screenshot data.
+ * A single screencast frame with binary image data.
  */
 export interface ScreencastFrame {
   id: string;
   sessionId: string;
   timestamp: number;
-  data: string;
+  data: Buffer;
   url: string;
   viewport: { width: number; height: number };
 }
@@ -56,7 +56,7 @@ export class ScreencastCapturer {
 
   constructor(options: ScreencastOptions = {}) {
     this.interval = options.interval || 100;
-    this.quality = options.quality || 80;
+    this.quality = options.quality || 60;
     this.type = options.type || 'jpeg';
     this.maxWidth = options.width || 1280;
     this.maxHeight = options.height || 720;
@@ -109,7 +109,7 @@ export class ScreencastCapturer {
           id: crypto.randomUUID(),
           sessionId: this.sessionId,
           timestamp: Date.now(),
-          data: params.data,
+          data: Buffer.from(params.data, 'base64'),
           url: page.url(),
           viewport,
         });
@@ -162,13 +162,12 @@ export class ScreencastCapturer {
       type: this.type,
       quality: this.type === 'jpeg' ? this.quality : undefined,
     });
-    const data = screenshot.toString('base64');
 
     return {
       id: crypto.randomUUID(),
       sessionId,
       timestamp: Date.now(),
-      data,
+      data: screenshot,
       url: page.url(),
       viewport: viewport || { width: 0, height: 0 },
     };

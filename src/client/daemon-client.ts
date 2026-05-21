@@ -1,17 +1,43 @@
 import type { ExecutionResult } from '../executor.js';
+import { startDaemonProcess } from '../daemon/daemon.js';
 
 const DAEMON_PORT = 9224;
 const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`;
 
+let _ensurePromise: Promise<void> | null = null;
+
+async function ensureDaemonRunning(): Promise<void> {
+  if (_ensurePromise) return _ensurePromise;
+  _ensurePromise = (async () => {
+    try {
+      const resp = await fetch(`${DAEMON_BASE}/health`, { signal: AbortSignal.timeout(2000) });
+      if (resp.ok) {
+        const data = (await resp.json()) as { status?: string };
+        if (data.status === 'ok') return;
+      }
+    } catch { /* daemon not reachable */ }
+    await startDaemonProcess(DAEMON_PORT);
+  })();
+  _ensurePromise.catch(() => { _ensurePromise = null; });
+  try {
+    await _ensurePromise;
+  } catch {
+    _ensurePromise = null;
+    throw new Error('Daemon not available');
+  }
+}
+
 /**
  * Make an RPC call to the daemon's HTTP server.
  * All daemon operations go through this single function.
+ * Automatically ensures the daemon is running before making the call.
  */
 async function rpcCall<T = unknown>(
   method: string,
   params: Record<string, unknown> = {},
   timeoutMs: number = 10000,
 ): Promise<T> {
+  await ensureDaemonRunning();
   const resp = await fetch(`${DAEMON_BASE}/rpc`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -26,6 +52,7 @@ async function rpcCall<T = unknown>(
 
 /**
  * Check if the daemon is running by hitting its health endpoint.
+ * This is a simple liveness check — does NOT auto-start the daemon.
  */
 export async function isDaemonRunning(): Promise<boolean> {
   try {

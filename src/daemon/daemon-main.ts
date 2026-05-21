@@ -123,9 +123,9 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
 .bar .dot.ok{background:#2ecc71}
 .bar .url{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8899aa;font-size:12px}
 .bar .conn{color:#556;font-size:11px;flex-shrink:0}
-.viewport{position:fixed;top:40px;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#1a1a2e}
+.viewport{position:fixed;top:40px;left:0;right:0;bottom:0;display:flex;align-items:flex-start;justify-content:center;overflow:hidden;background:#1a1a2e}
 .viewport.mobile-mode{bottom:35vh}
-.viewport img#screen{max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,.5);display:none;user-select:none;-webkit-user-drag:none}
+.viewport img#screen{object-fit:none;border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,.5);display:none;user-select:none;-webkit-user-drag:none}
 .waiting{color:#556;font-size:14px;text-align:center}
 .toolbar{position:fixed;left:0;right:0;top:40px;background:#16213e;border-bottom:1px solid #0f3460;display:none;flex-direction:column;z-index:90;padding:4px 6px}
 .toolbar-btn{min-width:44px;height:44px;border:none;border-radius:6px;background:#0f3460;color:#cde;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
@@ -240,6 +240,7 @@ let ws=null;
 let connected=false;
 let remoteViewport={width:1280,height:800};
 let currentUrl='';
+let imgBlobUrl='';
 let currentFocusedSelector='';
 let currentFocusedValue='';
 let deviceMode='desktop';
@@ -258,17 +259,48 @@ function connectWS(){
     connEl.textContent='WS';
     if(deviceMode==='desktop') createHiddenInput();
   };
+  ws.binaryType='arraybuffer';
   ws.onmessage=(e)=>{
     try{
+      if(e.data instanceof ArrayBuffer){
+        const buf=new Uint8Array(e.data);
+        const headerLen=(buf[0]<<24)|(buf[1]<<16)|(buf[2]<<8)|buf[3];
+        const header=JSON.parse(new TextDecoder().decode(buf.slice(4,4+headerLen)));
+        const jpegData=buf.slice(4+headerLen);
+        if(header.type==='screenshot'){
+          const blob=new Blob([jpegData],{type:'image/jpeg'});
+          if(imgBlobUrl) URL.revokeObjectURL(imgBlobUrl);
+          imgBlobUrl=URL.createObjectURL(blob);
+          img.src=imgBlobUrl;
+          img.style.display='block';
+          wait.style.display='none';
+          if(header.data.viewport) remoteViewport=header.data.viewport;
+          if(header.data.url&&header.data.url!==currentUrl){
+            currentUrl=header.data.url;
+            urlEl.textContent=currentUrl;
+          }
+        }
+        return;
+      }
       const m=JSON.parse(e.data);
       if(m.type==='screenshot'){
-        img.src='data:image/jpeg;base64,'+m.data.data;
-        img.style.display='block';
-        wait.style.display='none';
+        if(m.data.data){
+          img.src='data:image/jpeg;base64,'+m.data.data;
+          img.style.display='block';
+          wait.style.display='none';
+        }
         if(m.data.viewport) remoteViewport=m.data.viewport;
         if(m.data.url&&m.data.url!==currentUrl){
           currentUrl=m.data.url;
           urlEl.textContent=currentUrl;
+        }
+      }else if(m.type==='error'&&m.data.code==='SESSION_NOT_FOUND'){
+        dot.className='dot';
+        connEl.textContent='ERR';
+        urlEl.textContent=m.data.message||'Session not found';
+        wait.textContent='Session not found';
+        if(m.data.availableSessions&&m.data.availableSessions.length>0){
+          wait.textContent+='. Try: /preview/'+m.data.availableSessions[0];
         }
       }else if(m.type==='status'){
         connEl.textContent=m.data.status==='connected'?'OK':'...';

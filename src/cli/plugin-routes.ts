@@ -5,7 +5,7 @@ import { MarketplaceSearcher } from '../plugin/marketplace-search.js';
 import { NPMSearcher } from '../plugin/npm-search.js';
 import { startDaemonProcess, stopDaemonProcess, getDaemonProcessStatus } from '../daemon/daemon.js';
 import { outputResult, outputError } from './output.js';
-import { DEFAULT_MARKETPLACE_URL, NPM_REGISTRY_URL, resolveNpmPackageName } from '../config.js';
+import { DEFAULT_MARKETPLACE_URL, NPM_REGISTRY_URL, resolveNpmPackageWithFallback } from '../config.js';
 import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 import { getPluginLoader as getGlobalPluginLoader } from '../utils/plugin-singleton.js';
 import {
@@ -139,7 +139,7 @@ async function handlePluginInfo(
   }
 
   try {
-    const npmName = resolveNpmPackageName(slug);
+    const npmName = await resolveNpmPackageWithFallback(slug);
     const resp = await fetch(`${NPM_REGISTRY_URL}/${encodeURIComponent(npmName)}`);
     if (resp.ok) {
       const data = (await resp.json()) as Record<string, unknown>;

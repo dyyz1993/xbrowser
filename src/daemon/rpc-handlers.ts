@@ -101,8 +101,9 @@ async function injectRecording(page: import('playwright').Page): Promise<void> {
  * Resolve a raw CDP endpoint string to a WebSocket URL.
  */
 async function resolveCDPEndpoint(raw: string): Promise<string> {
+  const defaultCDPPort = process.env.XBROWSER_CDP_PORT || '9222';
   if (raw === 'auto') {
-    const httpResp = await fetch('http://localhost:9222/json/version');
+    const httpResp = await fetch(`http://localhost:${defaultCDPPort}/json/version`);
     const data = (await httpResp.json()) as { webSocketDebuggerUrl?: string };
     if (!data.webSocketDebuggerUrl) throw new Error('Could not auto-discover CDP from localhost:9222');
     return data.webSocketDebuggerUrl;
@@ -201,6 +202,14 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
 
   // ─── Handler implementations ─────────────────────────────────
 
+  function registerSessionIfNew(sessionName: string) {
+    if (!previewWS) return;
+    const session = findSession(sessionName);
+    if (session) {
+      previewWS.registerSession(session.name, session.page);
+    }
+  }
+
   async function handleSessionCreate(params: Record<string, unknown>) {
     const name = (params.name as string) || 'default';
     const cdp = params.cdpEndpoint as string;
@@ -247,13 +256,15 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const cmdParams = (params.params || {}) as Record<string, unknown>;
     const sessionName = (params.session as string) || 'default';
     const cdp = params.cdpEndpoint as string | undefined;
+    const endpoint = cdp || await resolveCDPEndpoint('auto');
     commandLogStore.add(sessionName, {
       timestamp: Date.now(),
       command,
       params: cmdParams,
       session: sessionName,
     });
-    const result = await executeCommand(command, cmdParams, sessionName, { cdpEndpoint: cdp });
+    const result = await executeCommand(command, cmdParams, sessionName, { cdpEndpoint: endpoint });
+    registerSessionIfNew(sessionName);
     return result;
   }
 
@@ -262,6 +273,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const sessionName = (params.session as string) || 'default';
     const cdp = params.cdpEndpoint as string | undefined;
     const result = await executeChain(input, { cdpEndpoint: cdp, sessionName });
+    registerSessionIfNew(sessionName);
     return result;
   }
 

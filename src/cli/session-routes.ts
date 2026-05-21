@@ -4,22 +4,23 @@ import {
 } from '../session/session-client.js';
 import { handleSessionHelp } from '../builtins/index.js';
 import { outputResult, outputError } from './output.js';
-import { isDaemonRunning, forwardSessionCreate, forwardSessionClose, forwardSessionList } from '../client/daemon-client.js';
-import { startDaemonProcess, stopDaemonProcess } from '../daemon/daemon.js';
+import { forwardSessionCreate, forwardSessionClose, forwardSessionList } from '../client/daemon-client.js';
+import { stopDaemonProcess, killAllDaemonProcesses } from '../daemon/daemon.js';
+import { homedir } from 'os';
+import { join } from 'path';
+import { readdirSync, rmSync } from 'node:fs';
 
-/**
- * Ensure daemon is running. Auto-start if not.
- * If auto-start fails, abort with error — session operations MUST go through daemon.
- */
-async function ensureDaemon(): Promise<void> {
-  if (process.env.XBROWSER_DAEMON_WORKER) return; // already inside daemon
-  if (await isDaemonRunning().catch(() => false)) return;
-
+function cleanSessionFiles(): number {
+  const dir = join(homedir(), '.xbrowser', 'sessions');
+  let count = 0;
   try {
-    await startDaemonProcess(9224);
-  } catch (e) {
-    outputError(`Failed to start daemon: ${(e as Error).message}. Session operations require daemon.`);
-  }
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, entry.name);
+      rmSync(p, { recursive: true, force: true });
+      count++;
+    }
+  } catch { /* no session dir */ }
+  return count;
 }
 
 export async function handleSession(
@@ -32,7 +33,6 @@ export async function handleSession(
 
   switch (sub) {
     case 'open': {
-      await ensureDaemon();
       const url = args[1];
       const name = (options.name as string) || 'default';
       if (!url)
@@ -61,12 +61,23 @@ export async function handleSession(
       break;
     }
     case 'kill': {
-      // Kill everything: close all sessions + stop daemon
       const name = (options.name as string) || 'default';
       try { await forwardSessionClose(name); } catch { /* ignore */ }
       await closeSession(name);
       try { await stopDaemonProcess(); } catch { /* ignore */ }
       outputResult({ ok: true, name, killed: true, daemon: 'stopped' }, mode);
+      break;
+    }
+    case 'kill-all': {
+      try {
+        const sessions = await forwardSessionList();
+        for (const s of sessions) {
+          try { await forwardSessionClose(s.name); } catch { /* ignore */ }
+        }
+      } catch { /* daemon may be down */ }
+      try { await killAllDaemonProcesses(); } catch { /* ignore */ }
+      const cleaned = cleanSessionFiles();
+      outputResult({ ok: true, sessionsCleaned: cleaned, daemon: 'killed' }, mode);
       break;
     }
     default:

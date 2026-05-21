@@ -70,7 +70,7 @@ const sessions = new Map<string, ManagedSession>();
 let _sharedBrowser: Browser | null = null;
 let _sharedCdpProxy: CDPInterceptorProxy | null = null;
 
-const IDLE_TIMEOUT_MS = (process.env.XBROWSER_IDLE_TIMEOUT ? parseInt(process.env.XBROWSER_IDLE_TIMEOUT, 10) : 15) * 60 * 1000;
+const IDLE_TIMEOUT_MS = (process.env.XBROWSER_IDLE_TIMEOUT ? parseInt(process.env.XBROWSER_IDLE_TIMEOUT, 10) : 30) * 60 * 1000;
 let idleTimer: ReturnType<typeof setTimeout> | null = null;
 
 function resetIdleTimer(): void {
@@ -640,7 +640,7 @@ export async function createSession(
 
     page = targetPage;
   } else {
-    context = await b.newContext();
+    context = await b.newContext({ viewport: { width: 1920, height: 1080 } });
     page = await context.newPage();
   }
 

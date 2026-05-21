@@ -156,17 +156,12 @@ export async function executeCommand(
     params = result.data as Record<string, unknown>;
   }
 
-  // Forward page-scope commands to daemon. Auto-start daemon if not running.
+  // Forward page-scope commands to daemon (auto-starts daemon if not running).
   if (command.scope === 'page' && !process.env.XBROWSER_DAEMON_WORKER) {
-    const { isDaemonRunning, forwardExec } = await import('./client/daemon-client.js');
-    let running = await isDaemonRunning().catch(() => false);
-    if (!running) {
-      const { startDaemonProcess } = await import('./daemon/daemon.js');
-      try { await startDaemonProcess(9224); running = true; } catch { /* fall through to local */ }
-    }
-    if (running) {
-      return forwardExec(commandName, params, sessionName, extraOpts?.cdpEndpoint);
-    }
+    const { forwardExec } = await import('./client/daemon-client.js');
+    const result = await forwardExec(commandName, params, sessionName, extraOpts?.cdpEndpoint);
+    if (result) return result;
+    // forwardExec returned null/undefined (e.g. daemon unreachable) — fall through to local execution
   }
 
   let session: ManagedSession | undefined;

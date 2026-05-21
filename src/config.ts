@@ -57,6 +57,29 @@ export function resolveNpmPackageName(name: string): string {
   return `${NPM_SCOPE}${name}`;
 }
 
+export function generateNpmCandidates(name: string): string[] {
+  if (name.startsWith('@')) return [name];
+  return [
+    `${NPM_SCOPE}xbrowser-plugin-${name}`,
+    `${NPM_SCOPE}${name}`,
+    `xbrowser-plugin-${name}`,
+  ];
+}
+
+export async function resolveNpmPackageWithFallback(name: string): Promise<string> {
+  const candidates = generateNpmCandidates(name);
+  for (const candidate of candidates) {
+    try {
+      const encoded = encodeURIComponent(candidate);
+      const res = await fetch(`${NPM_REGISTRY_URL}/${encoded}`);
+      if (res.ok) return candidate;
+    } catch {
+      continue;
+    }
+  }
+  return resolveNpmPackageName(name);
+}
+
 export function getCaptchaConfig(): CaptchaConfig {
   const config = loadConfig() as ConfigRoot;
   return {

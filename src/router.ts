@@ -319,6 +319,10 @@ export async function routeCommand(
       case 'create':
         handleCreate(cmdArgs, options);
         break;
+      case 'kill': {
+        await handleSession(['kill-all'], options, mode);
+        break;
+      }
       case 'daemon':
         handleDaemon(cmdArgs, options, mode);
         break;
@@ -367,12 +371,9 @@ export async function routeCommand(
         const subCommand = cmdArgs[0] || 'list';
         const netSession = sessionName;
 
-        const { isDaemonRunning, forwardNetworkList, forwardNetworkClear, forwardNetworkTop, forwardCommandLog, forwardNetworkAround, forwardNetworkAnalyze, forwardNetworkCurl, forwardNetworkReplay, forwardNetworkLike, forwardNetworkDislike, forwardNetworkExport, forwardNetworkInspect } = await import('./client/daemon-client.js');
-        if (!(await isDaemonRunning())) {
-          outputError('Daemon is not running. Start with: xbrowser daemon start');
-          break;
-        }
+        const { forwardNetworkList, forwardNetworkClear, forwardNetworkTop, forwardCommandLog, forwardNetworkAround, forwardNetworkAnalyze, forwardNetworkCurl, forwardNetworkReplay, forwardNetworkLike, forwardNetworkDislike, forwardNetworkExport, forwardNetworkInspect } = await import('./client/daemon-client.js');
 
+        try {
         switch (subCommand) {
           case 'list': {
             const filter = options.filter as string | undefined;
@@ -663,6 +664,9 @@ export async function routeCommand(
           }
           default:
             outputError(`Unknown net sub-command: ${subCommand}. Use: list, clear, top, log, around, analyze, curl, replay, inspect, like, dislike, export`);
+        }
+        } catch (err) {
+          outputError((err as Error).message || 'Network command failed');
         }
         break;
       }

@@ -341,13 +341,13 @@ describe('net CLI command', () => {
     expect(output).toContain('cleared');
   });
 
-  it('net — daemon not running', async () => {
+  it('net — daemon not running and auto-start fails', async () => {
     mockIsDaemonRunning.mockResolvedValue(false);
+    mockForwardNetworkList.mockRejectedValue(new Error('Daemon not available'));
     await routeCommand(['net', 'list', '--session', 'test']);
     expect(mockOutputError).toHaveBeenCalledWith(
-      'Daemon is not running. Start with: xbrowser daemon start'
+      expect.stringContaining('Daemon not available')
     );
-    expect(mockForwardNetworkList).not.toHaveBeenCalled();
   });
 
   it('net — unknown sub-command', async () => {

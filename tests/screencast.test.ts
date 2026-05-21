@@ -47,7 +47,7 @@ describe('ScreencastCapturer', () => {
     expect(frame.sessionId).toBe('session-1');
     expect(frame.url).toBe('https://example.com');
     expect(frame.viewport).toEqual({ width: 1280, height: 720 });
-    expect(frame.data).toBe(Buffer.from('fake-image').toString('base64'));
+    expect(frame.data).toEqual(Buffer.from('fake-image'));
     expect(frame.id).toBeTruthy();
     expect(frame.timestamp).toBeGreaterThan(0);
   });

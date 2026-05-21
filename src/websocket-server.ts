@@ -25,7 +25,8 @@ export type WSMessage =
   | { type: 'input_blur'; selector: string }
   | { type: 'file_upload_result'; success: boolean; fileName: string; error?: string }
   | { type: 'file_list_result'; path: string; files: Array<{ name: string; isDir: boolean; size: number; modified: string }>; error?: string }
-  | { type: 'file_download_result'; fileName: string; mimeType: string; data: string; error?: string };
+  | { type: 'file_download_result'; fileName: string; mimeType: string; data: string; error?: string }
+  | { type: 'error'; data: { code: string; message: string; availableSessions?: string[] } };
 
 /**
  * Inbound WebSocket message types received from clients.
@@ -45,17 +46,17 @@ export type WSInboundMessage =
   | { type: 'file_list'; path: string }
   | { type: 'file_download'; path: string };
 
-/**
- * A screencast frame message with base64-encoded screenshot data.
- */
-export interface ScreencastMessage {
-  sessionId: string;
-  id: string;
-  timestamp: number;
-  data: string;
-  url: string;
-  viewport: { width: number; height: number };
-}
+  /**
+   * A screencast frame message with binary image data.
+   */
+  export interface ScreencastMessage {
+    sessionId: string;
+    id: string;
+    timestamp: number;
+    data: Buffer;
+    url: string;
+    viewport: { width: number; height: number };
+  }
 
 /**
  * A command execution event message streamed during command lifecycle.
@@ -307,15 +308,27 @@ export class WSServer extends EventEmitter {
       this.emit('client-connected', clientId);
 
       // Auto-bind to session from URL if present
-      if (sessionIdFromUrl && this.screencasts.has(sessionIdFromUrl)) {
-        client.sessionId = sessionIdFromUrl;
-        let clients = this.sessionClients.get(sessionIdFromUrl);
-        if (!clients) {
-          clients = new Set();
-          this.sessionClients.set(sessionIdFromUrl, clients);
+      if (sessionIdFromUrl) {
+        if (this.screencasts.has(sessionIdFromUrl)) {
+          client.sessionId = sessionIdFromUrl;
+          let clients = this.sessionClients.get(sessionIdFromUrl);
+          if (!clients) {
+            clients = new Set();
+            this.sessionClients.set(sessionIdFromUrl, clients);
+          }
+          clients.add(clientId);
+          this.startScreencastIfNeeded(sessionIdFromUrl);
+        } else {
+          const known = Array.from(this.screencasts.keys());
+          this.sendToClient(clientId, {
+            type: 'error',
+            data: {
+              code: 'SESSION_NOT_FOUND',
+              message: `Session "${sessionIdFromUrl}" not found. Available: ${known.length ? known.join(', ') : '(none)'}`,
+              availableSessions: known,
+            },
+          });
         }
-        clients.add(clientId);
-        this.startScreencastIfNeeded(sessionIdFromUrl);
       }
 
       wsLike.on('close', () => {
@@ -334,7 +347,7 @@ export class WSServer extends EventEmitter {
             return;
           }
 
-          this.handleInboundMessage(clientId, msg);
+          this.handleInboundMessage(clientId, msg).catch(() => {});
         } catch {
           // ignore parse errors
         }
@@ -362,17 +375,20 @@ export class WSServer extends EventEmitter {
 
     if (sc.clientCount === 0 && !sc.capturer.isActive()) {
       sc.capturer.startCapture(sc.page, sessionId, (frame: ScreencastFrame) => {
-        this.broadcastToSession(sessionId, {
+        const header = Buffer.from(JSON.stringify({
           type: 'screenshot',
           data: {
             sessionId: frame.sessionId,
             id: frame.id,
             timestamp: frame.timestamp,
-            data: frame.data,
             url: frame.url,
             viewport: frame.viewport,
           },
-        });
+        }), 'utf-8');
+        const headerLen = Buffer.alloc(4);
+        headerLen.writeUInt32BE(header.length, 0);
+        const payload = Buffer.concat([headerLen, header, frame.data]);
+        this.broadcastBinaryToSession(sessionId, payload);
       }).then(() => {
         this.emit('screencast-started', sessionId);
       }).catch(() => {
@@ -671,6 +687,20 @@ export class WSServer extends EventEmitter {
   broadcast(message: WSMessage): void {
     for (const clientId of this.clients.keys()) {
       this.sendToClient(clientId, message);
+    }
+  }
+
+  broadcastBinaryToSession(sessionId: string, payload: Buffer): void {
+    const clients = this.sessionClients.get(sessionId);
+    if (!clients) return;
+    for (const clientId of clients) {
+      const client = this.clients.get(clientId);
+      if (!client) continue;
+      try {
+        client.ws.send(payload);
+      } catch {
+        // ignore send errors
+      }
     }
   }
 

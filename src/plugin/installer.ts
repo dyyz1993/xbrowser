@@ -17,7 +17,7 @@ import { installFromUrl } from './install-sources/url.js';
 import { installFromMarketplace } from './install-sources/marketplace.js';
 import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 import { getMarketplaceUrl } from './install-utils.js';
-import { resolveNpmPackageName } from '../config.js';
+import { resolveNpmPackageWithFallback } from '../config.js';
 
 export type { InstalledPlugin, InstallOptions } from './installer-types.js';
 
@@ -56,7 +56,7 @@ export class PluginInstaller {
 
     mkdirSync(targetDir, { recursive: true });
 
-    const resolvedSource = type === 'npm' ? resolveNpmPackageName(source) : source;
+    const resolvedSource = type === 'npm' ? await resolveNpmPackageWithFallback(source) : source;
 
     switch (type) {
       case 'local':
