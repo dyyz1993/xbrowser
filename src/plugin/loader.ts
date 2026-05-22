@@ -133,8 +133,10 @@ export class XBrowserPluginLoader {
           }
           const instance = await this.loadPlugin(indexPath, entry.name);
           loaded.push(instance);
-        } catch {
-          // skip plugins that fail to load
+        } catch (err) {
+          if (process.env.XBROWSER_DEBUG) {
+            console.warn(`⚠️  Plugin "${entry.name}" load failed: ${err instanceof Error ? err.message : String(err)}`);
+          }
         }
       }
     }

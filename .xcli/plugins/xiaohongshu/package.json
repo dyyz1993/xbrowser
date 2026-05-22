@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-xiaohongshu",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "小红书 - 笔记详情、用户信息、搜索、评论采集",
   "main": "index.ts",
   "keywords": [
@@ -28,7 +28,7 @@
     "slug": "xiaohongshu",
     "name": "xiaohongshu",
     "description": "小红书 - 笔记详情、用户信息、搜索、评论采集",
-    "version": "3.0.0",
+    "version": "3.1.0",
     "author": "XBrowser Team",
     "tags": [
       "xiaohongshu"

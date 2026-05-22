@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-douyin",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "description": "XBrowser 抖音数据采集插件 - 支持视频评论、用户评论、作品统计、AI 字幕提取等功能",
   "type": "module",
   "main": "index.ts",
@@ -37,7 +37,7 @@
     "slug": "douyin",
     "name": "douyin",
     "description": "XBrowser 抖音数据采集插件 - 支持视频评论、用户评论、作品统计、AI 字幕提取等功能",
-    "version": "4.0.0",
+    "version": "4.1.0",
     "author": "dyyz1993",
     "tags": [
       "douyin"
