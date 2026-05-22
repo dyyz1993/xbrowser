@@ -1178,6 +1178,7 @@ export default function (xcli: XCLIAPI): void {
           { cmd: 'xbrowser doubao music --lyric "明月几时有，把酒问青天，不知天上宫阙" --style 国风 --mood 激昂 --timeout 90', description: '自定义歌词模式，选择国风风格（最多200字）' },
           { cmd: 'xbrowser doubao music --lyric "hello world" --style 流行 --mood 快乐 --voice 女声 --duration 120 --timeout 120', description: '完整参数：自定义歌词+风格+情绪+音色+时长（歌词可短可长，最长200字）' },
           { cmd: 'xbrowser doubao music --description "励志歌曲" --voice 男声 --timeout 60', description: 'AI 写歌词模式，指定音色' },
+          { cmd: 'xbrowser doubao music --lyric "测试歌词" --debug --timeout 90', description: '开启 debug 模式，记录 API 请求到 ~/.xbrowser/debug/' },
         ],
     result: z.any(),
     handler: async (params, ctx) => {
