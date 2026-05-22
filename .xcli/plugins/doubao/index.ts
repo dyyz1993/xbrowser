@@ -1361,13 +1361,6 @@ export default function (xcli: XCLIAPI): void {
               tips.push('⚠ 未找到「自定义歌词」选项，继续使用 AI 歌词');
             }
           }
-          // 先点击歌词输入区激活
-          const clickInput = await page.evaluateHandle(() => {
-            const el = document.querySelector('[class*="lyrics-content"]');
-            if (el && el.offsetParent !== null) { (el as HTMLElement).click(); return true; }
-            return false;
-          });
-          await page.waitForTimeout(500);
 
           // 歌词限制：最多 200 字
           const lyricText = params.lyric.length > 200 ? params.lyric.slice(0, 200) : params.lyric;
@@ -1376,58 +1369,74 @@ export default function (xcli: XCLIAPI): void {
             tips.push(`⚠ 歌词超过 200 字，已截断到 ${lyricText.length} 字`);
           }
 
-          // 填写歌词到专用 textarea（使用截断后的值）
-          const lyricArea = page.locator('textarea[placeholder="自定义歌词"]').first();
-          if (await lyricArea.count() > 0 && await lyricArea.isVisible()) {
-            await lyricArea.fill(lyricText);
-            tips.push(`已填入歌词(${lyricText.length}字)`);
-            await page.waitForTimeout(500);
-          } else {
-            // fallback: 找任意可见 textarea 填写
-            const fallbackTa = page.locator('textarea').filter({ has: page.locator(':visible') }).first();
-            if (await fallbackTa.count() > 0) {
-              await fallbackTa.fill(lyricText);
-              tips.push('已填入歌词(fallback)');
-              await page.waitForTimeout(500);
-            }
-          }
-
-          // 通过 evaluate 再次触发 React 更新（保险起见）
-          await page.evaluate((text) => {
-            const ta = document.querySelector('textarea[placeholder="自定义歌词"]') as HTMLTextAreaElement;
-            if (ta) {
-              ta.value = text;
-              ta.dispatchEvent(new Event('input', { bubbles: true }));
-              ta.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-          }, lyricText);
-          await page.waitForTimeout(300);
-
-          // 启用并点击确认按钮
-          const confirmButtonHandle = await page.evaluateHandle(() => {
-            const btn = document.querySelector('button[class*="lyric-confirm"]') as HTMLButtonElement;
-            return btn;
+          // 【关键】直接点击弹窗内的 textarea（不能点击弹窗外部的 lyrics-content 元素，否则弹窗会关闭）
+          const textareaCoords = await page.evaluate(() => {
+            const ta = document.querySelector('textarea[placeholder="自定义歌词"]');
+            if (!ta) return null;
+            const rect = ta.getBoundingClientRect();
+            return { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
           });
-          const confirmButtonEl = confirmButtonHandle.asElement();
-          if (confirmButtonEl) {
-            // 移除 disabled 属性和 class
-            await page.evaluate(() => {
+
+          if (textareaCoords) {
+            // 点击 textarea 获取焦点
+            await page.mouse.click(textareaCoords.x + textareaCoords.w / 2, textareaCoords.y + textareaCoords.h / 2);
+            await page.waitForTimeout(500);
+
+            // 【关键】用 keyboard.type 输入歌词（模拟真实键盘输入，触发 React onChange，确认按钮才会自动变蓝）
+            await page.keyboard.type(lyricText, { delay: 30 });
+            await page.waitForTimeout(1000);
+            tips.push(`已输入歌词(${lyricText.length}字)`);
+
+            // 验证：检查确认按钮是否已启用
+            const confirmState = await page.evaluate(() => {
               const btn = document.querySelector('button[class*="lyric-confirm"]') as HTMLButtonElement;
-              if (btn) {
-                btn.disabled = false;
-                btn.classList.remove('semi-button-disabled', 'semi-button-primary-disabled');
-              }
+              if (!btn) return { found: false };
+              return {
+                found: true,
+                disabled: btn.disabled,
+                text: btn.textContent?.trim()
+              };
             });
-            await page.waitForTimeout(300);
-            // 使用坐标点击，绕过 React 控制
-            const confirmBox = await confirmButtonEl.boundingBox();
-            if (confirmBox) {
-              await page.mouse.click(confirmBox.x + confirmBox.width / 2, confirmBox.y + confirmBox.height / 2);
-              tips.push('已确认歌词');
+
+            if (confirmState.found && !confirmState.disabled) {
+              // 确认按钮已自动启用（React 状态已更新），直接点击
+              const confirmBox = await page.evaluate(() => {
+                const btn = document.querySelector('button[class*="lyric-confirm"]') as HTMLButtonElement;
+                if (!btn) return null;
+                const rect = btn.getBoundingClientRect();
+                return { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
+              });
+              if (confirmBox) {
+                await page.mouse.click(confirmBox.x + confirmBox.w / 2, confirmBox.y + confirmBox.h / 2);
+                tips.push('已确认歌词');
+              }
+            } else if (confirmState.found && confirmState.disabled) {
+              // 确认按钮仍然 disabled，可能歌词输入有问题
+              tips.push('⚠ 确认按钮仍为灰色，歌词输入可能未生效');
+              // 尝试强制启用并点击
+              await page.evaluate(() => {
+                const btn = document.querySelector('button[class*="lyric-confirm"]') as HTMLButtonElement;
+                if (btn) {
+                  btn.disabled = false;
+                  btn.classList.remove('semi-button-disabled', 'semi-button-primary-disabled');
+                }
+              });
+              await page.waitForTimeout(300);
+              const confirmBox = await page.evaluate(() => {
+                const btn = document.querySelector('button[class*="lyric-confirm"]');
+                if (!btn) return null;
+                const rect = btn.getBoundingClientRect();
+                return { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
+              });
+              if (confirmBox) {
+                await page.mouse.click(confirmBox.x + confirmBox.w / 2, confirmBox.y + confirmBox.h / 2);
+                tips.push('已强制确认歌词');
+              }
             } else {
-              tips.push('⚠ 无法获取确认按钮坐标');
+              tips.push('⚠ 未找到确认按钮');
             }
           } else {
+            tips.push('⚠ 未找到歌词输入框，可能弹窗已关闭');
             // fallback: 点任意"确认"按钮
             const fbBtn = page.locator('button').filter({ hasText: '确认' }).first();
             if (await fbBtn.count() > 0) {
