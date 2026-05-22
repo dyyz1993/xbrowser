@@ -144,6 +144,37 @@ function printRecordingSummary(summary: RecordingSummary, sessionName: string): 
     const navInfo = step.contextChanges.find(c => c.type === 'navigate');
     if (navInfo) desc += ` → navigate to ${navInfo.url?.substring(0, 80)}`;
     console.log(`  ${step.step}. ${desc}`);
+    // Show click context (popover/dropdown items)
+    if (a.clickContext) {
+      const ctx = a.clickContext;
+      if (ctx.appeared?.length > 0) {
+        for (const popup of ctx.appeared) {
+          const roleStr = popup.role ? ` [${popup.role}]` : '';
+          console.log(`      ↳ ${popup.tag}${roleStr} "${(popup.text || '').substring(0, 60)}"`);
+          if (popup.items?.length > 0) {
+            for (const item of popup.items.slice(0, 10)) {
+              const disStr = item.disabled ? ' [disabled]' : '';
+              console.log(`        • ${item.text}${disStr}`);
+            }
+            if (popup.items.length > 10) {
+              console.log(`        ... and ${popup.items.length - 10} more items`);
+            }
+          }
+        }
+      }
+      if (ctx.stateChanges?.length > 0) {
+        for (const sc of ctx.stateChanges) {
+          const parts: string[] = [];
+          if (sc.ariaExpanded !== undefined) parts.push(`expanded=${sc.ariaExpanded}`);
+          if (sc.disabled) parts.push('disabled');
+          if (sc.ariaSelected !== undefined) parts.push(`selected=${sc.ariaSelected}`);
+          if (sc.dataState) parts.push(`state=${sc.dataState}`);
+          if (parts.length > 0) {
+            console.log(`      ↳ state: <${sc.tag}> "${(sc.text || '').substring(0, 30)}" ${parts.join(', ')}`);
+          }
+        }
+      }
+    }
   }
 
   console.log('');
@@ -178,6 +209,38 @@ function printHumanReadableSummary(summary: RecordingSummary): void {
     if (a.x !== undefined && a.y !== undefined) parts.push(`@(${a.x},${a.y})`);
 
     console.log(parts.join(' '));
+
+    // Show click context (popover/dropdown items)
+    if (a.clickContext) {
+      const ctx = a.clickContext;
+      if (ctx.appeared?.length > 0) {
+        for (const popup of ctx.appeared) {
+          const roleStr = popup.role ? ` [${popup.role}]` : '';
+          console.log(`    📋 ${popup.tag}${roleStr} "${(popup.text || '').substring(0, 60)}"`);
+          if (popup.items?.length > 0) {
+            for (const item of popup.items.slice(0, 10)) {
+              const disStr = item.disabled ? ' [disabled]' : '';
+              console.log(`       • ${item.text}${disStr}`);
+            }
+            if (popup.items.length > 10) {
+              console.log(`       ... and ${popup.items.length - 10} more items`);
+            }
+          }
+        }
+      }
+      if (ctx.stateChanges?.length > 0) {
+        for (const sc of ctx.stateChanges) {
+          const stateParts: string[] = [];
+          if (sc.ariaExpanded !== undefined) stateParts.push(`expanded=${sc.ariaExpanded}`);
+          if (sc.disabled) stateParts.push('disabled');
+          if (sc.ariaSelected !== undefined) stateParts.push(`selected=${sc.ariaSelected}`);
+          if (sc.dataState) stateParts.push(`state=${sc.dataState}`);
+          if (stateParts.length > 0) {
+            console.log(`    🔄 <${sc.tag}> "${(sc.text || '').substring(0, 30)}" ${stateParts.join(', ')}`);
+          }
+        }
+      }
+    }
 
     for (const net of step.network) {
       console.log(`    → ${net.method} ${net.path} [${net.status}] ${net.resourceType}`);

@@ -17,6 +17,39 @@ import type { BrowserContext, Frame, Page, Request, Response } from 'playwright'
 
 // ─── Types ───────────────────────────────────────────────────────
 
+export interface ClickContextItem {
+  text: string;
+  tag?: string;
+  disabled?: boolean;
+  href?: string;
+}
+
+export interface ClickContextElement {
+  tag: string;
+  selector?: string;
+  role?: string;
+  text: string;
+  rect?: { x: number; y: number; w: number; h: number };
+  items: ClickContextItem[];
+}
+
+export interface ClickContextStateChange {
+  tag: string;
+  text: string;
+  id?: string;
+  ariaExpanded?: string;
+  ariaSelected?: string;
+  disabled?: boolean;
+  dataState?: string;
+  changed?: boolean;
+}
+
+export interface ClickContext {
+  appeared: ClickContextElement[];
+  disappeared: unknown[];
+  stateChanges: ClickContextStateChange[];
+}
+
 export interface UserAction {
   id: number;
   type: 'click' | 'input' | 'change' | 'keydown' | 'submit' | 'scroll';
@@ -39,6 +72,8 @@ export interface UserAction {
   y?: number;
   scrollX?: number;
   scrollY?: number;
+  /** Click context: popover/dropdown/menu items captured 200ms after click */
+  clickContext?: ClickContext;
 }
 
 export interface NetworkEntry {
@@ -293,8 +328,145 @@ const ACTION_SIGNAL_SCRIPT = `
     });
   }
 
+  // --- Click context: capture popover/dropdown/menu/state changes after click ---
+  var POPOVER_SELECTORS = [
+    '[role="menu"]','[role="listbox"]','[role="dialog"]','[role="tooltip"]','[role="popover"]',
+    '[role="combobox"]','[role="tree"]','[role="grid"]',
+    '.popover','.popup','.dropdown','.menu','.modal','.tooltip','.panel',
+    '[class*="popover"]','[class*="popup"]','[class*="dropdown"]','[class*="menu"]','[class*="tooltip"]',
+    '[class*="modal"]','[class*="panel"]','[class*="overlay"]','[class*="sheet"]',
+    '[data-popup]','[data-dropdown]','[data-menu]','[data-popover]',
+    '.semi-dropdown','.semi-popover','.semi-modal','.semi-select-option',
+    '.ant-dropdown','.ant-popover','.ant-modal','.ant-select-dropdown',
+    '.el-dropdown','.el-popover','.el-dialog','.el-select-dropdown',
+    '.t-dropdown','.t-popup','.t-dialog'
+  ];
+
+  function isNearClick(el, cx, cy, range) {
+    try {
+      var r = el.getBoundingClientRect();
+      if (!r || r.width === 0 || r.height === 0) return false;
+      // Element overlaps with or is near the click area
+      var margin = range || 300;
+      return !(r.left > cx + margin || r.right < cx - margin || r.top > cy + margin || r.bottom < cy - margin);
+    } catch(e) { return false; }
+  }
+
+  function captureVisibleContext(cx, cy) {
+    var result = { appeared: [], disappeared: [], stateChanges: [] };
+    try {
+      // 1. Find popover/dropdown/menu elements near the click
+      for (var i = 0; i < POPOVER_SELECTORS.length; i++) {
+        try {
+          var els = document.querySelectorAll(POPOVER_SELECTORS[i]);
+          for (var j = 0; j < els.length; j++) {
+            var el = els[j];
+            if (!isNearClick(el, cx, cy, 500)) continue;
+            var rect = el.getBoundingClientRect();
+            if (rect.width === 0 || rect.height === 0) continue;
+            var items = [];
+            // Capture child items (up to 20)
+            var children = el.querySelectorAll('a,button,[role="menuitem"],[role="option"],[role="treeitem"],li,div[class*="item"]');
+            for (var k = 0; k < Math.min(children.length, 20); k++) {
+              var child = children[k];
+              var childText = (child.textContent || '').trim().substring(0, 60);
+              if (!childText) continue;
+              var childInfo = { text: childText };
+              if (child.disabled) childInfo.disabled = true;
+              if (child.getAttribute('aria-disabled') === 'true') childInfo.disabled = true;
+              if (child.tagName) childInfo.tag = child.tagName.toLowerCase();
+              if (child.href) childInfo.href = child.href.substring(0, 80);
+              items.push(childInfo);
+            }
+            result.appeared.push({
+              tag: el.tagName.toLowerCase(),
+              selector: uniqueSelector(el),
+              role: el.getAttribute('role'),
+              text: (el.textContent || '').trim().substring(0, 100),
+              rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
+              items: items,
+            });
+          }
+        } catch(e) {}
+      }
+
+      // 2. Find elements that changed aria-expanded or disabled state near click
+      var nearbyEls = document.elementsFromPoint ? document.elementsFromPoint(cx, cy) : [];
+      // Also check elements in a wider area
+      var area = document.querySelector('body');
+      if (area) {
+        var allInteractive = area.querySelectorAll('[aria-expanded],[disabled],[aria-disabled],[aria-selected],[data-state]');
+        for (var i = 0; i < allInteractive.length; i++) {
+          var el = allInteractive[i];
+          if (!isNearClick(el, cx, cy, 400)) continue;
+          var info = { tag: el.tagName.toLowerCase(), text: (el.textContent || '').trim().substring(0, 60) };
+          if (el.id) info.id = el.id;
+          if (el.getAttribute('aria-expanded')) info.ariaExpanded = el.getAttribute('aria-expanded');
+          if (el.disabled) info.disabled = true;
+          if (el.getAttribute('aria-disabled') === 'true') info.disabled = true;
+          if (el.getAttribute('aria-selected')) info.ariaSelected = el.getAttribute('aria-selected');
+          if (el.getAttribute('data-state')) info.dataState = el.getAttribute('data-state');
+          result.stateChanges.push(info);
+        }
+      }
+    } catch(e) {}
+    // Deduplicate appeared by selector
+    var seen = {};
+    result.appeared = result.appeared.filter(function(item) {
+      if (!item.selector) return true;
+      if (seen[item.selector]) return false;
+      seen[item.selector] = true;
+      return true;
+    });
+    return result;
+  }
+
   document.addEventListener('click', function(e) {
-    pushAction('click', { element: describe(resolveMeaningful(e)), x: e.clientX, y: e.clientY });
+    var cx = e.clientX, cy = e.clientY;
+    // Snapshot before (for diff)
+    var beforeExpanded = {};
+    try {
+      var expandedEls = document.querySelectorAll('[aria-expanded]');
+      for (var i = 0; i < expandedEls.length; i++) {
+        var el = expandedEls[i];
+        if (isNearClick(el, cx, cy, 400)) {
+          beforeExpanded[el.id || uniqueSelector(el)] = el.getAttribute('aria-expanded');
+        }
+      }
+    } catch(e) {}
+
+    pushAction('click', { element: describe(resolveMeaningful(e)), x: cx, y: cy });
+
+    // After 200ms, capture what changed
+    setTimeout(function() {
+      try {
+        var ctx = captureVisibleContext(cx, cy);
+        // Check aria-expanded changes
+        try {
+          var expandedEls = document.querySelectorAll('[aria-expanded]');
+          for (var i = 0; i < expandedEls.length; i++) {
+            var el = expandedEls[i];
+            var key = el.id || uniqueSelector(el);
+            var now = el.getAttribute('aria-expanded');
+            if (beforeExpanded[key] !== undefined && beforeExpanded[key] !== now) {
+              ctx.stateChanges.push({
+                tag: el.tagName.toLowerCase(),
+                text: (el.textContent || '').trim().substring(0, 60),
+                id: el.id || undefined,
+                ariaExpanded: now,
+                changed: true,
+              });
+            }
+          }
+        } catch(e) {}
+        if (ctx.appeared.length > 0 || ctx.stateChanges.length > 0) {
+          var lastAction = window.__xb_pending_actions[window.__xb_pending_actions.length - 1];
+          if (lastAction && lastAction.type === 'click') {
+            lastAction.clickContext = ctx;
+          }
+        }
+      } catch(e) {}
+    }, 200);
   }, true);
 
   document.addEventListener('input', function(e) {
@@ -736,6 +908,13 @@ export class SessionRecorder {
       if (raw.ts <= this.lastActionTs) continue;
 
       this.actionCounter++;
+
+      // For click actions, capture popover/dropdown context after a delay
+      let clickContext: ClickContext | undefined;
+      if (raw.type === 'click' && raw.x !== undefined && raw.y !== undefined) {
+        clickContext = await this.captureClickContext(page, raw.x, raw.y);
+      }
+
       this.actions.push({
         id: this.actionCounter,
         type: raw.type as UserAction['type'],
@@ -749,9 +928,117 @@ export class SessionRecorder {
         y: raw.y,
         scrollX: raw.scrollX,
         scrollY: raw.scrollY,
+        clickContext,
       });
       this.lastActionTs = raw.ts;
     }
+  }
+
+  /**
+   * After a click, wait 300ms then scan for popover/dropdown/menu elements
+   * near the click position. This runs server-side to avoid race conditions
+   * with the client-side poll interval.
+   */
+  private async captureClickContext(page: Page, cx: number, cy: number): Promise<ClickContext | undefined> {
+    // Wait for animations/transitions to settle
+    await new Promise(r => setTimeout(r, 300));
+
+    try {
+      const ctx = await page.evaluate(([cx, cy]) => {
+        const POPOVER_SELECTORS = [
+          '[role="menu"]','[role="listbox"]','[role="dialog"]','[role="tooltip"]','[role="popover"]',
+          '[role="combobox"]','[role="tree"]','[role="grid"]',
+          '.popover','.popup','.dropdown','.menu','.modal','.tooltip','.panel',
+          '[class*="popover"]','[class*="popup"]','[class*="dropdown"]','[class*="menu"]',
+          '[class*="tooltip"]','[class*="modal"]','[class*="panel"]','[class*="overlay"]','[class*="sheet"]',
+          '[data-popup]','[data-dropdown]','[data-menu]','[data-popover"]',
+          '.semi-dropdown','.semi-popover','.semi-modal',
+          '.ant-dropdown','.ant-popover','.ant-modal',
+          '.el-dropdown','.el-popover','.el-dialog',
+          '.t-dropdown','.t-popup','.t-dialog',
+        ];
+
+        function isNear(el: Element, x: number, y: number, range: number) {
+          try {
+            const r = el.getBoundingClientRect();
+            if (!r || r.width === 0 || r.height === 0) return false;
+            return !(r.left > x + range || r.right < x - range || r.top > y + range || r.bottom < y - range);
+          } catch { return false; }
+        }
+
+        const result: { appeared: unknown[]; disappeared: unknown[]; stateChanges: unknown[] } = {
+          appeared: [],
+          disappeared: [],
+          stateChanges: [],
+        };
+        const seenSelectors = new Set<string>();
+
+        for (const sel of POPOVER_SELECTORS) {
+          try {
+            const els = document.querySelectorAll(sel);
+            for (let j = 0; j < els.length; j++) {
+              const el = els[j];
+              if (!isNear(el, cx, cy, 500)) continue;
+              const rect = el.getBoundingClientRect();
+              if (rect.width === 0 || rect.height === 0) continue;
+
+              // Deduplicate
+              const elSel = el.id ? '#' + el.id : sel;
+              if (seenSelectors.has(elSel + rect.x + rect.y)) continue;
+              seenSelectors.add(elSel + rect.x + rect.y);
+
+              const items: { text: string; tag?: string; disabled?: boolean; href?: string }[] = [];
+              const children = el.querySelectorAll('a,button,[role="menuitem"],[role="option"],[role="treeitem"],li,div[class*="item"]');
+              for (let k = 0; k < Math.min(children.length, 20); k++) {
+                const child = children[k];
+                const childText = (child.textContent || '').trim().substring(0, 60);
+                if (!childText) continue;
+                const ci: { text: string; tag?: string; disabled?: boolean; href?: string } = { text: childText };
+                if ((child as HTMLInputElement).disabled || child.getAttribute('aria-disabled') === 'true') ci.disabled = true;
+                if (child.tagName) ci.tag = child.tagName.toLowerCase();
+                if ((child as HTMLAnchorElement).href) ci.href = (child as HTMLAnchorElement).href.substring(0, 80);
+                items.push(ci);
+              }
+
+              result.appeared.push({
+                tag: el.tagName.toLowerCase(),
+                selector: el.id ? '#' + el.id : undefined,
+                role: el.getAttribute('role'),
+                text: (el.textContent || '').trim().substring(0, 100),
+                rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
+                items,
+              });
+            }
+          } catch { /* skip invalid selectors */ }
+        }
+
+        // Check aria-expanded / disabled state changes near click
+        const allInteractive = document.querySelectorAll('[aria-expanded],[disabled],[aria-disabled],[aria-selected],[data-state]');
+        for (let i = 0; i < allInteractive.length; i++) {
+          const el = allInteractive[i];
+          if (!isNear(el, cx, cy, 400)) continue;
+          const info: Record<string, unknown> = {
+            tag: el.tagName.toLowerCase(),
+            text: (el.textContent || '').trim().substring(0, 60),
+          };
+          if (el.id) info.id = el.id;
+          if (el.getAttribute('aria-expanded')) info.ariaExpanded = el.getAttribute('aria-expanded');
+          if ((el as HTMLInputElement).disabled || el.getAttribute('aria-disabled') === 'true') info.disabled = true;
+          if (el.getAttribute('aria-selected')) info.ariaSelected = el.getAttribute('aria-selected');
+          if (el.getAttribute('data-state')) info.dataState = el.getAttribute('data-state');
+          result.stateChanges.push(info);
+        }
+
+        return result;
+      }, [cx, cy] as const) as ClickContext;
+
+      if (ctx.appeared.length > 0 || ctx.stateChanges.length > 0) {
+        return ctx;
+      }
+    } catch {
+      // page may have navigated
+    }
+    return undefined;
   }
 
   // ─── Periodic disk flush ────────────────────────────────────────
