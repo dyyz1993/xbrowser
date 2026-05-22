@@ -1163,9 +1163,9 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({
       description: z.string().optional().describe('歌词主题描述（如"春天的田野"、"友情岁月"），AI 写歌词模式使用'),
-      lyric: z.string().optional().describe('自定义歌词（传入后自动切换到自定义歌词模式，豆包将按此歌词生成音乐）'),
-      style: z.string().optional().describe('音乐风格（如：流行、摇滚、民谣、古典）'),
-      mood: z.string().optional().describe('情绪（如：快乐、忧伤、激昂、温柔）'),
+      lyric: z.string().optional().describe('自定义歌词（最多 200 字，超过会自动截断。传入后自动切换到自定义歌词模式，豆包将按此歌词生成音乐）'),
+      style: z.string().optional().describe('音乐风格（如：流行、嘻哈、国风、DJ、摇滚、民谣、R&B、雷鬼、朋克、电音、爵士）'),
+      mood: z.string().optional().describe('情绪（如：快乐、忧伤、激昂、温柔、思念、愤怒、平静、浪漫）'),
       voice: z.string().optional().describe('音色（如：女声、男声、童声）'),
       duration: z.coerce.number().int().positive().optional()
         .describe('时长（秒）：如 30、60、90'),
@@ -1175,8 +1175,8 @@ export default function (xcli: XCLIAPI): void {
     }),
         examples: [
           { cmd: 'xbrowser doubao music --description "写一首快乐的歌曲，关于春天的美好" --timeout 60', description: 'AI 写歌词模式（默认）' },
-          { cmd: 'xbrowser doubao music --lyric "明月几时有，把酒问青天" --style 国风 --mood 激昂 --timeout 90', description: '自定义歌词模式，选择国风风格' },
-          { cmd: 'xbrowser doubao music --lyric "hello world" --style 流行 --mood 快乐 --voice 女声 --duration 120 --timeout 120', description: '完整参数：自定义歌词+风格+情绪+音色+时长' },
+          { cmd: 'xbrowser doubao music --lyric "明月几时有，把酒问青天，不知天上宫阙" --style 国风 --mood 激昂 --timeout 90', description: '自定义歌词模式，选择国风风格（最多200字）' },
+          { cmd: 'xbrowser doubao music --lyric "hello world" --style 流行 --mood 快乐 --voice 女声 --duration 120 --timeout 120', description: '完整参数：自定义歌词+风格+情绪+音色+时长（歌词可短可长，最长200字）' },
           { cmd: 'xbrowser doubao music --description "励志歌曲" --voice 男声 --timeout 60', description: 'AI 写歌词模式，指定音色' },
         ],
     result: z.any(),
@@ -1369,24 +1369,30 @@ export default function (xcli: XCLIAPI): void {
           });
           await page.waitForTimeout(500);
 
-          // 填写歌词到专用 textarea
+          // 歌词限制：最多 200 字
+          const lyricText = params.lyric.length > 200 ? params.lyric.slice(0, 200) : params.lyric;
+          const truncated = params.lyric.length !== lyricText.length;
+          if (truncated) {
+            tips.push(`⚠ 歌词超过 200 字，已截断到 ${lyricText.length} 字`);
+          }
+
+          // 填写歌词到专用 textarea（使用截断后的值）
           const lyricArea = page.locator('textarea[placeholder="自定义歌词"]').first();
           if (await lyricArea.count() > 0 && await lyricArea.isVisible()) {
-            await lyricArea.fill(params.lyric);
-            tips.push(`已填入歌词(${params.lyric.length}字)`);
+            await lyricArea.fill(lyricText);
+            tips.push(`已填入歌词(${lyricText.length}字)`);
             await page.waitForTimeout(500);
           } else {
             // fallback: 找任意可见 textarea 填写
             const fallbackTa = page.locator('textarea').filter({ has: page.locator(':visible') }).first();
             if (await fallbackTa.count() > 0) {
-              await fallbackTa.fill(params.lyric);
+              await fallbackTa.fill(lyricText);
               tips.push('已填入歌词(fallback)');
               await page.waitForTimeout(500);
             }
           }
 
-          // 确保字数不超过200，超过则截断
-          const lyricText = params.lyric.length > 200 ? params.lyric.slice(0, 200) : params.lyric;
+          // 通过 evaluate 再次触发 React 更新（保险起见）
           await page.evaluate((text) => {
             const ta = document.querySelector('textarea[placeholder="自定义歌词"]') as HTMLTextAreaElement;
             if (ta) {
