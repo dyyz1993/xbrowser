@@ -10,6 +10,7 @@ import { resolve } from 'path';
 import { existsSync, readdirSync } from 'fs';
 import { homedir } from 'os';
 import { PluginMetadataParser } from './metadata-parser.js';
+import { ensurePluginDependencies } from './ensure-deps.js';
 
 export type { PluginInstance, PluginStatus, XCLIAPI };
 
@@ -97,11 +98,13 @@ export class XBrowserPluginLoader {
 
   async scanAndLoad(): Promise<PluginInstance[]> {
     const cwd = this.options.cwd || process.cwd();
+    const globalDir = this.options.globalDir || resolve(homedir(), '.xbrowser/plugins');
+    ensurePluginDependencies(globalDir);
     const dirs = [
       resolve(cwd, '.xcli/plugins'),
       resolve(cwd, '../.xcli/plugins'),
       this.options.userDir || resolve(homedir(), '.xcli/plugins'),
-      this.options.globalDir || resolve(homedir(), '.xbrowser/plugins'),
+      globalDir,
     ];
 
     const loaded: PluginInstance[] = [];

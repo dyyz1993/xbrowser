@@ -47,7 +47,7 @@ const TEMPLATES: Record<string, ScaffoldTemplate> = {
       },
       {
         path: 'package.json',
-        content: `{\n  "name": "{{projectName}}",\n  "version": "1.0.0"\n}\n`,
+        content: `{\n  "name": "{{projectName}}",\n  "version": "1.0.0",\n  "dependencies": {\n    "zod": "^3.24.0"\n  }\n}\n`,
       },
     ],
   },
@@ -95,7 +95,7 @@ const TEMPLATES: Record<string, ScaffoldTemplate> = {
       },
       {
         path: 'package.json',
-        content: `{\n  "name": "{{projectName}}",\n  "version": "1.0.0"\n}\n`,
+        content: `{\n  "name": "{{projectName}}",\n  "version": "1.0.0",\n  "dependencies": {\n    "zod": "^3.24.0"\n  }\n}\n`,
       },
     ],
   },
@@ -138,7 +138,7 @@ const TEMPLATES: Record<string, ScaffoldTemplate> = {
       },
       {
         path: 'package.json',
-        content: `{\n  "name": "{{projectName}}",\n  "version": "1.0.0"\n}\n`,
+        content: `{\n  "name": "{{projectName}}",\n  "version": "1.0.0",\n  "dependencies": {\n    "zod": "^3.24.0"\n  }\n}\n`,
       },
     ],
   },
@@ -180,7 +180,7 @@ const TEMPLATES: Record<string, ScaffoldTemplate> = {
       },
       {
         path: 'package.json',
-        content: `{\n  "name": "{{projectName}}",\n  "version": "1.0.0"\n}\n`,
+        content: `{\n  "name": "{{projectName}}",\n  "version": "1.0.0",\n  "dependencies": {\n    "zod": "^3.24.0"\n  }\n}\n`,
       },
     ],
   },
