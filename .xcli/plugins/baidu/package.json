@@ -19,10 +19,26 @@
       "suggest",
       "news",
       "seo-rank"
+    ],
+    "slug": "baidu",
+    "name": "@xbrowser/baidu",
+    "description": "百度搜索 - 真实浏览器操作",
+    "version": "2.0.0",
+    "author": "dyyz1993",
+    "tags": [
+      "baidu",
+      "search-engine"
+    ],
+    "sites": [
+      "baidu.com"
     ]
   },
   "_npmSource": {
     "name": "@xbrowser/baidu",
     "version": "2.0.0"
+  },
+  "_marketplace": {
+    "slug": "baidu",
+    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
   }
 }

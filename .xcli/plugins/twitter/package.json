@@ -18,7 +18,15 @@
       "liked"
     ],
     "sites": [
-      "twitter"
+      "twitter",
+      "x.com"
+    ],
+    "slug": "twitter",
+    "version": "4.0.0",
+    "author": "XBrowser Team",
+    "tags": [
+      "twitter",
+      "social-media"
     ]
   },
   "dependencies": {
@@ -26,5 +34,9 @@
   },
   "peerDependencies": {
     "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "_marketplace": {
+    "slug": "twitter",
+    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
   }
 }
