@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-twitter",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "type": "module",
   "description": "X (Twitter) 数据采集 - XHR 拦截模式，含 views/bookmarks/媒体等丰富数据",
   "main": "index.ts",

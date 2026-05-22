@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-producthunt",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Product Hunt SEO 外链 - 产品发布平台 (DA 91, dofollow, 高权重)",
   "main": "index.ts",
   "keywords": [

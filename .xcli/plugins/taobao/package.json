@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-taobao",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "description": "淘宝 - 商品搜索、详情、店铺、评价与优惠券采集（需登录态）",
   "main": "index.ts",
   "keywords": [

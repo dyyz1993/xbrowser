@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-juejin",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "掘金 SEO 外链 - 中文技术社区 (DA 70+, 百度收录好)",
   "main": "index.ts",
   "keywords": [

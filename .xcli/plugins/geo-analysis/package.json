@@ -1,6 +1,6 @@
 {
   "name": "geo-analysis",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "GEO 外链排名分析插件 - 一键搜索所有 AI 搜索引擎，提取引用外链，按域名/平台聚合排名，生成发帖策略报告",
   "main": "index.ts",
   "type": "module",

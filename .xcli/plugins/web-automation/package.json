@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-web-automation",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "通用网页自动化 - 搜索、提取、分页采集",
   "main": "index.ts",
   "keywords": [

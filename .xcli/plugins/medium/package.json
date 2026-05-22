@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-medium",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Medium SEO 外链 - 内容平台 (DA 96, nofollow, 241M 月流量)",
   "main": "index.ts",
   "keywords": [

@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-seo",
-  "version": "5.0.0",
+  "version": "6.0.0",
   "type": "module",
   "description": "搜索引擎提交工具 + 57 个外链平台提交入口 — sitemap ping / IndexNow / SEO 检查 / 页面分析 / 外链提交",
   "main": "index.ts",

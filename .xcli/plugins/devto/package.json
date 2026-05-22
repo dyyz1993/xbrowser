@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-devto",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Dev.to SEO 外链 - 开发者社区 (DA 51, UGC/nofollow, 高流量)",
   "main": "index.ts",
   "keywords": [

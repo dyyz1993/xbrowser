@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-deviantart",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "DeviantArt Art Search",
   "main": "index.ts",
   "keywords": [

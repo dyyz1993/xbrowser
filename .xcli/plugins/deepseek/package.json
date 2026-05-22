@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-deepseek",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "DeepSeek 聊天助手 - 会话管理、消息发送、模式切换、附件支持",
   "author": "xbrowser",
   "xbrowser": {

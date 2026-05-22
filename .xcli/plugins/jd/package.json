@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-jd",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "京东商品图片搜索",
   "main": "index.ts",
   "keywords": [

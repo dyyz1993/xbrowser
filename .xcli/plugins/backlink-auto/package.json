@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-backlink-auto",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "自动注册+提交外链（CDP安全模式，CAPTCHA检测）",
   "main": "index.ts",
   "xbrowser": {

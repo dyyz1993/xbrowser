@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-github",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "GitHub SEO 外链 - Profile / README / Gist / Repo",
   "main": "index.ts",
   "keywords": [

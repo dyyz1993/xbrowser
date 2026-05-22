@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-steam",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Steam 游戏评论抓取 — 通过 Steam Review API 批量获取所有语言评论",
   "main": "index.ts",
   "keywords": [

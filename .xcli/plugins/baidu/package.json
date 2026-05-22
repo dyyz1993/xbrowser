@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-baidu",
-  "version": "3.0.0",
+  "version": "5.0.0",
   "description": "百度搜索 - 真实浏览器操作",
   "main": "index.ts",
   "keywords": [

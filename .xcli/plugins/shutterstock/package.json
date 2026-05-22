@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-shutterstock",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Shutterstock - Stock Photos, Images & Vectors",
   "main": "index.ts",
   "keywords": [

@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-9gag",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "9GAG 图片搜索",
   "main": "index.ts",
   "keywords": [

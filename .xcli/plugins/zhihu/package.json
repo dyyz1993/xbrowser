@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-zhihu",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "知乎 - 知识问答、内容采集与 AI 知答 (DA 93)",
   "main": "index.ts",
   "keywords": [

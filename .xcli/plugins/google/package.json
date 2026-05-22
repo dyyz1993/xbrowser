@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-google",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Google Search & Images",
   "main": "index.ts",
   "keywords": [

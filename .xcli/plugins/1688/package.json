@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-1688",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "1688阿里巴巴 - 店铺信息、商品列表、商品详情、搜索采集",
   "main": "index.ts",
   "keywords": [

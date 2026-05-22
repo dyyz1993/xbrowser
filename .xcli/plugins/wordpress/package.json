@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-wordpress",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "WordPress.com SEO 外链 - 博客平台 (DA 93, dofollow)",
   "main": "index.ts",
   "keywords": [

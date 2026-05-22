@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-blogger",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Blogger.com SEO 外链 - Google 免费博客平台 (DA 89, dofollow)",
   "main": "index.ts",
   "keywords": [

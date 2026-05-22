@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-p500px",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "500px Photography Search",
   "main": "index.ts",
   "keywords": [

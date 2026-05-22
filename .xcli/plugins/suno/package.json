@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-suno",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Suno AI Music Generation - 音乐生成、创作管理，支持自定义歌词/风格/同步异步",
   "type": "module",
   "main": "index.ts",

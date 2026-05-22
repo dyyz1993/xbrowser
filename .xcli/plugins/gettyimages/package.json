@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-gettyimages",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "description": "Getty Images - Stock Photos & Pictures",
   "main": "index.ts",
   "keywords": [
