@@ -11,23 +11,33 @@ const DB_URL = 'https://www.doubao.com';
 /**
  * 下载媒体文件到本地，返回 { localPath, size } 或 null
  */
-async function downloadMedia(url: string, prefix: string): Promise<{ localPath: string; size: number } | null> {
-  try {
-    const { execSync } = await import('child_process');
-    const downloadDir = path.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads');
-    if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir, { recursive: true });
-    const filename = `${prefix}_${Date.now()}${url.includes('video') ? '.mp4' : url.includes('audio') || url.includes('music') ? '.mp3' : '.png'}`;
-    const localPath = path.join(downloadDir, filename);
-    execSync(`curl -sL -o '${localPath}' '${url}'`, { timeout: 60000 });
-    const stat = fs.statSync(localPath);
-    if (stat.size < 1024) {
+async function downloadMedia(url: string, prefix: string, maxRetries = 3): Promise<{ localPath: string; size: number }> {
+  const downloadDir = path.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads');
+  if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir, { recursive: true });
+  const ext = url.includes('video') || url.includes('videoweb') ? '.mp4'
+    : url.includes('audio') || url.includes('music') || url.includes('bigmusic') ? '.mp3'
+    : '.png';
+  const filename = `${prefix}_${Date.now()}${ext}`;
+  const localPath = path.join(downloadDir, filename);
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const { execSync } = await import('child_process');
+      execSync(`curl -sLf -o '${localPath}' '${url}'`, { timeout: 120000 });
+      const stat = fs.statSync(localPath);
+      if (stat.size >= 1024) {
+        return { localPath, size: stat.size };
+      }
+      // 文件过小，可能是错误页面，删掉重试
       fs.unlinkSync(localPath);
-      return null;
+    } catch {
+      if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
     }
-    return { localPath, size: stat.size };
-  } catch {
-    return null;
+    if (attempt < maxRetries) {
+      await new Promise(r => setTimeout(r, 2000 * attempt));
+    }
   }
+  throw new Error(`下载失败（重试 ${maxRetries} 次）: ${url}`);
 }
 
 function formatFileSize(bytes: number): string {
@@ -710,12 +720,9 @@ export default function (xcli: XCLIAPI): void {
 
         if (imageUrl) {
           const downloaded = await downloadMedia(imageUrl, 'image');
-          const downloadTip = downloaded
-            ? `📁 图片已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`
-            : '⚠ 图片下载失败，请用 URL 手动下载';
           return {
-            data: { url: imageUrl, localPath: downloaded?.localPath || null, prompt, duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` },
-            tips: [...tips, downloadTip],
+            data: { url: imageUrl, localPath: downloaded.localPath, prompt, duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` },
+            tips: [...tips, `📁 图片已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`],
             message: `✅ 图片已生成 (${((Date.now() - startTime) / 1000).toFixed(1)}s)`,
           };
         }
@@ -1172,22 +1179,16 @@ export default function (xcli: XCLIAPI): void {
           tips.push(`状态提示: ${statusMatch?.[0] || '任务可能还在处理'}`);
         }
 
-        let localVideoPath: string | null = null;
+
         if (videoUrl) {
           const downloaded = await downloadMedia(videoUrl, 'video');
-          if (downloaded) {
-            localVideoPath = downloaded.localPath;
-            tips.push(`📁 视频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`);
-          } else {
-            tips.push('⚠ 视频下载失败，请用 URL 手动下载');
-          }
+          tips.push(`📁 视频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`);
+          return {
+            data: { taskId: params.task, url: videoUrl, localPath: downloaded.localPath },
+            tips,
+            message: `✅ 视频地址: ${videoUrl}`,
+          };
         }
-
-        return {
-          data: { taskId: params.task, url: videoUrl || null, localPath: localVideoPath },
-          tips,
-          message: videoUrl ? `✅ 视频地址: ${videoUrl}` : '⏱ 视频尚未生成完成',
-        };
       } catch (error) {
         return fail('未知错误', ['获取视频结果失败']);
       }
@@ -1645,13 +1646,9 @@ export default function (xcli: XCLIAPI): void {
 
           if (audioUrl) {
             const downloaded = await downloadMedia(audioUrl, 'music');
-            const downloadTip = downloaded
-              ? `📁 音频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`
-              : '⚠ 音频下载失败，请用 URL 手动下载';
-
             return ok({
                 url: audioUrl,
-                localPath: downloaded?.localPath || null,
+                localPath: downloaded.localPath,
                 conversationUrl,
                 description: activeDescription,
                 style: params.style || null,
@@ -1660,7 +1657,7 @@ export default function (xcli: XCLIAPI): void {
                 duration: params.duration || null,
                 lyric: params.lyric || null,
                 mode,
-              }, [...tips, '✅ 音乐生成完成！', downloadTip]);
+              }, [...tips, '✅ 音乐生成完成！', `📁 音频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`]);
           }
 
           const hasError = await page.evaluate(() => {
@@ -1735,12 +1732,9 @@ export default function (xcli: XCLIAPI): void {
         const audioUrl = await extractPageAudio(page);
         if (audioUrl) {
           const downloaded = await downloadMedia(audioUrl, 'music');
-          const downloadTip = downloaded
-            ? `📁 音频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`
-            : '⚠ 音频下载失败，请用 URL 手动下载';
           return {
-            data: { status: 'completed', url: audioUrl, localPath: downloaded?.localPath || null, taskId: params.task || null },
-            tips: [...tips, downloadTip],
+            data: { status: 'completed', url: audioUrl, localPath: downloaded.localPath, taskId: params.task || null },
+            tips: [...tips, `📁 音频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`],
             message: `✅ 音乐已生成: ${audioUrl}`,
           };
         }
@@ -1799,10 +1793,7 @@ export default function (xcli: XCLIAPI): void {
 
         if (audioUrl) {
           const downloaded = await downloadMedia(audioUrl, 'music');
-          const downloadTip = downloaded
-            ? `📁 音频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`
-            : '⚠ 音频下载失败，请用 URL 手动下载';
-          return ok({ url: audioUrl, localPath: downloaded?.localPath || null, taskId: params.task || null }, [...tips, downloadTip]);
+          return ok({ url: audioUrl, localPath: downloaded.localPath, taskId: params.task || null }, [...tips, `📁 音频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`]);
         }
 
         // No audio found — give user actionable instructions
