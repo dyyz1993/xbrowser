@@ -24,12 +24,25 @@
       "comments",
       "feed",
       "resolve-url"
-    ]
+    ],
+    "slug": "xiaohongshu",
+    "name": "xiaohongshu",
+    "description": "小红书 - 笔记详情、用户信息、搜索、评论采集",
+    "version": "3.0.0",
+    "author": "XBrowser Team",
+    "tags": [
+      "xiaohongshu"
+    ],
+    "sites": []
   },
   "dependencies": {
     "zod": "^3.24.0"
   },
   "peerDependencies": {
     "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "_marketplace": {
+    "slug": "xiaohongshu",
+    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
   }
 }

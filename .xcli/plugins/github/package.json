@@ -20,6 +20,23 @@
       "get-profile",
       "create-repo",
       "edit-readme"
+    ],
+    "slug": "github",
+    "name": "github",
+    "description": "GitHub SEO 外链 - Profile / README / Gist / Repo",
+    "version": "4.0.0",
+    "author": "dyyz1993",
+    "tags": [
+      "github",
+      "developer",
+      "code"
+    ],
+    "sites": [
+      "github.com"
     ]
+  },
+  "_marketplace": {
+    "slug": "github",
+    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
   }
 }

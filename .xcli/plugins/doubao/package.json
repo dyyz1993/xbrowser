@@ -49,6 +49,16 @@
     ],
     "sites": [
       "doubao"
+    ],
+    "slug": "doubao",
+    "version": "3.0.0",
+    "author": "Unknown",
+    "tags": [
+      "doubao"
     ]
+  },
+  "_marketplace": {
+    "slug": "doubao",
+    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
   }
 }

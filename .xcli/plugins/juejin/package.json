@@ -19,6 +19,22 @@
       "draft",
       "update-profile",
       "fetch-articles"
+    ],
+    "slug": "juejin",
+    "name": "juejin",
+    "description": "掘金 SEO 外链 - 中文技术社区 (DA 70+, 百度收录好)",
+    "version": "4.0.0",
+    "author": "dyyz1993",
+    "tags": [
+      "juejin",
+      "developer"
+    ],
+    "sites": [
+      "juejin.cn"
     ]
+  },
+  "_marketplace": {
+    "slug": "juejin",
+    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
   }
 }

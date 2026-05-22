@@ -33,6 +33,19 @@
       "user-comments",
       "search",
       "ai-subtitle"
-    ]
+    ],
+    "slug": "douyin",
+    "name": "douyin",
+    "description": "XBrowser 抖音数据采集插件 - 支持视频评论、用户评论、作品统计、AI 字幕提取等功能",
+    "version": "4.0.0",
+    "author": "dyyz1993",
+    "tags": [
+      "douyin"
+    ],
+    "sites": []
+  },
+  "_marketplace": {
+    "slug": "douyin",
+    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
   }
 }

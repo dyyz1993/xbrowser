@@ -26,6 +26,22 @@
       "seller-items",
       "coupons",
       "update-profile"
+    ],
+    "slug": "taobao",
+    "name": "taobao",
+    "description": "淘宝 - 商品搜索、详情、店铺、评价与优惠券采集（需登录态）",
+    "version": "5.0.0",
+    "author": "dyyz1993",
+    "tags": [
+      "taobao",
+      "e-commerce"
+    ],
+    "sites": [
+      "taobao.com"
     ]
+  },
+  "_marketplace": {
+    "slug": "taobao",
+    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
   }
 }

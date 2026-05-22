@@ -19,6 +19,23 @@
       "draft",
       "update-profile",
       "fetch-articles"
+    ],
+    "slug": "csdn",
+    "name": "csdn",
+    "description": "CSDN SEO 外链 - 中文技术平台 (DA 80+, 百度排名 #1)",
+    "version": "4.0.0",
+    "author": "dyyz1993",
+    "tags": [
+      "csdn",
+      "developer",
+      "knowledge"
+    ],
+    "sites": [
+      "csdn.net"
     ]
+  },
+  "_marketplace": {
+    "slug": "csdn",
+    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
   }
 }

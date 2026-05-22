@@ -18,6 +18,19 @@
       "paginate",
       "fill-and-submit",
       "screenshot"
-    ]
+    ],
+    "slug": "web-automation",
+    "name": "web-automation",
+    "description": "通用网页自动化 - 搜索、提取、分页采集",
+    "version": "3.0.0",
+    "author": "dyyz1993",
+    "tags": [
+      "web-automation"
+    ],
+    "sites": []
+  },
+  "_marketplace": {
+    "slug": "web-automation",
+    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
   }
 }
