@@ -57,8 +57,10 @@ export async function installFromMarketplace(
   const tmpDir = join(tmpdir(), `xbrowser-marketplace-${Date.now()}`);
   mkdirSync(tmpDir, { recursive: true });
 
+  const realSlug = String(plugin.slug || slug);
+
   try {
-    await downloadAndExtractMarketplaceTarball(baseUrl, slug, tmpDir, targetDir);
+    await downloadAndExtractMarketplaceTarball(baseUrl, realSlug, tmpDir, targetDir);
   } finally {
     safeCleanup(tmpDir);
   }
@@ -73,7 +75,7 @@ export async function installFromMarketplace(
     throw new Error(`Invalid marketplace plugin: ${verify.error}`);
   }
 
-  const trackUrl = `${baseUrl}/api/plugins/${slug}/install`;
+  const trackUrl = `${baseUrl}/api/plugins/${realSlug}/install`;
   fetch(trackUrl, { method: 'POST' }).catch(() => {});
 
   return {

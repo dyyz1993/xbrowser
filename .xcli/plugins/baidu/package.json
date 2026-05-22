@@ -1,6 +1,6 @@
 {
-  "name": "xbrowser-plugin-baidu",
-  "version": "5.0.0",
+  "name": "@xbrowser/baidu",
+  "version": "2.0.0",
   "description": "百度搜索 - 真实浏览器操作",
   "main": "index.ts",
   "keywords": [
@@ -20,5 +20,9 @@
       "news",
       "seo-rank"
     ]
+  },
+  "_npmSource": {
+    "name": "@xbrowser/baidu",
+    "version": "2.0.0"
   }
 }
