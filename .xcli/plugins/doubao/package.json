@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-doubao",
-  "version": "3.1.0",
+    "version": "3.2.0",
   "description": "豆包 (Doubao) 全能助手 - 会话管理、图像/视频/音乐生成、自定义歌词、文件管理、联网搜索",
   "type": "module",
   "main": "index.ts",
@@ -51,7 +51,7 @@
       "doubao"
     ],
     "slug": "doubao",
-    "version": "3.1.0",
+  "version": "3.2.0",
     "author": "Unknown",
     "tags": [
       "doubao"
