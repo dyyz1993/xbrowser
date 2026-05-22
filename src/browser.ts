@@ -283,6 +283,11 @@ export function readSessionDiskMeta(name: string): SessionDiskMeta | null {
   }
 }
 
+export function deleteSessionDiskMeta(name: string): void {
+  const file = sessionFile(name);
+  try { unlinkSync(file); } catch { /* file may not exist */ }
+}
+
 /**
  * Find a session by name, falling back to disk-stored metadata when the
  * in-memory session is gone (e.g. cross-CLI-invocation).
@@ -294,13 +299,27 @@ export function readSessionDiskMeta(name: string): SessionDiskMeta | null {
  * @param cdpEndpoint - CDP endpoint to use when restoring from disk.
  * @returns A managed session (possibly restored), or `undefined`.
  */
-export async function findOrRestoreSession(
+ export async function findOrRestoreSession(
   name: string,
   cdpEndpoint?: string,
 ): Promise<ManagedSession | undefined> {
   // 1. Try in-memory first
   const inMem = findSession(name);
-  if (inMem) return inMem;
+  if (inMem) {
+    // Validate in-memory session's page is still alive
+    try {
+      await Promise.race([
+        inMem.page.evaluate(() => true),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+      ]);
+      return inMem;
+    } catch {
+      // Page is dead, discard and fall through to disk restore / fresh create
+      console.log(`[Session] "${name}" page unresponsive, discarding stale session`);
+      sessions.delete(inMem.id);
+      deleteSessionDiskMeta(name);
+    }
+  }
 
   // 2. Try disk recovery if we have CDP
   const meta = readSessionDiskMeta(name);
@@ -366,6 +385,19 @@ export async function findOrRestoreSession(
       page = pages.length > 0 ? pages[0] : await context.newPage();
     }
 
+    // Validate restored page is responsive
+    try {
+      await Promise.race([
+        page.evaluate(() => true),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+      ]);
+    } catch {
+      // Page is dead (CDP disconnected, tab closed, etc.) — discard stale session, create fresh
+      console.log(`[Session] "${name}" restored page unresponsive, creating fresh session`);
+      deleteSessionDiskMeta(name);
+      return undefined;
+    }
+
     const targetUrl = meta.conversationUrl || meta.url;
     if (targetUrl && page.url() !== targetUrl && !page.url().includes(new URL(targetUrl).hostname)) {
       await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
@@ -388,6 +420,8 @@ export async function findOrRestoreSession(
     return session;
   } catch (e) {
     console.error(`[Session Restore] Failed for "${name}":`, (e as Error).message);
+    // Discard corrupt session meta so next attempt starts fresh
+    deleteSessionDiskMeta(name);
     return undefined;
   }
 }
