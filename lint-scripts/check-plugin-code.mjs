@@ -31,7 +31,7 @@ const entries = readdirSync(PLUGINS_DIR, { withFileTypes: true });
 
 for (const entry of entries) {
   if (!entry.isDirectory()) continue;
-  if (entry.name === 'shared') continue;
+  if (entry.name === 'shared' || entry.name === 'node_modules') continue;
 
   const pluginPath = resolve(PLUGINS_DIR, entry.name);
   const tsPath = resolve(pluginPath, 'index.ts');

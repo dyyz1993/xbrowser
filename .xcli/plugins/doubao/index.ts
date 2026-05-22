@@ -1296,67 +1296,65 @@ export default function (xcli: XCLIAPI): void {
               tips.push('已选择「自定义歌词」');
               await page.waitForTimeout(2000);
 
-              // 调试：截图并查找所有 textarea
-              const screenshotPath = '/tmp/doubao_custom_lyric_modal.png';
-              await page.screenshot({ path: screenshotPath, fullPage: true });
-              tips.push(`📸 已截图: ${screenshotPath}`);
+              if (params.debug) {
+                const screenshotPath = '/tmp/doubao_custom_lyric_modal.png';
+                await page.screenshot({ path: screenshotPath, fullPage: true });
+                tips.push(`📸 已截图: ${screenshotPath}`);
 
-              // 查找所有 textarea
-              const textareas = await page.evaluate(() => {
-                const areas = document.querySelectorAll('textarea');
-                const info: Array<{ placeholder: string; id: string; class: string; value: string; visible: boolean }> = [];
-                areas.forEach(t => {
-                  info.push({
-                    placeholder: t.getAttribute('placeholder') || '',
-                    id: t.getAttribute('id') || '',
-                    class: t.getAttribute('class') || '',
-                    value: t.value,
-                    visible: t.offsetParent !== null
+                const textareas = await page.evaluate(() => {
+                  const areas = document.querySelectorAll('textarea');
+                  const info: Array<{ placeholder: string; id: string; class: string; value: string; visible: boolean }> = [];
+                  areas.forEach(t => {
+                    info.push({
+                      placeholder: t.getAttribute('placeholder') || '',
+                      id: t.getAttribute('id') || '',
+                      class: t.getAttribute('class') || '',
+                      value: t.value,
+                      visible: t.offsetParent !== null
+                    });
                   });
+                  return info;
                 });
-                return info;
-              });
-              tips.push(`🔍 找到 ${textareas.length} 个 textarea: ${JSON.stringify(textareas)}`);
+                tips.push(`🔍 找到 ${textareas.length} 个 textarea: ${JSON.stringify(textareas)}`);
 
-              // 查找所有包含"歌词"的元素
-              const lyricElements = await page.evaluate(() => {
-                const all = document.querySelectorAll('*');
-                const info: Array<{ tag: string; text: string; class: string; visible: boolean }> = [];
-                all.forEach(e => {
-                  const cls = e.getAttribute('class') || '';
-                  const txt = e.textContent?.trim() || '';
-                  if (cls.toLowerCase().includes('lyric') || txt.includes('歌词')) {
-                    if (info.length < 20) { // 限制输出数量
+                const lyricElements = await page.evaluate(() => {
+                  const all = document.querySelectorAll('*');
+                  const info: Array<{ tag: string; text: string; class: string; visible: boolean }> = [];
+                  all.forEach(e => {
+                    const cls = e.getAttribute('class') || '';
+                    const txt = e.textContent?.trim() || '';
+                    if (cls.toLowerCase().includes('lyric') || txt.includes('歌词')) {
+                      if (info.length < 20) {
+                        info.push({
+                          tag: e.tagName,
+                          text: txt.substring(0, 50),
+                          class: cls,
+                          visible: e.offsetParent !== null
+                        });
+                      }
+                    }
+                  });
+                  return info;
+                });
+                tips.push(`🔍 找到 ${lyricElements.length} 个歌词相关元素: ${JSON.stringify(lyricElements)}`);
+
+                const buttons = await page.evaluate(() => {
+                  const all = document.querySelectorAll('button');
+                  const info: Array<{ text: string; class: string; disabled: boolean }> = [];
+                  all.forEach(b => {
+                    const txt = b.textContent?.trim() || '';
+                    if (txt.length < 20) {
                       info.push({
-                        tag: e.tagName,
-                        text: txt.substring(0, 50),
-                        class: cls,
-                        visible: e.offsetParent !== null
+                        text: txt,
+                        class: b.getAttribute('class') || '',
+                        disabled: (b as HTMLButtonElement).disabled
                       });
                     }
-                  }
+                  });
+                  return info;
                 });
-                return info;
-              });
-              tips.push(`🔍 找到 ${lyricElements.length} 个歌词相关元素: ${JSON.stringify(lyricElements)}`);
-
-              // 查找所有 button 元素（看确认按钮状态）
-              const buttons = await page.evaluate(() => {
-                const all = document.querySelectorAll('button');
-                const info: Array<{ text: string; class: string; disabled: boolean }> = [];
-                all.forEach(b => {
-                  const txt = b.textContent?.trim() || '';
-                  if (txt.length < 20) {
-                    info.push({
-                      text: txt,
-                      class: b.getAttribute('class') || '',
-                      disabled: (b as HTMLButtonElement).disabled
-                    });
-                  }
-                });
-                return info;
-              });
-              tips.push(`🔍 找到 ${buttons.length} 个按钮: ${JSON.stringify(buttons)}`);
+                tips.push(`🔍 找到 ${buttons.length} 个按钮: ${JSON.stringify(buttons)}`);
+              }
             } else {
               tips.push('⚠ 未找到「自定义歌词」选项，继续使用 AI 歌词');
             }
@@ -1575,7 +1573,33 @@ export default function (xcli: XCLIAPI): void {
 
         if (waitSeconds > 0) {
           tips.push(`⏳ 等待音乐生成（最长 ${waitSeconds} 秒）...`);
-          const audioUrl = await audioUrlPromise;
+
+          const startTime = Date.now();
+          const maxWait = waitSeconds * 1000;
+          let audioUrl: string | null = null;
+
+          while (Date.now() - startTime < maxWait) {
+            const networkResult = await Promise.race([
+              audioUrlPromise.then(u => u),
+              new Promise<null>(r => setTimeout(() => r(null), 5000))
+            ]);
+            if (networkResult) {
+              audioUrl = networkResult;
+              break;
+            }
+
+            const domUrl = await extractPageAudio(page);
+            if (domUrl) {
+              audioUrl = domUrl;
+              break;
+            }
+
+            const hasError = await page.evaluate(() => {
+              const body = document.body.innerText;
+              return /生成失败|出错了|无法生成|请求过于频繁|请稍后再试|抱歉/.test(body);
+            });
+            if (hasError) break;
+          }
 
           if (audioUrl) {
             return ok({
@@ -1589,21 +1613,6 @@ export default function (xcli: XCLIAPI): void {
                 lyric: params.lyric || null,
                 mode,
               }, [...tips, '✅ 音乐生成完成！', '💡 URL 有签名有时效，建议尽快下载']);
-          }
-
-          const fallbackUrl = await extractPageAudio(page);
-          if (fallbackUrl) {
-            return ok({
-                url: fallbackUrl,
-                conversationUrl,
-                description: activeDescription,
-                style: params.style || null,
-                mood: params.mood || null,
-                voice: params.voice || null,
-                duration: params.duration || null,
-                lyric: params.lyric || null,
-                mode,
-              }, [...tips, '✅ 音乐生成完成（通过 DOM 提取）']);
           }
 
           const hasError = await page.evaluate(() => {

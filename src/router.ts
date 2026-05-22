@@ -771,11 +771,11 @@ export async function routeCommand(
           }
 
           const needsBrowser = cmdEntry.scope !== 'global';
-          // Forward non-global plugin commands to daemon
           if (needsBrowser && !process.env.XBROWSER_DAEMON_WORKER) {
             const { forwardExec } = await import('./client/daemon-client.js');
-            const result = await forwardExec(command, params, sessionName, cdpEndpoint);
-            if (result) {
+            const userTimeout = typeof params.timeout === 'number' && params.timeout > 0 ? params.timeout * 1000 + 30000 : undefined;
+            const result = await forwardExec(command, params, sessionName, cdpEndpoint, userTimeout);
+            if (result && result.success !== false) {
               if (isCommandResult(result)) {
                 if (mode === 'json' || mode === 'yaml') {
                   console.log(outputFormatter.format(result.data, { mode: mode as 'json' | 'yaml', color: false, emoji: false }));

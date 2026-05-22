@@ -107,11 +107,12 @@ export async function forwardExec(
   params: Record<string, unknown>,
   session: string = 'default',
   cdpEndpoint?: string,
+  timeoutMs: number = 120000,
 ): Promise<ExecutionResult> {
   const rpcParams: Record<string, unknown> = { command, params, session };
   if (cdpEndpoint) rpcParams.cdpEndpoint = cdpEndpoint;
   try {
-    return await rpcCall<ExecutionResult>('exec', rpcParams, 60000);
+    return await rpcCall<ExecutionResult>('exec', rpcParams, timeoutMs);
   } catch {
     return { success: false, data: null, message: `Daemon error: exec failed`, duration: 0 };
   }
