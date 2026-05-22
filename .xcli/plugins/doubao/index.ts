@@ -1173,11 +1173,12 @@ export default function (xcli: XCLIAPI): void {
         .describe('同步等待秒数（如 --timeout 60），不传则异步提交'),
       debug: z.boolean().optional().describe('开启 debug 模式，自动记录 API 请求结构到 ~/.xbrowser/debug/'),
     }),
-    examples: [
-      { cmd: 'xbrowser doubao music --description "轻快的钢琴曲" --timeout 60', description: 'AI 写歌词模式，同步等待' },
-      { cmd: 'xbrowser doubao music --lyric "明月几时有，把酒问青天" --style 古风 --mood 激昂 --timeout 90', description: '自定义歌词模式' },
-      { cmd: 'xbrowser doubao music --description "草原牧歌" --debug --timeout 60', description: '带 debug 模式，记录 API 结构' },
-    ],
+        examples: [
+          { cmd: 'xbrowser doubao music --description "写一首快乐的歌曲，关于春天的美好" --timeout 60', description: 'AI 写歌词模式（默认）' },
+          { cmd: 'xbrowser doubao music --lyric "明月几时有，把酒问青天" --style 国风 --mood 激昂 --timeout 90', description: '自定义歌词模式，选择国风风格' },
+          { cmd: 'xbrowser doubao music --lyric "hello world" --style 流行 --mood 快乐 --voice 女声 --duration 120 --timeout 120', description: '完整参数：自定义歌词+风格+情绪+音色+时长' },
+          { cmd: 'xbrowser doubao music --description "励志歌曲" --voice 男声 --timeout 60', description: 'AI 写歌词模式，指定音色' },
+        ],
     result: z.any(),
     handler: async (params, ctx) => {
       try {
@@ -1219,12 +1220,7 @@ export default function (xcli: XCLIAPI): void {
                 if (typeof msg.content === 'string') {
                   try {
                     const content = JSON.parse(msg.content);
-                    if (content.generation_type === 'custome_lyric' && !content.lyric) {
-                      tips.push('⚠️ 检测到自定义歌词模式下 lyric 字段为空，歌词可能未正确填入');
-                    }
-                    if (content.generation_type === 'ai_lyric' && !content.theme) {
-                      tips.push('⚠️ 检测到 AI 写歌词模式下 theme 字段为空，主题可能未正确填入');
-                    }
+                    // 不再使用旧 API 检测
                   } catch { /* ignore */ }
                 }
               }
@@ -1235,7 +1231,13 @@ export default function (xcli: XCLIAPI): void {
         await page.goto('https://www.doubao.com/chat/', { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForTimeout(2000);
 
-        const musicHandle = await page.evaluateHandle(() => Array.from(document.querySelectorAll('div,button')).find(e => e.textContent.trim() === '音乐生成' && e.children.length === 0));
+        const musicHandle = await page.evaluateHandle(() => {
+          const all = document.querySelectorAll('button,div');
+          for (const e of all) {
+            if (e.textContent.trim() === '音乐生成' && e.offsetParent !== null) return e;
+          }
+          return null;
+        });
         const musicEl = musicHandle.asElement();
         if (!musicEl) throw new Error('找不到「音乐生成」按钮');
         const musicBox = await musicEl.boundingBox();
@@ -1243,131 +1245,6 @@ export default function (xcli: XCLIAPI): void {
         await page.mouse.click(musicBox.x + musicBox.width / 2, musicBox.y + musicBox.height / 2);
         tips.push('已点击「音乐生成」按钮');
         await page.waitForTimeout(2500);
-
-        if (params.style) {
-          const styleSpanHandle = await page.evaluateHandle(() => {
-            for (const s of document.querySelectorAll('span')) {
-              const text = s.textContent.trim();
-              if (['流行', '嘻哈', '国风', 'DJ', '摇滚', '民谣', 'R&B', '雷鬼', '朋克', '电音', '爵士'].includes(text) && s.className.includes('px-6')) return s;
-            }
-            return null;
-          });
-          const styleSpan = styleSpanHandle.asElement();
-          if (styleSpan) {
-            const styleBox = await styleSpan.boundingBox();
-            if (styleBox) await page.mouse.click(styleBox.x + styleBox.width / 2, styleBox.y + styleBox.height / 2);
-            await page.waitForTimeout(800);
-            const styleSelected = await page.evaluateHandle((style: string) => {
-              const el = Array.from(document.querySelectorAll('div')).find(e => e.textContent.trim() === style && e.children.length === 0);
-              return el || null;
-            }, params.style);
-            const styleOpt = styleSelected.asElement();
-            if (styleOpt) {
-              const optBox = await styleOpt.boundingBox();
-              if (optBox) await page.mouse.click(optBox.x + optBox.width / 2, optBox.y + optBox.height / 2);
-              tips.push(`已选择风格: ${params.style}`);
-            } else {
-              tips.push(`⚠ 未找到风格"${params.style}"，使用默认`);
-            }
-            await page.waitForTimeout(500);
-          } else {
-            tips.push(`⚠ 未找到风格下拉入口，使用默认`);
-          }
-        }
-
-        if (params.mood) {
-          const moodSpanHandle = await page.evaluateHandle(() => {
-            for (const s of document.querySelectorAll('span')) {
-              const text = s.textContent.trim();
-              if (['快乐', '忧伤', '激昂', '温柔', '思念', '愤怒', '平静', '浪漫'].includes(text) && s.className.includes('px-6')) return s;
-            }
-            return null;
-          });
-          const moodSpan = moodSpanHandle.asElement();
-          if (moodSpan) {
-            const moodBox = await moodSpan.boundingBox();
-            if (moodBox) await page.mouse.click(moodBox.x + moodBox.width / 2, moodBox.y + moodBox.height / 2);
-            await page.waitForTimeout(800);
-            const moodSelected = await page.evaluateHandle((mood: string) => {
-              const el = Array.from(document.querySelectorAll('div')).find(e => e.textContent.trim() === mood && e.children.length === 0);
-              return el || null;
-            }, params.mood);
-            const moodOpt = moodSelected.asElement();
-            if (moodOpt) {
-              const optBox = await moodOpt.boundingBox();
-              if (optBox) await page.mouse.click(optBox.x + optBox.width / 2, optBox.y + optBox.height / 2);
-              tips.push(`已选择情绪: ${params.mood}`);
-            } else {
-              tips.push(`⚠ 未找到情绪"${params.mood}"，使用默认`);
-            }
-            await page.waitForTimeout(500);
-          } else {
-            tips.push(`⚠ 未找到情绪下拉入口，使用默认`);
-          }
-        }
-
-        if (params.duration) {
-          const durSpanHandle = await page.evaluateHandle(() => {
-            for (const s of document.querySelectorAll('span')) {
-              const text = s.textContent.trim();
-              if (['30', '60', '90', '120'].includes(text) && s.className.includes('px-6')) return s;
-            }
-            return null;
-          });
-          const durSpan = durSpanHandle.asElement();
-          if (durSpan) {
-            const durBox = await durSpan.boundingBox();
-            if (durBox) await page.mouse.click(durBox.x + durBox.width / 2, durBox.y + durBox.height / 2);
-            await page.waitForTimeout(800);
-            const durLabel = `${params.duration}`;
-            const durSelected = await page.evaluateHandle((dur: string) => {
-              const el = Array.from(document.querySelectorAll('div')).find(e => e.textContent.trim() === dur && e.children.length === 0);
-              return el || null;
-            }, durLabel);
-            const durOpt = durSelected.asElement();
-            if (durOpt) {
-              const optBox = await durOpt.boundingBox();
-              if (optBox) await page.mouse.click(optBox.x + optBox.width / 2, optBox.y + optBox.height / 2);
-              tips.push(`已选择时长: ${params.duration}秒`);
-            } else {
-              tips.push(`⚠ 未找到时长"${params.duration}秒"选项，使用默认`);
-            }
-            await page.waitForTimeout(500);
-          } else {
-            tips.push(`⚠ 未找到时长下拉入口，使用默认`);
-          }
-        }
-
-        if (params.voice) {
-          const voiceSpanHandle = await page.evaluateHandle(() => {
-            for (const s of document.querySelectorAll('span')) {
-              const text = s.textContent.trim();
-              if (['女声', '男声', '童声'].includes(text) && s.className.includes('px-6')) return s;
-            }
-            return null;
-          });
-          const voiceSpan = voiceSpanHandle.asElement();
-          if (voiceSpan) {
-            const voiceBox = await voiceSpan.boundingBox();
-            if (voiceBox) await page.mouse.click(voiceBox.x + voiceBox.width / 2, voiceBox.y + voiceBox.height / 2);
-            await page.waitForTimeout(800);
-            const voiceSelected = await page.evaluateHandle((voice: string) => {
-              const el = Array.from(document.querySelectorAll('div')).find(e => e.textContent.trim() === voice && e.children.length === 0);
-              return el || null;
-            }, params.voice);
-            const voiceOpt = voiceSelected.asElement();
-            if (voiceOpt) {
-              const optBox = await voiceOpt.boundingBox();
-              if (optBox) await page.mouse.click(optBox.x + optBox.width / 2, optBox.y + optBox.height / 2);
-              tips.push(`已选择音色: ${params.voice}`);
-            } else {
-              tips.push(`⚠ 未找到音色"${params.voice}"，使用默认`);
-            }
-            await page.waitForTimeout(500);
-          } else {
-            tips.push(`⚠ 未找到音色下拉入口，使用默认`);
-          }
-        }
 
         const audioUrlPromise = new Promise<string | null>((resolve) => {
           const timeout = (waitSeconds > 0 ? waitSeconds : 60) * 1000;
@@ -1390,90 +1267,274 @@ export default function (xcli: XCLIAPI): void {
           page.on('response', handler);
         });
 
+        // 新 UI：内联模板交互（AI 帮我写歌词/描述 + 风格/情绪/音色）
         if (params.lyric) {
-          const dropdownHandle = await page.evaluateHandle(() => {
-            for (const s of document.querySelectorAll('span')) {
-              if (s.textContent.trim() === 'AI 帮我写歌词') return s;
+          const aiSpan = await page.evaluateHandle(() => {
+            const spans = document.querySelectorAll('span');
+            for (const s of spans) {
+              if (s.textContent.trim() === 'AI 帮我写歌词' && s.offsetParent !== null && !s.isContentEditable) return s;
             }
             return null;
           });
-          const dropdownEl = dropdownHandle.asElement();
-          if (!dropdownEl) throw new Error('找不到「AI 帮我写歌词」下拉选项');
-          const dropBox = await dropdownEl.boundingBox();
-          if (dropBox) await page.mouse.click(dropBox.x + dropBox.width / 2, dropBox.y + dropBox.height / 2);
-          tips.push('已点击「AI 帮我写歌词」下拉');
-          await page.waitForTimeout(1000);
+          const aiEl = aiSpan.asElement();
+          if (aiEl) {
+            const aiBox = await aiEl.boundingBox();
+            if (aiBox) await page.mouse.click(aiBox.x + aiBox.width / 2, aiBox.y + aiBox.height / 2);
+            tips.push('已点击「AI 帮我写歌词」');
+            await page.waitForTimeout(1200);
+            const customDiv = await page.evaluateHandle(() => {
+              const divs = document.querySelectorAll('div');
+              for (const d of divs) {
+                if (d.textContent.trim() === '自定义歌词' && d.children.length === 0 && d.offsetParent !== null) return d;
+              }
+              return null;
+            });
+            const customEl = customDiv.asElement();
+            if (customEl) {
+              const customBox = await customEl.boundingBox();
+              if (customBox) await page.mouse.click(customBox.x + customBox.width / 2, customBox.y + customBox.height / 2);
+              tips.push('已选择「自定义歌词」');
+              await page.waitForTimeout(2000);
 
-          const customHandle = await page.evaluateHandle(() => {
-            return Array.from(document.querySelectorAll('div')).find(e => e.textContent.trim() === '自定义歌词' && e.children.length === 0) || null;
+              // 调试：截图并查找所有 textarea
+              const screenshotPath = '/tmp/doubao_custom_lyric_modal.png';
+              await page.screenshot({ path: screenshotPath, fullPage: true });
+              tips.push(`📸 已截图: ${screenshotPath}`);
+
+              // 查找所有 textarea
+              const textareas = await page.evaluate(() => {
+                const areas = document.querySelectorAll('textarea');
+                const info: Array<{ placeholder: string; id: string; class: string; value: string; visible: boolean }> = [];
+                areas.forEach(t => {
+                  info.push({
+                    placeholder: t.getAttribute('placeholder') || '',
+                    id: t.getAttribute('id') || '',
+                    class: t.getAttribute('class') || '',
+                    value: t.value,
+                    visible: t.offsetParent !== null
+                  });
+                });
+                return info;
+              });
+              tips.push(`🔍 找到 ${textareas.length} 个 textarea: ${JSON.stringify(textareas)}`);
+
+              // 查找所有包含"歌词"的元素
+              const lyricElements = await page.evaluate(() => {
+                const all = document.querySelectorAll('*');
+                const info: Array<{ tag: string; text: string; class: string; visible: boolean }> = [];
+                all.forEach(e => {
+                  const cls = e.getAttribute('class') || '';
+                  const txt = e.textContent?.trim() || '';
+                  if (cls.toLowerCase().includes('lyric') || txt.includes('歌词')) {
+                    if (info.length < 20) { // 限制输出数量
+                      info.push({
+                        tag: e.tagName,
+                        text: txt.substring(0, 50),
+                        class: cls,
+                        visible: e.offsetParent !== null
+                      });
+                    }
+                  }
+                });
+                return info;
+              });
+              tips.push(`🔍 找到 ${lyricElements.length} 个歌词相关元素: ${JSON.stringify(lyricElements)}`);
+
+              // 查找所有 button 元素（看确认按钮状态）
+              const buttons = await page.evaluate(() => {
+                const all = document.querySelectorAll('button');
+                const info: Array<{ text: string; class: string; disabled: boolean }> = [];
+                all.forEach(b => {
+                  const txt = b.textContent?.trim() || '';
+                  if (txt.length < 20) {
+                    info.push({
+                      text: txt,
+                      class: b.getAttribute('class') || '',
+                      disabled: (b as HTMLButtonElement).disabled
+                    });
+                  }
+                });
+                return info;
+              });
+              tips.push(`🔍 找到 ${buttons.length} 个按钮: ${JSON.stringify(buttons)}`);
+            } else {
+              tips.push('⚠ 未找到「自定义歌词」选项，继续使用 AI 歌词');
+            }
+          }
+          // 先点击歌词输入区激活
+          const clickInput = await page.evaluateHandle(() => {
+            const el = document.querySelector('[class*="lyrics-content"]');
+            if (el && el.offsetParent !== null) { (el as HTMLElement).click(); return true; }
+            return false;
           });
-          const customEl = customHandle.asElement();
-          if (!customEl) throw new Error('下拉菜单中找不到「自定义歌词」选项');
-          const customBox = await customEl.boundingBox();
-          if (customBox) await page.mouse.click(customBox.x + customBox.width / 2, customBox.y + customBox.height / 2);
-          tips.push('已选择「自定义歌词」');
-          await page.waitForTimeout(2000);
-
-          const lyricTextarea = page.locator('textarea[placeholder="自定义歌词"]').first();
-          await lyricTextarea.waitFor({ state: 'visible', timeout: 5000 });
-          await lyricTextarea.fill(params.lyric);
           await page.waitForTimeout(500);
 
-          // 豆包弹窗的确认按钮默认 disabled（React 状态管理未跟随 fill 更新）
-          // 需要强制移除 disabled 属性才能点击
-          await page.evaluate(() => {
-            const btn = document.querySelector('button[class*="lyric-confirm"]');
-            if (btn) {
-              btn.disabled = false;
-              btn.classList.remove('semi-button-disabled', 'semi-button-primary-disabled');
+          // 填写歌词到专用 textarea
+          const lyricArea = page.locator('textarea[placeholder="自定义歌词"]').first();
+          if (await lyricArea.count() > 0 && await lyricArea.isVisible()) {
+            await lyricArea.fill(params.lyric);
+            tips.push(`已填入歌词(${params.lyric.length}字)`);
+            await page.waitForTimeout(500);
+          } else {
+            // fallback: 找任意可见 textarea 填写
+            const fallbackTa = page.locator('textarea').filter({ has: page.locator(':visible') }).first();
+            if (await fallbackTa.count() > 0) {
+              await fallbackTa.fill(params.lyric);
+              tips.push('已填入歌词(fallback)');
+              await page.waitForTimeout(500);
             }
-          });
-          await page.waitForTimeout(200);
+          }
 
-          const confirmHandle = await page.evaluateHandle(() => document.querySelector('button[class*="lyric-confirm"]'));
-          const confirmEl = confirmHandle.asElement();
-          if (confirmEl) {
-            const confirmBox = await confirmEl.boundingBox();
-            if (confirmBox) await page.mouse.click(confirmBox.x + confirmBox.width / 2, confirmBox.y + confirmBox.height / 2);
-            tips.push('已确认歌词');
+          // 确保字数不超过200，超过则截断
+          const lyricText = params.lyric.length > 200 ? params.lyric.slice(0, 200) : params.lyric;
+          await page.evaluate((text) => {
+            const ta = document.querySelector('textarea[placeholder="自定义歌词"]') as HTMLTextAreaElement;
+            if (ta) {
+              ta.value = text;
+              ta.dispatchEvent(new Event('input', { bubbles: true }));
+              ta.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          }, lyricText);
+          await page.waitForTimeout(300);
+
+          // 启用并点击确认按钮
+          const confirmButtonHandle = await page.evaluateHandle(() => {
+            const btn = document.querySelector('button[class*="lyric-confirm"]') as HTMLButtonElement;
+            return btn;
+          });
+          const confirmButtonEl = confirmButtonHandle.asElement();
+          if (confirmButtonEl) {
+            // 移除 disabled 属性和 class
+            await page.evaluate(() => {
+              const btn = document.querySelector('button[class*="lyric-confirm"]') as HTMLButtonElement;
+              if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('semi-button-disabled', 'semi-button-primary-disabled');
+              }
+            });
+            await page.waitForTimeout(300);
+            // 使用坐标点击，绕过 React 控制
+            const confirmBox = await confirmButtonEl.boundingBox();
+            if (confirmBox) {
+              await page.mouse.click(confirmBox.x + confirmBox.width / 2, confirmBox.y + confirmBox.height / 2);
+              tips.push('已确认歌词');
+            } else {
+              tips.push('⚠ 无法获取确认按钮坐标');
+            }
+          } else {
+            // fallback: 点任意"确认"按钮
+            const fbBtn = page.locator('button').filter({ hasText: '确认' }).first();
+            if (await fbBtn.count() > 0) {
+              await fbBtn.click().catch(() => {});
+              tips.push('已确认歌词(fallback)');
+            }
           }
           await page.waitForTimeout(1500);
-          tips.push('已切换到自定义歌词模式并输入歌词');
         } else {
-          const descHandle = await page.evaluateHandle(() => {
-            for (const s of document.querySelectorAll('span')) {
+          const editSpan = await page.evaluateHandle(() => {
+            const spans = document.querySelectorAll('span[contenteditable]');
+            for (const s of spans) {
               if (s.textContent?.includes('描述歌词要表达的主题')) return s;
             }
             return null;
           });
-          const descEl = descHandle.asElement();
-          if (descEl) {
-            const descBox = await descEl.boundingBox();
-            if (descBox) await page.mouse.click(descBox.x + descBox.width / 2, descBox.y + descBox.height / 2);
+          const editEl = editSpan.asElement();
+          if (editEl) {
+            const editBox = await editEl.boundingBox();
+            if (editBox) await page.mouse.click(editBox.x + editBox.width / 2, editBox.y + editBox.height / 2);
             await page.waitForTimeout(300);
-            const descSet = await page.evaluate((description: string) => {
-              const spans = document.querySelectorAll('span');
-              for (const span of spans) {
-                if (span.textContent?.includes('描述歌词要表达的主题')) {
-                  (span as HTMLElement).focus();
+            const filled = await page.evaluate((desc) => {
+              const editableSpans = document.querySelectorAll('span[contenteditable]');
+              for (const s of editableSpans) {
+                if (s.textContent?.includes('描述歌词要表达的主题')) {
+                  s.focus();
                   document.execCommand('selectAll', false);
-                  document.execCommand('insertText', false, description);
+                  document.execCommand('insertText', false, desc);
                   return true;
                 }
               }
               return false;
             }, params.description!);
-            if (descSet) {
-              tips.push(`已输入描述: "${params.description}"`);
-            } else {
-              tips.push('⚠ 描述输入失败，将尝试直接提交');
-            }
+            if (filled) tips.push(`已输入描述: "${params.description}"`);
+            else tips.push('⚠ 描述输入失败');
           } else {
             tips.push('⚠ 未找到描述输入区域');
           }
         }
 
         await page.waitForTimeout(500);
+
+        // 选中内联风格/情绪/音色标签：先点当前值弹出下拉，再选目标值
+        const dropdownValues: Array<{ current: string; target: string }> = [];
+        const genreMap: Record<string, string[]> = {
+          style: ['流行', '嘻哈', '国风', 'DJ', '摇滚', '民谣', 'R&B', '雷鬼', '朋克', '电音', '爵士'],
+          mood: ['快乐', '忧伤', '激昂', '温柔', '思念', '愤怒', '平静', '浪漫'],
+          voice: ['女声', '男声', '童声'],
+        };
+        const categoryFor: Record<string, 'style' | 'mood' | 'voice'> = {
+          '流行': 'style', '嘻哈': 'style', '国风': 'style', 'DJ': 'style', '摇滚': 'style', '民谣': 'style',
+          'R&B': 'style', '雷鬼': 'style', '朋克': 'style', '电音': 'style', '爵士': 'style',
+          '快乐': 'mood', '忧伤': 'mood', '激昂': 'mood', '温柔': 'mood', '思念': 'mood', '愤怒': 'mood', '平静': 'mood', '浪漫': 'mood',
+          '女声': 'voice', '男声': 'voice', '童声': 'voice',
+        };
+
+        const selectInlineOption = async (target: string): Promise<boolean> => {
+          const cat = categoryFor[target];
+          if (!cat) return false;
+          const candidates = genreMap[cat];
+          // 找到当前选中的值（页面上可见的 inline span）
+          const current = await page.evaluateHandle((opts: string[]) => {
+            const all = document.querySelectorAll('span,div');
+            for (const s of all) {
+              const t = s.textContent.trim();
+              if (t.length > 0 && t.length < 10 && opts.includes(t) && s.offsetParent !== null && !s.isContentEditable) return s;
+            }
+            return null;
+          }, candidates);
+          const curEl = current.asElement();
+          if (!curEl) return false;
+          const curBox = await curEl.boundingBox();
+          if (!curBox) return false;
+          // 点击当前值弹出下拉
+          await page.mouse.click(curBox.x + curBox.width / 2, curBox.y + curBox.height / 2);
+          await page.waitForTimeout(800);
+          // 在下拉中找目标值（可能用 span div 或 button）
+          const optHandle = await page.evaluateHandle((text: string) => {
+            const all = document.querySelectorAll('span,div,button');
+            for (const d of all) {
+              if (d.textContent.trim() === text && d.offsetParent !== null && d.getAttribute('role') !== 'tab') return d;
+            }
+            return null;
+          }, target);
+          const optEl = optHandle.asElement();
+          if (optEl) {
+            const optBox = await optEl.boundingBox();
+            if (optBox) {
+              await page.mouse.click(optBox.x + optBox.width / 2, optBox.y + optBox.height / 2);
+              await page.waitForTimeout(500);
+              return true;
+            }
+          }
+          // 点击空白区域关闭下拉
+          await page.mouse.click(10, 10).catch(() => {});
+          return false;
+        };
+
+        if (params.style) {
+          const ok = await selectInlineOption(params.style);
+          if (ok) tips.push(`已选择风格: ${params.style}`);
+          else tips.push(`⚠ 未选中风格"${params.style}"，使用默认`);
+        }
+        if (params.mood) {
+          const ok = await selectInlineOption(params.mood);
+          if (ok) tips.push(`已选择情绪: ${params.mood}`);
+          else tips.push(`⚠ 未选中情绪"${params.mood}"，使用默认`);
+        }
+        if (params.voice) {
+          const ok = await selectInlineOption(params.voice);
+          if (ok) tips.push(`已选择音色: ${params.voice}`);
+          else tips.push(`⚠ 未选中音色"${params.voice}"，使用默认`);
+        }
 
         // Click the send button to submit
         const sendHandle = await page.evaluateHandle(() => document.querySelector('#flow-end-msg-send'));
@@ -1575,7 +1636,8 @@ export default function (xcli: XCLIAPI): void {
             `或查看创作历史: xbrowser doubao my-creations --type all${cdpSuffix ? ' --cdp ' + cdpFlag : ''}`,
           ]);
       } catch (error) {
-        return fail('未知错误', ['提交音乐生成失败']);
+        const errMsg = error instanceof Error ? error.message : String(error);
+        return fail('未知错误', ['提交音乐生成失败', `原因: ${errMsg}`]);
       }
     },
   });
