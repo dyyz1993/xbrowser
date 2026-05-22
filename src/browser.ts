@@ -303,23 +303,9 @@ export function deleteSessionDiskMeta(name: string): void {
   name: string,
   cdpEndpoint?: string,
 ): Promise<ManagedSession | undefined> {
-  // 1. Try in-memory first
+  // 1. Try in-memory first (same-process sessions are always valid)
   const inMem = findSession(name);
-  if (inMem) {
-    // Validate in-memory session's page is still alive
-    try {
-      await Promise.race([
-        inMem.page.evaluate(() => true),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
-      ]);
-      return inMem;
-    } catch {
-      // Page is dead, discard and fall through to disk restore / fresh create
-      console.log(`[Session] "${name}" page unresponsive, discarding stale session`);
-      sessions.delete(inMem.id);
-      deleteSessionDiskMeta(name);
-    }
-  }
+  if (inMem) return inMem;
 
   // 2. Try disk recovery if we have CDP
   const meta = readSessionDiskMeta(name);
