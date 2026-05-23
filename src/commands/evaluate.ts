@@ -16,23 +16,4 @@ export const evaluateCommand = registerCommand({
   },
 });
 
-export const evaluateFnCommand = registerCommand({
-  name: 'evaluate-fn',
 
-  description: 'Evaluate a function with arguments in the browser',
-  scope: 'page',
-  parameters: z.object({
-    fn: z.string(),
-    args: z.array(z.unknown()).optional(),
-  }),
-  handler: async (p, ctx: BrowserCommandContext) => {
-    const result = await ctx.page.evaluate(
-      (args: { fnBody: string; fnArgs: unknown[] }) => {
-        const fn = new Function('...args', args.fnBody);
-        return fn(...args.fnArgs);
-      },
-      { fnBody: p.fn, fnArgs: p.args || [] }
-    );
-    return ok({ result });
-  },
-});

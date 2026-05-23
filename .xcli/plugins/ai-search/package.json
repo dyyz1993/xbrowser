@@ -1,0 +1,9 @@
+{
+  "name": "ai-search",
+  "version": "1.0.0",
+  "description": "AI search across 14 AI engines with structured results",
+  "type": "module",
+  "xbrowser": {
+    "description": "AI search across 14 AI engines with structured results"
+  }
+}

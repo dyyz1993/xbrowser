@@ -67,17 +67,4 @@ describe('Navigation Commands', () => {
     const url = mockPage.url();
     expect(url).toBe('https://example.com');
   });
-
-  it('waitForSelector should wait for element', async () => {
-    await mockPage.waitForSelector('#content', { state: 'visible', timeout: 5000 });
-    expect(mockPage.waitForSelector).toHaveBeenCalledWith('#content', {
-      state: 'visible',
-      timeout: 5000,
-    });
-  });
-
-  it('waitForTimeout should wait for duration', async () => {
-    await mockPage.waitForTimeout(1000);
-    expect(mockPage.waitForTimeout).toHaveBeenCalledWith(1000);
-  });
 });

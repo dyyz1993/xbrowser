@@ -1,0 +1,9 @@
+{
+  "name": "testsuite",
+  "version": "1.0.0",
+  "description": "Run sequence of test steps and report results",
+  "type": "module",
+  "xbrowser": {
+    "description": "Sequential test step runner"
+  }
+}

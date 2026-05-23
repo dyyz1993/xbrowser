@@ -4,7 +4,6 @@ import type { BrowserCommandContext } from '../../src/context.js';
 function createMockContext(overrides?: Record<string, unknown>): BrowserCommandContext {
   const page = {
     waitForSelector: vi.fn().mockResolvedValue({}),
-    waitForTimeout: vi.fn().mockResolvedValue(undefined),
     evaluate: vi.fn().mockResolvedValue(undefined),
     screenshot: vi.fn().mockResolvedValue(Buffer.from('test')),
     setViewportSize: vi.fn().mockResolvedValue(undefined),
@@ -57,10 +56,10 @@ describe('Wait Commands', () => {
     ctx = createMockContext();
   });
 
-  describe('waitForSelector', () => {
+  describe('wait', () => {
     it('should wait for selector with defaults', async () => {
-      const { waitForSelectorCommand } = await import('../../src/commands/wait.js');
-      const result = await waitForSelectorCommand.handler({ selector: '#content' }, ctx);
+      const { waitCommand } = await import('../../src/commands/wait.js');
+      const result = await waitCommand.handler({ selector: '#content' }, ctx);
       expect(ctx.page.waitForSelector).toHaveBeenCalledWith('#content', {
         state: 'visible',
         timeout: 30000,
@@ -69,8 +68,8 @@ describe('Wait Commands', () => {
     });
 
     it('should wait with custom state and timeout', async () => {
-      const { waitForSelectorCommand } = await import('../../src/commands/wait.js');
-      await waitForSelectorCommand.handler(
+      const { waitCommand } = await import('../../src/commands/wait.js');
+      await waitCommand.handler(
         { selector: '#modal', state: 'hidden', timeout: 5000 },
         ctx
       );
@@ -81,8 +80,8 @@ describe('Wait Commands', () => {
     });
 
     it('should wait for attached state', async () => {
-      const { waitForSelectorCommand } = await import('../../src/commands/wait.js');
-      await waitForSelectorCommand.handler(
+      const { waitCommand } = await import('../../src/commands/wait.js');
+      await waitCommand.handler(
         { selector: '#elem', state: 'attached' },
         ctx
       );
@@ -93,8 +92,8 @@ describe('Wait Commands', () => {
     });
 
     it('should wait for detached state', async () => {
-      const { waitForSelectorCommand } = await import('../../src/commands/wait.js');
-      await waitForSelectorCommand.handler(
+      const { waitCommand } = await import('../../src/commands/wait.js');
+      await waitCommand.handler(
         { selector: '.loader', state: 'detached', timeout: 10000 },
         ctx
       );
@@ -102,22 +101,6 @@ describe('Wait Commands', () => {
         state: 'detached',
         timeout: 10000,
       });
-    });
-  });
-
-  describe('waitForTimeout', () => {
-    it('should wait for specified duration', async () => {
-      const { waitForTimeoutCommand } = await import('../../src/commands/wait.js');
-      const result = await waitForTimeoutCommand.handler({ timeout: 2000 }, ctx);
-      expect(ctx.page.waitForTimeout).toHaveBeenCalledWith(2000);
-      expect(result).toEqual({ success: true, data: { waited: 2000 }, tips: [] });
-    });
-
-    it('should wait for zero timeout', async () => {
-      const { waitForTimeoutCommand } = await import('../../src/commands/wait.js');
-      const result = await waitForTimeoutCommand.handler({ timeout: 0 }, ctx);
-      expect(ctx.page.waitForTimeout).toHaveBeenCalledWith(0);
-      expect(result).toEqual({ success: true, data: { waited: 0 }, tips: [] });
     });
   });
 });

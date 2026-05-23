@@ -1,0 +1,9 @@
+{
+  "name": "diff",
+  "version": "1.0.0",
+  "description": "Visual regression: compare page screenshot against baseline",
+  "type": "module",
+  "xbrowser": {
+    "description": "Visual regression testing — compare screenshots"
+  }
+}

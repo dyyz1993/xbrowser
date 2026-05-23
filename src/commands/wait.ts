@@ -25,19 +25,4 @@ const waitForSelectorDef = {
 };
 
 export const waitCommand = registerCommand({ name: 'wait', ...waitForSelectorDef });
-export const waitForSelectorCommand = registerCommand({ name: 'wait-for-selector', ...waitForSelectorDef });
 
-export const waitForTimeoutCommand = registerCommand({
-  name: 'wait-for-timeout',
-
-  description: 'Wait for a specified duration',
-  scope: 'page',
-  parameters: z.object({
-    timeout: z.number(),
-  }),
-  result: z.object({ waited: z.number() }),
-  handler: async (p, ctx: BrowserCommandContext) => {
-    await ctx.page.waitForTimeout(p.timeout);
-    return ok({ waited: p.timeout });
-  },
-});

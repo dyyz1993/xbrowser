@@ -60,41 +60,4 @@ describe('Evaluate Commands', () => {
     });
   });
 
-  describe('evaluateFn', () => {
-    it('should evaluate function with arguments', async () => {
-      const ctx = createMockContext(3);
-      const { evaluateFnCommand } = await import('../../src/commands/evaluate.js');
-      const result = await evaluateFnCommand.handler(
-        { fn: 'return args[0] + args[1]', args: [1, 2] },
-        ctx
-      );
-      expect(ctx.page.evaluate).toHaveBeenCalled();
-      expect(result).toEqual({ success: true, data: { result: 3 }, tips: [] });
-    });
-
-    it('should evaluate function without arguments', async () => {
-      const ctx = createMockContext('hello');
-      const { evaluateFnCommand } = await import('../../src/commands/evaluate.js');
-      const result = await evaluateFnCommand.handler(
-        { fn: 'return "hello"' },
-        ctx
-      );
-      expect(ctx.page.evaluate).toHaveBeenCalledWith(
-        expect.any(Function),
-        { fnBody: 'return "hello"', fnArgs: [] }
-      );
-      expect(result).toEqual({ success: true, data: { result: 'hello' }, tips: [] });
-    });
-
-    it('should pass arguments correctly', async () => {
-      const ctx = createMockContext([1, 2, 3]);
-      const { evaluateFnCommand } = await import('../../src/commands/evaluate.js');
-      await evaluateFnCommand.handler(
-        { fn: 'return args', args: [1, 2, 3] },
-        ctx
-      );
-      const callArgs = (ctx.page.evaluate as ReturnType<typeof vi.fn>).mock.calls[0];
-      expect(callArgs[1]).toEqual({ fnBody: 'return args', fnArgs: [1, 2, 3] });
-    });
-  });
 });

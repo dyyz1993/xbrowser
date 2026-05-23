@@ -1,0 +1,9 @@
+{
+  "name": "assert",
+  "version": "1.0.0",
+  "description": "Assert page state — check text, visibility, URL, title, element count",
+  "type": "module",
+  "xbrowser": {
+    "description": "Assert page state — check text, visibility, URL, title, element count"
+  }
+}

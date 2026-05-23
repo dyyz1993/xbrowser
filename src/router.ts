@@ -690,9 +690,17 @@ export async function routeCommand(
         const internalLoader = loader.getCore().loader;
         const site = internalLoader.getSite(command);
         if (site) {
+          const allSiteCommands = site.getAllCommands();
           const subCommand = cmdArgs[0];
           if (!subCommand || subCommand === '--help' || subCommand === '-h') {
-            const commands = site.getAllCommands();
+            if (allSiteCommands.length === 1 && subCommand && (subCommand === '--help' || subCommand === '-h')) {
+              const cmdEntry = site.getCommand(allSiteCommands[0].name);
+              if (cmdEntry) {
+                showCommandHelp(command, cmdEntry, { description: site.config.description, name: site.name, url: site.url }, mode);
+                return;
+              }
+            }
+            const commands = allSiteCommands;
             if (mode === 'json') {
               outputResult({
                 site: command,
@@ -714,17 +722,22 @@ export async function routeCommand(
             return;
           }
 
-          const cmdEntry = site.getCommand(subCommand);
+          let cmdEntry = site.getCommand(subCommand);
+          let cmdArgsForPlugin = cmdArgs.slice(1);
           if (!cmdEntry) {
-            outputError(
-              `Unknown command "${subCommand}" for site "${command}".\n` +
-              `Run "xbrowser ${command} --help" to see available commands.`
-            );
-            return;
+            if (allSiteCommands.length === 1) {
+              cmdEntry = site.getCommand(allSiteCommands[0].name);
+              cmdArgsForPlugin = cmdArgs;
+            }
+            if (!cmdEntry) {
+              outputError(
+                `Unknown command "${subCommand}" for site "${command}".\n` +
+                `Run "xbrowser ${command} --help" to see available commands.`
+              );
+              return;
+            }
           }
 
-          // Check for --help on specific command: "xbrowser zhihu chat --help"
-          const cmdArgsForPlugin = cmdArgs.slice(1);
           if (cmdArgsForPlugin.includes('--help') || cmdArgsForPlugin.includes('-h')) {
             showCommandHelp(command, cmdEntry, { description: site.config.description, name: site.name, url: site.url }, mode);
             return;

@@ -34,28 +34,6 @@ export const gotoCommand = registerCommand({
   },
 });
 
-/** 'open' is an alias for 'goto' */
-export const openCommand = registerCommand({
-  name: 'open',
-  description: 'Open URL (alias for goto)',
-  scope: 'page',
-  parameters: z.object({
-    url: z.string(),
-    waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle']).optional(),
-  }),
-  result: z.object({
-    url: z.string(),
-    status: z.number().optional(),
-    ssr: z.boolean().optional(),
-  }),
-  handler: async (p, ctx: BrowserCommandContext) => {
-    // Delegate to goto handler — p.url and p.waitUntil are used inside
-    const { url, waitUntil, ...rest } = p;
-    void rest;
-    return gotoCommand.handler({ url, waitUntil }, ctx);
-  },
-});
-
 export const backCommand = registerCommand({
   name: 'back',
   description: 'Go back in browser history',

@@ -1,4 +1,4 @@
-import type { AISearchResult, DomainExtraction } from '../commands/ai-search.js';
+import type { AISearchResult, DomainExtraction } from '../commands/ai-search-engines.js';
 
 export interface SearchResult extends AISearchResult {
   id: string;

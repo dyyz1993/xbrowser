@@ -1,0 +1,9 @@
+{
+  "name": "image",
+  "version": "1.0.0",
+  "description": "Multi-engine image search with unified result format",
+  "type": "module",
+  "xbrowser": {
+    "description": "Multi-engine image search"
+  }
+}

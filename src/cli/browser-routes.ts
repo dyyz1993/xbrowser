@@ -139,7 +139,7 @@ export async function handleBrowserCommand(
       case 'wait':
         if (!sel)
           outputError('Usage: xbrowser wait <selector> [--timeout <ms>]\n       xbrowser wait -s <selector> [--timeout <ms>]');
-        cmdName = 'wait-for-selector';
+        cmdName = 'wait';
         params = {
           selector: sel,
           state: options.state as string | undefined,
@@ -153,8 +153,7 @@ export async function handleBrowserCommand(
   } else {
     switch (command) {
       case 'goto':
-      case 'open':
-        if (!args[0]) outputError(`Usage: xbrowser ${command} <url>`);
+        if (!args[0]) outputError(`Usage: xbrowser goto <url>`);
         cmdName = 'goto';
         params = {
           url: /^https?:\/\//i.test(args[0]) || /^wss?:\/\//i.test(args[0]) ? args[0] : 'https://' + args[0],
@@ -308,23 +307,6 @@ export async function handleBrowserCommand(
             site: (options.site || options.s) as string | undefined,
           };
           break;
-        case 'image':
-          if (!args[0]) outputError('Usage: xbrowser image "query" [--engine NAME] [--limit N] [--size any|large|medium|small] [--download] [--download-dir ./images]\n\nEngines: bing-images, unsplash, pexels, pixabay (headless)\n         baidu-images, google-images, huaban, pinterest (need --cdp)\n\nDefault: searches bing-images + unsplash + pexels in parallel');
-          cmdName = 'image';
-          params = {
-            query: args.join(' '),
-            engine: options.engine as string | undefined,
-            limit: options.limit ? Number(options.limit) : undefined,
-            size: options.size as string | undefined,
-            color: options.color as string | undefined,
-            type: options.type as string | undefined,
-            download: !!(options.download),
-            downloadDir: (options['download-dir'] || options.downloadDir) as string | undefined,
-            concurrency: options.concurrency ? Number(options.concurrency) : undefined,
-            format: (options.format || options.F) as string | undefined,
-            timeout: options.timeout ? Number(options.timeout) : undefined,
-          };
-          break;
           case 'network': {
             const subCmd = args[0];
             if (subCmd === 'intercept') {
@@ -347,26 +329,9 @@ export async function handleBrowserCommand(
               duration: options.duration ? Number(options.duration) : undefined,
               ws: !!(options.ws),
             };
-           break;
-         }
-          case 'ai-search':
-            if (!args[0] && !options.prompt && !options.p) outputError('Usage: xbrowser ai-search "query" [--engine ENGINE] [--all] [--prompt "query"] [--limit N] [--full] [--showSources] [--extractUrls] [--format markdown|json|text] [--timeout ms]\n\nEngines: deepseek, doubao, chatgpt, claude, kimi, qianwen, yuanbao, chatglm, yiyan, metaso, tiangong, xinghuo, hailuo, 360ai\nDefault: deepseek\n--all: search all engines and aggregate results\nRequires: --cdp http://localhost:9221 (all AI engines need login)');
-            if (options.engine && (options.all)) outputError('--all 与 --engine 互斥，不能同时指定');
-            cmdName = 'ai-search';
-            params = {
-              query: args.join(' ') || (options.prompt || options.p) as string,
-              engine: options.engine as string | undefined,
-              all: !!(options.all),
-              prompt: (options.prompt || options.p) as string | undefined,
-              limit: options.limit ? Number(options.limit) : undefined,
-              full: !!(options.full || options.f),
-              showSources: !!(options.showSources || options['show-sources']),
-              extractUrls: !!(options.extractUrls || options['extract-urls'] || options['extracturls']),
-              format: (options.format || options.F) as string | undefined,
-              timeout: options.timeout ? Number(options.timeout) : undefined,
-            };
             break;
-       default:
+          }
+        default:
          cmdName = command;
          params = { ...options };
          break;

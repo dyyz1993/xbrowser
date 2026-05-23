@@ -39,21 +39,4 @@ export const textCommand = registerCommand({
   },
 });
 
-export const getPropertyCommand = registerCommand({
-  name: 'getProperty',
-  description: 'Get element property or attribute',
-  scope: 'element',
-  parameters: z.object({
-    selector: z.string(),
-    property: z.string(),
-  }),
-  result: z.object({
-    property: z.string(),
-    selector: z.string(),
-    value: z.string().nullable(),
-  }),
-  handler: async (p, ctx: BrowserCommandContext) => {
-    const value = await ctx.page.getAttribute(p.selector, p.property);
-    return ok({ property: p.property, selector: p.selector, value });
-  },
-});
+

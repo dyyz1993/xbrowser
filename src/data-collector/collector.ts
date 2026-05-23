@@ -3,8 +3,8 @@ import {
   findAndFillInput,
   waitForAIResponse,
   parseMarkdownResults,
-} from '../commands/ai-search.js';
-import type { AISearchResultItem } from '../commands/ai-search.js';
+} from '../commands/ai-search-engines.js';
+import type { AISearchResultItem } from '../commands/ai-search-engines.js';
 import {
   getEngineConfig,
   detectLoginStatus,
