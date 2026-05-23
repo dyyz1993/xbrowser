@@ -17,7 +17,8 @@ export const evaluateCommand = registerCommand({
 });
 
 export const evaluateFnCommand = registerCommand({
-  name: 'evaluateFn',
+  name: 'evaluate-fn',
+  aliases: ['evaluateFn'],
   description: 'Evaluate a function with arguments in the browser',
   scope: 'page',
   parameters: z.object({

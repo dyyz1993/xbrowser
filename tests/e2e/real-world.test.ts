@@ -116,40 +116,40 @@ describeE2E('Real-world: example.com automation', () => {
   });
 
   it('should manage localStorage', async () => {
-    await executeCommand('setLocalStorage', { key: 'test-key', value: 'test-value' }, sessionName);
-    const get = await executeCommand('getLocalStorage', { key: 'test-key' }, sessionName);
+    await executeCommand('set-local-storage', { key: 'test-key', value: 'test-value' }, sessionName);
+    const get = await executeCommand('get-local-storage', { key: 'test-key' }, sessionName);
     expect(get.success).toBe(true);
     const getData = unwrap(get) as { key: string; value: string };
     expect(getData.value).toBe('test-value');
 
-    const getAll = await executeCommand('getLocalStorage', {}, sessionName);
+    const getAll = await executeCommand('get-local-storage', {}, sessionName);
     expect(getAll.success).toBe(true);
     const allData = unwrap(getAll) as { data: Record<string, string> };
     expect(allData.data['test-key']).toBe('test-value');
 
-    await executeCommand('clearLocalStorage', {}, sessionName);
-    const afterClear = await executeCommand('getLocalStorage', { key: 'test-key' }, sessionName);
+    await executeCommand('clear-local-storage', {}, sessionName);
+    const afterClear = await executeCommand('get-local-storage', { key: 'test-key' }, sessionName);
     const clearData = unwrap(afterClear) as { value: string | null };
     expect(clearData.value).toBeNull();
   });
 
   it('should manage cookies', async () => {
     const set = await executeCommand(
-      'setCookie',
+      'set-cookie',
       { name: 'test-cookie', value: 'hello', domain: 'example.com', path: '/' },
       sessionName
     );
     expect(set.success).toBe(true);
 
-    const get = await executeCommand('getCookies', {}, sessionName);
+    const get = await executeCommand('get-cookies', {}, sessionName);
     expect(get.success).toBe(true);
     const cookieData = unwrap(get) as { cookies: Array<{ name: string; value: string }> };
     const found = cookieData.cookies.find((c) => c.name === 'test-cookie');
     expect(found).toBeDefined();
     expect(found!.value).toBe('hello');
 
-    await executeCommand('clearCookies', {}, sessionName);
-    const after = await executeCommand('getCookies', {}, sessionName);
+    await executeCommand('clear-cookies', {}, sessionName);
+    const after = await executeCommand('get-cookies', {}, sessionName);
     const afterData = unwrap(after) as { cookies: unknown[] };
     expect(afterData.cookies).toHaveLength(0);
   });
@@ -162,7 +162,7 @@ describeE2E('Real-world: example.com automation', () => {
   });
 
   it('should change viewport size', async () => {
-    const result = await executeCommand('setViewport', { width: 375, height: 812 }, sessionName);
+    const result = await executeCommand('set-viewport', { width: 375, height: 812 }, sessionName);
     expect(result.success).toBe(true);
     const data = unwrap(result) as { width: number; height: number };
     expect(data.width).toBe(375);
@@ -170,7 +170,7 @@ describeE2E('Real-world: example.com automation', () => {
   });
 
   it('should restore viewport after test', async () => {
-    const result = await executeCommand('setViewport', { width: 1280, height: 720 }, sessionName);
+    const result = await executeCommand('set-viewport', { width: 1280, height: 720 }, sessionName);
     expect(result.success).toBe(true);
   });
 
@@ -345,7 +345,7 @@ describeE2E('Real-world: chain execution on example.com', () => {
   }, 60000);
 });
 
-describeE2E('Real-world: evaluateFn command', () => {
+describeE2E('Real-world: evaluate-fn command', () => {
   const sessionName = `rw-evalfn-${Date.now()}`;
 
   beforeAll(async () => {
@@ -358,7 +358,7 @@ describeE2E('Real-world: evaluateFn command', () => {
 
   it('should evaluate a function with arguments', async () => {
     const result = await executeCommand(
-      'evaluateFn',
+      'evaluate-fn',
       { fn: 'return args[0] + args[1]', args: [1, 2] },
       sessionName
     );
@@ -369,7 +369,7 @@ describeE2E('Real-world: evaluateFn command', () => {
 
   it('should evaluate a function that queries the DOM', async () => {
     const result = await executeCommand(
-      'evaluateFn',
+      'evaluate-fn',
       { fn: 'return document.querySelectorAll("p").length' },
       sessionName
     );

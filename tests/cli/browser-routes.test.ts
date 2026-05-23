@@ -172,11 +172,11 @@ describe('browser-routes', () => {
   });
 
   describe('wait', () => {
-    it('should route wait as waitForSelector', async () => {
+    it('should route wait as wait-for-selector', async () => {
       mockNormalizeSelector.mockReturnValue('#loading');
       await handleBrowserCommand('wait', ['loading'], {}, 'sess', 'text');
       expect(mockExecuteCommand).toHaveBeenCalledWith(
-        'waitForSelector',
+        'wait-for-selector',
         { selector: '#loading', state: undefined, timeout: undefined },
         'sess'
       );
@@ -192,7 +192,7 @@ describe('browser-routes', () => {
         'text'
       );
       expect(mockExecuteCommand).toHaveBeenCalledWith(
-        'waitForSelector',
+        'wait-for-selector',
         { selector: '#el', state: 'visible', timeout: 5000 },
         'sess'
       );

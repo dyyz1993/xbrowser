@@ -4,7 +4,8 @@ import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 
 export const setViewportCommand = registerCommand({
-  name: 'setViewport',
+  name: 'set-viewport',
+  aliases: ['setViewport'],
   description: 'Set the viewport size and properties',
   scope: 'browser',
   parameters: z.object({

@@ -139,7 +139,7 @@ export async function handleBrowserCommand(
       case 'wait':
         if (!sel)
           outputError('Usage: xbrowser wait <selector> [--timeout <ms>]\n       xbrowser wait -s <selector> [--timeout <ms>]');
-        cmdName = 'waitForSelector';
+        cmdName = 'wait-for-selector';
         params = {
           selector: sel,
           state: options.state as string | undefined,

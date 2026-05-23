@@ -4,7 +4,8 @@ import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 
 export const getCookiesCommand = registerCommand({
-  name: 'getCookies',
+  name: 'get-cookies',
+  aliases: ['getCookies'],
   description: 'Get all cookies for the current page',
   scope: 'page',
   result: z.object({
@@ -17,7 +18,8 @@ export const getCookiesCommand = registerCommand({
 });
 
 export const setCookieCommand = registerCommand({
-  name: 'setCookie',
+  name: 'set-cookie',
+  aliases: ['setCookie'],
   description: 'Set a cookie',
   scope: 'page',
   parameters: z.object({
@@ -38,7 +40,8 @@ export const setCookieCommand = registerCommand({
 });
 
 export const clearCookiesCommand = registerCommand({
-  name: 'clearCookies',
+  name: 'clear-cookies',
+  aliases: ['clearCookies'],
   description: 'Clear all cookies',
   scope: 'page',
   result: z.object({ cleared: z.boolean() }),
@@ -49,7 +52,8 @@ export const clearCookiesCommand = registerCommand({
 });
 
 export const getLocalStorageCommand = registerCommand({
-  name: 'getLocalStorage',
+  name: 'get-local-storage',
+  aliases: ['getLocalStorage'],
   description: 'Get localStorage entries',
   scope: 'page',
   parameters: z.object({
@@ -77,7 +81,8 @@ export const getLocalStorageCommand = registerCommand({
 });
 
 export const setLocalStorageCommand = registerCommand({
-  name: 'setLocalStorage',
+  name: 'set-local-storage',
+  aliases: ['setLocalStorage'],
   description: 'Set a localStorage entry',
   scope: 'page',
   parameters: z.object({
@@ -97,7 +102,8 @@ export const setLocalStorageCommand = registerCommand({
 });
 
 export const clearLocalStorageCommand = registerCommand({
-  name: 'clearLocalStorage',
+  name: 'clear-local-storage',
+  aliases: ['clearLocalStorage'],
   description: 'Clear all localStorage entries',
   scope: 'page',
   result: z.object({ cleared: z.boolean() }),
