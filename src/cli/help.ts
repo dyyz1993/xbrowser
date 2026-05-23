@@ -47,6 +47,21 @@ Commands:
   plugin uninstall <name>           Uninstall plugin
   plugin list                       List plugins
   plugin reload <name>              Reload plugin
+  create <name> --template <type>   Create plugin
+  daemon start [--port <port>]      Start daemon
+  daemon stop                       Stop daemon
+  daemon status                     Check status
+  serve [--port <port>] [--token <t>] Start HTTP server for remote access
+  remote <url> [command] [--token <t>] Execute command on remote server
+  record start --url <url>          Start recording
+  record stop                       Stop recording
+  record status                     Recording status
+  replay <file>                     Replay recording
+  run <file>                        Execute commands from file
+  help                              Show this help
+  --version, -v                     Show version
+
+Marketplace & Admin:
   marketplace publish [--dry-run]   Publish plugin to marketplace
   marketplace login [--token <key>] Login to marketplace
   marketplace register              Register developer account
@@ -62,19 +77,6 @@ Commands:
   admin list [--status <status>]    List all plugins (admin only)
   admin bulk-approve <slugs...>     Bulk approve (admin only)
   admin cleanup                     Reset data (admin only)
-  create <name> --template <type>   Create plugin
-  daemon start [--port <port>]      Start daemon
-  daemon stop                       Stop daemon
-  daemon status                     Check status
-  serve [--port <port>] [--token <t>] Start HTTP server for remote access
-  remote <url> [command] [--token <t>] Execute command on remote server
-  record start --url <url>          Start recording
-  record stop                       Stop recording
-  record status                     Recording status
-  replay <file>                     Replay recording
-  run <file>                        Execute commands from file
-  help                              Show this help
-  --version, -v                     Show version
 
 Plugin Commands:
   Installed plugins provide additional commands.
