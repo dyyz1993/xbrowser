@@ -60,7 +60,7 @@ describe('ScreencastCapturer', () => {
     const mockEvaluate = vi.fn().mockRejectedValue(new Error('no evaluate'));
     const capturer = new ScreencastCapturer();
     const frame = await (capturer as any).captureFrame({ ...mockPage, evaluate: mockEvaluate } as any, 's1');
-    expect(frame.viewport).toEqual({ width: 1280, height: 720 });
+    expect(frame.viewport).toEqual({ width: 1920, height: 1080 });
   });
 
   it('should start capture and invoke callback', async () => {
