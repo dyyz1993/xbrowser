@@ -27,6 +27,67 @@ function buildTips(ctx: CommandContext): string[] {
   return tips;
 }
 
+/** Safe click by visible text — finds element with exact text match, uses mouse.click */
+async function safeClickByText(page: Page, text: string, opts?: { preferLarge?: boolean; debug?: boolean }): Promise<boolean> {
+  const preferLarge = opts?.preferLarge ?? false;
+  const debug = opts?.debug ?? false;
+  const handle = await page.evaluateHandle(([t, preferLarge, debug]: [string, boolean, boolean]) => {
+    const allEls = Array.from(document.querySelectorAll('button, span, a, div, [role="button"]'))
+      .filter(el => {
+        const txt = el.textContent?.trim();
+        return txt === t || (txt && txt.startsWith(t) && txt.length < t.length + 20);
+      });
+    const visibleEls = allEls.filter(el => {
+      if (el.offsetParent === null) return false;
+      const rect = el.getBoundingClientRect();
+      return rect.width > 10 && rect.height > 10;
+    });
+    if (debug && allEls.length > 0) {
+      console.log(`[safeClickByText] text="${t}" total=${allEls.length} visible=${visibleEls.length}`);
+    }
+    const els = visibleEls;
+    if (els.length === 0) return null;
+    if (preferLarge) {
+      els.sort((a, b) => {
+        const aA = a.getBoundingClientRect().width * a.getBoundingClientRect().height;
+        const bA = b.getBoundingClientRect().width * b.getBoundingClientRect().height;
+        return bA - aA;
+      });
+    } else {
+      els.sort((a, b) => a.innerHTML.length - b.innerHTML.length);
+    }
+    const el = els[0];
+    const box = el.getBoundingClientRect();
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  }, [text, preferLarge, debug] as [string, boolean, boolean]);
+  
+  // Handle both direct object return and ElementHandle
+  let coords: { x: number; y: number } | null = null;
+  try {
+    if (handle.asElement()) {
+      coords = await (handle as unknown as { jsonValue(): Promise<{ x: number; y: number } | null> }).jsonValue();
+    } else {
+      // Direct plain object from evaluateHandle
+      coords = await (handle as unknown as { jsonValue(): Promise<{ x: number; y: number } | null> }).jsonValue();
+    }
+  } catch {
+    coords = null;
+  }
+  
+  if (coords && coords.x > 0 && coords.y > 0) {
+    await page.mouse.click(coords.x, coords.y);
+    return true;
+  }
+  return false;
+}
+
+/** Wait for specific text to appear on page */
+async function waitForText(page: Page, text: string, timeout = 10000): Promise<void> {
+  await page.waitForFunction(
+    (t: string) => document.body.innerText.includes(t), text, { timeout },
+  );
+}
+
 /** Extract audio URL from a clip object */
 function extractAudioUrl(clip: Record<string, unknown>): string | null {
   const mediaUrls = clip.media_urls as Array<Record<string, string>> | undefined;
@@ -205,22 +266,40 @@ export default function (xcli: XCLIAPI): void {
      1. create — 生成音乐（同步/异步）
      ════════════════════════════════════════════ */
   site.command('create', {
-    description: '在 Suno 上生成音乐。传 --prompt 使用简单模式，传 --lyric+--style 使用高级模式。--wait 同步等待结果',
+    description: '在 Suno 上生成音乐。传 --prompt/--lyric 填入描述，--style 点击风格标签，--instrumental 切换纯音乐。--wait 同步等待结果',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({
+      status: z.enum(['submitted', 'completed', 'timeout', 'error']).optional(),
+      songs: z.array(z.object({
+        id: z.string(),
+        title: z.string(),
+        status: z.string(),
+        audioUrl: z.string().nullable(),
+        imageUrl: z.string().optional(),
+        model: z.string().optional(),
+        tags: z.string().optional(),
+        prompt: z.string().optional(),
+        duration: z.number().optional(),
+      })).optional(),
+      clipIds: z.array(z.string()).optional(),
+      prompt: z.string().nullable().optional(),
+      lyric: z.string().nullable().optional(),
+      style: z.string().nullable().optional(),
+      error: z.string().optional(),
+    }),
     parameters: z.object({
-      prompt: z.string().optional().describe('简单模式：描述你想创作的音乐（如 "A gentle piano melody with soft strings"）'),
-      lyric: z.string().optional().describe('高级模式：自定义歌词文本'),
-      style: z.string().optional().describe('高级模式：音乐风格（如 "ambient piano, soft classical"）'),
-      title: z.string().optional().describe('歌曲标题（可选）'),
+      prompt: z.string().optional().describe('描述你想创作的音乐（如 "A gentle piano melody with soft strings"）'),
+      lyric: z.string().optional().describe('自定义歌词文本（与 prompt 共用同一个 textarea）'),
+      style: z.string().optional().describe('音乐风格标签，逗号分隔（如 "electronic guitar, pop"），会点击对应风格标签'),
       instrumental: z.boolean().optional().describe('纯音乐模式（无歌词）'),
+      model: z.string().optional().describe('模型版本（如 "v4.5-all", "v5Pro"），默认使用页面当前模型'),
       wait: z.coerce.number().int().positive().optional()
         .describe('同步等待秒数（如 --wait 120），不传则异步提交'),
     }),
     examples: [
-      { cmd: 'xbrowser suno create --prompt "A gentle piano melody" --wait 120 --cdp 9221', description: '简单模式 + 同步等待' },
-      { cmd: 'xbrowser suno create --prompt "electronic dance music" --title "My Track" --cdp 9221', description: '异步提交' },
-      { cmd: 'xbrowser suno create --lyric "Hello world\\nThis is a song" --style "pop rock" --wait 120 --cdp 9221', description: '高级模式 + 自定义歌词' },
+      { cmd: 'xbrowser suno create --prompt "A gentle piano melody" --wait 120 --cdp 9221', description: '描述模式 + 同步等待' },
+      { cmd: 'xbrowser suno create --prompt "electronic dance music" --style "electronic guitar" --cdp 9221', description: '异步提交 + 风格标签' },
+      { cmd: 'xbrowser suno create --lyric "Hello world\\nThis is a song" --style "pop rock" --wait 120 --cdp 9221', description: '自定义歌词 + 风格' },
       { cmd: 'xbrowser suno create --prompt "ambient study" --instrumental --cdp 9221', description: '纯音乐' },
     ],
     handler: async (params, ctx) => {
@@ -230,12 +309,23 @@ export default function (xcli: XCLIAPI): void {
         const waitSeconds = typeof params.wait === 'number' ? params.wait : 0;
 
         if (!params.prompt && !params.lyric && !params.style) {
-          return fail('❌ 缺少必要参数', ['请提供 --prompt（简单模式）或 --lyric+--style（高级模式）']);
+          return fail('❌ 缺少必要参数', ['请提供 --prompt 或 --lyric 或 --style']);
         }
 
-        // Navigate to create page
+        // 1. Navigate to create page
         await page.goto(CREATE_URL, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
-        await page.waitForTimeout(4000);
+
+        // 2. Wait for create page to be ready (hook-driven, no waitForTimeout)
+        // Suno has multiple textareas:
+        //   - lyrics-textarea (data-testid, for lyrics input) — may be hidden in Simple mode
+        //   - style input (placeholder: "electronic guitar, twee pop...")
+        //   - description input (placeholder: "Studio-quality epic song...")
+        //   - describe-sound input (placeholder: "Describe the sound you want")
+        // Wait for ANY visible textarea (the page is loaded when at least one appears)
+        await page.waitForFunction(
+          () => Array.from(document.querySelectorAll('textarea')).some(t => t.offsetParent !== null && t.getBoundingClientRect().height > 0),
+          { timeout: 20000 }
+        );
 
         // ── Capture EXISTING clip IDs from the page BEFORE generation ──
         const beforeClipIds = new Set<string>();
@@ -254,117 +344,93 @@ export default function (xcli: XCLIAPI): void {
           ? captureGeneration(page, beforeClipIds, waitSeconds * 1000)
           : null;
 
-        // ── Switch to correct mode and fill form ──
-        if (params.prompt && !params.lyric) {
-          // Simple mode — click "Simple" tab
-          await page.evaluate(() => {
-            const tabs = Array.from(document.querySelectorAll('button, [role="tab"], a'));
-            const simple = tabs.find(t => t.textContent?.trim() === 'Simple' && t.offsetParent !== null);
-            if (simple) (simple as HTMLElement).click();
-          });
-          await page.waitForTimeout(500);
-
-          // Fill prompt textarea
-          const filled = await page.evaluate((prompt: string) => {
-            const tas = Array.from(document.querySelectorAll('textarea'));
-            // Try exact match first, then contains
-            const ta = tas.find(t => t.placeholder === 'Describe the sound you want')
-              || tas.find(t => t.placeholder.includes('Describe the sound'));
+        // 3. Fill textarea — choose the right one based on what user provides
+        // If user provides lyric → use lyrics-textarea (data-testid)
+        // If user provides prompt (description) → use description textarea (placeholder contains "Studio-quality")
+        if (params.lyric) {
+          await page.evaluate((text: string) => {
+            const ta = document.querySelector('textarea[data-testid="lyrics-textarea"]') as HTMLTextAreaElement;
             if (ta) {
-              const nativeSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-              if (nativeSetter) nativeSetter.call(ta, prompt);
-              else ta.value = prompt;
+              const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+              if (setter) setter.call(ta, text);
+              else ta.value = text;
               ta.dispatchEvent(new Event('input', { bubbles: true }));
               ta.dispatchEvent(new Event('change', { bubbles: true }));
-              return true;
             }
-            return false;
+          }, params.lyric);
+          tips.push(`已输入歌词: "${params.lyric.slice(0, 50)}..."`);
+        } else if (params.prompt) {
+          // Description mode — use the description textarea (placeholder "Studio-quality...")
+          await page.evaluate((text: string) => {
+            const tas = Array.from(document.querySelectorAll('textarea')) as HTMLTextAreaElement[];
+            const ta = tas.find(t => t.placeholder.includes('Studio-quality') || t.placeholder.includes('Describe'));
+            if (ta) {
+              const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+              if (setter) setter.call(ta, text);
+              else ta.value = text;
+              ta.dispatchEvent(new Event('input', { bubbles: true }));
+              ta.dispatchEvent(new Event('change', { bubbles: true }));
+            }
           }, params.prompt);
-          if (filled) tips.push(`已输入描述: "${params.prompt.slice(0, 50)}..."`);
-          else tips.push('⚠ 未找到 prompt 输入框');
+          tips.push(`已输入描述: "${params.prompt.slice(0, 50)}..."`);
         }
 
-        if (params.lyric || params.style) {
-          // Advanced mode — click "Advanced" tab
-          await page.evaluate(() => {
-            const tabs = Array.from(document.querySelectorAll('button, [role="tab"], a'));
-            const adv = tabs.find(t => t.textContent?.trim() === 'Advanced' && t.offsetParent !== null);
-            if (adv) (adv as HTMLElement).click();
-          });
-          await page.waitForTimeout(500);
-
-          if (params.lyric) {
-            const filled = await page.evaluate((lyric: string) => {
-              const ta = Array.from(document.querySelectorAll('textarea'))
-                .find(t => t.placeholder.includes('lyrics') || t.placeholder.includes('歌词'));
-              if (ta) {
-                const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-                if (setter) setter.call(ta, lyric); else ta.value = lyric;
-                ta.dispatchEvent(new Event('input', { bubbles: true }));
-                ta.dispatchEvent(new Event('change', { bubbles: true }));
-                return true;
-              }
-              return false;
-            }, params.lyric);
-            if (filled) tips.push('已输入自定义歌词');
-          }
-          if (params.style) {
-            const filled = await page.evaluate((style: string) => {
-              const ta = Array.from(document.querySelectorAll('textarea'))
-                .find(t => t.placeholder.includes('electronic') || t.placeholder.includes('smooth') || t.placeholder.includes('house'));
-              if (ta) {
-                const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-                if (setter) setter.call(ta, style); else ta.value = style;
-                ta.dispatchEvent(new Event('input', { bubbles: true }));
-                ta.dispatchEvent(new Event('change', { bubbles: true }));
-                return true;
-              }
-              return false;
-            }, params.style);
-            if (filled) tips.push(`已输入风格: "${params.style.slice(0, 50)}..."`);
+        // 4. Style tag — click by text (the style chips are button>span elements)
+        if (params.style) {
+          const styleTags = params.style.split(',').map(s => s.trim()).filter(Boolean);
+          for (const tag of styleTags) {
+            // Wait for style tag to appear on page
+            try {
+              await page.waitForFunction(
+                (t: string) => {
+                  const els = Array.from(document.querySelectorAll('button, span'));
+                  return els.some(e => e.textContent?.trim() === t && e.offsetParent !== null);
+                },
+                tag,
+                { timeout: 5000 }
+              );
+            } catch { /* tag may not exist, try anyway */ }
+            const clicked = await safeClickByText(page, tag);
+            if (clicked) tips.push(`已选择风格: ${tag}`);
+            else tips.push(`⚠ 未找到风格标签: ${tag}`);
           }
         }
 
-        // ── Instrumental toggle ──
+        // 5. Instrumental toggle — click by text
         if (params.instrumental) {
-          const clicked = await page.evaluate(() => {
-            const btn = Array.from(document.querySelectorAll('button')).find(b =>
-              (b.getAttribute('aria-label') || '').toLowerCase().includes('instrumental') && b.offsetParent !== null
-            );
-            if (btn) { (btn as HTMLElement).click(); return true; }
-            return false;
-          });
-          if (clicked) tips.push('已开启纯音乐模式');
+          const clicked = await safeClickByText(page, 'Instrumental');
+          if (clicked) tips.push('已切换到纯音乐模式');
         }
 
-        // ── Fill song title ──
-        if (params.title) {
-          await page.evaluate((title: string) => {
-            const input = document.querySelector<HTMLInputElement>('input[placeholder="Song Title (Optional)"]');
-            if (input) {
-              const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-              if (setter) setter.call(input, title); else input.value = title;
-              input.dispatchEvent(new Event('input', { bubbles: true }));
-              input.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-          }, params.title);
-          tips.push(`标题: "${params.title}"`);
+        // 6. Model selection (optional)
+        if (params.model) {
+          const modelBtnClicked = await safeClickByText(page, params.model);
+          if (modelBtnClicked) {
+            await page.waitForTimeout(500);
+            tips.push(`已选择模型: ${params.model}`);
+          }
         }
 
-        await page.waitForTimeout(800);
-
-        // ── Click Create ──
-        const createClicked = await page.evaluate(() => {
-          // Find visible, enabled Create button
-          const btns = Array.from(document.querySelectorAll('button')).filter(b =>
-            b.textContent?.trim() === 'Create' && b.offsetParent !== null && !b.disabled
+        // 7. Click Create — use safeClickByText (the create button is a span, not a <button>)
+        // Wait for Create button to be visible first
+        try {
+          await page.waitForFunction(
+            () => {
+              const els = Array.from(document.querySelectorAll('button, span, a'));
+              return els.some(e => e.textContent?.trim() === 'Create' && e.offsetParent !== null);
+            },
+            { timeout: 10000 }
           );
-          if (btns.length > 0) { (btns[0] as HTMLElement).click(); return true; }
-          // Fallback: aria-label
-          const aria = document.querySelector('button[aria-label="Create song"]:not([disabled])');
-          if (aria && (aria as HTMLElement).offsetParent !== null) { (aria as HTMLElement).click(); return true; }
-          return false;
-        });
+        } catch {
+          // Debug: dump all Create-like elements
+          const debugInfo = await page.evaluate(() => {
+            return Array.from(document.querySelectorAll('*'))
+              .filter(e => e.textContent?.trim() === 'Create')
+              .map(e => ({ tag: e.tagName, vis: e.offsetParent !== null, w: Math.round(e.getBoundingClientRect().width), h: Math.round(e.getBoundingClientRect().height) }));
+          });
+          tips.push(`⚠ Create 元素: ${JSON.stringify(debugInfo.slice(0, 5))}`);
+        }
+        const createClicked = await safeClickByText(page, 'Create', { preferLarge: true, debug: true });
 
         if (!createClicked) {
           return fail('❌ 无法点击 Create', [...tips, '❌ Create 按钮不可用（可能积分不足或参数未正确填入）']);
@@ -383,7 +449,6 @@ export default function (xcli: XCLIAPI): void {
             return ok({
                 songs,
                 clipIds: genResult.clipIds,
-                title: params.title || null,
                 prompt: params.prompt || null,
                 lyric: params.lyric || null,
                 style: params.style || null,
@@ -405,7 +470,6 @@ export default function (xcli: XCLIAPI): void {
         // Async mode — return immediately
         return ok({
             status: 'submitted',
-            title: params.title || null,
             prompt: params.prompt || null,
             lyric: params.lyric || null,
             style: params.style || null,
@@ -416,7 +480,9 @@ export default function (xcli: XCLIAPI): void {
             '  xbrowser suno result --cdp 9221',
           ]);
       } catch (error) {
-        return fail('未知错误', ['生成失败']);
+        const msg = error instanceof Error ? error.message : String(error);
+        console.error('[SUNO ERROR]', msg);
+        return fail(`生成失败: ${msg}`, ['生成失败']);
       }
     },
   });
@@ -427,7 +493,20 @@ export default function (xcli: XCLIAPI): void {
   site.command('result', {
     description: '获取最新生成的音乐音频 URL（被动拦截页面 feed 数据）',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({
+      songs: z.array(z.object({
+        id: z.string(),
+        title: z.string(),
+        status: z.string(),
+        audioUrl: z.string().nullable(),
+        imageUrl: z.string().optional(),
+        model: z.string().optional(),
+        tags: z.string().optional(),
+        prompt: z.string().optional(),
+        duration: z.number().optional(),
+      })).optional(),
+      total: z.number().optional(),
+    }),
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(10).describe('返回条数（默认 10）'),
     }),
@@ -458,6 +537,7 @@ export default function (xcli: XCLIAPI): void {
             ...tips,
             `共 ${songs.length} 首，${withUrl.length} 首可播放`,
             ...withUrl.slice(0, 3).map(s => `🎵 ${s.title || '未命名'} [${s.status}] → ${s.audioUrl}`),
+          ]);
       } catch (error) {
         return fail('未知错误', ['获取结果失败']);
       }
