@@ -168,6 +168,37 @@ async function safeClickSelector(page: Page, selector: string): Promise<boolean>
   return true;
 }
 
+async function waitForText(page: Page, text: string, timeout = 5000): Promise<void> {
+  await page.waitForFunction(
+    (t: string) => {
+      const all = document.querySelectorAll('div, button, span, textarea');
+      return Array.from(all).some(el => el.textContent?.trim() === t && el.offsetParent !== null);
+    },
+    text,
+    { timeout }
+  );
+}
+
+async function waitForGone(page: Page, selector: string, timeout = 5000): Promise<void> {
+  await page.waitForSelector(selector, { state: 'detached', timeout });
+}
+
+async function safeClickByText(page: Page, text: string): Promise<boolean> {
+  const handle = await page.evaluateHandle((t: string) => {
+    const all = document.querySelectorAll('div, button, span');
+    for (const el of all) {
+      if (el.textContent?.trim() === t && el.offsetParent !== null) return el;
+    }
+    return null;
+  }, text);
+  const element = handle.asElement();
+  if (!element) return false;
+  const box = await element.boundingBox();
+  if (!box) return false;
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+  return true;
+}
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'doubao',
@@ -1222,7 +1253,21 @@ export default function (xcli: XCLIAPI): void {
           { cmd: 'xbrowser doubao music --description "励志歌曲" --voice 男声 --timeout 60', description: 'AI 写歌词模式，指定音色' },
           { cmd: 'xbrowser doubao music --lyric "测试歌词" --debug --timeout 90', description: '开启 debug 模式，记录 API 请求到 ~/.xbrowser/debug/' },
         ],
-    result: z.any(),
+    result: z.object({
+      url: z.string().optional(),
+      localPath: z.string().optional(),
+      conversationUrl: z.string().optional(),
+      description: z.string().optional(),
+      style: z.string().optional(),
+      mood: z.string().optional(),
+      voice: z.string().optional(),
+      duration: z.union([z.string(), z.number()]).optional(),
+      lyric: z.string().optional(),
+      mode: z.enum(['custom_lyric', 'ai_lyric', 'description']).optional(),
+      taskId: z.string().optional(),
+      status: z.enum(['pending', 'submitted', 'completed', 'timeout', 'error']).optional(),
+      error: z.string().optional(),
+    }),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1261,39 +1306,36 @@ export default function (xcli: XCLIAPI): void {
               const msgs = body.messages || [];
               for (const msg of msgs) {
                 if (typeof msg.content === 'string') {
-                  try {
-                    const content = JSON.parse(msg.content);
-                    // 不再使用旧 API 检测
-                  } catch { /* ignore */ }
+                  try { JSON.parse(msg.content); } catch { /* ignore */ }
                 }
               }
             } catch { /* ignore */ }
           }
         });
 
-        await page.goto('https://www.doubao.com/chat/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await page.waitForTimeout(2000);
+        // === Phase 0: Navigate to doubao ===
+        if (!page.url().includes('doubao.com')) {
+          await page.goto('https://www.doubao.com/chat/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        }
 
-        const musicHandle = await page.evaluateHandle(() => {
-          const all = document.querySelectorAll('button,div');
-          for (const e of all) {
-            if (e.textContent.trim() === '音乐生成' && e.offsetParent !== null) return e;
-          }
-          return null;
-        });
-        const musicEl = musicHandle.asElement();
-        if (!musicEl) throw new Error('找不到「音乐生成」按钮');
-        const musicBox = await musicEl.boundingBox();
-        if (!musicBox) throw new Error('「音乐生成」按钮不可见');
-        await page.mouse.click(musicBox.x + musicBox.width / 2, musicBox.y + musicBox.height / 2);
+        // === Phase 1: Click 音乐生成 ===
+        const musicClicked = await safeClickByText(page, '音乐生成');
+        if (!musicClicked) {
+          return fail('找不到「音乐生成」按钮', ['请确保豆包页面已加载且音乐生成功能可用']);
+        }
         tips.push('已点击「音乐生成」按钮');
-        await page.waitForTimeout(2500);
 
+        // Hook: wait for panel to expand (AI帮我写歌词 appears)
+        try {
+          await waitForText(page, 'AI 帮我写歌词', 5000);
+        } catch { /* panel may already be in different state */ }
+
+        // Register response listener for bigmusic/get_video
         const audioUrlPromise = new Promise<string | null>((resolve) => {
           const timeout = (waitSeconds > 0 ? waitSeconds : 60) * 1000;
           const timer = setTimeout(() => resolve(null), timeout);
 
-          const handler = async (response: import('playwright-core').Response) => {
+          const responseHandler = async (response: import('playwright-core').Response) => {
             const url = response.url();
             if (url.includes('bigmusic/get_video')) {
               try {
@@ -1301,204 +1343,95 @@ export default function (xcli: XCLIAPI): void {
                 const data = json.data as Record<string, unknown> | undefined;
                 if (json.code === 0 && data?.url && typeof data.url === 'string') {
                   clearTimeout(timer);
-                  page.off('response', handler);
+                  page.off('response', responseHandler);
                   resolve(data.url);
                 }
               } catch { /* keep waiting */ }
             }
           };
-          page.on('response', handler);
+          page.on('response', responseHandler);
         });
 
-        // 新 UI：内联模板交互（AI 帮我写歌词/描述 + 风格/情绪/音色）
+        // === Phase 2: Lyric input ===
         if (params.lyric) {
-          const aiSpan = await page.evaluateHandle(() => {
-            const spans = document.querySelectorAll('span');
-            for (const s of spans) {
-              if (s.textContent.trim() === 'AI 帮我写歌词' && s.offsetParent !== null && !s.isContentEditable) return s;
-            }
-            return null;
-          });
-          const aiEl = aiSpan.asElement();
-          if (aiEl) {
-            const aiBox = await aiEl.boundingBox();
-            if (aiBox) await page.mouse.click(aiBox.x + aiBox.width / 2, aiBox.y + aiBox.height / 2);
+          const aiClicked = await safeClickByText(page, 'AI 帮我写歌词');
+          if (aiClicked) {
             tips.push('已点击「AI 帮我写歌词」');
-            await page.waitForTimeout(1200);
-            const customDiv = await page.evaluateHandle(() => {
-              const divs = document.querySelectorAll('div');
-              for (const d of divs) {
-                if (d.textContent.trim() === '自定义歌词' && d.children.length === 0 && d.offsetParent !== null) return d;
-              }
-              return null;
-            });
-            const customEl = customDiv.asElement();
-            if (customEl) {
-              const customBox = await customEl.boundingBox();
-              if (customBox) await page.mouse.click(customBox.x + customBox.width / 2, customBox.y + customBox.height / 2);
+            // Hook: wait for dropdown with 自定义歌词
+            try {
+              await waitForText(page, '自定义歌词', 3000);
+            } catch { /* dropdown may have different text */ }
+
+            const customClicked = await safeClickByText(page, '自定义歌词');
+            if (customClicked) {
               tips.push('已选择「自定义歌词」');
-              await page.waitForTimeout(2000);
-
-              if (params.debug) {
-                const screenshotPath = '/tmp/doubao_custom_lyric_modal.png';
-                await page.screenshot({ path: screenshotPath, fullPage: true });
-                tips.push(`📸 已截图: ${screenshotPath}`);
-
-                const textareas = await page.evaluate(() => {
-                  const areas = document.querySelectorAll('textarea');
-                  const info: Array<{ placeholder: string; id: string; class: string; value: string; visible: boolean }> = [];
-                  areas.forEach(t => {
-                    info.push({
-                      placeholder: t.getAttribute('placeholder') || '',
-                      id: t.getAttribute('id') || '',
-                      class: t.getAttribute('class') || '',
-                      value: t.value,
-                      visible: t.offsetParent !== null
-                    });
-                  });
-                  return info;
-                });
-                tips.push(`🔍 找到 ${textareas.length} 个 textarea: ${JSON.stringify(textareas)}`);
-
-                const lyricElements = await page.evaluate(() => {
-                  const all = document.querySelectorAll('*');
-                  const info: Array<{ tag: string; text: string; class: string; visible: boolean }> = [];
-                  all.forEach(e => {
-                    const cls = e.getAttribute('class') || '';
-                    const txt = e.textContent?.trim() || '';
-                    if (cls.toLowerCase().includes('lyric') || txt.includes('歌词')) {
-                      if (info.length < 20) {
-                        info.push({
-                          tag: e.tagName,
-                          text: txt.substring(0, 50),
-                          class: cls,
-                          visible: e.offsetParent !== null
-                        });
-                      }
-                    }
-                  });
-                  return info;
-                });
-                tips.push(`🔍 找到 ${lyricElements.length} 个歌词相关元素: ${JSON.stringify(lyricElements)}`);
-
-                const buttons = await page.evaluate(() => {
-                  const all = document.querySelectorAll('button');
-                  const info: Array<{ text: string; class: string; disabled: boolean }> = [];
-                  all.forEach(b => {
-                    const txt = b.textContent?.trim() || '';
-                    if (txt.length < 20) {
-                      info.push({
-                        text: txt,
-                        class: b.getAttribute('class') || '',
-                        disabled: (b as HTMLButtonElement).disabled
-                      });
-                    }
-                  });
-                  return info;
-                });
-                tips.push(`🔍 找到 ${buttons.length} 个按钮: ${JSON.stringify(buttons)}`);
-              }
             } else {
               tips.push('⚠ 未找到「自定义歌词」选项，继续使用 AI 歌词');
             }
           }
 
-          // 歌词限制：最多 200 字
+          // Lyric length limit: 200 chars
           const lyricText = params.lyric.length > 200 ? params.lyric.slice(0, 200) : params.lyric;
           const truncated = params.lyric.length !== lyricText.length;
           if (truncated) {
             tips.push(`⚠ 歌词超过 200 字，已截断到 ${lyricText.length} 字`);
           }
 
-          // 【关键】直接点击弹窗内的 textarea（不能点击弹窗外部的 lyrics-content 元素，否则弹窗会关闭）
-          const textareaCoords = await page.evaluate(() => {
-            const ta = document.querySelector('textarea[placeholder="自定义歌词"]');
-            if (!ta) return null;
-            const rect = ta.getBoundingClientRect();
-            return { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
-          });
+          // Hook: wait for textarea to appear
+          try {
+            await page.waitForSelector('textarea[placeholder="自定义歌词"]', { timeout: 5000 });
+          } catch { /* may already exist */ }
 
-          if (textareaCoords) {
-            // 点击 textarea 获取焦点
-            await page.mouse.click(textareaCoords.x + textareaCoords.w / 2, textareaCoords.y + textareaCoords.h / 2);
-            await page.waitForTimeout(500);
-
-            // 【关键】用 keyboard.type 输入歌词（模拟真实键盘输入，触发 React onChange，确认按钮才会自动变蓝）
-            await page.keyboard.type(lyricText, { delay: 30 });
-            await page.waitForTimeout(1000);
-            tips.push(`已输入歌词(${lyricText.length}字)`);
-
-            // 验证：检查确认按钮是否已启用
-            const confirmState = await page.evaluate(() => {
-              const btn = document.querySelector('button[class*="lyric-confirm"]') as HTMLButtonElement;
-              if (!btn) return { found: false };
-              return {
-                found: true,
-                disabled: btn.disabled,
-                text: btn.textContent?.trim()
-              };
-            });
-
-            if (confirmState.found && !confirmState.disabled) {
-              // 确认按钮已自动启用（React 状态已更新），直接点击
-              const confirmBox = await page.evaluate(() => {
-                const btn = document.querySelector('button[class*="lyric-confirm"]') as HTMLButtonElement;
-                if (!btn) return null;
-                const rect = btn.getBoundingClientRect();
-                return { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
-              });
-              if (confirmBox) {
-                await page.mouse.click(confirmBox.x + confirmBox.w / 2, confirmBox.y + confirmBox.h / 2);
-                tips.push('已确认歌词');
-              }
-            } else if (confirmState.found && confirmState.disabled) {
-              // 确认按钮仍然 disabled，可能歌词输入有问题
-              tips.push('⚠ 确认按钮仍为灰色，歌词输入可能未生效');
-              // 尝试强制启用并点击
-              await page.evaluate(() => {
-                const btn = document.querySelector('button[class*="lyric-confirm"]') as HTMLButtonElement;
-                if (btn) {
-                  btn.disabled = false;
-                  btn.classList.remove('semi-button-disabled', 'semi-button-primary-disabled');
-                }
-              });
-              await page.waitForTimeout(300);
-              const confirmBox = await page.evaluate(() => {
-                const btn = document.querySelector('button[class*="lyric-confirm"]');
-                if (!btn) return null;
-                const rect = btn.getBoundingClientRect();
-                return { x: rect.x, y: rect.y, w: rect.width, h: rect.height };
-              });
-              if (confirmBox) {
-                await page.mouse.click(confirmBox.x + confirmBox.w / 2, confirmBox.y + confirmBox.h / 2);
-                tips.push('已强制确认歌词');
-              }
-            } else {
-              tips.push('⚠ 未找到确认按钮');
-            }
-          } else {
-            tips.push('⚠ 未找到歌词输入框，可能弹窗已关闭');
-            // fallback: 点任意"确认"按钮
-            const fbBtn = page.locator('button').filter({ hasText: '确认' }).first();
-            if (await fbBtn.count() > 0) {
-              await fbBtn.click().catch(() => {});
-              tips.push('已确认歌词(fallback)');
+          // Click textarea via evaluateHandle + boundingBox
+          const taHandle = await page.evaluateHandle(() =>
+            document.querySelector('textarea[placeholder="自定义歌词"]')
+          );
+          const taEl = taHandle.asElement();
+          if (taEl) {
+            const taBox = await taEl.boundingBox();
+            if (taBox) {
+              await page.mouse.click(taBox.x + taBox.width / 2, taBox.y + taBox.height / 2);
             }
           }
-          await page.waitForTimeout(1500);
-        } else {
-          const editSpan = await page.evaluateHandle(() => {
+
+          await page.keyboard.type(lyricText, { delay: 30 });
+          tips.push(`已输入歌词(${lyricText.length}字)`);
+
+          // Hook: wait for confirm button to be enabled
+          try {
+            await page.waitForFunction(() => {
+              const btns = [...document.querySelectorAll('span, button')];
+              const confirm = btns.find(b => b.textContent?.trim() === '确认');
+              if (!confirm) return false;
+              return !(confirm as HTMLButtonElement).disabled;
+            }, { timeout: 5000 });
+          } catch { /* confirm button may already be enabled */ }
+
+          const confirmClicked = await safeClickByText(page, '确认');
+          if (confirmClicked) {
+            tips.push('已确认歌词');
+          } else {
+            tips.push('⚠ 未找到确认按钮');
+          }
+
+          // Hook: wait for dialog to close
+          try {
+            await waitForGone(page, 'textarea[placeholder="自定义歌词"]', 3000);
+          } catch { /* dialog may already be closed */ }
+
+        } else if (params.description) {
+          // AI lyric mode — type description in editable span
+          const editHandle = await page.evaluateHandle(() => {
             const spans = document.querySelectorAll('span[contenteditable]');
             for (const s of spans) {
               if (s.textContent?.includes('描述歌词要表达的主题')) return s;
             }
             return null;
           });
-          const editEl = editSpan.asElement();
+          const editEl = editHandle.asElement();
           if (editEl) {
             const editBox = await editEl.boundingBox();
             if (editBox) await page.mouse.click(editBox.x + editBox.width / 2, editBox.y + editBox.height / 2);
-            await page.waitForTimeout(300);
             const filled = await page.evaluate((desc) => {
               const editableSpans = document.querySelectorAll('span[contenteditable]');
               for (const s of editableSpans) {
@@ -1518,27 +1451,23 @@ export default function (xcli: XCLIAPI): void {
           }
         }
 
-        await page.waitForTimeout(500);
-
-        // 选中内联风格/情绪/音色标签：先点当前值弹出下拉，再选目标值
-        const dropdownValues: Array<{ current: string; target: string }> = [];
+        // === Phase 4: Select style/mood/voice ===
         const genreMap: Record<string, string[]> = {
           style: ['流行', '嘻哈', '国风', 'DJ', '摇滚', '民谣', 'R&B', '雷鬼', '朋克', '电音', '爵士'],
-          mood: ['快乐', '忧伤', '激昂', '温柔', '思念', '愤怒', '平静', '浪漫'],
-          voice: ['女声', '男声', '童声'],
+          mood: ['快乐', '放松', '活力', '兴奋', '忧郁', '鼓舞', '伤感', '怀旧', '浪漫'],
+          voice: ['女声', '男声'],
         };
         const categoryFor: Record<string, 'style' | 'mood' | 'voice'> = {
           '流行': 'style', '嘻哈': 'style', '国风': 'style', 'DJ': 'style', '摇滚': 'style', '民谣': 'style',
           'R&B': 'style', '雷鬼': 'style', '朋克': 'style', '电音': 'style', '爵士': 'style',
-          '快乐': 'mood', '忧伤': 'mood', '激昂': 'mood', '温柔': 'mood', '思念': 'mood', '愤怒': 'mood', '平静': 'mood', '浪漫': 'mood',
-          '女声': 'voice', '男声': 'voice', '童声': 'voice',
+          '快乐': 'mood', '放松': 'mood', '活力': 'mood', '兴奋': 'mood', '忧郁': 'mood', '鼓舞': 'mood', '伤感': 'mood', '怀旧': 'mood', '浪漫': 'mood',
+          '女声': 'voice', '男声': 'voice',
         };
 
         const selectInlineOption = async (target: string): Promise<boolean> => {
           const cat = categoryFor[target];
           if (!cat) return false;
           const candidates = genreMap[cat];
-          // 找到当前选中的值（页面上可见的 inline span）
           const current = await page.evaluateHandle((opts: string[]) => {
             const all = document.querySelectorAll('span,div');
             for (const s of all) {
@@ -1551,14 +1480,28 @@ export default function (xcli: XCLIAPI): void {
           if (!curEl) return false;
           const curBox = await curEl.boundingBox();
           if (!curBox) return false;
-          // 点击当前值弹出下拉
           await page.mouse.click(curBox.x + curBox.width / 2, curBox.y + curBox.height / 2);
-          await page.waitForTimeout(800);
-          // 在下拉中找目标值（可能用 span div 或 button）
+          // Hook: wait for dropdown option to appear
+          try {
+            await page.waitForFunction((text: string) => {
+              const all = document.querySelectorAll('span,div');
+              for (const d of all) {
+                if (d.textContent.trim() === text && d.offsetParent !== null && d.getAttribute('role') !== 'tab') {
+                  const rect = d.getBoundingClientRect();
+                  if (rect.y > 0 && rect.height < 80 && rect.height > 10) return true;
+                }
+              }
+              return false;
+            }, target, { timeout: 3000 });
+          } catch { /* dropdown may not appear */ }
+
           const optHandle = await page.evaluateHandle((text: string) => {
-            const all = document.querySelectorAll('span,div,button');
+            const all = document.querySelectorAll('span,div');
             for (const d of all) {
-              if (d.textContent.trim() === text && d.offsetParent !== null && d.getAttribute('role') !== 'tab') return d;
+              if (d.textContent.trim() === text && d.offsetParent !== null && d.getAttribute('role') !== 'tab') {
+                const rect = d.getBoundingClientRect();
+                if (rect.y > 0 && rect.height < 80 && rect.height > 10) return d;
+              }
             }
             return null;
           }, target);
@@ -1567,32 +1510,79 @@ export default function (xcli: XCLIAPI): void {
             const optBox = await optEl.boundingBox();
             if (optBox) {
               await page.mouse.click(optBox.x + optBox.width / 2, optBox.y + optBox.height / 2);
-              await page.waitForTimeout(500);
               return true;
             }
           }
-          // 点击空白区域关闭下拉
           await page.mouse.click(10, 10).catch(() => {});
           return false;
         };
 
         if (params.style) {
-          const ok = await selectInlineOption(params.style);
-          if (ok) tips.push(`已选择风格: ${params.style}`);
+          const selected = await selectInlineOption(params.style);
+          if (selected) tips.push(`已选择风格: ${params.style}`);
           else tips.push(`⚠ 未选中风格"${params.style}"，使用默认`);
         }
         if (params.mood) {
-          const ok = await selectInlineOption(params.mood);
-          if (ok) tips.push(`已选择情绪: ${params.mood}`);
+          const selected = await selectInlineOption(params.mood);
+          if (selected) tips.push(`已选择情绪: ${params.mood}`);
           else tips.push(`⚠ 未选中情绪"${params.mood}"，使用默认`);
         }
         if (params.voice) {
-          const ok = await selectInlineOption(params.voice);
-          if (ok) tips.push(`已选择音色: ${params.voice}`);
+          const selected = await selectInlineOption(params.voice);
+          if (selected) tips.push(`已选择音色: ${params.voice}`);
           else tips.push(`⚠ 未选中音色"${params.voice}"，使用默认`);
         }
 
-        // Click the send button to submit
+        // === Phase 5: Submit ===
+        // Hook: wait for auto-generated description text to appear
+        try {
+          await page.waitForFunction(() => {
+            const all = document.querySelectorAll('div');
+            return Array.from(all).some(d => {
+              const t = d.textContent?.trim() || '';
+              return t.startsWith('我想创作一首歌曲') && d.offsetParent !== null && t.length < 300;
+            });
+          }, { timeout: 10000 });
+        } catch { /* description text may not appear yet */ }
+
+        const descHandle = await page.evaluateHandle(() => {
+          const all = document.querySelectorAll('div');
+          for (const d of all) {
+            const t = d.textContent?.trim() || '';
+            if (t.startsWith('我想创作一首歌曲') && d.offsetParent !== null && t.length < 300) {
+              const rect = d.getBoundingClientRect();
+              if (rect.height > 10 && rect.height < 200) return d;
+            }
+          }
+          return null;
+        });
+        const descEl = descHandle.asElement();
+        if (descEl) {
+          const descBox = await descEl.boundingBox();
+          if (descBox) {
+            await page.mouse.click(descBox.x + descBox.width / 2, descBox.y + descBox.height / 2);
+            tips.push('已点击自动生成的描述文本');
+            if (params.duration) {
+              await page.keyboard.type(` ${params.duration}s`, { delay: 30 });
+              tips.push(`已追加时长: ${params.duration}s`);
+            }
+          }
+        } else if (params.duration) {
+          const editorHandle = await page.evaluateHandle(() =>
+            document.querySelector('div[aria-label="doc_editor"]') || document.querySelector('[contenteditable="true"]')
+          );
+          const editorEl = editorHandle.asElement();
+          if (editorEl) {
+            const editorBox = await editorEl.boundingBox();
+            if (editorBox) {
+              await page.mouse.click(editorBox.x + editorBox.width - 10, editorBox.y + editorBox.height / 2);
+              await page.keyboard.type(` ${params.duration}s`, { delay: 30 });
+              tips.push(`已追加时长: ${params.duration}s`);
+            }
+          }
+        }
+
+        // Click send button
         const sendHandle = await page.evaluateHandle(() => document.querySelector('#flow-end-msg-send'));
         const sendEl = sendHandle.asElement();
         if (sendEl) {
@@ -1607,13 +1597,12 @@ export default function (xcli: XCLIAPI): void {
         const opts = ctxAny.options as Record<string, unknown> | undefined;
         const cdpFlag = ctxAny.cdpEndpoint || opts?.cdp;
         const cdpSuffix = cdpFlag ? ` --cdp ${cdpFlag}` : '';
-        const sessionName = (opts?.session as string) || 'default';
-        const sessionSuffix = ` --session ${sessionName}${cdpSuffix}`;
 
         const conversationUrl = page.url();
         const activeDescription = params.description || params.lyric || '';
         const mode = params.lyric ? 'custom_lyric' : 'ai_lyric';
 
+        // === Phase 6: Wait for result ===
         if (waitSeconds > 0) {
           tips.push(`⏳ 等待音乐生成（最长 ${waitSeconds} 秒）...`);
 
@@ -1647,17 +1636,18 @@ export default function (xcli: XCLIAPI): void {
           if (audioUrl) {
             const downloaded = await downloadMedia(audioUrl, 'music');
             return ok({
-                url: audioUrl,
-                localPath: downloaded.localPath,
-                conversationUrl,
-                description: activeDescription,
-                style: params.style || null,
-                mood: params.mood || null,
-                voice: params.voice || null,
-                duration: params.duration || null,
-                lyric: params.lyric || null,
-                mode,
-              }, [...tips, '✅ 音乐生成完成！', `📁 音频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`]);
+              url: audioUrl,
+              localPath: downloaded.localPath,
+              conversationUrl,
+              description: activeDescription,
+              style: params.style || undefined,
+              mood: params.mood || undefined,
+              voice: params.voice || undefined,
+              duration: params.duration || undefined,
+              lyric: params.lyric || undefined,
+              mode,
+              status: 'completed',
+            }, [...tips, '✅ 音乐生成完成！', `📁 音频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`]);
           }
 
           const hasError = await page.evaluate(() => {
@@ -1676,34 +1666,47 @@ export default function (xcli: XCLIAPI): void {
             return /生成失败|出错了|无法生成|请求过于频繁|操作过于频繁|请稍后再试|抱歉/.test(body);
           });
           if (hasError) {
-            return ok({ error: '生成失败', conversationUrl, description: activeDescription, lyric: params.lyric || null, mode }, [...tips, '❌ 音乐生成失败，请检查豆包页面']);
+            return ok({
+              error: '生成失败',
+              conversationUrl,
+              description: activeDescription,
+              lyric: params.lyric || undefined,
+              mode,
+              status: 'error',
+            }, [...tips, '❌ 音乐生成失败，请检查豆包页面']);
           }
 
-          return ok({ status: 'timeout', conversationUrl, description: activeDescription, lyric: params.lyric || null, mode }, [
-              ...tips,
-              `⏱ 等待超时（${waitSeconds}秒），音乐可能还在生成中`,
-              `恢复查看: 使用相同 --cdp 重新执行命令会自动回到此对话`,
-              `或查看创作历史: xbrowser doubao my-creations --type all${cdpSuffix ? ' --cdp ' + cdpFlag : ''}`,
-            ]);
-        }
-
-        return ok({
-            status: 'submitted',
+          return ok({
+            status: 'timeout',
             conversationUrl,
             description: activeDescription,
-            style: params.style || null,
-            mood: params.mood || null,
-            voice: params.voice || null,
-            duration: params.duration || null,
-            lyric: params.lyric || null,
+            lyric: params.lyric || undefined,
             mode,
           }, [
             ...tips,
-            `✅ 音乐生成已提交！${params.lyric ? '模式: 自定义歌词' : `描述: "${activeDescription}"`}`,
-            `⏱ 预计 25-60 秒后生成完成`,
+            `⏱ 等待超时（${waitSeconds}秒），音乐可能还在生成中`,
             `恢复查看: 使用相同 --cdp 重新执行命令会自动回到此对话`,
             `或查看创作历史: xbrowser doubao my-creations --type all${cdpSuffix ? ' --cdp ' + cdpFlag : ''}`,
           ]);
+        }
+
+        return ok({
+          status: 'submitted',
+          conversationUrl,
+          description: activeDescription,
+          style: params.style || undefined,
+          mood: params.mood || undefined,
+          voice: params.voice || undefined,
+          duration: params.duration || undefined,
+          lyric: params.lyric || undefined,
+          mode,
+        }, [
+          ...tips,
+          `✅ 音乐生成已提交！${params.lyric ? '模式: 自定义歌词' : `描述: "${activeDescription}"`}`,
+          `⏱ 预计 25-60 秒后生成完成`,
+          `恢复查看: 使用相同 --cdp 重新执行命令会自动回到此对话`,
+          `或查看创作历史: xbrowser doubao my-creations --type all${cdpSuffix ? ' --cdp ' + cdpFlag : ''}`,
+        ]);
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
         return fail('未知错误', ['提交音乐生成失败', `原因: ${errMsg}`]);
