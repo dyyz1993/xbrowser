@@ -22,9 +22,9 @@ export interface ScreencastOptions {
   quality?: number;
   /** Image format. Default: 'jpeg' */
   type?: 'jpeg' | 'png';
-  /** Max capture width. Default: 1280 */
+  /** Max capture width. Default: 1920 */
   width?: number;
-  /** Max capture height. Default: 720 */
+  /** Max capture height. Default: 1080 */
   height?: number;
 }
 
@@ -58,8 +58,8 @@ export class ScreencastCapturer {
     this.interval = options.interval || 100;
     this.quality = options.quality || 60;
     this.type = options.type || 'jpeg';
-    this.maxWidth = options.width || 1280;
-    this.maxHeight = options.height || 720;
+    this.maxWidth = options.width || 1920;
+    this.maxHeight = options.height || 1080;
   }
 
   /**
@@ -155,7 +155,7 @@ export class ScreencastCapturer {
       try {
         viewport = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
       } catch {
-        viewport = { width: 1280, height: 720 };
+        viewport = { width: 1920, height: 1080 };
       }
     }
     const screenshot = await page.screenshot({

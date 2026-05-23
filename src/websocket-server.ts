@@ -84,6 +84,7 @@ export interface StatusMessage {
 interface WSClient {
   id: string;
   sessionId?: string;
+  requestedSessionId?: string;
   ws: WSLike;
 }
 
@@ -135,13 +136,15 @@ export class WSServer extends EventEmitter {
    * Call this when a session is created. The capturer will only start
    * when a WS client binds to this session.
    */
-  registerSession(sessionId: string, page: Page, options?: { interval?: number; quality?: number; type?: 'jpeg' | 'png' }): void {
+  registerSession(sessionId: string, page: Page, options?: { interval?: number; quality?: number; type?: 'jpeg' | 'png'; width?: number; height?: number }): void {
     if (this.screencasts.has(sessionId)) return;
     this.screencasts.set(sessionId, {
       capturer: new ScreencastCapturer({
         interval: options?.interval ?? 500,
         quality: options?.quality ?? 80,
         type: options?.type ?? 'jpeg',
+        width: options?.width ?? 1920,
+        height: options?.height ?? 1080,
       }),
       page,
       clientCount: 0,
@@ -211,6 +214,12 @@ export class WSServer extends EventEmitter {
     }, 500);
 
     this.screencasts.get(sessionId)!.focusPoll = focusPoll;
+
+    for (const [clientId, client] of this.clients) {
+      if (client.requestedSessionId === sessionId && !client.sessionId) {
+        this.bindClientToSession(clientId, sessionId);
+      }
+    }
   }
 
   /**
@@ -309,6 +318,7 @@ export class WSServer extends EventEmitter {
 
       // Auto-bind to session from URL if present
       if (sessionIdFromUrl) {
+        client.requestedSessionId = sessionIdFromUrl;
         if (this.screencasts.has(sessionIdFromUrl)) {
           client.sessionId = sessionIdFromUrl;
           let clients = this.sessionClients.get(sessionIdFromUrl);
