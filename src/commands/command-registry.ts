@@ -11,7 +11,6 @@ export interface BrowserCommandDefinition<
   P extends ZodType<unknown, ZodTypeDef, unknown> = ZodType<unknown, ZodTypeDef, unknown>,
 > {
   name: string;
-  aliases?: string[];
   description: string;
   scope: CommandScope;
   parameters?: P;
@@ -65,11 +64,6 @@ export function registerCommand<P extends ZodType<unknown, ZodTypeDef, unknown>>
     handler: def.handler as RegisteredCommand['handler'],
   };
   registry.set(cmd.name, cmd);
-  if (def.aliases) {
-    for (const alias of def.aliases) {
-      registry.set(alias, cmd);
-    }
-  }
   return cmd;
 }
 

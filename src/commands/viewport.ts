@@ -5,7 +5,7 @@ import { registerCommand } from './command-registry.js';
 
 export const setViewportCommand = registerCommand({
   name: 'set-viewport',
-  aliases: ['setViewport'],
+
   description: 'Set the viewport size and properties',
   scope: 'browser',
   parameters: z.object({

@@ -25,11 +25,11 @@ const waitForSelectorDef = {
 };
 
 export const waitCommand = registerCommand({ name: 'wait', ...waitForSelectorDef });
-export const waitForSelectorCommand = registerCommand({ name: 'wait-for-selector', aliases: ['waitForSelector'], ...waitForSelectorDef });
+export const waitForSelectorCommand = registerCommand({ name: 'wait-for-selector', ...waitForSelectorDef });
 
 export const waitForTimeoutCommand = registerCommand({
   name: 'wait-for-timeout',
-  aliases: ['waitForTimeout'],
+
   description: 'Wait for a specified duration',
   scope: 'page',
   parameters: z.object({
