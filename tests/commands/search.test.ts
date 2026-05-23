@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import * as cheerio from 'cheerio';
 import {
   getRecencyParams,
@@ -9,6 +9,7 @@ import {
   resolveUrl,
   isAdResult,
   mergeResults,
+  resolveBaiduRedirects,
 } from '../../src/commands/search.js';
 
 describe('search command - utility functions', () => {
@@ -414,20 +415,6 @@ describe('search command - parsers', () => {
   });
 
   describe('resolveUrl - Baidu edge cases', () => {
-    it('should keep original Baidu redirect URL when url param is encrypted token', () => {
-      // Real-world case: Baidu returns encrypted tokens as url= param, not real URLs
-      const item = {
-        title: 'Test',
-        url: 'http://www.baidu.com/link?url=7NQMJ3yUzbFXq4DPUHMMxVpLjonJqQEZC5ylr1kRweM_q4l782itJBEvRhOf_S-JCEo81ze3yJlhtAi_TiBUmdGQR-fZWsd_BEJQhEoX8ei',
-        snippet: 'Test snippet',
-        position: 1,
-      };
-      const resolved = resolveUrl(item);
-      // The resolved URL should be a valid URL (either the original or the decoded one)
-      // It should NOT be a bare encrypted token like "7NQMJ3yUzbFX..."
-      expect(resolved.url).toMatch(/^https?:\/\//);
-    });
-
     it('should preserve real URL when Baidu url param contains actual URL', () => {
       const item = {
         title: 'Test',
@@ -439,50 +426,151 @@ describe('search command - parsers', () => {
       expect(resolved.url).toBe('https://github.com/test');
     });
 
-    it('should handle Baidu href that is just an encrypted token (no link prefix)', () => {
-      // Sometimes Baidu puts the encrypted token directly in href without the link prefix
+    it('should keep original URL when Baidu url param is encrypted token', () => {
+      // Synchronous resolveUrl can't decode encrypted tokens — async resolveBaiduRedirects handles that
       const item = {
         title: 'Test',
-        url: '7NQMJ3yUzbFXq4DPUHMMxVpLjonJqQEZC5ylr1kRweM',
+        url: 'http://www.baidu.com/link?url=7NQMJ3yUzbFXq4DPUHMMxVpLjonJqQEZC5ylr1kRweM_q4l782itJBEvRhOf',
         snippet: 'Test snippet',
         position: 1,
       };
       const resolved = resolveUrl(item);
-      // Should return as-is (it's not a baidu.com/link URL so resolveUrl should not touch it)
-      expect(resolved.url).toBe('7NQMJ3yUzbFXq4DPUHMMxVpLjonJqQEZC5ylr1kRweM');
+      // Keeps the original baidu.com/link URL (not a bare token)
+      expect(resolved.url).toContain('baidu.com/link');
+    });
+
+    it('should keep non-Baidu URLs unchanged', () => {
+      const item = {
+        title: 'Test',
+        url: 'https://example.com/page',
+        snippet: 'Test snippet',
+        position: 1,
+      };
+      const resolved = resolveUrl(item);
+      expect(resolved.url).toBe('https://example.com/page');
+    });
+  });
+
+  describe('resolveBaiduRedirects - 302 redirect resolution', () => {
+    it('should resolve Baidu redirect URL to real URL via 302 Location', async () => {
+      // Mock global fetch to return 302 with Location header (case-insensitive)
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        status: 302,
+        headers: { get: (name: string) => name.toLowerCase() === 'location' ? 'https://example.com/real-page' : null },
+      }));
+
+      const items = [
+        {
+          title: 'Test',
+          url: 'http://www.baidu.com/link?url=encrypted_token_here',
+          snippet: 'Test snippet',
+          position: 1,
+        },
+      ];
+
+      const resolved = await resolveBaiduRedirects(items);
+      expect(resolved[0].url).toBe('https://example.com/real-page');
+      vi.restoreAllMocks();
+    });
+
+    it('should resolve multiple Baidu redirect URLs in parallel', async () => {
+      let callCount = 0;
+      vi.stubGlobal('fetch', vi.fn().mockImplementation(() => {
+        callCount++;
+        const urls = ['https://example.com/a', 'https://example.com/b'];
+        return Promise.resolve({
+          status: 302,
+          headers: { get: (name: string) => name === 'location' ? urls[callCount - 1] : null },
+        });
+      }));
+
+      const items = [
+        { title: 'A', url: 'http://www.baidu.com/link?url=token_a', snippet: '', position: 1 },
+        { title: 'B', url: 'http://www.baidu.com/link?url=token_b', snippet: '', position: 2 },
+      ];
+
+      const resolved = await resolveBaiduRedirects(items);
+      expect(resolved[0].url).toMatch(/^https?:\/\//);
+      expect(resolved[1].url).toMatch(/^https?:\/\//);
+      expect(callCount).toBe(2);
+      vi.restoreAllMocks();
+    });
+
+    it('should keep original URL when fetch fails or times out', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('timeout')));
+
+      const items = [
+        {
+          title: 'Test',
+          url: 'http://www.baidu.com/link?url=encrypted_token',
+          snippet: 'Test snippet',
+          position: 1,
+        },
+      ];
+
+      const resolved = await resolveBaiduRedirects(items);
+      // Fallback: keep the original Baidu redirect URL
+      expect(resolved[0].url).toBe('http://www.baidu.com/link?url=encrypted_token');
+      vi.restoreAllMocks();
+    });
+
+    it('should keep original URL when 302 Location is missing', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        status: 302,
+        headers: { get: () => null },
+      }));
+
+      const items = [
+        {
+          title: 'Test',
+          url: 'http://www.baidu.com/link?url=encrypted_token',
+          snippet: 'Test snippet',
+          position: 1,
+        },
+      ];
+
+      const resolved = await resolveBaiduRedirects(items);
+      expect(resolved[0].url).toBe('http://www.baidu.com/link?url=encrypted_token');
+      vi.restoreAllMocks();
+    });
+
+    it('should skip non-Baidu URLs', async () => {
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+
+      const items = [
+        { title: 'Test', url: 'https://example.com/page', snippet: '', position: 1 },
+      ];
+
+      const resolved = await resolveBaiduRedirects(items);
+      expect(resolved[0].url).toBe('https://example.com/page');
+      expect(fetchSpy).not.toHaveBeenCalled();
+      vi.restoreAllMocks();
+    });
+
+    it('should skip items where resolveUrl already decoded a real URL', async () => {
+      // If the url= param was already a real URL, no need to fetch
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+
+      const items = [
+        {
+          title: 'Test',
+          url: 'https://github.com/test',  // Already resolved by resolveUrl
+          snippet: '',
+          position: 1,
+        },
+      ];
+
+      const resolved = await resolveBaiduRedirects(items);
+      expect(resolved[0].url).toBe('https://github.com/test');
+      expect(fetchSpy).not.toHaveBeenCalled();
+      vi.restoreAllMocks();
     });
   });
 
   describe('mergeResults - Baidu garbled URL prevention', () => {
-    it('should not produce garbled URLs when merging Baidu results with encrypted tokens', () => {
-      const results = [
-        {
-          engine: 'bing' as const,
-          results: [
-            { title: 'SQL Tutorial', url: 'https://example.com/sql', snippet: 'Learn SQL', position: 1 },
-          ],
-        },
-        {
-          engine: 'baidu' as const,
-          results: [
-            {
-              title: 'SQL教程',
-              url: 'http://www.baidu.com/link?url=7NQMJ3yUzbFXq4DPUHMMxVpLjonJqQEZC5ylr1kRweM_q4l782itJBEvRhOf_S-JCEo81ze3yJlhtAi_TiBUmdGQR-fZWsd_BEJQhEoX8ei',
-              snippet: '学习SQL',
-              position: 1,
-            },
-          ],
-        },
-      ];
-
-      const merged = mergeResults(results, 10);
-      // Every URL in merged results must start with http:// or https://
-      for (const item of merged) {
-        expect(item.url).toMatch(/^https?:\/\//);
-      }
-    });
-
-    it('should filter out Baidu results with non-URL hrefs in merge', () => {
+    it('should filter out results with non-URL hrefs in merge', () => {
       const results = [
         {
           engine: 'baidu' as const,

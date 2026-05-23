@@ -311,6 +311,52 @@ function resolveUrl(item: SearchResultItem): SearchResultItem {
   return { ...item, url };
 }
 
+/**
+ * Resolve Baidu redirect URLs by following the 302 redirect.
+ * Baidu's /link?url=<token> returns the real URL in the Location header.
+ */
+async function resolveBaiduRedirects(items: SearchResultItem[], timeoutMs = 5000): Promise<SearchResultItem[]> {
+  const baiduItems = items.filter(
+    item => item.url.includes('baidu.com/link') && !isValidUrl(item.url.replace(/.*[?&]url=/, '').replace(/&.*/, ''))
+  );
+
+  if (baiduItems.length === 0) return items;
+
+  const resolved = await Promise.allSettled(
+    baiduItems.map(async (item) => {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        const resp = await fetch(item.url, {
+          method: 'HEAD',
+          redirect: 'manual',
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        const location = resp.headers.get('location');
+        if (location && isValidUrl(location)) {
+          return { ...item, url: location };
+        }
+      } catch {
+        // fetch failed or timed out — keep original URL
+      }
+      return item;
+    }),
+  );
+
+  // Build a map from original URL → resolved item
+  const resolutionMap = new Map<string, SearchResultItem>();
+  for (let i = 0; i < resolved.length; i++) {
+    const result = resolved[i];
+    if (result.status === 'fulfilled') {
+      resolutionMap.set(baiduItems[i].url, result.value);
+    }
+  }
+
+  // Replace items in the original array
+  return items.map(item => resolutionMap.get(item.url) || item);
+}
+
 function isAdResult(item: SearchResultItem): boolean {
   const adKeywords = ['广告', '推广', 'Ad', 'Sponsored', 'Promoted'];
   const text = `${item.title} ${item.snippet}`;
@@ -450,6 +496,10 @@ export const searchCommand = registerCommand({
         }
 
         results = finalResult.results.slice(0, p.limit ?? 10);
+        // Resolve Baidu redirect URLs via 302
+        if (finalResult.engine === 'baidu') {
+          results = await resolveBaiduRedirects(results);
+        }
         engineLabel = SEARCH_ENGINES[finalResult.engine].name;
       } else {
         const engines = [...ENGINE_FALLBACK_ORDER];
@@ -487,6 +537,12 @@ export const searchCommand = registerCommand({
           );
         }
 
+        // Resolve Baidu redirect URLs via 302 before merging
+        for (const er of allResults) {
+          if (er.engine === 'baidu') {
+            er.results = await resolveBaiduRedirects(er.results);
+          }
+        }
         results = mergeResults(allResults, p.limit ?? 10);
         engineLabel = allResults.map(r => SEARCH_ENGINES[r.engine].name).join('+');
       }
@@ -544,4 +600,4 @@ export const searchCommand = registerCommand({
   },
 });
 
-export { getRecencyParams, parseBingResults, parseGoogleResults, parseBaiduResults, normalizeUrl, resolveUrl, isAdResult, mergeResults };
+export { getRecencyParams, parseBingResults, parseGoogleResults, parseBaiduResults, normalizeUrl, resolveUrl, resolveBaiduRedirects, isAdResult, mergeResults };
