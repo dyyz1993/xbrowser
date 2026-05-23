@@ -96,7 +96,7 @@ describe('search command - utility functions', () => {
       expect(resolved.url).toBe('https://example.com');
     });
 
-    it('should handle malformed URLs gracefully', () => {
+    it('should keep original URL when Baidu url param is not a valid URL', () => {
       const item = {
         title: 'Test',
         url: 'https://www.baidu.com/link?url=not-valid',
@@ -104,7 +104,8 @@ describe('search command - utility functions', () => {
         position: 1,
       };
       const resolved = resolveUrl(item);
-      expect(resolved.url).toBe('not-valid');
+      // When the decoded value is not a valid URL, keep the original Baidu link
+      expect(resolved.url).toBe('https://www.baidu.com/link?url=not-valid');
     });
   });
 
@@ -409,6 +410,105 @@ describe('search command - parsers', () => {
 
       expect(results).toHaveLength(1);
       expect(results[0].snippet).toContain('This is a longer paragraph');
+    });
+  });
+
+  describe('resolveUrl - Baidu edge cases', () => {
+    it('should keep original Baidu redirect URL when url param is encrypted token', () => {
+      // Real-world case: Baidu returns encrypted tokens as url= param, not real URLs
+      const item = {
+        title: 'Test',
+        url: 'http://www.baidu.com/link?url=7NQMJ3yUzbFXq4DPUHMMxVpLjonJqQEZC5ylr1kRweM_q4l782itJBEvRhOf_S-JCEo81ze3yJlhtAi_TiBUmdGQR-fZWsd_BEJQhEoX8ei',
+        snippet: 'Test snippet',
+        position: 1,
+      };
+      const resolved = resolveUrl(item);
+      // The resolved URL should be a valid URL (either the original or the decoded one)
+      // It should NOT be a bare encrypted token like "7NQMJ3yUzbFX..."
+      expect(resolved.url).toMatch(/^https?:\/\//);
+    });
+
+    it('should preserve real URL when Baidu url param contains actual URL', () => {
+      const item = {
+        title: 'Test',
+        url: 'https://www.baidu.com/link?url=https%3A%2F%2Fgithub.com%2Ftest',
+        snippet: 'Test snippet',
+        position: 1,
+      };
+      const resolved = resolveUrl(item);
+      expect(resolved.url).toBe('https://github.com/test');
+    });
+
+    it('should handle Baidu href that is just an encrypted token (no link prefix)', () => {
+      // Sometimes Baidu puts the encrypted token directly in href without the link prefix
+      const item = {
+        title: 'Test',
+        url: '7NQMJ3yUzbFXq4DPUHMMxVpLjonJqQEZC5ylr1kRweM',
+        snippet: 'Test snippet',
+        position: 1,
+      };
+      const resolved = resolveUrl(item);
+      // Should return as-is (it's not a baidu.com/link URL so resolveUrl should not touch it)
+      expect(resolved.url).toBe('7NQMJ3yUzbFXq4DPUHMMxVpLjonJqQEZC5ylr1kRweM');
+    });
+  });
+
+  describe('mergeResults - Baidu garbled URL prevention', () => {
+    it('should not produce garbled URLs when merging Baidu results with encrypted tokens', () => {
+      const results = [
+        {
+          engine: 'bing' as const,
+          results: [
+            { title: 'SQL Tutorial', url: 'https://example.com/sql', snippet: 'Learn SQL', position: 1 },
+          ],
+        },
+        {
+          engine: 'baidu' as const,
+          results: [
+            {
+              title: 'SQL教程',
+              url: 'http://www.baidu.com/link?url=7NQMJ3yUzbFXq4DPUHMMxVpLjonJqQEZC5ylr1kRweM_q4l782itJBEvRhOf_S-JCEo81ze3yJlhtAi_TiBUmdGQR-fZWsd_BEJQhEoX8ei',
+              snippet: '学习SQL',
+              position: 1,
+            },
+          ],
+        },
+      ];
+
+      const merged = mergeResults(results, 10);
+      // Every URL in merged results must start with http:// or https://
+      for (const item of merged) {
+        expect(item.url).toMatch(/^https?:\/\//);
+      }
+    });
+
+    it('should filter out Baidu results with non-URL hrefs in merge', () => {
+      const results = [
+        {
+          engine: 'baidu' as const,
+          results: [
+            {
+              title: 'Test',
+              // Bare encrypted token, not a real URL
+              url: 'OrYtfZ0SXYmjEX_8ENnNmzF4wqENGEbS3M27O3pfJNbU',
+              snippet: 'Test',
+              position: 1,
+            },
+            {
+              title: 'Valid',
+              url: 'https://example.com/valid',
+              snippet: 'Valid result',
+              position: 2,
+            },
+          ],
+        },
+      ];
+
+      const merged = mergeResults(results, 10);
+      // The garbled token should not appear in final results
+      const urls = merged.map(r => r.url);
+      expect(urls).not.toContain('OrYtfZ0SXYmjEX_8ENnNmzF4wqENGEbS3M27O3pfJNbU');
+      expect(urls).toContain('https://example.com/valid');
     });
   });
 

@@ -5,6 +5,7 @@ function createMockContext(evaluateResult?: unknown): BrowserCommandContext {
   return {
     page: {
       evaluate: vi.fn().mockResolvedValue(evaluateResult ?? undefined),
+      url: vi.fn().mockReturnValue('https://example.com/'),
     },
     browser: {},
     browserContext: {
@@ -77,7 +78,11 @@ describe('Storage Commands', () => {
         sameSite: 'Strict' as const,
       };
       await setCookieCommand.handler(cookie, ctx);
-      expect(ctx.browserContext.addCookies).toHaveBeenCalledWith([cookie]);
+      expect(ctx.browserContext.addCookies).toHaveBeenCalledWith([{
+        ...cookie,
+        domain: 'example.com',
+        path: '/',
+      }]);
     });
   });
 

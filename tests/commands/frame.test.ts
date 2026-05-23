@@ -95,19 +95,19 @@ describe('Frame Commands', () => {
     it('should return error when no index or name provided', async () => {
       const { frameCommand } = await import('../../src/commands/frame.js');
       const result = await frameCommand.handler({}, ctx);
-      expect(result).toEqual({ success: true, data: { error: 'Must provide index or name' }, tips: [] });
+      expect(result).toEqual({ success: false, data: null, message: 'Must provide index or name', tips: [] });
     });
 
     it('should return error when frame not found by index', async () => {
       const { frameCommand } = await import('../../src/commands/frame.js');
       const result = await frameCommand.handler({ index: 99 }, ctx);
-      expect(result).toEqual({ success: true, data: { error: 'Frame not found' }, tips: [] });
+      expect(result).toEqual({ success: false, data: null, message: 'Frame not found', tips: [] });
     });
 
     it('should return error when frame not found by name', async () => {
       const { frameCommand } = await import('../../src/commands/frame.js');
       const result = await frameCommand.handler({ name: 'nonexistent' }, ctx);
-      expect(result).toEqual({ success: true, data: { error: 'Frame not found' }, tips: [] });
+      expect(result).toEqual({ success: false, data: null, message: 'Frame not found', tips: [] });
     });
 
     it('should get first frame by index 0', async () => {

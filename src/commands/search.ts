@@ -286,12 +286,26 @@ function normalizeUrl(url: string): string {
   }
 }
 
+function isValidUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 function resolveUrl(item: SearchResultItem): SearchResultItem {
   let url = item.url;
   try {
     const baiduMatch = url.match(/[?&]url=([^&]+)/);
     if (baiduMatch && url.includes('baidu.com/link')) {
-      url = decodeURIComponent(baiduMatch[1]);
+      const decoded = decodeURIComponent(baiduMatch[1]);
+      // Only accept decoded value if it's a valid http/https URL
+      // Baidu sometimes puts encrypted tokens in url= param, not real URLs
+      if (isValidUrl(decoded)) {
+        url = decoded;
+      }
     }
   } catch { /* baidu link decode failed */ }
   return { ...item, url };
@@ -313,6 +327,8 @@ function mergeResults(
     for (const item of results) {
       const resolved = resolveUrl(item);
       if (isAdResult(resolved)) continue;
+      // Skip results with non-URL values (e.g. Baidu encrypted tokens)
+      if (!isValidUrl(resolved.url)) continue;
       const key = normalizeUrl(resolved.url);
       if (groups.has(key)) {
         const group = groups.get(key)!;
