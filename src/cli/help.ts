@@ -47,21 +47,21 @@ Commands:
   plugin uninstall <name>           Uninstall plugin
   plugin list                       List plugins
   plugin reload <name>              Reload plugin
-  plugin publish [--dry-run]        Publish plugin to marketplace
-  plugin register                   Register developer account
-  plugin login [--token <key>]      Login to marketplace
-  plugin whoami                     Show current user
-  plugin logout                     Logout from marketplace
-  admin pending                     List pending plugins
-  admin approve <slug>              Approve a plugin
-  admin reject <slug> [--reason]    Reject a plugin
-  admin feature <slug>              Toggle featured status
-  admin remove <slug>               Remove a plugin
-  admin stats                       Dashboard stats
-  admin inventory                   Full plugin inventory
-  admin list [--status <status>]    List all plugins
-  admin bulk-approve <slugs...>     Bulk approve plugins
-  admin cleanup                     Reset fake data
+  marketplace publish [--dry-run]   Publish plugin to marketplace
+  marketplace login [--token <key>] Login to marketplace
+  marketplace register              Register developer account
+  marketplace whoami                Show current user
+  marketplace logout                Logout from marketplace
+  admin pending                     List pending plugins (admin only)
+  admin approve <slug>              Approve a plugin (admin only)
+  admin reject <slug> [--reason]    Reject a plugin (admin only)
+  admin feature <slug>              Toggle featured (admin only)
+  admin remove <slug>               Remove a plugin (admin only)
+  admin stats                       Dashboard stats (admin only)
+  admin inventory                   Plugin inventory (admin only)
+  admin list [--status <status>]    List all plugins (admin only)
+  admin bulk-approve <slugs...>     Bulk approve (admin only)
+  admin cleanup                     Reset data (admin only)
   create <name> --template <type>   Create plugin
   daemon start [--port <port>]      Start daemon
   daemon stop                       Stop daemon

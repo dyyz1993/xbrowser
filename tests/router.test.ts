@@ -48,7 +48,6 @@ vi.mock('../src/cli/index.js', () => ({
   handleExtract: vi.fn(),
   handleFilter: vi.fn(),
   handleRun: vi.fn(),
-  handleAdmin: vi.fn(),
 }));
 
 vi.mock('../src/cli/output.js', () => ({
@@ -259,16 +258,6 @@ describe('router', () => {
     const { handleFilter } = await import('../src/cli/index.js');
     await routeCommand(['filter', 'data.json']);
     expect(handleFilter).toHaveBeenCalledWith(['data.json'], 'text');
-  });
-
-  it('routes admin subcommand to handleAdmin', async () => {
-    const { handleAdmin } = await import('../src/cli/index.js');
-    await routeCommand(['admin', 'status']);
-    expect(handleAdmin).toHaveBeenCalledWith(
-      ['status'],
-      expect.any(Object),
-      'text'
-    );
   });
 
   it('routes help subcommand to showMainHelp', async () => {

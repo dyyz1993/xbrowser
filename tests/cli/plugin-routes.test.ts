@@ -63,12 +63,10 @@ vi.mock('../../src/daemon/daemon.js', () => ({
   isDaemonRunning: vi.fn(),
 }));
 
-vi.mock('../../src/cli/publish-routes.js', () => ({
-  handlePublish: vi.fn(),
-  handlePluginLogin: vi.fn(),
-  handlePluginWhoami: vi.fn(),
-  handlePluginLogout: vi.fn(),
-  handleRegister: vi.fn(),
+vi.mock('../../src/plugin/builtins/shared.js', () => ({
+  loadAuth: vi.fn(),
+  saveAuth: vi.fn(),
+  getRegistryUrl: vi.fn(),
 }));
 
 import { handlePlugin, handleCreate, handleDaemon } from '../../src/cli/plugin-routes.js';
@@ -336,34 +334,34 @@ describe('plugin-routes', () => {
   });
 
   describe('handlePlugin - publish/register/login/whoami/logout', () => {
-    it('should delegate publish to handlePublish', async () => {
-      const { handlePublish } = await import('../../src/cli/publish-routes.js');
-      await handlePlugin(['publish'], {}, 'json');
-      expect(handlePublish).toHaveBeenCalledWith([], {}, 'json');
+    it('should output redirect error for publish', async () => {
+      await expect(
+        handlePlugin(['publish'], {}, 'json')
+      ).rejects.toThrow('"publish" has moved to the marketplace plugin');
     });
 
-    it('should delegate register to handleRegister', async () => {
-      const { handleRegister } = await import('../../src/cli/publish-routes.js');
-      await handlePlugin(['register'], {}, 'text');
-      expect(handleRegister).toHaveBeenCalledWith([], {}, 'text');
+    it('should output redirect error for register', async () => {
+      await expect(
+        handlePlugin(['register'], {}, 'text')
+      ).rejects.toThrow('"register" has moved to the marketplace plugin');
     });
 
-    it('should delegate login to handlePluginLogin', async () => {
-      const { handlePluginLogin } = await import('../../src/cli/publish-routes.js');
-      await handlePlugin(['login'], {}, 'text');
-      expect(handlePluginLogin).toHaveBeenCalledWith([], {}, 'text');
+    it('should output redirect error for login', async () => {
+      await expect(
+        handlePlugin(['login'], {}, 'text')
+      ).rejects.toThrow('"login" has moved to the marketplace plugin');
     });
 
-    it('should delegate whoami to handlePluginWhoami', async () => {
-      const { handlePluginWhoami } = await import('../../src/cli/publish-routes.js');
-      await handlePlugin(['whoami'], {}, 'json');
-      expect(handlePluginWhoami).toHaveBeenCalledWith([], {}, 'json');
+    it('should output redirect error for whoami', async () => {
+      await expect(
+        handlePlugin(['whoami'], {}, 'json')
+      ).rejects.toThrow('"whoami" has moved to the marketplace plugin');
     });
 
-    it('should delegate logout to handlePluginLogout', async () => {
-      const { handlePluginLogout } = await import('../../src/cli/publish-routes.js');
-      await handlePlugin(['logout'], {}, 'text');
-      expect(handlePluginLogout).toHaveBeenCalledWith([], {}, 'text');
+    it('should output redirect error for logout', async () => {
+      await expect(
+        handlePlugin(['logout'], {}, 'text')
+      ).rejects.toThrow('"logout" has moved to the marketplace plugin');
     });
   });
 

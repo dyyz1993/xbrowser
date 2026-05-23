@@ -8,13 +8,6 @@ import { outputResult, outputError } from './output.js';
 import { DEFAULT_MARKETPLACE_URL, NPM_REGISTRY_URL, resolveNpmPackageWithFallback } from '../config.js';
 import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 import { getPluginLoader as getGlobalPluginLoader } from '../utils/plugin-singleton.js';
-import {
-  handlePublish,
-  handlePluginLogin,
-  handlePluginWhoami,
-  handlePluginLogout,
-  handleRegister,
-} from './publish-routes.js';
 
 let pluginLoader: XBrowserPluginLoader | null = null;
 
@@ -267,19 +260,11 @@ export async function handlePlugin(
       await handlePluginInfo(subArgs, options, mode);
       break;
     case 'publish':
-      await handlePublish(subArgs, options, mode);
-      break;
     case 'register':
-      await handleRegister(subArgs, options, mode);
-      break;
     case 'login':
-      await handlePluginLogin(subArgs, options, mode);
-      break;
     case 'whoami':
-      await handlePluginWhoami(subArgs, options, mode);
-      break;
     case 'logout':
-      await handlePluginLogout(subArgs, options, mode);
+      outputError(`"${sub}" has moved to the marketplace plugin. Use: xbrowser marketplace ${sub}`);
       break;
     default:
       console.log(handlePluginHelp());

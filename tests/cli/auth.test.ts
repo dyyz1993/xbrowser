@@ -30,7 +30,7 @@ describe('CLI Auth Flow', () => {
   describe('loadAuth', () => {
     it('should return null when no auth file exists', async () => {
       if (existsSync(ACTUAL_AUTH_FILE)) rmSync(ACTUAL_AUTH_FILE)
-      const { loadAuth } = await import('../../src/cli/publish-routes.js')
+      const { loadAuth } = await import('../../src/plugin/builtins/shared.js')
       const result = loadAuth()
       expect(result).toBeNull()
     })
@@ -42,7 +42,7 @@ describe('CLI Auth Flow', () => {
         JSON.stringify({ token: 'test-token-123', registry: 'https://xbrowser.dev' }),
         'utf-8'
       )
-      const { loadAuth } = await import('../../src/cli/publish-routes.js')
+      const { loadAuth } = await import('../../src/plugin/builtins/shared.js')
       const result = loadAuth()
       expect(result).not.toBeNull()
       expect(result!.token).toBe('test-token-123')
@@ -51,7 +51,7 @@ describe('CLI Auth Flow', () => {
 
     it('should return null for corrupted auth file', async () => {
       writeFileSync(ACTUAL_AUTH_FILE, 'not-valid-json', 'utf-8')
-      const { loadAuth } = await import('../../src/cli/publish-routes.js')
+      const { loadAuth } = await import('../../src/plugin/builtins/shared.js')
       const result = loadAuth()
       expect(result).toBeNull()
     })

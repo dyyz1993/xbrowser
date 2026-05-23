@@ -115,7 +115,7 @@ export const consoleCheckCommand = registerCommand({
 });
 
 export const networkCheckCommand = registerCommand({
-  name: 'network',
+  name: 'net-debug',
   description: 'Monitor and analyze network requests — capture failed requests, slow responses, status codes',
   scope: 'page',
   parameters: z.object({

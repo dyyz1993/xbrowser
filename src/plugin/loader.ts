@@ -144,6 +144,23 @@ export class XBrowserPluginLoader {
       }
     }
 
+    try {
+      const { default: setupMarketplace } = await import('./builtins/marketplace.js');
+      setupMarketplace(this.loader.getAPI());
+    } catch (err) {
+      if (process.env.XBROWSER_DEBUG) {
+        console.warn(`⚠️  Built-in marketplace plugin load failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    try {
+      const { default: setupAdmin } = await import('./builtins/admin.js');
+      setupAdmin(this.loader.getAPI());
+    } catch (err) {
+      if (process.env.XBROWSER_DEBUG) {
+        console.warn(`⚠️  Built-in admin plugin load failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     return loaded;
   }
 
