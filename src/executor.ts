@@ -266,16 +266,20 @@ export async function executeCommand(
 
     if (isCommandResult(raw)) {
       const merged = [...(raw.tips || []), ...(smartTips || [])];
+      const isSuccess = raw.success !== false;
       recordArchive(session?.id, sessionName, {
         step: 0,
         command: commandName,
         params,
-        result: { success: true, data: raw.data, tips: merged.length > 0 ? merged : raw.tips || [] },
+        result: { success: isSuccess, data: raw.data, message: raw.message, tips: merged.length > 0 ? merged : raw.tips || [] },
         toolCalls: [],
         duration: duration,
         timestamp: start,
       });
-      return { ...ok(raw.data, merged.length > 0 ? merged : raw.tips), duration };
+      if (isSuccess) {
+        return { ...ok(raw.data, merged.length > 0 ? merged : raw.tips), duration };
+      }
+      return { success: false, data: raw.data, message: raw.message, tips: merged.length > 0 ? merged : raw.tips || [], duration };
     }
 
     recordArchive(session?.id, sessionName, {

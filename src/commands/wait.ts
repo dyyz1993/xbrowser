@@ -16,11 +16,35 @@ const waitForSelectorDef = {
     found: z.boolean(),
   }),
   handler: async (p: { selector: string; state?: string; timeout?: number }, ctx: BrowserCommandContext) => {
-    await ctx.page.waitForSelector(p.selector, {
-      state: (p.state || 'visible') as 'attached' | 'detached' | 'visible' | 'hidden',
-      timeout: p.timeout || 30000,
-    });
-    return ok({ selector: p.selector, found: true });
+    const timeout = p.timeout || 30000;
+    const state = (p.state || 'visible') as string;
+    const startTime = Date.now();
+
+    const checkElement = async (): Promise<boolean> => {
+      return ctx.page.evaluate(({ sel, st }) => {
+        const el = document.querySelector(sel);
+        if (!el) return st === 'hidden' || st === 'detached';
+        if (st === 'attached') return true;
+        if (st === 'detached') return false;
+        if (st === 'visible') {
+          const rect = el.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        }
+        if (st === 'hidden') {
+          const rect = el.getBoundingClientRect();
+          return rect.width === 0 && rect.height === 0;
+        }
+        return true;
+      }, { sel: p.selector, st: state });
+    };
+
+    while (Date.now() - startTime < timeout) {
+      if (await checkElement()) {
+        return ok({ selector: p.selector, found: true });
+      }
+      await new Promise(r => setTimeout(r, 200));
+    }
+    return ok({ selector: p.selector, found: false });
   },
 };
 

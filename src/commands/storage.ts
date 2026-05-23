@@ -34,7 +34,20 @@ export const setCookieCommand = registerCommand({
   }),
   result: z.object({ name: z.string() }),
   handler: async (p, ctx: BrowserCommandContext) => {
-    await ctx.browserContext.addCookies([p]);
+    const cookie = { ...p } as typeof p & { url?: string };
+    if (!cookie.domain && !cookie.url) {
+      const pageUrl = ctx.page.url();
+      if (pageUrl && pageUrl !== 'about:blank') {
+        try {
+          const u = new URL(pageUrl);
+          cookie.domain = u.hostname;
+          if (!cookie.path) cookie.path = '/';
+        } catch {
+          // URL parse failed
+        }
+      }
+    }
+    await ctx.browserContext.addCookies([cookie]);
     return ok({ name: p.name });
   },
 });

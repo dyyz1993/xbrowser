@@ -180,7 +180,7 @@ export async function handleBrowserCommand(
         cmdName = 'scroll';
         params = {
           direction,
-          distance: options.distance ? Number(options.distance) : undefined,
+          distance: options.distance ? Number(options.distance) : options.amount ? Number(options.amount) : undefined,
           selector: (options.selector || options.s) as string | undefined,
         };
         break;

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ok } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 
@@ -46,11 +46,11 @@ export const frameCommand = registerCommand({
     } else if (p.name !== undefined) {
       targetFrame = allFrames.find((f) => f.name() === p.name);
     } else {
-      return ok({ error: 'Must provide index or name' });
+      return fail('Must provide index or name');
     }
 
     if (!targetFrame) {
-      return ok({ error: 'Frame not found' });
+      return fail('Frame not found');
     }
 
     return ok({
