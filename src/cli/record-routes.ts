@@ -61,9 +61,15 @@ export async function handleRecord(
         steps: result.steps,
       }, mode);
 
-      const summary = SessionRecorder.readSummary(sessionName);
-      if (summary) {
-        printRecordingSummary(summary, sessionName);
+      const md = SessionRecorder.readMarkdownSummary(sessionName);
+      if (md) {
+        console.log('');
+        console.log(md);
+      } else {
+        const summary = SessionRecorder.readSummary(sessionName);
+        if (summary) {
+          printRecordingSummary(summary, sessionName);
+        }
       }
       break;
     }
