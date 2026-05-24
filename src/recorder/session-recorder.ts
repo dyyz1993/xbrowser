@@ -715,8 +715,11 @@ const CHECKPOINT_OVERLAY_SCRIPT = `
       showOverlay();
       return;
     }
-    if (e.altKey && e.key >= '1' && e.key <= '9' && __xb_cp_visible) {
-      var idx = parseInt(e.key) - 1;
+    // Option/Alt + number → confirm checkpoint
+    // Use e.code ("Digit1"~"Digit9") instead of e.key because
+    // macOS Option+number produces special chars (¡™£¢...) in e.key
+    if (e.altKey && /^Digit([1-9])$/.test(e.code) && __xb_cp_visible) {
+      var idx = parseInt(e.code.replace('Digit', '')) - 1;
       if (idx < __xb_cp_elements.length) {
         var cp = __xb_cp_elements[idx];
         window.__xb_pending_actions = window.__xb_pending_actions || [];
