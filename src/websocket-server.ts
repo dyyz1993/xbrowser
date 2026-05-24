@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import type { Server } from 'http';
 import type { Page } from 'playwright';
 import { ScreencastCapturer, type ScreencastFrame } from './screencast.js';
+import sharp from 'sharp';
 import { StreamStateManager, FrameRateController, FrameProcessor, STATE_CONFIGS } from './stream/index.js';
 import type { StreamState } from './stream/index.js';
 
@@ -81,6 +82,7 @@ export interface StatusMessage {
   status: 'connected' | 'disconnected' | 'error';
   sessionId?: string;
   message?: string;
+  viewport?: { width: number; height: number };
 }
 
 interface WSClient {
@@ -145,7 +147,9 @@ export class WSServer extends EventEmitter {
           config,
           this.lastFrameViewport.width,
           this.lastFrameViewport.height,
-        ).then((processedBuffer) => {
+        ).then(async (processedBuffer) => {
+          const meta = await sharp(processedBuffer).metadata();
+          const actualViewport = { width: meta.width || this.lastFrameViewport!.width, height: meta.height || this.lastFrameViewport!.height };
           for (const [sid, sc] of this.screencasts) {
             if (sc.clientCount > 0) {
               const header = Buffer.from(JSON.stringify({
@@ -155,7 +159,7 @@ export class WSServer extends EventEmitter {
                   id: crypto.randomUUID(),
                   timestamp: Date.now(),
                   url: '',
-                  viewport: this.lastFrameViewport!,
+                  viewport: actualViewport,
                   streamState: newState,
                   fps: this.frameRateController.getCurrentFps(),
                 },
@@ -169,6 +173,42 @@ export class WSServer extends EventEmitter {
         }).catch(() => {});
       }
     });
+  }
+
+  private async processAndBroadcast(
+    frameData: string,
+    frameViewport: { width: number; height: number },
+    sessionId: string,
+    frameSessionId: string,
+    frameId: string,
+    frameTimestamp: number,
+    frameUrl: string,
+  ): Promise<void> {
+    const config = this.stateManager.getConfig();
+    const processedBuffer = await this.frameProcessor.process(
+      frameData,
+      config,
+      frameViewport.width,
+      frameViewport.height,
+    );
+    const meta = await sharp(processedBuffer).metadata();
+    const actualViewport = { width: meta.width || frameViewport.width, height: meta.height || frameViewport.height };
+    const header = Buffer.from(JSON.stringify({
+      type: 'screenshot',
+      data: {
+        sessionId: frameSessionId,
+        id: frameId,
+        timestamp: frameTimestamp,
+        url: frameUrl,
+        viewport: actualViewport,
+        streamState: this.stateManager.getState(),
+        fps: this.frameRateController.getCurrentFps(),
+      },
+    }), 'utf-8');
+    const headerLen = Buffer.alloc(4);
+    headerLen.writeUInt32BE(header.length, 0);
+    const payload = Buffer.concat([headerLen, header, processedBuffer]);
+    this.broadcastBinaryToSession(sessionId, payload);
   }
 
   /**
@@ -413,6 +453,22 @@ export class WSServer extends EventEmitter {
             : 'Connected. Send {"type":"bind","sessionId":"..."} to start preview.',
         },
       });
+
+      // Send viewport info asynchronously (may need page.evaluate for CDP mode)
+      const initSc = client.sessionId ? this.screencasts.get(client.sessionId) : undefined;
+      if (initSc?.page) {
+        (async () => {
+          try {
+            const vp = this.lastFrameViewport
+              || initSc.page.viewportSize()
+              || await initSc.page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+            this.sendToClient(clientId, {
+              type: 'status',
+              data: { status: 'connected', sessionId: client.sessionId || undefined, viewport: vp },
+            });
+          } catch { /* ignore */ }
+        })();
+      }
     });
   }
 
@@ -436,29 +492,15 @@ export class WSServer extends EventEmitter {
             return;
           }
 
-          const processedBuffer = await this.frameProcessor.process(
+          await this.processAndBroadcast(
             this.lastFrameData,
-            config,
-            frame.viewport.width,
-            frame.viewport.height,
+            frame.viewport,
+            sessionId,
+            frame.sessionId,
+            frame.id,
+            frame.timestamp,
+            frame.url,
           );
-
-          const header = Buffer.from(JSON.stringify({
-            type: 'screenshot',
-            data: {
-              sessionId: frame.sessionId,
-              id: frame.id,
-              timestamp: frame.timestamp,
-              url: frame.url,
-              viewport: frame.viewport,
-              streamState: this.stateManager.getState(),
-              fps: this.frameRateController.getCurrentFps(),
-            },
-          }), 'utf-8');
-          const headerLen = Buffer.alloc(4);
-          headerLen.writeUInt32BE(header.length, 0);
-          const payload = Buffer.concat([headerLen, header, processedBuffer]);
-          this.broadcastBinaryToSession(sessionId, payload);
         })().catch(() => {});
       }).then(() => {
         this.emit('screencast-started', sessionId);
@@ -467,6 +509,19 @@ export class WSServer extends EventEmitter {
       });
     }
     sc.clientCount++;
+
+    // Replay last frame for newly connected client if available
+    if (this.lastFrameData && this.lastFrameViewport && sc.capturer.isActive()) {
+      this.processAndBroadcast(
+        this.lastFrameData,
+        this.lastFrameViewport,
+        sessionId,
+        sessionId,
+        crypto.randomUUID(),
+        Date.now(),
+        '',
+      ).catch(() => {});
+    }
   }
 
   private stopScreencastIfNeeded(sessionId: string): void {
@@ -508,29 +563,15 @@ export class WSServer extends EventEmitter {
             return;
           }
 
-          const processedBuffer = await this.frameProcessor.process(
+          await this.processAndBroadcast(
             this.lastFrameData,
-            config,
-            frame.viewport.width,
-            frame.viewport.height,
+            frame.viewport,
+            sessionId,
+            frame.sessionId,
+            frame.id,
+            frame.timestamp,
+            frame.url,
           );
-
-          const header = Buffer.from(JSON.stringify({
-            type: 'screenshot',
-            data: {
-              sessionId: frame.sessionId,
-              id: frame.id,
-              timestamp: frame.timestamp,
-              url: frame.url,
-              viewport: frame.viewport,
-              streamState: this.stateManager.getState(),
-              fps: this.frameRateController.getCurrentFps(),
-            },
-          }), 'utf-8');
-          const headerLen = Buffer.alloc(4);
-          headerLen.writeUInt32BE(header.length, 0);
-          const payload = Buffer.concat([headerLen, header, processedBuffer]);
-          this.broadcastBinaryToSession(sessionId, payload);
         })().catch(() => {});
       }).catch(() => {});
     }
@@ -800,10 +841,24 @@ export class WSServer extends EventEmitter {
     // Lazy start screencast
     this.startScreencastIfNeeded(sessionId);
 
+    const sc = this.screencasts.get(sessionId);
     this.sendToClient(clientId, {
       type: 'status',
       data: { status: 'connected', sessionId, message: `Bound to session: ${sessionId}` },
     });
+    if (sc?.page) {
+      (async () => {
+        try {
+          const vp = this.lastFrameViewport
+            || sc.page.viewportSize()
+            || await sc.page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+          this.sendToClient(clientId, {
+            type: 'status',
+            data: { status: 'connected', sessionId, viewport: vp },
+          });
+        } catch { /* ignore */ }
+      })();
+    }
   }
 
   broadcastToSession(sessionId: string, message: WSMessage): void {

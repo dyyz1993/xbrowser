@@ -248,7 +248,7 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
 .bar .conn{color:#556;font-size:11px;flex-shrink:0}
 .viewport{position:fixed;top:40px;left:0;right:0;bottom:0;display:flex;align-items:flex-start;justify-content:center;overflow:hidden;background:#1a1a2e}
 .viewport.mobile-mode{bottom:35vh}
-.viewport img#screen{object-fit:none;border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,.5);display:none;user-select:none;-webkit-user-drag:none}
+.viewport img#screen{width:100%;height:100%;object-fit:contain;border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,.5);display:none;user-select:none;-webkit-user-drag:none}
 .waiting{color:#556;font-size:14px;text-align:center}
 .toolbar{position:fixed;left:0;right:0;top:40px;background:#16213e;border-bottom:1px solid #0f3460;display:none;flex-direction:column;z-index:90;padding:4px 6px}
 .toolbar-btn{min-width:44px;height:44px;border:none;border-radius:6px;background:#0f3460;color:#cde;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
@@ -366,6 +366,7 @@ const PROTO=location.protocol==='https:'?'wss:':'ws:';
 let ws=null;
 let connected=false;
 let remoteViewport={width:1920,height:1080};
+let viewportLocked=false;
 let currentUrl='';
 let imgBlobUrl='';
 let currentFocusedSelector='';
@@ -401,7 +402,7 @@ function connectWS(){
           img.src=imgBlobUrl;
           img.style.display='block';
           wait.style.display='none';
-          if(header.data.viewport) remoteViewport=header.data.viewport;
+          if(header.data.viewport&&!viewportLocked){remoteViewport=header.data.viewport;viewportLocked=true;}
           if(header.data.url&&header.data.url!==currentUrl){
             currentUrl=header.data.url;
             urlEl.textContent=currentUrl;
@@ -435,6 +436,7 @@ function connectWS(){
       }else if(m.type==='status'){
         connEl.textContent=m.data.status==='connected'?'OK':'...';
         if(m.data.message) urlEl.textContent=m.data.message;
+        if(m.data.viewport&&!viewportLocked){remoteViewport=m.data.viewport;viewportLocked=true;}
       }else if(m.type==='navigation'){
         currentUrl=m.url||'';
         urlEl.textContent=currentUrl;
@@ -490,17 +492,27 @@ function connectWS(){
   ws.onerror=()=>{dot.className='dot';connEl.textContent='err'};
 }
 
- function viewerToRemote(cx,cy){
+ function getImgContentRect(){
   const rect=img.getBoundingClientRect();
-  const sx=remoteViewport.width/rect.width;
-  const sy=remoteViewport.height/rect.height;
-  return{x:Math.round((cx-rect.left)*sx),y:Math.round((cy-rect.top)*sy)};
+  if(!remoteViewport.width||!remoteViewport.height) return rect;
+  const imgAspect=remoteViewport.width/remoteViewport.height;
+  const boxAspect=rect.width/rect.height;
+  let cw,ch,ox,oy;
+  if(imgAspect>boxAspect){cw=rect.width;ch=rect.width/imgAspect;ox=rect.left;oy=rect.top+(rect.height-ch)/2;}
+  else{ch=rect.height;cw=rect.height*imgAspect;oy=rect.top;ox=rect.left+(rect.width-cw)/2;}
+  return{left:ox,top:oy,width:cw,height:ch};
+ }
+ function viewerToRemote(cx,cy){
+  const r=getImgContentRect();
+  const sx=remoteViewport.width/r.width;
+  const sy=remoteViewport.height/r.height;
+  return{x:Math.round((cx-r.left)*sx),y:Math.round((cy-r.top)*sy)};
  }
  function remoteToViewer(rx,ry){
-  const rect=img.getBoundingClientRect();
-  const sx=rect.width/remoteViewport.width;
-  const sy=rect.height/remoteViewport.height;
-  return{x:rect.left+rx*sx,y:rect.top+ry*sy};
+  const r=getImgContentRect();
+  const sx=r.width/remoteViewport.width;
+  const sy=r.height/remoteViewport.height;
+  return{x:r.left+rx*sx,y:r.top+ry*sy};
  }
 
  function sendMsg(obj){

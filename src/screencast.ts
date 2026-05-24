@@ -82,7 +82,6 @@ export class ScreencastCapturer {
     this.sessionId = sessionId;
 
     try {
-      // Try CDP Cast first
       const cdp = await page.context().newCDPSession(page);
       this.cdpSession = cdp;
 
@@ -122,7 +121,6 @@ export class ScreencastCapturer {
         maxHeight: this.maxHeight,
       });
     } catch {
-      // CDP Cast unavailable — fall back to page.screenshot() polling
       this.cdpSession = null;
       this.startFallbackPolling(page, sessionId);
     }
