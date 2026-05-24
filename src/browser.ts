@@ -832,10 +832,19 @@ export async function ensureProcessCanExit(): Promise<void> {
     idleTimer = null;
   }
 
-  // Close each session's own browser
+  // Close each session's own browser connection.
+  // For CDP sessions: browser.close() only disconnects the WebSocket,
+  // it does NOT close the remote browser or its pages.
+  // The next CLI invocation will reconnect via findOrRestoreSession().
   for (const session of sessions.values()) {
     if (session.browser) {
-      await session.browser.close().catch(() => {});
+      if (session.isCDP) {
+        // CDP: just disconnect, remote browser keeps running
+        await session.browser.close().catch(() => {});
+      } else {
+        // Non-CDP: close the browser we launched
+        await session.browser.close().catch(() => {});
+      }
     }
   }
 
