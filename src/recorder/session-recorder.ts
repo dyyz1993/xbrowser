@@ -129,8 +129,23 @@ export interface RecordingSummary {
   totalActions: number;
   totalNetworkRequests: number;
   steps: RecordingStep[];
-  /** Ref → element descriptor map. Steps reference elements via ref to reduce size. */
   elements: Record<string, ElementRef>;
+  checkpoints: CheckpointEntry[];
+}
+
+export type CheckpointType = 'dialog' | 'captcha' | 'login' | 'iframe' | 'slider' | 'custom';
+
+export interface CheckpointEntry {
+  id: number;
+  type: CheckpointType;
+  timestamp: number;
+  url: string;
+  pageTitle: string;
+  hint: string;
+  selector?: string;
+  source: 'auto' | 'manual';
+  relatedActionId?: number;
+  context?: Record<string, unknown>;
 }
 
 export interface RecordingData {
@@ -140,6 +155,7 @@ export interface RecordingData {
   actions: UserAction[];
   network: NetworkEntry[];
   contextChanges: ContextChange[];
+  checkpoints: CheckpointEntry[];
 }
 
 /** Written to disk so `record stop` (separate process) can signal the recorder. */
@@ -504,6 +520,183 @@ const ACTION_SIGNAL_SCRIPT = `
 })();
 `;
 
+/**
+ * Checkpoint Visual Overlay — independent from ACTION_SIGNAL_SCRIPT.
+ * Not guarded by __xb_action_signal so it can be injected on re-record.
+ * Press Alt to highlight detected checkpoint elements.
+ * Press Alt+1..9 to confirm/mark a checkpoint.
+ */
+const CHECKPOINT_OVERLAY_SCRIPT = `
+(function() {
+  if (window.__xb_checkpoint_overlay) return;
+  window.__xb_checkpoint_overlay = true;
+
+  var __xb_cp_elements = [];
+  var __xb_cp_overlay = null;
+  var __xb_cp_visible = false;
+  var __xb_scan_timer = null;
+
+  var CHECKPOINT_RULES = [
+    { type: 'captcha', label: '验证码', color: '#ef4444', selectors: [
+      'img[src*="captcha"]','img[src*="verify"]','img[src*="vcode"]',
+      '[class*="captcha"]','[id*="captcha"]','#captcha','.captcha',
+      '[class*="Captcha"]','[class*="verify-code"]','[class*="VerifyCode"]'
+    ]},
+    { type: 'slider', label: '滑块验证', color: '#f97316', selectors: [
+      '[class*="slider"]','[class*="drag-verify"]','[class*="slide-verify"]',
+      '[class*="nc-container"]','[class*="nc_1_wrapper"]',
+      '[class*="Slider"]','[class*="slideBar"]'
+    ]},
+    { type: 'login', label: '登录框', color: '#3b82f6', selectors: [
+      'input[type="password"]',
+      'form[action*="login"]','[class*="login-form"]','[class*="LoginForm"]',
+      '[class*="sign-in"]','[class*="signIn"]'
+    ]},
+    { type: 'iframe', label: 'iframe', color: '#8b5cf6', selectors: [
+      'iframe[src*="captcha"]','iframe[src*="verify"]','iframe[src*="recaptcha"]',
+      'iframe[title*="captcha"]','iframe[src*="google.com/recaptcha"]'
+    ]},
+    { type: 'sms', label: '短信验证', color: '#10b981', selectors: [
+      'input[placeholder*="验证码"]','input[placeholder*="短信"]','input[placeholder*="SMS"]',
+      'input[name*="sms"]','input[name*="verify"]','input[maxlength="4"]','input[maxlength="6"]'
+    ]}
+  ];
+
+  function scanCheckpointElements() {
+    __xb_cp_elements = [];
+    for (var r = 0; r < CHECKPOINT_RULES.length; r++) {
+      var rule = CHECKPOINT_RULES[r];
+      for (var s = 0; s < rule.selectors.length; s++) {
+        try {
+          var els = document.querySelectorAll(rule.selectors[s]);
+          for (var j = 0; j < els.length; j++) {
+            var el = els[j];
+            var rect = el.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              var dup = false;
+              for (var d = 0; d < __xb_cp_elements.length; d++) {
+                if (__xb_cp_elements[d].el === el) { dup = true; break; }
+              }
+              if (!dup) {
+                __xb_cp_elements.push({ el: el, type: rule.type, label: rule.label, color: rule.color, selector: rule.selectors[s] });
+              }
+            }
+          }
+        } catch(e) {}
+      }
+    }
+  }
+
+  function showOverlay() {
+    if (__xb_cp_visible) return;
+    __xb_cp_visible = true;
+    scanCheckpointElements();
+    if (__xb_cp_elements.length === 0) return;
+
+    __xb_cp_overlay = document.createElement('div');
+    __xb_cp_overlay.id = '__xb_cp_overlay';
+    __xb_cp_overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:999999;';
+
+    for (var i = 0; i < __xb_cp_elements.length; i++) {
+      var cp = __xb_cp_elements[i];
+      var rect = cp.el.getBoundingClientRect();
+      
+      var box = document.createElement('div');
+      box.style.cssText = 'position:fixed;' +
+        'left:' + (rect.left - 3) + 'px;' +
+        'top:' + (rect.top - 3) + 'px;' +
+        'width:' + (rect.width + 6) + 'px;' +
+        'height:' + (rect.height + 6) + 'px;' +
+        'outline:3px solid ' + cp.color + ';' +
+        'outline-offset:0px;' +
+        'box-shadow:0 0 12px ' + cp.color + '80;' +
+        'border-radius:4px;' +
+        'pointer-events:none;' +
+        'transition:all 0.15s ease;';
+      __xb_cp_overlay.appendChild(box);
+
+      var badge = document.createElement('div');
+      badge.style.cssText = 'position:fixed;' +
+        'left:' + rect.left + 'px;' +
+        'top:' + (rect.top - 28) + 'px;' +
+        'background:' + cp.color + ';' +
+        'color:white;' +
+        'font:bold 12px/1.2 system-ui,sans-serif;' +
+        'padding:3px 8px;' +
+        'border-radius:4px;' +
+        'white-space:nowrap;' +
+        'pointer-events:none;' +
+        'box-shadow:0 2px 8px rgba(0,0,0,0.3);';
+      badge.textContent = '[' + (i + 1) + '] ' + cp.label;
+      __xb_cp_overlay.appendChild(badge);
+    }
+
+    var hint = document.createElement('div');
+    hint.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);' +
+      'background:rgba(0,0,0,0.85);color:white;font:13px/1.4 system-ui,sans-serif;' +
+      'padding:8px 16px;border-radius:8px;pointer-events:none;white-space:nowrap;' +
+      'box-shadow:0 4px 16px rgba(0,0,0,0.3);';
+    hint.textContent = 'Alt+' + (__xb_cp_elements.length > 0 ? '1~' + Math.min(__xb_cp_elements.length, 9) + ' = checkpoint' : 'none detected') + ' | release Alt to close';
+    __xb_cp_overlay.appendChild(hint);
+
+    document.body.appendChild(__xb_cp_overlay);
+  }
+
+  function hideOverlay() {
+    if (!__xb_cp_visible) return;
+    __xb_cp_visible = false;
+    if (__xb_cp_overlay && __xb_cp_overlay.parentNode) {
+      __xb_cp_overlay.parentNode.removeChild(__xb_cp_overlay);
+    }
+    __xb_cp_overlay = null;
+  }
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Alt' && !e.repeat) {
+      showOverlay();
+      return;
+    }
+    if (e.altKey && e.key >= '1' && e.key <= '9' && __xb_cp_visible) {
+      var idx = parseInt(e.key) - 1;
+      if (idx < __xb_cp_elements.length) {
+        var cp = __xb_cp_elements[idx];
+        window.__xb_pending_actions = window.__xb_pending_actions || [];
+        window.__xb_pending_actions.push({
+          type: 'checkpoint',
+          ts: Date.now(),
+          url: location.href,
+          title: document.title,
+          checkpointType: cp.type,
+          hint: cp.label,
+          selector: cp.selector,
+          source: 'manual',
+        });
+        if (__xb_cp_overlay) {
+          var boxes = __xb_cp_overlay.querySelectorAll('div[style*="outline"]');
+          if (boxes[idx]) {
+            boxes[idx].style.outline = '3px solid #22c55e';
+            boxes[idx].style.boxShadow = '0 0 20px #22c55e80';
+          }
+        }
+      }
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
+
+  document.addEventListener('keyup', function(e) {
+    if (e.key === 'Alt') {
+      hideOverlay();
+    }
+  }, true);
+
+  __xb_scan_timer = setInterval(function() {
+    if (!__xb_cp_visible) scanCheckpointElements();
+  }, 2000);
+  scanCheckpointElements();
+})();
+`;
+
 // ─── SessionRecorder ─────────────────────────────────────────────
 
 export class SessionRecorder {
@@ -516,10 +709,12 @@ export class SessionRecorder {
   private actions: UserAction[] = [];
   private network: NetworkEntry[] = [];
   private contextChanges: ContextChange[] = [];
+  private checkpoints: CheckpointEntry[] = [];
 
   private actionCounter = 0;
   private networkCounter = 0;
   private contextCounter = 0;
+  private checkpointCounter = 0;
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
   private flushTimer: ReturnType<typeof setInterval> | null = null;
@@ -548,6 +743,22 @@ export class SessionRecorder {
 
   getLiveData(): RecordingData {
     return this.buildData();
+  }
+
+  addManualCheckpoint(type: string, hint: string, selector?: string): CheckpointEntry {
+    this.checkpointCounter++;
+    const cp: CheckpointEntry = {
+      id: this.checkpointCounter,
+      type: type as CheckpointType,
+      timestamp: Date.now(),
+      url: this.page.url(),
+      pageTitle: '',
+      hint,
+      selector,
+      source: 'manual',
+    };
+    this.checkpoints.push(cp);
+    return cp;
   }
 
   /** Directory for this session's recordings. */
@@ -579,6 +790,8 @@ export class SessionRecorder {
     this.actions = [];
     this.network = [];
     this.contextChanges = [];
+    this.checkpoints = [];
+    this.checkpointCounter = 0;
 
     // Navigate if URL provided
     if (url) {
@@ -603,6 +816,7 @@ export class SessionRecorder {
     // 1. Inject action signal script (minimal frontend footprint)
     await this.injectActionScript(this.page);
     await this.page.addInitScript(ACTION_SIGNAL_SCRIPT);
+    await this.page.addInitScript(CHECKPOINT_OVERLAY_SCRIPT);
 
     // 2. Network capture at context level (covers all pages/tabs)
     this.context.on('request', this.handleRequest);
@@ -614,10 +828,13 @@ export class SessionRecorder {
     // 4. Track navigation on main page
     this.page.on('framenavigated', this.handleFrameNavigated);
 
-    // 5. Poll for frontend action signals
+    // 5. Detect dialog/alert/confirm/prompt as checkpoints
+    this.page.on('dialog', this.handleDialog);
+
+    // 6. Poll for frontend action signals
     this.pollTimer = setInterval(() => void this.pollActions(), 200);
 
-    // 6. Periodic flush to disk (so data survives if process crashes)
+    // 7. Periodic flush to disk (so data survives if process crashes)
     this.flushTimer = setInterval(() => this.flushToDisk(), 5000);
   }
 
@@ -637,6 +854,7 @@ export class SessionRecorder {
     this.context.off('response', this.handleResponse);
     this.context.off('page', this.handleNewPage);
     this.page.off('framenavigated', this.handleFrameNavigated);
+    this.page.off('dialog', this.handleDialog);
     for (const p of this.activePages) {
       try { p.off('framenavigated', this.handleFrameNavigated); } catch { /* page may be closed */ }
     }
@@ -752,6 +970,11 @@ export class SessionRecorder {
     try {
       await page.evaluate(ACTION_SIGNAL_SCRIPT);
     } catch {
+      // page may not be ready — action script already injected is OK
+    }
+    try {
+      await page.evaluate(CHECKPOINT_OVERLAY_SCRIPT);
+    } catch {
       // page may not be ready
     }
   }
@@ -846,6 +1069,7 @@ export class SessionRecorder {
 
     // Inject signal script into new page
     await page.addInitScript(ACTION_SIGNAL_SCRIPT);
+    await page.addInitScript(CHECKPOINT_OVERLAY_SCRIPT);
     await this.injectActionScript(page).catch(() => {});
 
     page.on('framenavigated', this.handleFrameNavigated);
@@ -861,6 +1085,21 @@ export class SessionRecorder {
       type: 'navigate',
       url: frame.url(),
     });
+  };
+
+  private handleDialog = async (dialog: import('playwright').Dialog): Promise<void> => {
+    this.checkpointCounter++;
+    this.checkpoints.push({
+      id: this.checkpointCounter,
+      type: 'dialog',
+      timestamp: Date.now(),
+      url: this.page.url(),
+      pageTitle: await this.page.title().catch(() => ''),
+      hint: `Dialog [${dialog.type()}]: "${dialog.message()}"`,
+      source: 'auto',
+      context: { dialogType: dialog.type(), message: dialog.message() },
+    });
+    await dialog.dismiss().catch(() => {});
   };
 
   // ─── Action polling ─────────────────────────────────────────────
@@ -931,6 +1170,14 @@ export class SessionRecorder {
         clickContext,
       });
       this.lastActionTs = raw.ts;
+
+      if (raw.type === 'click' || raw.type === 'navigate' || raw.type === 'submit') {
+        const detected = await this.detectCheckpoints(page);
+        for (const cp of detected) {
+          cp.relatedActionId = this.actionCounter;
+          this.checkpoints.push(cp);
+        }
+      }
     }
   }
 
@@ -1041,6 +1288,64 @@ export class SessionRecorder {
     return undefined;
   }
 
+  private async detectCheckpoints(page: Page): Promise<CheckpointEntry[]> {
+    const CHECKPOINT_RULES: Array<{ type: CheckpointType; selectors: string[] }> = [
+      { type: 'captcha', selectors: ['img[src*="captcha"]', 'img[src*="verify"]', '[class*="captcha"]', '[id*="captcha"]', '#captcha', '.captcha'] },
+      { type: 'slider', selectors: ['[class*="slider"]', '[class*="drag-verify"]', '[class*="slide-verify"]'] },
+      { type: 'login', selectors: ['input[type="password"]'] },
+      { type: 'iframe', selectors: ['iframe[src*="captcha"]', 'iframe[src*="verify"]', 'iframe[src*="recaptcha"]', 'iframe[title*="captcha"]'] },
+    ];
+
+    try {
+      const found = await page.evaluate((rules) => {
+        const results: Array<{ type: string; selector: string; text: string }> = [];
+        for (const rule of rules) {
+          for (const sel of rule.selectors) {
+            try {
+              const el = document.querySelector(sel);
+              if (el) {
+                const rect = el.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                  results.push({
+                    type: rule.type,
+                    selector: sel,
+                    text: (el.textContent || '').substring(0, 60),
+                  });
+                }
+              }
+            } catch { /* skip invalid selector */ }
+          }
+        }
+        return results;
+      }, CHECKPOINT_RULES);
+
+      const entries: CheckpointEntry[] = [];
+      for (const item of found) {
+        this.checkpointCounter++;
+        const hints: Record<string, string> = {
+          captcha: 'Captcha verification detected',
+          slider: 'Slider verification detected',
+          login: 'Login form detected (password field)',
+          iframe: 'Verification iframe detected',
+        };
+        entries.push({
+          id: this.checkpointCounter,
+          type: item.type as CheckpointType,
+          timestamp: Date.now(),
+          url: page.url(),
+          pageTitle: await page.title().catch(() => ''),
+          hint: hints[item.type] || item.type,
+          selector: item.selector,
+          source: 'auto',
+          context: { matchedSelector: item.selector, elementText: item.text },
+        });
+      }
+      return entries;
+    } catch {
+      return [];
+    }
+  }
+
   // ─── Periodic disk flush ────────────────────────────────────────
 
   private flushToDisk(): void {
@@ -1068,6 +1373,7 @@ export class SessionRecorder {
       actions: [...this.actions],
       network: [...this.network],
       contextChanges: [...this.contextChanges],
+      checkpoints: [...this.checkpoints],
     };
   }
 
@@ -1184,6 +1490,7 @@ export class SessionRecorder {
       totalNetworkRequests: meaningfulNetwork.length,
       steps,
       elements,
+      checkpoints: data.checkpoints,
     };
   }
 

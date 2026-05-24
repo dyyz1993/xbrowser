@@ -213,3 +213,11 @@ export async function forwardRecordSummary(session: string): Promise<unknown> {
 export async function forwardReplay(file: string, session: string, slowMo?: number): Promise<unknown> {
   return rpcCall('replay', { file, session, slowMo }, 120000);
 }
+
+export async function forwardRecordCheckpoint(session: string, type: string, hint: string, selector?: string): Promise<unknown> {
+  return rpcCall('record:checkpoint', { session, type, hint, selector }, 10000);
+}
+
+export async function forwardReplayResume(session: string): Promise<unknown> {
+  return rpcCall('replay:resume', { session }, 10000);
+}

@@ -2,14 +2,13 @@ import * as fs from 'fs';
 import * as yaml from 'yaml';
 import type { Page } from 'playwright';
 import type { RecordingSession, RecordedEvent } from './recorder.js';
+import type { CheckpointEntry } from './session-recorder.js';
 
-/**
- * Options for controlling playback speed and error handling.
- */
 export interface PlaybackOptions {
   slowMo?: number;
   stopOnError?: boolean;
   onProgress?: (info: { current: number; total: number; event: RecordedEvent }) => void;
+  onCheckpoint?: (checkpoint: { type: string; hint: string; selector?: string }) => Promise<boolean>;
 }
 
 /**
@@ -32,6 +31,7 @@ export interface PlaybackResult {
 export class PlaybackEngine {
   private page: Page;
   private recording: RecordingSession;
+  private checkpoints: CheckpointEntry[] = [];
 
   constructor(page: Page, recording: RecordingSession) {
     this.page = page;
@@ -52,6 +52,7 @@ export class PlaybackEngine {
     };
 
     let recording: RecordingSession;
+    const checkpoints: CheckpointEntry[] = (raw as unknown as Record<string, unknown>).checkpoints as CheckpointEntry[] || [];
     if (raw.events && raw.events.length > 0) {
       recording = raw;
     } else if (raw.actions && raw.actions.length > 0) {
@@ -75,23 +76,25 @@ export class PlaybackEngine {
       recording = { id: 'replay', name: 'replay', startUrl: raw.startUrl || '', startTime: new Date().toISOString(), duration: 0, events: [] };
     }
 
-    return new PlaybackEngine(page, recording);
+    return new PlaybackEngine(page, recording).withCheckpoints(checkpoints);
   }
 
-  /**
-   * Play back all recorded events on the page.
-   *
-   * Navigates to the recording's start URL, then replays each event
-   * with original inter-event timing multiplied by the slow-motion factor.
-   *
-   * @param options - Playback options for slow motion, error handling, and progress callbacks.
-   * @returns A PlaybackResult with success status, duration, and any errors.
-   */
+  withCheckpoints(checkpoints: CheckpointEntry[]): PlaybackEngine {
+    this.checkpoints = checkpoints;
+    return this;
+  }
+
   async play(options: PlaybackOptions = {}): Promise<PlaybackResult> {
     const startTime = Date.now();
     const errors: PlaybackResult['errors'] = [];
-    const { slowMo = 1, stopOnError = true, onProgress } = options;
+    const { slowMo = 1, stopOnError = true, onProgress, onCheckpoint } = options;
     const events = this.recording.events || [];
+    const checkpointMap = new Map<number, CheckpointEntry>();
+    for (const cp of this.checkpoints) {
+      if (cp.relatedActionId != null) {
+        checkpointMap.set(cp.relatedActionId, cp);
+      }
+    }
 
     if (this.recording.startUrl) {
       try {
@@ -116,6 +119,14 @@ export class PlaybackEngine {
         }
 
         await this.executeEvent(event);
+
+        if (onCheckpoint && checkpointMap.has(i)) {
+          const cp = checkpointMap.get(i)!;
+          const shouldContinue = await onCheckpoint({ type: cp.type, hint: cp.hint, selector: cp.selector });
+          if (!shouldContinue) {
+            break;
+          }
+        }
 
         if (onProgress) {
           onProgress({ current: i + 1, total: events.length, event });

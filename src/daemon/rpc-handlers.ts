@@ -32,11 +32,12 @@ import { exportEntry } from './code-export.js';
 import type { ExportLang } from './code-export.js';
 import { WSServer } from '../websocket-server.js';
 import { SessionRecorder } from '../recorder/session-recorder.js';
-import type { RecordingSummary } from '../recorder/session-recorder.js';
+import type { RecordingSummary, CheckpointEntry } from '../recorder/session-recorder.js';
 import { PlaybackEngine } from '../recorder/player.js';
 import type { PlaybackResult } from '../recorder/player.js';
 
 const activeRecorders = new Map<string, SessionRecorder>();
+const replayResumeResolvers = new Map<string, () => void>();
 
 const CONFIG_DIR = join(homedir(), '.xbrowser');
 
@@ -206,8 +207,14 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
         case 'record:summary':
           return handleRecordSummary(params);
 
+        case 'record:checkpoint':
+          return handleRecordCheckpoint(params);
+
         case 'replay':
           return handleReplay(params);
+
+        case 'replay:resume':
+          return handleReplayResume(params);
 
         default:
           throw new Error(`Unknown method: ${method}`);
@@ -590,6 +597,35 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     return { ok: true, live: false, summary };
   }
 
+  function handleRecordCheckpoint(params: Record<string, unknown>): { ok: boolean; checkpoint?: CheckpointEntry; error?: string } {
+    const sessionName = (params.session as string) || 'default';
+    const recorder = activeRecorders.get(sessionName);
+    if (!recorder || !recorder.isRecording) {
+      return { ok: false, error: 'No active recording for session: ' + sessionName };
+    }
+
+    const type = (params.type as string) || 'custom';
+    const hint = (params.hint as string) || '';
+    const selector = params.selector as string | undefined;
+
+    if (!hint) {
+      return { ok: false, error: 'Please provide a hint describing the checkpoint' };
+    }
+
+    const cp = recorder.addManualCheckpoint(type, hint, selector);
+    return { ok: true, checkpoint: cp };
+  }
+
+  async function handleReplayResume(_params: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
+    const resolver = replayResumeResolvers.get('default');
+    if (!resolver) {
+      return { ok: false, error: 'No paused replay to resume' };
+    }
+    resolver();
+    replayResumeResolvers.delete('default');
+    return { ok: true };
+  }
+
   async function handleReplay(params: Record<string, unknown>): Promise<PlaybackResult & { ok: boolean }> {
     const file = params.file as string;
     const sessionName = (params.session as string) || 'default';
@@ -605,7 +641,16 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     }
 
     const engine = PlaybackEngine.fromFile(session.page, file);
-    const result = await engine.play({ slowMo });
+    const result = await engine.play({
+      slowMo,
+      onCheckpoint: async (checkpoint) => {
+        return new Promise<boolean>((resolve) => {
+          replayResumeResolvers.set(sessionName, () => resolve(true));
+          console.log(`[replay] Checkpoint reached: [${checkpoint.type}] ${checkpoint.hint}`);
+          console.log('[replay] Send "replay:resume" RPC to continue.');
+        });
+      },
+    });
     return { ok: result.success, ...result };
   }
 }

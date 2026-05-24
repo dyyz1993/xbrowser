@@ -7,6 +7,7 @@ import {
   forwardRecordStatus,
   forwardRecordSummary,
   forwardReplay,
+  forwardRecordCheckpoint,
 } from '../client/daemon-client.js';
 
 // ─── record start/stop/status/summary (via daemon) ────────────────
@@ -102,12 +103,31 @@ export async function handleRecord(
       break;
     }
 
+    case 'checkpoint': {
+      const sessionName = (options.session as string) || 'default';
+      const type = (options.type as string) || 'custom';
+      const hint = (options.hint as string) || '';
+      const selector = options.selector as string | undefined;
+
+      if (!hint) {
+        outputError('Please provide --hint "description of what needs human help"');
+        return;
+      }
+
+      const result = await forwardRecordCheckpoint(sessionName, type, hint, selector) as Record<string, unknown>;
+      outputResult(result, mode);
+      break;
+    }
+
     default:
       console.log('Usage:');
       console.log('  xbrowser record start [--url <url>] [--session <name>]');
       console.log('  xbrowser record stop  [--session <name>]');
       console.log('  xbrowser record status [--session <name>]');
       console.log('  xbrowser record summary [--session <name>] [--json]');
+      console.log('  xbrowser record checkpoint --type <type> --hint "description" [--selector <sel>] [--session <name>]');
+      console.log('');
+      console.log('Checkpoint types: dialog, captcha, login, iframe, slider, custom');
   }
 }
 
@@ -179,6 +199,16 @@ function printRecordingSummary(summary: RecordingSummary, sessionName: string): 
 
   console.log('');
   console.log(`  Files: ${SessionRecorder.getRecordingsDir(sessionName)}/`);
+
+  if (summary.checkpoints && summary.checkpoints.length > 0) {
+    console.log('');
+    console.log(`  Checkpoints (${summary.checkpoints.length}):`);
+    for (const cp of summary.checkpoints) {
+      const src = cp.source === 'auto' ? '[auto]' : '[manual]';
+      console.log(`    ${cp.id}. ${src} [${cp.type}] ${cp.hint}`);
+      if (cp.selector) console.log(`       selector: ${cp.selector}`);
+    }
+  }
 }
 
 function printHumanReadableSummary(summary: RecordingSummary): void {
@@ -264,6 +294,16 @@ function printHumanReadableSummary(summary: RecordingSummary): void {
       } else if (ctx.type === 'new_tab') {
         console.log(`    ↗ new tab: ${ctx.url}`);
       }
+    }
+  }
+
+  if (summary.checkpoints && summary.checkpoints.length > 0) {
+    console.log('');
+    console.log(`Checkpoints (${summary.checkpoints.length}):`);
+    for (const cp of summary.checkpoints) {
+      const src = cp.source === 'auto' ? '[auto]' : '[manual]';
+      console.log(`  ${cp.id}. ${src} [${cp.type}] ${cp.hint}`);
+      if (cp.selector) console.log(`     selector: ${cp.selector}`);
     }
   }
 }
