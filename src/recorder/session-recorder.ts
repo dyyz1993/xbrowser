@@ -536,31 +536,59 @@ const CHECKPOINT_OVERLAY_SCRIPT = `
   var __xb_cp_visible = false;
   var __xb_scan_timer = null;
 
+  // ─── Checkpoint Rules ────────────────────────────────────────
+  // Two categories:
+  // 1. BLOCKERS (red/orange) — visible elements that block automation (captcha, login, slider)
+  //    These are stable selectors — websites rarely change captcha/login element patterns.
+  //    Agent sees these in recording data and knows "human intervention needed here".
+  // 2. HIDDEN CONTENT (blue/purple/green) — elements not visible until triggered by user action.
+  //    These capture "what options appear after clicking/hovering" for agent replay planning.
+  //
   var CHECKPOINT_RULES = [
-    { type: 'captcha', label: '验证码', color: '#ef4444', selectors: [
+    // ── BLOCKERS: visible elements that require human intervention ──
+    { type: 'captcha', label: '⚠️验证码', color: '#ef4444', category: 'blocker', selectors: [
       'img[src*="captcha"]','img[src*="verify"]','img[src*="vcode"]',
       '[class*="captcha"]','[id*="captcha"]','#captcha','.captcha',
-      '[class*="Captcha"]','[class*="verify-code"]','[class*="VerifyCode"]'
+      '[class*="Captcha"]','[class*="verify-code"]','[class*="VerifyCode"]',
+      'img[alt*="captcha" i]','img[alt*="验证码"]'
     ]},
-    { type: 'slider', label: '滑块验证', color: '#f97316', selectors: [
-      '[class*="slider"]','[class*="drag-verify"]','[class*="slide-verify"]',
+    { type: 'slider', label: '⚠️滑块验证', color: '#f97316', category: 'blocker', selectors: [
+      '[class*="slide-verify"]','[class*="drag-verify"]',
       '[class*="nc-container"]','[class*="nc_1_wrapper"]',
-      '[class*="Slider"]','[class*="slideBar"]'
+      '[class*="tcaptcha"]','[id*="tcaptcha"]',
+      '[class*="verify-wrap"]','[class*="verify_bar"]'
     ]},
-    { type: 'login', label: '登录框', color: '#3b82f6', selectors: [
+    { type: 'login', label: '⚠️登录框', color: '#f97316', category: 'blocker', selectors: [
       'input[type="password"]',
       'form[action*="login"]','[class*="login-form"]','[class*="LoginForm"]',
-      '[class*="sign-in"]','[class*="signIn"]'
+      '[class*="sign-in"]','[class*="signIn"]','[class*="LoginPanel"]'
     ]},
-    { type: 'iframe', label: 'iframe', color: '#8b5cf6', selectors: [
-      'iframe[src*="captcha"]','iframe[src*="verify"]','iframe[src*="recaptcha"]',
-      'iframe[title*="captcha"]','iframe[src*="google.com/recaptcha"]'
-    ]},
-    { type: 'sms', label: '短信验证', color: '#10b981', selectors: [
+    { type: 'sms', label: '⚠️短信验证', color: '#ef4444', category: 'blocker', selectors: [
       'input[placeholder*="验证码"]','input[placeholder*="短信"]','input[placeholder*="SMS"]',
-      'input[name*="sms"]','input[name*="verify"]','input[maxlength="4"]','input[maxlength="6"]'
-    ]}
+      'input[name*="sms_code"]','input[name*="verify_code"]','input[name*="smscode"]',
+      'input[autocomplete="one-time-code"]'
+    ]},
+
+    // ── HIDDEN CONTENT: not visible until triggered by user action ──
+    // These help agent know "after clicking X, options A/B/C appear"
+    { type: 'dialog', label: '📋弹窗/对话框', color: '#3b82f6', category: 'hidden', selectors: [
+      '[role="dialog"][aria-hidden="false"]',
+      '[class*="Modal"][class*="open"]','[class*="Dialog"][class*="visible"]',
+    ]},
+    { type: 'dropdown', label: '📋下拉选项', color: '#8b5cf6', category: 'hidden', selectors: [
+      '[role="listbox"]','[role="menu"]',
+      '[class*="select-dropdown"]','[class*="Select-menu"]',
+    ]},
   ];
+
+  function isVisible(el) {
+    var rect = el.getBoundingClientRect();
+    var style = window.getComputedStyle(el);
+    return rect.width > 0 && rect.height > 0
+      && style.display !== 'none'
+      && style.visibility !== 'hidden'
+      && parseFloat(style.opacity) > 0;
+  }
 
   function scanCheckpointElements() {
     __xb_cp_elements = [];
@@ -571,15 +599,46 @@ const CHECKPOINT_OVERLAY_SCRIPT = `
           var els = document.querySelectorAll(rule.selectors[s]);
           for (var j = 0; j < els.length; j++) {
             var el = els[j];
+            // Blockers: only show VISIBLE elements (already on page, blocking you)
+            // Hidden content: show regardless of visibility (these are the "what appears after" items)
+            var shouldShow = rule.category === 'hidden' || isVisible(el);
+            if (!shouldShow) continue;
+
             var rect = el.getBoundingClientRect();
-            if (rect.width > 0 && rect.height > 0) {
-              var dup = false;
-              for (var d = 0; d < __xb_cp_elements.length; d++) {
-                if (__xb_cp_elements[d].el === el) { dup = true; break; }
+            // For hidden elements, use a small placeholder rect so overlay can still render
+            var w = rect.width > 0 ? rect.width : 120;
+            var h = rect.height > 0 ? rect.height : 32;
+            var left = rect.left > 0 ? rect.left : (window.innerWidth / 2 - 60);
+            var top = rect.top > 0 ? rect.top : (window.innerHeight / 2 - 16);
+
+            var dup = false;
+            for (var d = 0; d < __xb_cp_elements.length; d++) {
+              if (__xb_cp_elements[d].el === el) { dup = true; break; }
+            }
+            if (!dup) {
+              // For hidden elements, capture their content (options/items) for agent context
+              var content = '';
+              if (rule.category === 'hidden') {
+                var texts = [];
+                var children = el.querySelectorAll('li, option, [role="option"], [role="menuitem"], [class*="item"], [class*="option"]');
+                for (var c = 0; c < Math.min(children.length, 20); c++) {
+                  var t = children[c].textContent.trim();
+                  if (t && t.length < 100) texts.push(t);
+                }
+                if (texts.length > 0) content = texts.join(' | ');
+                else if (el.textContent.trim().length < 200) content = el.textContent.trim();
               }
-              if (!dup) {
-                __xb_cp_elements.push({ el: el, type: rule.type, label: rule.label, color: rule.color, selector: rule.selectors[s] });
-              }
+
+              __xb_cp_elements.push({
+                el: el,
+                type: rule.type,
+                label: rule.label,
+                color: rule.color,
+                selector: rule.selectors[s],
+                category: rule.category,
+                rect: { left: left, top: top, width: w, height: h },
+                content: content
+              });
             }
           }
         } catch(e) {}
@@ -599,14 +658,14 @@ const CHECKPOINT_OVERLAY_SCRIPT = `
 
     for (var i = 0; i < __xb_cp_elements.length; i++) {
       var cp = __xb_cp_elements[i];
-      var rect = cp.el.getBoundingClientRect();
+      var r = cp.rect || cp.el.getBoundingClientRect();
       
       var box = document.createElement('div');
       box.style.cssText = 'position:fixed;' +
-        'left:' + (rect.left - 3) + 'px;' +
-        'top:' + (rect.top - 3) + 'px;' +
-        'width:' + (rect.width + 6) + 'px;' +
-        'height:' + (rect.height + 6) + 'px;' +
+        'left:' + (r.left - 3) + 'px;' +
+        'top:' + (r.top - 3) + 'px;' +
+        'width:' + (r.width + 6) + 'px;' +
+        'height:' + (r.height + 6) + 'px;' +
         'outline:3px solid ' + cp.color + ';' +
         'outline-offset:0px;' +
         'box-shadow:0 0 12px ' + cp.color + '80;' +
@@ -617,8 +676,8 @@ const CHECKPOINT_OVERLAY_SCRIPT = `
 
       var badge = document.createElement('div');
       badge.style.cssText = 'position:fixed;' +
-        'left:' + rect.left + 'px;' +
-        'top:' + (rect.top - 28) + 'px;' +
+        'left:' + r.left + 'px;' +
+        'top:' + (r.top - 28) + 'px;' +
         'background:' + cp.color + ';' +
         'color:white;' +
         'font:bold 12px/1.2 system-ui,sans-serif;' +
@@ -670,6 +729,8 @@ const CHECKPOINT_OVERLAY_SCRIPT = `
           hint: cp.label,
           selector: cp.selector,
           source: 'manual',
+          category: cp.category,
+          content: cp.content || '',
         });
         if (__xb_cp_overlay) {
           var boxes = __xb_cp_overlay.querySelectorAll('div[style*="outline"]');
