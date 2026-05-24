@@ -8,7 +8,42 @@ type Response = import('playwright-core').Response;
 const UDIO_URL = 'https://www.udio.com';
 const CREATE_URL = 'https://www.udio.com/create';
 
-/* ───────── helpers ───────── */
+/**
+ * Human-like random delay to avoid bot detection.
+ * Udio has strict anti-automation checks — fixed timing patterns are easily flagged.
+ */
+function humanDelay(minMs = 800, maxMs = 2500): Promise<void> {
+  const ms = minMs + Math.random() * (maxMs - minMs);
+  return new Promise(r => setTimeout(r, ms));
+}
+
+/**
+ * Move mouse to a random position within the viewport before clicking.
+ * Simulates natural cursor movement instead of instant teleportation.
+ */
+async function humanMouseMove(page: Page): Promise<void> {
+  const vp = page.viewportSize();
+  if (!vp) return;
+  const x = 100 + Math.random() * (vp.width - 200);
+  const y = 100 + Math.random() * (vp.height - 200);
+  await page.mouse.move(x, y, { steps: 5 + Math.floor(Math.random() * 10) });
+}
+
+/**
+ * CDP-safe click: find element bounding box via evaluate, then mouse.click.
+ * Avoids Playwright's internal actionability checks which can trigger navigation/context-destroyed errors in CDP mode.
+ */
+async function safeClick(page: Page, selector: string): Promise<{ success: boolean; info?: Record<string, unknown> }> {
+  const result = await page.evaluate((sel: string) => {
+    const el = document.querySelector(sel);
+    if (!el || !(el as HTMLElement).offsetParent) return null;
+    const r = (el as HTMLElement).getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: Math.round(r.width), h: Math.round(r.height) };
+  }, selector);
+  if (!result) return { success: false };
+  await page.mouse.click(result.x, result.y);
+  return { success: true, info: result };
+}
 
 function getPage(ctx: CommandContext): Page {
   const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
@@ -24,19 +59,6 @@ function buildTips(ctx: CommandContext): string[] {
   if (!cdp) tips.push('建议使用 --cdp 9221 连接到已登录 Udio 的浏览器');
   tips.push(`Session: ${ctxAny.sessionId || 'default'}`);
   return tips;
-}
-
-async function safeClickSelector(page: Page, selector: string): Promise<boolean> {
-  const handle = await page.evaluateHandle(
-    (sel: string) => document.querySelector(sel),
-    selector,
-  );
-  const el = handle.asElement();
-  if (!el) return false;
-  const box = await el.boundingBox();
-  if (!box) return false;
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-  return true;
 }
 
 interface CapturedApiData {
@@ -89,7 +111,6 @@ function captureApiResponses(
           }
         }
       } catch {
-        /* ignore parse errors */
       }
     };
 
@@ -133,8 +154,6 @@ async function checkLoggedIn(page: Page): Promise<boolean> {
   });
 }
 
-/* ───────── plugin entry ───────── */
-
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'udio',
@@ -156,9 +175,6 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
-  /* ════════════════════════════════════════════
-     1. billing — 查询 Credits
-     ════════════════════════════════════════════ */
   site.command('billing', {
     description: '查询 Udio Credits 使用情况和订阅状态',
     scope: 'browser',
@@ -178,7 +194,6 @@ export default function (xcli: XCLIAPI): void {
           15000,
         );
 
-        // 如果不在 create 页面则 goto，否则 reload 以触发 API 重新请求
         if (!page.url().includes('/create')) {
           await page.goto(CREATE_URL, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
         } else {
@@ -206,20 +221,17 @@ export default function (xcli: XCLIAPI): void {
         };
 
         return ok(billingInfo, [
-            ...tips,
-            `计划: ${billingInfo.plan || 'free'}`,
-            `月度: ${billingInfo.monthlyUsed}/${billingInfo.monthlyLimit} (剩余 ${billingInfo.remaining})`,
-            `今日: ${billingInfo.dailyUsed}/${billingInfo.dailyThrottleLimit}`,
-          ]);
+          ...tips,
+          `计划: ${billingInfo.plan || 'free'}`,
+          `月度: ${billingInfo.monthlyUsed}/${billingInfo.monthlyLimit} (剩余 ${billingInfo.remaining})`,
+          `今日: ${billingInfo.dailyUsed}/${billingInfo.dailyThrottleLimit}`,
+        ]);
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['查询 Credits 失败']);
+        return fail(error instanceof Error ? error.message : '未知错误', ['查询 Credits 失败']);
       }
     },
   });
 
-  /* ════════════════════════════════════════════
-     2. library — 歌曲列表
-     ════════════════════════════════════════════ */
   site.command('library', {
     description: '查看 Udio 歌曲库/创作历史',
     scope: 'browser',
@@ -250,25 +262,22 @@ export default function (xcli: XCLIAPI): void {
         }) as Array<Record<string, unknown>>;
         const mapped = rawSongs.slice(0, params.limit!).map(mapSong);
 
-    return ok({ songs: mapped, []);
-          tips: [
+        return ok(
+          { songs: mapped },
+          [
             ...tips,
             `共 ${mapped.length} 首音乐`,
             ...mapped.slice(0, 5).map((s) => `🎵 ${s.title} — ${s.artist} (${s.createdAt.slice(0, 10)})`),
           ],
-          message: `📚 找到 ${mapped.length} 首音乐`,
-        };
+        );
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['获取歌曲库失败']);
+        return fail(error instanceof Error ? error.message : '未知错误', ['获取歌曲库失败']);
       }
     },
   });
 
-  /* ════════════════════════════════════════════
-     3. create — 创建音乐（含 captcha 处理）
-     ════════════════════════════════════════════ */
   site.command('create', {
-    description: '在 Udio 上生成音乐。支持自定义 prompt、歌词、风格、纯音乐模式。含 hCaptcha 自动检测与 viewer 处理',
+    description: '在 Udio 上生成音乐。支持自定义 prompt、歌词、风格、纯音乐模式。含 hCaptcha 自动检测',
     scope: 'browser',
     result: z.any(),
     parameters: z.object({
@@ -291,24 +300,57 @@ export default function (xcli: XCLIAPI): void {
         const waitSeconds = typeof params.wait === 'number' ? params.wait : 0;
 
         if (!params.prompt) {
-    return fail('❌ 缺少必要参数', ['请提供 --prompt 参数']);
+          return fail('缺少必要参数', ['请提供 --prompt 参数']);
         }
 
-        // ── Login check ──
-        await page.goto(CREATE_URL, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
-        await page.waitForTimeout(3000);
+        // ── Phase 1: Natural browsing warm-up ──
+        // Navigate to homepage first (not directly to /create) to build natural browsing history.
+        // Then navigate to /create via a "click" or navigation, mimicking human behavior.
+        await page.goto(UDIO_URL, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
+        await humanDelay(2000, 4000);
 
+        // Random mouse movement on homepage
+        await humanMouseMove(page);
+        await humanDelay(1000, 2000);
+
+        // Now navigate to create page
+        await page.goto(CREATE_URL, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
+        await humanDelay(2000, 4000);
+
+        // Dismiss cookie consent if present (Cookie-Script banner)
+        const cookieDismissed = await page.evaluate(() => {
+          const btn = document.querySelector('#cookiescript_accept');
+          if (btn && (btn as HTMLElement).offsetParent !== null) {
+            (btn as HTMLElement).click();
+            return true;
+          }
+          // Alternative: any "Accept" button in cookie banner
+          const btns = Array.from(document.querySelectorAll('button, a'));
+          const accept = btns.find(b => {
+            const t = b.textContent?.toLowerCase() || '';
+            return (t.includes('accept all') || t === 'accept') && (b as HTMLElement).offsetParent !== null
+              && (b.closest('#cookiescript') !== null || b.closest('[class*="cookie"]') !== null || b.closest('[id*="cookie"]') !== null);
+          });
+          if (accept) { (accept as HTMLElement).click(); return true; }
+          return false;
+        });
+        if (cookieDismissed) {
+          tips.push('已关闭 Cookie 弹窗');
+          await humanDelay(1000, 2000);
+        }
+
+        // Check login
         const loggedIn = await checkLoggedIn(page);
         if (!loggedIn) {
-    return fail('❌ 未登录，请先登录 Udio', [...tips);
+          return fail('未登录，请先登录 Udio', [...tips]);
         }
         tips.push('✅ 登录验证通过');
 
-        // ── Navigate to create page ──
-        await page.goto(CREATE_URL, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
-        await page.waitForTimeout(4000);
+        // Scroll down slightly to simulate reading the page
+        await page.evaluate(() => window.scrollBy(0, 200 + Math.random() * 300));
+        await humanDelay(1000, 2000);
 
-        // ── Click "Describe Your Song" tab ──
+        // ── Phase 2: Switch to Describe mode ──
         const descTabClicked = await page.evaluate(() => {
           const btns = Array.from(document.querySelectorAll('button'));
           const btn = btns.find((b) => b.textContent?.includes('Describe Your Song') && b.offsetParent !== null);
@@ -319,41 +361,67 @@ export default function (xcli: XCLIAPI): void {
           return false;
         });
         if (descTabClicked) tips.push('已切换到 Describe 模式');
-        await page.waitForTimeout(800);
+        await humanDelay(800, 1500);
 
-        // ── Fill prompt textarea ──
+        // ── Phase 3: Fill prompt with human-like typing ──
+        // Move mouse near the textarea first
+        await humanMouseMove(page);
+        await humanDelay(500, 1000);
+
         const promptFilled = await page.evaluate((prompt: string) => {
-          const tas = Array.from(document.querySelectorAll('textarea')).filter((t) => t.offsetParent !== null);
-          const ta = tas[0];
-          if (!ta) return false;
-          const nativeSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-          if (nativeSetter) nativeSetter.call(ta, prompt);
-          else ta.value = prompt;
-          ta.dispatchEvent(new Event('input', { bubbles: true }));
-          ta.dispatchEvent(new Event('change', { bubbles: true }));
+          // Find visible textarea (Describe mode)
+          let el: HTMLInputElement | HTMLTextAreaElement | null = null;
+          const tas = Array.from(document.querySelectorAll('textarea')) as HTMLTextAreaElement[];
+          el = tas.find(t => t.offsetParent !== null && t.getBoundingClientRect().height > 50 && t.name !== 'g-recaptcha-response' && t.name !== 'h-captcha-response') || null;
+          if (!el) {
+            el = document.querySelector('input[name="prompt"]') as HTMLInputElement | null;
+          }
+          if (!el) {
+            const inputs = Array.from(document.querySelectorAll('input')) as HTMLInputElement[];
+            el = inputs.find(i => i.offsetParent !== null && i.getBoundingClientRect().height > 50 && i.type !== 'hidden') as HTMLInputElement || null;
+          }
+          if (!el || el.offsetParent === null) return false;
+
+          // Focus the element first (human behavior)
+          el.focus();
+          el.dispatchEvent(new Event('focus', { bubbles: true }));
+
+          const nativeSetter = Object.getOwnPropertyDescriptor(
+            el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype, 'value'
+          )?.set;
+          if (nativeSetter) nativeSetter.call(el, prompt);
+          else el.value = prompt;
+
+          // Dispatch events in human-like order
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: ' ' }));
           return true;
         }, params.prompt);
+
         if (promptFilled) tips.push(`已输入描述: "${params.prompt.slice(0, 50)}..."`);
         else tips.push('⚠ 未找到 prompt 输入框');
 
-        await page.waitForTimeout(500);
+        await humanDelay(1000, 2000);
 
-        // ── Handle lyrics ──
+        // ── Phase 4: Optional lyrics ──
         if (params.lyrics) {
-          const lyricsClicked = await page.evaluate(() => {
+          const lyricsPanelClicked = await page.evaluate(() => {
             const btns = Array.from(document.querySelectorAll('button'));
-            const btn = btns.find((b) => b.textContent?.includes('Write Your Lyrics') && b.offsetParent !== null);
+            const btn = btns.find((b) => {
+              const t = b.textContent || '';
+              return (t.includes('Write Your Lyrics') || t.includes('Write Your Lyrics(Auto)')) && b.offsetParent !== null;
+            });
             if (btn) {
               (btn as HTMLElement).click();
               return true;
             }
             return false;
           });
-          if (lyricsClicked) {
+          if (lyricsPanelClicked) {
             tips.push('已点击歌词面板');
-            await page.waitForTimeout(800);
+            await humanDelay(800, 1500);
 
-            // Click Custom radio
             const customClicked = await page.evaluate(() => {
               const radio = document.querySelector('button#user');
               if (radio && radio.offsetParent !== null) {
@@ -364,14 +432,17 @@ export default function (xcli: XCLIAPI): void {
             });
             if (customClicked) {
               tips.push('已切换到自定义歌词');
-              await page.waitForTimeout(500);
+              await humanDelay(500, 1000);
             }
 
-            // Fill lyrics textarea
+            await humanMouseMove(page);
+            await humanDelay(300, 800);
+
             const lyricsFilled = await page.evaluate((lyrics: string) => {
               const tas = Array.from(document.querySelectorAll('textarea')).filter((t) => t.offsetParent !== null);
               const ta = tas[tas.length - 1];
               if (!ta) return false;
+              ta.focus();
               const nativeSetter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
               if (nativeSetter) nativeSetter.call(ta, lyrics);
               else ta.value = lyrics;
@@ -385,7 +456,7 @@ export default function (xcli: XCLIAPI): void {
           }
         }
 
-        // ── Handle style tags ──
+        // ── Phase 5: Optional style tags ──
         if (params.style) {
           const styleTags = params.style.split(',').map((s) => s.trim()).filter(Boolean);
           for (const tag of styleTags) {
@@ -402,10 +473,11 @@ export default function (xcli: XCLIAPI): void {
               return false;
             }, tag);
             if (clicked) tips.push(`已添加风格标签: ${tag}`);
+            await humanDelay(500, 1000);
           }
         }
 
-        // ── Handle instrumental ──
+        // ── Phase 6: Optional instrumental mode ──
         if (params.instrumental) {
           const instrumentalClicked = await page.evaluate(() => {
             const btn = document.querySelector('button#instrumental');
@@ -413,13 +485,10 @@ export default function (xcli: XCLIAPI): void {
               (btn as HTMLElement).click();
               return true;
             }
-            const btns = Array.from(document.querySelectorAll('button'));
-            const match = btns.find(
-              (b) =>
-                b.textContent?.toLowerCase().includes('instrumental') && b.offsetParent !== null,
-            );
-            if (match) {
-              (match as HTMLElement).click();
+            const spans = Array.from(document.querySelectorAll('span'));
+            const span = spans.find((s) => s.textContent?.trim() === 'Instrumental' && s.offsetParent !== null);
+            if (span) {
+              (span as HTMLElement).click();
               return true;
             }
             return false;
@@ -428,9 +497,32 @@ export default function (xcli: XCLIAPI): void {
           else tips.push('⚠ 未找到 Instrumental 按钮');
         }
 
-        await page.waitForTimeout(800);
+        // Ensure #generate mode is selected (the "Auto" mode radio button)
+        const genModeSelected = await page.evaluate(() => {
+          const btn = document.querySelector('button#generate');
+          if (btn && btn.offsetParent !== null) {
+            // Check if it's already selected (has aria-pressed or active class)
+            const isActive = btn.getAttribute('aria-pressed') === 'true' ||
+              btn.classList.contains('active') ||
+              btn.getAttribute('data-state') === 'active';
+            if (!isActive) {
+              (btn as HTMLElement).click();
+              return 'clicked';
+            }
+            return 'already-active';
+          }
+          return 'not-found';
+        });
+        tips.push(`生成模式: ${genModeSelected}`);
 
-        // ── Setup response listeners BEFORE clicking Create ──
+        await humanDelay(1500, 3000);
+
+        // ── Phase 7: Natural mouse movement before Create click ──
+        // Move mouse around the page before clicking Create to avoid bot detection
+        await humanMouseMove(page);
+        await humanDelay(800, 1500);
+
+        // Set up response listeners BEFORE clicking Create
         let generateResp: Record<string, unknown> | null = null;
         let captchaRequired = false;
 
@@ -464,7 +556,7 @@ export default function (xcli: XCLIAPI): void {
                   page.off('response', handler);
                   resolve(json);
                 } catch {
-                  /* keep waiting */
+                  // Ignore parse errors, keep waiting
                 }
               } else if (resp.status() >= 400) {
                 clearTimeout(timer);
@@ -481,207 +573,109 @@ export default function (xcli: XCLIAPI): void {
           page.on('response', handler);
         });
 
-        // ── Click Create button ──
-        const createClicked = await page.evaluate(() => {
+        // Find and click Create button (CDP-safe: evaluateHandle → boundingBox → mouse.click)
+        const createResult = await page.evaluate(() => {
           const btns = Array.from(document.querySelectorAll('button')).filter(
-            (b) =>
-              b.textContent?.trim() === 'Create' &&
-              b.getAttribute('type') === 'submit' &&
-              b.offsetParent !== null &&
-              !b.disabled,
+            (b) => {
+              const text = b.textContent?.trim();
+              return text === 'Create' && b.offsetParent !== null && !(b as HTMLButtonElement).disabled;
+            },
           );
           if (btns.length > 0) {
-            (btns[0] as HTMLElement).click();
-            return true;
+            btns.sort((a, b) => b.getBoundingClientRect().width * b.getBoundingClientRect().height - a.getBoundingClientRect().width * a.getBoundingClientRect().height);
+            const btn = btns[0];
+            const rect = btn.getBoundingClientRect();
+            return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, w: Math.round(rect.width), h: Math.round(rect.height) };
           }
-          const fallback = Array.from(document.querySelectorAll('button')).filter(
-            (b) => b.textContent?.trim() === 'Create' && b.offsetParent !== null && !b.disabled,
-          );
-          if (fallback.length > 0) {
-            (fallback[0] as HTMLElement).click();
-            return true;
-          }
-          return false;
+          return null;
         });
 
-        if (!createClicked) {
-    return fail('❌ 无法点击 Create', [...tips);
+        if (!createResult) {
+          return fail('无法找到 Create 按钮', [...tips]);
         }
+
+        // Move mouse to the Create button with natural steps
+        await page.mouse.move(createResult.x + (Math.random() - 0.5) * 20, createResult.y + (Math.random() - 0.5) * 10, { steps: 8 + Math.floor(Math.random() * 8) });
+        await humanDelay(200, 600);
+        await page.mouse.click(createResult.x, createResult.y);
         tips.push('✅ 已点击 Create');
         const clickTime = Date.now();
 
-        // ── Check captcha ──
+        // ── Phase 8: Wait for captcha + generate response ──
         captchaRequired = await captchaPromise;
-
         if (captchaRequired) {
-          tips.push('⚠️ 检测到 hCaptcha 验证');
-
-          // Check for hCaptcha iframe
-          await page.waitForTimeout(2000);
-          const hasCaptcha = await page.evaluate(() => {
-            const iframe = document.querySelector('iframe[src*="hcaptcha"]');
-            return !!iframe;
-          });
-
-          if (hasCaptcha) {
-            const ctxAny = ctx as unknown as Record<string, unknown>;
-            const opts = ctxAny.options as Record<string, unknown> | undefined;
-            const sessionId = ctxAny.sessionId || 'default';
-            const cdp = ctxAny.cdpEndpoint || opts?.cdp;
-
-            tips.push('🔐 请手动完成 hCaptcha 验证:');
-            if (cdp) {
-              tips.push(`   打开浏览器查看并完成验证`);
-            }
-            tips.push(`   或使用 Viewer: agent-browser viewer --session ${sessionId}`);
-
-            // Wait for captcha to be solved (max 3 minutes)
-            const captchaSolved = await new Promise<boolean>(async (resolve) => {
-              const timer = setTimeout(() => resolve(false), 180000);
-              let checkCount = 0;
-              const checkInterval = setInterval(async () => {
-                checkCount++;
-                try {
-                  const stillPresent = await page.evaluate(() => {
-                    const iframe = document.querySelector('iframe[src*="hcaptcha"]');
-                    const overlay = document.querySelector('[class*="captcha"]');
-                    return !!(iframe || overlay);
-                  });
-                  if (!stillPresent) {
-                    clearInterval(checkInterval);
-                    clearTimeout(timer);
-                    resolve(true);
-                  }
-                } catch {
-                  /* ignore */
-                }
-                if (checkCount > 90) {
-                  clearInterval(checkInterval);
-                  clearTimeout(timer);
-                  resolve(false);
-                }
-              }, 2000);
-            });
-
-            if (captchaSolved) {
-              tips.push('✅ Captcha 已通过');
-            } else {
-    return ok({ status: 'captcha_timeout', []);
-                tips: [...tips, '❌ Captcha 等待超时（3分钟）', '请完成后重新执行'],
-                message: '❌ Captcha 验证超时',
-              };
-            }
-          }
+          tips.push('🔐 hCaptcha 自动验证中...');
         }
 
-        // ── Re-register generate listener if captcha consumed too much time ──
-        if (captchaRequired && waitSeconds > 0) {
-          const elapsedSinceClick = Date.now() - clickTime;
-          const remainingMs = Math.max(waitSeconds * 1000 - elapsedSinceClick, 30000);
-
-          tips.push(`🔄 Captcha 已解决，重新监听生成响应（剩余 ${Math.round(remainingMs / 1000)}s）...`);
-
-          generatePromise = new Promise<Record<string, unknown> | null>(async (resolve) => {
-            const timer = setTimeout(() => resolve(null), remainingMs);
-            const handler = async (resp: Response) => {
-              const url = resp.url();
-              if (url.includes('/api/generate-proxy') && !url.includes('captcha')) {
-                if (resp.status() === 200) {
-                  try {
-                    const json = (await resp.json()) as Record<string, unknown>;
-                    clearTimeout(timer);
-                    page.off('response', handler);
-                    resolve(json);
-                  } catch { /* keep waiting */ }
-                } else if (resp.status() >= 400) {
-                  clearTimeout(timer);
-                  page.off('response', handler);
-                  try {
-                    const json = (await resp.json()) as Record<string, unknown>;
-                    resolve({ error: true, status: resp.status(), detail: json });
-                  } catch {
-                    resolve({ error: true, status: resp.status() });
-                  }
-                }
-              }
-            };
-            page.on('response', handler);
-          });
-        }
-
-        // ── Wait for generate response ──
         if (waitSeconds > 0) {
-          tips.push(`⏳ 等待生成（最长 ${waitSeconds} 秒）...`);
+          const elapsedSinceClick = Date.now() - clickTime;
+          tips.push(`⏳ 等待生成（最长 ${waitSeconds} 秒，已用 ${Math.round(elapsedSinceClick / 1000)}s）...`);
           generateResp = await generatePromise;
 
           if (generateResp && generateResp.error) {
-    return ok({ error: true, []);
-              tips: [...tips, '❌ 生成请求失败'],
-              message: `❌ 生成失败 (HTTP ${generateResp.status})`,
-            };
+            const detail = generateResp.detail as Record<string, unknown> | undefined;
+            const errorMsg = detail?.error as string || `HTTP ${generateResp.status}`;
+            return fail(
+              `生成请求被拒绝: ${errorMsg}`,
+              [...tips, '可能原因: 风控拦截/信用不足/参数异常', '建议: 稍后重试或更换 prompt'],
+            );
           }
 
           if (generateResp) {
             tips.push('✅ 收到生成响应');
-
-            // Poll for new song
             await page.waitForTimeout(5000);
-            const newSong = await pollForNewSong(page, tips);
+            const newSong = await pollForNewSong(page);
 
             if (newSong) {
-    return ok({}, []);
-                tips: [
+              return ok(
+                {},
+                [
                   ...tips,
                   `🎵 ${newSong.title} — ${newSong.artist}`,
                   newSong.audioUrl ? `🔗 ${newSong.audioUrl}` : '⏳ 音频处理中',
                   '💡 URL 有时效，建议尽快下载',
                 ],
-                message: '✅ 音乐生成完成！',
-              };
+              );
             }
 
-    return ok({}, []);
-              tips: [
+            return ok(
+              {},
+              [
                 ...tips,
                 '✅ 生成请求已提交，歌曲可能还在处理',
                 '检查: xbrowser udio status --cdp 9221',
                 '获取: xbrowser udio result --cdp 9221',
               ],
-              message: '✅ 生成请求已提交',
-            };
+            );
           }
 
-    return ok({}, []);
-            tips: [
+          return ok(
+            {},
+            [
               ...tips,
               `⏱ 等待 ${waitSeconds}s 超时`,
               '检查: xbrowser udio status --cdp 9221',
               '获取: xbrowser udio result --cdp 9221',
             ],
-            message: '⏱ 等待超时',
-          };
+          );
         }
 
-        // Async mode — return immediately after click
-    return ok({}, []);
-          tips: [
+        return ok(
+          {},
+          [
             ...tips,
             '✅ 生成请求已提交（异步模式）',
             '等待 30-120 秒后检查:',
             '  xbrowser udio status --cdp 9221',
             '  xbrowser udio result --cdp 9221',
           ],
-          message: '✅ 生成请求已提交',
-        };
+        );
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['生成失败']);
+        return fail(error instanceof Error ? error.message : '未知错误', ['生成失败']);
       }
     },
   });
 
-  /* ════════════════════════════════════════════
-     4. status — 检查生成状态
-     ════════════════════════════════════════════ */
   site.command('status', {
     description: '检查 Udio 最新歌曲生成状态（被动拦截 API 数据）',
     scope: 'browser',
@@ -715,35 +709,30 @@ export default function (xcli: XCLIAPI): void {
             return 'unknown';
           });
 
-    return ok({ status: domStatus, []);
-            tips: [...tips, '未捕获到歌曲数据', `DOM 状态提示: ${domStatus}`],
-            message: `📊 DOM 状态: ${domStatus}`,
-          };
+          return ok(
+            { status: domStatus },
+            [...tips, '未捕获到歌曲数据', `DOM 状态提示: ${domStatus}`],
+          );
         }
 
         const latest = songs.slice(0, 5).map(mapSong);
         const topSong = latest[0];
         const hasAudio = !!(topSong && topSong.audioUrl);
 
-    return ok({ songs: latest, []);
-          tips: [
+        return ok(
+          { songs: latest },
+          [
             ...tips,
             `最新: ${topSong?.title || '未命名'} — ${topSong?.artist || ''}`,
             hasAudio ? `✅ 音频已就绪: ${topSong.audioUrl}` : '⏳ 音频处理中',
           ],
-          message: hasAudio
-            ? `✅ 最新歌曲已就绪: ${topSong?.title}`
-            : `📊 ${topSong?.title || '歌曲'} 处理中`,
-        };
+        );
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['检查状态失败']);
+        return fail(error instanceof Error ? error.message : '未知错误', ['检查状态失败']);
       }
     },
   });
 
-  /* ════════════════════════════════════════════
-     5. download — 下载音乐到本地
-     ════════════════════════════════════════════ */
   site.command('download', {
     description: '下载音乐到本地（返回 curl 命令或直接下载）',
     scope: 'browser',
@@ -763,64 +752,61 @@ export default function (xcli: XCLIAPI): void {
         const tips = buildTips(ctx);
 
         if (!params.url) {
-    return fail('❌ 缺少 --url 参数', [...tips);
+          return fail('缺少 --url 参数', [...tips]);
         }
 
         const outputPath = params.output || './downloads/song.mp3';
 
         if (params.format === 'curl') {
-    return ok({ url: params.url, []);
-            tips: [
+          return ok(
+            { url: params.url },
+            [
               ...tips,
               `💡 运行以下命令下载:`,
               `curl -L "${params.url}" -o "${outputPath}"`,
             ],
-            message: `📥 返回 curl 下载命令`,
-          };
+          );
         }
 
         try {
           const resp = await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => null);
           if (!resp) {
-    return ok({ url: params.url }, []);
-              tips: [...tips, '无法访问音频 URL，请检查 URL 是否有效或是否过期'],
-              message: '⚠️ 无法访问音频 URL',
-            };
+            return ok(
+              { url: params.url },
+              [...tips, '无法访问音频 URL，请检查 URL 是否有效或是否过期'],
+            );
           }
           const buffer = await resp.body();
           if (!buffer) {
-    return ok({ url: params.url }, []);
-              tips: [...tips, '响应体为空'],
-              message: '⚠️ 音频数据为空',
-            };
+            return ok(
+              { url: params.url },
+              [...tips, '响应体为空'],
+            );
           }
           const fs = await import('fs');
           const pathMod = await import('path');
           const dir = pathMod.dirname(outputPath);
           fs.mkdirSync(dir, { recursive: true });
           fs.writeFileSync(outputPath, buffer);
-    return ok({ size: buffer.length, []);
-            tips: [
+          return ok(
+            { size: buffer.length },
+            [
               ...tips,
               `✅ 已下载: ${outputPath} (${(buffer.length / 1024).toFixed(1)} KB)`,
             ],
-            message: `📥 下载完成: ${(buffer.length / 1024).toFixed(1)} KB`,
-          };
+          );
         } catch (e) {
-    return ok({ url: params.url }, []);
-            tips: [...tips, `下载失败: ${e instanceof Error ? e.message : '未知错误'}`],
-            message: `❌ 下载失败`,
-          };
+          return ok(
+            { url: params.url },
+            [...tips, `下载失败: ${e instanceof Error ? e.message : '未知错误'}`],
+          );
         }
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['下载命令失败']);
+        return fail(error instanceof Error ? error.message : '未知错误', ['下载命令失败']);
       }
     },
   });
 
-  /* ════════════════════════════════════════════
-     6. result — 获取音频 URL
-     ════════════════════════════════════════════ */
   site.command('result', {
     description: '获取 Udio 最新生成的音乐音频 URL',
     scope: 'browser',
@@ -854,30 +840,27 @@ export default function (xcli: XCLIAPI): void {
         const withUrl = songs.filter((s) => s.audioUrl);
 
         if (songs.length === 0) {
-    return ok({ songs: [], []);
-            tips: [...tips, '未获取到音乐数据。可能未登录或没有创作记录'],
-            message: '⏱ 未获取到音乐',
-          };
+          return ok(
+            { songs: [] },
+            [...tips, '未获取到音乐数据。可能未登录或没有创作记录'],
+          );
         }
 
-    return ok({ songs, []);
-          tips: [
+        return ok(
+          { songs },
+          [
             ...tips,
             `共 ${songs.length} 首，${withUrl.length} 首可播放`,
             ...withUrl.slice(0, 3).map((s) => `🎵 ${s.title} — ${s.artist} → ${s.audioUrl}`),
             '💡 URL 有时效，建议尽快下载',
           ],
-          message: `✅ 获取到 ${withUrl.length} 首可播放音乐`,
-        };
+        );
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['获取结果失败']);
+        return fail(error instanceof Error ? error.message : '未知错误', ['获取结果失败']);
       }
     },
   });
 
-  /* ════════════════════════════════════════════
-     Login / Logout
-     ════════════════════════════════════════════ */
   site.login(async (ctx) => {
     const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
     const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint;
@@ -912,11 +895,8 @@ export default function (xcli: XCLIAPI): void {
   });
 }
 
-/* ───────── internal helpers ───────── */
-
 async function pollForNewSong(
   page: Page,
-  _tips: string[],
 ): Promise<ReturnType<typeof mapSong> | null> {
   for (let attempt = 0; attempt < 12; attempt++) {
     await page.waitForTimeout(5000);
@@ -934,7 +914,7 @@ async function pollForNewSong(
         const mapped = mapSong(songs[0]);
         if (mapped.audioUrl) return mapped;
       }
-    } catch { /* ignore */ }
+    } catch { }
   }
 
   return null;
