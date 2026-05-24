@@ -14,18 +14,14 @@ async function main() {
     exitCode = 1;
   } finally {
     // Only cleanup browser for short-lived commands.
-    // Long-running server commands (preview, serve, daemon) manage their own lifecycle.
-    const { getDaemonProcessStatus } = await import('../src/daemon/daemon.js');
-    const daemonStatus = getDaemonProcessStatus();
+    // Long-running server commands (preview, serve) manage their own lifecycle.
     const command = process.argv[2];
-    const subCommand = process.argv[3];
-    const isLongRunning = command === 'preview' || command === 'serve' || daemonStatus.running;
-    const isSessionClose = command === 'session' && (subCommand === 'close' || subCommand === 'kill');
+    const isLongRunning = command === 'preview' || command === 'serve';
     if (!isLongRunning) {
-      if (isSessionClose) {
-        const { destroyBrowser } = await import('../src/browser.js');
-        await destroyBrowser().catch(() => { });
-      }
+      // Ensure all async resources (CDP WebSocket, timers, proxy agents) are cleaned up
+      // so the process can exit cleanly.
+      const { ensureProcessCanExit } = await import('../src/browser.js');
+      await ensureProcessCanExit().catch(() => {});
       process.exit(exitCode);
     }
   }
