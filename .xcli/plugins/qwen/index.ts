@@ -520,6 +520,175 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  async function captureAuthParams(page: Page): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('捕获认证参数超时（10s），请确认已登录')), 10000);
+
+      const handler = (request: import('playwright-core').Request) => {
+        const url = request.url();
+        if (url.includes('chat2-api.qianwen.com') && url.includes('ut=')) {
+          const queryString = url.split('?')[1];
+          if (queryString) {
+            clearTimeout(timer);
+            page.off('request', handler);
+            resolve(queryString);
+          }
+        }
+      };
+
+      page.on('request', handler);
+    });
+  }
+
+  async function fetchSessionList(page: Page, authParams: string, pageSize: number, currentPage: number): Promise<{
+    sessions: Array<{ session_id: string; title: string; created_at: number }>;
+    have_next_page: boolean;
+  }> {
+    return page.evaluate(async ({ auth, size, pg }) => {
+      const resp = await fetch(
+        `https://chat2-api.qianwen.com/api/v2/session/page/list?${auth}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ pageSize: size, currentPage: pg }),
+        },
+      );
+      const json = await resp.json();
+      if (json.code !== 0) throw new Error(`Session list API error: ${json.msg || json.code}`);
+      return {
+        sessions: (json.data?.list || []).map((s: Record<string, unknown>) => ({
+          session_id: String(s.session_id || ''),
+          title: String(s.title || ''),
+          created_at: Number(s.created_at || 0),
+        })),
+        have_next_page: Boolean(json.data?.have_next_page),
+      };
+    }, { auth: authParams, size: pageSize, pg: currentPage });
+  }
+
+  async function fetchSessionImages(page: Page, authParams: string, sessionId: string): Promise<string[]> {
+    return page.evaluate(async ({ auth, sid }) => {
+      // GET request with params in query string (not POST body)
+      const resp = await fetch(
+        `https://chat2-api.qianwen.com/api/v1/session/msg/list?${auth}&sessionId=${encodeURIComponent(sid)}&pageSize=50&currentPage=1`,
+        {
+          method: 'GET',
+          credentials: 'include',
+        },
+      );
+      const json = await resp.json();
+      if (json.code !== 0) return [];
+
+      // Response structure: data.list[].response_messages[].content
+      // Image URLs are embedded in markdown: ![](https://wanx.alicdn.com/...)
+      const items = json.data?.list || [];
+      const images = [];
+      const seen = new Set();
+
+      for (const item of items) {
+        const respMsgs = item.response_messages || [];
+        for (const rm of respMsgs) {
+          if (typeof rm.content !== 'string') continue;
+          // Extract URLs from markdown image syntax: ![...](url)
+          const mdRegex = /!\[.*?\]\((https?:\/\/[^\s"'<>)]+)\)/g;
+          let match;
+          while ((match = mdRegex.exec(rm.content)) !== null) {
+            const url = match[1];
+            if (!seen.has(url)) {
+              seen.add(url);
+              images.push(url);
+            }
+          }
+          // Also extract plain CDN URLs as fallback
+          const urlRegex = /https?:\/\/[^\s"'<>)]+?(?:wanx\.alicdn\.com|workspace-zb-cdn\.qianwen\.com)[^\s"'<>)]*\.png[^\s"'<>)]*/g;
+          while ((match = urlRegex.exec(rm.content)) !== null) {
+            const url = match[0];
+            if (!seen.has(url)) {
+              seen.add(url);
+              images.push(url);
+            }
+          }
+        }
+      }
+      return images;
+    }, { auth: authParams, sid: sessionId });
+  }
+
+  site.command('history', {
+    description: '获取千问会话历史及生成的图片',
+    scope: 'browser',
+    parameters: z.object({
+      limit: z.coerce.number().int().positive().optional().default(10).describe('返回会话数量'),
+    }),
+    result: z.any(),
+    examples: [
+      { cmd: 'xbrowser qwen history --cdp 9221', description: '列出所有会话及图片' },
+      { cmd: 'xbrowser qwen history --limit 5 --cdp 9221', description: '限制 5 个会话' },
+      { cmd: 'xbrowser qwen history --cdp 9221 --json', description: 'JSON 输出' },
+    ],
+    handler: async (params, ctx) => {
+      try {
+        const page = getPage(ctx);
+        const tips = buildTips(ctx);
+
+        const currentUrl = page.url();
+        let authParams: string;
+
+        if (currentUrl.includes('qianwen.com')) {
+          const probePromise = captureAuthParams(page);
+          await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 });
+          authParams = await probePromise;
+        } else {
+          const probePromise = captureAuthParams(page);
+          await page.goto(QWEN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          authParams = await probePromise;
+        }
+        tips.push('✅ 已捕获认证参数');
+
+        const { sessions } = await fetchSessionList(page, authParams, params.limit!, 1);
+        if (sessions.length === 0) {
+          return ok({ sessions: [], totalImages: 0 }, [...tips, '未找到会话记录']);
+        }
+        tips.push(`✅ 获取到 ${sessions.length} 个会话`);
+
+        let totalImages = 0;
+        const results: Array<{
+          sessionId: string;
+          title: string;
+          createdAt: number;
+          images: string[];
+        }> = [];
+
+        for (const session of sessions) {
+          const images = await fetchSessionImages(page, authParams, session.session_id);
+          totalImages += images.length;
+          results.push({
+            sessionId: session.session_id,
+            title: session.title,
+            createdAt: session.created_at,
+            images,
+          });
+        }
+
+        return ok(
+          { sessions: results, totalImages },
+          [
+            ...tips,
+            `📊 ${results.length} 个会话，共 ${totalImages} 张图片`,
+            ...results.filter(s => s.images.length > 0).slice(0, 5).map(s =>
+              `🖼 [${s.images.length}张] ${s.title.slice(0, 30)}`
+            ),
+            totalImages > 0 ? '💡 URL 有时效，建议尽快下载' : '',
+            `✅ 历史记录获取完成`,
+          ].filter(Boolean),
+        );
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : '未知错误', ['获取历史记录失败']);
+      }
+    },
+  });
+
   site.command('billing', {
     description: '检查千问登录状态',
     scope: 'browser',
