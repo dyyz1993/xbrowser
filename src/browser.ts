@@ -425,6 +425,16 @@ export function deleteSessionDiskMeta(name: string): void {
       isCDP: true,
       cdpEndpoint: ep,
     };
+    // Safety: remove any stale session with the same name before inserting.
+    // This should never happen (findSession returned undefined above) but
+    // guards against race conditions in daemon mode.
+    for (const [existingId, existingSession] of sessions) {
+      if (existingSession.name === name) {
+        logSessionEvent('remove_stale', `Removing stale session name="${name}" id="${existingId}" during restore`);
+        sessions.delete(existingId);
+      }
+    }
+
     sessions.set(session.id, session);
     resetIdleTimer();
     await installNetworkCapture(page, name);
@@ -633,6 +643,14 @@ export async function createSession(
   url?: string,
   options?: BrowserLaunchOptions
 ): Promise<ManagedSession> {
+  // Enforce name uniqueness: close any existing session with the same name.
+  // A session name is a unique identifier — there can be only one per name.
+  const existing = findSession(name);
+  if (existing) {
+    logSessionEvent('replace_session', `name="${name}" id="${existing.id}" — closing existing session before creating new one`);
+    await closeSessionByName(name);
+  }
+
   const b = await createBrowser(options);
   const isCDP = !!options?.cdpEndpoint;
   let context: BrowserContext;
@@ -721,18 +739,26 @@ export async function closeSessionByName(name: string): Promise<boolean> {
   for (const [id, session] of sessions) {
     if (session.name === name || session.id === name) {
       logSessionEvent('close_session', `name="${session.name}" id="${session.id}" url="${session.page.url()}"`);
-      if (!session.isCDP) {
+      if (session.isCDP) {
+        // CDP mode: close the page/tab we created (not the whole browser).
+        // This only affects the tab xbrowser opened, not other user tabs.
+        try { await session.page.close(); } catch { /* page may already be closed */ }
+        // Disconnect the CDP WebSocket connection
+        if (session.browser) {
+          await session.browser.close().catch(() => {});
+        }
+      } else {
+        // Non-CDP mode: close the context (and its pages), then the browser
         await session.context.close();
-      }
-      if (session.browser) {
-        await session.browser.close().catch(() => {});
+        if (session.browser) {
+          await session.browser.close().catch(() => {});
+        }
       }
       sessions.delete(id);
 
-      if (!session.isCDP) {
-        const file = sessionFile(session.name);
-        try { unlinkSync(file); } catch { /* file may not exist */ }
-      }
+      // Always clean up disk metadata
+      const file = sessionFile(session.name);
+      try { unlinkSync(file); } catch { /* file may not exist */ }
 
       // Clear associated network captures from memory
       try {
