@@ -21,6 +21,7 @@ const {
   mockPrintExtractSummary,
   mockFilterRecording,
   mockParseExcludeTypes,
+  mockReadMarkdownSummary,
 } = vi.hoisted(() => ({
   mockOutputResult: vi.fn(),
   mockOutputError: vi.fn(),
@@ -42,6 +43,7 @@ const {
   mockPrintExtractSummary: vi.fn(),
   mockFilterRecording: vi.fn(),
   mockParseExcludeTypes: vi.fn(),
+  mockReadMarkdownSummary: vi.fn(),
 }));
 
 vi.mock('../../src/cli/output.js', () => ({
@@ -61,6 +63,7 @@ vi.mock('../../src/client/daemon-client.js', () => ({
 vi.mock('../../src/recorder/session-recorder.js', () => ({
   SessionRecorder: {
     readSummary: mockReadSummary,
+    readMarkdownSummary: mockReadMarkdownSummary,
     getRecordingsDir: mockGetRecordingsDir,
   },
 }));
