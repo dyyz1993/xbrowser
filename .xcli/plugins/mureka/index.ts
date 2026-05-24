@@ -96,7 +96,7 @@ function mapSong(item: Record<string, unknown>) {
   const coverUrl = (item.cover || item.cover_url || '') as string;
   const fullCoverUrl = coverUrl && !coverUrl.startsWith('http') ? `https://static-web.mureka.cn/${coverUrl}` : coverUrl;
   return {
-    id: String(item.song_id || item.id || item.task_id || ''),
+    id: String(item.feed_id || item.song_id || item.id || item.task_id || ''),
     title: (item.title || item.name || '') as string,
     status: (item.generate_state || item.status || item.state || '') as string | number,
     audioUrl: fullAudioUrl,
@@ -368,15 +368,16 @@ export default function (xcli: XCLIAPI): void {
           extraTips.push('💡 提示: 音频下载可能需要消耗 20 金币(V9模型)或免费(V8模型)，使用 xbrowser mureka download --url "URL" --cdp 9221 查看');
         }
 
-    return ok({ songs, []);
-          tips: [
+    return ok(
+          { songs },
+          [
             ...tips,
             `共 ${songs.length} 首，${withUrl.length} 首可播放`,
             ...withUrl.slice(0, 3).map(s => `🎵 ${s.title || '未命名'} → ${s.audioUrl}`),
             ...extraTips,
+            `📚 找到 ${songs.length} 首歌曲`,
           ],
-          message: `📚 找到 ${songs.length} 首歌曲`,
-        };
+        );
       } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['获取歌曲列表失败']);
       }
@@ -387,15 +388,14 @@ export default function (xcli: XCLIAPI): void {
      3. create — 创建音乐（聊天式）
      ════════════════════════════════════════════ */
   site.command('create', {
-    description: '在 Mureka 上创建音乐。聊天式创作，支持简易/自定义/配乐模式。--wait 同步等待结果',
+    description: '在 Mureka 上创建音乐。支持简易/自定义/配乐模式，--wait 同步等待结果',
     scope: 'browser',
     result: z.any(),
     parameters: z.object({
       prompt: z.string().describe('音乐描述（如"轻快的钢琴曲"、"悲伤的小提琴"）'),
-      mode: z.enum(['简易', '自定义', '配乐']).optional().describe('创作模式（默认简易）'),
-      model: z.enum(['V9', 'V8', 'O2']).optional().describe('模型（V9/V8/O2）'),
-      lyric: z.string().optional().describe('自定义歌词（自定义模式使用）'),
-      style: z.string().optional().describe('风格描述（自定义模式使用）'),
+      mode: z.enum(['简易', '自定义', '配乐']).optional().describe('创作模式（默认 自定义）'),
+      style: z.string().optional().describe('音乐风格描述'),
+      lyric: z.string().optional().describe('歌词文本（自定义模式使用）'),
       title: z.string().optional().describe('歌曲标题'),
       wait: z.coerce.number().int().positive().optional()
         .describe('同步等待秒数（如 --wait 120），不传则异步提交'),
@@ -411,18 +411,33 @@ export default function (xcli: XCLIAPI): void {
         const page = getPage(ctx);
         const tips = buildTips(ctx);
         const waitSeconds = typeof params.wait === 'number' ? params.wait : 0;
+        const mode = params.mode || '自定义';
 
-        const mode = params.mode || '简易';
+        // Register API listener BEFORE navigation so we capture profile response
+        const loginPromise = new Promise<boolean>(async (resolve) => {
+          const timer = setTimeout(() => { page.off('response', handler); resolve(false); }, 15000);
+          const handler = async (resp: Response) => {
+            if (resp.url().includes('/api/pgc/profile') && resp.status() === 200) {
+              clearTimeout(timer);
+              page.off('response', handler);
+              resolve(true);
+            }
+          };
+          page.on('response', handler);
+        });
 
-        await ensureCreatePage(page);
+        await page.goto(MUREKA_URL, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
         await page.waitForTimeout(3000);
 
-        const loginCheck = await captureApis(page, {
-          url: CREATE_URL,
-          apis: ['profile'],
-          timeoutMs: 8000,
+        // Also try direct fetch as fallback
+        const loggedIn = await loginPromise || await page.evaluate(async () => {
+          try {
+            const r = await fetch('/api/pgc/profile', { credentials: 'include' });
+            return r.ok;
+          } catch { return false; }
         });
-        if (!loginCheck.profile) {
+
+        if (!loggedIn) {
           const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint;
           throw new Error(
             'Mureka 未登录！\n' +
@@ -442,13 +457,16 @@ export default function (xcli: XCLIAPI): void {
             return Array.isArray(items) ? items : [];
           } catch { return []; }
         }) as Array<Record<string, unknown>>;
-        const beforeIds = new Set(beforeFeedItems.map(s => String(s.id || s.song_id || s.task_id)));
+        const beforeIds = new Set(beforeFeedItems.map(s => String(s.feed_id || s.id || s.song_id || s.task_id)));
         tips.push(`已有 ${beforeIds.size} 首已知歌曲`);
 
-        if (mode !== '简易') {
+        if (mode !== '自定义') {
           const modeClicked = await page.evaluate((modeName: string) => {
-            const tabs = Array.from(document.querySelectorAll('.create-mode-tab-switch-item'));
-            const target = tabs.find(t => (t.textContent || '').trim().includes(modeName));
+            const tabs = Array.from(document.querySelectorAll('button, [role="tab"], div[class*="tab"]'));
+            const target = tabs.find(t => {
+              const txt = (t.textContent || '').trim();
+              return txt === modeName || txt.includes(modeName);
+            });
             if (target) {
               (target as HTMLElement).click();
               return true;
@@ -456,168 +474,286 @@ export default function (xcli: XCLIAPI): void {
             return false;
           }, mode);
           if (modeClicked) tips.push(`已切换到${mode}模式`);
-          else tips.push(`⚠ 未找到"${mode}"模式切换按钮`);
+          else tips.push(`⚠ 未找到"${mode}"模式切换按钮，继续使用当前模式`);
           await page.waitForTimeout(1000);
         }
 
-        if (mode === '自定义') {
-          if (params.lyric) {
-            const filled = await setReactTextarea(page, 'textarea[placeholder="在此输入歌词"]', params.lyric);
-            if (filled) tips.push('已输入歌词');
-            else tips.push('⚠ 未找到歌词输入框');
-          }
-          if (params.style) {
-            const filled = await setReactTextarea(page, 'textarea[placeholder="输入风格、情绪、乐器等来控制生成的音乐"]', params.style);
-            if (filled) tips.push(`已输入风格: ${params.style}`);
-            else tips.push('⚠ 未找到风格输入框');
-          }
-          if (params.title) {
-            const filled = await setReactInput(page, 'input.el-input__inner[placeholder="输入歌名"]', params.title);
-            if (filled) tips.push(`标题: ${params.title}`);
-          }
-        } else {
-          if (params.title) {
-            const filled = await setReactInput(page, 'input.el-input__inner[placeholder="输入歌名"]', params.title);
-            if (filled) tips.push(`标题: ${params.title}`);
-          }
-
-          const filled = await setReactTextarea(
-            page,
-            'textarea.composer__input[placeholder="聊聊想法"]',
-            params.prompt,
-          );
-          if (filled) tips.push(`已输入描述: "${params.prompt.slice(0, 50)}..."`);
-          else tips.push('⚠ 未找到聊天输入框');
-        }
-
-        await page.waitForTimeout(800);
-
-        const sendClicked = await safeClickSelector(page, 'button.composer__submit[aria-label="Send"]');
-        if (!sendClicked) {
-          const altClicked = await page.evaluate(() => {
-            const btns = Array.from(document.querySelectorAll('button'));
-            const send = btns.find(b =>
-              b.getAttribute('aria-label') === 'Send'
-              && !b.className.includes('--disabled')
-              && b.offsetParent !== null
-            );
-            if (send) { (send as HTMLElement).click(); return true; }
-            const submit = btns.find(b =>
-              (b.textContent || '').trim() === '发送'
-              && b.offsetParent !== null
-            );
-            if (submit) { (submit as HTMLElement).click(); return true; }
-            return false;
-          });
-          if (altClicked) tips.push('✅ 已点击发送按钮（备用选择器）');
-          else {
-    return fail('❌ 无法点击发送按钮', [...tips);
-          }
-        } else {
-          tips.push('✅ 已点击发送');
-        }
-
-        if (mode === '简易') {
-          tips.push('⏳ 等待 AI 回复 ...');
-          const chatAction = await waitForChatAction(page, 20000);
-
-          if (chatAction) {
-            if (chatAction.type === 'create') {
-              tips.push(`✅ AI 已生成创作方案，已点击"${chatAction.text}"按钮`);
-            } else {
-              tips.push(`✅ AI 回复了追问，已自动选择: "${chatAction.text}"`);
-              await page.waitForTimeout(3000);
-
-              const chatAction2 = await waitForChatAction(page, 15000);
-              if (chatAction2) {
-                if (chatAction2.type === 'create') {
-                  tips.push(`✅ 已点击"${chatAction2.text}"按钮开始生成`);
-                } else {
-                  tips.push(`✅ AI 追问第二轮，已自动选择: "${chatAction2.text}"`);
-                  await page.waitForTimeout(2000);
-                }
-              }
-            }
+        const lyricText = params.lyric || params.prompt;
+        if (lyricText) {
+          const lyricSel = 'textarea[placeholder="在此输入歌词"]';
+          const filled = await setReactTextarea(page, lyricSel, lyricText);
+          if (filled) {
+            tips.push(`已输入歌词: "${lyricText.slice(0, 40)}${lyricText.length > 40 ? '...' : ''}"`);
+            await safeClickSelector(page, lyricSel);
+            await page.keyboard.type(' ');
+            await page.keyboard.press('Backspace');
           } else {
-            tips.push('⚠ AI 未回复，可能直接开始生成或未收到响应');
+            tips.push('⚠ 未找到歌词输入框');
           }
+        }
+
+        if (params.style) {
+          const styleSel = 'textarea[placeholder="输入风格、情绪、乐器等来控制生成的音乐"]';
+          const filled = await setReactTextarea(page, styleSel, params.style);
+          if (filled) {
+            tips.push(`已输入风格: ${params.style}`);
+            await safeClickSelector(page, styleSel);
+            await page.keyboard.type(' ');
+            await page.keyboard.press('Backspace');
+          } else {
+            tips.push('⚠ 未找到风格输入框');
+          }
+        }
+
+        if (params.title) {
+          const titleSel = 'input[placeholder="歌名"]';
+          let filled = await setReactInput(page, titleSel, params.title);
+          if (!filled) {
+            filled = await setReactInput(page, 'input.el-input__inner[placeholder="输入歌名"]', params.title);
+          }
+          if (filled) {
+            tips.push(`标题: ${params.title}`);
+            await safeClickSelector(page, titleSel);
+            await page.keyboard.type(' ');
+            await page.keyboard.press('Backspace');
+          } else {
+            tips.push('⚠ 未找到歌名输入框');
+          }
+        }
+
+        await page.waitForTimeout(500);
+
+        let capturedSongId = '';
+        const generateHandler = async (resp: Response) => {
+          const url = resp.url();
+          if (!url.includes('/api/') || resp.status() !== 200) return;
+          if (!url.includes('generate') && !url.includes('create') && !url.includes('submit')) return;
+          try {
+            const json = await resp.json() as Record<string, unknown>;
+            const data = (json.data || json) as Record<string, unknown>;
+            const newId = String(data.song_id || data.id || data.task_id || data.feed_id || '');
+            if (newId && newId !== 'undefined' && newId !== 'null') {
+              capturedSongId = newId;
+            }
+          } catch { /* ignore */ }
+        };
+        page.on('response', generateHandler);
+
+        const detectPromise = new Promise<Record<string, unknown> | null>((resolve) => {
+          const timer = setTimeout(() => {
+            page.off('response', handler);
+            resolve(null);
+          }, 20000);
+          let settled = false;
+          const handler = async (resp: Response) => {
+            if (settled) return;
+            const url = resp.url();
+            if (!url.includes('/api/pgc/lyrics/optimize/detect')) return;
+            try {
+              const json = await resp.json() as Record<string, unknown>;
+              settled = true;
+              clearTimeout(timer);
+              page.off('response', handler);
+              resolve(json.data || json);
+            } catch { /* ignore */ }
+          };
+          page.on('response', handler);
+        });
+
+        const firstClick = await safeClickText(page, '创作');
+        if (!firstClick) {
+          return fail('❌ 无法找到「创作」按钮', [...tips]);
+        }
+        tips.push('✅ 已点击「创作」按钮（第一次）');
+
+        const detectResult = await detectPromise;
+        if (detectResult) {
+          tips.push('✅ 歌词优化检测完成');
+
+          await page.waitForTimeout(1000);
+
+          const optimizeClicked = await safeClickText(page, '优化歌词并生成');
+          if (optimizeClicked) {
+            tips.push('✅ 已点击「优化歌词并生成」');
+            // Wait for SSE lyrics optimization stream to finish (typically 10-20s)
+            // The "使用这些歌词" button is inside a dialog-container.dialog-show
+            let useLyricClicked = false;
+
+            // First check if the optimization dialog exists and wait for content
+            const dialogReady = await page.evaluate(() => {
+              const container = document.querySelector('.dialog-container.dialog-show, .dialog-box');
+              if (!container) return { found: false };
+              const text = container.textContent || '';
+              const hasUseBtn = text.includes('使用这些歌词');
+              return { found: true, hasUseBtn, snippet: text.slice(0, 200) };
+            });
+
+            if (dialogReady.found) {
+              tips.push('✅ 歌词优化弹窗已出现');
+
+              const enableDeadline = Date.now() + 25000;
+              let enabled = false;
+              while (Date.now() < enableDeadline) {
+                await new Promise(r => setTimeout(r, 1000));
+                const btnState = await page.evaluate(() => {
+                  const container = document.querySelector('.dialog-container.dialog-show, .dialog-box');
+                  if (!container) return { found: false, disabled: true };
+                  const btns = Array.from(container.querySelectorAll('div, button, span'));
+                  const btn = btns.find(b => {
+                    const t = b.textContent?.trim() || '';
+                    return (t === '使用这些歌词' || t === '使用这些歌词0/200')
+                      && b.getBoundingClientRect().width > 50;
+                  });
+                  if (!btn) return { found: false, disabled: true };
+                  const isDisabled = (btn as HTMLElement).classList.contains('disabled')
+                    || btn.classList.contains('selectLyricBtnDisabled')
+                    || btn.getAttribute('aria-disabled') === 'true'
+                    || (btn as HTMLElement).style.pointerEvents === 'none';
+                  return { found: true, disabled: isDisabled };
+                });
+                if (btnState.found && !btnState.disabled) { enabled = true; break; }
+              }
+
+              if (enabled) {
+                tips.push('✅ 歌词优化完成');
+              } else {
+                tips.push('⚠ 歌词优化等待超时，尝试直接点击');
+              }
+
+              // Click "使用这些歌词" inside the dialog
+              useLyricClicked = await page.evaluate(() => {
+                const container = document.querySelector('.dialog-container.dialog-show, .dialog-box');
+                if (!container) return false;
+                const btns = Array.from(container.querySelectorAll('div, button, span'));
+                const btn = btns.find(b => {
+                  const t = b.textContent?.trim() || '';
+                  return t === '使用这些歌词' && b.getBoundingClientRect().width > 50;
+                });
+                if (!btn) return false;
+                const r = btn.getBoundingClientRect();
+                // Return coordinates for mouse.click (CDP-safe)
+                return { x: r.x + r.width/2, y: r.y + r.height/2 };
+              }) as boolean | Record<string, number>;
+
+              if (typeof useLyricClicked === 'object' && useLyricClicked.x) {
+                await page.mouse.click(useLyricClicked.x, useLyricClicked.y);
+                useLyricClicked = true;
+                tips.push('✅ 已点击「使用这些歌词」');
+              } else {
+                useLyricClicked = false;
+                tips.push('⚠ 在弹窗内未找到可点击的「使用这些歌词」');
+              }
+            } else {
+              tips.push('⚠ 未检测到歌词优化弹窗，可能不需要优化');
+            }
+            await page.waitForTimeout(500);
+          } else {
+            tips.push('⚠ 未找到歌词优化弹窗，可能无需优化');
+          }
+        }
+
+        const secondClick = await safeClickText(page, '创作');
+        if (secondClick) {
+          tips.push('✅ 已点击「创作」按钮（第二次，提交生成）');
+        } else {
+          tips.push('⚠ 未找到第二次「创作」按钮');
+        }
+
+        // Wait a moment for generate API to fire
+        await page.waitForTimeout(3000);
+        page.off('response', generateHandler);
+
+        if (capturedSongId) {
+          tips.push(`✅ 生成请求已提交，songId: ${capturedSongId}`);
+        } else {
+          tips.push('⚠ 未捕获到生成 API 响应，音乐可能已在生成中');
         }
 
         if (waitSeconds > 0) {
           tips.push(`⏳ 等待生成（最长 ${waitSeconds} 秒）...`);
 
-          const pollResult = await new Promise<Array<Record<string, unknown>>>(async (resolve) => {
-            const deadline = Date.now() + waitSeconds * 1000;
-            const poll = async () => {
-              if (Date.now() > deadline) { resolve([]); return; }
+          const waitDeadline = Date.now() + waitSeconds * 1000;
+          const maxAttempts = Math.ceil(waitSeconds / 5);
+          let pollResult: Array<Record<string, unknown>> = [];
 
-              try {
-                const feedData = await page.evaluate(async () => {
-                  try {
-                    const resp = await fetch('/api/pgc/feed/list?listRenderType=createdresult&page=1&pageSize=10', { credentials: 'include' });
-                    const json = await resp.json();
-                    const data = json.data || {};
-                    const items = (data as Record<string, unknown>).list || (data as Record<string, unknown>).items || [];
-                    return Array.isArray(items) ? items : [];
-                  } catch { return []; }
+          for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            if (Date.now() > waitDeadline) break;
+
+            await new Promise(r => setTimeout(r, 5000));
+
+            try {
+              const feedData = await page.evaluate(async () => {
+                try {
+                  const resp = await fetch('/api/pgc/feed/list?listRenderType=createdresult&page=1&pageSize=10', { credentials: 'include' });
+                  const json = await resp.json();
+                  const data = json.data || {};
+                  const items = (data as Record<string, unknown>).list || (data as Record<string, unknown>).items || [];
+                  return Array.isArray(items) ? items : [];
+                } catch { return []; }
+              }) as Array<Record<string, unknown>>;
+              if (feedData.length > 0) {
+                const newItems = feedData.filter(s => {
+                  const id = String(s.feed_id || s.id || s.song_id || s.task_id);
+                  return id && !beforeIds.has(id);
                 });
-                if (feedData.length > 0) {
-                  const newItems = (feedData as Array<Record<string, unknown>>).filter(s => {
-                    const id = String(s.id || s.song_id || s.task_id);
-                    return id && !beforeIds.has(id);
+                if (newItems.length > 0) {
+                  pollResult = newItems;
+                  const completed = newItems.filter(s => {
+                    const status = Number(s.status);
+                    const audio = s.audio_url || s.play_url || s.audioUrl;
+                    return status === 3 && audio;
                   });
-                  if (newItems.length > 0) { resolve(newItems); return; }
+                  if (completed.length > 0) {
+                    pollResult = completed;
+                    break;
+                  }
                 }
-              } catch { /* ignore */ }
-
-              await page.waitForTimeout(5000);
-              poll();
-            };
-            poll();
-          });
+              }
+            } catch { /* ignore */ }
+          }
 
           if (pollResult.length > 0) {
             const songs = pollResult.flatMap(mapSong);
             const withUrl = songs.filter(s => s.audioUrl);
+            const extraTips: string[] = [];
+            if (withUrl.some(s => s.audioUrl?.includes('static-web.mureka.cn'))) {
+              extraTips.push('💡 音频下载: xbrowser mureka download --url "URL" --cdp 9221');
+            }
 
-          const extraTips: string[] = [];
-          if (withUrl.some(s => s.audioUrl?.includes('static-web.mureka.cn'))) {
-            extraTips.push('💡 提示: 音频下载可能需要消耗 20 金币(V9模型)或免费(V8模型)，使用 xbrowser mureka download --url "URL" --cdp 9221 查看');
-          }
-
-    return ok({}, []);
-              tips: [
+            return ok(
+              { songs, songId: capturedSongId },
+              [
                 ...tips,
                 `✅ 生成完成！共 ${songs.length} 首${withUrl.length > 0 ? `，${withUrl.length} 首可播放` : ''}`,
                 ...withUrl.slice(0, 2).map(s => `🎵 ${s.title || '未命名'} → ${s.audioUrl}`),
                 '💡 URL 有时效，建议尽快下载',
                 ...extraTips,
               ],
-              message: '✅ 音乐生成完成！',
-            };
+            );
           }
 
-    return ok({ status: 'timeout', []);
-            tips: [
+          return ok(
+            { status: 'timeout', songId: capturedSongId },
+            [
               ...tips,
               `⏱ 等待 ${waitSeconds}s 超时，音乐可能还在生成`,
               '检查: xbrowser mureka result --cdp 9221',
             ],
-            message: '⏱ 等待超时',
-          };
+          );
         }
 
-    return ok({}, []);
-          tips: [
+        return ok(
+          { songId: capturedSongId },
+          [
             ...tips,
             '✅ 生成请求已提交（异步模式）',
             '等待 30-120 秒后检查:',
             '  xbrowser mureka result --cdp 9221',
           ],
-          message: '✅ 生成请求已提交',
-        };
+        );
       } catch (error) {
-    return fail(error instanceof Error ? error.message : '未知错误', ['创建音乐失败']);
+        const errMsg = error instanceof Error ? `${error.message}\n${error.stack?.slice(0, 300)}` : String(error);
+        return fail(errMsg, ['创建音乐失败']);
       }
     },
   });
@@ -666,19 +802,19 @@ export default function (xcli: XCLIAPI): void {
             });
           } catch { /* ignore */ }
 
-    return ok({ status: domStatus, []);
-            tips: [...tips, '未捕获到歌曲数据', `DOM 状态提示: ${domStatus}`],
-            message: `📊 DOM 状态: ${domStatus}`,
-          };
+    return ok(
+            { status: domStatus },
+            [...tips, '未捕获到歌曲数据', `DOM 状态提示: ${domStatus}`, `📊 DOM 状态: ${domStatus}`],
+          );
         }
 
         const songs = feedItems.slice(0, 5).flatMap(mapSong);
         const statusSummary = songs.map(s => `${s.title || '未命名'}[${s.status}]`).join(', ');
 
-    return ok({ songs, []);
-          tips: [...tips, `共 ${songs.length} 首`],
-          message: `📊 ${statusSummary}`,
-        };
+    return ok(
+          { songs },
+          [...tips, `共 ${songs.length} 首`, `📊 ${statusSummary}`],
+        );
       } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['检查状态失败']);
       }
@@ -715,54 +851,47 @@ export default function (xcli: XCLIAPI): void {
         }
 
         if (!params.url) {
-    return fail('❌ 缺少 --url 参数', [...tips);
+    return fail('❌ 缺少 --url 参数', [...tips]);
         }
 
         const outputPath = params.output || './downloads/song.mp3';
 
         if (params.format === 'curl') {
-    return ok({ url: params.url, []);
-            tips: [
-              ...tips,
-              `💡 运行以下命令下载:`,
-              `curl -L "${params.url}" -o "${outputPath}"`,
-            ],
-            message: `📥 返回 curl 下载命令`,
-          };
+    return ok(
+              { url: params.url },
+              [
+                ...tips,
+                `💡 运行以下命令下载:`,
+                `curl -L "${params.url}" -o "${outputPath}"`,
+                `📥 返回 curl 下载命令`,
+              ],
+            );
         }
 
         try {
           const resp = await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => null);
           if (!resp) {
-    return ok({ url: params.url }, []);
-              tips: [...tips, '无法访问音频 URL，请检查 URL 是否有效或是否过期'],
-              message: '⚠️ 无法访问音频 URL',
-            };
+    return ok({ url: params.url }, [...tips, '无法访问音频 URL，请检查 URL 是否有效或是否过期', '⚠️ 无法访问音频 URL']);
           }
           const buffer = await resp.body();
           if (!buffer) {
-    return ok({ url: params.url }, []);
-              tips: [...tips, '响应体为空'],
-              message: '⚠️ 音频数据为空',
-            };
+    return ok({ url: params.url }, [...tips, '响应体为空', '⚠️ 音频数据为空']);
           }
           const fs = await import('fs');
           const pathMod = await import('path');
           const dir = pathMod.dirname(outputPath);
           fs.mkdirSync(dir, { recursive: true });
           fs.writeFileSync(outputPath, buffer);
-    return ok({ size: buffer.length, []);
-            tips: [
-              ...tips,
-              `✅ 已下载: ${outputPath} (${(buffer.length / 1024).toFixed(1)} KB)`,
-            ],
-            message: `📥 下载完成: ${(buffer.length / 1024).toFixed(1)} KB`,
-          };
+    return ok(
+              { size: buffer.length },
+              [
+                ...tips,
+                `✅ 已下载: ${outputPath} (${(buffer.length / 1024).toFixed(1)} KB)`,
+                `📥 下载完成: ${(buffer.length / 1024).toFixed(1)} KB`,
+              ],
+            );
         } catch (e) {
-    return ok({ url: params.url }, []);
-            tips: [...tips, `下载失败: ${e instanceof Error ? e.message : '未知错误'}`],
-            message: `❌ 下载失败`,
-          };
+    return ok({ url: params.url }, [...tips, `下载失败: ${e instanceof Error ? e.message : '未知错误'}`, '❌ 下载失败']);
         }
       } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['下载命令失败']);
@@ -805,24 +934,25 @@ export default function (xcli: XCLIAPI): void {
         }) as Array<Record<string, unknown>>;
 
         if (feedItems.length === 0) {
-    return ok({ songs: [], []);
-            tips: [...tips, '未获取到歌曲数据。可能未登录或没有创作记录'],
-            message: '⏱ 未获取到歌曲',
-          };
+    return ok(
+            { songs: [] },
+            [...tips, '未获取到歌曲数据。可能未登录或没有创作记录', '⏱ 未获取到歌曲'],
+          );
         }
 
         const songs = feedItems.slice(0, params.limit!).flatMap(mapSong);
         const withUrl = songs.filter(s => s.audioUrl);
 
-    return ok({ songs, []);
-          tips: [
+    return ok(
+          { songs },
+          [
             ...tips,
             `共 ${songs.length} 首，${withUrl.length} 首可播放`,
             ...withUrl.slice(0, 3).map(s => `🎵 ${s.title || '未命名'} [${s.status}] → ${s.audioUrl}`),
             '💡 URL 有时效，建议尽快下载',
+            `✅ 获取到 ${withUrl.length} 首可播放音乐`,
           ],
-          message: `✅ 获取到 ${withUrl.length} 首可播放音乐`,
-        };
+        );
       } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['获取结果失败']);
       }
