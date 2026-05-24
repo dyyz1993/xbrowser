@@ -1,0 +1,10 @@
+{
+  "name": "wanx",
+  "version": "1.0.0",
+  "description": "万相(Wanx) AI 视频生成插件",
+  "main": "index.ts",
+  "xbrowser": {
+    "description": "万相(Wanx) AI 视频生成 — 文生视频、图生视频、签到、积分查询",
+    "requiresLogin": true
+  }
+}
