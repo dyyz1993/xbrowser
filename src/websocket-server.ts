@@ -2,6 +2,8 @@ import { EventEmitter } from 'events';
 import type { Server } from 'http';
 import type { Page } from 'playwright';
 import { ScreencastCapturer, type ScreencastFrame } from './screencast.js';
+import { StreamStateManager, FrameRateController, FrameProcessor, STATE_CONFIGS } from './stream/index.js';
+import type { StreamState } from './stream/index.js';
 
 /**
  * Configuration for the WebSocket server.
@@ -124,11 +126,49 @@ export class WSServer extends EventEmitter {
   private screencasts: Map<string, SessionScreencast> = new Map();
   private wsServer: InstanceType<typeof import('ws').WebSocketServer> | null = null;
   private isRunning = false;
+  private stateManager: StreamStateManager = new StreamStateManager();
+  private frameRateController: FrameRateController = new FrameRateController();
+  private frameProcessor: FrameProcessor = new FrameProcessor();
+  private lastFrameData: string | null = null;
+  private lastFrameViewport: { width: number; height: number } | null = null;
 
   constructor(config: WSServerConfig = {}) {
     super();
     this.port = config.port ?? 9223;
     this.host = config.host || '0.0.0.0';
+
+    this.stateManager.setStateChangeCallback((newState: StreamState, _previousState: StreamState) => {
+      if (this.lastFrameData && this.lastFrameViewport) {
+        const config = STATE_CONFIGS[newState];
+        this.frameProcessor.process(
+          this.lastFrameData,
+          config,
+          this.lastFrameViewport.width,
+          this.lastFrameViewport.height,
+        ).then((processedBuffer) => {
+          for (const [sid, sc] of this.screencasts) {
+            if (sc.clientCount > 0) {
+              const header = Buffer.from(JSON.stringify({
+                type: 'screenshot',
+                data: {
+                  sessionId: sid,
+                  id: crypto.randomUUID(),
+                  timestamp: Date.now(),
+                  url: '',
+                  viewport: this.lastFrameViewport!,
+                  streamState: newState,
+                  fps: this.frameRateController.getCurrentFps(),
+                },
+              }), 'utf-8');
+              const headerLen = Buffer.alloc(4);
+              headerLen.writeUInt32BE(header.length, 0);
+              const payload = Buffer.concat([headerLen, header, processedBuffer]);
+              this.broadcastBinaryToSession(sid, payload);
+            }
+          }
+        }).catch(() => {});
+      }
+    });
   }
 
   /**
@@ -385,24 +425,44 @@ export class WSServer extends EventEmitter {
 
     if (sc.clientCount === 0 && !sc.capturer.isActive()) {
       sc.capturer.startCapture(sc.page, sessionId, (frame: ScreencastFrame) => {
-        const header = Buffer.from(JSON.stringify({
-          type: 'screenshot',
-          data: {
-            sessionId: frame.sessionId,
-            id: frame.id,
-            timestamp: frame.timestamp,
-            url: frame.url,
-            viewport: frame.viewport,
-          },
-        }), 'utf-8');
-        const headerLen = Buffer.alloc(4);
-        headerLen.writeUInt32BE(header.length, 0);
-        const payload = Buffer.concat([headerLen, header, frame.data]);
-        this.broadcastBinaryToSession(sessionId, payload);
+        (async () => {
+          this.lastFrameData = frame.data.toString('base64');
+          this.lastFrameViewport = frame.viewport;
+
+          this.stateManager.onFrameReceived();
+          const config = this.stateManager.getConfig();
+
+          if (!this.frameRateController.shouldSendFrame(config.maxFps)) {
+            return;
+          }
+
+          const processedBuffer = await this.frameProcessor.process(
+            this.lastFrameData,
+            config,
+            frame.viewport.width,
+            frame.viewport.height,
+          );
+
+          const header = Buffer.from(JSON.stringify({
+            type: 'screenshot',
+            data: {
+              sessionId: frame.sessionId,
+              id: frame.id,
+              timestamp: frame.timestamp,
+              url: frame.url,
+              viewport: frame.viewport,
+              streamState: this.stateManager.getState(),
+              fps: this.frameRateController.getCurrentFps(),
+            },
+          }), 'utf-8');
+          const headerLen = Buffer.alloc(4);
+          headerLen.writeUInt32BE(header.length, 0);
+          const payload = Buffer.concat([headerLen, header, processedBuffer]);
+          this.broadcastBinaryToSession(sessionId, payload);
+        })().catch(() => {});
       }).then(() => {
         this.emit('screencast-started', sessionId);
       }).catch(() => {
-        // CDP Cast start failed — fallback polling is handled internally
         this.emit('screencast-started', sessionId);
       });
     }
@@ -416,6 +476,9 @@ export class WSServer extends EventEmitter {
     sc.clientCount = Math.max(0, sc.clientCount - 1);
     if (sc.clientCount === 0 && sc.capturer.isActive()) {
       sc.capturer.stopCapture().then(() => {
+        this.frameRateController.reset();
+        this.lastFrameData = null;
+        this.lastFrameViewport = null;
         this.emit('screencast-stopped', sessionId);
       }).catch(() => {
         this.emit('screencast-stopped', sessionId);
@@ -434,20 +497,41 @@ export class WSServer extends EventEmitter {
     const sc = this.screencasts.get(sessionId);
     if (sc && !sc.capturer.isActive() && sc.clientCount > 0) {
       await sc.capturer.startCapture(sc.page, sessionId, (frame: ScreencastFrame) => {
-        const header = Buffer.from(JSON.stringify({
-          type: 'screenshot',
-          data: {
-            sessionId: frame.sessionId,
-            id: frame.id,
-            timestamp: frame.timestamp,
-            url: frame.url,
-            viewport: frame.viewport,
-          },
-        }), 'utf-8');
-        const headerLen = Buffer.alloc(4);
-        headerLen.writeUInt32BE(header.length, 0);
-        const payload = Buffer.concat([headerLen, header, frame.data]);
-        this.broadcastBinaryToSession(sessionId, payload);
+        (async () => {
+          this.lastFrameData = frame.data.toString('base64');
+          this.lastFrameViewport = frame.viewport;
+
+          this.stateManager.onFrameReceived();
+          const config = this.stateManager.getConfig();
+
+          if (!this.frameRateController.shouldSendFrame(config.maxFps)) {
+            return;
+          }
+
+          const processedBuffer = await this.frameProcessor.process(
+            this.lastFrameData,
+            config,
+            frame.viewport.width,
+            frame.viewport.height,
+          );
+
+          const header = Buffer.from(JSON.stringify({
+            type: 'screenshot',
+            data: {
+              sessionId: frame.sessionId,
+              id: frame.id,
+              timestamp: frame.timestamp,
+              url: frame.url,
+              viewport: frame.viewport,
+              streamState: this.stateManager.getState(),
+              fps: this.frameRateController.getCurrentFps(),
+            },
+          }), 'utf-8');
+          const headerLen = Buffer.alloc(4);
+          headerLen.writeUInt32BE(header.length, 0);
+          const payload = Buffer.concat([headerLen, header, processedBuffer]);
+          this.broadcastBinaryToSession(sessionId, payload);
+        })().catch(() => {});
       }).catch(() => {});
     }
   }
@@ -476,24 +560,28 @@ export class WSServer extends EventEmitter {
 
     switch (msg.type) {
       case 'click':
+        this.stateManager.onUserInteraction();
         if (page) {
           await page.mouse.click(msg.x, msg.y, { button: msg.button || 'left' });
         }
         break;
 
       case 'type':
+        this.stateManager.onUserInteraction();
         if (page) {
           await page.keyboard.type(msg.text, { delay: 50 });
         }
         break;
 
       case 'keypress':
+        this.stateManager.onUserInteraction();
         if (page) {
           await page.keyboard.press(msg.key);
         }
         break;
 
       case 'scroll':
+        this.stateManager.onUserInteraction();
         if (page) {
           await page.mouse.wheel(msg.deltaX, msg.deltaY);
         }
@@ -507,6 +595,7 @@ export class WSServer extends EventEmitter {
         break;
 
       case 'input_mouse': {
+        this.stateManager.onUserInteraction();
         const p = this.getClientPage(clientId);
         if (!p) break;
         switch (msg.action) {
@@ -548,6 +637,7 @@ export class WSServer extends EventEmitter {
       }
 
       case 'input_keyboard': {
+        this.stateManager.onUserInteraction();
         const p = this.getClientPage(clientId);
         if (!p) break;
         if (msg.action === 'down') await p.keyboard.down(msg.key);
@@ -556,6 +646,7 @@ export class WSServer extends EventEmitter {
       }
 
       case 'input_fill': {
+        this.stateManager.onUserInteraction();
         const p = this.getClientPage(clientId);
         if (!p) break;
         await p.fill(msg.selector, msg.text);
@@ -563,6 +654,7 @@ export class WSServer extends EventEmitter {
       }
 
       case 'input_insert_text': {
+        this.stateManager.onUserInteraction();
         const p = this.getClientPage(clientId);
         if (!p) break;
         await p.keyboard.insertText(msg.text);

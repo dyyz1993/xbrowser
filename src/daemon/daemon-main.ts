@@ -294,12 +294,16 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
 .file-item-meta{font-size:10px;color:#556;margin-top:2px}
 .file-item-action{width:28px;height:28px;border:none;border-radius:4px;background:transparent;color:#678;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .file-item-action:active{background:#0f3460;color:#cde}
+.quality-badge.quality-user_interacting{background:#2ecc71;color:#fff}
+.quality-badge.quality-screen_moving{background:#f39c12;color:#fff}
+.quality-badge.quality-static{background:#556;color:#ddd}
 @media(hover:hover)and (pointer:fine){.touchpad,.toolbar,.input-panel{display:none!important}.viewport{bottom:0!important}}
 </style></head><body>
 <div class="bar">
   <span class="dot" id="status"></span>
   <span class="url" id="url">connecting...</span>
   <span class="conn" id="conn"></span>
+  <div id="qualityBadge" class="quality-badge quality-static" style="font-size:10px;padding:2px 8px;border-radius:10px;background:#556;color:#eee;white-space:nowrap;flex-shrink:0">static</div>
 </div>
 <div class="viewport" id="viewport">
   <img id="screen">
@@ -402,6 +406,7 @@ function connectWS(){
             currentUrl=header.data.url;
             urlEl.textContent=currentUrl;
           }
+          if(header.data.streamState) updateQualityBadge(header.data.streamState,header.data.fps);
         }
         return;
       }
@@ -480,7 +485,7 @@ function connectWS(){
     wait.style.display='block';
     img.style.display='none';
     removeHiddenInput();
-    setTimeout(connectWS,2000);
+    if(shouldReconnect) setTimeout(connectWS,2000);
   };
   ws.onerror=()=>{dot.className='dot';connEl.textContent='err'};
 }
@@ -498,9 +503,36 @@ function connectWS(){
   return{x:rect.left+rx*sx,y:rect.top+ry*sy};
  }
 
-function sendMsg(obj){
+ function sendMsg(obj){
   if(ws&&ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify(obj));
+ }
+
+function updateQualityBadge(state,fps){
+  var badge=document.getElementById('qualityBadge');
+  if(!badge) return;
+  var labels={'user_interacting':'interacting','screen_moving':'moving','static':'static'};
+  badge.textContent=(labels[state]||state)+(fps?' '+fps+'fps':'');
+  badge.className='quality-badge quality-'+(state||'static');
 }
+
+function sendUserActivity(){
+  if(ws&&ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify({type:'user_activity'}));
+}
+
+var shouldReconnect=true;
+var backgroundTimer=null;
+var BACKGROUND_TIMEOUT=60000;
+document.addEventListener('visibilitychange',function(){
+  if(document.hidden){
+    backgroundTimer=setTimeout(function(){
+      if(ws) ws.close(1000,'Page in background');
+    },BACKGROUND_TIMEOUT);
+  }else{
+    if(backgroundTimer){clearTimeout(backgroundTimer);backgroundTimer=null;}
+    if(shouldReconnect&&(!ws||ws.readyState===3)){connectWS();}
+  }
+});
+window.addEventListener('beforeunload',function(){shouldReconnect=false;});
 
  // --- Virtual Cursor ---
  function setCursorAtRemote(rx,ry,state){
@@ -542,11 +574,13 @@ function createHiddenInput(){
     if(e.target===inputField) return;
     e.preventDefault();
     sendMsg({type:'input_keyboard',action:'down',key:e.key});
+    sendUserActivity();
   });
   hiddenInput.addEventListener('keyup',(e)=>{
     if(e.target===inputField) return;
     e.preventDefault();
     sendMsg({type:'input_keyboard',action:'up',key:e.key});
+    sendUserActivity();
   });
 }
 function removeHiddenInput(){
@@ -562,6 +596,7 @@ viewportEl.addEventListener('mousedown',(e)=>{
   sendMsg({type:'input_mouse',action:'down',x:r.x,y:r.y});
   setCursorAtRemote(r.x,r.y,'click');
   focusHiddenInput();
+  sendUserActivity();
 });
 viewportEl.addEventListener('mousemove',(e)=>{
   if(deviceMode!=='desktop') return;
@@ -586,6 +621,7 @@ viewportEl.addEventListener('wheel',(e)=>{
   if(deviceMode!=='desktop') return;
   e.preventDefault();
   sendMsg({type:'scroll',deltaX:e.deltaX,deltaY:e.deltaY});
+  sendUserActivity();
 },{passive:false});
 
 // --- Mobile Touchpad ---
@@ -618,6 +654,7 @@ function tpShowGesture(text){
 touchpadEl.addEventListener('touchstart',(e)=>{
   e.preventDefault();
   if(tpScrollCooldown) return;
+  sendUserActivity();
   const t=e.touches[0];
   tpStartPos={x:t.clientX,y:t.clientY};
   tpStartTime=Date.now();
