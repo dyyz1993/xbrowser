@@ -523,241 +523,248 @@ const ACTION_SIGNAL_SCRIPT = `
 /**
  * Checkpoint Visual Overlay — independent from ACTION_SIGNAL_SCRIPT.
  * Not guarded by __xb_action_signal so it can be injected on re-record.
- * Press Alt to highlight detected checkpoint elements.
- * Press Alt+1..9 to confirm/mark a checkpoint.
+ *
+ * Interaction:
+ *   1. Hold Option (Alt) → enter marking mode, cursor shows crosshair
+ *   2. Mouse move → hovered element highlights with content preview
+ *   3. Press 1 → "采集" (capture element content, recording continues)
+ *   4. Press 2 → "卡点" (blocker: human intervention needed, recording pauses)
+ *   5. Green flash = captured / Red flash = blocker marked
+ *   6. Release Option → exit marking mode
  */
 const CHECKPOINT_OVERLAY_SCRIPT = `
 (function() {
   if (window.__xb_checkpoint_overlay) return;
   window.__xb_checkpoint_overlay = true;
 
-  var __xb_cp_elements = [];
-  var __xb_cp_overlay = null;
-  var __xb_cp_visible = false;
-  var __xb_scan_timer = null;
+  var __xb_overlay = null;       // main overlay container
+  var __xb_highlight = null;     // highlight box around hovered element
+  var __xb_preview = null;       // content preview panel
+  var __xb_hint = null;          // top hint bar
+  var __xb_active = false;       // is marking mode active
+  var __xb_hovered_el = null;    // currently hovered element
+  var __xb_flash_timer = null;
 
-  // ─── Checkpoint Rules ────────────────────────────────────────
-  // Two categories:
-  // 1. BLOCKERS (red/orange) — visible elements that block automation (captcha, login, slider)
-  //    These are stable selectors — websites rarely change captcha/login element patterns.
-  //    Agent sees these in recording data and knows "human intervention needed here".
-  // 2. HIDDEN CONTENT (blue/purple/green) — elements not visible until triggered by user action.
-  //    These capture "what options appear after clicking/hovering" for agent replay planning.
-  //
-  var CHECKPOINT_RULES = [
-    // ── BLOCKERS: visible elements that require human intervention ──
-    { type: 'captcha', label: '⚠️验证码', color: '#ef4444', category: 'blocker', selectors: [
-      'img[src*="captcha"]','img[src*="verify"]','img[src*="vcode"]',
-      '[class*="captcha"]','[id*="captcha"]','#captcha','.captcha',
-      '[class*="Captcha"]','[class*="verify-code"]','[class*="VerifyCode"]',
-      'img[alt*="captcha" i]','img[alt*="验证码"]'
-    ]},
-    { type: 'slider', label: '⚠️滑块验证', color: '#f97316', category: 'blocker', selectors: [
-      '[class*="slide-verify"]','[class*="drag-verify"]',
-      '[class*="nc-container"]','[class*="nc_1_wrapper"]',
-      '[class*="tcaptcha"]','[id*="tcaptcha"]',
-      '[class*="verify-wrap"]','[class*="verify_bar"]'
-    ]},
-    { type: 'login', label: '⚠️登录框', color: '#f97316', category: 'blocker', selectors: [
-      'input[type="password"]',
-      'form[action*="login"]','[class*="login-form"]','[class*="LoginForm"]',
-      '[class*="sign-in"]','[class*="signIn"]','[class*="LoginPanel"]'
-    ]},
-    { type: 'sms', label: '⚠️短信验证', color: '#ef4444', category: 'blocker', selectors: [
-      'input[placeholder*="验证码"]','input[placeholder*="短信"]','input[placeholder*="SMS"]',
-      'input[name*="sms_code"]','input[name*="verify_code"]','input[name*="smscode"]',
-      'input[autocomplete="one-time-code"]'
-    ]},
-
-    // ── HIDDEN CONTENT: not visible until triggered by user action ──
-    // These help agent know "after clicking X, options A/B/C appear"
-    { type: 'dialog', label: '📋弹窗/对话框', color: '#3b82f6', category: 'hidden', selectors: [
-      '[role="dialog"][aria-hidden="false"]',
-      '[class*="Modal"][class*="open"]','[class*="Dialog"][class*="visible"]',
-    ]},
-    { type: 'dropdown', label: '📋下拉选项', color: '#8b5cf6', category: 'hidden', selectors: [
-      '[role="listbox"]','[role="menu"]',
-      '[class*="select-dropdown"]','[class*="Select-menu"]',
-    ]},
-  ];
-
-  function isVisible(el) {
-    var rect = el.getBoundingClientRect();
-    var style = window.getComputedStyle(el);
-    return rect.width > 0 && rect.height > 0
-      && style.display !== 'none'
-      && style.visibility !== 'hidden'
-      && parseFloat(style.opacity) > 0;
-  }
-
-  function scanCheckpointElements() {
-    __xb_cp_elements = [];
-    for (var r = 0; r < CHECKPOINT_RULES.length; r++) {
-      var rule = CHECKPOINT_RULES[r];
-      for (var s = 0; s < rule.selectors.length; s++) {
-        try {
-          var els = document.querySelectorAll(rule.selectors[s]);
-          for (var j = 0; j < els.length; j++) {
-            var el = els[j];
-            // Blockers: only show VISIBLE elements (already on page, blocking you)
-            // Hidden content: show regardless of visibility (these are the "what appears after" items)
-            var shouldShow = rule.category === 'hidden' || isVisible(el);
-            if (!shouldShow) continue;
-
-            var rect = el.getBoundingClientRect();
-            // For hidden elements, use a small placeholder rect so overlay can still render
-            var w = rect.width > 0 ? rect.width : 120;
-            var h = rect.height > 0 ? rect.height : 32;
-            var left = rect.left > 0 ? rect.left : (window.innerWidth / 2 - 60);
-            var top = rect.top > 0 ? rect.top : (window.innerHeight / 2 - 16);
-
-            var dup = false;
-            for (var d = 0; d < __xb_cp_elements.length; d++) {
-              if (__xb_cp_elements[d].el === el) { dup = true; break; }
-            }
-            if (!dup) {
-              // For hidden elements, capture their content (options/items) for agent context
-              var content = '';
-              if (rule.category === 'hidden') {
-                var texts = [];
-                var children = el.querySelectorAll('li, option, [role="option"], [role="menuitem"], [class*="item"], [class*="option"]');
-                for (var c = 0; c < Math.min(children.length, 20); c++) {
-                  var t = children[c].textContent.trim();
-                  if (t && t.length < 100) texts.push(t);
-                }
-                if (texts.length > 0) content = texts.join(' | ');
-                else if (el.textContent.trim().length < 200) content = el.textContent.trim();
-              }
-
-              __xb_cp_elements.push({
-                el: el,
-                type: rule.type,
-                label: rule.label,
-                color: rule.color,
-                selector: rule.selectors[s],
-                category: rule.category,
-                rect: { left: left, top: top, width: w, height: h },
-                content: content
-              });
-            }
-          }
-        } catch(e) {}
+  // ── helper: get element content for preview ──
+  function getElementContent(el) {
+    var texts = [];
+    // Collect child items (li, option, button, menu items)
+    var children = el.querySelectorAll('li, option, button, [role="option"], [role="menuitem"], [class*="item"], [class*="option"], a[href]');
+    if (children.length > 0) {
+      for (var i = 0; i < Math.min(children.length, 20); i++) {
+        var t = children[i].textContent.trim();
+        if (t && t.length < 100) texts.push(t);
       }
     }
+    if (texts.length > 0) return texts;
+    // Fallback: element's own text (truncated)
+    var own = el.textContent.trim();
+    if (own.length > 0) return [own.substring(0, 300)];
+    return [];
   }
 
-  function showOverlay() {
-    if (__xb_cp_visible) return;
-    __xb_cp_visible = true;
-    scanCheckpointElements();
-    if (__xb_cp_elements.length === 0) return;
-
-    __xb_cp_overlay = document.createElement('div');
-    __xb_cp_overlay.id = '__xb_cp_overlay';
-    __xb_cp_overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:999999;';
-
-    for (var i = 0; i < __xb_cp_elements.length; i++) {
-      var cp = __xb_cp_elements[i];
-      var r = cp.rect || cp.el.getBoundingClientRect();
-      
-      var box = document.createElement('div');
-      box.style.cssText = 'position:fixed;' +
-        'left:' + (r.left - 3) + 'px;' +
-        'top:' + (r.top - 3) + 'px;' +
-        'width:' + (r.width + 6) + 'px;' +
-        'height:' + (r.height + 6) + 'px;' +
-        'outline:3px solid ' + cp.color + ';' +
-        'outline-offset:0px;' +
-        'box-shadow:0 0 12px ' + cp.color + '80;' +
-        'border-radius:4px;' +
-        'pointer-events:none;' +
-        'transition:all 0.15s ease;';
-      __xb_cp_overlay.appendChild(box);
-
-      var badge = document.createElement('div');
-      badge.style.cssText = 'position:fixed;' +
-        'left:' + r.left + 'px;' +
-        'top:' + (r.top - 28) + 'px;' +
-        'background:' + cp.color + ';' +
-        'color:white;' +
-        'font:bold 12px/1.2 system-ui,sans-serif;' +
-        'padding:3px 8px;' +
-        'border-radius:4px;' +
-        'white-space:nowrap;' +
-        'pointer-events:none;' +
-        'box-shadow:0 2px 8px rgba(0,0,0,0.3);';
-      badge.textContent = '[' + (i + 1) + '] ' + cp.label;
-      __xb_cp_overlay.appendChild(badge);
+  // ── helper: get short selector for element ──
+  function shortSelector(el) {
+    if (!el || !el.tagName) return '';
+    if (el.id) return '#' + el.id;
+    if (el.getAttribute('data-testid')) return '[data-testid="' + el.getAttribute('data-testid') + '"]';
+    if (el.getAttribute('aria-label')) return '[aria-label="' + el.getAttribute('aria-label').substring(0, 30) + '"]';
+    if (el.className && typeof el.className === 'string') {
+      var cls = el.className.trim().split(/\\s+/)[0];
+      if (cls) return el.tagName.toLowerCase() + '.' + cls;
     }
-
-    var hint = document.createElement('div');
-    hint.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);' +
-      'background:rgba(0,0,0,0.85);color:white;font:13px/1.4 system-ui,sans-serif;' +
-      'padding:8px 16px;border-radius:8px;pointer-events:none;white-space:nowrap;' +
-      'box-shadow:0 4px 16px rgba(0,0,0,0.3);';
-    hint.textContent = 'Alt+' + (__xb_cp_elements.length > 0 ? '1~' + Math.min(__xb_cp_elements.length, 9) + ' = checkpoint' : 'none detected') + ' | release Alt to close';
-    __xb_cp_overlay.appendChild(hint);
-
-    document.body.appendChild(__xb_cp_overlay);
+    return el.tagName.toLowerCase();
   }
 
-  function hideOverlay() {
-    if (!__xb_cp_visible) return;
-    __xb_cp_visible = false;
-    if (__xb_cp_overlay && __xb_cp_overlay.parentNode) {
-      __xb_cp_overlay.parentNode.removeChild(__xb_cp_overlay);
+  // ── helper: tag label ──
+  function tagLabel(el) {
+    var tag = el.tagName.toLowerCase();
+    var type = el.getAttribute('type');
+    var role = el.getAttribute('role');
+    var placeholder = el.getAttribute('placeholder');
+    var text = (el.textContent || '').trim().substring(0, 40);
+    var parts = [tag];
+    if (type) parts.push('type=' + type);
+    if (role) parts.push('role=' + role);
+    if (placeholder) parts.push('"' + placeholder.substring(0, 20) + '"');
+    if (text && parts.length < 3) parts.push('"' + text + '"');
+    return parts.join(' ');
+  }
+
+  // ── create overlay elements ──
+  function createOverlay() {
+    __xb_overlay = document.createElement('div');
+    __xb_overlay.id = '__xb_mark_overlay';
+    __xb_overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:999999;';
+
+    // Highlight box
+    __xb_highlight = document.createElement('div');
+    __xb_highlight.style.cssText = 'position:fixed;border:3px solid #3b82f6;border-radius:4px;pointer-events:none;transition:all 0.1s ease;display:none;box-shadow:0 0 12px rgba(59,130,246,0.5);';
+    __xb_overlay.appendChild(__xb_highlight);
+
+    // Content preview panel (shows on hover)
+    __xb_preview = document.createElement('div');
+    __xb_preview.style.cssText = 'position:fixed;right:16px;top:50px;width:340px;max-height:60vh;overflow-y:auto;background:rgba(15,15,15,0.95);color:#e5e5e5;font:12px/1.5 system-ui,sans-serif;padding:12px;border-radius:8px;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,0.5);display:none;';
+    __xb_overlay.appendChild(__xb_preview);
+
+    // Top hint bar
+    __xb_hint = document.createElement('div');
+    __xb_hint.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.88);color:white;font:13px/1.4 system-ui,sans-serif;padding:8px 16px;border-radius:8px;pointer-events:none;white-space:nowrap;box-shadow:0 4px 16px rgba(0,0,0,0.3);';
+    __xb_hint.textContent = '\\u00b7  \\u00b7  \\u00b7';
+    __xb_overlay.appendChild(__xb_hint);
+
+    document.body.appendChild(__xb_overlay);
+    document.body.style.cursor = 'crosshair';
+  }
+
+  // ── destroy overlay ──
+  function destroyOverlay() {
+    if (__xb_overlay && __xb_overlay.parentNode) {
+      __xb_overlay.parentNode.removeChild(__xb_overlay);
     }
-    __xb_cp_overlay = null;
+    __xb_overlay = null;
+    __xb_highlight = null;
+    __xb_preview = null;
+    __xb_hint = null;
+    document.body.style.cursor = '';
+    __xb_hovered_el = null;
   }
 
-  document.addEventListener('keydown', function(e) {
-    if (e.key === 'Alt' && !e.repeat) {
-      showOverlay();
+  // ── update highlight on mouse move ──
+  function updateHighlight(e) {
+    var el = document.elementFromPoint(e.clientX, e.clientY);
+    // Skip overlay elements
+    if (!el || (el.id && el.id.indexOf('__xb_') === 0) || (__xb_overlay && __xb_overlay.contains(el))) {
+      __xb_highlight.style.display = 'none';
+      __xb_preview.style.display = 'none';
+      __xb_hovered_el = null;
+      __xb_hint.textContent = '\\u5c06 \\u9f20\\u6807 \\u79fb\\u5230\\u60f3\\u6807\\u8bb0\\u7684\\u5143\\u7d20\\u4e0a';
       return;
     }
-    // Option/Alt + number → confirm checkpoint
-    // Use e.code ("Digit1"~"Digit9") instead of e.key because
-    // macOS Option+number produces special chars (¡™£¢...) in e.key
-    if (e.altKey && /^Digit([1-9])$/.test(e.code) && __xb_cp_visible) {
-      var idx = parseInt(e.code.replace('Digit', '')) - 1;
-      if (idx < __xb_cp_elements.length) {
-        var cp = __xb_cp_elements[idx];
-        window.__xb_pending_actions = window.__xb_pending_actions || [];
-        window.__xb_pending_actions.push({
-          type: 'checkpoint',
-          ts: Date.now(),
-          url: location.href,
-          title: document.title,
-          checkpointType: cp.type,
-          hint: cp.label,
-          selector: cp.selector,
-          source: 'manual',
-          category: cp.category,
-          content: cp.content || '',
-        });
-        if (__xb_cp_overlay) {
-          var boxes = __xb_cp_overlay.querySelectorAll('div[style*="outline"]');
-          if (boxes[idx]) {
-            boxes[idx].style.outline = '3px solid #22c55e';
-            boxes[idx].style.boxShadow = '0 0 20px #22c55e80';
-          }
-        }
+    __xb_hovered_el = el;
+    var rect = el.getBoundingClientRect();
+
+    // Update highlight box
+    __xb_highlight.style.display = 'block';
+    __xb_highlight.style.left = (rect.left - 3) + 'px';
+    __xb_highlight.style.top = (rect.top - 3) + 'px';
+    __xb_highlight.style.width = (rect.width + 6) + 'px';
+    __xb_highlight.style.height = (rect.height + 6) + 'px';
+
+    // Build content preview
+    var content = getElementContent(el);
+    var sel = shortSelector(el);
+    var tag = tagLabel(el);
+    var html = '<div style="color:#888;margin-bottom:6px;font-size:11px;">' + sel + '</div>';
+    html += '<div style="color:#fff;font-weight:bold;margin-bottom:8px;">' + tag + '</div>';
+    if (content.length > 0) {
+      html += '<div style="border-top:1px solid #333;padding-top:8px;">';
+      for (var i = 0; i < Math.min(content.length, 15); i++) {
+        html += '<div style="padding:2px 0;color:#ccc;">\\u2022 ' + content[i].replace(/</g, '&lt;') + '</div>';
       }
+      if (content.length > 15) html += '<div style="color:#666;">... +' + (content.length - 15) + ' more</div>';
+      html += '</div>';
+    }
+
+    __xb_preview.innerHTML = html;
+    __xb_preview.style.display = 'block';
+
+    // Update hint
+    __xb_hint.textContent = '\\u2461 \\u91c7\\u96c6\\u6b64\\u5143\\u7d20  \\u2462 \\u5361\\u70b9\\uff08\\u4eba\\u5de5\\u4ecb\\u5165\\uff09  \\u2502 \\u677e\\u5f00 Option \\u9000\\u51fa';
+  }
+
+  // ── flash feedback ──
+  function flash(color) {
+    if (!__xb_highlight) return;
+    __xb_highlight.style.borderColor = color;
+    __xb_highlight.style.boxShadow = '0 0 24px ' + color + '80';
+    clearTimeout(__xb_flash_timer);
+    __xb_flash_timer = setTimeout(function() {
+      if (__xb_highlight) {
+        __xb_highlight.style.borderColor = '#3b82f6';
+        __xb_highlight.style.boxShadow = '0 0 12px rgba(59,130,246,0.5)';
+      }
+    }, 600);
+  }
+
+  // ── push checkpoint to pending actions ──
+  function pushCheckpoint(mode) {
+    if (!__xb_hovered_el) return;
+    var el = __xb_hovered_el;
+    var content = getElementContent(el);
+    var sel = shortSelector(el);
+    var rect = el.getBoundingClientRect();
+
+    window.__xb_pending_actions = window.__xb_pending_actions || [];
+    window.__xb_pending_actions.push({
+      type: 'checkpoint',
+      ts: Date.now(),
+      url: location.href,
+      title: document.title,
+      checkpointType: mode === 'collect' ? 'collect' : 'blocker',
+      hint: mode === 'collect' ? '\\u91c7\\u96c6: ' + tagLabel(el) : '\\u5361\\u70b9: \\u9700\\u8981\\u4eba\\u5de5\\u4ecb\\u5165',
+      selector: sel,
+      source: 'manual',
+      category: mode,
+      content: content.join(' | '),
+      elementTag: el.tagName.toLowerCase(),
+      elementText: (el.textContent || '').trim().substring(0, 200),
+      rect: { x: Math.round(rect.left), y: Math.round(rect.top), w: Math.round(rect.width), h: Math.round(rect.height) },
+    });
+  }
+
+  // ── event listeners ──
+  document.addEventListener('keydown', function(e) {
+    // Option/Alt pressed → enter marking mode
+    if (e.key === 'Alt' && !e.repeat && !__xb_active) {
+      __xb_active = true;
+      createOverlay();
+      e.preventDefault();
+      return;
+    }
+
+    // Only process keys while marking mode is active
+    if (!__xb_active) return;
+
+    // Press 1 → collect (capture element)
+    if (e.code === 'Digit1' || e.key === '1') {
+      pushCheckpoint('collect');
+      flash('#22c55e'); // green
       e.preventDefault();
       e.stopPropagation();
+      return;
+    }
+
+    // Press 2 → blocker (human intervention needed)
+    if (e.code === 'Digit2' || e.key === '2') {
+      pushCheckpoint('blocker');
+      flash('#ef4444'); // red
+      e.preventDefault();
+      e.stopPropagation();
+      return;
     }
   }, true);
 
   document.addEventListener('keyup', function(e) {
     if (e.key === 'Alt') {
-      hideOverlay();
+      __xb_active = false;
+      destroyOverlay();
     }
   }, true);
 
-  __xb_scan_timer = setInterval(function() {
-    if (!__xb_cp_visible) scanCheckpointElements();
-  }, 2000);
-  scanCheckpointElements();
+  // Track mouse move (only when active)
+  document.addEventListener('mousemove', function(e) {
+    if (!__xb_active) return;
+    updateHighlight(e);
+  }, true);
+
+  // Prevent click while in marking mode
+  document.addEventListener('click', function(e) {
+    if (__xb_active) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }, true);
 })();
 `;
 
