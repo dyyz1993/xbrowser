@@ -35,6 +35,7 @@ import { SessionRecorder } from '../recorder/session-recorder.js';
 import type { RecordingSummary, CheckpointEntry } from '../recorder/session-recorder.js';
 import { PlaybackEngine } from '../recorder/player.js';
 import type { PlaybackResult } from '../recorder/player.js';
+import { resolveCDPEndpoint } from '../utils/cdp.js';
 
 const activeRecorders = new Map<string, SessionRecorder>();
 const replayResumeResolvers = new Map<string, () => void>();
@@ -104,32 +105,6 @@ async function injectRecording(page: import('playwright').Page): Promise<void> {
   }
 }
 
-/**
- * Resolve a raw CDP endpoint string to a WebSocket URL.
- */
-async function resolveCDPEndpoint(raw: string): Promise<string> {
-  const defaultCDPPort = process.env.XBROWSER_CDP_PORT || '9222';
-  if (raw === 'auto') {
-    const httpResp = await fetch(`http://localhost:${defaultCDPPort}/json/version`);
-    const data = (await httpResp.json()) as { webSocketDebuggerUrl?: string };
-    if (!data.webSocketDebuggerUrl) throw new Error('Could not auto-discover CDP from localhost:9222');
-    return data.webSocketDebuggerUrl;
-  }
-  if (/^\d+$/.test(raw)) {
-    const httpResp = await fetch(`http://localhost:${raw}/json/version`);
-    const data = (await httpResp.json()) as { webSocketDebuggerUrl?: string };
-    if (!data.webSocketDebuggerUrl) throw new Error(`Could not discover CDP from localhost:${raw}`);
-    return data.webSocketDebuggerUrl;
-  }
-  return raw;
-}
-
-/**
- * RPC handler implementation.
- *
- * Groups handlers by domain (session, exec, network, recording).
- * Returns the standard RPCHandler function expected by xcli-core's startHttpServer.
- */
 export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) => void } {
   let previewWS: WSServer | null = null;
   const INTERACTION_COMMANDS = new Set([

@@ -8,7 +8,7 @@ import {
   type CommandArchiveEntry,
   checkGuard,
 } from '@dyyz1993/xcli-core';
-import { mapPositionalValues } from './utils/positional-params.js';
+import { parsePluginParams } from './utils/plugin-params.js';
 import { getCommand, getAllCommands } from './commands/index.js';
 import type { BrowserCommandContext } from './context.js';
 import { findOrRestoreSession, createSession, saveSessionDiskMeta, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
@@ -428,32 +428,7 @@ export async function executeChain(
           }
 
           const pluginArgs = cmdArgs.slice(1);
-          const pluginParams: Record<string, unknown> = {};
-
-          // Separate positional args from --flag args
-          const positionalValues: string[] = [];
-          for (let i = 0; i < pluginArgs.length; i++) {
-            if (pluginArgs[i].startsWith('--')) {
-              const key = pluginArgs[i].slice(2);
-              const value = pluginArgs[i + 1];
-              if (value && !value.startsWith('-')) {
-                if (value === 'true') pluginParams[key] = true;
-                else if (value === 'false') pluginParams[key] = false;
-                else if (/^\d+$/.test(value)) pluginParams[key] = parseInt(value, 10);
-                else pluginParams[key] = value;
-                i++;
-              } else {
-                pluginParams[key] = true;
-              }
-            } else if (pluginArgs[i].startsWith('-') && pluginArgs[i].length === 2) {
-              // short flag like -j for --json — skip (handled elsewhere)
-            } else {
-              positionalValues.push(pluginArgs[i]);
-            }
-          }
-
-          // Map positional values to Zod schema params (with type coercion + unquoting)
-          Object.assign(pluginParams, mapPositionalValues(cmdEntry.parameters!, positionalValues, pluginParams));
+          const pluginParams = parsePluginParams(pluginArgs, cmdEntry.parameters!);
 
           const pluginCtx = {
             args: pluginArgs,

@@ -87,20 +87,24 @@ vi.mock('../../src/executor.js', () => ({
   isChainInput: vi.fn(() => false),
 }));
 
-vi.mock('../../src/cli/index.js', () => ({
-  handleBrowserCommand: vi.fn(),
-  handleSession: vi.fn(),
-  handlePlugin: vi.fn(),
-  handleCreate: vi.fn(),
-  handleDaemon: vi.fn(),
-  handleRecord: vi.fn(),
-  handleReplay: vi.fn(),
-  handleConvert: vi.fn(),
-  handleExtract: vi.fn(),
-  handleFilter: vi.fn(),
-  handleRun: vi.fn(),
-  handleAdmin: vi.fn(),
-}));
+vi.mock('../../src/cli/index.js', async (importOriginal) => {
+  const actual = await importOriginal() as Record<string, unknown>;
+  return {
+    ...actual,
+    handleBrowserCommand: vi.fn(),
+    handleSession: vi.fn(),
+    handlePlugin: vi.fn(),
+    handleCreate: vi.fn(),
+    handleDaemon: vi.fn(),
+    handleRecord: vi.fn(),
+    handleReplay: vi.fn(),
+    handleConvert: vi.fn(),
+    handleExtract: vi.fn(),
+    handleFilter: vi.fn(),
+    handleRun: vi.fn(),
+    handleAdmin: vi.fn(),
+  };
+});
 
 vi.mock('../../src/plugin/loader.js', () => {
   const mockLoader = {

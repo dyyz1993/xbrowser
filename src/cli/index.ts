@@ -11,3 +11,4 @@ export {
 } from './record-routes.js';
 export { handleRun } from './run-routes.js';
 export { handleViewer } from './viewer-routes.js';
+export { handleNetCommand } from './net-routes.js';
