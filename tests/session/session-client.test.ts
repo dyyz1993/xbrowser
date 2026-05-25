@@ -19,6 +19,7 @@ vi.mock('playwright', () => ({
 vi.mock('fs', () => ({
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
+  existsSync: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock('os', () => ({

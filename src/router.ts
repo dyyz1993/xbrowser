@@ -15,6 +15,7 @@ import {
   handleExtract,
   handleFilter,
   handleRun,
+  handleViewer,
 } from './cli/index.js';
 import { outputError, outputResult } from './cli/output.js';
 import { showMainHelp } from './cli/help.js';
@@ -217,7 +218,7 @@ export async function routeCommand(
   const parsed = parseArgs(argv);
   const { positional, options } = parsed;
   const mode = options.json ? 'json' : options.yaml ? 'yaml' : 'text';
-  const sessionName = (options.session as string) || 'default';
+  const sessionName = (options.session as string) || process.env.XBROWSER_SESSION || 'default';
   const cdpEndpoint = options.cdp as string | undefined;
 
   if (options.version || options.v) {
@@ -360,6 +361,9 @@ export async function routeCommand(
         if (builtin) await builtin.execute(cmdArgs, options, { cwd: process.cwd() });
         break;
       }
+      case 'viewer':
+        await handleViewer(cmdArgs, options, mode, cdpEndpoint);
+        break;
       case 'help':
         showMainHelp();
         break;

@@ -2,9 +2,8 @@ import { EventEmitter } from 'events';
 import type { Server } from 'http';
 import type { Page } from 'playwright';
 import { ScreencastCapturer, type ScreencastFrame } from './screencast.js';
-import sharp from 'sharp';
 import { StreamStateManager, FrameRateController, FrameProcessor, STATE_CONFIGS } from './stream/index.js';
-import type { StreamState } from './stream/index.js';
+import type { StreamState, CropConfig } from './stream/index.js';
 
 /**
  * Configuration for the WebSocket server.
@@ -47,7 +46,9 @@ export type WSInboundMessage =
   | { type: 'input_insert_text'; text: string }
   | { type: 'file_upload'; fileName: string; mimeType: string; data: string; selector?: string }
   | { type: 'file_list'; path: string }
-  | { type: 'file_download'; path: string };
+  | { type: 'file_download'; path: string }
+  | { type: 'focus_element'; selector: string }
+  | { type: 'focus_clear' };
 
   /**
    * A screencast frame message with binary image data.
@@ -133,6 +134,7 @@ export class WSServer extends EventEmitter {
   private frameProcessor: FrameProcessor = new FrameProcessor();
   private lastFrameData: string | null = null;
   private lastFrameViewport: { width: number; height: number } | null = null;
+  private sessionCrops: Map<string, { selector: string; box: { x: number; y: number; width: number; height: number } }> = new Map();
 
   constructor(config: WSServerConfig = {}) {
     super();
@@ -148,8 +150,7 @@ export class WSServer extends EventEmitter {
           this.lastFrameViewport.width,
           this.lastFrameViewport.height,
         ).then(async (processedBuffer) => {
-          const meta = await sharp(processedBuffer).metadata();
-          const actualViewport = { width: meta.width || this.lastFrameViewport!.width, height: meta.height || this.lastFrameViewport!.height };
+          const actualViewport = this.lastFrameViewport!;
           for (const [sid, sc] of this.screencasts) {
             if (sc.clientCount > 0) {
               const header = Buffer.from(JSON.stringify({
@@ -185,14 +186,18 @@ export class WSServer extends EventEmitter {
     frameUrl: string,
   ): Promise<void> {
     const config = this.stateManager.getConfig();
+    const crop = this.sessionCrops.get(sessionId);
+    const cropConfig: CropConfig | undefined = crop ? crop.box : undefined;
+    const effectiveViewport = crop
+      ? { width: crop.box.width, height: crop.box.height }
+      : frameViewport;
     const processedBuffer = await this.frameProcessor.process(
       frameData,
       config,
-      frameViewport.width,
-      frameViewport.height,
+      effectiveViewport.width,
+      effectiveViewport.height,
+      cropConfig,
     );
-    const meta = await sharp(processedBuffer).metadata();
-    const actualViewport = { width: meta.width || frameViewport.width, height: meta.height || frameViewport.height };
     const header = Buffer.from(JSON.stringify({
       type: 'screenshot',
       data: {
@@ -200,7 +205,7 @@ export class WSServer extends EventEmitter {
         id: frameId,
         timestamp: frameTimestamp,
         url: frameUrl,
-        viewport: actualViewport,
+        viewport: effectiveViewport,
         streamState: this.stateManager.getState(),
         fps: this.frameRateController.getCurrentFps(),
       },
@@ -770,6 +775,61 @@ export class WSServer extends EventEmitter {
           this.sendToClient(clientId, { type: 'file_download_result', fileName: basename(targetPath), mimeType, data: base64 });
         } catch (err) {
           this.sendToClient(clientId, { type: 'file_download_result', fileName: '', mimeType: '', data: '', error: String(err) });
+        }
+        break;
+      }
+
+      case 'focus_element': {
+        this.stateManager.onUserInteraction();
+        const p = this.getClientPage(clientId);
+        if (!p) break;
+        const sid = client?.sessionId || '';
+        try {
+          const element = await p.$(msg.selector);
+          if (element) {
+            const box = await element.boundingBox();
+            if (box) {
+              this.sessionCrops.set(sid, { selector: msg.selector, box: { x: box.x, y: box.y, width: box.width, height: box.height } });
+              this.broadcastToSession(sid, {
+                type: 'status',
+                data: { status: 'connected', viewport: { width: box.width, height: box.height } },
+              });
+              if (this.lastFrameData && this.lastFrameViewport) {
+                await this.processAndBroadcast(
+                  this.lastFrameData,
+                  this.lastFrameViewport,
+                  sid,
+                  sid,
+                  crypto.randomUUID(),
+                  Date.now(),
+                  '',
+                );
+              }
+            }
+          }
+        } catch { /* ignore */ }
+        break;
+      }
+
+      case 'focus_clear': {
+        const sid = client?.sessionId || '';
+        this.sessionCrops.delete(sid);
+        if (this.lastFrameViewport) {
+          this.broadcastToSession(sid, {
+            type: 'status',
+            data: { status: 'connected', viewport: this.lastFrameViewport },
+          });
+        }
+        if (this.lastFrameData && this.lastFrameViewport) {
+          await this.processAndBroadcast(
+            this.lastFrameData,
+            this.lastFrameViewport,
+            sid,
+            sid,
+            crypto.randomUUID(),
+            Date.now(),
+            '',
+          );
         }
         break;
       }

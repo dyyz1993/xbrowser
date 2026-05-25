@@ -58,6 +58,7 @@ Commands:
   record status                     Recording status
   replay <file>                     Replay recording
   run <file>                        Execute commands from file
+  viewer [--name <n>] [--selector <sel>] Generate viewer URL
   help                              Show this help
   --version, -v                     Show version
 

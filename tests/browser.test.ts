@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
+vi.mock('fs', () => ({
+  existsSync: vi.fn().mockReturnValue(false),
+  mkdirSync: vi.fn(),
+  writeFileSync: vi.fn(),
+}));
+
 vi.mock('playwright', () => {
   const mockPage = {
     url: vi.fn().mockReturnValue('about:blank'),

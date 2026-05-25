@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { chromium, type Browser, type BrowserContext, type Page, type Response } from 'playwright';
@@ -214,6 +214,21 @@ export function resolveLaunchOpts(ctx: BrowserCommandContext): BrowserLaunchOpti
   return { headless: true };
 }
 
+const CHROMIUM_CANDIDATES = [
+  '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/usr/bin/chromium-browser',
+  '/usr/bin/chromium',
+  '/usr/bin/google-chrome',
+];
+
+function discoverChromiumPath(): string | undefined {
+  for (const p of CHROMIUM_CANDIDATES) {
+    if (existsSync(p)) return p;
+  }
+  return undefined;
+}
+
 /**
  * Always create a new Browser instance (never caches).
  *
@@ -239,7 +254,9 @@ export async function createBrowser(options?: BrowserLaunchOptions): Promise<Bro
   }
 
   const executablePath =
-    options?.executablePath || process.env.XBROWSER_CHROMIUM_PATH || undefined;
+    options?.executablePath ||
+    process.env.XBROWSER_CHROMIUM_PATH ||
+    discoverChromiumPath();
   return await chromium.launch({ executablePath, headless: options?.headless ?? true });
 }
 

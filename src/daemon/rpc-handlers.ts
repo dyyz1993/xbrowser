@@ -216,6 +216,9 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
         case 'replay:resume':
           return handleReplayResume(params);
 
+        case 'viewer:check-selector':
+          return handleViewerCheckSelector(params);
+
         default:
           throw new Error(`Unknown method: ${method}`);
       }
@@ -243,8 +246,18 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const name = (params.name as string) || 'default';
     const cdp = params.cdpEndpoint as string;
     const url = params.url as string | undefined;
-    const endpoint = await resolveCDPEndpoint(cdp || 'auto');
-    const session = await createSession(name, url, { cdpEndpoint: endpoint });
+    let session;
+    if (cdp) {
+      const endpoint = await resolveCDPEndpoint(cdp);
+      session = await createSession(name, url, { cdpEndpoint: endpoint });
+    } else {
+      try {
+        const endpoint = await resolveCDPEndpoint('auto');
+        session = await createSession(name, url, { cdpEndpoint: endpoint });
+      } catch {
+        session = await createSession(name, url);
+      }
+    }
     await injectRecording(session.page);
     if (previewWS) previewWS.registerSession(session.name, session.page);
     saveSessionDiskMeta(name, {
@@ -286,7 +299,14 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const sessionName = (params.session as string) || 'default';
     const cdp = params.cdpEndpoint as string | undefined;
     const existingSession = findSession(sessionName);
-    const endpoint = cdp || existingSession?.cdpEndpoint || await resolveCDPEndpoint('auto');
+    let endpoint: string | undefined;
+    if (cdp) {
+      endpoint = cdp;
+    } else if (existingSession?.cdpEndpoint) {
+      endpoint = existingSession.cdpEndpoint;
+    } else {
+      try { endpoint = await resolveCDPEndpoint('auto'); } catch { endpoint = undefined; }
+    }
     commandLogStore.add(sessionName, {
       timestamp: Date.now(),
       command,
@@ -487,8 +507,14 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
         return { ok: false, error: 'Session not found: ' + sessionName + '. Provide --url to auto-create.' };
       }
       try {
-        const endpoint = await resolveCDPEndpoint('auto');
-        session = await createSession(sessionName, url, { cdpEndpoint: endpoint });
+        let session2;
+        try {
+          const endpoint = await resolveCDPEndpoint('auto');
+          session2 = await createSession(sessionName, url, { cdpEndpoint: endpoint });
+        } catch {
+          session2 = await createSession(sessionName, url);
+        }
+        session = session2;
         await injectRecording(session.page);
         if (previewWS) previewWS.registerSession(session.name, session.page);
         saveSessionDiskMeta(sessionName, {
@@ -652,5 +678,22 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       },
     });
     return { ok: result.success, ...result };
+  }
+
+  async function handleViewerCheckSelector(params: Record<string, unknown>): Promise<{ found: boolean; box?: { x: number; y: number; width: number; height: number } }> {
+    const name = (params.name as string) || 'default';
+    const selector = params.selector as string;
+    if (!selector) return { found: false };
+    const session = findSession(name);
+    if (!session?.page) return { found: false };
+    try {
+      const element = await session.page.$(selector);
+      if (!element) return { found: false };
+      const box = await element.boundingBox();
+      if (!box) return { found: false };
+      return { found: true, box };
+    } catch {
+      return { found: false };
+    }
   }
 }

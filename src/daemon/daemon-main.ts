@@ -111,6 +111,17 @@ async function main() {
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
 
+  process.on('uncaughtException', (err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    log(`uncaughtException: ${msg}`);
+    console.error('Daemon uncaughtException:', msg);
+  });
+  process.on('unhandledRejection', (reason) => {
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    log(`unhandledRejection: ${msg}`);
+    console.error('Daemon unhandledRejection:', msg);
+  });
+
   // Keep alive — prevents the process from exiting
   setInterval(() => {}, 60000);
 }
@@ -248,7 +259,7 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
 .bar .conn{color:#556;font-size:11px;flex-shrink:0}
 .viewport{position:fixed;top:40px;left:0;right:0;bottom:0;display:flex;align-items:flex-start;justify-content:center;overflow:hidden;background:#1a1a2e}
 .viewport.mobile-mode{bottom:35vh}
-.viewport img#screen{width:100%;height:100%;object-fit:contain;border-radius:4px;box-shadow:0 4px 20px rgba(0,0,0,.5);display:none;user-select:none;-webkit-user-drag:none}
+.viewport canvas#screen{display:none;user-select:none;-webkit-user-drag:none}
 .waiting{color:#556;font-size:14px;text-align:center}
 .toolbar{position:fixed;left:0;right:0;top:40px;background:#16213e;border-bottom:1px solid #0f3460;display:none;flex-direction:column;z-index:90;padding:4px 6px}
 .toolbar-btn{min-width:44px;height:44px;border:none;border-radius:6px;background:#0f3460;color:#cde;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
@@ -306,7 +317,7 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
   <div id="qualityBadge" class="quality-badge quality-static" style="font-size:10px;padding:2px 8px;border-radius:10px;background:#556;color:#eee;white-space:nowrap;flex-shrink:0">static</div>
 </div>
 <div class="viewport" id="viewport">
-  <img id="screen">
+  <canvas id="screen"></canvas>
   <div class="waiting" id="wait">Waiting for screencast...</div>
 </div>
 <div class="toolbar" id="toolbar">
@@ -367,17 +378,45 @@ let ws=null;
 let connected=false;
 let remoteViewport={width:1920,height:1080};
 let viewportLocked=false;
+let originalViewport=null;
 let currentUrl='';
-let imgBlobUrl='';
 let currentFocusedSelector='';
 let currentFocusedValue='';
 let deviceMode='desktop';
+let lastHoverSent=0;
 
 const $=id=>document.getElementById(id);
-const img=$('screen'),wait=$('wait'),dot=$('status'),urlEl=$('url'),connEl=$('conn');
+const canvas=$('screen'),ctx=canvas.getContext('2d');wait=$('wait'),dot=$('status'),urlEl=$('url'),connEl=$('conn');
 const viewportEl=$('viewport'),cursorEl=$('cursor'),cursorLabelEl=$('cursor-label');
 const touchpadEl=$('touchpad'),toolbarEl=$('toolbar'),toolbarKeys=$('toolbar-keys');
 const inputPanel=$('input-panel'),inputField=$('input-field'),inputLabel=$('input-label');
+
+function resizeCanvas(){
+  const box=viewportEl.getBoundingClientRect();
+  const bw=box.width,bh=box.height;
+  if(!bw||!bh||!remoteViewport.width||!remoteViewport.height) return;
+  const vpAspect=remoteViewport.width/remoteViewport.height;
+  const boxAspect=bw/bh;
+  let cw,ch;
+  if(vpAspect>boxAspect){cw=bw;ch=bw/vpAspect;}
+  else{ch=bh;cw=bh*vpAspect;}
+  canvas.width=cw;
+  canvas.height=ch;
+  canvas.style.width=cw+'px';
+  canvas.style.height=ch+'px';
+  canvas.style.position='absolute';
+  canvas.style.left=(box.left+(bw-cw)/2)+'px';
+  canvas.style.top=(box.top+(bh-ch)/2)+'px';
+}
+window.addEventListener('resize',resizeCanvas);
+resizeCanvas();
+
+function drawFrame(bitmap){
+  resizeCanvas();
+  const cw=canvas.width,ch=canvas.height;
+  if(!cw||!ch) return;
+  ctx.drawImage(bitmap,0,0,cw,ch);
+}
 
 function connectWS(){
   ws=new WebSocket(PROTO+'//'+location.host+'/preview/'+sid);
@@ -386,6 +425,7 @@ function connectWS(){
     dot.className='dot ok';
     connEl.textContent='WS';
     if(deviceMode==='desktop') createHiddenInput();
+    checkFocus();
   };
   ws.binaryType='arraybuffer';
   ws.onmessage=(e)=>{
@@ -397,10 +437,11 @@ function connectWS(){
         const jpegData=buf.slice(4+headerLen);
         if(header.type==='screenshot'){
           const blob=new Blob([jpegData],{type:'image/jpeg'});
-          if(imgBlobUrl) URL.revokeObjectURL(imgBlobUrl);
-          imgBlobUrl=URL.createObjectURL(blob);
-          img.src=imgBlobUrl;
-          img.style.display='block';
+          createImageBitmap(blob).then(function(bmp){
+            drawFrame(bmp);
+            bmp.close();
+          });
+          canvas.style.display='block';
           wait.style.display='none';
           if(header.data.viewport&&!viewportLocked){remoteViewport=header.data.viewport;viewportLocked=true;}
           if(header.data.url&&header.data.url!==currentUrl){
@@ -414,11 +455,18 @@ function connectWS(){
       const m=JSON.parse(e.data);
       if(m.type==='screenshot'){
         if(m.data.data){
-          img.src='data:image/jpeg;base64,'+m.data.data;
-          img.style.display='block';
+          const binary=atob(m.data.data);
+          const bytes=new Uint8Array(binary.length);
+          for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+          const blob=new Blob([bytes],{type:'image/jpeg'});
+          createImageBitmap(blob).then(function(bmp){
+            drawFrame(bmp);
+            bmp.close();
+          });
+          canvas.style.display='block';
           wait.style.display='none';
         }
-        if(m.data.viewport) remoteViewport=m.data.viewport;
+        if(m.data.viewport&&!viewportLocked) remoteViewport=m.data.viewport;
         if(m.data.url&&m.data.url!==currentUrl){
           currentUrl=m.data.url;
           urlEl.textContent=currentUrl;
@@ -436,7 +484,12 @@ function connectWS(){
       }else if(m.type==='status'){
         connEl.textContent=m.data.status==='connected'?'OK':'...';
         if(m.data.message) urlEl.textContent=m.data.message;
-        if(m.data.viewport&&!viewportLocked){remoteViewport=m.data.viewport;viewportLocked=true;}
+        if(m.data.viewport){
+          if(!originalViewport) originalViewport={width:remoteViewport.width,height:remoteViewport.height};
+          remoteViewport=m.data.viewport;
+          viewportLocked=true;
+          resizeCanvas();
+        }
       }else if(m.type==='navigation'){
         currentUrl=m.url||'';
         urlEl.textContent=currentUrl;
@@ -485,39 +538,48 @@ function connectWS(){
     connEl.textContent='';
     urlEl.textContent='disconnected';
     wait.style.display='block';
-    img.style.display='none';
+    canvas.style.display='none';
     removeHiddenInput();
+    if(originalViewport){remoteViewport=originalViewport;originalViewport=null;viewportLocked=false;}
     if(shouldReconnect) setTimeout(connectWS,2000);
   };
   ws.onerror=()=>{dot.className='dot';connEl.textContent='err'};
 }
 
  function getImgContentRect(){
-  const rect=img.getBoundingClientRect();
-  if(!remoteViewport.width||!remoteViewport.height) return rect;
-  const imgAspect=remoteViewport.width/remoteViewport.height;
-  const boxAspect=rect.width/rect.height;
-  let cw,ch,ox,oy;
-  if(imgAspect>boxAspect){cw=rect.width;ch=rect.width/imgAspect;ox=rect.left;oy=rect.top+(rect.height-ch)/2;}
-  else{ch=rect.height;cw=rect.height*imgAspect;oy=rect.top;ox=rect.left+(rect.width-cw)/2;}
-  return{left:ox,top:oy,width:cw,height:ch};
+  if(!canvas||!canvas.width||!canvas.height) return{left:0,top:0,width:0,height:0};
+  return canvas.getBoundingClientRect();
  }
  function viewerToRemote(cx,cy){
   const r=getImgContentRect();
-  const sx=remoteViewport.width/r.width;
-  const sy=remoteViewport.height/r.height;
-  return{x:Math.round((cx-r.left)*sx),y:Math.round((cy-r.top)*sy)};
+  return{x:Math.round((cx-r.left)*remoteViewport.width/r.width),y:Math.round((cy-r.top)*remoteViewport.height/r.height)};
  }
  function remoteToViewer(rx,ry){
   const r=getImgContentRect();
-  const sx=r.width/remoteViewport.width;
-  const sy=r.height/remoteViewport.height;
-  return{x:r.left+rx*sx,y:r.top+ry*sy};
+  return{x:r.left+rx*r.width/remoteViewport.width,y:r.top+ry*r.height/remoteViewport.height};
  }
 
- function sendMsg(obj){
+function sendMsg(obj){
   if(ws&&ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify(obj));
- }
+}
+
+function parseFocusHash(){
+  var h=location.hash;
+  if(!h) return null;
+  var m=h.match(/^#focus=(.+)$/);
+  return m?decodeURIComponent(m[1]):null;
+}
+
+function checkFocus(){
+  var sel=parseFocusHash();
+  if(sel&&ws&&ws.readyState===WebSocket.OPEN){
+    ws.send(JSON.stringify({type:'focus_element',selector:sel}));
+  }else if(!sel&&ws&&ws.readyState===WebSocket.OPEN){
+    ws.send(JSON.stringify({type:'focus_clear'}));
+  }
+}
+
+window.addEventListener('hashchange',checkFocus);
 
 function updateQualityBadge(state,fps){
   var badge=document.getElementById('qualityBadge');
@@ -548,8 +610,8 @@ window.addEventListener('beforeunload',function(){shouldReconnect=false;});
 
  // --- Virtual Cursor ---
  function setCursorAtRemote(rx,ry,state){
-  const v=remoteToViewer(rx,ry);
-  const rect=img.getBoundingClientRect();
+   const v=remoteToViewer(rx,ry);
+   const rect=canvas.getBoundingClientRect();
   const cx=clamp(v.x,rect.left,rect.right);
   const cy=clamp(v.y,rect.top,rect.bottom);
   const ox=deviceMode==='mobile'?15:0;
@@ -613,11 +675,17 @@ viewportEl.addEventListener('mousedown',(e)=>{
 viewportEl.addEventListener('mousemove',(e)=>{
   if(deviceMode!=='desktop') return;
   const r=viewerToRemote(e.clientX,e.clientY);
+  const now=Date.now();
   if(e.buttons>0){
     sendMsg({type:'input_mouse',action:'move',x:r.x,y:r.y});
     setCursorAtRemote(r.x,r.y,e.buttons===1?'click':'drag');
+    sendUserActivity();
   }else{
     setCursorAtRemote(r.x,r.y,'idle');
+    if(now-lastHoverSent>50){
+      lastHoverSent=now;
+      sendMsg({type:'input_mouse',action:'move',x:r.x,y:r.y});
+    }
   }
 });
 viewportEl.addEventListener('mouseup',(e)=>{

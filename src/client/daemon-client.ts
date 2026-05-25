@@ -221,3 +221,10 @@ export async function forwardRecordCheckpoint(session: string, type: string, hin
 export async function forwardReplayResume(session: string): Promise<unknown> {
   return rpcCall('replay:resume', { session }, 10000);
 }
+
+export async function forwardViewerCheckSelector(
+  name: string,
+  selector: string,
+): Promise<{ found: boolean; box?: { x: number; y: number; width: number; height: number } }> {
+  return rpcCall('viewer:check-selector', { name, selector }, 5000);
+}

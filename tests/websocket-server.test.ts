@@ -21,7 +21,14 @@ function createMockPage(): Page {
     fill: vi.fn().mockResolvedValue(undefined),
     evaluate: vi.fn().mockResolvedValue(undefined),
     on: vi.fn(),
+    $: vi.fn().mockResolvedValue(null),
   } as unknown as Page;
+}
+
+function createMockElement(box: { x: number; y: number; width: number; height: number }) {
+  return {
+    boundingBox: vi.fn().mockResolvedValue(box),
+  };
 }
 
 describe('WSServer', () => {
@@ -157,6 +164,127 @@ describe('WSServer', () => {
           y: 20,
         })
       ).resolves.toBeUndefined();
+    });
+
+    it('should handle focus_element message and set crop box', async () => {
+      const page = (server as any).screencasts.get(sessionId).page as Page;
+      const mockElement = createMockElement({ x: 100, y: 200, width: 300, height: 150 });
+      (page as any).$ = vi.fn().mockResolvedValue(mockElement);
+
+      const sendSpy = vi.fn();
+      (server as any).clients.set(clientId, {
+        id: clientId,
+        sessionId,
+        ws: { send: sendSpy, close: vi.fn(), on: vi.fn() },
+      });
+      let sessionClients = (server as any).sessionClients.get(sessionId);
+      if (!sessionClients) {
+        sessionClients = new Set();
+        (server as any).sessionClients.set(sessionId, sessionClients);
+      }
+      sessionClients.add(clientId);
+
+      await server['handleInboundMessage'](clientId, {
+        type: 'focus_element',
+        selector: '#my-element',
+      });
+
+      expect(page.$).toHaveBeenCalledWith('#my-element');
+      expect((server as any).sessionCrops.get(sessionId)).toEqual({
+        selector: '#my-element',
+        box: { x: 100, y: 200, width: 300, height: 150 },
+      });
+
+      const statusCall = sendSpy.mock.calls.find((call: any[]) => {
+        try {
+          const msg = JSON.parse(call[0]);
+          return msg.type === 'status' && msg.data.viewport;
+        } catch { return false; }
+      });
+      expect(statusCall).toBeDefined();
+      const statusMsg = JSON.parse(statusCall![0]);
+      expect(statusMsg.data.viewport).toEqual({ width: 300, height: 150 });
+    });
+
+    it('should handle focus_element when element not found', async () => {
+      const page = (server as any).screencasts.get(sessionId).page as Page;
+      (page as any).$ = vi.fn().mockResolvedValue(null);
+
+      await server['handleInboundMessage'](clientId, {
+        type: 'focus_element',
+        selector: '#nonexistent',
+      });
+
+      expect((server as any).sessionCrops.has(sessionId)).toBe(false);
+    });
+
+    it('should handle focus_clear message and reset crop', async () => {
+      const sid = sessionId;
+      (server as any).sessionCrops.set(sid, {
+        selector: '#my-element',
+        box: { x: 100, y: 200, width: 300, height: 150 },
+      });
+      (server as any).lastFrameViewport = { width: 1920, height: 1080 };
+      (server as any).lastFrameData = null;
+
+      const sendSpy = vi.fn();
+      (server as any).clients.set(clientId, {
+        id: clientId,
+        sessionId: sid,
+        ws: { send: sendSpy, close: vi.fn(), on: vi.fn() },
+      });
+      let sessionClients = (server as any).sessionClients.get(sid);
+      if (!sessionClients) {
+        sessionClients = new Set();
+        (server as any).sessionClients.set(sid, sessionClients);
+      }
+      sessionClients.add(clientId);
+
+      await server['handleInboundMessage'](clientId, {
+        type: 'focus_clear',
+      });
+
+      expect((server as any).sessionCrops.has(sid)).toBe(false);
+
+      const statusCall = sendSpy.mock.calls.find((call: any[]) => {
+        try {
+          const msg = JSON.parse(call[0]);
+          return msg.type === 'status' && msg.data.viewport;
+        } catch { return false; }
+      });
+      expect(statusCall).toBeDefined();
+      const statusMsg = JSON.parse(statusCall![0]);
+      expect(statusMsg.data.viewport).toEqual({ width: 1920, height: 1080 });
+    });
+
+    it('should apply crop to frames when crop is set', async () => {
+      const sid = sessionId;
+      (server as any).sessionCrops.set(sid, {
+        selector: '#my-element',
+        box: { x: 50, y: 50, width: 400, height: 300 },
+      });
+
+      const processSpy = vi.spyOn((server as any).frameProcessor, 'process').mockResolvedValue(Buffer.from('fake'));
+
+      await (server as any).processAndBroadcast(
+        'base64data',
+        { width: 1920, height: 1080 },
+        sid,
+        sid,
+        'frame-id',
+        Date.now(),
+        '',
+      );
+
+      expect(processSpy).toHaveBeenCalledWith(
+        'base64data',
+        expect.anything(),
+        400,
+        300,
+        { x: 50, y: 50, width: 400, height: 300 },
+      );
+
+      processSpy.mockRestore();
     });
   });
 });

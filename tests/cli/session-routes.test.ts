@@ -158,4 +158,41 @@ describe('session-routes', () => {
     expect(mockHandleSessionHelp).toHaveBeenCalled();
     logSpy.mockRestore();
   });
+
+  // ── XBROWSER_SESSION env var ──
+
+  it('should use XBROWSER_SESSION as default name for close', async () => {
+    mockForwardSessionClose.mockResolvedValue({ ok: true });
+    process.env.XBROWSER_SESSION = 'env-close';
+    try {
+      await handleSession(['close'], {}, 'json');
+      expect(mockForwardSessionClose).toHaveBeenCalledWith('env-close');
+      expect(mockCloseSession).toHaveBeenCalledWith('env-close');
+    } finally {
+      delete process.env.XBROWSER_SESSION;
+    }
+  });
+
+  it('should use XBROWSER_SESSION as default name for kill', async () => {
+    mockForwardSessionClose.mockResolvedValue({ ok: true });
+    process.env.XBROWSER_SESSION = 'env-kill';
+    try {
+      await handleSession(['kill'], {}, 'json');
+      expect(mockForwardSessionClose).toHaveBeenCalledWith('env-kill');
+      expect(mockCloseSession).toHaveBeenCalledWith('env-kill');
+    } finally {
+      delete process.env.XBROWSER_SESSION;
+    }
+  });
+
+  it('should prefer --name over XBROWSER_SESSION', async () => {
+    mockForwardSessionClose.mockResolvedValue({ ok: true });
+    process.env.XBROWSER_SESSION = 'env-name';
+    try {
+      await handleSession(['close'], { name: 'flag-name' }, 'json');
+      expect(mockForwardSessionClose).toHaveBeenCalledWith('flag-name');
+    } finally {
+      delete process.env.XBROWSER_SESSION;
+    }
+  });
 });

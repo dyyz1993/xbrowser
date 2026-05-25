@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@dyyz1993/xcli-core', () => ({
   parseArgs: (argv: string[]) => {
@@ -749,5 +749,94 @@ describe('router', () => {
     const { allBuiltins } = await import('../src/builtins/index.js');
     vi.mocked(allBuiltins).length = 0;
     await routeCommand(['preview']);
+  });
+
+  it('should use XBROWSER_SESSION env var as default session name when --session not provided', async () => {
+    vi.resetModules();
+    vi.doMock('../src/plugin/loader.js', () => {
+      const mockLoader = {
+        getCore: () => ({
+          loader: { getSite: vi.fn(() => null) },
+        }),
+        scanAndLoad: vi.fn(),
+      };
+      return { XBrowserPluginLoader: vi.fn(() => mockLoader) };
+    });
+    const mod = await import('../src/router.js');
+    const { handleBrowserCommand } = await import('../src/cli/index.js');
+    const { isChainInput } = await import('../src/executor.js');
+    vi.mocked(isChainInput).mockReturnValue(false);
+    process.env.XBROWSER_SESSION = 'env-session';
+    try {
+      await mod.routeCommand(['screenshot']);
+      expect(handleBrowserCommand).toHaveBeenCalledWith(
+        'screenshot',
+        [],
+        expect.any(Object),
+        'env-session',
+        'text',
+        undefined
+      );
+    } finally {
+      delete process.env.XBROWSER_SESSION;
+    }
+  });
+
+  it('should prefer --session flag over XBROWSER_SESSION env var', async () => {
+    vi.resetModules();
+    vi.doMock('../src/plugin/loader.js', () => {
+      const mockLoader = {
+        getCore: () => ({
+          loader: { getSite: vi.fn(() => null) },
+        }),
+        scanAndLoad: vi.fn(),
+      };
+      return { XBrowserPluginLoader: vi.fn(() => mockLoader) };
+    });
+    const mod = await import('../src/router.js');
+    const { handleBrowserCommand } = await import('../src/cli/index.js');
+    const { isChainInput } = await import('../src/executor.js');
+    vi.mocked(isChainInput).mockReturnValue(false);
+    process.env.XBROWSER_SESSION = 'env-session';
+    try {
+      await mod.routeCommand(['--session', 'flag-session', 'screenshot']);
+      expect(handleBrowserCommand).toHaveBeenCalledWith(
+        'screenshot',
+        [],
+        expect.any(Object),
+        'flag-session',
+        'text',
+        undefined
+      );
+    } finally {
+      delete process.env.XBROWSER_SESSION;
+    }
+  });
+
+  it('should use default when neither --session nor XBROWSER_SESSION is set', async () => {
+    vi.resetModules();
+    vi.doMock('../src/plugin/loader.js', () => {
+      const mockLoader = {
+        getCore: () => ({
+          loader: { getSite: vi.fn(() => null) },
+        }),
+        scanAndLoad: vi.fn(),
+      };
+      return { XBrowserPluginLoader: vi.fn(() => mockLoader) };
+    });
+    const mod = await import('../src/router.js');
+    const { handleBrowserCommand } = await import('../src/cli/index.js');
+    const { isChainInput } = await import('../src/executor.js');
+    vi.mocked(isChainInput).mockReturnValue(false);
+    delete process.env.XBROWSER_SESSION;
+    await mod.routeCommand(['screenshot']);
+    expect(handleBrowserCommand).toHaveBeenCalledWith(
+      'screenshot',
+      [],
+      expect.any(Object),
+      'default',
+      'text',
+      undefined
+    );
   });
 });
