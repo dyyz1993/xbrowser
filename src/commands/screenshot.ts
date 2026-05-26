@@ -8,6 +8,7 @@ export const screenshotCommand = registerCommand({
   name: 'screenshot',
   description: 'Take a screenshot of the page or element',
   scope: 'page',
+  selectorParams: ['selector'],
   parameters: z.object({
     selector: z.string().optional(),
     type: z.enum(['png', 'jpeg']).optional(),

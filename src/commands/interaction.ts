@@ -8,6 +8,7 @@ export const clickCommand = registerCommand({
   name: 'click',
   description: 'Click on element',
   scope: 'element',
+  selectorParams: ['selector'],
   parameters: z.object({
     selector: z.string(),
     button: z.enum(['left', 'right', 'middle']).optional(),
@@ -100,6 +101,7 @@ export const fillCommand = registerCommand({
   name: 'fill',
   description: 'Fill input field',
   scope: 'element',
+  selectorParams: ['selector'],
   parameters: z.object({
     selector: z.string(),
     value: z.string(),
@@ -134,23 +136,11 @@ export const fillCommand = registerCommand({
     }).catch(() => false);
 
     if (isReact) {
-      await page.evaluate(({ selector, value }) => {
-        const el = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement;
-        if (!el) throw new Error(`Element not found: ${selector}`);
-
-        const proto = el instanceof HTMLTextAreaElement
-          ? HTMLTextAreaElement.prototype
-          : HTMLInputElement.prototype;
-        const nativeSetter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
-
-        if (nativeSetter) {
-          nativeSetter.call(el, value);
-        } else {
-          el.value = value;
-        }
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-      }, { selector: p.selector, value: p.value });
+      await page.click(p.selector, { force: true, timeout: 10000 });
+      await page.fill(p.selector, '', { force: true, timeout: 10000 });
+      await page.keyboard.press('Control+a');
+      await page.keyboard.press('Backspace');
+      await page.type(p.selector, p.value, { delay: 10 });
     } else {
       await page.fill(p.selector, p.value, { force: true, timeout: 10000 });
     }
@@ -163,6 +153,7 @@ export const typeCommand = registerCommand({
   name: 'type',
   description: 'Type text into element',
   scope: 'element',
+  selectorParams: ['selector'],
   parameters: z.object({
     selector: z.string(),
     text: z.string(),
@@ -181,6 +172,7 @@ export const pressCommand = registerCommand({
   name: 'press',
   description: 'Press a key',
   scope: 'element',
+  selectorParams: ['selector'],
   parameters: z.object({
     selector: z.string().optional(),
     key: z.string(),
@@ -199,6 +191,7 @@ export const selectCommand = registerCommand({
   name: 'select',
   description: 'Select option in dropdown',
   scope: 'element',
+  selectorParams: ['selector'],
   parameters: z.object({
     selector: z.string(),
     value: z.union([z.string(), z.array(z.string())]),
@@ -218,6 +211,7 @@ export const checkCommand = registerCommand({
   name: 'check',
   description: 'Check checkbox or radio',
   scope: 'element',
+  selectorParams: ['selector'],
   parameters: z.object({
     selector: z.string(),
   }),
@@ -234,6 +228,7 @@ export const hoverCommand = registerCommand({
   name: 'hover',
   description: 'Hover over element',
   scope: 'element',
+  selectorParams: ['selector'],
   parameters: z.object({
     selector: z.string(),
     modifiers: z.array(z.enum(['Alt', 'Control', 'Meta', 'Shift'])).optional(),
@@ -251,6 +246,7 @@ export const dblclickCommand = registerCommand({
   name: 'dblclick',
   description: 'Double click on element',
   scope: 'element',
+  selectorParams: ['selector'],
   parameters: z.object({
     selector: z.string(),
     button: z.enum(['left', 'right', 'middle']).optional(),

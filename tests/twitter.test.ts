@@ -80,12 +80,19 @@ function makeTweetEntry(id: string, text: string, extra: Record<string, any> = {
 describe('Twitter Plugin', () => {
   describe('Plugin Registration', () => {
     it('should register twitter site with correct config', () => {
-      expect(mockXCLI.createSite).toHaveBeenCalledWith({
+      expect(mockXCLI.createSite).toHaveBeenCalledWith(expect.objectContaining({
         name: 'twitter',
         url: 'https://x.com',
         description: 'X (Twitter) - 社交媒体内容采集（XHR 拦截模式，数据更丰富）',
         requiresLogin: true,
-      });
+        isLogin: expect.any(Function),
+        loginConfig: expect.objectContaining({
+          captchaSelectors: expect.any(Array),
+          loggedInSelectors: expect.any(Array),
+          loginKeywords: expect.any(Array),
+          loginUrls: expect.any(Array),
+        }),
+      }));
     });
 
     it('should register 6 commands', () => {

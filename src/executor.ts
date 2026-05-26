@@ -20,8 +20,12 @@ import {
 import type { WSServer, CommandMessage } from './websocket-server.js';
 import { getPluginLoader } from './utils/plugin-singleton.js';
 import { getTipsManager } from './tips/index.js';
+import { resolveRefParams } from './utils/resolve-selector.js';
 import { homedir } from 'os';
 import { join } from 'path';
+
+const NAVIGATION_COMMANDS = new Set(['goto', 'back', 'forward', 'refresh']);
+const snapshotHintShown = new WeakSet<ManagedSession>();
 
 let archiveInitialized = false;
 function ensureArchiveInit(): void {
@@ -226,6 +230,16 @@ export async function executeCommand(
     await tipsManager.beforeCommand(session.page, commandName, params);
   }
 
+  let refTips: string[] = [];
+  if (session?.page && command.selectorParams && command.selectorParams.length > 0) {
+    const cache = new Map<string, string>();
+    const resolved = await resolveRefParams(session.page, params, command.selectorParams, cache);
+    if (resolved.tips.length > 0) {
+      refTips = resolved.tips;
+      params = resolved.params;
+    }
+  }
+
   try {
     const raw = await command.handler(params, ctx);
     const end = Date.now();
@@ -265,7 +279,12 @@ export async function executeCommand(
     }
 
     if (isCommandResult(raw)) {
-      const merged = [...(raw.tips || []), ...(smartTips || [])];
+      let snapshotHint: string | undefined;
+      if (session && NAVIGATION_COMMANDS.has(commandName) && !snapshotHintShown.has(session)) {
+        snapshotHintShown.add(session);
+        snapshotHint = '💡 使用 snapshot 命令获取页面快照和 ref 编号，然后用 ref 快速定位元素（如 click --selector e1）';
+      }
+      const merged = [...(raw.tips || []), ...(smartTips || []), ...(snapshotHint ? [snapshotHint] : []), ...refTips];
       const isSuccess = raw.success !== false;
       recordArchive(session?.id, sessionName, {
         step: 0,

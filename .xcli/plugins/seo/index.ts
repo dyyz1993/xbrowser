@@ -123,7 +123,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('bulk-submit', {
     description: '批量提交多个 URL 到 IndexNow（最多 10000 条）',
     scope: 'project',
-    result: z.object({ host: z.string(), submitted: z.number(), ok: z.boolean(), status: z.string() }).nullable().passthrough(),
+    result: z.object({ host: z.string(), submitted: z.number(), ok: z.boolean(), status: z.string() }).passthrough().nullable(),
     parameters: z.object({
       urls: z.string().describe('逗号分隔的 URL 列表'),
       key: z.string().describe('IndexNow key'),
@@ -319,7 +319,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('analyze', {
     description: '分析页面 SEO 因素，给出评分和优化建议',
     scope: 'project',
-    result: z.object({ url: z.string().optional(), title: z.string(), description: z.string(), robots: z.string(), canonical: z.string(), openGraph: z.object({ title: z.string(), description: z.string(), image: z.string(), url: z.string() }), twitter: z.object({ card: z.string(), title: z.string(), description: z.string(), image: z.string() }), headings: z.object({ h1Count: z.number(), h1s: z.array(z.string()), h2Count: z.number(), h2s: z.array(z.string()) }), images: z.object({ total: z.number(), withoutAlt: z.number() }), links: z.object({ internal: z.number(), external: z.number() }), structuredData: z.array(z.any()), score: z.object({ passed: z.number(), total: z.number(), percentage: z.number() }) }).nullable().passthrough(),
+    result: z.object({ url: z.string().optional(), title: z.string(), description: z.string(), robots: z.string(), canonical: z.string(), openGraph: z.object({ title: z.string(), description: z.string(), image: z.string(), url: z.string() }), twitter: z.object({ card: z.string(), title: z.string(), description: z.string(), image: z.string() }), headings: z.object({ h1Count: z.number(), h1s: z.array(z.string()), h2Count: z.number(), h2s: z.array(z.string()) }), images: z.object({ total: z.number(), withoutAlt: z.number() }), links: z.object({ internal: z.number(), external: z.number() }), structuredData: z.array(z.any()), score: z.object({ passed: z.number(), total: z.number(), percentage: z.number() }) }).passthrough().nullable(),
     parameters: z.object({
       url: z.string().describe('要分析的页面 URL'),
       html: z.string().optional().describe('直接传入 HTML 字符串，跳过网络抓取'),
@@ -564,7 +564,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('login', {
     description: '在浏览器中登录外链平台，保存登录状态',
     scope: 'browser',
-    result: z.object({ platform: z.string(), loggedIn: z.boolean() }).nullable().passthrough(),
+    result: z.object({ platform: z.string(), loggedIn: z.boolean() }).passthrough().nullable(),
     parameters: z.object({
       platform: z.string().describe('平台名称（模糊匹配，如 github / linkedin）'),
     }),
@@ -613,7 +613,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('logout', {
     description: '清除平台的登录状态',
     scope: 'project',
-    result: z.object({ cleared: z.number().optional(), keys: z.array(z.string()).optional(), platform: z.string().optional() }).nullable().passthrough(),
+    result: z.object({ cleared: z.number().optional(), keys: z.array(z.string()).optional(), platform: z.string().optional() }).passthrough().nullable(),
     parameters: z.object({
       platform: z.string().optional().describe('平台名称或 "all" 清除全部'),
     }),
@@ -853,7 +853,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('submit-backlink', {
     description: '在浏览器中打开外链平台的外链提交入口页面，可选自动填写 URL',
     scope: 'browser',
-    result: z.object({ platform: z.string(), entryUrl: z.string(), category: z.string(), steps: z.string(), autoFill: z.object({ filled: z.boolean(), saved: z.boolean() }).optional() }).nullable().passthrough(),
+    result: z.object({ platform: z.string(), entryUrl: z.string(), category: z.string(), steps: z.string(), autoFill: z.object({ filled: z.boolean(), saved: z.boolean() }).optional() }).passthrough().nullable(),
     parameters: z.object({
       platform: z.string().describe('平台名称（模糊匹配，如 linkedin / github / medium）'),
       url: z.string().optional().describe('要填写的网站 URL（提供后自动填写并保存）'),
@@ -961,7 +961,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('submit-guest-post', {
     description: '在浏览器中提交客座文章到支持 Guest Post 的平台',
     scope: 'browser',
-    result: z.object({ platform: z.string(), formUrl: z.string(), submitted: z.boolean().optional(), type: z.string().optional() }).nullable().passthrough(),
+    result: z.object({ platform: z.string(), formUrl: z.string(), submitted: z.boolean().optional(), type: z.string().optional() }).passthrough().nullable(),
     parameters: z.object({
       platform: z.string().describe('平台名称（如 css-tricks / smashing-magazine / search-engine-journal）'),
       name: z.string().describe('你的姓名'),
@@ -1395,7 +1395,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('batch-submit', {
     description: '批量提交网站 URL 到多个外链平台（自动填写并保存）',
     scope: 'browser',
-    result: z.object({ url: z.string(), total: z.number(), summary: z.object({ reachable: z.number(), logged: z.number(), filled: z.number(), saved: z.number() }) }).nullable().passthrough(),
+    result: z.object({ url: z.string(), total: z.number(), summary: z.object({ reachable: z.number(), logged: z.number(), filled: z.number(), saved: z.number() }) }).passthrough().nullable(),
     parameters: z.object({
       url: z.string().describe('要提交的网站 URL'),
       platforms: z.string().optional().describe('平台组: google/github/oauth27/all 或逗号分隔的平台名称，默认 oauth27'),

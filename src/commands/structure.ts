@@ -7,6 +7,7 @@ export const structureCommand = registerCommand({
   name: 'structure',
   description: 'Get the DOM structure of the page or an element',
   scope: 'page',
+  selectorParams: ['selector'],
   parameters: z.object({
     selector: z.string().optional(),
     depth: z.number().optional(),

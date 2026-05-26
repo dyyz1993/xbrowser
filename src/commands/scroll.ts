@@ -7,6 +7,7 @@ export const scrollCommand = registerCommand({
   name: 'scroll',
   description: 'Scroll the page or an element',
   scope: 'page',
+  selectorParams: ['selector'],
   parameters: z.object({
     direction: z.enum(['up', 'down', 'left', 'right']),
     distance: z.number().optional(),

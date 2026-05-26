@@ -7,6 +7,7 @@ export const htmlCommand = registerCommand({
   name: 'html',
   description: 'Get page HTML content',
   scope: 'page',
+  selectorParams: ['selector'],
   parameters: z.object({
     selector: z.string().optional(),
   }),
@@ -25,6 +26,7 @@ export const textCommand = registerCommand({
   name: 'text',
   description: 'Get text content',
   scope: 'page',
+  selectorParams: ['selector'],
   parameters: z.object({
     selector: z.string().optional(),
   }),

@@ -13,7 +13,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('extract', {
     description: '从指定URL提取页面结构化内容',
     scope: 'browser',
-    result: z.array(z.object({ tag: z.string(), text: z.string(), href: z.string().optional(), src: z.string().optional() })).passthrough(),
+    result: z.array(z.object({ tag: z.string(), text: z.string(), href: z.string().optional(), src: z.string().optional() }).passthrough()),
     parameters: z.object({
       url: z.string().describe('目标页面URL'),
       selector: z.string().optional().default('body').describe('CSS选择器，默认body'),
@@ -93,7 +93,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('paginate', {
     description: '分页采集：自动翻页并提取数据',
     scope: 'browser',
-    result: z.array(z.record(z.string())).passthrough(),
+    result: z.array(z.record(z.string())),
     parameters: z.object({
       url: z.string().describe('起始页URL'),
       nextSelector: z

@@ -149,7 +149,7 @@ export default function (xcli: XCLIAPI): void {
             `采集 ${pages} 页，共 ${allResults.length} 条结果${limit ? `，截取前 ${limit} 条` : ''}`,
           ]);
       } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误',, cdpTips);
+        return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -225,7 +225,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok(items, [...cdpTips, `分类: ${params.category}`, `共获取 ${items.length} 条热搜`]);
       } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误',, cdpTips);
+        return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -261,7 +261,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok(items, [...cdpTips, `关键词 "${params.query}" 的搜索建议共 ${items.length} 条`]);
       } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误',, cdpTips);
+        return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -331,7 +331,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok(news, [...cdpTips, `关键词 "${params.query}" 获取 ${news.length} 条新闻`]);
       } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误',, cdpTips);
+        return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -418,7 +418,7 @@ export default function (xcli: XCLIAPI): void {
             `共检查 ${pages} 页`,
           ]);
       } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误',, cdpTips);
+        return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -575,7 +575,7 @@ export default function (xcli: XCLIAPI): void {
             timestamp: new Date().toISOString(),
           }, [...cdpTips, `关键词 "${query}" 搜索到 ${total} 张图片`]);
       } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误',, cdpTips);
+        return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });

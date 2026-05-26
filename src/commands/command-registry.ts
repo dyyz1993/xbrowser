@@ -15,6 +15,11 @@ export interface BrowserCommandDefinition<
   scope: CommandScope;
   parameters?: P;
   result?: ZodType<unknown>;
+  /**
+   * Declare which parameter keys contain CSS selectors.
+   * The executor will resolve `eN` ref values to real selectors before calling the handler.
+   */
+  selectorParams?: string[];
   handler: (params: z.infer<P>, ctx: BrowserCommandContext) => Promise<unknown>;
 }
 
@@ -27,6 +32,7 @@ export interface RegisteredCommand {
   readonly scope: CommandScope;
   readonly parameters?: ZodType<unknown>;
   readonly result?: ZodType<unknown>;
+  readonly selectorParams?: string[];
   readonly handler: (
     params: Record<string, unknown>,
     ctx: BrowserCommandContext
@@ -61,6 +67,7 @@ export function registerCommand<P extends ZodType<unknown, ZodTypeDef, unknown>>
     scope: def.scope,
     parameters: def.parameters,
     result: def.result,
+    selectorParams: def.selectorParams,
     handler: def.handler as RegisteredCommand['handler'],
   };
   registry.set(cmd.name, cmd);

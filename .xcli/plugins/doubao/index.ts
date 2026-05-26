@@ -968,7 +968,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao my-creations', description: '查看所有创作' },
       { cmd: 'xbrowser doubao my-creations --type image', description: '只看图片' },
     ],
-    result: z.array(z.object({ index: z.number(), src: z.string(), alt: z.string(), text: z.string() }).passthrough()).passthrough(),
+    result: z.array(z.object({ index: z.number(), src: z.string(), alt: z.string(), text: z.string() }).passthrough()),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);

@@ -18,6 +18,7 @@ import './crawl.js';
 import './search.js';
 import './network.js';
 import './ai-search-engines.js';
+import './snapshot.js';
 
 export { getCommand, getAllCommands, getCommandNames, clearRegistry, registerCommand } from './command-registry.js';
 export type { RegisteredCommand, BrowserCommandDefinition } from './command-registry.js';

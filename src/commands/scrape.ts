@@ -9,6 +9,7 @@ export const scrapeCommand = registerCommand({
   name: 'scrape',
   description: 'Scrape a page and convert to Markdown (with JS rendering)',
   scope: 'project',
+  selectorParams: ['selector'],
   parameters: z.object({
     url: z.string(),
     selector: z.string().optional(),

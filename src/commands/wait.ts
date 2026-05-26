@@ -48,5 +48,5 @@ const waitForSelectorDef = {
   },
 };
 
-export const waitCommand = registerCommand({ name: 'wait', ...waitForSelectorDef });
+export const waitCommand = registerCommand({ name: 'wait', selectorParams: ['selector'], ...waitForSelectorDef });
 
