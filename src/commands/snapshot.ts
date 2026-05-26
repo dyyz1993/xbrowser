@@ -3,7 +3,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { resolveSelectors } from '../utils/resolve-selector.js';
-import { extractSemanticElements, extractDomain, saveSemantics } from '../utils/site-semantics.js';
+import { extractSemanticElements, extractDomain, saveSemantics, enhanceSemanticsWithLLM } from '../utils/site-semantics.js';
 
 export const snapshotCommand = registerCommand({
   name: 'snapshot',
@@ -69,6 +69,7 @@ function persistSemantics(url: string, aria: string | undefined): void {
     if (Object.keys(elements).length > 0) {
       saveSemantics(domain, pathKey, url, elements);
     }
+    enhanceSemanticsWithLLM(url, aria, elements).catch(() => {});
   } catch {
     // semantics persistence is non-critical
   }

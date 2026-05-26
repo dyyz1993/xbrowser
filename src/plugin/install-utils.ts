@@ -11,7 +11,7 @@ import { resolve } from 'path';
 import { execSync } from 'child_process';
 import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';
-import { getConfigValue } from '../config.js';
+import { getMarketplaceUrl } from '../config.js';
 import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 
 export interface PluginVerifyResult {
@@ -19,8 +19,6 @@ export interface PluginVerifyResult {
   error?: string;
   warnings?: string[];
 }
-
-const DEFAULT_MARKETPLACE_URL = 'https://marketplace.xbrowser.dev';
 
 export async function downloadToFile(url: string, destPath: string): Promise<void> {
   await ensureProxyFetch();
@@ -89,13 +87,8 @@ export async function verifyPlugin(dir: string): Promise<PluginVerifyResult> {
   return { valid: true, warnings };
 }
 
-export function getMarketplaceUrl(): string {
-  return (
-    process.env.XBROWSER_MARKETPLACE_URL ||
-    (getConfigValue('marketplaceUrl') as string) ||
-    DEFAULT_MARKETPLACE_URL
-  );
-}
+
+export { getMarketplaceUrl };
 
 export function safeCleanup(dir: string): void {
   try {

@@ -2,6 +2,7 @@ import { existsSync, writeFileSync, mkdirSync } from 'fs';
 import { resolve } from 'path';
 import { homedir } from 'os';
 import { readJsonFile } from '../../utils/json-file.js';
+import { getRegistryUrl } from '../../config.js';
 
 export interface AuthConfig {
   token: string;
@@ -28,6 +29,4 @@ export function saveAuth(config: AuthConfig): void {
   writeFileSync(getAuthFile(), JSON.stringify(config, null, 2), 'utf-8');
 }
 
-export function getRegistryUrl(options: Record<string, unknown>, fallbackRegistry?: string): string {
-  return (options['registry'] as string) || process.env.XBROWSER_REGISTRY || fallbackRegistry || 'https://xbrowser.dev';
-}
+export { getRegistryUrl };

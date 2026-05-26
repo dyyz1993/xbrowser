@@ -49,8 +49,29 @@ interface ConfigRoot {
 }
 
 export const DEFAULT_MARKETPLACE_URL = 'https://marketplace.xbrowser.dev';
+export const DEFAULT_REGISTRY_URL = 'https://xbrowser.dev';
 export const NPM_REGISTRY_URL = 'https://registry.npmjs.org';
 export const NPM_SCOPE = '@xbrowser/';
+
+export function getMarketplaceUrl(): string {
+  return (
+    process.env.XBROWSER_MARKETPLACE_URL ||
+    (getConfigValue('marketplaceUrl') as string) ||
+    DEFAULT_MARKETPLACE_URL
+  );
+}
+
+export function getRegistryUrl(
+  options: Record<string, unknown> = {},
+  fallbackRegistry?: string,
+): string {
+  return (
+    (options['registry'] as string) ||
+    process.env.XBROWSER_REGISTRY ||
+    fallbackRegistry ||
+    DEFAULT_REGISTRY_URL
+  );
+}
 
 export function resolveNpmPackageName(name: string): string {
   if (name.startsWith('@')) return name;

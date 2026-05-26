@@ -1,7 +1,19 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { extractSemanticElements, extractDomain, saveSemantics, loadSemantics, getSemanticsPath } from '../../src/utils/site-semantics.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { extractSemanticElements, extractDomain, saveSemantics, loadSemantics, getSemanticsPath, shouldInvokeLLM, analyzeWithLLM } from '../../src/utils/site-semantics.js';
 import { existsSync, rmSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
+
+let mockExecFileCallback: ((err: Error | null, stdout: string, stderr: string) => void) | null = null;
+
+vi.mock('child_process', () => ({
+  execFile: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb: unknown) => {
+    const callback = cb as (err: Error | null, stdout: string, stderr: string) => void;
+    if (mockExecFileCallback) {
+      mockExecFileCallback = null;
+      setImmediate(() => callback(null, '', ''));
+    }
+  }),
+}));
 
 const MOCK_DIR = '/tmp/xbrowser-test-semantics';
 
@@ -167,5 +179,157 @@ button "搜索" [ref=e2]
 
   it('returns null for unknown domain', () => {
     expect(loadSemantics('nonexistent.com')).toBeNull();
+  });
+});
+
+describe('shouldInvokeLLM', () => {
+  const makeSnapshot = (lines: string[]) => lines.join('\n');
+
+  it('skips when interactive elements below threshold', () => {
+    const snapshot = makeSnapshot([
+      'button "OK" [ref=e1]',
+      'link "Home" [ref=e2]',
+    ]);
+    const result = shouldInvokeLLM(snapshot, {}, null);
+    expect(result.shouldInvoke).toBe(false);
+    expect(result.reason).toContain('below threshold');
+  });
+
+  it('triggers when generic ratio is high', () => {
+    const snapshot = makeSnapshot([
+      'button "OK" [ref=e1]',
+      'link "Home" [ref=e2]',
+      'link "About" [ref=e3]',
+      'link "Contact" [ref=e4]',
+      'link "Help" [ref=e5]',
+      'generic "action1" [ref=e6]',
+      'generic "action2" [ref=e7]',
+      'generic "action3" [ref=e8]',
+      'generic "action4" [ref=e9]',
+      'generic "action5" [ref=e10]',
+    ]);
+    const elements = extractSemanticElements(snapshot);
+    const result = shouldInvokeLLM(snapshot, elements, null);
+    expect(result.shouldInvoke).toBe(true);
+    expect(result.reason).toContain('generic ratio');
+  });
+
+  it('triggers when rule-based extraction is poor', () => {
+    const snapshot = makeSnapshot([
+      'button "OK" [ref=e1]',
+      'link "Home" [ref=e2]',
+      'link "About" [ref=e3]',
+      'link "Contact" [ref=e4]',
+      'link "Help" [ref=e5]',
+      'link "Blog" [ref=e6]',
+      'link "FAQ" [ref=e7]',
+      'link "Docs" [ref=e8]',
+      'link "API" [ref=e9]',
+      'link "Support" [ref=e10]',
+    ]);
+    const sparseElements: Record<string, { role: string; label: string }> = {};
+    const result = shouldInvokeLLM(snapshot, sparseElements, null);
+    expect(result.shouldInvoke).toBe(true);
+    expect(result.reason).toContain('< 30%');
+  });
+
+  it('triggers when semantics are stale', () => {
+    const snapshot = makeSnapshot([
+      'button "OK" [ref=e1]',
+      'link "Home" [ref=e2]',
+      'link "About" [ref=e3]',
+      'link "Contact" [ref=e4]',
+      'link "Help" [ref=e5]',
+      'link "Blog" [ref=e6]',
+    ]);
+    const staleSemantics = {
+      site: 'example.com',
+      pages: {},
+      updated_at: '2020-01-01',
+    };
+    const elements = extractSemanticElements(snapshot);
+    const result = shouldInvokeLLM(snapshot, elements, staleSemantics);
+    expect(result.shouldInvoke).toBe(true);
+    expect(result.reason).toContain('stale');
+  });
+
+  it('skips when rule-based extraction is sufficient', () => {
+    const snapshot = makeSnapshot([
+      'button "OK" [ref=e1]',
+      'link "Home" [ref=e2]',
+      'link "About" [ref=e3]',
+      'link "Contact" [ref=e4]',
+      'link "Help" [ref=e5]',
+      'link "Blog" [ref=e6]',
+    ]);
+    const elements = extractSemanticElements(snapshot);
+    const result = shouldInvokeLLM(snapshot, elements, null);
+    expect(result.shouldInvoke).toBe(false);
+    expect(result.reason).toContain('sufficient');
+  });
+});
+
+describe('analyzeWithLLM', () => {
+  it('returns null on execFile error', async () => {
+    const { execFile } = await import('child_process');
+    const mockImpl = vi.mocked(execFile);
+    mockImpl.mockImplementationOnce((_cmd: any, _args: any, _opts: any, cb: any) => {
+      cb(new Error('not found'), '', '');
+      return {} as any;
+    });
+
+    process.env.PI_CLI_PATH = '/nonexistent/pi';
+    const result = await analyzeWithLLM('button "test" [ref=e1]');
+    expect(result).toBeNull();
+    delete process.env.PI_CLI_PATH;
+  });
+
+  it('parses valid YAML output', async () => {
+    const yamlOutput = `
+搜索框:
+  role: searchbox
+  label: 搜索
+  action: input_search
+提交按钮:
+  role: button
+  label: 提交
+  action: submit
+`;
+    const { execFile } = await import('child_process');
+    const mockImpl = vi.mocked(execFile);
+    mockImpl.mockImplementationOnce((_cmd: any, _args: any, _opts: any, cb: any) => {
+      cb(null, yamlOutput, '');
+      return {} as any;
+    });
+
+    const result = await analyzeWithLLM('searchbox "搜索" [ref=e1]\nbutton "提交" [ref=e2]');
+    expect(result).not.toBeNull();
+    expect(result!['搜索框'].role).toBe('searchbox');
+    expect(result!['搜索框'].action).toBe('input_search');
+    expect(result!['提交按钮'].role).toBe('button');
+  });
+
+  it('returns null for empty output', async () => {
+    const { execFile } = await import('child_process');
+    const mockImpl = vi.mocked(execFile);
+    mockImpl.mockImplementationOnce((_cmd: any, _args: any, _opts: any, cb: any) => {
+      cb(null, '', '');
+      return {} as any;
+    });
+
+    const result = await analyzeWithLLM('button "test" [ref=e1]');
+    expect(result).toBeNull();
+  });
+
+  it('returns null for invalid YAML output', async () => {
+    const { execFile } = await import('child_process');
+    const mockImpl = vi.mocked(execFile);
+    mockImpl.mockImplementationOnce((_cmd: any, _args: any, _opts: any, cb: any) => {
+      cb(null, 'not valid yaml [[[[', '');
+      return {} as any;
+    });
+
+    const result = await analyzeWithLLM('button "test" [ref=e1]');
+    expect(result).toBeNull();
   });
 });

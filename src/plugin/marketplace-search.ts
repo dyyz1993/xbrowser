@@ -1,14 +1,10 @@
 import type { MarketplacePluginSearchResult, SearchOptions } from './types.js';
-import { getConfigValue, DEFAULT_MARKETPLACE_URL } from '../config.js';
+import { getMarketplaceUrl } from '../config.js';
 import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 
 export class MarketplaceSearcher {
   private static getBaseUrl(): string {
-    return (
-      process.env.XBROWSER_MARKETPLACE_URL ||
-      (getConfigValue('marketplaceUrl') as string) ||
-      DEFAULT_MARKETPLACE_URL
-    );
+    return getMarketplaceUrl();
   }
 
   static async search(options: SearchOptions = {}): Promise<MarketplacePluginSearchResult[]> {
