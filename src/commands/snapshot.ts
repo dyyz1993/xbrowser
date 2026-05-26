@@ -3,6 +3,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { resolveSelectors } from '../utils/resolve-selector.js';
+import { extractSemanticElements, extractDomain, saveSemantics } from '../utils/site-semantics.js';
 
 export const snapshotCommand = registerCommand({
   name: 'snapshot',
@@ -30,6 +31,7 @@ export const snapshotCommand = registerCommand({
     if (p.type === 'aria') {
       const aria = await captureAriaSnapshot(page, p.selector, p.depth);
       const tips = await buildRefTips(page, aria);
+      persistSemantics(url, aria);
       return ok({ url, title, aria }, tips);
     }
 
@@ -50,12 +52,27 @@ export const snapshotCommand = registerCommand({
         captureDomSnapshot(page, p.selector, p.depth ?? 6),
       ]);
       const tips = await buildRefTips(page, aria);
+      persistSemantics(url, aria);
       return ok({ url, title, aria, text, dom }, tips);
     }
 
     return fail(`Unknown snapshot type: ${p.type}`);
   },
 });
+
+function persistSemantics(url: string, aria: string | undefined): void {
+  if (!aria || aria === '(aria snapshot not available)') return;
+  try {
+    const domain = extractDomain(url);
+    const pathKey = new URL(url).pathname.replace(/\/$/, '') || '/';
+    const elements = extractSemanticElements(aria);
+    if (Object.keys(elements).length > 0) {
+      saveSemantics(domain, pathKey, url, elements);
+    }
+  } catch {
+    // semantics persistence is non-critical
+  }
+}
 
 async function buildRefTips(page: import('playwright').Page, aria: string | undefined): Promise<string[]> {
   if (!aria) return [];
