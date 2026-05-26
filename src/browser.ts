@@ -126,22 +126,44 @@ process.on('exit', () => {
   sessions.clear();
 });
 
-async function getCDPTargets(cdpEndpoint: string): Promise<Array<{ id: string; url: string; webSocketDebuggerUrl: string }>> {
+async function getCDPTargets(cdpEndpoint: string | number): Promise<Array<{ id: string; url: string; title: string; webSocketDebuggerUrl: string }>> {
   try {
+    const ep = String(cdpEndpoint);
     let host = 'localhost';
     let port = '9222';
-    if (cdpEndpoint.startsWith('http://') || cdpEndpoint.startsWith('https://')) {
-      const u = new URL(cdpEndpoint);
+    if (ep.startsWith('http://') || ep.startsWith('https://')) {
+      const u = new URL(ep);
       host = u.hostname;
       port = u.port || '9222';
-    } else if (/^\d+$/.test(cdpEndpoint)) {
-      port = cdpEndpoint;
+    } else if (/^\d+$/.test(ep)) {
+      port = ep;
     }
-    const resp = await fetch(`http://${host}:${port}/json/list`);
-    return (await resp.json()) as Array<{ id: string; url: string; webSocketDebuggerUrl: string }>;
+    const url = `http://${host}:${port}/json/list`;
+    const resp = await fetch(url);
+    return (await resp.json()) as Array<{ id: string; url: string; title: string; webSocketDebuggerUrl: string }>;
   } catch {
     return [];
   }
+}
+
+export async function findTargetPage(
+  cdpEndpoint: string | number,
+  target: string
+): Promise<{ pageId: string; wsUrl: string; title: string; url: string } | null> {
+  const targets = await getCDPTargets(cdpEndpoint);
+  const pages = targets.filter(t => t.url && !t.url.startsWith('about:blank') && !t.url.startsWith('chrome://'));
+
+  const byId = pages.find(t => t.id === target);
+  if (byId) return { pageId: byId.id, wsUrl: byId.webSocketDebuggerUrl, title: byId.title, url: byId.url };
+
+  const lowerTarget = target.toLowerCase();
+  const byTitle = pages.find(t => t.title && t.title.toLowerCase().includes(lowerTarget));
+  if (byTitle) return { pageId: byTitle.id, wsUrl: byTitle.webSocketDebuggerUrl, title: byTitle.title, url: byTitle.url };
+
+  const byUrl = pages.find(t => t.url.toLowerCase().includes(lowerTarget));
+  if (byUrl) return { pageId: byUrl.id, wsUrl: byUrl.webSocketDebuggerUrl, title: byUrl.title, url: byUrl.url };
+
+  return null;
 }
 
 /**
@@ -668,7 +690,7 @@ export async function createSession(
   }
 
   if (url && page.url() !== url) {
-    await page.goto(url, { waitUntil: 'domcontentloaded' });
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
   }
 
   const session: ManagedSession = {

@@ -148,6 +148,26 @@ export async function executeCommand(
     );
   }
 
+  // --target: extract and resolve before Zod validation
+  const _target = params._target as string | undefined;
+  // Remove _target from params so Zod schemas don't complain about unknown keys
+  if (_target) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { _target: _u, ...rest } = params;
+    params = rest;
+  }
+
+  let targetPageOverride: { url: string; title: string } | null = null;
+  if (_target && extraOpts?.cdpEndpoint) {
+    const { findTargetPage } = await import('./browser.js');
+    targetPageOverride = await findTargetPage(extraOpts.cdpEndpoint, _target);
+    if (!targetPageOverride) {
+      return errorResult(`Target "${_target}" not found. Use 'xbrowser targets --cdp ${extraOpts.cdpEndpoint}' to list available pages.`);
+    }
+    // Override URL with target page URL so commands navigate to the right place
+    params = { ...params, url: targetPageOverride.url };
+  }
+
   if (command.parameters) {
     const result = command.parameters.safeParse(params);
     if (!result.success) {
@@ -169,10 +189,17 @@ export async function executeCommand(
   }
 
   let session: ManagedSession | undefined;
+
   // Try in-memory first, then disk restore
   const existing = await findOrRestoreSession(sessionName, extraOpts?.cdpEndpoint);
   if (existing) {
     session = existing;
+    if (targetPageOverride && session.page) {
+      const currentUrl = session.page.url();
+      if (currentUrl !== targetPageOverride.url) {
+        await session.page.goto(targetPageOverride.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+      }
+    }
   } else if ((command.scope === 'page' || command.scope === 'project') && params.url) {
     session = await createSession(sessionName, params.url as string, {
       cdpEndpoint: extraOpts?.cdpEndpoint,

@@ -449,6 +449,10 @@ export async function routeCommand(
           }
           const params = parsePluginParams(cmdArgsForPlugin, cmdEntry.parameters!, options);
 
+          if (options.target && !params._target) {
+            params._target = options.target;
+          }
+
           const needsBrowser = cmdEntry.scope !== 'global';
           if (needsBrowser && !process.env.XBROWSER_DAEMON_WORKER) {
             const { forwardExec } = await import('./client/daemon-client.js');

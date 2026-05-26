@@ -252,8 +252,8 @@ export async function handleBrowserCommand(
           };
           break;
         }
-       case 'scrape':
-          if (!args[0]) outputError('Usage: xbrowser scrape <url> [--format markdown|html|text] [--selector <sel>] [--timeout <ms>]');
+        case 'scrape':
+          if (!args[0]) outputError('Usage: xbrowser scrape <url> [--format markdown|html|text] [--mode raw|clean|compact] [--selector <sel>] [--timeout <ms>]');
           cmdName = 'scrape';
           params = {
             url: args[0],
@@ -261,6 +261,7 @@ export async function handleBrowserCommand(
             timeout: options.timeout ? Number(options.timeout) : undefined,
             format: options.format as string | undefined,
             onlyMainContent: options['only-main-content'] !== 'false',
+            mode: options.mode as string | undefined,
           };
           break;
         case 'map':
@@ -336,6 +337,11 @@ export async function handleBrowserCommand(
          params = { ...options };
          break;
      }
+  }
+
+  const target = options.target as string | undefined;
+  if (target) {
+    params = { ...params, _target: target };
   }
 
   const result = cdpEndpoint
