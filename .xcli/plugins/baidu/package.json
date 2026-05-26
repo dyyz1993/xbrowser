@@ -1,18 +1,32 @@
 {
-  "name": "@xbrowser/baidu",
-  "version": "2.0.0",
+  "_marketplace": {
+    "slug": "baidu",
+    "url": "https://marketplace.xbrowser.dev"
+  },
+  "_npmSource": {
+    "name": "@xbrowser/baidu",
+    "version": "2.0.0"
+  },
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "百度搜索 - 真实浏览器操作",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "baidu.com"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "@xbrowser/baidu",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "2.0.0",
   "xbrowser": {
-    "site": "https://www.baidu.com",
-    "requiresLogin": false,
+    "author": "dyyz1993",
     "commands": [
       "search",
       "hotsearch",
@@ -20,25 +34,18 @@
       "news",
       "seo-rank"
     ],
-    "slug": "baidu",
-    "name": "@xbrowser/baidu",
     "description": "百度搜索 - 真实浏览器操作",
-    "version": "2.0.0",
-    "author": "dyyz1993",
+    "name": "@xbrowser/baidu",
+    "requiresLogin": false,
+    "site": "https://www.baidu.com",
+    "sites": [
+      "baidu.com"
+    ],
+    "slug": "baidu",
     "tags": [
       "baidu",
       "search-engine"
     ],
-    "sites": [
-      "baidu.com"
-    ]
-  },
-  "_npmSource": {
-    "name": "@xbrowser/baidu",
     "version": "2.0.0"
-  },
-  "_marketplace": {
-    "slug": "baidu",
-    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
   }
 }

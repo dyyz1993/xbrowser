@@ -233,14 +233,51 @@ function errResult(message: string, tips: string[]) {
 }
 
 export default function (xcli: XCLIAPI): void {
-  const site = xcli.createSite({ name: 'xiaohongshu', url: XHS_BASE, description: '小红书数据采集' });
+  const site = xcli.createSite({
+    name: 'xiaohongshu',
+    url: XHS_BASE,
+    description: '小红书数据采集',
+    requiresLogin: false,
+    loginConfig: {
+      loginUrls: ['/login', '/passport'],
+      loginSelectors: ['[class*="login"]', '[class*="modal"]'],
+      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]', '[class*="slider"]'],
+      loginKeywords: ['登录', '注册'],
+      loggedInSelectors: ['[class*="avatar"]', '[class*="user-info"]'],
+      loginPrompt: '请使用 --cdp 连接已登录的浏览器（CDP 9221）',
+    },
+    isLogin: async (ctx) => {
+      const ctxAny = ctx as Record<string, unknown>;
+      const page = ctxAny.page as import('playwright-core').Page;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/login')) return false;
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        if (!body) return false;
+        if (body.includes('登录')) return false;
+        return true;
+      } catch {
+        return true;
+      }
+    },
+  });
 
   site.command('detail', {
     description: '获取笔记详情（API 拦截）',
     scope: 'browser',
     parameters: z.object({ noteId: z.string().describe('笔记 ID') }),
     examples: [{ cmd: 'xbrowser xiaohongshu detail --noteId "67xxxxxxxxxxxxxx"', description: '获取笔记详情' }],
-    result: z.any(),
+    result: z.object({
+      noteId: z.string(), type: z.string(), title: z.string(), desc: z.string(),
+      cover: z.string(), images: z.array(z.string()), videoUrl: z.string(),
+      author: z.object({ userId: z.string(), nickname: z.string(), avatar: z.string() }).passthrough(),
+      statistics: z.object({
+        likedCount: z.string(), collectedCount: z.string(),
+        commentCount: z.string(), shareCount: z.string(),
+      }).passthrough(),
+      tags: z.array(z.string()), time: z.number(), lastUpdateTime: z.number(),
+    }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -283,7 +320,19 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({ userId: z.string().describe('用户 ID'), maxPages: z.number().default(5).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu notes --userId "5xxxxxxxxxxxx"', description: '采集用户笔记' }],
-    result: z.any(),
+    result: z.object({
+      total: z.number(),
+      notes: z.array(z.object({
+        noteId: z.string(), type: z.string(), title: z.string(), desc: z.string(),
+        cover: z.string(), images: z.array(z.string()), videoUrl: z.string(),
+        author: z.object({ userId: z.string(), nickname: z.string(), avatar: z.string() }).passthrough(),
+        statistics: z.object({
+          likedCount: z.string(), collectedCount: z.string(),
+          commentCount: z.string(), shareCount: z.string(),
+        }).passthrough(),
+        tags: z.array(z.string()), time: z.number(), lastUpdateTime: z.number(),
+      }).passthrough()),
+    }),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -315,7 +364,20 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({ userId: z.string().describe('用户 ID') }),
     examples: [{ cmd: 'xbrowser xiaohongshu profile --userId "5xxxxxxxxxxxx"', description: '获取用户资料' }],
-    result: z.any(),
+    result: z.object({
+      userId: z.string(),
+      nickname: z.string(),
+      redId: z.string().optional(),
+      avatar: z.string(),
+      desc: z.string().optional(),
+      gender: z.string().optional(),
+      ipLocation: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      statistics: z.object({
+        notes: z.number(), fans: z.number(), following: z.number(), interaction: z.number(),
+      }).passthrough().optional(),
+      stats: z.record(z.string()).optional(),
+    }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -369,7 +431,15 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({ keyword: z.string().describe('搜索关键词'), maxPages: z.number().default(3).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu search --keyword "美食推荐"', description: '搜索笔记' }],
-    result: z.any(),
+    result: z.object({
+      keyword: z.string(),
+      total: z.number(),
+      notes: z.array(z.object({
+        noteId: z.string(), type: z.string(), title: z.string(), cover: z.string(),
+        author: z.object({ userId: z.string(), nickname: z.string() }).passthrough(),
+        likedCount: z.string(),
+      }).passthrough()),
+    }),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -401,7 +471,15 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({ noteId: z.string().describe('笔记 ID'), maxPages: z.number().default(8).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu comments --noteId "67xxxxxxxxxxxxxx"', description: '获取笔记评论' }],
-    result: z.any(),
+    result: z.object({
+      total: z.number(),
+      comments: z.array(z.object({
+        id: z.string(), content: z.string(),
+        author: z.object({ userId: z.string(), nickname: z.string(), avatar: z.string() }).passthrough(),
+        likedCount: z.number(), subCommentCount: z.number(),
+        ipLocation: z.string(), createTime: z.number(), createTimeStr: z.string(),
+      }).passthrough()),
+    }),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -437,7 +515,14 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({ maxPages: z.number().default(3).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu feed', description: '获取首页推荐' }],
-    result: z.any(),
+    result: z.object({
+      total: z.number(),
+      notes: z.array(z.object({
+        noteId: z.string(), type: z.string(), title: z.string(), cover: z.string(),
+        author: z.object({ userId: z.string(), nickname: z.string() }).passthrough(),
+        likedCount: z.string(),
+      }).passthrough()),
+    }),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -469,7 +554,12 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({ url: z.string().describe('短链 URL') }),
     examples: [{ cmd: 'xbrowser xiaohongshu resolve-url --url "https://xhslink.com/xxx"', description: '解析短链' }],
-    result: z.any(),
+    result: z.object({
+      originalUrl: z.string(),
+      finalUrl: z.string(),
+      noteId: z.string(),
+      userId: z.string(),
+    }),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -503,12 +593,21 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       query: z.string(),
       limit: z.number().optional().default(10),
-      page: z.any().optional(),
       timeout: z.number().optional().default(20000),
     }),
-    result: z.any(),
+    result: z.object({
+      query: z.string(),
+      engine: z.string(),
+      results: z.array(z.object({
+        title: z.string(), thumbnailUrl: z.string(), sourceUrl: z.string(),
+        originalUrl: z.string(), width: z.number(), height: z.number(),
+        format: z.string(), sourceSite: z.string(),
+      }).passthrough()),
+      total: z.number(),
+      timestamp: z.number(),
+    }),
     handler: async (params, ctx) => {
-      const page = (params.page as import('playwright').Page) || (ctx as Record<string, unknown>).page as import('playwright').Page;
+      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
       try {
         await page.goto('https://www.xiaohongshu.com/search_result?keyword=' + encodeURIComponent(params.query) + '&source=web_search_result_notes', { waitUntil: 'networkidle', timeout: params.timeout });

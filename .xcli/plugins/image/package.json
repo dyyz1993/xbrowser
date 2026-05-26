@@ -1,9 +1,31 @@
 {
-  "name": "image",
-  "version": "1.0.0",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "Multi-engine image search with unified result format",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin"
+  ],
+  "main": "index.ts",
+  "name": "image",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
   "type": "module",
+  "version": "1.0.0",
   "xbrowser": {
-    "description": "Multi-engine image search"
+    "author": "dyyz1993",
+    "commands": [
+      "image"
+    ],
+    "description": "Multi-engine image search",
+    "name": "image",
+    "sites": [],
+    "slug": "image",
+    "tags": [
+      "image"
+    ],
+    "version": "1.0.0"
   }
 }

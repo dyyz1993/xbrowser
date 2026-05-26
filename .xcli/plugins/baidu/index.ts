@@ -41,6 +41,9 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.baidu.com',
     description: '百度搜索 - 真实浏览器操作',
     requiresLogin: false,
+    loginConfig: {
+      requiresLogin: false,
+    },
   });
 
   baidu.command('search', {
@@ -55,7 +58,10 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser baidu search --query "AI"', description: '搜索 AI 相关内容' },
       { cmd: 'xbrowser baidu search --query "编程" --pages 3', description: '搜索编程并采集前3页' },
     ],
-    result: z.any(),
+    result: z.array(z.object({
+      title: z.string(), url: z.string(), snippet: z.string(),
+      source: z.string(), page: z.number(), position: z.number(),
+    })),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -143,11 +149,7 @@ export default function (xcli: XCLIAPI): void {
             `采集 ${pages} 页，共 ${allResults.length} 条结果${limit ? `，截取前 ${limit} 条` : ''}`,
           ]);
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误',, cdpTips);
       }
     },
   });
@@ -163,7 +165,10 @@ export default function (xcli: XCLIAPI): void {
         .describe('热搜分类'),
     }),
     examples: [{ cmd: 'xbrowser baidu hotsearch', description: '获取热搜榜单' }],
-    result: z.any(),
+    result: z.array(z.object({
+      rank: z.number(), title: z.string(), url: z.string(),
+      heat: z.string(), tag: z.string(),
+    })),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -220,11 +225,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok(items, [...cdpTips, `分类: ${params.category}`, `共获取 ${items.length} 条热搜`]);
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误',, cdpTips);
       }
     },
   });
@@ -238,7 +239,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser baidu suggest --query "编程"', description: '获取编程的搜索建议' },
     ],
-    result: z.any(),
+    result: z.array(z.string()),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -260,11 +261,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok(items, [...cdpTips, `关键词 "${params.query}" 的搜索建议共 ${items.length} 条`]);
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误',, cdpTips);
       }
     },
   });
@@ -277,7 +274,10 @@ export default function (xcli: XCLIAPI): void {
       limit: z.number().optional().default(10).describe('结果数量'),
     }),
     examples: [{ cmd: 'xbrowser baidu news --query "AI"', description: '获取 AI 相关新闻' }],
-    result: z.any(),
+    result: z.array(z.object({
+      title: z.string(), url: z.string(), source: z.string(),
+      time: z.string(), snippet: z.string(),
+    })),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -331,11 +331,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok(news, [...cdpTips, `关键词 "${params.query}" 获取 ${news.length} 条新闻`]);
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误',, cdpTips);
       }
     },
   });
@@ -351,7 +347,17 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser baidu seo-rank --domain "github.com" --keyword "代码托管"', description: '查询 GitHub 在"代码托管"的排名' },
     ],
-    result: z.any(),
+    result: z.object({
+      domain: z.string(),
+      keyword: z.string(),
+      topRank: z.object({
+        page: z.number(), position: z.number(), title: z.string(), url: z.string(),
+      }).nullable(),
+      rankings: z.array(z.object({
+        page: z.number(), position: z.number(), title: z.string(), url: z.string(),
+      })),
+      checked: z.boolean(),
+    }),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -412,11 +418,7 @@ export default function (xcli: XCLIAPI): void {
             `共检查 ${pages} 页`,
           ]);
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误',, cdpTips);
       }
     },
   });
@@ -429,7 +431,6 @@ export default function (xcli: XCLIAPI): void {
       limit: z.number().default(20).describe('结果数量，默认20'),
       size: z.enum(['any', 'large', 'medium', 'small', 'icon']).optional().default('any').describe('图片尺寸过滤'),
       color: z.string().optional().describe('颜色过滤'),
-      page: z.any().optional().describe('外部传入的 Page 对象'),
       timeout: z.number().default(20000).describe('超时时间(ms)'),
     }),
     examples: [
@@ -437,7 +438,23 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser baidu search-image --query "风景" --size large --limit 10', description: '搜索大尺寸风景图片' },
       { cmd: 'xbrowser baidu search-image --query "logo" --size icon --color red', description: '搜索红色图标' },
     ],
-    result: z.any(),
+    result: z.object({
+      query: z.string(),
+      engine: z.string(),
+      results: z.array(z.object({
+        title: z.string(),
+        thumbnailUrl: z.string(),
+        sourceUrl: z.string(),
+        originalUrl: z.string().optional(),
+        width: z.number(),
+        height: z.number(),
+        format: z.string().optional(),
+        sourceSite: z.string(),
+        fileSize: z.string().optional(),
+      }).passthrough()),
+      total: z.number().optional(),
+      timestamp: z.string().optional(),
+    }).passthrough(),
     handler: async (params, ctx) => {
       const page = (params.page || (ctx as Record<string, unknown>).page) as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -558,11 +575,7 @@ export default function (xcli: XCLIAPI): void {
             timestamp: new Date().toISOString(),
           }, [...cdpTips, `关键词 "${query}" 搜索到 ${total} 张图片`]);
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误',, cdpTips);
       }
     },
   });

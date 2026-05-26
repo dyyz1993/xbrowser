@@ -1,20 +1,36 @@
 {
-  "name": "xbrowser-plugin-699pic",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "摄图网 - 正版高清图片素材库",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "699pic"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-699pic",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://www.699pic.com",
-    "requiresLogin": false,
+    "author": "dyyz1993",
     "commands": [
       "search-image"
-    ]
+    ],
+    "description": "摄图网 - 正版高清图片素材库",
+    "name": "699pic",
+    "requiresLogin": false,
+    "site": "https://www.699pic.com",
+    "sites": [],
+    "slug": "699pic",
+    "tags": [
+      "699pic"
+    ],
+    "version": "3.0.0"
   }
 }

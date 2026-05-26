@@ -1,20 +1,36 @@
 {
-  "name": "xbrowser-plugin-facebook",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "Facebook 图片搜索",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "facebook"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-facebook",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://www.facebook.com",
-    "requiresLogin": true,
+    "author": "dyyz1993",
     "commands": [
       "search-image"
-    ]
+    ],
+    "description": "Facebook 图片搜索",
+    "name": "facebook",
+    "requiresLogin": true,
+    "site": "https://www.facebook.com",
+    "sites": [],
+    "slug": "facebook",
+    "tags": [
+      "facebook"
+    ],
+    "version": "3.0.0"
   }
 }

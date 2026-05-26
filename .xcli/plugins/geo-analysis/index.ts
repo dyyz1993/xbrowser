@@ -839,7 +839,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser geo-analysis collect --keyword "AI 编程工具" --engine doubao', description: '指定豆包引擎采集' },
       { cmd: 'xbrowser geo-analysis collect --keyword "Rust 语言" --engine metaso --format markdown', description: '秘塔引擎，Markdown 格式' },
     ],
-    result: z.any(),
+    result: z.object({ id: z.string(), query: z.string(), engine: z.string(), results: z.array(z.any()), total: z.number(), timestamp: z.number(), duration: z.string(), rawResponse: z.string().optional(), domainExtraction: z.object({ query: z.string(), totalUrls: z.number(), totalDomains: z.number(), domains: z.array(z.any()) }).optional(), markdown: z.string().optional() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -893,7 +893,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser geo-analysis batch --keyword "Rust" --engines "deepseek,kimi,qianwen,chatglm"', description: '指定4引擎采集' },
       { cmd: 'xbrowser geo-analysis batch --keyword "Web3" --format markdown', description: 'Markdown 格式输出' },
     ],
-    result: z.any(),
+    result: z.object({ totalEngines: z.number(), successfulEngines: z.number(), failedEngines: z.number(), results: z.array(z.any()), summary: z.object({ totalResults: z.number(), totalUrls: z.number(), uniqueDomains: z.number(), topEngines: z.array(z.object({ engine: z.string(), count: z.number() })) }), timestamp: z.number(), duration: z.number(), markdown: z.string().optional() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -976,7 +976,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser geo-analysis rank', description: '生成域名排名（前20）' },
       { cmd: 'xbrowser geo-analysis rank --top 50 --format markdown', description: '前50名，Markdown 格式' },
     ],
-    result: z.any(),
+    result: z.union([z.array(z.object({ domain: z.string(), count: z.number(), urls: z.array(z.string()), platform: z.string().optional(), firstSeen: z.string(), lastSeen: z.string() })), z.object({ markdown: z.string() })]).passthrough(),
     handler: async (params) => {
       try {
         const history = await loadAllHistory(500);
@@ -1020,7 +1020,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser geo-analysis all --keyword "AI 编程工具"', description: '搜索所有引擎并聚合' },
       { cmd: 'xbrowser geo-analysis all --keyword "Rust" --format json', description: 'JSON 格式输出' },
     ],
-    result: z.any(),
+    result: z.object({ query: z.string(), totalEngines: z.number(), successEngines: z.number(), failedEngines: z.number(), totalUrls: z.number(), uniqueDomains: z.number(), domainRanking: z.array(z.any()), platformRanking: z.array(z.any()), engineDetails: z.array(z.any()), markdown: z.string().optional() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1196,7 +1196,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser geo-analysis company', description: '生成企业排名' },
       { cmd: 'xbrowser geo-analysis company --top 30 --format markdown', description: '前30名，Markdown 格式' },
     ],
-    result: z.any(),
+    result: z.union([z.array(z.object({ name: z.string(), domain: z.string(), type: z.string(), score: z.number(), occurrences: z.number(), engines: z.array(z.string()), firstSeen: z.string(), lastSeen: z.string() })), z.object({ markdown: z.string() })]).passthrough(),
     handler: async (params) => {
       try {
         const history = await loadAllHistory(500);
@@ -1240,7 +1240,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser geo-analysis trend', description: '分析趋势' },
       { cmd: 'xbrowser geo-analysis trend --top 10 --format markdown', description: '前10个趋势，Markdown 格式' },
     ],
-    result: z.any(),
+    result: z.union([z.array(z.object({ domain: z.string(), dates: z.array(z.string()), counts: z.array(z.number()), growthRate: z.number(), trend: z.enum(['up', 'down', 'stable']) })), z.object({ markdown: z.string() })]).passthrough(),
     handler: async (params) => {
       try {
         const history = await loadAllHistory(500);
@@ -1285,7 +1285,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser geo-analysis report', description: '生成 Markdown 格式报告' },
       { cmd: 'xbrowser geo-analysis report --keyword "AI" --format json', description: '指定关键词，JSON 格式' },
     ],
-    result: z.any(),
+    result: z.object({ path: z.string(), keyword: z.string().optional(), generatedAt: z.number().optional(), domainRankings: z.array(z.any()).optional(), companyRankings: z.array(z.any()).optional(), trends: z.array(z.any()).optional(), stats: z.object({ dataPoints: z.number(), uniqueDomains: z.number(), companies: z.number() }).optional() }).passthrough(),
     handler: async (params) => {
       try {
         const history = await loadAllHistory(1000);
@@ -1344,7 +1344,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser geo-analysis history', description: '查看最近20条' },
       { cmd: 'xbrowser geo-analysis history --limit 50 --engine deepseek', description: '查看 deepseek 的50条' },
     ],
-    result: z.any(),
+    result: z.array(z.object({ id: z.string(), query: z.string(), engine: z.string(), total: z.number(), domains: z.number(), urls: z.number(), timestamp: z.string() })),
     handler: async (params) => {
       try {
         let history = await loadAllHistory(1000);
@@ -1379,7 +1379,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser geo-analysis status', description: '查看系统状态' },
     ],
-    result: z.any(),
+    result: z.object({ version: z.string(), totalRecords: z.number(), totalEngines: z.number(), availableEngines: z.array(z.string()), totalQueries: z.number(), storageSizeBytes: z.number(), storageSizeMB: z.string(), engineDistribution: z.record(z.number()), top10Domains: z.array(z.object({ domain: z.string(), platform: z.string().nullable().optional(), count: z.number() })), oldestRecord: z.string().nullable(), newestRecord: z.string().nullable() }).passthrough(),
     handler: async () => {
       try {
         const history = await loadAllHistory(10000);
@@ -1408,7 +1408,7 @@ export default function (xcli: XCLIAPI): void {
             }
           }
         } catch {
-          // no data yet
+          // no data yet for this engine, skip
         }
 
         const engineDistribution = new Map<string, number>();

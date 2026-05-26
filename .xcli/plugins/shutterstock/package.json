@@ -1,20 +1,36 @@
 {
-  "name": "xbrowser-plugin-shutterstock",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "Shutterstock - Stock Photos, Images & Vectors",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "shutterstock"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-shutterstock",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://www.shutterstock.com",
-    "requiresLogin": false,
+    "author": "dyyz1993",
     "commands": [
       "search-image"
-    ]
+    ],
+    "description": "Shutterstock - Stock Photos, Images & Vectors",
+    "name": "shutterstock",
+    "requiresLogin": false,
+    "site": "https://www.shutterstock.com",
+    "sites": [],
+    "slug": "shutterstock",
+    "tags": [
+      "shutterstock"
+    ],
+    "version": "3.0.0"
   }
 }

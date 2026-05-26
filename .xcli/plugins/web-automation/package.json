@@ -1,36 +1,43 @@
 {
-  "name": "xbrowser-plugin-web-automation",
-  "version": "3.0.0",
+  "_marketplace": {
+    "slug": "web-automation",
+    "url": "https://marketplace.xbrowser.dev"
+  },
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "通用网页自动化 - 搜索、提取、分页采集",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "automation"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-web-automation",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "",
-    "requiresLogin": false,
+    "author": "dyyz1993",
     "commands": [
       "extract",
       "paginate",
       "fill-and-submit",
       "screenshot"
     ],
-    "slug": "web-automation",
-    "name": "web-automation",
     "description": "通用网页自动化 - 搜索、提取、分页采集",
-    "version": "3.0.0",
-    "author": "dyyz1993",
+    "name": "web-automation",
+    "requiresLogin": false,
+    "site": "",
+    "sites": [],
+    "slug": "web-automation",
     "tags": [
       "web-automation"
     ],
-    "sites": []
-  },
-  "_marketplace": {
-    "slug": "web-automation",
-    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
+    "version": "3.0.0"
   }
 }

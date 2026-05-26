@@ -1,9 +1,31 @@
 {
-  "name": "testsuite",
-  "version": "1.0.0",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "Run sequence of test steps and report results",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin"
+  ],
+  "main": "index.ts",
+  "name": "testsuite",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
   "type": "module",
+  "version": "1.0.0",
   "xbrowser": {
-    "description": "Sequential test step runner"
+    "author": "dyyz1993",
+    "commands": [
+      "testsuite"
+    ],
+    "description": "Sequential test step runner",
+    "name": "testsuite",
+    "sites": [],
+    "slug": "testsuite",
+    "tags": [
+      "testsuite"
+    ],
+    "version": "1.0.0"
   }
 }

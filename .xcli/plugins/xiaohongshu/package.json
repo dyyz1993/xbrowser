@@ -1,21 +1,32 @@
 {
-  "name": "xbrowser-plugin-xiaohongshu",
-  "version": "3.1.0",
+  "_marketplace": {
+    "slug": "xiaohongshu",
+    "url": "https://marketplace.xbrowser.dev"
+  },
+  "author": "XBrowser Team",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "小红书 - 笔记详情、用户信息、搜索、评论采集",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xiaohongshu",
     "redbook",
     "xhs",
     "笔记",
-    "social-media"
+    "social-media",
+    "xbrowser-plugin"
   ],
-  "author": "XBrowser Team",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-xiaohongshu",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.1.0",
   "xbrowser": {
-    "site": "https://www.xiaohongshu.com",
-    "requiresLogin": false,
+    "author": "XBrowser Team",
     "commands": [
       "detail",
       "notes",
@@ -25,24 +36,15 @@
       "feed",
       "resolve-url"
     ],
-    "slug": "xiaohongshu",
-    "name": "xiaohongshu",
     "description": "小红书 - 笔记详情、用户信息、搜索、评论采集",
-    "version": "3.1.0",
-    "author": "XBrowser Team",
+    "name": "xiaohongshu",
+    "requiresLogin": false,
+    "site": "https://www.xiaohongshu.com",
+    "sites": [],
+    "slug": "xiaohongshu",
     "tags": [
       "xiaohongshu"
     ],
-    "sites": []
-  },
-  "dependencies": {
-    "zod": "^3.24.0"
-  },
-  "peerDependencies": {
-    "@dyyz1993/xcli-core": ">=1.0.0"
-  },
-  "_marketplace": {
-    "slug": "xiaohongshu",
-    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
+    "version": "3.1.0"
   }
 }

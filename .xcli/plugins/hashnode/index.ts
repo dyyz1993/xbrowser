@@ -8,6 +8,29 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://hashnode.com',
     description: 'Hashnode SEO 外链 - 开发者博客平台 (DA 80+, 自定义域名 dofollow)',
     requiresLogin: true,
+    loginConfig: {
+      loginUrls: ['/login', '/signin', '/auth'],
+      loginSelectors: ['[class*="login"]', '[class*="signin"]'],
+      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]'],
+      loginKeywords: ['Sign in', 'Log in'],
+      loggedInSelectors: ['[class*="avatar"]', '[data-testid*="avatar"]'],
+      loginPrompt: 'This site requires login. Use --cdp to connect a logged-in browser.',
+    },
+    isLogin: async (ctx) => {
+      const ctxAny = ctx as Record<string, unknown>;
+      const page = ctxAny.page as import('playwright-core').Page;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/login')) return false;
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        if (!body) return false;
+        if (body.includes('Sign in')) return false;
+        return true;
+      } catch {
+        return true;
+      }
+    },
   });
 
   site.command('login', {
@@ -15,7 +38,7 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser hashnode login', description: '登录 Hashnode' }],
-    result: z.any(),
+    result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
@@ -65,7 +88,7 @@ export default function (xcli: XCLIAPI): void {
         description: '发布带外链的文章',
       },
     ],
-    result: z.any(),
+    result: z.object({ title: z.string(), tags: z.string().optional(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
@@ -142,7 +165,7 @@ export default function (xcli: XCLIAPI): void {
         description: '保存为草稿',
       },
     ],
-    result: z.any(),
+    result: z.object({ title: z.string(), saved: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
@@ -199,7 +222,7 @@ export default function (xcli: XCLIAPI): void {
         description: '更新 Profile 添加外链',
       },
     ],
-    result: z.any(),
+    result: z.object({ url: z.string(), updated: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');

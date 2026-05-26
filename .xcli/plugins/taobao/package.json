@@ -1,8 +1,13 @@
 {
-  "name": "xbrowser-plugin-taobao",
-  "version": "5.0.0",
+  "_marketplace": {
+    "slug": "taobao",
+    "url": "https://marketplace.xbrowser.dev"
+  },
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "淘宝 - 商品搜索、详情、店铺、评价与优惠券采集（需登录态）",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
@@ -10,11 +15,16 @@
     "ecommerce",
     "shopping"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-taobao",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "5.0.0",
   "xbrowser": {
-    "site": "https://www.taobao.com",
-    "requiresLogin": true,
+    "author": "dyyz1993",
     "commands": [
       "login",
       "search",
@@ -27,21 +37,18 @@
       "coupons",
       "update-profile"
     ],
-    "slug": "taobao",
-    "name": "taobao",
     "description": "淘宝 - 商品搜索、详情、店铺、评价与优惠券采集（需登录态）",
-    "version": "5.0.0",
-    "author": "dyyz1993",
+    "name": "taobao",
+    "requiresLogin": true,
+    "site": "https://www.taobao.com",
+    "sites": [
+      "taobao.com"
+    ],
+    "slug": "taobao",
     "tags": [
       "taobao",
       "e-commerce"
     ],
-    "sites": [
-      "taobao.com"
-    ]
-  },
-  "_marketplace": {
-    "slug": "taobao",
-    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
+    "version": "5.0.0"
   }
 }

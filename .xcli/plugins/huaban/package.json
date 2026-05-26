@@ -1,20 +1,36 @@
 {
-  "name": "xbrowser-plugin-huaban",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "花瓣网 - 设计灵感采集",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "huaban"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-huaban",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://huaban.com",
-    "requiresLogin": false,
+    "author": "dyyz1993",
     "commands": [
       "search-image"
-    ]
+    ],
+    "description": "花瓣网 - 设计灵感采集",
+    "name": "huaban",
+    "requiresLogin": false,
+    "site": "https://huaban.com",
+    "sites": [],
+    "slug": "huaban",
+    "tags": [
+      "huaban"
+    ],
+    "version": "3.0.0"
   }
 }

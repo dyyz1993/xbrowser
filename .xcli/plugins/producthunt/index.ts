@@ -8,12 +8,35 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.producthunt.com',
     description: 'Product Hunt SEO 外链 - 产品发布平台 (DA 91, dofollow, 高权重)',
     requiresLogin: true,
+    loginConfig: {
+      loginUrls: ['/login', '/signin', '/auth'],
+      loginSelectors: ['[class*="login"]', '[class*="signin"]'],
+      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]'],
+      loginKeywords: ['Sign in', 'Log in'],
+      loggedInSelectors: ['[class*="avatar"]', '[data-testid*="avatar"]'],
+      loginPrompt: 'This site requires login. Use --cdp to connect a logged-in browser.',
+    },
+    isLogin: async (ctx) => {
+      const ctxAny = ctx as Record<string, unknown>;
+      const page = ctxAny.page as import('playwright-core').Page;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/signin') || url.includes('/login')) return false;
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        if (!body) return false;
+        if (body.includes('Sign in')) return false;
+        return true;
+      } catch {
+        return true;
+      }
+    },
   });
 
   site.command('login', {
     description: '登录 Product Hunt（Google OAuth）',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser producthunt login', description: '登录 Product Hunt' }],
     handler: async (params, ctx) => {
@@ -54,7 +77,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('submit-product', {
     description: '提交新产品（含 dofollow 外链）',
     scope: 'page',
-    result: z.any(),
+    result: z.object({ name: z.string(), url: z.string(), pageUrl: z.string() }).passthrough(),
     parameters: z.object({
       name: z.string().describe('产品名称'),
       tagline: z.string().describe('一句话描述'),
@@ -149,7 +172,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('comment', {
     description: '在产品页面评论（含外链）',
     scope: 'page',
-    result: z.any(),
+    result: z.object({ productUrl: z.string(), commented: z.boolean(), url: z.string() }).passthrough(),
     parameters: z.object({
       productUrl: z.string().describe('产品页面 URL'),
       content: z.string().describe('评论内容（可含链接）'),
@@ -204,7 +227,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('update-profile', {
     description: '更新 Product Hunt 个人资料（添加外链）',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ url: z.string(), updated: z.boolean() }).passthrough(),
     parameters: z.object({
       url: z.string().describe('要添加到 Profile 的网站 URL'),
       bio: z.string().optional().describe('个人简介文本'),

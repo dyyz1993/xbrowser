@@ -1,20 +1,36 @@
 {
-  "name": "xbrowser-plugin-freepik",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "Freepik - Free vectors, photos and PSD downloads",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "freepik"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-freepik",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://www.freepik.com",
-    "requiresLogin": false,
+    "author": "dyyz1993",
     "commands": [
       "search-image"
-    ]
+    ],
+    "description": "Freepik - Free vectors, photos and PSD downloads",
+    "name": "freepik",
+    "requiresLogin": false,
+    "site": "https://www.freepik.com",
+    "sites": [],
+    "slug": "freepik",
+    "tags": [
+      "freepik"
+    ],
+    "version": "3.0.0"
   }
 }

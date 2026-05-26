@@ -1,28 +1,28 @@
 {
-  "name": "xbrowser-plugin-qianwen",
-  "version": "3.0.0",
+  "author": "XBrowser Team",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "通义千问 (Qianwen) - 会话管理、消息发送、文件附件",
-  "type": "module",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "qianwen",
     "tongyi",
     "aliyun",
     "ai",
-    "cdp"
+    "cdp",
+    "xbrowser-plugin"
   ],
-  "author": "XBrowser Team",
   "license": "MIT",
-  "dependencies": {
-    "zod": "^3.24.0"
-  },
+  "main": "index.ts",
+  "name": "xbrowser-plugin-qianwen",
   "peerDependencies": {
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "name": "qianwen",
-    "description": "通义千问 (Qianwen) AI 助手",
+    "author": "dyyz1993",
     "commands": [
       "list",
       "new",
@@ -30,8 +30,16 @@
       "chat",
       "attach"
     ],
+    "description": "通义千问 (Qianwen) AI 助手",
+    "name": "qianwen",
+    "site": "https://www.qianwen.com",
     "sites": [
       "qianwen"
-    ]
+    ],
+    "slug": "qianwen",
+    "tags": [
+      "qianwen"
+    ],
+    "version": "3.0.0"
   }
 }

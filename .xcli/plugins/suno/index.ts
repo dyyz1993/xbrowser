@@ -550,7 +550,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('status', {
     description: '检查当前页面音乐生成状态（被动拦截 feed 数据）',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ status: z.string().optional(), clips: z.array(z.record(z.any())).optional(), total: z.number().optional() }).passthrough(),
     parameters: z.object({}),
     examples: [
       { cmd: 'xbrowser suno status --cdp 9221', description: '检查状态' },
@@ -593,7 +593,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('library', {
     description: '查看 Suno 创作历史/歌曲列表',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ songs: z.array(z.record(z.any())), total: z.number() }).passthrough(),
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(20).describe('返回条数（默认 20）'),
     }),

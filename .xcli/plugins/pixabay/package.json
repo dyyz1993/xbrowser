@@ -1,20 +1,36 @@
 {
-  "name": "xbrowser-plugin-pixabay",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "Pixabay - Free images, royalty free stock photos",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "pixabay"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-pixabay",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://pixabay.com",
-    "requiresLogin": false,
+    "author": "dyyz1993",
     "commands": [
       "search-image"
-    ]
+    ],
+    "description": "Pixabay - Free images, royalty free stock photos",
+    "name": "pixabay",
+    "requiresLogin": false,
+    "site": "https://pixabay.com",
+    "sites": [],
+    "slug": "pixabay",
+    "tags": [
+      "pixabay"
+    ],
+    "version": "3.0.0"
   }
 }

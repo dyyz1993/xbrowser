@@ -111,6 +111,7 @@ function captureApiResponses(
           }
         }
       } catch {
+        // response parse error for non-matching URLs, skip
       }
     };
 
@@ -178,7 +179,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('billing', {
     description: '查询 Udio Credits 使用情况和订阅状态',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ email: z.string(), userId: z.string(), tier: z.string(), dailyUsed: z.number(), monthlyUsed: z.number(), monthlyDiscretionary: z.number(), monthlyLimit: z.number(), dailyThrottleLimit: z.number(), plan: z.string(), isActive: z.boolean(), remaining: z.number() }).passthrough(),
     parameters: z.object({}),
     examples: [
       { cmd: 'xbrowser udio billing --cdp 9221', description: '查询 Credits' },
@@ -235,7 +236,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('library', {
     description: '查看 Udio 歌曲库/创作历史',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ songs: z.array(z.record(z.any())) }).passthrough(),
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(20).describe('返回条数（默认 20）'),
     }),
@@ -279,7 +280,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('create', {
     description: '在 Udio 上生成音乐。支持自定义 prompt、歌词、风格、纯音乐模式。含 hCaptcha 自动检测',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({}).passthrough(),
     parameters: z.object({
       prompt: z.string().describe('音乐描述提示词（如 "A gentle piano melody with soft strings"）'),
       lyrics: z.string().optional().describe('自定义歌词文本'),
@@ -556,7 +557,7 @@ export default function (xcli: XCLIAPI): void {
                   page.off('response', handler);
                   resolve(json);
                 } catch {
-                  // Ignore parse errors, keep waiting
+                  // JSON parse errors for non-matching responses, keep waiting
                 }
               } else if (resp.status() >= 400) {
                 clearTimeout(timer);
@@ -679,7 +680,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('status', {
     description: '检查 Udio 最新歌曲生成状态（被动拦截 API 数据）',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ status: z.string().optional(), songs: z.array(z.record(z.any())).optional() }).passthrough(),
     parameters: z.object({}),
     examples: [
       { cmd: 'xbrowser udio status --cdp 9221', description: '检查状态' },
@@ -736,7 +737,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('download', {
     description: '下载音乐到本地（返回 curl 命令或直接下载）',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ url: z.string(), size: z.number().optional() }).passthrough(),
     parameters: z.object({
       url: z.string().describe('音频 URL'),
       output: z.string().optional().describe('输出路径（默认 ./downloads/）'),
@@ -810,7 +811,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('result', {
     description: '获取 Udio 最新生成的音乐音频 URL',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ songs: z.array(z.record(z.any())) }).passthrough(),
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(5).describe('返回条数（默认 5）'),
     }),
@@ -914,7 +915,7 @@ async function pollForNewSong(
         const mapped = mapSong(songs[0]);
         if (mapped.audioUrl) return mapped;
       }
-    } catch { }
+    } catch { /* song lookup failed, continue */ }
   }
 
   return null;

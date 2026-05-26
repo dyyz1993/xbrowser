@@ -1,20 +1,36 @@
 {
-  "name": "xbrowser-plugin-p500px",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "500px Photography Search",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "p500px"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-p500px",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://500px.com",
-    "requiresLogin": false,
+    "author": "dyyz1993",
     "commands": [
       "search-image"
-    ]
+    ],
+    "description": "500px Photography Search",
+    "name": "p500px",
+    "requiresLogin": false,
+    "site": "https://500px.com",
+    "sites": [],
+    "slug": "p500px",
+    "tags": [
+      "p500px"
+    ],
+    "version": "3.0.0"
   }
 }

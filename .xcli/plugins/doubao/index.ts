@@ -233,7 +233,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao list', description: '列出所有会话' },
       { cmd: 'xbrowser doubao list --json', description: 'JSON 格式输出' },
     ],
-    result: z.any(),
+    result: z.array(z.object({ index: z.number(), title: z.string(), url: z.string() }).passthrough()),
     handler: async (_params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -251,11 +251,7 @@ export default function (xcli: XCLIAPI): void {
 
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
-        return {
-          data: conversations,
-          tips,
-          message: `找到 ${conversations.length} 个会话`,
-        };
+        return ok(conversations, tips);
       } catch (error) {
         return fail('未知错误', ['获取会话列表失败']);
       }
@@ -270,7 +266,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao new', description: '新建对话' },
     ],
-    result: z.any(),
+    result: z.object({ created: z.boolean() }).passthrough(),
     handler: async (_params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -304,11 +300,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         await page.waitForTimeout(1500);
-        return {
-          data: { created: true },
-          tips: buildTips(ctx),
-          message: '✅ 已创建新对话',
-        };
+        return ok({ created: true }, buildTips(ctx));
       } catch (error) {
         return fail('未知错误', ['创建新对话失败']);
       }
@@ -326,7 +318,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao open "工作计划"', description: '打开指定会话' },
       { cmd: 'xbrowser doubao open "代码"', description: '模糊匹配打开' },
     ],
-    result: z.any(),
+    result: z.object({ opened: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -348,11 +340,7 @@ export default function (xcli: XCLIAPI): void {
         if (!clicked.found) throw new Error(`未找到包含"${params.title}"的会话`);
 
         await page.waitForTimeout(2000);
-        return {
-          data: { opened: clicked.title },
-          tips: buildTips(ctx),
-          message: `✅ 已打开会话：${clicked.title}`,
-        };
+        return ok({ opened: clicked.title }, buildTips(ctx));
       } catch (error) {
         return fail('未知错误', ['打开会话失败']);
       }
@@ -377,7 +365,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao chat "2024年新闻" --search --showSources', description: '联网搜索+显示来源' },
       { cmd: 'xbrowser doubao chat "深度研究AI趋势" --think --search --showSources', description: '深度思考+联网搜索+来源' },
     ],
-    result: z.any(),
+    result: z.object({ response: z.string(), duration: z.string().optional(), sources: z.record(z.any()).optional() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -572,7 +560,7 @@ export default function (xcli: XCLIAPI): void {
             }, params.message);
             if (responseText) break;
           } catch {
-            // ignore
+            // continue polling on page evaluate failure
           }
         }
 
@@ -637,18 +625,10 @@ export default function (xcli: XCLIAPI): void {
             tips.push(`搜索来源：${domains.size} 个域名, ${uniqueUrls.length} 条链接`);
           }
 
-          return {
-            data: result,
-            tips,
-            message: `✅ AI 回复 (${((Date.now() - startTime) / 1000).toFixed(1)}s)`,
-          };
+          return ok(result, tips);
         } else {
           tips.push('AI 回复超时或未检测到');
-          return {
-            data: { response: '' },
-            tips,
-            message: '⏱ AI 回复超时（60s），请检查页面',
-          };
+          return ok({ response: '' }, tips);
         }
       } catch (error) {
         return fail('未知错误', ['发送消息失败']);
@@ -676,7 +656,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao image --prompt "赛博朋克城市" --model Seedance --ratio 16:9', description: '指定模型和比例' },
       { cmd: 'xbrowser doubao image --prompt "油画风格的花园" --style 水彩 --ref /path/to/ref.jpg', description: '指定风格+参考图' },
     ],
-    result: z.any(),
+    result: z.object({ url: z.string().optional(), localPath: z.string().optional(), prompt: z.string().optional(), duration: z.string().optional() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -751,11 +731,7 @@ export default function (xcli: XCLIAPI): void {
 
         if (imageUrl) {
           const downloaded = await downloadMedia(imageUrl, 'image');
-          return {
-            data: { url: imageUrl, localPath: downloaded.localPath, prompt, duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` },
-            tips: [...tips, `📁 图片已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`],
-            message: `✅ 图片已生成 (${((Date.now() - startTime) / 1000).toFixed(1)}s)`,
-          };
+          return ok({ url: imageUrl, localPath: downloaded.localPath, prompt, duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` }, [...tips, `📁 图片已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`]);
         }
 
         return ok({ prompt }, [...tips, '图片可能还在生成中，请到豆包页面查看']);
@@ -779,7 +755,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao image-edit --action erase --image /path/to/img.jpg', description: '擦除' },
       { cmd: 'xbrowser doubao image-edit --action enhance --image /path/to/img.jpg', description: '增强' },
     ],
-    result: z.any(),
+    result: z.object({ action: z.string(), image: z.string(), submitted: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -850,11 +826,7 @@ export default function (xcli: XCLIAPI): void {
 
         await page.waitForTimeout(3000);
 
-        return {
-          data: { action: params.action, image: absPath, submitted: true },
-          tips,
-          message: `✅ 图片${label}请求已提交`,
-        };
+        return ok({ action: params.action, image: absPath, submitted: true }, tips);
       } catch (error) {
         return fail('未知错误', ['图片编辑失败']);
       }
@@ -871,7 +843,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao image-cutout --image /path/to/img.jpg', description: 'AI 抠图' },
     ],
-    result: z.any(),
+    result: z.object({ resultUrl: z.string(), source: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -919,11 +891,7 @@ export default function (xcli: XCLIAPI): void {
           if (resultUrl) break;
         }
 
-        return {
-          data: { resultUrl: resultUrl || 'processing', source: absPath },
-          tips,
-          message: resultUrl ? '✅ 抠图完成' : '⏱ 抠图处理中，请到页面查看结果',
-        };
+        return ok({ resultUrl: resultUrl || 'processing', source: absPath }, tips);
       } catch (error) {
         return fail('未知错误', ['抠图失败']);
       }
@@ -942,7 +910,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao image-vary --image /path/to/img.jpg', description: '图片衍生' },
       { cmd: 'xbrowser doubao image-vary --image /path/to/img.jpg --prompt "更亮色调"', description: '带提示词的衍生' },
     ],
-    result: z.any(),
+    result: z.object({ source: z.string(), prompt: z.string().optional(), submitted: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -982,11 +950,7 @@ export default function (xcli: XCLIAPI): void {
           }
         }
 
-        return {
-          data: { source: absPath, prompt: params.prompt, submitted: true },
-          tips,
-          message: '✅ 图片衍生请求已提交',
-        };
+        return ok({ source: absPath, prompt: params.prompt, submitted: true }, tips);
       } catch (error) {
         return fail('未知错误', ['图片衍生失败']);
       }
@@ -1004,7 +968,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao my-creations', description: '查看所有创作' },
       { cmd: 'xbrowser doubao my-creations --type image', description: '只看图片' },
     ],
-    result: z.any(),
+    result: z.array(z.object({ index: z.number(), src: z.string(), alt: z.string(), text: z.string() }).passthrough()).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1067,7 +1031,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao video --prompt "一只猫在草地上奔跑"', description: '提交视频生成' },
       { cmd: 'xbrowser doubao video --prompt "赛博朋克城市夜景" --model Seedance2.0', description: '指定模型' },
     ],
-    result: z.any(),
+    result: z.object({ taskId: z.string(), prompt: z.string(), status: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1110,13 +1074,9 @@ export default function (xcli: XCLIAPI): void {
           return urlParts ? urlParts[1] : '';
         });
 
-        return {
-          data: { taskId: taskId || 'pending', prompt: params.prompt, status: 'submitted' },
-          tips: taskId
+        return ok({ taskId: taskId || 'pending', prompt: params.prompt, status: 'submitted' }, taskId
             ? [...tips, `taskId: ${taskId}`]
-            : [...tips, '无法提取 taskId，请使用 video-status 检查任务状态'],
-          message: taskId ? `✅ 视频生成已提交，taskId: ${taskId}` : '✅ 视频生成已提交（未提取到 taskId）',
-        };
+            : [...tips, '无法提取 taskId，请使用 video-status 检查任务状态']);
       } catch (error) {
         return fail('未知错误', ['提交视频生成失败']);
       }
@@ -1133,7 +1093,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao video-status --task abc123', description: '检查状态' },
     ],
-    result: z.any(),
+    result: z.object({ taskId: z.string(), status: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1161,11 +1121,7 @@ export default function (xcli: XCLIAPI): void {
           return 'unknown';
         }, params.task);
 
-        return {
-          data: { taskId: params.task, status },
-          tips,
-          message: `📊 任务 ${params.task} 状态: ${status}`,
-        };
+        return ok({ taskId: params.task, status }, tips);
       } catch (error) {
         return fail('未知错误', ['检查状态失败']);
       }
@@ -1182,7 +1138,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao video-result --task abc123', description: '获取视频 URL' },
     ],
-    result: z.any(),
+    result: z.object({ taskId: z.string(), url: z.string().optional(), localPath: z.string().optional() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1214,11 +1170,7 @@ export default function (xcli: XCLIAPI): void {
         if (videoUrl) {
           const downloaded = await downloadMedia(videoUrl, 'video');
           tips.push(`📁 视频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`);
-          return {
-            data: { taskId: params.task, url: videoUrl, localPath: downloaded.localPath },
-            tips,
-            message: `✅ 视频地址: ${videoUrl}`,
-          };
+          return ok({ taskId: params.task, url: videoUrl, localPath: downloaded.localPath }, tips);
         }
       } catch (error) {
         return fail('未知错误', ['获取视频结果失败']);
@@ -1724,7 +1676,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao music-status --task my-music --session music-session --cdp 9221', description: '检查音乐状态' },
     ],
-    result: z.any(),
+    result: z.object({ status: z.string(), taskId: z.string().nullable(), url: z.string().nullable() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1735,11 +1687,7 @@ export default function (xcli: XCLIAPI): void {
         const audioUrl = await extractPageAudio(page);
         if (audioUrl) {
           const downloaded = await downloadMedia(audioUrl, 'music');
-          return {
-            data: { status: 'completed', url: audioUrl, localPath: downloaded.localPath, taskId: params.task || null },
-            tips: [...tips, `📁 音频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`],
-            message: `✅ 音乐已生成: ${audioUrl}`,
-          };
+          return ok({ status: 'completed', url: audioUrl, localPath: downloaded.localPath, taskId: params.task || null }, [...tips, `📁 音频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`]);
         }
 
         // Otherwise check text indicators
@@ -1785,7 +1733,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao music-result --session music-session --cdp 9221', description: '获取音乐 URL' },
       { cmd: 'xbrowser doubao music-result --task my-track --session music-session --cdp 9221', description: '带标记获取' },
     ],
-    result: z.any(),
+    result: z.object({ url: z.string().nullable(), localPath: z.string().optional(), taskId: z.string().nullable() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1850,7 +1798,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao upload --path /path/to/document.pdf', description: '上传文件' },
       { cmd: 'xbrowser doubao upload --path ~/photo.jpg', description: '上传图片' },
     ],
-    result: z.any(),
+    result: z.object({ file: z.string(), uploaded: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1910,7 +1858,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao cloud-drive --list', description: '列出云盘文件' },
     ],
-    result: z.any(),
+    result: z.object({ files: z.array(z.record(z.any())), total: z.number() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -1967,7 +1915,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao mode --model 豆包Pro', description: '切换到豆包Pro' },
       { cmd: 'xbrowser doubao mode --model Seedream', description: '切换到 Seedream' },
     ],
-    result: z.any(),
+    result: z.object({ model: z.string(), switched: z.boolean().optional() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -2005,11 +1953,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         await page.waitForTimeout(1000);
-        return {
-          data: { model: modelName, switched: true },
-          tips,
-          message: `✅ 已切换到模型: ${modelName}`,
-        };
+        return ok({ model: modelName, switched: true }, tips);
       } catch (error) {
         return fail('未知错误', ['切换模型失败']);
       }
@@ -2026,7 +1970,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao search --query "今日热搜"', description: '联网搜索' },
     ],
-    result: z.any(),
+    result: z.object({}).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
@@ -2203,7 +2147,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao attach file ~/document.pdf', description: '上传文件' },
       { cmd: 'xbrowser doubao attach file ~/report.xlsx', description: '上传 Excel 文件' },
     ],
-    result: z.any(),
+    result: z.object({ type: z.string(), file: z.string(), uploaded: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);

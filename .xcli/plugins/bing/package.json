@@ -1,20 +1,36 @@
 {
-  "name": "xbrowser-plugin-bing",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "Bing Search & Images",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "bing"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-bing",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://www.bing.com",
-    "requiresLogin": false,
+    "author": "dyyz1993",
     "commands": [
       "search-image"
-    ]
+    ],
+    "description": "Bing Search & Images",
+    "name": "bing",
+    "requiresLogin": false,
+    "site": "https://www.bing.com",
+    "sites": [],
+    "slug": "bing",
+    "tags": [
+      "bing"
+    ],
+    "version": "3.0.0"
   }
 }

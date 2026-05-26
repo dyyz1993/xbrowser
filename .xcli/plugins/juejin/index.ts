@@ -19,6 +19,29 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://juejin.cn',
     description: '掘金 SEO 外链 - 中文技术社区 (DA 70+, 百度收录好)',
     requiresLogin: true,
+    loginConfig: {
+      loginUrls: ['/login', '/passport'],
+      loginSelectors: ['[class*="login"]', '[class*="modal"]'],
+      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]', '[class*="slider"]'],
+      loginKeywords: ['登录', '注册'],
+      loggedInSelectors: ['[class*="avatar"]', '[class*="user-info"]'],
+      loginPrompt: '请使用 --cdp 连接已登录的浏览器（CDP 9221）',
+    },
+    isLogin: async (ctx) => {
+      const ctxAny = ctx as Record<string, unknown>;
+      const page = ctxAny.page as import('playwright-core').Page;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/login')) return false;
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        if (!body) return false;
+        if (body.includes('登录') || body.includes('注册')) return false;
+        return true;
+      } catch {
+        return true;
+      }
+    },
   });
 
   site.command('login', {
@@ -26,7 +49,7 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser juejin login', description: '登录掘金' }],
-    result: z.any(),
+    result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -62,11 +85,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok({ loggedIn, url: page.url() }, [...cdpTips, loggedIn ? '掘金登录成功' : '登录可能未完成，请检查页面']);
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -86,7 +105,7 @@ export default function (xcli: XCLIAPI): void {
         description: '发布带外链的文章',
       },
     ],
-    result: z.any(),
+    result: z.object({ title: z.string(), tags: z.string().optional(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -180,11 +199,7 @@ export default function (xcli: XCLIAPI): void {
             url: page.url(),
           }, [...cdpTips, `文章 "${params.title}" 已在掘金发布`]);
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -202,7 +217,7 @@ export default function (xcli: XCLIAPI): void {
         description: '保存为草稿',
       },
     ],
-    result: z.any(),
+    result: z.object({ title: z.string(), saved: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -247,11 +262,7 @@ export default function (xcli: XCLIAPI): void {
             url: page.url(),
           }, [...cdpTips, `草稿 "${params.title}" 已保存`]);
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -269,7 +280,7 @@ export default function (xcli: XCLIAPI): void {
         description: '更新 Profile 添加外链',
       },
     ],
-    result: z.any(),
+    result: z.object({ url: z.string(), updated: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -309,11 +320,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok({ url: params.url, updated: true }, [...cdpTips, 'Profile 已更新，包含外链']);
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });
@@ -329,7 +336,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser juejin fetch-articles', description: '获取我的文章列表' },
       { cmd: 'xbrowser juejin fetch-articles --limit 50', description: '获取前50篇文章' },
     ],
-    result: z.any(),
+    result: z.array(z.object({ title: z.string(), url: z.string(), views: z.string(), likes: z.string(), comments: z.string(), date: z.string() })),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -394,11 +401,7 @@ export default function (xcli: XCLIAPI): void {
             `获取 ${articles.length} 篇文章`,
           ]);
       } catch (error) {
-        return {
-          data: null,
-          tips: cdpTips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
   });

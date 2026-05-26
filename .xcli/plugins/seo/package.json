@@ -1,12 +1,22 @@
 {
-  "name": "xbrowser-plugin-seo",
-  "version": "6.0.0",
-  "type": "module",
+  "dependencies": {
+    "imapflow": "^1.0.0",
+    "zod": "^3.24.0"
+  },
   "description": "搜索引擎提交工具 + 57 个外链平台提交入口 — sitemap ping / IndexNow / SEO 检查 / 页面分析 / 外链提交",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin"
+  ],
   "main": "index.ts",
+  "name": "xbrowser-plugin-seo",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "6.0.0",
   "xbrowser": {
-    "name": "seo",
-    "description": "搜索引擎提交工具",
+    "author": "dyyz1993",
     "commands": [
       "ping",
       "submit",
@@ -25,12 +35,16 @@
       "register",
       "batch-submit"
     ],
+    "description": "搜索引擎提交工具",
+    "name": "seo",
+    "site": "https://www.google.com",
     "sites": [
       "seo"
-    ]
-  },
-  "dependencies": {
-    "zod": "^3.24.0",
-    "imapflow": "^1.0.0"
+    ],
+    "slug": "seo",
+    "tags": [
+      "seo"
+    ],
+    "version": "6.0.0"
   }
 }

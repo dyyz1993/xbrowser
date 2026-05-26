@@ -104,7 +104,7 @@ export default function (xcli: XCLIAPI): void {
     description: '列出所有历史会话',
     scope: 'page',
     parameters: z.object({}),
-    result: z.any(),
+    result: z.array(z.object({ index: z.number(), title: z.string(), url: z.string() }).passthrough()),
     examples: [
       { cmd: 'xbrowser claude list', description: '列出所有会话' },
       { cmd: 'xbrowser claude list --json', description: 'JSON 格式输出' },
@@ -126,11 +126,7 @@ export default function (xcli: XCLIAPI): void {
 
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
-        return {
-          data: conversations,
-          tips,
-          message: `找到 ${conversations.length} 个会话`,
-        };
+        return ok(conversations, tips);
       } catch (error) {
         return fail('未知错误', ['获取会话列表失败']);
       }
@@ -141,7 +137,7 @@ export default function (xcli: XCLIAPI): void {
     description: '创建新的空白对话',
     scope: 'browser',
     parameters: z.object({}),
-    result: z.any(),
+    result: z.object({ created: z.boolean() }).passthrough(),
     examples: [
       { cmd: 'xbrowser claude new', description: '新建对话' },
     ],
@@ -183,11 +179,9 @@ export default function (xcli: XCLIAPI): void {
         }
 
         await page.waitForTimeout(1500);
-        return {
-          data: { created: true },
-          tips: buildTips(ctx),
-          message: '✅ 已创建新对话',
-        };
+        const tips = buildTips(ctx);
+        tips.push('已创建新对话');
+        return ok({ created: true }, tips);
       } catch (error) {
         return fail('未知错误', ['创建新对话失败']);
       }
@@ -200,7 +194,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       title: z.string().describe('会话标题（支持模糊匹配）'),
     }),
-    result: z.any(),
+    result: z.object({ opened: z.string() }).passthrough(),
     examples: [
       { cmd: 'xbrowser claude open "1加1等于2"', description: '打开指定会话' },
       { cmd: 'xbrowser claude open "股票"', description: '模糊匹配打开' },
@@ -226,11 +220,9 @@ export default function (xcli: XCLIAPI): void {
         if (!clicked.found) throw new Error(`未找到包含"${params.title}"的会话`);
 
         await page.waitForTimeout(2000);
-        return {
-          data: { opened: clicked.title },
-          tips: buildTips(ctx),
-          message: `✅ 已打开会话：${clicked.title}`,
-        };
+        const tips = buildTips(ctx);
+        tips.push(`已打开会话：${clicked.title}`);
+        return ok({ opened: clicked.title }, tips);
       } catch (error) {
         return fail('未知错误', ['打开会话失败']);
       }
@@ -249,7 +241,7 @@ export default function (xcli: XCLIAPI): void {
       search: z.boolean().optional().describe('开启联网搜索'),
       showSources: z.boolean().optional().describe('显示联网搜索引用的来源 URL 和域名'),
     }),
-    result: z.any(),
+    result: z.object({ response: z.string(), duration: z.string().optional(), conversationId: z.string().optional(), sources: z.record(z.any()).optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser claude chat "你好"', description: '发送消息' },
       { cmd: 'xbrowser claude chat "分析这张图" --attach /path/to/img.jpg', description: '发送消息+图片' },
@@ -415,6 +407,7 @@ export default function (xcli: XCLIAPI): void {
             }, hasFile);
             if (responseText) break;
           } catch {
+            // continue polling on page evaluate failure
           }
         }
 
@@ -438,7 +431,7 @@ export default function (xcli: XCLIAPI): void {
                   try {
                     new URL(clean);
                     allUrls.push(clean);
-                  } catch {}
+                  } catch { /* invalid URL, skip */ }
                 }
               }
 
@@ -466,7 +459,7 @@ export default function (xcli: XCLIAPI): void {
 
               const domains = new Set<string>();
               for (const u of uniqueUrls) {
-                try { domains.add(new URL(u).hostname.replace(/^www\./, '')); } catch {}
+                try { domains.add(new URL(u).hostname.replace(/^www\./, '')); } catch { /* invalid URL, skip */ }
               }
 
               result.sources = {
@@ -483,18 +476,10 @@ export default function (xcli: XCLIAPI): void {
             }
           }
 
-          return {
-            data: result,
-            tips,
-            message: `✅ AI 回复 (${((Date.now() - startTime) / 1000).toFixed(1)}s)`,
-          };
+          return ok(result, tips);
         } else {
           tips.push('AI 回复超时或未检测到');
-          return {
-            data: { response: '' },
-            tips,
-            message: '⏱ AI 回复超时（120s），请检查页面',
-          };
+          return ok({ response: '' }, tips);
         }
       } catch (error) {
         return fail('未知错误', ['发送消息失败']);
@@ -509,7 +494,7 @@ export default function (xcli: XCLIAPI): void {
       type: z.enum(['image', 'file', 'url']).describe('附件类型'),
       path: z.string().describe('文件路径 或 URL 链接'),
     }),
-    result: z.any(),
+    result: z.object({ type: z.string().optional(), sent: z.boolean().optional(), file: z.string().optional(), uploaded: z.boolean().optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser claude attach image ~/photo.jpg', description: '上传图片' },
       { cmd: 'xbrowser claude attach url "https://example.com"', description: '发送 URL 链接' },
@@ -527,11 +512,7 @@ export default function (xcli: XCLIAPI): void {
           await page.waitForTimeout(300);
           await sendMessage(page);
           tips.push(`URL "${params.path}" 已作为消息发送`);
-          return {
-            data: { type: 'url', sent: true },
-            tips,
-            message: '✅ URL 已发送',
-          };
+          return ok({ type: 'url', sent: true }, tips);
         }
 
         const absPath = path.resolve(params.path);
@@ -544,11 +525,7 @@ export default function (xcli: XCLIAPI): void {
         }
         await page.waitForTimeout(1000);
         tips.push(`附件 "${path.basename(absPath)}" 已上传`);
-        return {
-          data: { type: params.type, file: absPath, uploaded: true },
-          tips,
-          message: `✅ 附件 "${path.basename(absPath)}" 已上传`,
-        };
+        return ok({ type: params.type, file: absPath, uploaded: true }, tips);
       } catch (error) {
         return fail('未知错误', ['上传附件失败']);
       }

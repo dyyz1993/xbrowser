@@ -22,7 +22,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('ping', {
     description: '通过 sitemap ping 通知搜索引擎抓取站点地图',
     scope: 'project',
-    result: z.any(),
+    result: z.object({ sitemap: z.string(), engines: z.array(z.object({ engine: z.string(), ok: z.boolean(), status: z.string() })) }).passthrough(),
     parameters: z.object({
       sitemap: z.string().describe('sitemap.xml 的完整 URL'),
       engines: z.string().optional().describe('目标引擎，逗号分隔 (google,bing)，默认全部'),
@@ -76,7 +76,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('submit', {
     description: '通过 IndexNow 协议提交 URL 给搜索引擎（Bing/Yandex/Seznam 等）',
     scope: 'project',
-    result: z.any(),
+    result: z.object({ url: z.string(), host: z.string(), indexnow: z.object({ ok: z.boolean(), status: z.string() }) }).passthrough(),
     parameters: z.object({
       url: z.string().describe('要提交的完整 URL'),
       key: z.string().describe('IndexNow key（先运行 setup-indexnow 生成）'),
@@ -123,7 +123,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('bulk-submit', {
     description: '批量提交多个 URL 到 IndexNow（最多 10000 条）',
     scope: 'project',
-    result: z.any(),
+    result: z.object({ host: z.string(), submitted: z.number(), ok: z.boolean(), status: z.string() }).nullable().passthrough(),
     parameters: z.object({
       urls: z.string().describe('逗号分隔的 URL 列表'),
       key: z.string().describe('IndexNow key'),
@@ -188,7 +188,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('setup-indexnow', {
     description: '生成 IndexNow key — 配置后 xbrowser seo submit 才能工作',
     scope: 'project',
-    result: z.any(),
+    result: z.object({ domain: z.string(), key: z.string(), keyUrl: z.string() }).passthrough(),
     parameters: z.object({
       domain: z.string().describe('你的域名'),
     }),
@@ -220,7 +220,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('check', {
     description: '检查域名的 IndexNow / robots.txt / sitemap 等 SEO 基础配置',
     scope: 'project',
-    result: z.any(),
+    result: z.object({ domain: z.string(), checks: z.array(z.object({ item: z.string(), status: z.string(), detail: z.string().optional() })), indexnowKeyFound: z.boolean() }).passthrough(),
     parameters: z.object({
       domain: z.string().describe('域名'),
     }),
@@ -260,7 +260,7 @@ export default function (xcli: XCLIAPI): void {
           if (userAgentCount > 0) {
             checks.push({ item: 'robots.txt 规则', status: `✅ 发现 ${userAgentCount} 个 User-agent 规则` });
           }
-        } catch {}
+        } catch { /* non-critical, continue */ }
       }
 
       if (!sitemapUrl) {
@@ -272,7 +272,7 @@ export default function (xcli: XCLIAPI): void {
               checks.push({ item: `sitemap${path}`, status: '✅ 可访问' });
               break;
             }
-          } catch {}
+          } catch { /* non-critical, continue */ }
         }
       }
 
@@ -289,7 +289,7 @@ export default function (xcli: XCLIAPI): void {
               checks.push({ item: 'sitemap URL 数量', status: '⚠️ 未发现 URL 条目' });
             }
           }
-        } catch {}
+        } catch { /* non-critical, continue */ }
       } else {
         checks.push({ item: 'sitemap', status: '⚠️ 未找到 sitemap 文件' });
       }
@@ -304,7 +304,7 @@ export default function (xcli: XCLIAPI): void {
           keyValue = text.trim();
           checks.push({ item: 'IndexNow key', status: '✅ 已配置' });
         }
-      } catch {}
+      } catch { /* non-critical, continue */ }
       if (!keyFound) {
         checks.push({ item: 'IndexNow key', status: '⚠️ 未发现（运行 seo setup-indexnow 配置）' });
       }
@@ -319,7 +319,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('analyze', {
     description: '分析页面 SEO 因素，给出评分和优化建议',
     scope: 'project',
-    result: z.any(),
+    result: z.object({ url: z.string().optional(), title: z.string(), description: z.string(), robots: z.string(), canonical: z.string(), openGraph: z.object({ title: z.string(), description: z.string(), image: z.string(), url: z.string() }), twitter: z.object({ card: z.string(), title: z.string(), description: z.string(), image: z.string() }), headings: z.object({ h1Count: z.number(), h1s: z.array(z.string()), h2Count: z.number(), h2s: z.array(z.string()) }), images: z.object({ total: z.number(), withoutAlt: z.number() }), links: z.object({ internal: z.number(), external: z.number() }), structuredData: z.array(z.any()), score: z.object({ passed: z.number(), total: z.number(), percentage: z.number() }) }).nullable().passthrough(),
     parameters: z.object({
       url: z.string().describe('要分析的页面 URL'),
       html: z.string().optional().describe('直接传入 HTML 字符串，跳过网络抓取'),
@@ -401,7 +401,7 @@ export default function (xcli: XCLIAPI): void {
       let internalLinks = 0;
       let externalLinks = 0;
       let targetHost = '';
-      try { targetHost = new URL(params.url).hostname; } catch {}
+      try { targetHost = new URL(params.url).hostname; } catch { /* non-critical, continue */ }
       for (const linkTag of linkMatches) {
         const hrefMatch = linkTag.match(/href=["']([^"']+)["']/i);
         if (!hrefMatch) continue;
@@ -419,7 +419,7 @@ export default function (xcli: XCLIAPI): void {
       for (const block of jsonLdMatches) {
         const inner = block.match(/<script[^>]*>([\s\S]*?)<\/script>/i);
         if (inner) {
-          try { structuredData.push(JSON.parse(inner[1].trim())); } catch {}
+          try { structuredData.push(JSON.parse(inner[1].trim())); } catch { /* non-critical, continue */ }
         }
       }
 
@@ -473,7 +473,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('setup-guide', {
     description: '输出完整的搜索引擎收录配置指南',
     scope: 'project',
-    result: z.any(),
+    result: z.object({ domain: z.string() }).passthrough(),
     parameters: z.object({
       domain: z.string().describe('你的域名'),
     }),
@@ -508,7 +508,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('backlinks', {
     description: '列出外链提交平台及精确入口 URL（57 个平台，11 个类别）',
     scope: 'project',
-    result: z.any(),
+    result: z.object({ total: z.number(), filtered: z.boolean(), categories: z.array(z.string()), platforms: z.array(z.object({ name: z.string(), url: z.string(), entryUrl: z.string(), category: z.string(), steps: z.string() })) }).passthrough(),
     parameters: z.object({
       category: z.string().optional().describe('按类别筛选: ' + categories.join('/')),
       search: z.string().optional().describe('按名称或网址搜索'),
@@ -564,7 +564,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('login', {
     description: '在浏览器中登录外链平台，保存登录状态',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ platform: z.string(), loggedIn: z.boolean() }).nullable().passthrough(),
     parameters: z.object({
       platform: z.string().describe('平台名称（模糊匹配，如 github / linkedin）'),
     }),
@@ -613,7 +613,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('logout', {
     description: '清除平台的登录状态',
     scope: 'project',
-    result: z.any(),
+    result: z.object({ cleared: z.number().optional(), keys: z.array(z.string()).optional(), platform: z.string().optional() }).nullable().passthrough(),
     parameters: z.object({
       platform: z.string().optional().describe('平台名称或 "all" 清除全部'),
     }),
@@ -709,7 +709,7 @@ export default function (xcli: XCLIAPI): void {
             await page.waitForTimeout(3000);
             return { loggedIn: true, method: 'oauth-consent' };
           }
-        } catch {}
+        } catch { /* non-critical, continue */ }
       }
 
       for (let i = 0; i < 10; i++) {
@@ -742,7 +742,7 @@ export default function (xcli: XCLIAPI): void {
             return { loggedIn: true, method: 'google-oauth' };
           }
         }
-      } catch {}
+      } catch { /* non-critical, continue */ }
     }
 
     return { loggedIn: false, method: '' };
@@ -756,7 +756,7 @@ export default function (xcli: XCLIAPI): void {
           if (await el.isVisible({ timeout: 1500 }).catch(() => false)) {
             return true;
           }
-        } catch {}
+        } catch { /* non-critical, continue */ }
       }
       return false;
     })();
@@ -840,11 +840,11 @@ export default function (xcli: XCLIAPI): void {
                 await page.waitForTimeout(2000);
                 break;
               }
-            } catch {}
+            } catch { /* non-critical, continue */ }
           }
           break;
         }
-      } catch {}
+      } catch { /* non-critical, continue */ }
     }
 
     return { filled, saved };
@@ -853,7 +853,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('submit-backlink', {
     description: '在浏览器中打开外链平台的外链提交入口页面，可选自动填写 URL',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ platform: z.string(), entryUrl: z.string(), category: z.string(), steps: z.string(), autoFill: z.object({ filled: z.boolean(), saved: z.boolean() }).optional() }).nullable().passthrough(),
     parameters: z.object({
       platform: z.string().describe('平台名称（模糊匹配，如 linkedin / github / medium）'),
       url: z.string().optional().describe('要填写的网站 URL（提供后自动填写并保存）'),
@@ -894,7 +894,7 @@ export default function (xcli: XCLIAPI): void {
         } else if (loginState.at && (Date.now() - loginState.at > 14 * 24 * 60 * 60 * 1000)) {
           loginTips.push(`⚠️ 登录状态可能已过期（超过14天），建议重新登录`);
         }
-      } catch {}
+      } catch { /* non-critical, continue */ }
 
       try {
         const resolvedUrl = await resolveEntryUrl(page, match);
@@ -961,7 +961,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('submit-guest-post', {
     description: '在浏览器中提交客座文章到支持 Guest Post 的平台',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ platform: z.string(), formUrl: z.string(), submitted: z.boolean().optional(), type: z.string().optional() }).nullable().passthrough(),
     parameters: z.object({
       platform: z.string().describe('平台名称（如 css-tricks / smashing-magazine / search-engine-journal）'),
       name: z.string().describe('你的姓名'),
@@ -1164,7 +1164,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('setup-email', {
     description: '配置邮箱 IMAP 授权（用于自动获取验证码，支持 QQ 邮箱等）',
     scope: 'project',
-    result: z.any(),
+    result: z.object({ configured: z.boolean() }).passthrough(),
     parameters: z.object({
       user: z.string().describe('邮箱地址（如 dyyz1993@qq.com）'),
       pass: z.string().describe('IMAP 授权码（非邮箱密码，QQ邮箱需在设置中开启 IMAP 并生成授权码）'),
@@ -1200,7 +1200,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('verify-email', {
     description: '从 Gmail 获取最新的验证邮件，提取验证码或验证链接',
     scope: 'project',
-    result: z.any(),
+    result: z.object({ subject: z.string(), from: z.string(), code: z.string().optional(), link: z.string().optional() }).passthrough(),
     parameters: z.object({
       from: z.string().describe('发件人过滤（域名或邮箱地址）'),
       maxAge: z.number().optional().describe('最大回溯时间（秒），默认 300').default(300),
@@ -1241,7 +1241,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('register', {
     description: '在浏览器中自动注册外链平台账号',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ platform: z.string(), email: z.string(), password: z.string(), signupUrl: z.string(), submitted: z.boolean() }).passthrough(),
     parameters: z.object({
       platform: z.string().describe('平台名称（模糊匹配）'),
       email: z.string().describe('注册邮箱'),
@@ -1286,7 +1286,7 @@ export default function (xcli: XCLIAPI): void {
             signupUrl = testUrl;
             break;
           }
-        } catch {}
+        } catch { /* non-critical, continue */ }
       }
 
       if (!signupUrl) {
@@ -1358,7 +1358,7 @@ export default function (xcli: XCLIAPI): void {
               await page.goto(verifyResult.link, { waitUntil: 'domcontentloaded', timeout: 30000 });
               await page.waitForTimeout(3000);
             }
-          } catch {}
+          } catch { /* non-critical, continue */ }
         }
 
         const storageKey = `seo_login_${match.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
@@ -1395,7 +1395,7 @@ export default function (xcli: XCLIAPI): void {
   seo.command('batch-submit', {
     description: '批量提交网站 URL 到多个外链平台（自动填写并保存）',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ url: z.string(), total: z.number(), summary: z.object({ reachable: z.number(), logged: z.number(), filled: z.number(), saved: z.number() }) }).nullable().passthrough(),
     parameters: z.object({
       url: z.string().describe('要提交的网站 URL'),
       platforms: z.string().optional().describe('平台组: google/github/oauth27/all 或逗号分隔的平台名称，默认 oauth27'),
@@ -1566,7 +1566,7 @@ export default function (xcli: XCLIAPI): void {
                         await page.waitForTimeout(3000);
                         break;
                       }
-                    } catch {}
+                    } catch { /* non-critical, continue */ }
                   }
                 }
 
@@ -1620,13 +1620,13 @@ export default function (xcli: XCLIAPI): void {
                               await page.waitForTimeout(2000);
                               break;
                             }
-                          } catch {}
+                          } catch { /* non-critical, continue */ }
                         }
                         break;
                       }
                     }
                     if (result.urlFilled) break;
-                  } catch {}
+                  } catch { /* non-critical, continue */ }
                 }
                 if (!result.urlFilled) {
                   result.notes += ' | no URL input found';

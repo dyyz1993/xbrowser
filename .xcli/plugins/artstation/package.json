@@ -1,20 +1,36 @@
 {
-  "name": "xbrowser-plugin-artstation",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "Artstation Artwork Search",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "artstation"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-artstation",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://www.artstation.com",
-    "requiresLogin": false,
+    "author": "dyyz1993",
     "commands": [
       "search-image"
-    ]
+    ],
+    "description": "Artstation Artwork Search",
+    "name": "artstation",
+    "requiresLogin": false,
+    "site": "https://www.artstation.com",
+    "sites": [],
+    "slug": "artstation",
+    "tags": [
+      "artstation"
+    ],
+    "version": "3.0.0"
   }
 }

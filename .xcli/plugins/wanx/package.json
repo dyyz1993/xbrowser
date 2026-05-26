@@ -1,10 +1,35 @@
 {
-  "name": "wanx",
-  "version": "1.0.0",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "万相(Wanx) AI 视频生成插件",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin"
+  ],
   "main": "index.ts",
+  "name": "xbrowser-plugin-wanx",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "1.0.0",
   "xbrowser": {
+    "author": "dyyz1993",
+    "commands": [
+      "sign",
+      "video",
+      "result"
+    ],
     "description": "万相(Wanx) AI 视频生成 — 文生视频、图生视频、签到、积分查询",
-    "requiresLogin": true
+    "name": "wanx",
+    "site": "https://tongyi.aliyun.com/wan/explore",
+    "requiresLogin": true,
+    "sites": [],
+    "slug": "wanx",
+    "tags": [
+      "wanx"
+    ],
+    "version": "1.0.0"
   }
 }

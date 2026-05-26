@@ -1,35 +1,43 @@
 {
-  "name": "xbrowser-plugin-qwen",
-  "version": "1.0.0",
+  "author": "XBrowser Team",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "千问 (Qwen) - AI 图片生成",
-  "type": "module",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "qwen",
     "qianwen",
     "image-generation",
     "ai",
-    "cdp"
+    "cdp",
+    "xbrowser-plugin"
   ],
-  "author": "XBrowser Team",
   "license": "MIT",
-  "dependencies": {
-    "zod": "^3.24.0"
-  },
+  "main": "index.ts",
+  "name": "xbrowser-plugin-qwen",
   "peerDependencies": {
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
+  "type": "module",
+  "version": "1.0.0",
   "xbrowser": {
-    "name": "qwen",
-    "description": "千问 (Qwen) AI 图片生成",
+    "author": "dyyz1993",
     "commands": [
       "image",
       "result",
       "billing"
     ],
+    "description": "千问 (Qwen) AI 图片生成",
+    "name": "qwen",
+    "site": "https://www.qianwen.com",
     "sites": [
       "qwen"
-    ]
+    ],
+    "slug": "qwen",
+    "tags": [
+      "qwen"
+    ],
+    "version": "1.0.0"
   }
 }

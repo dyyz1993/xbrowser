@@ -1,26 +1,26 @@
 {
-  "name": "xbrowser-plugin-udio",
-  "version": "3.0.0",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "Udio AI Music Generation - AI 音乐生成、Credits 查询、歌曲管理、hCaptcha 处理",
-  "type": "module",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "udio",
     "ai",
     "music-generation",
     "cdp",
-    "playwright"
+    "playwright",
+    "xbrowser-plugin"
   ],
-  "dependencies": {
-    "zod": "^3.24.0"
-  },
+  "main": "index.ts",
+  "name": "xbrowser-plugin-udio",
   "peerDependencies": {
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "name": "udio",
-    "description": "Udio AI 音乐生成",
+    "author": "dyyz1993",
     "commands": [
       "create",
       "status",
@@ -28,8 +28,16 @@
       "library",
       "billing"
     ],
+    "description": "Udio AI 音乐生成",
+    "name": "udio",
+    "site": "https://www.udio.com",
     "sites": [
       "udio"
-    ]
+    ],
+    "slug": "udio",
+    "tags": [
+      "udio"
+    ],
+    "version": "3.0.0"
   }
 }

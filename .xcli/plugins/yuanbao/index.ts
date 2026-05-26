@@ -131,7 +131,7 @@ export default function (xcli: XCLIAPI): void {
     description: '列出所有历史会话',
     scope: 'page',
     parameters: z.object({}),
-    result: z.any(),
+    result: z.array(z.object({ index: z.number(), title: z.string(), url: z.string() }).passthrough()),
     examples: [
       { cmd: 'xbrowser yuanbao list', description: '列出所有会话' },
       { cmd: 'xbrowser yuanbao list --json', description: 'JSON 格式输出' },
@@ -155,11 +155,7 @@ export default function (xcli: XCLIAPI): void {
 
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
-        return {
-          data: conversations,
-          tips,
-          message: `找到 ${conversations.length} 个会话`,
-        };
+        return ok(conversations, tips);
       } catch (error) {
         return fail('未知错误', ['获取会话列表失败']);
       }
@@ -170,7 +166,7 @@ export default function (xcli: XCLIAPI): void {
     description: '创建新的空白对话',
     scope: 'browser',
     parameters: z.object({}),
-    result: z.any(),
+    result: z.object({ created: z.boolean() }).passthrough(),
     examples: [
       { cmd: 'xbrowser yuanbao new', description: '新建对话' },
     ],
@@ -213,11 +209,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         await page.waitForTimeout(1500);
-        return {
-          data: { created: true },
-          tips: buildTips(ctx),
-          message: '✅ 已创建新对话',
-        };
+        return ok({ created: true }, buildTips(ctx));
       } catch (error) {
         return fail('未知错误', ['创建新对话失败']);
       }
@@ -230,7 +222,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       title: z.string().describe('会话标题（支持模糊匹配）'),
     }),
-    result: z.any(),
+    result: z.object({ opened: z.string() }).passthrough(),
     examples: [
       { cmd: 'xbrowser yuanbao open "工作计划"', description: '打开指定会话' },
       { cmd: 'xbrowser yuanbao open "代码"', description: '模糊匹配打开' },
@@ -258,11 +250,7 @@ export default function (xcli: XCLIAPI): void {
         if (!clicked.found) throw new Error(`未找到包含"${params.title}"的会话`);
 
         await page.waitForTimeout(2000);
-        return {
-          data: { opened: clicked.title },
-          tips: buildTips(ctx),
-          message: `✅ 已打开会话：${clicked.title}`,
-        };
+        return ok({ opened: clicked.title }, buildTips(ctx));
       } catch (error) {
         return fail('未知错误', ['打开会话失败']);
       }
@@ -280,7 +268,7 @@ export default function (xcli: XCLIAPI): void {
       search: z.boolean().optional().describe('开启联网搜索'),
       showSources: z.boolean().optional().describe('显示联网搜索引用的来源 URL 和域名'),
     }),
-    result: z.any(),
+    result: z.object({ response: z.string(), duration: z.string().optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser yuanbao chat "你好"', description: '发送消息' },
       { cmd: 'xbrowser yuanbao chat "分析这张图" --attach /path/to/img.jpg', description: '发送消息+图片' },
@@ -514,27 +502,19 @@ export default function (xcli: XCLIAPI): void {
             }, params.message);
             if (responseText) break;
           } catch {
-            // ignore
+            // continue polling on page evaluate failure
           }
         }
 
         if (responseText) {
           tips.push('AI 回复已收到');
-          return {
-            data: {
+          return ok({
               response: responseText,
               duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
-            },
-            tips,
-            message: `✅ AI 回复 (${((Date.now() - startTime) / 1000).toFixed(1)}s)`,
-          };
+            }, tips);
         } else {
           tips.push('AI 回复超时或未检测到');
-          return {
-            data: { response: '' },
-            tips,
-            message: '⏱ AI 回复超时（60s），请检查页面',
-          };
+          return ok({ response: '' }, tips);
         }
       } catch (error) {
         return fail('未知错误', ['发送消息失败']);
@@ -548,7 +528,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       file: z.string().describe('附件文件路径'),
     }),
-    result: z.any(),
+    result: z.object({ file: z.string(), uploaded: z.boolean() }).passthrough(),
     examples: [
       { cmd: 'xbrowser yuanbao attach /path/to/file.pdf', description: '上传文件' },
       { cmd: 'xbrowser yuanbao attach /path/to/image.png', description: '上传图片' },
@@ -582,11 +562,7 @@ export default function (xcli: XCLIAPI): void {
 
         await page.waitForTimeout(1000);
         tips.push(`已上传: ${path.basename(absPath)}`);
-        return {
-          data: { file: absPath, uploaded: true },
-          tips,
-          message: `✅ 文件已上传: ${path.basename(absPath)}`,
-        };
+        return ok({ file: absPath, uploaded: true }, tips);
       } catch (error) {
         return fail('未知错误', ['上传附件失败']);
       }

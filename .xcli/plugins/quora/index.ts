@@ -8,6 +8,29 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.quora.com',
     description: 'Quora SEO 外链 - 问答平台 (DA 92, nofollow, 136M 月流量)',
     requiresLogin: true,
+    loginConfig: {
+      loginUrls: ['/login', '/signin', '/auth'],
+      loginSelectors: ['[class*="login"]', '[class*="signin"]'],
+      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]'],
+      loginKeywords: ['Sign in', 'Log in'],
+      loggedInSelectors: ['[class*="avatar"]', '[data-testid*="avatar"]'],
+      loginPrompt: 'This site requires login. Use --cdp to connect a logged-in browser.',
+    },
+    isLogin: async (ctx) => {
+      const ctxAny = ctx as Record<string, unknown>;
+      const page = ctxAny.page as import('playwright-core').Page;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/login')) return false;
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        if (!body) return false;
+        if (body.includes('Sign in')) return false;
+        return true;
+      } catch {
+        return true;
+      }
+    },
   });
 
   site.command('login', {
@@ -15,7 +38,7 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser quora login', description: '登录 Quora' }],
-    result: z.any(),
+    result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
@@ -64,7 +87,7 @@ export default function (xcli: XCLIAPI): void {
         description: '回答问题并插入外链',
       },
     ],
-    result: z.any(),
+    result: z.object({ questionUrl: z.string(), answered: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
@@ -127,7 +150,7 @@ export default function (xcli: XCLIAPI): void {
         description: '在 Quora 发布文章',
       },
     ],
-    result: z.any(),
+    result: z.object({ title: z.string(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
@@ -188,7 +211,7 @@ export default function (xcli: XCLIAPI): void {
         description: '更新 Profile 添加外链',
       },
     ],
-    result: z.any(),
+    result: z.object({ url: z.string(), updated: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');

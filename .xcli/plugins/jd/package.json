@@ -1,20 +1,36 @@
 {
-  "name": "xbrowser-plugin-jd",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "京东商品图片搜索",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "jd"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-jd",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://www.jd.com",
-    "requiresLogin": false,
+    "author": "dyyz1993",
     "commands": [
       "search-image"
-    ]
+    ],
+    "description": "京东商品图片搜索",
+    "name": "jd",
+    "requiresLogin": false,
+    "site": "https://www.jd.com",
+    "sites": [],
+    "slug": "jd",
+    "tags": [
+      "jd"
+    ],
+    "version": "3.0.0"
   }
 }

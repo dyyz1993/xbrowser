@@ -8,6 +8,29 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.instagram.com',
     description: 'Instagram 图片搜索',
     requiresLogin: true,
+    loginConfig: {
+      loginUrls: ['/login', '/signin', '/auth'],
+      loginSelectors: ['[class*="login"]', '[class*="signin"]'],
+      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]'],
+      loginKeywords: ['Sign in', 'Log in'],
+      loggedInSelectors: ['[class*="avatar"]', '[data-testid*="avatar"]'],
+      loginPrompt: 'This site requires login. Use --cdp to connect a logged-in browser.',
+    },
+    isLogin: async (ctx) => {
+      const ctxAny = ctx as Record<string, unknown>;
+      const page = ctxAny.page as import('playwright-core').Page;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/login/')) return false;
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        if (!body) return false;
+        if (body.includes('Log in')) return false;
+        return true;
+      } catch {
+        return true;
+      }
+    },
   });
 
   instagram.command('search-image', {
@@ -16,13 +39,27 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       query: z.string().describe('搜索标签（不含 #）'),
       limit: z.number().optional().default(10),
-      page: z.any().optional(),
       timeout: z.number().optional().default(20000),
     }),
-    result: z.any(),
+    result: z.object({
+      query: z.string(),
+      engine: z.string(),
+      results: z.array(z.object({
+        title: z.string(),
+        thumbnailUrl: z.string(),
+        sourceUrl: z.string(),
+        originalUrl: z.string().optional(),
+        width: z.number(),
+        height: z.number(),
+        format: z.string().optional(),
+        sourceSite: z.string(),
+        fileSize: z.string().optional(),
+      }).passthrough()),
+      total: z.number().optional(),
+      timestamp: z.union([z.string(), z.number()]).optional(),
+    }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (params.page as import('playwright').Page)
-        || (ctx as Record<string, unknown>).page as import('playwright').Page;
+      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
 
       try {

@@ -243,6 +243,30 @@ export default function (xcli: XCLIAPI): void {
     name: 'douyin',
     url: DOUYIN_BASE,
     description: '抖音数据采集',
+    requiresLogin: false,
+    loginConfig: {
+      loginUrls: ['/login', '/passport'],
+      loginSelectors: ['[class*="login"]', '[class*="modal"]'],
+      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]', '[class*="slider"]'],
+      loginKeywords: ['登录', '注册'],
+      loggedInSelectors: ['[class*="avatar"]', '[class*="user-info"]'],
+      loginPrompt: '请使用 --cdp 连接已登录的浏览器（CDP 9221）',
+    },
+    isLogin: async (ctx) => {
+      const ctxAny = ctx as Record<string, unknown>;
+      const page = ctxAny.page as import('playwright-core').Page;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/passport')) return false;
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        if (!body) return false;
+        if (body.includes('登录')) return false;
+        return true;
+      } catch {
+        return true;
+      }
+    },
   });
 
   site.command('videos', {
@@ -255,7 +279,24 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser douyin videos --url "https://www.douyin.com/user/xxx"', description: '采集用户作品' },
     ],
-    result: z.any(),
+    result: z.object({
+      total: z.number(),
+      videos: z.array(z.object({
+        awemeId: z.string(), desc: z.string(), createTime: z.number(), createTimeStr: z.string(),
+        author: z.object({ uid: z.string(), nickname: z.string() }).passthrough(),
+        video: z.object({
+          playUrl: z.string(), cover: z.string(), width: z.number(), height: z.number(), duration: z.number(),
+          bitRates: z.array(z.object({
+            gearName: z.string(), qualityType: z.number(), playAddr: z.string(), size: z.number(),
+          }).passthrough()),
+        }).passthrough(),
+        statistics: z.object({
+          diggCount: z.number(), commentCount: z.number(), shareCount: z.number(),
+          collectCount: z.number(), playCount: z.number(),
+        }).passthrough(),
+        tagNames: z.array(z.string()),
+      }).passthrough()),
+    }),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -296,7 +337,11 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser douyin profile --url "https://www.douyin.com/user/xxx"', description: '获取用户资料' },
     ],
-    result: z.any(),
+    result: z.object({
+      nickname: z.string(),
+      signature: z.string(),
+      stats: z.record(z.string()),
+    }),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -342,7 +387,13 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser douyin detail --awemeId "7xxxxxxxxxxxxx"', description: '获取视频详情' },
     ],
-    result: z.any(),
+    result: z.object({
+      awemeId: z.string(),
+      desc: z.string(),
+      author: z.string(),
+      likeCount: z.string(),
+      commentCount: z.string(),
+    }),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -394,7 +445,19 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser douyin comments --awemeId "7xxxxxxxxxxxxx"', description: '获取视频评论' },
       { cmd: 'xbrowser douyin comments --awemeId "7xxxxxxxxxxxxx" --maxPages 10', description: '获取更多评论' },
     ],
-    result: z.any(),
+    result: z.object({
+      total: z.number(),
+      comments: z.array(z.object({
+        id: z.string(), text: z.string(),
+        user: z.object({ uid: z.string(), nickname: z.string(), avatar: z.string() }).passthrough(),
+        createTime: z.number(), createTimeStr: z.string(),
+        diggCount: z.number(), replyCount: z.number(),
+        replyTo: z.object({
+          id: z.string(), text: z.string(),
+          user: z.object({ uid: z.string(), nickname: z.string() }).passthrough(),
+        }).passthrough().optional(),
+      }).passthrough()),
+    }),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -439,7 +502,24 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser douyin user-comments --uid "xxx"', description: '获取用户喜欢的视频' },
     ],
-    result: z.any(),
+    result: z.object({
+      total: z.number(),
+      favorites: z.array(z.object({
+        awemeId: z.string(), desc: z.string(), createTime: z.number(), createTimeStr: z.string(),
+        author: z.object({ uid: z.string(), nickname: z.string() }).passthrough(),
+        video: z.object({
+          playUrl: z.string(), cover: z.string(), width: z.number(), height: z.number(), duration: z.number(),
+          bitRates: z.array(z.object({
+            gearName: z.string(), qualityType: z.number(), playAddr: z.string(), size: z.number(),
+          }).passthrough()),
+        }).passthrough(),
+        statistics: z.object({
+          diggCount: z.number(), commentCount: z.number(), shareCount: z.number(),
+          collectCount: z.number(), playCount: z.number(),
+        }).passthrough(),
+        tagNames: z.array(z.string()),
+      }).passthrough()),
+    }),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -488,7 +568,29 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser douyin search --keyword "潮汕美食"', description: '搜索视频' },
       { cmd: 'xbrowser douyin search --keyword "潮汕美食" --maxPages 3', description: '搜索并翻页' },
     ],
-    result: z.any(),
+    result: z.object({
+      total: z.number(),
+      source: z.string(),
+      keyword: z.string(),
+      videos: z.array(z.object({
+        awemeId: z.string(), desc: z.string(),
+        author: z.object({ nickname: z.string() }).passthrough(),
+        createTime: z.number().optional(), createTimeStr: z.string().optional(),
+        video: z.object({
+          playUrl: z.string().optional(), cover: z.string().optional(),
+          width: z.number().optional(), height: z.number().optional(), duration: z.number().optional(),
+          bitRates: z.array(z.any()).optional(),
+        }).passthrough().optional(),
+        cover: z.string().optional(), duration: z.string().optional(),
+        statistics: z.object({
+          diggCount: z.union([z.number(), z.string()]).optional(),
+          commentCount: z.union([z.number(), z.string()]).optional(),
+          collectCount: z.union([z.number(), z.string()]).optional(),
+          shareCount: z.number().optional(), playCount: z.number().optional(),
+        }).passthrough().optional(),
+        tagNames: z.array(z.string()).optional(),
+      }).passthrough()),
+    }),
     handler: async (params, ctx) => {
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
@@ -544,7 +646,7 @@ export default function (xcli: XCLIAPI): void {
               collected.push(item);
             }
           } catch {
-            // ignore
+            // response parse failure for non-matching responses, skip
           }
         };
 
@@ -673,7 +775,12 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser douyin ai-subtitle --url "https://www.douyin.com/video/7xxx" --manual', description: '手动模式提取字幕' },
       { cmd: 'xbrowser douyin ai-subtitle --url "https://www.douyin.com/user/xxx" --videoIndex 0', description: '提取用户第一个作品字幕' },
     ],
-    result: z.any(),
+    result: z.object({
+      subtitle: z.string(),
+      prompt: z.string(),
+      videoUrl: z.string(),
+      mode: z.string(),
+    }).passthrough(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -764,7 +871,7 @@ export default function (xcli: XCLIAPI): void {
                 return iframeEl;
               }
             } catch {
-              // continue trying
+              // iframe not ready yet, continue trying
             }
           }
 
@@ -782,7 +889,7 @@ export default function (xcli: XCLIAPI): void {
                 return page.frameLocator(frameSelector);
               }
             } catch {
-              // continue
+              // iframe access may fail, continue searching
             }
           }
 
@@ -867,7 +974,7 @@ export default function (xcli: XCLIAPI): void {
             try {
               currentText = await extractTextFromFrame(frame);
             } catch {
-              // iframe might still be loading
+              // iframe might still be loading, continue polling
             }
 
             if (currentText && currentText.length > 30) {

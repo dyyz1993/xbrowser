@@ -71,7 +71,7 @@ async function testConnection(config: EmailConfig): Promise<boolean> {
   } finally {
     try {
       await client.logout();
-    } catch {}
+    } catch { /* logout cleanup, ignore errors */ }
   }
 }
 
@@ -305,7 +305,7 @@ export async function fetchVerificationCode(fromFilter: string, maxAge: number):
   } finally {
     try {
       await client.logout();
-    } catch {}
+    } catch { /* logout cleanup, ignore errors */ }
   }
 }
 

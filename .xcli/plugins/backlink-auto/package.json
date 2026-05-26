@@ -1,9 +1,33 @@
 {
-  "name": "xbrowser-plugin-backlink-auto",
-  "version": "3.0.0",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "自动注册+提交外链（CDP安全模式，CAPTCHA检测）",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin"
+  ],
   "main": "index.ts",
+  "name": "xbrowser-plugin-backlink-auto",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "description": "自动注册+提交外链（CDP安全模式，CAPTCHA检测）"
+    "author": "dyyz1993",
+    "commands": [
+      "run",
+      "sms",
+      "read-email"
+    ],
+    "description": "自动注册+提交外链（CDP安全模式，CAPTCHA检测）",
+    "name": "backlink-auto",
+    "sites": [],
+    "slug": "backlink-auto",
+    "tags": [
+      "backlink-auto"
+    ],
+    "version": "3.0.0"
   }
 }

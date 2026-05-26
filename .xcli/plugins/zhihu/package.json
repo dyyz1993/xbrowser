@@ -1,8 +1,17 @@
 {
-  "name": "@xbrowser/zhihu",
-  "version": "2.1.0",
+  "_marketplace": {
+    "slug": "zhihu",
+    "url": "https://marketplace.xbrowser.dev"
+  },
+  "_npmSource": {
+    "name": "@xbrowser/zhihu",
+    "version": "2.1.0"
+  },
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "知乎 - 知识问答、内容采集与 AI 知答 (DA 93)",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
@@ -12,11 +21,16 @@
     "ai-chat",
     "zhida"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "@xbrowser/zhihu",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "2.1.0",
   "xbrowser": {
-    "site": "https://www.zhihu.com",
-    "requiresLogin": false,
+    "author": "dyyz1993",
     "commands": [
       "search",
       "trending",
@@ -25,26 +39,19 @@
       "article",
       "chat"
     ],
-    "slug": "zhihu",
-    "name": "@xbrowser/zhihu",
     "description": "知乎 - 知识问答、内容采集与 AI 知答 (DA 93)",
-    "version": "2.1.0",
-    "author": "dyyz1993",
+    "name": "@xbrowser/zhihu",
+    "requiresLogin": false,
+    "site": "https://www.zhihu.com",
+    "sites": [
+      "zhihu.com"
+    ],
+    "slug": "zhihu",
     "tags": [
       "zhihu",
       "q&a",
       "knowledge"
     ],
-    "sites": [
-      "zhihu.com"
-    ]
-  },
-  "_npmSource": {
-    "name": "@xbrowser/zhihu",
     "version": "2.1.0"
-  },
-  "_marketplace": {
-    "slug": "zhihu",
-    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
   }
 }

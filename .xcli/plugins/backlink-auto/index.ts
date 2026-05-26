@@ -1,8 +1,18 @@
+/**
+ * Required environment variables:
+ * - BACKLINK_EMAIL: Registration email address
+ * - BACKLINK_PHONE: Registration phone number
+ * - BACKLINK_PASSWORD: Base password for all site registrations
+ */
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page, BrowserContext } from 'playwright';
 import { execSync } from 'child_process';
+
+const BACKLINK_EMAIL = process.env.BACKLINK_EMAIL || '';
+const BACKLINK_PHONE = process.env.BACKLINK_PHONE || '';
+const BACKLINK_PASSWORD = process.env.BACKLINK_PASSWORD || '';
 
 // ─── Safe CDP helpers (avoid locator.click which destroys context) ───
 
@@ -149,7 +159,7 @@ async function read163EmailCode(page: Page, fromDomain: string, timeoutMs = 6000
           return codeMatch ? codeMatch[1] : null;
         }, fromDomain);
         if (code) return code;
-      } catch {}
+      } catch { /* verification code not found yet */ }
       await mailPage.waitForTimeout(5000);
       await mailPage.reload().catch(() => {});
       await mailPage.waitForTimeout(3000);
@@ -182,7 +192,7 @@ function addResult(r: SiteResult) {
 // ─── Site-specific handlers ───
 
 async function registerIssuu(page: Page): Promise<SiteResult> {
-  const r: SiteResult = { site: 'Issuu', dr: 93, registered: false, submitted: false, email: 'dyyz1993@163.com', phone: '13751880018', password: 'OmniVideo2026!Seo', code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
+  const r: SiteResult = { site: 'Issuu', dr: 93, registered: false, submitted: false, email: BACKLINK_EMAIL, phone: BACKLINK_PHONE, password: BACKLINK_PASSWORD, code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
   try {
     await safeGoto(page, 'https://issuu.com/signup');
     await page.waitForTimeout(3000);
@@ -243,7 +253,7 @@ async function registerIssuu(page: Page): Promise<SiteResult> {
 }
 
 async function registerSubstack(page: Page): Promise<SiteResult> {
-  const r: SiteResult = { site: 'Substack', dr: 93, registered: false, submitted: false, email: 'dyyz1993@163.com', phone: '13751880018', password: 'OmniVideo2026!Sub', code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
+  const r: SiteResult = { site: 'Substack', dr: 93, registered: false, submitted: false, email: BACKLINK_EMAIL, phone: BACKLINK_PHONE, password: BACKLINK_PASSWORD, code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
   try {
     await safeGoto(page, 'https://substack.com/signup');
     await page.waitForTimeout(3000);
@@ -278,7 +288,7 @@ async function registerSubstack(page: Page): Promise<SiteResult> {
 }
 
 async function registerAboutMe(page: Page): Promise<SiteResult> {
-  const r: SiteResult = { site: 'About.me', dr: 90, registered: false, submitted: false, email: 'dyyz1993@163.com', phone: '13751880018', password: 'OmniVideo2026!Ab', code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
+  const r: SiteResult = { site: 'About.me', dr: 90, registered: false, submitted: false, email: BACKLINK_EMAIL, phone: BACKLINK_PHONE, password: BACKLINK_PASSWORD, code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
   try {
     await safeGoto(page, 'https://about.me/signup');
     await page.waitForTimeout(3000);
@@ -317,7 +327,7 @@ async function registerAboutMe(page: Page): Promise<SiteResult> {
 }
 
 async function registerDisqus(page: Page): Promise<SiteResult> {
-  const r: SiteResult = { site: 'Disqus', dr: 92, registered: false, submitted: false, email: 'dyyz1993@163.com', phone: '13751880018', password: 'OmniVideo2026!Dq', code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
+  const r: SiteResult = { site: 'Disqus', dr: 92, registered: false, submitted: false, email: BACKLINK_EMAIL, phone: BACKLINK_PHONE, password: BACKLINK_PASSWORD, code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
   try {
     await safeGoto(page, 'https://disqus.com/profile/signup/');
     await page.waitForTimeout(3000);
@@ -350,7 +360,7 @@ async function registerDisqus(page: Page): Promise<SiteResult> {
 }
 
 async function registerCalCom(page: Page): Promise<SiteResult> {
-  const r: SiteResult = { site: 'Cal.com', dr: 92, registered: false, submitted: false, email: 'dyyz1993@163.com', phone: '13751880018', password: 'OmniVideo2026!Cal', code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
+  const r: SiteResult = { site: 'Cal.com', dr: 92, registered: false, submitted: false, email: BACKLINK_EMAIL, phone: BACKLINK_PHONE, password: BACKLINK_PASSWORD, code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
   try {
     await safeGoto(page, 'https://app.cal.com/signup');
     await page.waitForTimeout(3000);
@@ -386,7 +396,7 @@ async function registerCalCom(page: Page): Promise<SiteResult> {
 }
 
 async function registerHashnode(page: Page): Promise<SiteResult> {
-  const r: SiteResult = { site: 'Hashnode', dr: 83, registered: false, submitted: false, email: 'dyyz1993@163.com', phone: '13751880018', password: 'OmniVideo2026!Hn', code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
+  const r: SiteResult = { site: 'Hashnode', dr: 83, registered: false, submitted: false, email: BACKLINK_EMAIL, phone: BACKLINK_PHONE, password: BACKLINK_PASSWORD, code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
   try {
     await safeGoto(page, 'https://hashnode.com/onboard');
     await page.waitForTimeout(3000);
@@ -409,7 +419,7 @@ async function registerHashnode(page: Page): Promise<SiteResult> {
 }
 
 async function registerGreasyFork(page: Page): Promise<SiteResult> {
-  const r: SiteResult = { site: 'GreasyFork', dr: 78, registered: false, submitted: false, email: 'dyyz1993@163.com', phone: '13751880018', password: 'OmniVideo2026!Gf', code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
+  const r: SiteResult = { site: 'GreasyFork', dr: 78, registered: false, submitted: false, email: BACKLINK_EMAIL, phone: BACKLINK_PHONE, password: BACKLINK_PASSWORD, code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
   try {
     await safeGoto(page, 'https://greasyfork.org/zh-CN/users/sign_up');
     await page.waitForTimeout(3000);
@@ -443,7 +453,7 @@ async function registerGreasyFork(page: Page): Promise<SiteResult> {
 }
 
 async function registerSeaArt(page: Page): Promise<SiteResult> {
-  const r: SiteResult = { site: 'SeaArt', dr: 70, registered: false, submitted: false, email: 'dyyz1993@163.com', phone: '13751880018', password: 'OmniVideo2026!Sa', code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
+  const r: SiteResult = { site: 'SeaArt', dr: 70, registered: false, submitted: false, email: BACKLINK_EMAIL, phone: BACKLINK_PHONE, password: BACKLINK_PASSWORD, code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
   try {
     await safeGoto(page, 'https://www.seaart.ai/user/register');
     await page.waitForTimeout(3000);
@@ -475,7 +485,7 @@ async function registerSeaArt(page: Page): Promise<SiteResult> {
 }
 
 async function registerLeetCode(page: Page): Promise<SiteResult> {
-  const r: SiteResult = { site: 'LeetCode', dr: 87, registered: false, submitted: false, email: 'dyyz1993@163.com', phone: '13751880018', password: 'OmniVideo2026!Lc', code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
+  const r: SiteResult = { site: 'LeetCode', dr: 87, registered: false, submitted: false, email: BACKLINK_EMAIL, phone: BACKLINK_PHONE, password: BACKLINK_PASSWORD, code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
   try {
     await safeGoto(page, 'https://leetcode.com/accounts/signup/');
     await page.waitForTimeout(3000);
@@ -498,7 +508,7 @@ async function registerLeetCode(page: Page): Promise<SiteResult> {
 }
 
 async function registerDevTo(page: Page): Promise<SiteResult> {
-  const r: SiteResult = { site: 'Dev.to', dr: 90, registered: false, submitted: false, email: 'dyyz1993@163.com', phone: '13751880018', password: 'OmniVideo2026!Dt', code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
+  const r: SiteResult = { site: 'Dev.to', dr: 90, registered: false, submitted: false, email: BACKLINK_EMAIL, phone: BACKLINK_PHONE, password: BACKLINK_PASSWORD, code: null, notes: '', url: 'https://omnivideo.net', captchaType: null };
   try {
     await safeGoto(page, 'https://dev.to/enter');
     await page.waitForTimeout(3000);
@@ -553,7 +563,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser --cdp 9221 backlink-auto run', description: '跑前10个站点' },
       { cmd: 'xbrowser --cdp 9221 backlink-auto run --startFrom 3 --maxSites 5', description: '从第4个开始跑5个' },
     ],
-    result: z.any(),
+    result: z.object({ total: z.number(), registered: z.number(), submitted: z.number() }).passthrough(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as Page | undefined;
       if (!page) return { data: null, tips: ['需要浏览器页面'], message: '缺少浏览器页面' };
@@ -586,7 +596,7 @@ export default function (xcli: XCLIAPI): void {
 
           // Close the site page to keep things clean
           // DON'T close - CDP mode shared context, closing kills the connection
-          // try { await sitePage.close(); } catch {}
+          // try { await sitePage.close(); } catch { /* non-critical, skip */ }
         } catch (e: any) {
           tips.push(`❌ Error: ${e.message?.substring(0, 60)}`);
         }
@@ -611,7 +621,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       filter: z.string().optional().describe('过滤关键词'),
     }),
-    result: z.any(),
+    result: z.object({ code: z.string().nullable(), text: z.string(), time: z.string() }).nullable().passthrough(),
     handler: async (params) => {
       const sms = readLatestSMS(params.filter);
       return ok(sms, [sms ? `验证码: ${sms.code} (${sms.time})` : '未找到验证码短信']);
@@ -625,7 +635,7 @@ export default function (xcli: XCLIAPI): void {
       from: z.string().describe('发件人域名'),
       timeout: z.number().optional().describe('超时毫秒').default(30000),
     }),
-    result: z.any(),
+    result: z.object({ code: z.string().nullable() }).passthrough(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as Page | undefined;
       if (!page) return { data: null, tips: ['需要浏览器页面'] };

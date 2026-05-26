@@ -584,7 +584,7 @@ export default function (xcli: XCLIAPI): void {
       format: z.enum(['markdown', 'json', 'text']).default('markdown'),
       timeout: z.number().default(60000).describe('AI 回复超时（毫秒）'),
     }),
-    result: z.any(),
+    result: z.object({ query: z.string(), engine: z.string(), results: z.array(z.object({ title: z.string(), url: z.string(), snippet: z.string(), position: z.number(), aiSummary: z.string().optional() })), total: z.number(), timestamp: z.number(), aiResponse: z.string().optional(), sources: z.object({ total: z.number(), domains: z.array(z.string()), urls: z.array(z.object({ url: z.string(), domain: z.string() })) }).optional(), domainExtraction: z.object({ query: z.string(), totalUrls: z.number(), totalDomains: z.number(), domains: z.array(z.any()) }).optional(), engineInfo: z.object({ name: z.string(), loginStatus: z.string(), internetSearch: z.object({ supported: z.boolean(), enabled: z.boolean(), details: z.string() }), uploadCapabilities: z.object({ image: z.boolean(), file: z.boolean() }) }).optional(), duration: z.string().optional(), content: z.string().optional(), totalEngines: z.number().optional(), successEngines: z.number().optional(), failedEngines: z.number().optional(), totalUrls: z.number().optional(), uniqueDomains: z.number().optional(), domainRanking: z.array(z.any()).optional(), platformRanking: z.array(z.any()).optional(), engineDetails: z.array(z.any()).optional(), perEngineResults: z.record(z.any()).optional() }).passthrough(),
     handler: async (params, ctx) => {
       const query = params.prompt || params.query;
       if (!query) throw new Error('请提供搜索关键词（--query 或 --prompt）');

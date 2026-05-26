@@ -1,24 +1,40 @@
 {
-  "name": "xbrowser-plugin-wordpress",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "WordPress.com SEO 外链 - 博客平台 (DA 93, dofollow)",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "wordpress.com"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-wordpress",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://wordpress.com",
-    "requiresLogin": true,
+    "author": "dyyz1993",
     "commands": [
       "login",
       "publish",
       "draft",
       "update-profile",
       "create-page"
-    ]
+    ],
+    "description": "WordPress.com SEO 外链 - 博客平台 (DA 93, dofollow)",
+    "name": "wordpress",
+    "requiresLogin": true,
+    "site": "https://wordpress.com",
+    "sites": [],
+    "slug": "wordpress",
+    "tags": [
+      "wordpress"
+    ],
+    "version": "3.0.0"
   }
 }

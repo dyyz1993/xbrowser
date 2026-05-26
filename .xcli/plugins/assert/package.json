@@ -1,9 +1,31 @@
 {
-  "name": "assert",
-  "version": "1.0.0",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "Assert page state — check text, visibility, URL, title, element count",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin"
+  ],
+  "main": "index.ts",
+  "name": "assert",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
   "type": "module",
+  "version": "1.0.0",
   "xbrowser": {
-    "description": "Assert page state — check text, visibility, URL, title, element count"
+    "author": "dyyz1993",
+    "commands": [
+      "assert"
+    ],
+    "description": "Assert page state — check text, visibility, URL, title, element count",
+    "name": "assert",
+    "sites": [],
+    "slug": "assert",
+    "tags": [
+      "assert"
+    ],
+    "version": "1.0.0"
   }
 }

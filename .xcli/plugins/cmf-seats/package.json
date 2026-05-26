@@ -1,14 +1,34 @@
 {
-  "name": "xbrowser-plugin-cmf-seats",
-  "version": "3.0.0",
-  "description": "座椅CMF评论查询（颜色/材质/触感）- 从821条真实车主评论中提取",
-  "main": "index.ts",
-  "type": "module",
-  "xbrowser": {
-    "name": "cmf-seats",
-    "description": "座椅CMF评论查询（颜色/材质/触感）- 从821条真实车主评论中提取"
-  },
   "dependencies": {
     "zod": "^3.22.4"
+  },
+  "description": "座椅CMF评论查询（颜色/材质/触感）- 从821条真实车主评论中提取",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin"
+  ],
+  "main": "index.ts",
+  "name": "xbrowser-plugin-cmf-seats",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
+  "xbrowser": {
+    "author": "dyyz1993",
+    "description": "座椅CMF评论查询（颜色/材质/触感）- 从821条真实车主评论中提取",
+    "commands": [
+      "query",
+      "list",
+      "stats"
+    ],
+    "name": "cmf-seats",
+    "site": "https://k.m.autohome.com.cn",
+    "sites": [],
+    "slug": "cmf-seats",
+    "tags": [
+      "cmf-seats"
+    ],
+    "version": "3.0.0"
   }
 }

@@ -1,9 +1,31 @@
 {
-  "name": "ai-search",
-  "version": "1.0.0",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "AI search across 14 AI engines with structured results",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin"
+  ],
+  "main": "index.ts",
+  "name": "ai-search",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
   "type": "module",
+  "version": "1.0.0",
   "xbrowser": {
-    "description": "AI search across 14 AI engines with structured results"
+    "author": "dyyz1993",
+    "commands": [
+      "ai-search"
+    ],
+    "description": "AI search across 14 AI engines with structured results",
+    "name": "ai-search",
+    "sites": [],
+    "slug": "ai-search",
+    "tags": [
+      "ai-search"
+    ],
+    "version": "1.0.0"
   }
 }

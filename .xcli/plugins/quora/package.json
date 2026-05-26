@@ -1,23 +1,39 @@
 {
-  "name": "xbrowser-plugin-quora",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "Quora SEO 外链 - 问答平台 (DA 92, nofollow, 136M 月流量)",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "quora.com"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-quora",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://www.quora.com",
-    "requiresLogin": true,
+    "author": "dyyz1993",
     "commands": [
       "login",
       "answer",
       "publish-article",
       "update-profile"
-    ]
+    ],
+    "description": "Quora SEO 外链 - 问答平台 (DA 92, nofollow, 136M 月流量)",
+    "name": "quora",
+    "requiresLogin": true,
+    "site": "https://www.quora.com",
+    "sites": [],
+    "slug": "quora",
+    "tags": [
+      "quora"
+    ],
+    "version": "3.0.0"
   }
 }

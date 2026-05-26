@@ -1,20 +1,36 @@
 {
-  "name": "xbrowser-plugin-google",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "Google Search & Images",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "google"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-google",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://www.google.com",
-    "requiresLogin": false,
+    "author": "dyyz1993",
     "commands": [
       "search-image"
-    ]
+    ],
+    "description": "Google Search & Images",
+    "name": "google",
+    "requiresLogin": false,
+    "site": "https://www.google.com",
+    "sites": [],
+    "slug": "google",
+    "tags": [
+      "google"
+    ],
+    "version": "3.0.0"
   }
 }

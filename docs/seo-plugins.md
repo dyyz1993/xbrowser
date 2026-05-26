@@ -189,7 +189,7 @@ xbrowser plugin update blogger-seo
 
 ## Marketplace
 
-Browse and install plugins from the [xbrowser marketplace](https://xbrowser-marketplace.dyyz1993.workers.dev).
+Browse and install plugins from the [xbrowser marketplace](https://marketplace.xbrowser.dev).
 
 ```bash
 # Search for SEO plugins

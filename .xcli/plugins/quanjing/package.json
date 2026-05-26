@@ -1,20 +1,36 @@
 {
-  "name": "xbrowser-plugin-quanjing",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "全景创意图片搜索",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "quanjing"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-quanjing",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://www.quanjing.com",
-    "requiresLogin": false,
+    "author": "dyyz1993",
     "commands": [
       "search-image"
-    ]
+    ],
+    "description": "全景创意图片搜索",
+    "name": "quanjing",
+    "requiresLogin": false,
+    "site": "https://www.quanjing.com",
+    "sites": [],
+    "slug": "quanjing",
+    "tags": [
+      "quanjing"
+    ],
+    "version": "3.0.0"
   }
 }

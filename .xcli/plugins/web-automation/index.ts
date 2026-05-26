@@ -13,7 +13,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('extract', {
     description: '从指定URL提取页面结构化内容',
     scope: 'browser',
-    result: z.any(),
+    result: z.array(z.object({ tag: z.string(), text: z.string(), href: z.string().optional(), src: z.string().optional() })).passthrough(),
     parameters: z.object({
       url: z.string().describe('目标页面URL'),
       selector: z.string().optional().default('body').describe('CSS选择器，默认body'),
@@ -93,7 +93,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('paginate', {
     description: '分页采集：自动翻页并提取数据',
     scope: 'browser',
-    result: z.any(),
+    result: z.array(z.record(z.string())).passthrough(),
     parameters: z.object({
       url: z.string().describe('起始页URL'),
       nextSelector: z
@@ -173,7 +173,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('fill-and-submit', {
     description: '填写表单并提交',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ submittedUrl: z.string(), resultUrl: z.string(), resultTitle: z.string(), fieldsFilled: z.number() }).passthrough(),
     parameters: z.object({
       url: z.string().describe('表单页面URL'),
       fields: z
@@ -235,7 +235,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('screenshot', {
     description: '截取网页截图',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ url: z.string(), fullPage: z.boolean(), imageBase64: z.string(), size: z.number() }).passthrough(),
     parameters: z.object({
       url: z.string().describe('目标URL'),
       fullPage: z.boolean().optional().default(false).describe('是否全页截图'),

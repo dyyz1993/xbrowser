@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page, Response } from 'playwright';
 
 interface BrowserCtx extends CommandContext {
@@ -221,12 +222,33 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.1688.com',
     description: '1688阿里巴巴 - 店铺信息、商品列表、商品详情、搜索采集',
     requiresLogin: false,
+    loginConfig: {
+      loginUrls: ['/login', '/passport'],
+      loginSelectors: ['[class*="login"]', '[class*="modal"]'],
+      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]', '[class*="slider"]'],
+      loginKeywords: ['登录', '注册'],
+      loggedInSelectors: ['[class*="avatar"]', '[class*="user-info"]'],
+      loginPrompt: '请使用 --cdp 连接已登录的浏览器（CDP 9221）',
+    },
   });
 
   site.command('shop', {
     description: '获取1688店铺信息',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({
+      source: z.string(), memberId: z.string(),
+      name: z.string(), description: z.string(), fansCount: z.string(), founded: z.string(),
+      years: z.string(), location: z.string(),
+      ratings: z.array(z.object({ label: z.string(), score: z.string() })),
+      mainProducts: z.array(z.string()), categories: z.array(z.object({
+        name: z.string(), count: z.string(), url: z.string(),
+      })), logo: z.string(),
+      returnRate: z.string(), serviceScore: z.string(),
+      onTimeRate: z.string(), goodRate: z.string(),
+      isFollowed: z.boolean(), followBtnText: z.string(), hasChat: z.boolean(),
+      loginState: z.object({ isLoggedIn: z.boolean(), loginId: z.string(), userId: z.string(), hasCdp: z.boolean() }).optional(),
+      loginRequired: z.record(z.boolean()).optional(),
+    }).passthrough(),
     parameters: z.object({
       url: z.string().optional().describe('店铺 URL，如 https://ouyimei.1688.com/'),
       memberId: z.string().optional().describe('店铺 memberId（与 url 二选一）'),
@@ -247,10 +269,7 @@ export default function (xcli: XCLIAPI): void {
 
       const memberId = params.memberId || (params.url ? extractMemberId(params.url) : null);
       if (!memberId) {
-        return {
-          data: null,
-          tips: [...ctxTips, '请提供 url 或 memberId 参数'],
-        };
+        return fail('参数错误', [...ctxTips, '请提供 url 或 memberId 参数']);
       }
 
       const shopUrl = `https://${memberId}.1688.com/`;
@@ -426,14 +445,12 @@ export default function (xcli: XCLIAPI): void {
           loginRequired.hasChat = true;
         }
 
-        return {
-          data: {
+        return ok({
             source: 'dom',
             memberId,
             ...data,
             ...(loginState.isLoggedIn ? { loginState, loginRequired } : {}),
-          },
-          tips: [
+          }, [
             ...ctxTips,
             `[DOM] 店铺: ${data.name}`,
             `粉丝: ${data.fansCount}`,
@@ -442,13 +459,10 @@ export default function (xcli: XCLIAPI): void {
           ],
         };
       } catch (error) {
-        return {
-          data: null,
-          tips: [
+        return fail('参数错误', [
             ...ctxTips,
             `获取店铺信息失败: ${error instanceof Error ? error.message : '未知错误'}`,
-          ],
-        };
+          ]);
       }
     },
   });
@@ -456,7 +470,13 @@ export default function (xcli: XCLIAPI): void {
   site.command('products', {
     description: '获取1688店铺商品列表',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({
+      memberId: z.string(), sort: z.string(), count: z.number(), source: z.string(),
+      results: z.array(z.object({
+        offerId: z.string(), title: z.string(), price: z.string(),
+        sales: z.string(), imageUrl: z.string(), detailUrl: z.string(),
+      }).passthrough()),
+    }),
     parameters: z.object({
       url: z.string().optional().describe('店铺 URL'),
       memberId: z.string().optional().describe('店铺 memberId（与 url 二选一）'),
@@ -484,10 +504,7 @@ export default function (xcli: XCLIAPI): void {
 
       const memberId = params.memberId || (params.url ? extractMemberId(params.url) : null);
       if (!memberId) {
-        return {
-          data: null,
-          tips: [...ctxTips, '请提供 url 或 memberId 参数'],
-        };
+        return fail('参数错误', [...ctxTips, '请提供 url 或 memberId 参数']);
       }
 
       let listUrl: string;
@@ -534,16 +551,13 @@ export default function (xcli: XCLIAPI): void {
             };
           });
 
-          return {
-            data: {
-              memberId,
-              sort: params.sort,
-              count: apiItems.length,
-              source: 'api',
-              results: apiItems,
-            },
-            tips: [...ctxTips, `[API] 店铺商品 ${apiItems.length} 个`],
-          };
+          return ok({
+            memberId,
+            sort: params.sort,
+            count: apiItems.length,
+            source: 'api',
+            results: apiItems,
+          }, [...ctxTips, `[API] 店铺商品 ${apiItems.length} 个`]);
         }
 
         const results = await page.evaluate((limit) => {
@@ -600,16 +614,13 @@ export default function (xcli: XCLIAPI): void {
           return items;
         }, params.limit);
 
-        return {
-          data: {
-            memberId,
-            sort: params.sort,
-            count: results.length,
-            source: 'dom',
-            results,
-          },
-          tips: [...ctxTips, `[DOM] 店铺商品 ${results.length} 个`],
-        };
+        return ok({
+          memberId,
+          sort: params.sort,
+          count: results.length,
+          source: 'dom',
+          results,
+        }, [...ctxTips, '[DOM] 店铺商品 ' + results.length + ' 个']);
       } finally {
         interceptor?.dispose();
       }
@@ -619,7 +630,23 @@ export default function (xcli: XCLIAPI): void {
   site.command('product-detail', {
     description: '获取1688商品详情',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({
+      source: z.string(), offerId: z.string(),
+      title: z.string(), price: z.string(), priceRange: z.string(),
+      minOrder: z.string(), sales: z.string(),
+      specs: z.array(z.object({ name: z.string(), values: z.array(z.string()) })),
+      images: z.array(z.string()), seller: z.string(), sellerUrl: z.string(),
+      tags: z.array(z.string()), location: z.string(),
+      newPrice: z.string(), estimatedPrice: z.string(),
+      wholesaleTiers: z.array(z.object({ range: z.string(), price: z.string() })),
+      skuInventory: z.array(z.object({ sku: z.string(), price: z.string(), stock: z.string() })),
+      discountInfo: z.array(z.string()), deliveryPromise: z.string(), shippingFee: z.string(),
+      returnPolicies: z.array(z.string()), repurchaseRate: z.string(), aiScore: z.string(),
+      properties: z.array(z.object({ name: z.string(), value: z.string() })),
+      hasBuyBtn: z.boolean(), hasCartBtn: z.boolean(), hasCollectBtn: z.boolean(), hasSampleBtn: z.boolean(),
+      loginState: z.object({ isLoggedIn: z.boolean(), loginId: z.string(), userId: z.string(), hasCdp: z.boolean() }).optional(),
+      loginRequired: z.record(z.boolean()).optional(),
+    }).passthrough(),
     parameters: z.object({
       url: z.string().optional().describe('商品 URL'),
       offerId: z.string().optional().describe('商品 offerId（与 url 二选一）'),
@@ -644,10 +671,7 @@ export default function (xcli: XCLIAPI): void {
           ? `https://detail.1688.com/offer/${params.offerId}.html`
           : '');
       if (!targetUrl) {
-        return {
-          data: null,
-          tips: [...ctxTips, '请提供 url 或 offerId 参数'],
-        };
+        return fail('参数错误', [...ctxTips, '请提供 url 或 offerId 参数']);
       }
 
       const offerId = params.offerId || extractOfferId(targetUrl) || '';
@@ -855,30 +879,24 @@ export default function (xcli: XCLIAPI): void {
           loginRequired.hasSampleBtn = true;
         }
 
-        return {
-          data: {
-            source: 'dom',
-            offerId,
-            ...data,
-            ...(loginState.isLoggedIn ? { loginState, loginRequired } : {}),
-          },
-          tips: [
-            ...ctxTips,
-            `[DOM] 商品: ${data.title}`,
-            `价格: ${data.price}`,
-            `SKU: ${data.specs.length} 个`,
-            ...(loginState.isLoggedIn ? [`[登录] 用户: ${loginState.loginId}`] : ['[未登录] 部分数据需要登录获取']),
-          ],
-        };
+        return ok({
+          source: 'dom',
+          offerId,
+          ...data,
+          ...(loginState.isLoggedIn ? { loginState, loginRequired } : {}),
+        }, [
+          ...ctxTips,
+          '[DOM] 商品: ' + data.title,
+          '价格: ' + data.price,
+          'SKU: ' + data.specs.length + ' 个',
+          ...(loginState.isLoggedIn ? ['[登录] 用户: ' + loginState.loginId] : ['[未登录] 部分数据需要登录获取']),
+        ]);
       } catch (error) {
-        return {
-          data: null,
-          tips: [
+        return fail('参数错误', [
             ...ctxTips,
             `获取商品详情失败: ${error instanceof Error ? error.message : '未知错误'}`,
             '1688详情页可能有反爬机制，建议重试',
-          ],
-        };
+          ]);
       }
     },
   });
@@ -886,7 +904,13 @@ export default function (xcli: XCLIAPI): void {
   site.command('search', {
     description: '搜索1688商品',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({
+      query: z.string(), sort: z.string(), count: z.number(), source: z.string(),
+      results: z.array(z.object({
+        offerId: z.string(), title: z.string(), price: z.string(),
+        sales: z.string(), seller: z.string(), imageUrl: z.string(), detailUrl: z.string(),
+      }).passthrough()),
+    }),
     parameters: z.object({
       query: z.string().describe('搜索关键词'),
       limit: z.number().optional().default(20).describe('获取商品数量'),
@@ -942,16 +966,13 @@ export default function (xcli: XCLIAPI): void {
               : '',
           }));
 
-          return {
-            data: {
-              query: params.query,
-              sort: params.sort,
-              count: apiItems.length,
-              source: 'api',
-              results: apiItems,
-            },
-            tips: [...ctxTips, `[API] 找到 ${apiItems.length} 个商品`],
-          };
+          return ok({
+            query: params.query,
+            sort: params.sort,
+            count: apiItems.length,
+            source: 'api',
+            results: apiItems,
+          }, [...ctxTips, '[API] 找到 ' + apiItems.length + ' 个商品']);
         }
 
         const results = await page.evaluate((limit) => {
@@ -1023,16 +1044,13 @@ export default function (xcli: XCLIAPI): void {
           return items;
         }, params.limit);
 
-        return {
-          data: {
-            query: params.query,
-            sort: params.sort,
-            count: results.length,
-            source: 'dom',
-            results,
-          },
-          tips: [...ctxTips, `[DOM] 找到 ${results.length} 个商品`],
-        };
+        return ok({
+          query: params.query,
+          sort: params.sort,
+          count: results.length,
+          source: 'dom',
+          results,
+        }, [...ctxTips, '[DOM] 找到 ' + results.length + ' 个商品']);
       } finally {
         interceptor?.dispose();
       }
@@ -1042,7 +1060,13 @@ export default function (xcli: XCLIAPI): void {
   site.command('categories', {
     description: '获取1688店铺分类列表',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({
+      memberId: z.string(), count: z.number(),
+      categories: z.array(z.object({
+        name: z.string(), count: z.string(), url: z.string(),
+        parentId: z.string(), catId: z.string(),
+      })),
+    }),
     parameters: z.object({
       url: z.string().optional().describe('店铺 URL'),
       memberId: z.string().optional().describe('店铺 memberId（与 url 二选一）'),
@@ -1063,10 +1087,7 @@ export default function (xcli: XCLIAPI): void {
 
       const memberId = params.memberId || (params.url ? extractMemberId(params.url) : null);
       if (!memberId) {
-        return {
-          data: null,
-          tips: [...ctxTips, '请提供 url 或 memberId 参数'],
-        };
+        return fail('参数错误', [...ctxTips, '请提供 url 或 memberId 参数']);
       }
 
       const shopUrl = `https://${memberId}.1688.com/`;
@@ -1171,26 +1192,20 @@ export default function (xcli: XCLIAPI): void {
           return items;
         });
 
-        return {
-          data: {
-            memberId,
-            count: categories.length,
-            categories,
-          },
-          tips: [
-            ...ctxTips,
-            `[DOM] 分类: ${categories.length} 个`,
-            categories.slice(0, 3).map((c) => `${c.name}(${c.count})`).join(', '),
-          ],
-        };
+        return ok({
+          memberId,
+          count: categories.length,
+          categories,
+        }, [
+          ...ctxTips,
+          '[DOM] 分类: ' + categories.length + ' 个',
+          categories.slice(0, 3).map((c) => '' + c.name + '(' + c.count + ')').join(', '),
+        ]);
       } catch (error) {
-        return {
-          data: null,
-          tips: [
+        return fail('参数错误', [
             ...ctxTips,
             `获取分类失败: ${error instanceof Error ? error.message : '未知错误'}`,
-          ],
-        };
+          ]);
       }
     },
   });

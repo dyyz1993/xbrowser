@@ -1,23 +1,39 @@
 {
-  "name": "xbrowser-plugin-devto",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "Dev.to SEO 外链 - 开发者社区 (DA 51, UGC/nofollow, 高流量)",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "dev.to"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-devto",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://dev.to",
-    "requiresLogin": true,
+    "author": "dyyz1993",
     "commands": [
       "login",
       "publish",
       "draft",
       "update-profile"
-    ]
+    ],
+    "description": "Dev.to SEO 外链 - 开发者社区 (DA 51, UGC/nofollow, 高流量)",
+    "name": "devto",
+    "requiresLogin": true,
+    "site": "https://dev.to",
+    "sites": [],
+    "slug": "devto",
+    "tags": [
+      "devto"
+    ],
+    "version": "3.0.0"
   }
 }

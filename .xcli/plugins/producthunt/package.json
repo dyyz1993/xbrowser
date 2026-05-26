@@ -1,23 +1,39 @@
 {
-  "name": "xbrowser-plugin-producthunt",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "Product Hunt SEO 外链 - 产品发布平台 (DA 91, dofollow, 高权重)",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "producthunt.com"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-producthunt",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://www.producthunt.com",
-    "requiresLogin": true,
+    "author": "dyyz1993",
     "commands": [
       "login",
       "submit-product",
       "comment",
       "update-profile"
-    ]
+    ],
+    "description": "Product Hunt SEO 外链 - 产品发布平台 (DA 91, dofollow, 高权重)",
+    "name": "producthunt",
+    "requiresLogin": true,
+    "site": "https://www.producthunt.com",
+    "sites": [],
+    "slug": "producthunt",
+    "tags": [
+      "producthunt"
+    ],
+    "version": "3.0.0"
   }
 }

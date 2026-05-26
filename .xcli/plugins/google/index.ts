@@ -8,6 +8,9 @@ export default function(xcli: XCLIAPI): void {
     url: 'https://www.google.com',
     description: 'Google Search & Images',
     requiresLogin: false,
+    loginConfig: {
+      requiresLogin: false,
+    },
   });
 
   google.command('search-image', {
@@ -19,10 +22,25 @@ export default function(xcli: XCLIAPI): void {
       size: z.enum(['any', 'large', 'medium', 'small', 'icon']).optional().default('any'),
       color: z.string().optional(),
       type: z.enum(['photo', 'clipart', 'lineart', 'animated', 'vector']).optional(),
-      page: z.any().optional(),
       timeout: z.number().optional().default(20000),
     }),
-    result: z.any(),
+    result: z.object({
+      query: z.string(),
+      engine: z.string(),
+      results: z.array(z.object({
+        title: z.string(),
+        thumbnailUrl: z.string(),
+        sourceUrl: z.string(),
+        originalUrl: z.string().optional(),
+        width: z.number(),
+        height: z.number(),
+        format: z.string().optional(),
+        sourceSite: z.string(),
+        fileSize: z.string().optional(),
+      }).passthrough()),
+      total: z.number().optional(),
+      timestamp: z.union([z.string(), z.number()]).optional(),
+    }).passthrough(),
     handler: async (params, ctx) => {
       const page = (params.page as import('playwright').Page)
         || (ctx as Record<string, unknown>).page as import('playwright').Page;

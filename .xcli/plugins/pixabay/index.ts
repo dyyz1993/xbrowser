@@ -6,6 +6,9 @@ export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'pixabay', url: 'https://pixabay.com',
     description: 'Pixabay - Free images, royalty free stock photos', requiresLogin: false,
+    loginConfig: {
+      requiresLogin: false,
+    },
   });
 
   site.command('search-image', {
@@ -13,9 +16,25 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({
       query: z.string(), limit: z.number().optional().default(20),
-      color: z.string().optional(), page: z.any().optional(), timeout: z.number().optional().default(20000),
+      color: z.string().optional(), timeout: z.number().optional().default(20000),
     }),
-    result: z.any(),
+    result: z.object({
+      query: z.string(),
+      engine: z.string(),
+      results: z.array(z.object({
+        title: z.string(),
+        thumbnailUrl: z.string(),
+        sourceUrl: z.string(),
+        originalUrl: z.string().optional(),
+        width: z.number(),
+        height: z.number(),
+        format: z.string().optional(),
+        sourceSite: z.string(),
+        fileSize: z.string().optional(),
+      }).passthrough()),
+      total: z.number().optional(),
+      timestamp: z.union([z.string(), z.number()]).optional(),
+    }).passthrough(),
     handler: async (params, ctx) => {
       const page = (params.page as import('playwright').Page) || (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');

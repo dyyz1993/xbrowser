@@ -32,7 +32,30 @@ export default function (xcli: XCLIAPI): void {
     name: 'github',
     url: 'https://github.com',
     description: 'GitHub SEO 外链 - Profile / README / Gist',
-    requiresLogin: true,
+    requiresLogin: false,
+    loginConfig: {
+      loginUrls: ['/login', '/signin', '/auth'],
+      loginSelectors: ['[class*="login"]', '[class*="signin"]'],
+      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]'],
+      loginKeywords: ['Sign in', 'Log in'],
+      loggedInSelectors: ['[class*="avatar"]', '[data-testid*="avatar"]'],
+      loginPrompt: 'This site requires login. Use --cdp to connect a logged-in browser.',
+    },
+    isLogin: async (ctx) => {
+      const ctxAny = ctx as Record<string, unknown>;
+      const page = ctxAny.page as import('playwright-core').Page;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/login')) return false;
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        if (!body) return false;
+        if (body.includes('Sign in')) return false;
+        return true;
+      } catch {
+        return true;
+      }
+    },
   });
 
   site.command('update-profile', {
@@ -46,7 +69,7 @@ export default function (xcli: XCLIAPI): void {
       name: z.string().optional().describe('显示名称'),
       hireable: z.boolean().optional().describe('是否开放招聘'),
     }),
-    result: z.any(),
+    result: z.object({ url: z.string(), saved: z.boolean(), updatedFields: z.array(z.string()) }).passthrough(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips } = buildCtxTips(ctx);
@@ -113,7 +136,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       url: z.string().describe('社交链接 URL'),
     }),
-    result: z.any(),
+    result: z.object({ url: z.string(), filled: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips } = buildCtxTips(ctx);
@@ -181,7 +204,7 @@ export default function (xcli: XCLIAPI): void {
       description: z.string().optional().describe('Gist 描述'),
       public: z.boolean().optional().default(true).describe('是否公开'),
     }),
-    result: z.any(),
+    result: z.object({ gistUrl: z.string(), filename: z.string(), public: z.boolean(), created: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips } = buildCtxTips(ctx);
@@ -257,7 +280,7 @@ export default function (xcli: XCLIAPI): void {
       username: z.string().optional().describe('GitHub 用户名，不填则获取自己的'),
     }),
     examples: [{ cmd: 'xbrowser github get-profile', description: '获取 Profile 信息' }],
-    result: z.any(),
+    result: z.object({ bio: z.string(), name: z.string(), username: z.string(), location: z.string(), company: z.string(), website: z.string(), socialLinks: z.array(z.string()), avatar: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips } = buildCtxTips(ctx);
@@ -330,7 +353,7 @@ export default function (xcli: XCLIAPI): void {
       private: z.boolean().optional().default(false).describe('是否私有'),
       readme: z.boolean().optional().default(true).describe('是否初始化 README'),
     }),
-    result: z.any(),
+    result: z.object({ repoUrl: z.string(), name: z.string(), private: z.boolean(), created: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips } = buildCtxTips(ctx);
@@ -407,7 +430,7 @@ export default function (xcli: XCLIAPI): void {
       content: z.string().describe('README 内容（Markdown）'),
       message: z.string().optional().describe('提交信息'),
     }),
-    result: z.any(),
+    result: z.object({ repo: z.string(), saved: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips } = buildCtxTips(ctx);

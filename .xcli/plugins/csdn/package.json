@@ -1,18 +1,28 @@
 {
-  "name": "xbrowser-plugin-csdn",
-  "version": "4.0.0",
+  "_marketplace": {
+    "slug": "csdn",
+    "url": "https://marketplace.xbrowser.dev"
+  },
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "CSDN SEO 外链 - 中文技术平台 (DA 80+, 百度排名 #1)",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "csdn.net"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-csdn",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "4.0.0",
   "xbrowser": {
-    "site": "https://www.csdn.net",
-    "requiresLogin": true,
+    "author": "dyyz1993",
     "commands": [
       "login",
       "publish",
@@ -20,22 +30,19 @@
       "update-profile",
       "fetch-articles"
     ],
-    "slug": "csdn",
-    "name": "csdn",
     "description": "CSDN SEO 外链 - 中文技术平台 (DA 80+, 百度排名 #1)",
-    "version": "4.0.0",
-    "author": "dyyz1993",
+    "name": "csdn",
+    "requiresLogin": true,
+    "site": "https://www.csdn.net",
+    "sites": [
+      "csdn.net"
+    ],
+    "slug": "csdn",
     "tags": [
       "csdn",
       "developer",
       "knowledge"
     ],
-    "sites": [
-      "csdn.net"
-    ]
-  },
-  "_marketplace": {
-    "slug": "csdn",
-    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
+    "version": "4.0.0"
   }
 }

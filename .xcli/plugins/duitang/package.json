@@ -1,20 +1,36 @@
 {
-  "name": "xbrowser-plugin-duitang",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "堆糖 - 美好生活研究所",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "duitang"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-duitang",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://www.duitang.com",
-    "requiresLogin": false,
+    "author": "dyyz1993",
     "commands": [
       "search-image"
-    ]
+    ],
+    "description": "堆糖 - 美好生活研究所",
+    "name": "duitang",
+    "requiresLogin": false,
+    "site": "https://www.duitang.com",
+    "sites": [],
+    "slug": "duitang",
+    "tags": [
+      "duitang"
+    ],
+    "version": "3.0.0"
   }
 }

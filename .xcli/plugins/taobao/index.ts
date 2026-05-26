@@ -33,11 +33,7 @@ function buildCtxTips(ctx: CommandContext): { tips: string[]; hasCdp: boolean } 
   return { tips, hasCdp };
 }
 
-function cdpRequiredResponse(missingTips: string[]): {
-  data: null;
-  tips: string[];
-  message: string;
-} {
+function cdpRequiredResponse(missingTips: string[]) {
   return fail('未检测到 CDP 连接，淘宝功能需要登录态才能使用', [
       ...missingTips,
       '请使用 --cdp 9221 连接到已登录的 Chrome 浏览器',
@@ -100,7 +96,7 @@ async function interceptFirstMatch(
         page.off('response', handler);
         resolve(json as Record<string, unknown>);
       } catch {
-        // ignore parse errors
+        // non-JSON response for non-target URLs, skip
       }
     };
 
@@ -193,6 +189,29 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.taobao.com',
     description: '淘宝 - 商品搜索、详情、店铺、评价与优惠券采集（需登录态）',
     requiresLogin: true,
+    loginConfig: {
+      loginUrls: ['/login', '/passport'],
+      loginSelectors: ['[class*="login"]', '[class*="modal"]'],
+      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]', '[class*="slider"]'],
+      loginKeywords: ['登录', '注册'],
+      loggedInSelectors: ['[class*="avatar"]', '[class*="user-info"]'],
+      loginPrompt: '请使用 --cdp 连接已登录的浏览器（CDP 9221）',
+    },
+    isLogin: async (ctx) => {
+      const ctxAny = ctx as Record<string, unknown>;
+      const page = ctxAny.page as import('playwright-core').Page;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/login')) return false;
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        if (!body) return false;
+        if (body.includes('登录')) return false;
+        return true;
+      } catch {
+        return true;
+      }
+    },
   });
 
   site.command('login', {
@@ -205,7 +224,11 @@ export default function (xcli: XCLIAPI): void {
         .default('qrcode')
         .describe('登录方式：qrcode=扫码, password=账号密码'),
     }),
-    result: z.any(),
+    result: z.object({
+      loggedIn: z.boolean(),
+      message: z.string().optional(),
+      url: z.string().optional(),
+    }).passthrough(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips } = buildCtxTips(ctx);
@@ -296,7 +319,13 @@ export default function (xcli: XCLIAPI): void {
         description: '按销量排序搜索',
       },
     ],
-    result: z.any(),
+    result: z.object({
+      query: z.string(), sort: z.string(), count: z.number(), source: z.string(),
+      results: z.array(z.object({
+        title: z.string(), price: z.string(), shop: z.string(), sales: z.string(),
+        location: z.string(), link: z.string(), imageUrl: z.string(),
+      }).passthrough()),
+    }),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -434,7 +463,16 @@ export default function (xcli: XCLIAPI): void {
         description: '搜索100-500元销量最高的机械键盘',
       },
     ],
-    result: z.any(),
+    result: z.object({
+      keyword: z.string(), count: z.number(), source: z.string(),
+      filters: z.object({
+        sort: z.string(), priceMin: z.number().optional(), priceMax: z.number().optional(), location: z.string().optional(),
+      }),
+      results: z.array(z.object({
+        title: z.string(), price: z.string(), shop: z.string(), sales: z.string(),
+        location: z.string(), link: z.string(), imageUrl: z.string(),
+      }).passthrough()),
+    }),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -577,7 +615,21 @@ export default function (xcli: XCLIAPI): void {
         description: '通过商品 ID 获取详情',
       },
     ],
-    result: z.any(),
+    result: z.object({
+      source: z.string(),
+      itemId: z.string().optional(),
+      title: z.string(), price: z.string(), originalPrice: z.string().optional(),
+      sales: z.string(),
+      shop: z.union([
+        z.string(),
+        z.object({ name: z.string(), shopId: z.string(), rating: z.string() }).passthrough(),
+      ]).optional(),
+      location: z.string().optional(),
+      images: z.array(z.string()).optional(),
+      skus: z.array(z.object({ name: z.string(), values: z.array(z.string()) })).optional(),
+      specs: z.record(z.string()).optional(),
+      promotions: z.array(z.string()).optional(),
+    }).passthrough(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -748,7 +800,23 @@ export default function (xcli: XCLIAPI): void {
         description: '获取商品完整详情',
       },
     ],
-    result: z.any(),
+    result: z.object({
+      source: z.string(), itemId: z.string(),
+      title: z.string(), price: z.string(), originalPrice: z.string().optional(),
+      sales: z.string(), images: z.array(z.string()).optional(),
+      skus: z.array(z.object({
+        skuId: z.string(), text: z.string(), price: z.string(), stock: z.string(),
+      })).optional(),
+      props: z.array(z.object({ name: z.string(), value: z.string() })).optional(),
+      seller: z.object({
+        shopName: z.string(), shopId: z.string(), shopUrl: z.string(),
+        rating: z.string(), location: z.string(),
+      }).passthrough().optional(),
+      shopName: z.string().optional(),
+      location: z.string().optional(),
+      rateCount: z.string().optional(),
+      coupons: z.array(z.string()).optional(),
+    }).passthrough(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -943,7 +1011,18 @@ export default function (xcli: XCLIAPI): void {
         description: '获取有图评价',
       },
     ],
-    result: z.any(),
+    result: z.object({
+      url: z.string(), type: z.string(), sort: z.string(),
+      count: z.number(), source: z.string(),
+      reviews: z.array(z.object({
+        user: z.string(), content: z.string(), time: z.string(),
+        rating: z.string(), sku: z.string(),
+        images: z.array(z.string()),
+        isAppend: z.boolean().optional(),
+        appendContent: z.string().optional(),
+        appendTime: z.string().optional(),
+      }).passthrough()),
+    }),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -1128,7 +1207,14 @@ export default function (xcli: XCLIAPI): void {
         description: '通过店铺 ID 获取信息',
       },
     ],
-    result: z.any(),
+    result: z.object({
+      source: z.string(),
+      name: z.string(), shopId: z.string().optional(),
+      description: z.string(), rating: z.string(), fans: z.string(),
+      itemCount: z.string().optional(), items: z.string().optional(),
+      location: z.string(), logo: z.string(),
+      categories: z.array(z.string()).optional(),
+    }).passthrough(),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -1244,7 +1330,13 @@ export default function (xcli: XCLIAPI): void {
         description: '获取店铺销量排序商品',
       },
     ],
-    result: z.any(),
+    result: z.object({
+      shopId: z.string(), sort: z.string(), count: z.number(), source: z.string(),
+      results: z.array(z.object({
+        title: z.string(), price: z.string(), sales: z.string(),
+        link: z.string(), imageUrl: z.string(),
+      }).passthrough()),
+    }),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -1354,7 +1446,18 @@ export default function (xcli: XCLIAPI): void {
         description: '获取商品优惠券',
       },
     ],
-    result: z.any(),
+    result: z.object({
+      source: z.string(), itemId: z.string(),
+      title: z.string().optional(),
+      coupons: z.array(z.object({
+        title: z.string(), amount: z.string(), condition: z.string(),
+        startTime: z.string().optional(), endTime: z.string().optional(), link: z.string().optional(),
+      })),
+      promotions: z.array(z.union([
+        z.object({ title: z.string(), type: z.string() }),
+        z.string(),
+      ])),
+    }),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -1475,7 +1578,11 @@ export default function (xcli: XCLIAPI): void {
         description: '更新店铺信息',
       },
     ],
-    result: z.any(),
+    result: z.object({
+      updated: z.boolean(),
+      shopName: z.string().optional(),
+      url: z.string(),
+    }),
     handler: async (params, ctx) => {
       const page = getPage(ctx);
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
@@ -1548,12 +1655,21 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       query: z.string().describe('搜索关键词'),
       limit: z.number().optional().default(10),
-      page: z.any().optional(),
       timeout: z.number().optional().default(20000),
     }),
-    result: z.any(),
+    result: z.object({
+      query: z.string(),
+      engine: z.string(),
+      results: z.array(z.object({
+        title: z.string(), thumbnailUrl: z.string(), sourceUrl: z.string(),
+        originalUrl: z.string(), width: z.number(), height: z.number(),
+        format: z.string(), sourceSite: z.string(),
+      }).passthrough()),
+      total: z.number(),
+      timestamp: z.number(),
+    }),
     handler: async (params, ctx) => {
-      const page = (params.page as import('playwright').Page) || (ctx as Record<string, unknown>).page as import('playwright').Page;
+      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
       try {
         await page.goto('https://s.taobao.com/search?q=' + encodeURIComponent(params.query), { waitUntil: 'domcontentloaded', timeout: params.timeout });
@@ -1576,7 +1692,7 @@ export default function (xcli: XCLIAPI): void {
           return imgs;
         }, params.limit);
         return ok({ query: params.query, engine: 'taobao', results, total: results.length, timestamp: Date.now() }, [`淘宝 "${params.query}"，共 ${results.length} 张`]);
-      } catch (error) { return { data: null, message: error instanceof Error ? error.message : '未知错误' }; }
+      } catch (error) { return fail(error instanceof Error ? error.message : '未知错误'); }
     },
   });
 

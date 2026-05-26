@@ -1,9 +1,12 @@
 {
-  "name": "xbrowser-plugin-doubao",
-"version": "3.3.0",
+  "_marketplace": {
+    "slug": "doubao",
+    "url": "https://marketplace.xbrowser.dev"
+  },
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "豆包 (Doubao) 全能助手 - 会话管理、图像/视频/音乐生成、自定义歌词、文件管理、联网搜索",
-  "type": "module",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "doubao",
@@ -14,17 +17,18 @@
     "music-generation",
     "cloud-drive",
     "cdp",
-    "playwright"
+    "playwright",
+    "xbrowser-plugin"
   ],
-  "dependencies": {
-    "zod": "^3.24.0"
-  },
+  "main": "index.ts",
+  "name": "xbrowser-plugin-doubao",
   "peerDependencies": {
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
+  "type": "module",
+  "version": "3.3.0",
   "xbrowser": {
-    "name": "doubao",
-    "description": "豆包 AI 全能助手",
+    "author": "Unknown",
     "commands": [
       "list",
       "new",
@@ -47,18 +51,16 @@
       "search",
       "attach"
     ],
+    "description": "豆包 AI 全能助手",
+    "name": "doubao",
+    "site": "https://www.doubao.com",
     "sites": [
       "doubao"
     ],
     "slug": "doubao",
-"version": "3.3.1",
-    "author": "Unknown",
     "tags": [
       "doubao"
-    ]
-  },
-  "_marketplace": {
-    "slug": "doubao",
-    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
+    ],
+    "version": "3.3.0"
   }
 }

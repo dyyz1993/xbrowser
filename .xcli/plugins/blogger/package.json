@@ -1,23 +1,39 @@
 {
-  "name": "xbrowser-plugin-blogger",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "Blogger.com SEO 外链 - Google 免费博客平台 (DA 89, dofollow)",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "blogger.com"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-blogger",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://www.blogger.com",
-    "requiresLogin": true,
+    "author": "dyyz1993",
     "commands": [
       "login",
       "create-blog",
       "publish",
       "update-profile"
-    ]
+    ],
+    "description": "Blogger.com SEO 外链 - Google 免费博客平台 (DA 89, dofollow)",
+    "name": "blogger",
+    "requiresLogin": true,
+    "site": "https://www.blogger.com",
+    "sites": [],
+    "slug": "blogger",
+    "tags": [
+      "blogger"
+    ],
+    "version": "3.0.0"
   }
 }

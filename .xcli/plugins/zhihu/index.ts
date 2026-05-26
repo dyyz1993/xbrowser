@@ -411,7 +411,7 @@ async function waitForResponse(page: Page, query: string, maxWaitMs: number = 60
 
       lastCandidateCount = result.candidateCount;
     } catch {
-      // ignore errors during polling
+      // ignore errors during candidate polling
     }
   }
 
@@ -467,6 +467,14 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.zhihu.com',
     description: '知乎 - 知识问答与内容采集 (DA 93)',
     requiresLogin: false,
+    loginConfig: {
+      loginUrls: ['/login', '/passport'],
+      loginSelectors: ['[class*="login"]', '[class*="modal"]'],
+      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]', '[class*="slider"]'],
+      loginKeywords: ['登录', '注册'],
+      loggedInSelectors: ['[class*="avatar"]', '[class*="user-info"]'],
+      loginPrompt: '请使用 --cdp 连接已登录的浏览器（CDP 9221）',
+    },
   });
 
   site.command('search', {
@@ -480,7 +488,14 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser zhihu search --query "AI 编程"', description: '搜索 AI 编程相关内容' },
     ],
-    result: z.any(),
+    result: z.object({
+      query: z.string(),
+      count: z.number(),
+      results: z.array(z.object({
+        title: z.string(), excerpt: z.string(), author: z.string(),
+        link: z.string(), type: z.string(),
+      })),
+    }),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -512,11 +527,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok({ query: params.query, count: results.length, results }, [...tips, `找到 ${results.length} 条结果`]);
       } catch (error) {
-        return {
-          data: null,
-          tips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
   });
@@ -530,7 +541,12 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser zhihu trending', description: '获取知乎热榜前 20' },
     ],
-    result: z.any(),
+    result: z.object({
+      count: z.number(),
+      items: z.array(z.object({
+        rank: z.number(), title: z.string(), hotScore: z.string(), link: z.string(),
+      })),
+    }),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -559,11 +575,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok({ count: items.length, items }, [...tips, `热榜 ${items.length} 条`]);
       } catch (error) {
-        return {
-          data: null,
-          tips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
   });
@@ -578,7 +590,13 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser zhihu question --url "https://www.zhihu.com/question/xxx"', description: '获取问题回答' },
     ],
-    result: z.any(),
+    result: z.object({
+      title: z.string(),
+      detail: z.string(),
+      answers: z.array(z.object({
+        author: z.string(), content: z.string(), upvotes: z.string(),
+      })),
+    }),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -607,16 +625,9 @@ export default function (xcli: XCLIAPI): void {
           return { title, detail, answers };
         }, params.limit);
 
-        return {
-          data,
-          tips: [...tips, `问题: ${data.title}`, `${data.answers.length} 条回答`],
-        };
+        return ok(data, [...tips, `问题: ${data.title}`, `${data.answers.length} 条回答`]);
       } catch (error) {
-        return {
-          data: null,
-          tips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
   });
@@ -634,7 +645,11 @@ export default function (xcli: XCLIAPI): void {
         description: '回答问题并附带外链',
       },
     ],
-    result: z.any(),
+    result: z.object({
+      url: z.string(),
+      submitted: z.boolean(),
+      pageUrl: z.string(),
+    }),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -668,11 +683,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok({ url: params.url, submitted: true, pageUrl: page.url() }, [...tips, '回答已提交']);
       } catch (error) {
-        return {
-          data: null,
-          tips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
   });
@@ -696,7 +707,17 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser zhihu chat --query "2024年房价走势" --mode fast --showSources', description: '快速回答+显示来源' },
       { cmd: 'xbrowser zhihu chat --query "我的收藏里关于Python的内容" --source my', description: '搜索个人知识库' },
     ],
-    result: z.any(),
+    result: z.object({
+      query: z.string(),
+      mode: z.string(),
+      source: z.string(),
+      response: z.string(),
+      sources: z.object({
+        total: z.number(),
+        domains: z.array(z.string()),
+        urls: z.array(z.object({ url: z.string(), domain: z.string() })),
+      }).optional(),
+    }),
     handler: async (params, ctx) => {
       try {
         const { page, tips } = resolvePage(ctx as Record<string, unknown>);
@@ -747,7 +768,7 @@ export default function (xcli: XCLIAPI): void {
                 aiResponse += body;
                 console.log('  [api] 捕获 AI 响应:', body.slice(0, 200));
               } catch {
-                // ignore errors
+                // ignore AI response read errors
               }
             }
           });
@@ -842,7 +863,11 @@ export default function (xcli: XCLIAPI): void {
         description: '发布带外链的知乎文章',
       },
     ],
-    result: z.any(),
+    result: z.object({
+      title: z.string(),
+      topic: z.string().optional(),
+      url: z.string(),
+    }),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -901,11 +926,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok({ title: params.title, topic: params.topic, url: page.url() }, [...tips, `文章 "${params.title}" 已在知乎发布`]);
       } catch (error) {
-        return {
-          data: null,
-          tips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
   });

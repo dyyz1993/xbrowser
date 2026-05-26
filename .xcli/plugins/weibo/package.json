@@ -1,20 +1,36 @@
 {
-  "name": "xbrowser-plugin-weibo",
-  "version": "3.0.0",
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "微博图片搜索",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "weibo"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-weibo",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "site": "https://s.weibo.com",
-    "requiresLogin": false,
+    "author": "dyyz1993",
     "commands": [
       "search-image"
-    ]
+    ],
+    "description": "微博图片搜索",
+    "name": "weibo",
+    "requiresLogin": false,
+    "site": "https://s.weibo.com",
+    "sites": [],
+    "slug": "weibo",
+    "tags": [
+      "weibo"
+    ],
+    "version": "3.0.0"
   }
 }

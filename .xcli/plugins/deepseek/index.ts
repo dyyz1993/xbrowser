@@ -99,7 +99,7 @@ export default function (xcli: XCLIAPI): void {
     description: '列出所有历史会话',
     scope: 'page',
     parameters: z.object({}),
-    result: z.any(),
+    result: z.array(z.object({ index: z.number(), title: z.string(), url: z.string() }).passthrough()),
     examples: [
       { cmd: 'xbrowser deepseek list', description: '列出所有会话' },
       { cmd: 'xbrowser deepseek list --json', description: 'JSON 格式输出' },
@@ -121,11 +121,7 @@ export default function (xcli: XCLIAPI): void {
 
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
-        return {
-          data: conversations,
-          tips,
-          message: `找到 ${conversations.length} 个会话`,
-        };
+        return ok(conversations, tips);
       } catch (error) {
         return fail('未知错误', ['获取会话列表失败']);
       }
@@ -139,7 +135,7 @@ export default function (xcli: XCLIAPI): void {
     description: '创建新的空白对话',
     scope: 'browser',
     parameters: z.object({}),
-    result: z.any(),
+    result: z.object({ created: z.boolean() }).passthrough(),
     examples: [
       { cmd: 'xbrowser deepseek new', description: '新建对话' },
     ],
@@ -178,11 +174,9 @@ export default function (xcli: XCLIAPI): void {
         }
 
         await page.waitForTimeout(1500);
-        return {
-          data: { created: true },
-          tips: buildTips(ctx),
-          message: '✅ 已创建新对话',
-        };
+        const tips = buildTips(ctx);
+        tips.push('已创建新对话');
+        return ok({ created: true }, tips);
       } catch (error) {
         return fail('未知错误', ['创建新对话失败']);
       }
@@ -198,7 +192,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       title: z.string().describe('会话标题（支持模糊匹配）'),
     }),
-    result: z.any(),
+    result: z.object({ opened: z.string() }).passthrough(),
     examples: [
       { cmd: 'xbrowser deepseek open "1加1等于2"', description: '打开指定会话' },
       { cmd: 'xbrowser deepseek open "股票"', description: '模糊匹配打开' },
@@ -224,11 +218,9 @@ export default function (xcli: XCLIAPI): void {
         if (!clicked.found) throw new Error(`未找到包含"${params.title}"的会话`);
 
         await page.waitForTimeout(2000);
-        return {
-          data: { opened: clicked.title },
-          tips: buildTips(ctx),
-          message: `✅ 已打开会话：${clicked.title}`,
-        };
+        const tips = buildTips(ctx);
+        tips.push(`已打开会话：${clicked.title}`);
+        return ok({ opened: clicked.title }, tips);
       } catch (error) {
         return fail('未知错误', ['打开会话失败']);
       }
@@ -250,7 +242,7 @@ export default function (xcli: XCLIAPI): void {
       search: z.boolean().optional().describe('开启联网搜索'),
       showSources: z.boolean().optional().describe('显示联网搜索引用的来源 URL 和域名'),
     }),
-    result: z.any(),
+    result: z.object({ response: z.string(), duration: z.string().optional(), conversationId: z.string().optional(), sources: z.record(z.any()).optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser deepseek chat "你好"', description: '发送消息' },
       { cmd: 'xbrowser deepseek chat "分析这张图" --attach /path/to/img.jpg', description: '发送消息+图片' },
@@ -431,7 +423,7 @@ export default function (xcli: XCLIAPI): void {
             }, { fileMode: hasFile });
             if (responseText) break;
           } catch {
-            // ignore
+            // continue polling on page evaluate failure
           }
         }
 
@@ -462,7 +454,7 @@ export default function (xcli: XCLIAPI): void {
                   try {
                     new URL(clean); // validate
                     allUrls.push(clean);
-                  } catch {}
+                  } catch { /* invalid URL, skip */ }
                 }
               }
 
@@ -493,7 +485,7 @@ export default function (xcli: XCLIAPI): void {
               // 提取域名
               const domains = new Set<string>();
               for (const u of uniqueUrls) {
-                try { domains.add(new URL(u).hostname.replace(/^www\./, '')); } catch {}
+                try { domains.add(new URL(u).hostname.replace(/^www\./, '')); } catch { /* invalid URL, skip */ }
               }
               // 也捕获 site-icons 域名
               const siteIcons = capturedStream.match(/site-icons\/([a-zA-Z0-9.-]+)/g) || [];
@@ -516,18 +508,10 @@ export default function (xcli: XCLIAPI): void {
             }
           }
 
-          return {
-            data: result,
-            tips,
-            message: `✅ AI 回复 (${((Date.now() - startTime) / 1000).toFixed(1)}s)`,
-          };
+          return ok(result, tips);
         } else {
           tips.push('AI 回复超时或未检测到');
-          return {
-            data: { response: '' },
-            tips,
-            message: '⏱ AI 回复超时（60s），请检查页面',
-          };
+          return ok({ response: '' }, tips);
         }
       } catch (error) {
         return fail('未知错误', ['发送消息失败']);
@@ -544,7 +528,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       mode: z.enum(['normal', 'expert']).describe('模式：normal=快速模式, expert=专家模式'),
     }),
-    result: z.any(),
+    result: z.object({ mode: z.string(), action: z.string().optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser deepseek mode expert', description: '专家模式' },
       { cmd: 'xbrowser deepseek mode normal', description: '快速模式' },
@@ -580,11 +564,9 @@ export default function (xcli: XCLIAPI): void {
         }
 
         const status = clicked === 'already' ? '已经是' : '已切换为';
-        return {
-          data: { mode: params.mode, action: clicked },
-          tips: buildTips(ctx),
-          message: `✅ ${status} ${label}`,
-        };
+        const tips = buildTips(ctx);
+        tips.push(`${status} ${label}`);
+        return ok({ mode: params.mode, action: clicked }, tips);
       } catch (error) {
         return fail('未知错误', ['切换模式失败']);
       }
@@ -628,7 +610,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       state: z.enum(['on', 'off']).describe('on=开启, off=关闭'),
     }),
-    result: z.any(),
+    result: z.object({ think: z.string(), action: z.string().optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser deepseek think on', description: '开启深度思考' },
       { cmd: 'xbrowser deepseek think off', description: '关闭深度思考' },
@@ -646,11 +628,9 @@ export default function (xcli: XCLIAPI): void {
           return ok({ think: params.state }, [...buildTips(ctx), '提示：未找到深度思考按钮，可能页面尚未完全加载']);
         }
         const status = result === 'already' ? `已经是${stateName}状态` : `已${stateName}`;
-        return {
-          data: { think: params.state, action: result },
-          tips: buildTips(ctx),
-          message: `✅ 深度思考：${status}`,
-        };
+        const tips = buildTips(ctx);
+        tips.push(`深度思考：${status}`);
+        return ok({ think: params.state, action: result }, tips);
       } catch (error) {
         return fail('未知错误', ['切换深度思考失败']);
       }
@@ -666,7 +646,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       state: z.enum(['on', 'off']).describe('on=开启, off=关闭'),
     }),
-    result: z.any(),
+    result: z.object({ search: z.string(), action: z.string().optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser deepseek search on', description: '开启智能搜索' },
       { cmd: 'xbrowser deepseek search off', description: '关闭智能搜索' },
@@ -684,11 +664,9 @@ export default function (xcli: XCLIAPI): void {
           return ok({ search: params.state }, [...buildTips(ctx), '提示：未找到智能搜索按钮，可能页面尚未完全加载']);
         }
         const status = result === 'already' ? `已经是${stateName}状态` : `已${stateName}`;
-        return {
-          data: { search: params.state, action: result },
-          tips: buildTips(ctx),
-          message: `✅ 智能搜索：${status}`,
-        };
+        const tips = buildTips(ctx);
+        tips.push(`智能搜索：${status}`);
+        return ok({ search: params.state, action: result }, tips);
       } catch (error) {
         return fail('未知错误', ['切换智能搜索失败']);
       }
@@ -705,7 +683,7 @@ export default function (xcli: XCLIAPI): void {
       type: z.enum(['image', 'file', 'url']).describe('附件类型'),
       path: z.string().describe('文件路径 或 URL 链接'),
     }),
-    result: z.any(),
+    result: z.object({ type: z.string().optional(), sent: z.boolean().optional(), file: z.string().optional(), uploaded: z.boolean().optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser deepseek attach image ~/photo.jpg', description: '上传图片' },
       { cmd: 'xbrowser deepseek attach url "https://example.com"', description: '发送 URL 链接' },
@@ -726,11 +704,7 @@ export default function (xcli: XCLIAPI): void {
           await page.waitForTimeout(300);
           await page.press(inputSel, 'Enter');
           tips.push(`URL "${params.path}" 已作为消息发送`);
-          return {
-            data: { type: 'url', sent: true },
-            tips,
-            message: `✅ URL 已发送`,
-          };
+          return ok({ type: 'url', sent: true }, tips);
         }
 
         // 图片或文件上传（DataTransfer 方案，绕过 OS 文件选择器）
@@ -744,11 +718,7 @@ export default function (xcli: XCLIAPI): void {
         }
         await page.waitForTimeout(1000);
         tips.push(`附件 "${path.basename(absPath)}" 已上传`);
-        return {
-          data: { type: params.type, file: absPath, uploaded: true },
-          tips,
-          message: `✅ 附件 "${path.basename(absPath)}" 已上传`,
-        };
+        return ok({ type: params.type, file: absPath, uploaded: true }, tips);
       } catch (error) {
         return fail('未知错误', ['上传附件失败']);
       }

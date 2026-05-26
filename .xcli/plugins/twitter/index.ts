@@ -8,6 +8,31 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://x.com',
     description: 'X (Twitter) - 社交媒体内容采集（XHR 拦截模式，数据更丰富）',
     requiresLogin: true,
+    loginConfig: {
+      loginUrls: ['/login', '/signin', '/auth'],
+      loginSelectors: ['[class*="login"]', '[class*="signin"]'],
+      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]'],
+      loginKeywords: ['Sign in', 'Log in'],
+      loggedInSelectors: ['[class*="avatar"]', '[data-testid*="avatar"]'],
+      loginPrompt: 'This site requires login. Use --cdp to connect a logged-in browser.',
+    },
+    isLogin: async (ctx) => {
+      const ctxAny = ctx as Record<string, unknown>;
+      const page = ctxAny.page as import('playwright-core').Page;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/login') || url.includes('/i/flow/login')) return false;
+        const hasLoginBtn = await page.locator('a[href*="/login"], [data-testid="loginButton"]').first().isVisible().catch(() => false);
+        if (hasLoginBtn) return false;
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        if (!body) return false;
+        if (body.includes('Sign in')) return false;
+        return true;
+      } catch {
+        return true;
+      }
+    },
   });
 
   const BASE = 'https://x.com';
@@ -71,7 +96,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser twitter search --query "OpenAI"', description: '搜索 OpenAI 相关推文' },
     ],
-    result: z.any(),
+    result: z.object({ query: z.string(), count: z.number(), tweets: z.array(z.object({ author: z.string(), text: z.string(), time: z.string(), likes: z.string(), retweets: z.string(), replies: z.string(), link: z.string() })) }).passthrough(),
     handler: async (params, ctx) => {
       const page = getPage(ctx as Record<string, unknown>);
       const tips = buildTips(ctx as Record<string, unknown>);
@@ -121,7 +146,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser twitter profile --username "elonmusk"', description: '获取 Elon Musk 资料' },
     ],
-    result: z.any(),
+    result: z.object({ name: z.string().optional(), screenName: z.string().optional(), description: z.string().optional(), bio: z.string().optional(), location: z.string().optional(), url: z.string().optional(), followersCount: z.number().optional(), followingCount: z.number().optional(), tweetCount: z.number().optional(), avatar: z.string().optional(), source: z.string().optional() }).passthrough(),
     handler: async (params, ctx) => {
       const page = getPage(ctx as Record<string, unknown>);
       const tips = buildTips(ctx as Record<string, unknown>);
@@ -164,7 +189,9 @@ export default function (xcli: XCLIAPI): void {
                 wantsToBeNotified: legacy.wants_to_be_notified,
               };
             }
-          } catch {}
+          } catch (e) {
+            if (process.env.DEBUG) console.warn('[twitter] response parse error:', (e as Error).message);
+          }
         }
       });
 
@@ -196,7 +223,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser twitter timeline --username "elonmusk"', description: '获取 Elon Musk 最新推文' },
     ],
-    result: z.any(),
+    result: z.object({ username: z.string(), count: z.number(), tweets: z.array(z.record(z.any())), source: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       const page = getPage(ctx as Record<string, unknown>);
       const tips = buildTips(ctx as Record<string, unknown>);
@@ -277,7 +304,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser twitter replies --id "123456789"', description: '获取推文回复' },
     ],
-    result: z.any(),
+    result: z.object({ tweetId: z.string(), count: z.number(), replies: z.array(z.record(z.any())) }).passthrough(),
     handler: async (params, ctx) => {
       const page = getPage(ctx as Record<string, unknown>);
       const tips = buildTips(ctx as Record<string, unknown>);
@@ -304,7 +331,9 @@ export default function (xcli: XCLIAPI): void {
               lang: legacy.lang,
             });
           }
-        } catch {}
+        } catch (e) {
+          if (process.env.DEBUG) console.warn('[twitter] response parse error:', (e as Error).message);
+        }
       });
 
       await page.goto(`${BASE}/i/status/${params.id}`, { waitUntil: 'domcontentloaded' });
@@ -329,7 +358,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser twitter liked --username "elonmusk"', description: '获取 Elon Musk 点赞' },
     ],
-    result: z.any(),
+    result: z.object({ username: z.string(), count: z.number(), tweets: z.array(z.object({ author: z.string(), text: z.string(), time: z.string(), likes: z.string() })) }).passthrough(),
     handler: async (params, ctx) => {
       const page = getPage(ctx as Record<string, unknown>);
       const tips = buildTips(ctx as Record<string, unknown>);
@@ -369,12 +398,11 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       query: z.string().describe('搜索关键词'),
       limit: z.number().optional().default(10),
-      page: z.any().optional(),
       timeout: z.number().optional().default(20000),
     }),
-    result: z.any(),
+    result: z.object({ query: z.string(), engine: z.string(), results: z.array(z.object({ title: z.string(), thumbnailUrl: z.string(), sourceUrl: z.string(), originalUrl: z.string(), width: z.number(), height: z.number(), format: z.string(), sourceSite: z.string() })), total: z.number(), timestamp: z.number() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (params.page as import('playwright').Page) || (ctx as Record<string, unknown>).page as import('playwright').Page;
+      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
       if (!page) throw new Error('需要浏览器页面');
       try {
         await page.goto(`https://x.com/search?q=${encodeURIComponent(params.query)}%20filter%3Aimages&f=live`, { waitUntil: 'domcontentloaded', timeout: params.timeout });

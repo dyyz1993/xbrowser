@@ -1198,6 +1198,36 @@ export http_proxy=http://127.0.0.1:7890
 export all_proxy=socks5://127.0.0.1:7890
 ```
 
+### 自定义 Registry 地址
+
+默认使用 `https://xbrowser.dev` 作为 marketplace 地址。支持 3 种方式配置自定义 registry：
+
+**1. 命令行参数 `--registry`（单次生效）**
+
+```bash
+xbrowser marketplace publish --registry https://your-registry.com
+xbrowser marketplace login --registry https://your-registry.com --token <key>
+xbrowser admin pending --registry https://your-registry.com
+```
+
+**2. 环境变量 `XBROWSER_REGISTRY`（全局生效）**
+
+```bash
+export XBROWSER_REGISTRY=https://your-registry.com
+xbrowser marketplace publish
+xbrowser admin pending
+```
+
+**3. 登录时持久化**
+
+```bash
+xbrowser marketplace login --registry https://your-registry.com --token <key>
+```
+
+登录成功后 registry 地址会存入 `~/.xbrowser/auth.json`，后续所有 marketplace/admin 命令自动使用该地址，无需重复指定。
+
+**优先级**：`--registry` 参数 > `XBROWSER_REGISTRY` 环境变量 > `~/.xbrowser/auth.json` 中保存的地址 > 默认值 `https://xbrowser.dev`
+
 ### 命令列表
 
 | 命令 | 说明 |

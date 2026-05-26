@@ -1,11 +1,26 @@
 {
-  "name": "xbrowser-plugin-deepseek",
-  "version": "3.0.0",
-  "description": "DeepSeek 聊天助手 - 会话管理、消息发送、模式切换、附件支持",
+  "_marketplace": {
+    "slug": "deepseek",
+    "url": "https://marketplace.xbrowser.dev"
+  },
   "author": "xbrowser",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "description": "DeepSeek 聊天助手 - 会话管理、消息发送、模式切换、附件支持",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin"
+  ],
+  "main": "index.ts",
+  "name": "xbrowser-plugin-deepseek",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "3.0.0",
   "xbrowser": {
-    "name": "deepseek",
-    "description": "DeepSeek 聊天助手",
+    "author": "xbrowser",
     "commands": [
       "list",
       "new",
@@ -16,18 +31,16 @@
       "search",
       "attach"
     ],
+    "description": "DeepSeek 聊天助手",
+    "name": "deepseek",
+    "site": "https://chat.deepseek.com",
     "sites": [
       "deepseek"
     ],
     "slug": "deepseek",
-    "version": "3.0.0",
-    "author": "xbrowser",
     "tags": [
       "deepseek"
-    ]
-  },
-  "_marketplace": {
-    "slug": "deepseek",
-    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
+    ],
+    "version": "3.0.0"
   }
 }

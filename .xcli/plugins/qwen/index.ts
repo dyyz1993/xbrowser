@@ -316,7 +316,7 @@ export default function (xcli: XCLIAPI): void {
       ratio: z.string().optional().describe('画面比例: 1:1, 16:9, 9:16, 4:3（默认 1:1）'),
       wait: z.coerce.number().int().positive().optional().describe('同步等待秒数（如 --wait 60），不传则异步提交'),
     }),
-    result: z.any(),
+    result: z.object({ images: z.array(z.string()).optional(), status: z.string().optional(), prompt: z.string().optional(), ratio: z.string().optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser qwen image --prompt "画一只可爱的猫咪" --cdp 9221', description: '基础文生图' },
       { cmd: 'xbrowser qwen image --prompt "皮克斯风格建筑" --ratio 16:9 --cdp 9221', description: '指定比例' },
@@ -463,7 +463,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(10).describe('返回条数（默认 10）'),
     }),
-    result: z.any(),
+    result: z.object({ images: z.array(z.object({ url: z.string(), alt: z.string() }).passthrough()).optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser qwen result --cdp 9221', description: '获取已生成图片' },
       { cmd: 'xbrowser qwen result --limit 5 --cdp 9221', description: '获取最近 5 张' },
@@ -621,7 +621,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(10).describe('返回会话数量'),
     }),
-    result: z.any(),
+    result: z.object({ sessions: z.array(z.record(z.any())).optional(), totalImages: z.number().optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser qwen history --cdp 9221', description: '列出所有会话及图片' },
       { cmd: 'xbrowser qwen history --limit 5 --cdp 9221', description: '限制 5 个会话' },
@@ -693,7 +693,7 @@ export default function (xcli: XCLIAPI): void {
     description: '检查千问登录状态',
     scope: 'browser',
     parameters: z.object({}),
-    result: z.any(),
+    result: z.object({ loggedIn: z.boolean(), hasImageMode: z.boolean(), url: z.string() }).passthrough(),
     examples: [
       { cmd: 'xbrowser qwen billing --cdp 9221', description: '检查登录状态' },
     ],

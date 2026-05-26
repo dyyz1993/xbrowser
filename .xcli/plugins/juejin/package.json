@@ -1,18 +1,28 @@
 {
-  "name": "xbrowser-plugin-juejin",
-  "version": "4.0.0",
+  "_marketplace": {
+    "slug": "juejin",
+    "url": "https://marketplace.xbrowser.dev"
+  },
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "description": "掘金 SEO 外链 - 中文技术社区 (DA 70+, 百度收录好)",
-  "main": "index.ts",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
     "juejin.cn"
   ],
-  "author": "dyyz1993",
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-juejin",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "4.0.0",
   "xbrowser": {
-    "site": "https://juejin.cn",
-    "requiresLogin": true,
+    "author": "dyyz1993",
     "commands": [
       "login",
       "publish",
@@ -20,21 +30,18 @@
       "update-profile",
       "fetch-articles"
     ],
-    "slug": "juejin",
-    "name": "juejin",
     "description": "掘金 SEO 外链 - 中文技术社区 (DA 70+, 百度收录好)",
-    "version": "4.0.0",
-    "author": "dyyz1993",
+    "name": "juejin",
+    "requiresLogin": true,
+    "site": "https://juejin.cn",
+    "sites": [
+      "juejin.cn"
+    ],
+    "slug": "juejin",
     "tags": [
       "juejin",
       "developer"
     ],
-    "sites": [
-      "juejin.cn"
-    ]
-  },
-  "_marketplace": {
-    "slug": "juejin",
-    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
+    "version": "4.0.0"
   }
 }

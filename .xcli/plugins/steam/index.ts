@@ -8,12 +8,15 @@ export default function(xcli: XCLIAPI): void {
     url: 'https://store.steampowered.com',
     description: 'Steam 游戏评论抓取 — 通过 Review API 批量获取所有语言评论',
     requiresLogin: false,
+    loginConfig: {
+      requiresLogin: false,
+    },
   });
 
   steam.command('reviews', {
     description: '抓取 Steam 游戏的全部评论（cursor 分页，100/页）',
     scope: 'browser',
-    result: z.any(),
+    result: z.record(z.any()),
     parameters: z.object({
       appId: z.string().describe('Steam app ID，如 3730100'),
       language: z.string().optional().default('all').describe('评论语言过滤，如 all/schinese/english'),
@@ -67,7 +70,7 @@ export default function(xcli: XCLIAPI): void {
             retries--;
             if (retries === 0) {
               const msg = err instanceof Error ? err.message : String(err);
-              return { success: false as const, data: null, message: `Page ${page} failed: ${msg}` };
+              return fail(`Page ${page} failed: ${msg}`);
             }
             await sleep(3000);
           }

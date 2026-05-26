@@ -277,7 +277,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('billing', {
     description: '查询 Mureka 积分余额、免费试用次数、可用模型',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ credits: z.number(), freeTtsDuration: z.number(), userStatus: z.string(), models: z.array(z.object({ name: z.string(), model: z.string(), credits: z.number(), freeToUse: z.number(), trialsRemaining: z.number().nullable(), description: z.string() }).passthrough()) }).passthrough(),
     parameters: z.object({}),
     examples: [
       { cmd: 'xbrowser mureka billing --cdp 9221', description: '查询积分和模型' },
@@ -332,7 +332,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('library', {
     description: '查看已创作的歌曲列表',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ songs: z.array(z.record(z.any())) }).passthrough(),
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(20).describe('返回条数（默认 20）'),
     }),
@@ -390,7 +390,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('create', {
     description: '在 Mureka 上创建音乐。支持简易/自定义/配乐模式，--wait 同步等待结果',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ songs: z.array(z.record(z.any())).optional(), songId: z.string().optional(), status: z.string().optional() }).passthrough(),
     parameters: z.object({
       prompt: z.string().describe('音乐描述（如"轻快的钢琴曲"、"悲伤的小提琴"）'),
       mode: z.enum(['简易', '自定义', '配乐']).optional().describe('创作模式（默认 自定义）'),
@@ -764,7 +764,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('status', {
     description: '检查当前音乐生成状态',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ status: z.string().optional(), songs: z.array(z.record(z.any())).optional() }).passthrough(),
     parameters: z.object({}),
     examples: [
       { cmd: 'xbrowser mureka status --cdp 9221', description: '检查状态' },
@@ -827,7 +827,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('download', {
     description: '下载音乐到本地（返回 curl 命令或直接下载）',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ url: z.string(), size: z.number().optional() }).passthrough(),
     parameters: z.object({
       url: z.string().describe('音频 URL'),
       output: z.string().optional().describe('输出路径（默认 ./downloads/）'),
@@ -905,7 +905,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('result', {
     description: '获取最新生成的音乐音频 URL（被动拦截页面数据）',
     scope: 'browser',
-    result: z.any(),
+    result: z.object({ songs: z.array(z.record(z.any())) }).passthrough(),
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(10).describe('返回条数（默认 10）'),
     }),

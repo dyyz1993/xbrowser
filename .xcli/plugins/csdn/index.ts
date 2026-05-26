@@ -22,6 +22,29 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.csdn.net',
     description: 'CSDN SEO 外链 - 中文技术平台 (DA 80+, 百度排名 #1)',
     requiresLogin: true,
+    loginConfig: {
+      loginUrls: ['/login', '/passport'],
+      loginSelectors: ['[class*="login"]', '[class*="modal"]'],
+      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]', '[class*="slider"]'],
+      loginKeywords: ['登录', '注册'],
+      loggedInSelectors: ['[class*="avatar"]', '[class*="user-info"]'],
+      loginPrompt: '请使用 --cdp 连接已登录的浏览器（CDP 9221）',
+    },
+    isLogin: async (ctx) => {
+      const ctxAny = ctx as Record<string, unknown>;
+      const page = ctxAny.page as import('playwright-core').Page;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/passport')) return false;
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        if (!body) return false;
+        if (body.includes('登录')) return false;
+        return true;
+      } catch {
+        return true;
+      }
+    },
   });
 
   site.command('login', {
@@ -29,7 +52,7 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser csdn login', description: '登录 CSDN' }],
-    result: z.any(),
+    result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (_params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -63,11 +86,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok({ loggedIn, url: page.url() }, [...tips, loggedIn ? 'CSDN 登录成功' : '登录可能未完成，请检查页面']);
       } catch (error) {
-        return {
-          data: null,
-          tips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
   });
@@ -86,7 +105,7 @@ export default function (xcli: XCLIAPI): void {
         description: '发布带外链的博客文章',
       },
     ],
-    result: z.any(),
+    result: z.object({ title: z.string(), tags: z.string().optional(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -154,11 +173,7 @@ export default function (xcli: XCLIAPI): void {
             url: page.url(),
           }, [...tips, `文章 "${params.title}" 已在 CSDN 发布`]);
       } catch (error) {
-        return {
-          data: null,
-          tips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
   });
@@ -176,7 +191,7 @@ export default function (xcli: XCLIAPI): void {
         description: '保存为草稿',
       },
     ],
-    result: z.any(),
+    result: z.object({ title: z.string(), saved: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -219,11 +234,7 @@ export default function (xcli: XCLIAPI): void {
             url: page.url(),
           }, [...tips, `草稿 "${params.title}" 已保存`]);
       } catch (error) {
-        return {
-          data: null,
-          tips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
   });
@@ -241,7 +252,7 @@ export default function (xcli: XCLIAPI): void {
         description: '更新 Profile 添加外链',
       },
     ],
-    result: z.any(),
+    result: z.object({ url: z.string(), updated: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -279,11 +290,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok({ url: params.url, updated: true }, [...tips, 'Profile 已更新，包含外链']);
       } catch (error) {
-        return {
-          data: null,
-          tips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
   });
@@ -300,7 +307,11 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser csdn fetch-articles --keyword "React"', description: '搜索 React 相关文章' },
       { cmd: 'xbrowser csdn fetch-articles --username "zhangsan"', description: '获取指定用户的文章' },
     ],
-    result: z.any(),
+    result: z.object({
+      source: z.string(),
+      count: z.number(),
+      articles: z.array(z.object({ title: z.string(), link: z.string(), views: z.string(), date: z.string() })),
+    }).passthrough(),
     handler: async (params, ctx) => {
       const { page, tips } = resolvePage(ctx as Record<string, unknown>);
 
@@ -356,11 +367,7 @@ export default function (xcli: XCLIAPI): void {
             articles,
           }, [...tips, `获取到 ${articles.length} 篇文章`]);
       } catch (error) {
-        return {
-          data: null,
-          tips,
-          message: error instanceof Error ? error.message : '未知错误',
-        };
+        return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
   });

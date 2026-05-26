@@ -241,9 +241,11 @@ xbrowser plugin login
 # Token-based login
 xbrowser plugin login --token your-api-key-here
 
-# Custom registry
-xbrowser plugin login --registry https://marketplace.xbrowser.dev
+# Custom registry (saved to ~/.xbrowser/auth.json after login)
+xbrowser plugin login --registry https://marketplace.xbrowser.dev --token your-api-key
 ```
+
+Registry 配置优先级：`--registry` 参数 > `XBROWSER_REGISTRY` 环境变量 > `~/.xbrowser/auth.json` 保存地址 > 默认 `https://xbrowser.dev`
 
 ### Validate Before Publishing
 

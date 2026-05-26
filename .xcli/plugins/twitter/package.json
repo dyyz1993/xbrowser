@@ -1,15 +1,27 @@
 {
-  "name": "xbrowser-plugin-twitter",
-  "version": "4.0.0",
-  "type": "module",
-  "description": "X (Twitter) 数据采集 - XHR 拦截模式，含 views/bookmarks/媒体等丰富数据",
-  "main": "index.ts",
+  "_marketplace": {
+    "slug": "twitter",
+    "url": "https://marketplace.xbrowser.dev"
+  },
   "author": "XBrowser Team",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "description": "X (Twitter) 数据采集 - XHR 拦截模式，含 views/bookmarks/媒体等丰富数据",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin"
+  ],
   "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-twitter",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "4.0.0",
   "xbrowser": {
-    "name": "twitter",
-    "url": "https://x.com",
-    "description": "X (Twitter) 数据采集插件（XHR 拦截模式）",
+    "author": "XBrowser Team",
     "commands": [
       "search",
       "profile",
@@ -17,26 +29,18 @@
       "replies",
       "liked"
     ],
+    "description": "X (Twitter) 数据采集插件（XHR 拦截模式）",
+    "name": "twitter",
+    "site": "https://x.com",
     "sites": [
       "twitter",
       "x.com"
     ],
     "slug": "twitter",
-    "version": "4.0.0",
-    "author": "XBrowser Team",
     "tags": [
       "twitter",
       "social-media"
-    ]
-  },
-  "dependencies": {
-    "zod": "^3.24.0"
-  },
-  "peerDependencies": {
-    "@dyyz1993/xcli-core": ">=1.0.0"
-  },
-  "_marketplace": {
-    "slug": "twitter",
-    "url": "https://xbrowser-marketplace.dyyz1993.workers.dev"
+    ],
+    "version": "4.0.0"
   }
 }
