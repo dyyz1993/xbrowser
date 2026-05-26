@@ -7,6 +7,12 @@ const TEST_DIR = resolve(tmpdir(), 'xbrowser-test-install-utils');
 
 vi.mock('../../src/config.js', () => ({
   getConfigValue: vi.fn(() => undefined),
+  getMarketplaceUrl: vi.fn(() => {
+    if (typeof process !== 'undefined' && process.env.XBROWSER_MARKETPLACE_URL) {
+      return process.env.XBROWSER_MARKETPLACE_URL;
+    }
+    return 'https://marketplace.xbrowser.dev';
+  }),
 }));
 
 import { execSync } from 'child_process';
