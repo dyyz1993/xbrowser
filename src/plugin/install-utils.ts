@@ -20,7 +20,7 @@ export interface PluginVerifyResult {
   warnings?: string[];
 }
 
-const DEFAULT_MARKETPLACE_URL = 'https://xbrowser-marketplace.dyyz1993.workers.dev';
+const DEFAULT_MARKETPLACE_URL = 'https://marketplace.xbrowser.dev';
 
 export async function downloadToFile(url: string, destPath: string): Promise<void> {
   await ensureProxyFetch();

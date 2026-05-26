@@ -205,7 +205,7 @@ describe('install-utils', () => {
   describe('getMarketplaceUrl', () => {
     it('should return default URL when no config', () => {
       const url = getMarketplaceUrl();
-      expect(url).toBe('https://xbrowser-marketplace.dyyz1993.workers.dev');
+      expect(url).toBe('https://marketplace.xbrowser.dev');
     });
 
     it('should return env var when set', () => {

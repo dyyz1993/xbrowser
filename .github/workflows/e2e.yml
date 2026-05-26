@@ -42,5 +42,5 @@ jobs:
       - name: Run E2E tests
         run: npm run test:e2e
         env:
-          XBROWSER_REGISTRY: https://xbrowser-marketplace.dyyz1993.workers.dev
+          XBROWSER_REGISTRY: https://marketplace.xbrowser.dev
           XBROWSER_CHROMIUM_PATH: ''

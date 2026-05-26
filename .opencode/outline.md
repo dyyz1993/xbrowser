@@ -32,5 +32,5 @@ xbrowser 是基于 @dyyz1993/xcli-core 的浏览器自动化 CLI 工具。
 | CSDN | 80+ | Nofollow |
 
 ## 测试: 392 通过
-## 市场: https://xbrowser-marketplace.dyyz1993.workers.dev
+## 市场: https://marketplace.xbrowser.dev
 ## 代理: http://127.0.0.1:7890

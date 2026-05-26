@@ -48,7 +48,7 @@ interface ConfigRoot {
   };
 }
 
-export const DEFAULT_MARKETPLACE_URL = 'https://xbrowser-marketplace.dyyz1993.workers.dev';
+export const DEFAULT_MARKETPLACE_URL = 'https://marketplace.xbrowser.dev';
 export const NPM_REGISTRY_URL = 'https://registry.npmjs.org';
 export const NPM_SCOPE = '@xbrowser/';
 

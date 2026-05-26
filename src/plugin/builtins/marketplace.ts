@@ -159,6 +159,8 @@ export default function setupMarketplacePlugin(xcli: XCLIAPI): void {
     description: 'Login to the marketplace',
     scope: 'global',
     parameters: z.object({
+      email: z.string().optional().describe('Email (skip interactive prompt)'),
+      password: z.string().optional().describe('Password (skip interactive prompt)'),
       token: z.string().optional().describe('Auth token (skip interactive login)'),
       registry: z.string().optional().describe('Custom registry URL'),
     }),
@@ -188,13 +190,17 @@ export default function setupMarketplacePlugin(xcli: XCLIAPI): void {
         return { success: true, data: { ok: true, text: `Token saved.\nLogged in as ${username}` } };
       }
 
-      console.log(`\nLogin to ${registryUrl}\n`);
+      let email = params.email as string | undefined;
+      let password = params.password as string | undefined;
 
-      const rl = createInterface({ input: process.stdin, output: process.stdout });
-      const email = await prompt(rl, 'Email: ');
-      const password = await prompt(rl, 'Password: ', true);
-      rl.close();
-      console.log();
+      if (!email || !password) {
+        console.log(`\nLogin to ${registryUrl}\n`);
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        if (!email) email = await prompt(rl, 'Email: ');
+        if (!password) password = await prompt(rl, 'Password: ', true);
+        rl.close();
+        console.log();
+      }
 
       if (!email || !password) {
         return { success: false, message: 'Email and password are required' };
@@ -234,6 +240,9 @@ export default function setupMarketplacePlugin(xcli: XCLIAPI): void {
     description: 'Register a new marketplace account',
     scope: 'global',
     parameters: z.object({
+      username: z.string().optional().describe('Username (2-50 chars)'),
+      email: z.string().optional().describe('Email'),
+      password: z.string().optional().describe('Password (min 6 chars)'),
       registry: z.string().optional().describe('Custom registry URL'),
     }),
     result: marketResult,
@@ -242,25 +251,33 @@ export default function setupMarketplacePlugin(xcli: XCLIAPI): void {
       const registryUrl = getRegistryUrl(params);
       await ensureProxyFetch();
 
-      console.log('\nRegister for xbrowser developer account\n');
+      let username = params.username as string | undefined;
+      let email = params.email as string | undefined;
+      let password = params.password as string | undefined;
 
-      const rl = createInterface({ input: process.stdin, output: process.stdout });
-      const username = await prompt(rl, 'Username (2-50 chars): ');
-      const email = await prompt(rl, 'Email: ');
-      const password = await prompt(rl, 'Password (min 6 chars): ', true);
-      const confirmPassword = await prompt(rl, 'Confirm password: ', true);
-      rl.close();
+      const needsInteractive = !username || !email || !password;
+      let confirmPassword = '';
 
-      if (username.length < 2 || username.length > 50) {
+      if (needsInteractive) {
+        console.log('\nRegister for xbrowser developer account\n');
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        if (!username) username = await prompt(rl, 'Username (2-50 chars): ');
+        if (!email) email = await prompt(rl, 'Email: ');
+        if (!password) password = await prompt(rl, 'Password (min 6 chars): ', true);
+        confirmPassword = await prompt(rl, 'Confirm password: ', true);
+        rl.close();
+      }
+
+      if (!username || username.length < 2 || username.length > 50) {
         return { success: false, message: 'Username must be 2-50 characters' };
       }
-      if (!email.includes('@')) {
+      if (!email || !email.includes('@')) {
         return { success: false, message: 'Invalid email' };
       }
-      if (password.length < 6) {
+      if (!password || password.length < 6) {
         return { success: false, message: 'Password must be at least 6 characters' };
       }
-      if (password !== confirmPassword) {
+      if (needsInteractive && password !== confirmPassword) {
         return { success: false, message: 'Passwords do not match' };
       }
 

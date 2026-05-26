@@ -5,7 +5,7 @@ import { join, resolve } from 'path';
 
 const TMP_DIR = join(process.env.TMPDIR || '/tmp', 'xbrowser-e2e');
 const REGISTRY =
-  process.env.XBROWSER_REGISTRY || 'https://xbrowser-marketplace.dyyz1993.workers.dev';
+  process.env.XBROWSER_REGISTRY || 'https://marketplace.xbrowser.dev';
 
 const XBROWSER_BIN = (() => {
   const localBin = resolve(import.meta.dirname, '../../node_modules/.bin/xbrowser');

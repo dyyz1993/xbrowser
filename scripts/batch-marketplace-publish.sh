@@ -24,13 +24,6 @@ skipping=false
 if [[ -n "$START_FROM" ]]; then skipping=true; fi
 
 for dir in $(ls "$PLUGINS_DIR" | sort); do
-  # Skip web-automation (too large)
-  if [[ "$dir" == "web-automation" ]]; then
-    skipped+=("$dir")
-    echo "[SKIP] $dir (excluded)"
-    continue
-  fi
-
   # Skip until start-from
   if [[ "$skipping" == true ]]; then
     if [[ "$dir" == "$START_FROM" ]]; then
@@ -51,10 +44,10 @@ for dir in $(ls "$PLUGINS_DIR" | sort); do
 
   if $DRY_RUN; then
     echo "[DRY-RUN] $dir"
-    npx xbrowser plugin publish "$PLUGINS_DIR/$dir" --dry-run 2>&1 && success+=("$dir") || failed+=("$dir")
+    npx xbrowser marketplace publish --dir "$PLUGINS_DIR/$dir" --dryRun 2>&1 && success+=("$dir") || failed+=("$dir")
   else
     echo "[PUBLISH] $dir"
-    if npx xbrowser plugin publish "$PLUGINS_DIR/$dir" 2>&1; then
+    if npx xbrowser marketplace publish --dir "$PLUGINS_DIR/$dir" 2>&1; then
       success+=("$dir")
       echo "[OK] $dir"
     else
@@ -68,11 +61,11 @@ done
 echo ""
 echo "===== Summary ====="
 echo "Succeeded: ${#success[@]}"
-for p in "${success[@]}"; do echo "  + $p"; done
+for p in "${success[@]:-}"; do echo "  + $p"; done
 echo "Failed:    ${#failed[@]}"
-for p in "${failed[@]}"; do echo "  - $p"; done
+for p in "${failed[@]:-}"; do echo "  - $p"; done
 echo "Skipped:   ${#skipped[@]}"
-for p in "${skipped[@]}"; do echo "  ~ $p"; done
+for p in "${skipped[@]:-}"; do echo "  ~ $p"; done
 echo "==================="
 
 if [[ ${#failed[@]} -gt 0 ]]; then
