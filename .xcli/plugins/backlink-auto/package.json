@@ -1,4 +1,8 @@
 {
+  "_marketplace": {
+    "slug": "backlink-auto",
+    "url": "https://marketplace.xbrowser.dev"
+  },
   "dependencies": {
     "zod": "^3.24.0"
   },

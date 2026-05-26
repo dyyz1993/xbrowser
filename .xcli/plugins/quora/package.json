@@ -1,4 +1,8 @@
 {
+  "_marketplace": {
+    "slug": "quora",
+    "url": "https://marketplace.xbrowser.dev"
+  },
   "author": "dyyz1993",
   "dependencies": {
     "zod": "^3.24.0"

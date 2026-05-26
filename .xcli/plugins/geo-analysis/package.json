@@ -1,4 +1,8 @@
 {
+  "_marketplace": {
+    "slug": "geo-analysis",
+    "url": "https://marketplace.xbrowser.dev"
+  },
   "author": "xbrowser",
   "category": "analytics",
   "commands": [

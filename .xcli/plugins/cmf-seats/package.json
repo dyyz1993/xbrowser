@@ -1,4 +1,8 @@
 {
+  "_marketplace": {
+    "slug": "cmf-seats",
+    "url": "https://marketplace.xbrowser.dev"
+  },
   "dependencies": {
     "zod": "^3.22.4"
   },

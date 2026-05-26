@@ -1,4 +1,8 @@
 {
+  "_marketplace": {
+    "slug": "seo",
+    "url": "https://marketplace.xbrowser.dev"
+  },
   "dependencies": {
     "imapflow": "^1.0.0",
     "zod": "^3.24.0"

@@ -1,4 +1,8 @@
 {
+  "_marketplace": {
+    "slug": "qwen",
+    "url": "https://marketplace.xbrowser.dev"
+  },
   "author": "XBrowser Team",
   "dependencies": {
     "zod": "^3.24.0"
