@@ -171,6 +171,7 @@ describe('browser', () => {
       await createSession('nav-session', 'https://example.com');
 
       expect(mockPage.goto).toHaveBeenCalledWith('https://example.com', {
+        timeout: 15000,
         waitUntil: 'domcontentloaded',
       });
     });

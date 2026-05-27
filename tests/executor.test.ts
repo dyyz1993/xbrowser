@@ -45,6 +45,7 @@ vi.mock('../src/daemon/daemon.js', () => ({
 
 // Isolate homedir to a temp dir so stale session files don't affect tests
 vi.mock('os', () => ({
+  default: { homedir: () => '/tmp/xbrowser-test-executor' },
   homedir: vi.fn().mockReturnValue('/tmp/xbrowser-test-executor'),
 }));
 
