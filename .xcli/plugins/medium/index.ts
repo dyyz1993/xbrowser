@@ -96,7 +96,7 @@ export default function (xcli: XCLIAPI): void {
         waitUntil: 'domcontentloaded',
         timeout: 20000,
       });
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
       await page.waitForTimeout(4000);
 
       await page.waitForSelector('[contenteditable="true"]', { timeout: 10000 }).catch(() => {});
@@ -165,7 +165,7 @@ export default function (xcli: XCLIAPI): void {
         waitUntil: 'domcontentloaded',
         timeout: 20000,
       });
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
       await page.waitForTimeout(4000);
 
       await page.waitForSelector('[contenteditable="true"]', { timeout: 10000 }).catch(() => {});
@@ -220,7 +220,7 @@ export default function (xcli: XCLIAPI): void {
         waitUntil: 'domcontentloaded',
         timeout: 15000,
       });
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
       await page.waitForTimeout(3000);
 
       const urlInput = page.locator(
@@ -275,7 +275,7 @@ export default function (xcli: XCLIAPI): void {
         waitUntil: 'domcontentloaded',
         timeout: 15000,
       });
-      await page.waitForLoadState('networkidle');
+      await page.waitForLoadState('domcontentloaded');
       await page.waitForTimeout(2000);
 
       if (params.bio) {

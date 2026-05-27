@@ -114,7 +114,7 @@ export default function (xcli: XCLIAPI): void {
           waitUntil: 'domcontentloaded',
           timeout: 20000,
         });
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('domcontentloaded');
         await page.waitForTimeout(4000);
 
         const titleInput = page.locator(
@@ -200,7 +200,7 @@ export default function (xcli: XCLIAPI): void {
           waitUntil: 'domcontentloaded',
           timeout: 20000,
         });
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('domcontentloaded');
         await page.waitForTimeout(4000);
 
         const titleInput = page.locator(
@@ -261,7 +261,7 @@ export default function (xcli: XCLIAPI): void {
           waitUntil: 'domcontentloaded',
           timeout: 15000,
         });
-        await page.waitForLoadState('networkidle');
+        await page.waitForLoadState('domcontentloaded');
         await page.waitForTimeout(2000);
 
         if (params.bio) {

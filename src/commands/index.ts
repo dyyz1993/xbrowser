@@ -22,6 +22,7 @@ import './snapshot.js';
 import './tab.js';
 import './addinitscript.js';
 import './find.js';
+import './detect.js';
 
 export { getCommand, getAllCommands, getCommandNames, clearRegistry, registerCommand } from './command-registry.js';
 export type { RegisteredCommand, BrowserCommandDefinition } from './command-registry.js';

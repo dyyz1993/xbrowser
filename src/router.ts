@@ -372,28 +372,32 @@ export async function routeCommand(
         await handleNetCommand(cmdArgs, options, mode, sessionName);
         break;
       default: {
-        const fullInput = argv.join(' ');
-        if (isChainInput(fullInput)) {
-          const chainResult = await executeChain(fullInput, { cdpEndpoint, sessionName });
-          for (const step of chainResult.steps) {
-            if (step.success) {
-              console.log(`[OK] ${step.raw}`);
-              if (step.tips?.length) {
-                for (const tip of step.tips) {
-                  console.log(`  💡 ${tip}`);
-                }
-              }
-            } else {
-              console.error(`[FAIL] ${step.raw}: ${step.message}`);
-            }
-          }
-          if (!chainResult.success) throw new Error("Command failed");
-          return;
-        }
-
+        // Check plugin site BEFORE chain parsing to avoid --content with +/, being misinterpreted
         const loader = await getPluginLoader();
         const internalLoader = loader.getCore().loader;
         const site = internalLoader.getSite(command);
+
+        // Only fall through to chain parsing if NOT a registered plugin site
+        if (!site) {
+          const fullInput = argv.join(' ');
+          if (isChainInput(fullInput)) {
+            const chainResult = await executeChain(fullInput, { cdpEndpoint, sessionName });
+            for (const step of chainResult.steps) {
+              if (step.success) {
+                console.log(`[OK] ${step.raw}`);
+                if (step.tips?.length) {
+                  for (const tip of step.tips) {
+                    console.log(`  💡 ${tip}`);
+                  }
+                }
+              } else {
+                console.error(`[FAIL] ${step.raw}: ${step.message}`);
+              }
+            }
+            if (!chainResult.success) throw new Error("Command failed");
+            return;
+          }
+        }
         if (site) {
           const allSiteCommands = site.getAllCommands();
           const subCommand = cmdArgs[0];
