@@ -266,6 +266,11 @@ export function getSessionById(id: string): ManagedSession | undefined {
   return sessions.get(id);
 }
 
+export function setActivePage(session: ManagedSession, page: Page): void {
+  session.page = page;
+  session.lastActivityAt = Date.now();
+}
+
 /**
  * Save session metadata to disk for cross-process recovery.
  */

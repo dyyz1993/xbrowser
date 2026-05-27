@@ -314,6 +314,9 @@ const commandDefCache: Record<string, CommandDef> = {
   frames: { positional: [] },
   frame: { positional: ['selector'] },
   actions: { positional: ['url'] },
+  find: { positional: ['strategy', 'value'] },
+  addinitscript: { positional: ['script'] },
+  tab: { positional: ['subcommand'] },
 };
 
 function getCommandDefinitions(): Record<string, CommandDef> {
