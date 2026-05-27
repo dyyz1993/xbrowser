@@ -80,11 +80,16 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       questionUrl: z.string().describe('问题页面 URL'),
       content: z.string().describe('回答内容（含外链）'),
+      keepAlive: z.boolean().optional().default(false).describe('发布后保留 session（默认关闭）'),
     }),
     examples: [
       {
-        cmd: 'xbrowser quora answer --questionUrl "https://www.quora.com/What-is-the-best-tool" --content "I recommend https://example.com - it\'s the best tool"',
-        description: '回答问题并插入外链',
+        cmd: 'xbrowser quora answer --questionUrl "https://www.quora.com/What-is-the-best-tool" --content "I recommend https://example.com"',
+        description: '回答问题（自动关闭 session）',
+      },
+      {
+        cmd: 'xbrowser quora answer --questionUrl "https://www.quora.com/What-is-the-best-tool" --content "I recommend https://example.com" --keep-alive',
+        description: '回答问题并保留 session（调试用）',
       },
     ],
     result: z.object({ questionUrl: z.string(), answered: z.boolean(), url: z.string() }).passthrough(),
@@ -129,10 +134,20 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(3000);
       }
 
+      const finalUrl = page.url();
+
+      if (!params.keepAlive) {
+        try {
+          await page.close();
+        } catch {
+          // page.close() failure is non-fatal
+        }
+      }
+
       return ok({
           questionUrl: params.questionUrl,
           answered: true,
-          url: page.url(),
+          url: finalUrl,
         }, [`回答已发布在 ${params.questionUrl}`]);
     },
   });
@@ -143,11 +158,16 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       title: z.string().describe('文章标题'),
       content: z.string().describe('文章内容（含外链）'),
+      keepAlive: z.boolean().optional().default(false).describe('发布后保留 session（默认关闭）'),
     }),
     examples: [
       {
-        cmd: 'xbrowser quora publish-article --title "My Guide" --content "Check out https://example.com for details"',
-        description: '在 Quora 发布文章',
+        cmd: 'xbrowser quora publish-article --title "My Guide" --content "Check out https://example.com"',
+        description: '发布文章（自动关闭 session）',
+      },
+      {
+        cmd: 'xbrowser quora publish-article --title "My Guide" --content "Hello" --keep-alive',
+        description: '发布文章并保留 session（调试用）',
       },
     ],
     result: z.object({ title: z.string(), url: z.string() }).passthrough(),
@@ -191,9 +211,19 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(3000);
       }
 
+      const finalUrl = page.url();
+
+      if (!params.keepAlive) {
+        try {
+          await page.close();
+        } catch {
+          // page.close() failure is non-fatal
+        }
+      }
+
       return ok({
           title: params.title,
-          url: page.url(),
+          url: finalUrl,
         }, [`文章 "${params.title}" 已在 Quora 发布`]);
     },
   });

@@ -81,11 +81,16 @@ export default function (xcli: XCLIAPI): void {
       title: z.string().describe('文章标题'),
       content: z.string().describe('文章内容（Markdown 或纯文本）'),
       tags: z.string().optional().describe('标签，逗号分隔'),
+      keepAlive: z.boolean().optional().default(false).describe('发布后保留 session（默认关闭）'),
     }),
     examples: [
       {
-        cmd: 'xbrowser hashnode publish --title "My Guide" --content "Check [my site](https://example.com)" --tags "javascript,webdev"',
-        description: '发布带外链的文章',
+        cmd: 'xbrowser hashnode publish --title "My Guide" --content "Hello" --tags "javascript,webdev"',
+        description: '发布文章（自动关闭 session）',
+      },
+      {
+        cmd: 'xbrowser hashnode publish --title "My Guide" --content "Hello" --keep-alive',
+        description: '发布文章并保留 session（调试用）',
       },
     ],
     result: z.object({ title: z.string(), tags: z.string().optional(), url: z.string() }).passthrough(),
@@ -144,10 +149,20 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(3000);
       }
 
+      const finalUrl = page.url();
+
+      if (!params.keepAlive) {
+        try {
+          await page.close();
+        } catch {
+          // page.close() failure is non-fatal
+        }
+      }
+
       return ok({
           title: params.title,
           tags: params.tags,
-          url: page.url(),
+          url: finalUrl,
         }, [`文章 "${params.title}" 已在 Hashnode 发布`]);
     },
   });

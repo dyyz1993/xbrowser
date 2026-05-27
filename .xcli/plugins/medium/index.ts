@@ -80,11 +80,16 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       title: z.string().describe('文章标题'),
       content: z.string().describe('文章内容（纯文本或 Markdown）'),
+      keepAlive: z.boolean().optional().default(false).describe('发布后保留 session（默认关闭）'),
     }),
     examples: [
       {
-        cmd: 'xbrowser medium publish --title "My Guide" --content "Check out https://example.com for more"',
-        description: '发布带外链的文章',
+        cmd: 'xbrowser medium publish --title "My Guide" --content "Check out https://example.com"',
+        description: '发布文章（自动关闭 session）',
+      },
+      {
+        cmd: 'xbrowser medium publish --title "My Guide" --content "Hello" --keep-alive',
+        description: '发布文章并保留 session（调试用）',
       },
     ],
     result: z.object({ title: z.string(), url: z.string() }).passthrough(),
@@ -136,9 +141,19 @@ export default function (xcli: XCLIAPI): void {
         }
       }
 
+      const finalUrl = page.url();
+
+      if (!params.keepAlive) {
+        try {
+          await page.close();
+        } catch {
+          // page.close() failure is non-fatal
+        }
+      }
+
       return ok({
           title: params.title,
-          url: page.url(),
+          url: finalUrl,
         }, [`文章 "${params.title}" 已在 Medium 发布`]);
     },
   });
