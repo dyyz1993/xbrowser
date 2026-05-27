@@ -23,6 +23,9 @@ xbrowser 项目 UI 自动化相关知识沉淀，包含 AI 搜索引擎 GEO 平�
 ## 踩坑记录
 | 文件 | 问题 | 最后更新 |
 |------|------|----------|
+| [troubleshooting/csdn-cloudflare.md](troubleshooting/csdn-cloudflare.md) | CSDN 编辑器被 Cloudflare bot 检测拦截 | 2026-05-27 |
+| [troubleshooting/juejin-captcha.md](troubleshooting/juejin-captcha.md) | 掘金登录滑块验证码 | 2026-05-27 |
+| [troubleshooting/cdp-session-loss.md](troubleshooting/cdp-session-loss.md) | cdp-tunnel 重启后登录态丢失 | 2026-05-27 |
 
 ## 插件开发笔记
 | 文件 | 站点 | 最后更新 |
