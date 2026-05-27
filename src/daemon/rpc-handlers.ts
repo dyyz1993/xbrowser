@@ -254,6 +254,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
 
   async function handleSessionClose(params: Record<string, unknown>) {
     const name = params.name as string;
+    if (previewWS) previewWS.unregisterSession(name);
     await closeSessionByName(name);
     removeSession(name);
     return { ok: true };
@@ -295,7 +296,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       registerSessionIfNew(sessionName);
       return result;
     } finally {
-      if (needsPause) await previewWS!.resumeScreencast(sessionName).catch(() => {});
+      if (needsPause) await previewWS!.resumeScreencast(sessionName).catch(() => { });
     }
   }
 
