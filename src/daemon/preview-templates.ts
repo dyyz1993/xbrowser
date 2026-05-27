@@ -180,12 +180,15 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
 .quality-badge.quality-user_interacting{background:#2ecc71;color:#fff}
 .quality-badge.quality-screen_moving{background:#f39c12;color:#fff}
 .quality-badge.quality-static{background:#556;color:#ddd}
-@media(hover:hover)and (pointer:fine){.touchpad,.toolbar,.input-panel{display:none!important}.viewport{bottom:0!important}}
+.mode-btn{height:22px;border:none;border-radius:4px;background:#0f3460;color:#cde;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0 6px}
+.mode-btn:active{background:#1a5276}
+.viewport.tablet-mode{bottom:0;touch-action:none}
 </style></head><body>
 <div class="bar">
   <span class="dot" id="status"></span>
   <span class="url" id="url">connecting...</span>
   <span class="conn" id="conn"></span>
+  <button class="mode-btn" id="mode-btn" title="Switch mode (Mobile/Tablet/PC)">📱</button>
   <div id="qualityBadge" class="quality-badge quality-static" style="font-size:10px;padding:2px 8px;border-radius:10px;background:#556;color:#eee;white-space:nowrap;flex-shrink:0">static</div>
 </div>
 <div class="viewport" id="viewport">
@@ -369,7 +372,7 @@ function connectWS(){
         currentFocusedSelector=m.selector||'';
         currentFocusedValue=m.value||'';
         inputLabel.textContent=(m.tag||'input')+(m.placeholder?' — '+m.placeholder:'');
-        if(deviceMode==='mobile'){
+        if(deviceMode==='mobile'||deviceMode==='tablet'){
           if(inputPanel.style.display!=='flex'){
             showInputPanel(m.value||'');
           } else {
@@ -378,7 +381,7 @@ function connectWS(){
         }
       }else if(m.type==='input_blur'){
         currentFocusedSelector='';
-        if(deviceMode==='mobile') hideInputPanel();
+        if(deviceMode==='mobile'||deviceMode==='tablet') hideInputPanel();
       }else if(m.type==='file_upload_result'){
         fileUploadStatus.textContent=m.success?'Uploaded: '+m.fileName:'Failed: '+(m.error||'unknown');
         fileUploadInput.value='';
@@ -486,8 +489,8 @@ window.addEventListener('beforeunload',function(){shouldReconnect=false;});
    const rect=canvas.getBoundingClientRect();
   const cx=clamp(v.x,rect.left,rect.right);
   const cy=clamp(v.y,rect.top,rect.bottom);
-  const ox=deviceMode==='mobile'?15:0;
-  const oy=deviceMode==='mobile'?-30:0;
+  const ox=(deviceMode==='mobile'||deviceMode==='tablet')?15:0;
+  const oy=(deviceMode==='mobile'||deviceMode==='tablet')?-30:0;
   const colors={idle:'rgba(0,120,255,0.6)',moving:'rgba(0,200,100,0.8)',click:'rgba(255,60,60,0.9)',drag:'rgba(255,160,0,0.9)'};
   const sizes={idle:8,moving:10,click:8,drag:10};
   cursorEl.style.background=colors[state]||colors.idle;
@@ -674,6 +677,79 @@ touchpadEl.addEventListener('touchend',(e)=>{
   tpStartPos=e.touches.length>0?{x:e.touches[0].clientX,y:e.touches[0].clientY}:null;
 },{passive:false});
 
+// --- Tablet: Canvas Touch (indirect cursor, same as touchpad but on canvas) ---
+viewportEl.addEventListener('touchstart',(e)=>{
+  if(deviceMode!=='tablet') return;
+  e.preventDefault();
+  if(tpScrollCooldown) return;
+  sendUserActivity();
+  const t=e.touches[0];
+  tpStartPos={x:t.clientX,y:t.clientY};
+  tpStartTime=Date.now();
+  if(e.touches.length===1){
+    tpLongPressTimer=setTimeout(()=>{
+      tpIsDragging=true;
+      tpShowGesture('DRAG');
+      setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'drag');
+      sendMsg({type:'input_mouse',action:'down',x:tpCursorRemote.x,y:tpCursorRemote.y});
+    },500);
+  }
+},{passive:false});
+viewportEl.addEventListener('touchmove',(e)=>{
+  if(deviceMode!=='tablet') return;
+  e.preventDefault();
+  if(!tpStartPos) return;
+  if(e.touches.length===1&&!tpIsScrolling){
+    clearTimeout(tpLongPressTimer);
+    const t=e.touches[0];
+    const dx=t.clientX-tpStartPos.x;
+    const dy=t.clientY-tpStartPos.y;
+    const now=Date.now();
+    const dt=Math.max(now-tpStartTime,1);
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    const velocity=dist/dt;
+    const accel=computeAcceleration(velocity);
+    const rect=canvas.getBoundingClientRect();
+    const sf=remoteViewport.width/(rect.width||300)*0.08;
+    tpCursorRemote.x=clamp(tpCursorRemote.x+dx*accel*sf,0,remoteViewport.width);
+    tpCursorRemote.y=clamp(tpCursorRemote.y+dy*accel*sf,0,remoteViewport.height);
+    setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,tpIsDragging?'drag':'moving');
+    sendMsg({type:'input_mouse',action:'move',x:Math.round(tpCursorRemote.x),y:Math.round(tpCursorRemote.y)});
+    tpStartPos={x:t.clientX,y:t.clientY};
+    tpStartTime=now;
+  }
+  if(e.touches.length===2){
+    clearTimeout(tpLongPressTimer);
+    tpIsScrolling=true;
+    tpShowGesture('SCROLL');
+    const t0=e.touches[0];
+    const dx=t0.clientX-tpStartPos.x;
+    const dy=t0.clientY-tpStartPos.y;
+    sendMsg({type:'scroll',deltaX:Math.round(dx*2),deltaY:Math.round(dy*2)});
+    tpStartPos={x:t0.clientX,y:t0.clientY};
+  }
+},{passive:false});
+viewportEl.addEventListener('touchend',(e)=>{
+  if(deviceMode!=='tablet') return;
+  e.preventDefault();
+  clearTimeout(tpLongPressTimer);
+  if(tpIsDragging){
+    tpIsDragging=false;
+    sendMsg({type:'input_mouse',action:'up',x:Math.round(tpCursorRemote.x),y:Math.round(tpCursorRemote.y)});
+    setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'idle');
+  }else if(e.touches.length===0&&!tpIsScrolling&&tpStartPos){
+    sendMsg({type:'input_mouse',action:'click',x:Math.round(tpCursorRemote.x),y:Math.round(tpCursorRemote.y)});
+    setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'click');
+    setTimeout(()=>setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'idle'),150);
+  }
+  if(e.touches.length===0){
+    tpIsScrolling=false;
+    tpScrollCooldown=true;
+    setTimeout(()=>{tpScrollCooldown=false;},300);
+  }
+  tpStartPos=e.touches.length>0?{x:e.touches[0].clientX,y:e.touches[0].clientY}:null;
+},{passive:false});
+
 // --- Virtual Keyboard Toolbar ---
 const toggleBtn=$('toolbar-toggle-btn');
 toggleBtn.addEventListener('click',()=>{
@@ -695,6 +771,7 @@ function showInputPanel(val){
   touchpadEl.style.display='none';
   toolbarEl.style.display='none';
   viewportEl.classList.remove('mobile-mode');
+  viewportEl.classList.remove('tablet-mode');
   inputField.value=val||'';
   setTimeout(()=>inputField.focus(),50);
 }
@@ -704,6 +781,8 @@ function hideInputPanel(){
     touchpadEl.style.display='flex';
     toolbarEl.style.display='flex';
     viewportEl.classList.add('mobile-mode');
+  }else if(deviceMode==='tablet'){
+    viewportEl.classList.add('tablet-mode');
   }
   inputField.blur();
 }
@@ -731,32 +810,52 @@ inputField.addEventListener('keydown',(e)=>{
 
 // --- Device Mode ---
 function detectMode(){
-  return('ontouchstart' in window||navigator.maxTouchPoints>0)?'mobile':'desktop';
+  if('ontouchstart' in window||navigator.maxTouchPoints>0){
+    var w=window.screen.width,h=window.screen.height;
+    var minDim=Math.min(w,h);
+    if(minDim>=768) return 'tablet';
+    return 'mobile';
+  }
+  return 'desktop';
 }
 function applyMode(mode){
   deviceMode=mode;
+  var modeBtn=$('mode-btn');
+  var icons={'mobile':'📱','tablet':'📟','desktop':'🖥️'};
+  if(modeBtn) modeBtn.textContent=icons[mode]||'📱';
+  viewportEl.classList.remove('mobile-mode','tablet-mode');
+  touchpadEl.style.display='none';
+  toolbarEl.style.display='none';
+  inputPanel.style.display='none';
+  cursorEl.style.display='none';
+  removeHiddenInput();
   if(mode==='mobile'){
     touchpadEl.style.display='flex';
     toolbarEl.style.display='flex';
     viewportEl.classList.add('mobile-mode');
-    removeHiddenInput();
-    if(inputPanel.style.display==='flex'){
-      touchpadEl.style.display='none';
-      toolbarEl.style.display='none';
-      viewportEl.classList.remove('mobile-mode');
-    }
+  }else if(mode==='tablet'){
+    viewportEl.classList.add('tablet-mode');
+    setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'idle');
   }else{
-    touchpadEl.style.display='none';
-    toolbarEl.style.display='none';
-    inputPanel.style.display='none';
-    viewportEl.classList.remove('mobile-mode');
     createHiddenInput();
   }
+  resizeCanvas();
 }
+var manualMode=false;
+function cycleMode(){
+  manualMode=true;
+  var modes=['mobile','tablet','desktop'];
+  var idx=modes.indexOf(deviceMode);
+  applyMode(modes[(idx+1)%modes.length]);
+}
+var modeBtnEl=$('mode-btn');
+if(modeBtnEl) modeBtnEl.addEventListener('click',cycleMode);
+
 let resizeTimer=null;
 function onResize(){
   clearTimeout(resizeTimer);
   resizeTimer=setTimeout(()=>{
+    if(manualMode) return;
     const m=detectMode();
     if(m!==deviceMode) applyMode(m);
   },100);
@@ -782,6 +881,8 @@ $('file-close').addEventListener('click',()=>{
     touchpadEl.style.display='flex';
     toolbarEl.style.display='flex';
     viewportEl.classList.add('mobile-mode');
+  }else if(deviceMode==='tablet'){
+    viewportEl.classList.add('tablet-mode');
   }
 });
 
@@ -795,11 +896,14 @@ fileBtn.addEventListener('click',()=>{
     if(deviceMode==='mobile'){
       touchpadEl.style.display='flex';
       viewportEl.classList.add('mobile-mode');
+    }else if(deviceMode==='tablet'){
+      viewportEl.classList.add('tablet-mode');
     }
   }else{
     filePanel.style.display='flex';
     touchpadEl.style.display='none';
     viewportEl.classList.remove('mobile-mode');
+    viewportEl.classList.remove('tablet-mode');
   }
 });
 toolbarEl.querySelector('.toolbar-toggle').insertBefore(fileBtn,$('toolbar-toggle-btn'));
