@@ -661,8 +661,16 @@ export default function (xcli: XCLIAPI): void {
       try {
         const page = getPage(ctx);
         await ensurePage(page, ctx);
-        await page.goto('https://www.doubao.com/chat/create-image', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+        // Always create a fresh conversation to avoid picking up history images
+        await page.goto('https://www.doubao.com/chat/create-image', { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
         await page.waitForTimeout(3000);
+        // Try to click "new conversation" button if it exists (to ensure clean state)
+        await page.evaluate(() => {
+          const newBtn = document.querySelector('[class*="new-conversation"], [class*="create-conversation"], [data-testid*="new"]');
+          if (newBtn) (newBtn as HTMLElement).click();
+        }).catch(() => {});
+        await page.waitForTimeout(2000);
+        await page.waitForSelector('[role="textbox"], [contenteditable="true"], textarea', { timeout: 15000 }).catch(() => {});
         const tips = buildTips(ctx);
 
         if (params.ref) {
@@ -677,40 +685,65 @@ export default function (xcli: XCLIAPI): void {
         }
 
         const prompt = params.prompt;
-        const inputFound = await page.evaluate((msg: string) => {
-          const selectors = ['textarea', '[contenteditable="true"]', '[role="textbox"]', '[class*="chat-input"] textarea'];
-          for (const sel of selectors) {
-            const el = document.querySelector<HTMLTextAreaElement | HTMLDivElement>(sel);
-            if (el) {
-              if ('value' in el) {
-                el.value = msg;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-              } else {
-                el.textContent = msg;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-              }
-              return true;
+        // Simulate REAL user behavior: click → focus → type character-by-character
+        // This triggers React's onChange/onInput handlers properly (unlike execCommand insertText)
+        const inputSelectors = [
+          '[contenteditable="true"]',
+          'textarea',
+          '[role="textbox"]',
+          '[class*="chat-input"] textarea',
+          '[class*="editor"] [contenteditable]',
+        ];
+        let inputFound = false;
+        for (const sel of inputSelectors) {
+          try {
+            const locator = page.locator(sel).first();
+            if (await locator.count() > 0) {
+              await locator.click({ timeout: 3000 });
+              await page.waitForTimeout(200);
+              // Type character-by-character to simulate real user typing
+              await locator.type(`画图: ${prompt}`, { delay: 10 });
+              inputFound = true;
+              break;
             }
-          }
-          return false;
-        }, `画图: ${prompt}`);
+          } catch { continue; }
+        }
 
         if (!inputFound) throw new Error('找不到输入框');
+
+        // Record existing image URLs before submitting (to avoid picking up history images)
+        const existingUrls = await page.evaluate(() => {
+          const urls = new Set<string>();
+          document.querySelectorAll('img').forEach(img => {
+            const src = (img as HTMLImageElement).src;
+            if (src && src.startsWith('http')) urls.add(src);
+          });
+          return [...urls];
+        });
+        tips.push(`📸 已记录 ${existingUrls.length} 张历史图片URL`);
 
         await page.waitForTimeout(500);
         await page.keyboard.press('Enter');
         tips.push('图片生成请求已提交，等待生成...');
-        await page.waitForTimeout(3000);
+        // Doubao image generation typically takes 30-60s, start checking after 10s
+        await page.waitForTimeout(10000);
 
         let imageUrl = '';
         const startTime = Date.now();
         while (Date.now() - startTime < 120000) {
-          await page.waitForTimeout(2000);
+          await page.waitForTimeout(3000);
           try {
-            imageUrl = await page.evaluate(() => {
+            imageUrl = await page.evaluate((excludeUrls: string[]) => {
+              const excludeSet = new Set(excludeUrls);
+              // Updated selectors based on actual doubao DOM (2026-05):
+              // - Generated images have class like "image-Q7dBqW" (hash suffix varies)
+              // - src contains "rc_gen_image" for generated content
+              // - Also check legacy selectors for backwards compatibility
               const selectors = [
-                'img[class*="image-item-img"]',
+                'img[src*="rc_gen_image"]',
                 'img[src*="image_generation"]',
+                'img[class*="image-"]',
+                'img[class*="image-item-img"]',
                 'img[class*="generated"]',
                 'img[class*="result"]',
               ];
@@ -718,25 +751,97 @@ export default function (xcli: XCLIAPI): void {
                 const imgs = document.querySelectorAll(sel);
                 for (const img of imgs) {
                   const src = (img as HTMLImageElement).src;
-                  if (src && src.startsWith('http') && !src.includes('data:image') && !src.includes('avatar') && !src.includes('BIZ_BOT')) {
+                  if (src && src.startsWith('http') && !src.includes('data:image') && !src.includes('avatar') && !src.includes('BIZ_BOT') && !src.includes('/static/') && !excludeSet.has(src)) {
                     return src;
                   }
                 }
               }
               return '';
-            });
+            }, existingUrls);
             if (imageUrl) break;
           } catch { /* ignore */ }
         }
 
+        // Download image: prefer HD version (click preview → fetch via browser → base64 → save)
         if (imageUrl) {
-          const downloaded = await downloadMedia(imageUrl, 'image');
-          return ok({ url: imageUrl, localPath: downloaded.localPath, prompt, duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` }, [...tips, `📁 图片已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`]);
+          let downloaded: { localPath: string; size: number } | null = null;
+
+          // Try HD: click to open preview → find HD img → fetch as base64 in browser context
+          try {
+            const clicked = await page.evaluate((excludeUrls: string[]) => {
+              const excludeSet = new Set(excludeUrls);
+              const imgs = document.querySelectorAll('img[src*="rc_gen_image"]');
+              for (const img of imgs) {
+                const src = (img as HTMLImageElement).src;
+                if (src && !excludeSet.has(src)) {
+                  (img as HTMLElement).click();
+                  return true;
+                }
+              }
+              return false;
+            }, existingUrls);
+
+            if (clicked) {
+              // Wait for HD preview image to load (up to 10s)
+              let hdLoaded = false;
+              for (let i = 0; i < 5; i++) {
+                await page.waitForTimeout(2000);
+                hdLoaded = await page.evaluate(() => {
+                  const imgs = document.querySelectorAll('img');
+                  for (const img of imgs) {
+                    if ((img as HTMLImageElement).src.includes('rc_gen_image') && (img as HTMLImageElement).naturalWidth > 1000) return true;
+                  }
+                  return false;
+                });
+                if (hdLoaded) break;
+              }
+              if (!hdLoaded) { throw new Error('HD preview not loaded'); }
+              // Fetch HD image inside browser (has cookies/referer, bypasses CORS)
+              const hdResult = await page.evaluate(async () => {
+                const imgs = document.querySelectorAll('img');
+                let hdSrc = '';
+                for (const img of imgs) {
+                  const src = (img as HTMLImageElement).src;
+                  const nw = (img as HTMLImageElement).naturalWidth;
+                  if (src && src.includes('rc_gen_image') && nw > 1000) { hdSrc = src; break; }
+                }
+                if (!hdSrc) return { ok: false as const, error: 'no hd image' };
+                const resp = await fetch(hdSrc);
+                const blob = await resp.blob();
+                return new Promise<{ ok: boolean; data?: string; size?: number }>((resolve) => {
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const base64 = (reader.result as string).split(',')[1];
+                    resolve({ ok: true, data: base64, size: blob.size });
+                  };
+                  reader.onerror = () => resolve({ ok: false });
+                  reader.readAsDataURL(blob);
+                });
+              });
+
+              if (hdResult.ok && hdResult.data) {
+                const downloadDir = path.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads');
+                if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir, { recursive: true });
+                const localPath = path.join(downloadDir, `image_${Date.now()}.png`);
+                fs.writeFileSync(localPath, Buffer.from(hdResult.data, 'base64'));
+                downloaded = { localPath, size: hdResult.size! };
+                tips.push(`🔍 高清图 ${(hdResult.size! / 1024 / 1024).toFixed(1)}MB`);
+              }
+            }
+          } catch { /* fallback to curl */ }
+
+          // Fallback: download thumbnail via curl
+          if (!downloaded) {
+            downloaded = await downloadMedia(imageUrl, 'image');
+            tips.push('⚠ 缩略图（高清获取失败）');
+          }
+
+          return ok({ url: imageUrl, localPath: downloaded.localPath, prompt, duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` }, [...tips, `📁 ${downloaded.localPath} (${formatFileSize(downloaded.size)})`]);
         }
 
         return ok({ prompt }, [...tips, '图片可能还在生成中，请到豆包页面查看']);
       } catch (error) {
-        return fail('未知错误', ['文生图失败']);
+        return fail('未知错误', ['文生图失败', `错误详情: ${error instanceof Error ? error.message : String(error)}`]);
       }
     },
   });

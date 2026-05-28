@@ -1,6 +1,6 @@
 # xbrowser
 
-> 自包含的浏览器自动化 CLI 工具 — 导航、点击、填表、截图、录制回放、插件扩展，一行命令搞定
+> Self-contained browser automation CLI — navigate, click, fill forms, screenshot, web scraping, record & replay. A Playwright/Puppeteer alternative for CLI-first workflows.
 
 [![CI Status](https://github.com/dyyz1993/xbrowser/workflows/CI/badge.svg)](https://github.com/dyyz1993/xbrowser/actions)
 [![codecov](https://codecov.io/gh/dyyz1993/xbrowser/branch/master/graph/badge.svg)](https://codecov.io/gh/dyyz1993/xbrowser)
@@ -848,6 +848,10 @@ xbrowser/
 | **@dyyz1993/xcli-core** | 通用 CLI 框架 | xbrowser 依赖的核心框架 |
 | **@dyyz1993/xpage (mpage)** | 浏览器自动化引擎 | 独立项目，xbrowser **不依赖** mpage |
 | **xbrowser** | 浏览器自动化 CLI | 自包含，直接使用 Playwright |
+
+## 🔑 Keywords
+
+`browser automation` `web scraping` `playwright alternative` `puppeteer alternative` `selenium alternative` `web crawler` `headless browser` `CLI tool` `command line` `scrape` `crawl` `anti-detection` `CDP` `record replay` `SEO tool` `AI agent` `browser plugin`
 
 ## 许可证
 

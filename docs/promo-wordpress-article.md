@@ -1,202 +1,257 @@
-# Automate Browser Tasks with xbrowser: A Developer's Guide to Web Automation
+# I Replaced 50-Line Puppeteer Scripts with Single CLI Commands — Here's How
 
-Browser automation has been stuck in a rut for years. The dominant tools — Selenium, Puppeteer, Playwright — are powerful, but they're built for testing, not for real-world task automation. You want to scrape a competitor's pricing page? Write a 40-line script. Need to search Google and Bing simultaneously and compare results? That's another script. Want to chain a login flow with a data extraction step? Now you're managing async state, waiting for selectors, and praying nothing times out.
+Last month I spent 3 hours debugging a Puppeteer script. The task? Go to Hacker News, click the top story, scrape the content, and save it. That's it. Three actions. Three hours — because the selector changed, the page loaded slower than my timeout, and the async/await chain threw an error I couldn't reproduce locally.
 
-I've been writing browser automation code for years, and I kept running into the same friction: too much boilerplate for tasks that should take one command. That frustration led me to [xbrowser](https://xbrowser.dev), a CLI tool designed specifically for developers and AI agents who need to get things done in a browser without writing a full test suite every time.
+![Hero - Terminal browser automation](https://raw.githubusercontent.com/dyyz1993/xbrowser/master/docs/promo-images/hero-banner.png)
 
-## The Problem with Current Tools
+That's when I decided to build [xbrowser](https://xbrowser.dev) — a CLI tool that treats browser automation as commands, not code. One line to search Google. One line to scrape any page. One line to chain a complete multi-step workflow. No scripts. No async management. No boilerplate. Think of it as the **web scraping CLI** that sits between Playwright and curl — purpose-built for developers who need to interact with the web, not test it.
 
-Let's be clear — Playwright and Selenium are excellent at what they do. If you're writing end-to-end tests for a web application, they're the right choice. But when your use case shifts from "test my app" to "interact with the web," the cracks start to show:
+```bash
+# What took me 50 lines of Puppeteer
+xbrowser "goto https://news.ycombinator.com , click '.titleline > a' , text"
+```
 
-- **Heavy setup**: You need a Node.js project, dependency installation, browser downloads, and boilerplate before you can even navigate to a page.
-- **Script-first**: Every task requires writing a script. There's no quick "just do this one thing" mode.
-- **No domain helpers**: Want to search Google? You're navigating to google.com, typing in a selector, waiting for results, and parsing the DOM yourself.
-- **Not agent-friendly**: AI agents need simple, composable commands. A 50-line async script is the opposite of that.
+That's it. One command. Readable. Replayable. Done.
 
-What I wanted was something like `curl` but for interactive browser tasks — a single command that handles the complexity and gives me the result.
+## Why I Couldn't Keep Using Puppeteer and Playwright
 
-## Enter xbrowser
+Don't get me wrong — Playwright is incredible for testing. Selenium pioneered the space. But I'm not testing web apps. I'm *using* the web: scraping competitors, checking SEO rankings, automating my social media posting, monitoring price changes. And **every headless browser tutorial** I found was about testing, not about building real web scraping pipelines or automation workflows.
 
-[xbrowser](https://github.com/dyyz1993/xbrowser) is an open-source (MIT) browser automation CLI that ships as a single npm package:
+For those tasks, the testing tools feel like using a sledgehammer to hang a picture frame:
+
+**The setup tax is real.** Every new task means `npm init`, install dependencies, download a browser, write boilerplate. I just want to scrape one page — why do I need a project?
+
+**Scripts don't compose.** My "scrape Hacker News" script doesn't help me "scrape Reddit." The selectors are different, the structure is different, but the core operation is the same: go to URL, extract content.
+
+**AI agents can't use them.** I build AI tools, and giving an LLM a 50-line async script to manage is a recipe for hallucinated selectors and broken promises. Agents need simple, declarative commands.
+
+I wanted `curl` for interactive browser tasks. So I built it.
+
+## Install Once, Automate Everything
 
 ```bash
 npm i -g @dyyz1993/xbrowser
 ```
 
-That's the entire installation. No separate browser download, no WebDriver setup, no configuration files. It comes with a managed Chromium build that includes CDP fingerprint protection — meaning the sites you visit can't easily detect that you're running an automated browser.
+That's the entire setup. No WebDriver. No config files. xbrowser ships with its own managed Chromium that includes CDP fingerprint protection — sites can't easily detect automation.
 
-The tool is designed around composable commands that map to real-world tasks rather than low-level browser APIs. Let me walk through the core features.
+From there, you have 35+ composable commands at your fingertips.
 
-## Multi-Engine Search
+## Feature 1: Search the Web From Your Terminal
 
-Searching the web from the command line shouldn't require an API key. xbrowser handles the browser interaction for you:
+No API keys. No OAuth. No rate limits. Just search.
 
 ```bash
-# Search Google
-xbrowser search "headless browser automation tools" --engine google --num 10
+# Google
+xbrowser search "best headless browser 2026" --engine google --num 10
 
-# Search Bing
-xbrowser search "headless browser automation tools" --engine bing --num 10
+# Bing
+xbrowser search "best headless browser 2026" --engine bing --num 10
 
-# Search Baidu (for Chinese-language results)
-xbrowser search "无头浏览器自动化工具" --engine baidu --num 10
+# Baidu (for Chinese-language results)
+xbrowser search "无头浏览器自动化" --engine baidu --num 10
 ```
 
-Each command returns structured results with titles, URLs, and snippets. You can pipe them into `jq` for filtering, save them to a file, or feed them directly into an AI agent's context.
+![Multi-engine search visualization](https://raw.githubusercontent.com/dyyz1993/xbrowser/master/docs/promo-images/multi-engine-search.png)
 
-This is particularly useful for competitive analysis. Want to see how your brand ranks across search engines?
+Each command returns structured JSON: titles, URLs, snippets. Pipe to `jq`, save to file, or feed directly into your AI agent's context.
+
+**Real use case:** I track how my open-source project ranks across search engines. Every Monday I run:
 
 ```bash
-# Compare your ranking position across engines
-xbrowser search "my product name" --engine google --num 30 | jq '.results[] | select(.url | contains("myproduct.com"))'
+xbrowser search "xbrowser browser automation" --engine google --num 30 \
+  | jq '.results[] | select(.url | contains("xbrowser.dev")) | .position'
 ```
 
-No API keys, no rate limits to manage, no OAuth flows. Just search and get results.
+Takes 5 seconds. No script. No API key. Just results.
 
-## Web Scraping Without the Script
+## Feature 2: Scrape Without Writing a Scraper
 
-The `scrape` command extracts clean, structured content from any URL:
+The `scrape` command handles JavaScript rendering, lazy-loaded content, and complex layouts — and outputs clean Markdown by default. It's the **web scraping tool** I always wished Playwright had built in:
 
 ```bash
-# Get page content as markdown
+# Any page → clean Markdown
 xbrowser scrape https://example.com/blog/my-article
 
-# Crawl an entire site
+# Crawl an entire site (respects robots.txt)
 xbrowser crawl https://example.com --depth 3 --max-pages 100
 
-# Generate a URL sitemap
+# Generate a complete URL map
 xbrowser map https://example.com
 ```
 
-The `scrape` output is markdown by default, which means it's immediately usable — paste it into a document, feed it to an LLM, or parse it with standard text tools.
+![Web scraping concept](https://raw.githubusercontent.com/dyyz1993/xbrowser/master/docs/promo-images/web-scraping.png)
 
-`crawl` follows internal links and respects depth limits, giving you a complete content snapshot of a site. `map` produces a flat list of every reachable URL, which is invaluable for SEO audits.
+I use `scrape` daily for:
+- **Content research**: Scrape competitor articles → feed to LLM for analysis
+- **SEO auditing**: Map all URLs on a site, check for orphaned pages
+- **Documentation**: Scrape API docs and convert to Markdown for offline reading
+- **Web crawler workflows**: Chain scrape with crawl for bulk data extraction
 
-Here's a practical example — auditing your own site's internal link structure:
+The `crawl` command follows internal links, respects `robots.txt`, deduplicates URLs, and handles SPA hash routes. It's an ethical, complete **web crawler** in one command.
 
-```bash
-# Map all URLs on your site
-xbrowser map https://mysite.com > sitemap.txt
+## Feature 3: Chain Commands — The Real Magic
 
-# Find orphaned pages (in sitemap but not linked from other pages)
-cat sitemap.txt | while read url; do
-  count=$(xbrowser scrape "$url" | grep -c "href=")
-  echo "$url: $count links"
-done
-```
+This is the feature that makes people say "wait, you can do that?"
 
-## Chain Commands: The Power Move
-
-This is the feature that sets xbrowser apart. Instead of writing multi-step scripts, you chain operations in a single command:
+Instead of writing scripts, you chain operations with 6 operators (`&&`, `,`, `+`, `->`, `;`, `||`):
 
 ```bash
-# Navigate, interact, and extract
-xbrowser chain "goto https://news.ycombinator.com && click '.titleline > a' && scrape"
+# Go to a page, click the top link, extract text
+xbrowser "goto https://news.ycombinator.com , click '.titleline > a:first-of-type' , text"
 
-# Complete login flow with data extraction
-xbrowser chain "goto https://app.example.com/login \
-  && fill '#email' 'user@example.com' \
-  && fill '#password' 'my-password' \
-  && click '#login-button' \
-  && wait '#dashboard' \
-  && scrape '#dashboard'"
+# Complete workflow: navigate → fill form → submit → extract
+xbrowser "goto https://app.example.com/login \
+  + fill '#email' 'user@example.com' \
+  + fill '#password' 'secret' \
+  + click '#login' \
+  -> wait '#dashboard' \
+  , screenshot --output dashboard.png"
 ```
 
-The chain syntax reads like natural language: go to this page, click this element, fill in that field, scrape the result. It mirrors how you'd describe the task to another person.
+![Command chaining pipeline](https://raw.githubusercontent.com/dyyz1993/xbrowser/master/docs/promo-images/command-chaining.png)
 
-For AI agent workflows, this is a game-changer. An agent can construct chain commands dynamically based on user intent:
+The syntax reads like natural language. `&&` means "then and only then" (stop on error). `,` means "do all of these." `->` means "pipe to next." `||` means "fallback if failed."
+
+**For AI agent developers**, this is transformative. Instead of generating 50-line scripts, your agent constructs a single chain string:
 
 ```
-User: "Go to Hacker News, click the top story, and summarize it for me"
+User: "Go to Hacker News, click the top story, and summarize it"
 
-Agent constructs:
-xbrowser chain "goto https://news.ycombinator.com && click '.titleline > a:first-of-type' && scrape"
+Agent builds:
+xbrowser "goto https://news.ycombinator.com , click '.titleline > a:first-of-type' , text"
 ```
 
-No script generation, no debugging async code, no selector management. The agent just builds a chain string and executes it.
+No async. No error handling boilerplate. No debugging. Just intent → command → result.
 
-## SEO and Backlink Analysis
+## Feature 4: Record Once, Replay Forever
 
-xbrowser ships with 67+ plugins, and the SEO suite is particularly comprehensive:
+Some workflows are too complex for a one-liner. That's where recording comes in:
 
 ```bash
-# Analyze backlinks for a domain
-xbrowser seo backlinks --domain example.com
-
-# Check on-page SEO factors
-xbrowser seo audit https://example.com/page
-
-# Analyze search engine results for a keyword
-xbrowser search "target keyword" --engine google --num 30 --analyze
-```
-
-The backlink plugin crawls referring domains, checks link status, and reports on link quality metrics. The audit plugin checks meta tags, heading structure, image alt text, and other on-page factors.
-
-For link-building workflows, you can combine search and scraping:
-
-```bash
-# Find guest post opportunities
-xbrowser search "write for us + web development" --engine google --num 20 | \
-  jq -r '.results[].url' | \
-  while read url; do
-    xbrowser scrape "$url" | grep -i "guidelines\|submit\|contribute"
-  done
-```
-
-## Record and Replay
-
-Sometimes you need to automate a complex workflow that's hard to express as a chain. That's where recording comes in:
-
-```bash
-# Start recording (opens a visible browser window)
-xbrowser record my-workflow
+# Start recording (opens visible browser)
+xbrowser record start --url https://example.com
 
 # Do your thing — click around, fill forms, navigate
+# xbrowser captures every action
 
-# Stop recording when done
-# The workflow is saved as a replayable script
+# Stop and save
+xbrowser record stop --output my-workflow.yaml
 
-# Replay it headlessly
-xbrowser replay my-workflow --headless
+# Replay headlessly anytime
+xbrowser replay my-workflow.yaml --headless
+
+# Export to Python, JavaScript, or Bash
+xbrowser convert my-workflow.yaml --lang python --output workflow.py
 ```
 
-Record your workflow once in a visible browser, then replay it on a schedule or in CI. This is perfect for:
+![Record and replay workflow](https://raw.githubusercontent.com/dyyz1993/xbrowser/master/docs/promo-images/record-replay.png)
 
-- Daily report generation that requires login
-- Monitoring competitor pricing pages
-- Regression testing without writing test code
+I use this for:
+- **Daily standup reports**: Record the Jira → Confluence navigation once, replay every morning
+- **Price monitoring**: Record a competitor's pricing page, replay daily, diff the output
+- **Onboarding**: Record a complex internal tool setup, give new hires the replay script
 
-## How It Compares
+The `convert` command is particularly powerful — it auto-generates working Puppeteer/Playwright/Selenium scripts from your recorded actions. Record in the browser, ship as code.
 
-Let me be straightforward about when to use what:
+## Feature 5: 68 Plugins for Every Platform
 
-| Feature | xbrowser | Playwright | Selenium |
-|---------|----------|------------|----------|
-| **Installation** | `npm i -g` (one step) | npm install + browser download | npm install + WebDriver |
-| **CLI-first** | Yes | No (library-first) | No (library-first) |
-| **Search helpers** | Google/Bing/Baidu built-in | None | None |
-| **SEO plugins** | 67+ built-in | None | None |
-| **Chain syntax** | `goto && click && scrape` | Requires script | Requires script |
-| **Record/Replay** | Built-in | Codegen (code output) | IDE plugins |
-| **Anti-detection** | CDP fingerprint protection | Basic stealth plugins | External tools |
-| **Test framework** | Not designed for this | Primary use case | Primary use case |
+![Plugin ecosystem](https://raw.githubusercontent.com/dyyz1993/xbrowser/master/docs/promo-images/plugin-ecosystem.png)
 
-The key distinction: [xbrowser](https://xbrowser.dev) is for **doing things on the web**. Playwright and Selenium are for **testing things on the web**. Different goals, different tools.
+xbrowser ships with 68 built-in plugins that encapsulate site-specific knowledge:
 
-If you're building an AI agent that needs to browse the web, scrape data, perform SEO analysis, or automate repetitive browser tasks, xbrowser gives you composable commands that map directly to those tasks. If you're writing integration tests for your React app, stick with Playwright.
+| Category | Plugins |
+|----------|---------|
+| **Search Engines** | Google, Bing, Baidu |
+| **AI Assistants** | DeepSeek, ChatGPT, Claude, Doubao, QianWen, YuanBao |
+| **Social Media** | Twitter/X, Reddit, Quora, Weibo, Zhihu, XiaoHongShu, Douyin |
+| **Developer** | GitHub, Dev.to, Medium, Hashnode, CSDN, Juejin |
+| **Image Platforms** | Unsplash, Pexels, Pinterest, Getty, Shutterstock, and 15 more |
+| **E-Commerce** | Taobao, JD, 1688 |
+| **SEO** | Backlink analysis, site audit, keyword tracking |
 
-## Getting Started
+Each plugin provides high-level commands tailored to that platform:
+
+```bash
+# GitHub: Get any user's profile
+xbrowser github get-profile --username torvalds
+
+# Unsplash: Search and download images
+xbrowser unsplash search "mountain sunset" --download first
+
+# Doubao: Generate AI images
+xbrowser doubao image --prompt "cyberpunk city at sunset" --cdp 9221
+
+# SEO: Audit any page
+xbrowser seo audit https://your-website.com
+```
+
+No selectors to write. No DOM to inspect. The plugin handles the complexity.
+
+## When to Use xbrowser vs. Playwright vs. Selenium
+
+I'll be direct:
+
+| | xbrowser | Playwright | Selenium |
+|---|---|---|---|
+| **Best for** | Web tasks & automation | App testing | Legacy testing |
+| **Setup** | `npm i -g` (1 step) | npm + browser download | npm + WebDriver |
+| **Learning curve** | CLI commands | JavaScript API | Language bindings |
+| **Search/Scrape** | Built-in helpers | Write it yourself | Write it yourself |
+| **Plugins** | 68 built-in | None | None |
+| **Anti-detection** | Built-in CDP protection | Third-party plugins | External tools |
+| **AI agent friendly** | ✅ CLI commands | ❌ Scripts | ❌ Scripts |
+| **Test framework** | Not a test tool | ⭐ Best in class | Good |
+
+**Use Playwright** for testing your web app. **Use xbrowser** for everything else.
+
+## Real-World Workflows I Run Daily
+
+Here's what my actual automation looks like:
+
+**Morning competitive check:**
+```bash
+xbrowser search "xbrowser alternatives" --engine google --num 20 --json > /tmp/competitors.json
+xbrowser search "browser automation CLI" --engine bing --num 20 --json >> /tmp/competitors.json
+```
+
+**Weekly SEO audit:**
+```bash
+xbrowser map https://xbrowser.dev > /tmp/sitemap.txt
+xbrowser seo audit https://xbrowser.dev --json > /tmp/seo-report.json
+```
+
+**Content research for blog posts:**
+```bash
+xbrowser scrape https://competitor-blog.com/latest-post | llm summarize
+```
+
+**AI search intelligence** (query 14 AI engines at once):
+```bash
+xbrowser ai-search-engines "how to do browser automation in 2026"
+```
+
+Each of these would be a 30-80 line Puppeteer script. With xbrowser, they're single commands I can alias, schedule with cron, or embed in AI agent workflows.
+
+## Get Started in 30 Seconds
 
 ```bash
 npm i -g @dyyz1993/xbrowser
-xbrowser --help
 xbrowser search "hello world" --engine google
 ```
 
-Three commands and you're up and running. The full documentation, plugin directory, and API reference are available at [xbrowser.dev](https://xbrowser.dev). The source code is on [GitHub](https://github.com/dyyz1993/xbrowser) under the MIT license.
+That's it. Two commands and you're automating the web.
 
-If you're building AI agents that interact with the web, or if you're tired of writing 50-line scripts for tasks that should take one command, give it a try. Contributions and plugin submissions are welcome.
+- **Docs & examples**: [xbrowser.dev](https://xbrowser.dev)
+- **Source code**: [github.com/dyyz1993/xbrowser](https://github.com/dyyz1993/xbrowser) (MIT license)
+- **68 plugins**: Search, scrape, crawl, record, replay, and automate 68+ platforms
+
+If you're tired of writing 50-line scripts for tasks that should take one command — or if you're building AI agents that need to browse the web — give it a try.
+
+## Tags
+
+`browser automation` `web scraping` `playwright alternative` `puppeteer alternative` `selenium alternative` `CLI tool` `headless browser` `web crawler` `SEO tool` `AI agent` `open source`
 
 ---
 
-*xbrowser is open source under the MIT license. Install with `npm i -g @dyyz1993/xbrowser`. Docs and examples at [xbrowser.dev](https://xbrowser.dev).*
+*xbrowser is open source under the MIT license. Install with `npm i -g @dyyz1993/xbrowser`. Full docs at [xbrowser.dev](https://xbrowser.dev).*
