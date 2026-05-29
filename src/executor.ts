@@ -21,6 +21,7 @@ import type { WSServer, CommandMessage } from './websocket-server.js';
 import { getPluginLoader } from './utils/plugin-singleton.js';
 import { getTipsManager } from './tips/index.js';
 import { resolveRefParams } from './utils/resolve-selector.js';
+import { loadHooks } from './hooks/loader.js';
 import { homedir } from 'os';
 import { join } from 'path';
 
@@ -56,12 +57,18 @@ async function guardCheck(commandName: string): Promise<{ blocked: boolean; mess
 /**
  * Result of a single command execution.
  */
+export interface HookOutput {
+  _hook: string;
+  [key: string]: unknown;
+}
+
 export interface ExecutionResult {
   success: boolean;
   data: unknown;
   message?: string;
   duration: number;
   tips?: string[];
+  hookOutputs?: HookOutput[];
 }
 
 /**
@@ -75,6 +82,7 @@ export interface ChainStepResult {
   message?: string;
   duration: number;
   tips?: string[];
+  hookOutputs?: HookOutput[];
 }
 
 /**
@@ -268,9 +276,24 @@ export async function executeCommand(
   }
 
   try {
+    const hooks = await loadHooks();
+    if (hooks.length > 0 && session?.page) {
+      await Promise.all(hooks.map(h => h.onBeforeCommand?.({ page: session.page!, command: commandName, params })));
+    }
+
     const raw = await command.handler(params, ctx);
     const end = Date.now();
     const duration = end - start;
+
+    let hookOutputs: HookOutput[] | undefined;
+    if (hooks.length > 0 && session?.page) {
+      const outputs: HookOutput[] = [];
+      for (const h of hooks) {
+        const output = await h.onAfterCommand?.({ page: session.page!, command: commandName, params, result: raw, duration });
+        if (output) outputs.push({ _hook: h.name, ...output });
+      }
+      if (outputs.length > 0) hookOutputs = outputs;
+    }
 
     // Save conversationUrl to session disk metadata when a command returns it
     if (session && isCommandResult(raw)) {
@@ -323,9 +346,9 @@ export async function executeCommand(
         timestamp: start,
       });
       if (isSuccess) {
-        return { ...ok(raw.data, merged.length > 0 ? merged : raw.tips), duration };
+        return { ...ok(raw.data, merged.length > 0 ? merged : raw.tips), duration, ...(hookOutputs ? { hookOutputs } : {}) };
       }
-      return { success: false, data: raw.data, message: raw.message, tips: merged.length > 0 ? merged : raw.tips || [], duration };
+      return { success: false, data: raw.data, message: raw.message, tips: merged.length > 0 ? merged : raw.tips || [], duration, ...(hookOutputs ? { hookOutputs } : {}) };
     }
 
     recordArchive(session?.id, sessionName, {
@@ -337,7 +360,7 @@ export async function executeCommand(
       duration: duration,
       timestamp: start,
     });
-    return { ...ok(raw, smartTips), duration };
+    return { ...ok(raw, smartTips), duration, ...(hookOutputs ? { hookOutputs } : {}) };
   } catch (err) {
     const end = Date.now();
     const duration = end - start;
@@ -500,8 +523,24 @@ export async function executeChain(
 
           const start = Date.now();
           try {
+            const hooks = await loadHooks();
+            if (hooks.length > 0) {
+              await Promise.all(hooks.map(h => h.onBeforeCommand?.({ page: session!.page!, command: `${cmdName} ${subCommand}`, params: pluginParams })));
+            }
+
             const raw = await cmdEntry.handler(pluginParams, pluginCtx) as CommandResult;
             const duration = Date.now() - start;
+
+            let hookOutputs: HookOutput[] | undefined;
+            if (hooks.length > 0) {
+              const outputs: HookOutput[] = [];
+              for (const h of hooks) {
+                const output = await h.onAfterCommand?.({ page: session!.page!, command: `${cmdName} ${subCommand}`, params: pluginParams, result: raw, duration });
+                if (output) outputs.push({ _hook: h.name, ...output } as HookOutput);
+              }
+              if (outputs.length > 0) hookOutputs = outputs;
+            }
+
             const data = raw?.data ?? raw;
             recordArchive(session!.id, sessionName, {
               step: results.length,
@@ -517,6 +556,7 @@ export async function executeChain(
               raw: cmdStr,
               ...ok(data),
               duration,
+              ...(hookOutputs ? { hookOutputs } : {}),
             });
             if (type === 'or') {
               return {
@@ -584,6 +624,7 @@ export async function executeChain(
           message: result.message,
           duration,
           tips: result.tips,
+          ...(result.hookOutputs ? { hookOutputs: result.hookOutputs } : {}),
         };
         results.push(stepResult);
 

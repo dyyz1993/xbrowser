@@ -1,10 +1,10 @@
 # xbrowser
 
-> Self-contained browser automation CLI — navigate, click, fill forms, screenshot, web scraping, record & replay. A Playwright/Puppeteer alternative for CLI-first workflows.
+> **Browser automation CLI** for web scraping, headless browsing, SEO analysis, and AI agent workflows. 35+ commands, 67+ plugins. A command-line alternative to Playwright, Puppeteer, and Selenium — **no code required**.
 
 [![CI Status](https://github.com/dyyz1993/xbrowser/workflows/CI/badge.svg)](https://github.com/dyyz1993/xbrowser/actions)
 [![codecov](https://codecov.io/gh/dyyz1993/xbrowser/branch/master/graph/badge.svg)](https://codecov.io/gh/dyyz1993/xbrowser)
-[![npm version](https://img.shields.io/npm/v/@dyyz1993/xbrowser.svg)](https://www.npmjs.com/package/@dyyz1993/xbrowser)
+[![npm version](https://img.shields.io/npm/v/@xbrowser/cli.svg)](https://www.npmjs.com/package/@xbrowser/cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## 特性
@@ -18,12 +18,48 @@
 - **会话管理** — 多会话并行，独立上下文
 - **Daemon 模式** — 后台常驻，快速响应
 
+## Use Cases
+
+**Web Scraping & Data Extraction**
+```bash
+# Scrape any page to Markdown — no Playwright scripts needed
+xbrowser scrape https://news.ycombinator.com --mode smart --output markdown
+
+# Crawl an entire site
+xbrowser crawl https://example.com --max-depth 3 --output json
+```
+
+**Search Engine Automation**
+```bash
+# Search Google, Bing, Baidu from the command line
+xbrowser search "best headless browser CLI" --engine google --limit 10 --json
+
+# Time-filtered search
+xbrowser search "playwright alternative 2025" --engine bing --time-filter month
+```
+
+**Browser Automation for AI Agents**
+```bash
+# Record browser actions, replay in CI/CD
+xbrowser record --output workflow.yaml
+xbrowser replay workflow.yaml
+
+# Chain commands for complex workflows
+xbrowser "goto https://example.com && wait .content && text --selector .content"
+```
+
+**SEO & Backlink Automation**
+```bash
+# Auto-publish articles to 13+ SEO platforms
+xbrowser publish --platform devto,juejin --file article.md
+```
+
 ## 快速开始
 
 ### 安装
 
 ```bash
-npm install -g @dyyz1993/xbrowser
+npm install -g @xbrowser/cli
 ```
 
 ### 最低要求
@@ -672,13 +708,13 @@ import {
   openSession,
   closeSession,
   registerCommand,
-} from '@dyyz1993/xbrowser';
+} from '@xbrowser/cli';
 ```
 
 ### 执行单条命令
 
 ```typescript
-import { openSession, executeCommand, closeAllBrowserSessions } from '@dyyz1993/xbrowser';
+import { openSession, executeCommand, closeAllBrowserSessions } from '@xbrowser/cli';
 
 // 创建会话
 await openSession('default', 'https://example.com');
@@ -695,7 +731,7 @@ await closeAllBrowserSessions();
 ### 执行命令链
 
 ```typescript
-import { executeChain } from '@dyyz1993/xbrowser';
+import { executeChain } from '@xbrowser/cli';
 
 const result = await executeChain('goto https://example.com && title && screenshot');
 console.log(result.success);   // true
@@ -706,7 +742,7 @@ console.log(result.totalDuration); // 1523
 ### 自定义命令
 
 ```typescript
-import { registerCommand } from '@dyyz1993/xbrowser';
+import { registerCommand } from '@xbrowser/cli';
 import { z } from 'zod';
 
 registerCommand({
@@ -840,6 +876,32 @@ xbrowser/
 ├── tests/               # 测试
 └── docs/                # 文档
 ```
+
+## xbrowser vs Other Browser Automation Tools
+
+| Feature | xbrowser | Playwright | Puppeteer | Selenium |
+|---------|----------|------------|-----------|----------|
+| **Interface** | CLI (command line) | Node.js library | Node.js library | Multi-language library |
+| **Setup** | `npm i -g` — 0 config | Install + browser download | Install + browser download | Install + WebDriver + drivers |
+| **Web Scraping** | Built-in (`scrape`, `crawl`, `map`) | Write custom scripts | Write custom scripts | Write custom scripts |
+| **Search** | Built-in multi-engine (`search`) | No | No | No |
+| **Plugin Ecosystem** | 67+ plugins | Limited | Limited | No |
+| **No Code Required** | ✅ CLI commands | ❌ Must write JS/TS | ❌ Must write JS/TS | ❌ Must write code |
+| **Headless Mode** | ✅ Default | ✅ | ✅ | ✅ |
+| **Record/Replay** | ✅ Built-in (`record`/`replay`) | ✅ Codegen | ❌ | ❌ |
+| **Anti-Detection** | ✅ CDP firewall | ❌ | ❌ | ❌ |
+| **AI Agent Integration** | ✅ Built-in plugins | Manual integration | Manual integration | Manual integration |
+
+**When to use xbrowser:**
+- You want to **automate browsers from the command line** without writing code
+- You need **web scraping, SEO automation, or AI agent workflows**
+- You want a **Playwright/Puppeteer alternative** that works with one-liners
+- You're building **CLI tools that need browser automation**
+
+**When to use Playwright/Puppeteer:**
+- You're writing **test suites** for web applications
+- You need **fine-grained programmatic control** of browser behavior
+- You're building a **Node.js application** that embeds browser automation
 
 ## 与相关项目的关系
 
