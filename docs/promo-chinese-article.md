@@ -291,7 +291,7 @@ xbrowser "goto https://app.com/login -> fill '#email' 'agent@ai.com' -> click '#
 
 ```bash
 # 安装（全局）
-npm i -g @dyyz1993/xbrowser
+npm i -g @xbrowser/cli
 
 # 第一次使用 —— 打开浏览器并获取标题
 xbrowser "goto https://news.ycombinator.com , title"
@@ -331,7 +331,7 @@ xbrowser "goto https://example.com , screenshot"
 
 **项目链接**：
 - GitHub：[github.com/dyyz1993/xbrowser](https://github.com/dyyz1993/xbrowser)
-- npm：[@dyyz1993/xbrowser](https://www.npmjs.com/package/@dyyz1993/xbrowser)
+- npm：[@xbrowser/cli](https://www.npmjs.com/package/@xbrowser/cli)
 
 如果觉得有用，欢迎给个 Star ⭐
 

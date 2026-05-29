@@ -115,7 +115,7 @@ The plugin system is open too. If you build something useful — a new search en
 If any of this resonates — if you've ever been frustrated by the gap between "I just want to search Google from the command line" and the 40-line script it takes to actually do it — give xbrowser a try:
 
 ```bash
-npm i -g @dyyz1993/xbrowser
+npm i -g @xbrowser/cli
 xbrowser search "hello world" --engine google
 ```
 
@@ -125,4 +125,4 @@ I built this tool because I needed it. Now I'm sharing it because I think other 
 
 ---
 
-*xbrowser is MIT-licensed and available on npm. Install: `npm i -g @dyyz1993/xbrowser`. Documentation: [xbrowser.dev](https://xbrowser.dev). Source: [github.com/dyyz1993/xbrowser](https://github.com/dyyz1993/xbrowser).*
+*xbrowser is MIT-licensed and available on npm. Install: `npm i -g @xbrowser/cli`. Documentation: [xbrowser.dev](https://xbrowser.dev). Source: [github.com/dyyz1993/xbrowser](https://github.com/dyyz1993/xbrowser).*

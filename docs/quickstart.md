@@ -5,7 +5,7 @@ Get started with xbrowser in minutes.
 ## Installation
 
 ```bash
-npm install -g @dyyz1993/xbrowser
+npm install -g @xbrowser/cli
 ```
 
 Requires Node.js >= 18 and Chromium browser.

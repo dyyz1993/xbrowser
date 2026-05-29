@@ -61,24 +61,6 @@ Commands:
   viewer [--name <n>] [--selector <sel>] Generate viewer URL
   help                              Show this help
   --version, -v                     Show version
-
-Marketplace & Admin:
-  marketplace publish [--dry-run]   Publish plugin to marketplace
-  marketplace login [--token <key>] Login to marketplace
-  marketplace register              Register developer account
-  marketplace whoami                Show current user
-  marketplace logout                Logout from marketplace
-  admin pending                     List pending plugins (admin only)
-  admin approve <slug>              Approve a plugin (admin only)
-  admin reject <slug> [--reason]    Reject a plugin (admin only)
-  admin feature <slug>              Toggle featured (admin only)
-  admin remove <slug>               Remove a plugin (admin only)
-  admin stats                       Dashboard stats (admin only)
-  admin inventory                   Plugin inventory (admin only)
-  admin list [--status <status>]    List all plugins (admin only)
-  admin bulk-approve <slugs...>     Bulk approve (admin only)
-  admin cleanup                     Reset data (admin only)
-
 Plugin Commands:
   Installed plugins provide additional commands.
   Use 'xbrowser plugin list' to see installed plugins and their commands.

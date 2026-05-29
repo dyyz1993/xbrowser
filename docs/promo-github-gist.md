@@ -2,7 +2,7 @@
 
 A quick-reference cheatsheet for [xbrowser](https://xbrowser.dev) — the CLI that turns any AI agent into a browser power user.
 
-> `npm i -g @dyyz1993/xbrowser`
+> `npm i -g @xbrowser/cli`
 
 ## Why This Exists
 
@@ -92,7 +92,7 @@ The plugin ecosystem covers search engine scraping, structured data extraction, 
 ## Quick Install
 
 ```bash
-npm i -g @dyyz1993/xbrowser
+npm i -g @xbrowser/cli
 xbrowser --help
 ```
 

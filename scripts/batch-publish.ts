@@ -25,7 +25,7 @@ xbrowser is a developer-first browser automation CLI built on **Playwright** and
 Install and start automating in seconds:
 
 \`\`\`bash
-npm install -g @dyyz1993/xbrowser
+npm install -g @xbrowser/cli
 xbrowser session open https://example.com
 xbrowser title
 xbrowser screenshot
@@ -82,7 +82,7 @@ xbrowser uses Playwright for cross-browser support (Chromium, Firefox, WebKit) a
 ## Try It Today
 
 \`\`\`bash
-npm install -g @dyyz1993/xbrowser
+npm install -g @xbrowser/cli
 \`\`\`
 
 Visit [xbrowser.dev](https://xbrowser.dev) for docs and examples.
@@ -109,7 +109,7 @@ xbrowser 是一款 AI 驱动的浏览器自动化 CLI 工具，基于 Playwright
 一行命令安装，即刻开始自动化：
 
 \`\`\`bash
-npm install -g @dyyz1993/xbrowser
+npm install -g @xbrowser/cli
 xbrowser session open https://example.com
 xbrowser title
 xbrowser screenshot
@@ -445,7 +445,7 @@ Key features:
 - CAPTCHA human-in-the-loop solving
 - Recording and replay as YAML
 
-It is way simpler than Selenium for most tasks. One line to install: npm install -g @dyyz1993/xbrowser
+It is way simpler than Selenium for most tasks. One line to install: npm install -g @xbrowser/cli
 
 Check it out at https://xbrowser.dev and https://github.com/dyyz1993/xbrowser`;
 

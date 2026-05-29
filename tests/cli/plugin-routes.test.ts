@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const mockSearchHandler = vi.fn().mockResolvedValue({ data: { items: [] } });
+
 const { mockOutputResult, mockOutputError, mockInstallerInstall, mockInstallerInstallFromMarketplace, mockInstallerInstallWithMarketplaceFallback, mockInstallerUninstall, mockInstallerList, mockReloadPlugin, mockGetPluginLoader } = vi.hoisted(() => ({
   mockOutputResult: vi.fn(),
   mockOutputError: vi.fn(),
@@ -48,10 +50,6 @@ vi.mock('../../src/builtins/index.js', () => ({
   handlePluginHelp: vi.fn(() => 'plugin help text'),
 }));
 
-vi.mock('../../src/plugin/marketplace-search.js', () => ({
-  MarketplaceSearcher: { search: vi.fn().mockResolvedValue([]) },
-}));
-
 vi.mock('../../src/plugin/npm-search.js', () => ({
   NPMSearcher: { search: vi.fn().mockResolvedValue([]) },
 }));
@@ -69,7 +67,39 @@ vi.mock('../../src/plugin/builtins/shared.js', () => ({
   getRegistryUrl: vi.fn(),
 }));
 
+vi.mock('../../src/utils/proxy-fetch.js', () => ({
+  ensureProxyFetch: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { handlePlugin, handleCreate, handleDaemon } from '../../src/cli/plugin-routes.js';
+
+function createMockSiteWithSearch(items: Array<Record<string, unknown>> = []) {
+  return {
+    name: 'marketplace',
+    getCommand: (name: string) => {
+      if (name === 'search') {
+        return { handler: mockSearchHandler };
+      }
+      if (name === 'info') {
+        return {
+          handler: vi.fn().mockResolvedValue({ data: { plugin: null } }),
+        };
+      }
+      return null;
+    },
+    getAllCommands: () => [{ name: 'search' }, { name: 'info' }],
+  };
+}
+
+function setupMockLoaderWithSites(sites: unknown[] = []) {
+  mockGetPluginLoader.mockResolvedValue({
+    getCore: () => ({
+      loader: {
+        getSites: () => sites,
+      },
+    }),
+  });
+}
 
 describe('plugin-routes', () => {
   beforeEach(() => {
@@ -77,6 +107,8 @@ describe('plugin-routes', () => {
     mockOutputError.mockImplementation((msg: string) => {
       throw new Error(msg);
     });
+    setupMockLoaderWithSites([]);
+    mockSearchHandler.mockResolvedValue({ data: { items: [] } });
   });
 
   describe('handlePlugin - install', () => {
@@ -193,15 +225,22 @@ describe('plugin-routes', () => {
   });
 
   describe('handlePlugin - search', () => {
-    it('should search plugins and output JSON', async () => {
-      const { MarketplaceSearcher } = await import('../../src/plugin/marketplace-search.js');
-      vi.mocked(MarketplaceSearcher.search).mockResolvedValueOnce([
-        { name: 'found-plugin', description: 'A plugin', version: '1.0.0', slug: 'fp' },
-      ]);
+    it('should search plugins via installed plugin and output JSON', async () => {
+      mockSearchHandler.mockResolvedValueOnce({
+        data: {
+          items: [
+            { name: 'found-plugin', description: 'A plugin', version: '1.0.0', slug: 'fp', source: 'marketplace' },
+          ],
+        },
+      });
+      setupMockLoaderWithSites([createMockSiteWithSearch()]);
 
       await handlePlugin(['search', 'test'], {}, 'json');
 
       expect(mockOutputResult).toHaveBeenCalled();
+      const callArgs = mockOutputResult.mock.calls[0][0] as Record<string, unknown>;
+      expect(callArgs.results.length).toBe(1);
+      expect(callArgs.results[0].name).toBe('found-plugin');
     });
   });
 
@@ -271,11 +310,15 @@ describe('plugin-routes', () => {
   });
 
   describe('handlePlugin - search text mode', () => {
-    it('should output text format search results', async () => {
-      const { MarketplaceSearcher } = await import('../../src/plugin/marketplace-search.js');
-      vi.mocked(MarketplaceSearcher.search).mockResolvedValueOnce([
-        { name: 'text-plugin', description: 'A text plugin', version: '1.0.0', slug: 'tp' },
-      ]);
+    it('should output text format search results from plugin', async () => {
+      mockSearchHandler.mockResolvedValueOnce({
+        data: {
+          items: [
+            { name: 'text-plugin', description: 'A text plugin', version: '1.0.0', slug: 'tp', source: 'marketplace' },
+          ],
+        },
+      });
+      setupMockLoaderWithSites([createMockSiteWithSearch()]);
 
       const logs: string[] = [];
       const origLog = console.log;
@@ -289,9 +332,7 @@ describe('plugin-routes', () => {
     });
 
     it('should show "No plugins found" when search returns empty', async () => {
-      const { MarketplaceSearcher } = await import('../../src/plugin/marketplace-search.js');
       const { NPMSearcher } = await import('../../src/plugin/npm-search.js');
-      vi.mocked(MarketplaceSearcher.search).mockResolvedValueOnce([]);
       vi.mocked(NPMSearcher.search).mockResolvedValueOnce([]);
 
       const logs: string[] = [];
@@ -304,10 +345,8 @@ describe('plugin-routes', () => {
       expect(logs.some(l => l.includes('No plugins found'))).toBe(true);
     });
 
-    it('should fallback to npm when marketplace returns empty', async () => {
-      const { MarketplaceSearcher } = await import('../../src/plugin/marketplace-search.js');
+    it('should fallback to npm when plugin search returns empty', async () => {
       const { NPMSearcher } = await import('../../src/plugin/npm-search.js');
-      vi.mocked(MarketplaceSearcher.search).mockResolvedValueOnce([]);
       vi.mocked(NPMSearcher.search).mockResolvedValueOnce([
         { name: 'npm-plugin', description: 'From npm', version: '2.0.0' },
       ]);
@@ -321,14 +360,15 @@ describe('plugin-routes', () => {
       );
     });
 
-    it('should pass limit option to search', async () => {
-      const { MarketplaceSearcher } = await import('../../src/plugin/marketplace-search.js');
-      vi.mocked(MarketplaceSearcher.search).mockResolvedValueOnce([]);
+    it('should pass search options to plugin search handler', async () => {
+      mockSearchHandler.mockResolvedValueOnce({ data: { items: [] } });
+      setupMockLoaderWithSites([createMockSiteWithSearch()]);
 
       await handlePlugin(['search', 'test'], { limit: 5 }, 'json');
 
-      expect(MarketplaceSearcher.search).toHaveBeenCalledWith(
-        expect.objectContaining({ limit: 5 })
+      expect(mockSearchHandler).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 5 }),
+        expect.anything(),
       );
     });
   });

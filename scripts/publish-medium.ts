@@ -54,7 +54,7 @@ async function main(): Promise<void> {
       'Quick Start',
       '',
       'Install and start automating in seconds:',
-      'npm install -g @dyyz1993/xbrowser',
+      'npm install -g @xbrowser/cli',
       'xbrowser session open https://example.com',
       'xbrowser title',
       'xbrowser screenshot',

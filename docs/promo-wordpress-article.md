@@ -30,7 +30,7 @@ I wanted `curl` for interactive browser tasks. So I built it.
 ## Install Once, Automate Everything
 
 ```bash
-npm i -g @dyyz1993/xbrowser
+npm i -g @xbrowser/cli
 ```
 
 That's the entire setup. No WebDriver. No config files. xbrowser ships with its own managed Chromium that includes CDP fingerprint protection — sites can't easily detect automation.
@@ -236,7 +236,7 @@ Each of these would be a 30-80 line Puppeteer script. With xbrowser, they're sin
 ## Get Started in 30 Seconds
 
 ```bash
-npm i -g @dyyz1993/xbrowser
+npm i -g @xbrowser/cli
 xbrowser search "hello world" --engine google
 ```
 
@@ -254,4 +254,4 @@ If you're tired of writing 50-line scripts for tasks that should take one comman
 
 ---
 
-*xbrowser is open source under the MIT license. Install with `npm i -g @dyyz1993/xbrowser`. Full docs at [xbrowser.dev](https://xbrowser.dev).*
+*xbrowser is open source under the MIT license. Install with `npm i -g @xbrowser/cli`. Full docs at [xbrowser.dev](https://xbrowser.dev).*

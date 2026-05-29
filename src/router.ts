@@ -451,13 +451,19 @@ export async function routeCommand(
             showCommandHelp(command, cmdEntry, { description: site.config.description, name: site.name, url: site.url }, mode);
             return;
           }
-          const params = parsePluginParams(cmdArgsForPlugin, cmdEntry.parameters!, options);
+          // Re-extract plugin args from original argv because global parseArgs
+          // consumes all --flags and leaves cmdArgsForPlugin empty.
+          // Find the index after 'pluginName subCommand' in argv.
+          const pluginNameIdx = argv.indexOf(command);
+          const subCmdIdx = pluginNameIdx >= 0 ? argv.indexOf(subCommand, pluginNameIdx + 1) : -1;
+          const rawPluginArgs = subCmdIdx >= 0 ? argv.slice(subCmdIdx + 1) : [];
+          const params = parsePluginParams(rawPluginArgs, cmdEntry.parameters!);
 
           if (options.target && !params._target) {
             params._target = options.target;
           }
 
-          const needsBrowser = cmdEntry.scope !== 'global';
+          const needsBrowser = cmdEntry.scope === 'page';
           if (needsBrowser && !process.env.XBROWSER_DAEMON_WORKER) {
             const { forwardExec } = await import('./client/daemon-client.js');
             const userTimeout = typeof params.timeout === 'number' && params.timeout > 0 ? params.timeout * 1000 + 30000 : undefined;

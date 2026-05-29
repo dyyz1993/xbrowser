@@ -34,10 +34,6 @@ function handlePluginHelp(): string {
     '  uninstall <name>                              Uninstall a plugin',
     '  list [--json]                                 List installed plugins',
     '  reload <name>                                 Reload a plugin',
-    '  publish [--registry <url>] [--dry-run]        Publish plugin to marketplace',
-    '  login [--token <api-key>] [--registry <url>]  Login to marketplace',
-    '  whoami                                        Show current logged-in user',
-    '  logout                                        Logout from marketplace',
     '',
     'Examples:',
     '  xbrowser plugin search scraper',
@@ -46,11 +42,6 @@ function handlePluginHelp(): string {
     '  xbrowser plugin uninstall my-plugin',
     '  xbrowser plugin list',
     '  xbrowser plugin reload my-plugin',
-    '  xbrowser plugin publish',
-    '  xbrowser plugin publish --dry-run',
-    '  xbrowser plugin login --token my-api-key',
-    '  xbrowser plugin whoami',
-    '  xbrowser plugin logout',
   ].join('\n');
 }
 

@@ -87,7 +87,7 @@ my-plugin/
 The entry file must export a default function:
 
 ```typescript
-import type { XCLIAPI } from '@dyyz1993/xbrowser';
+import type { XCLIAPI } from '@xbrowser/cli';
 
 export default function (xcli: XCLIAPI): void {
   // Register sites and commands here

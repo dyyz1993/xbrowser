@@ -1,11 +1,10 @@
 import { allBuiltins, handlePluginHelp } from '../builtins/index.js';
 import { XBrowserPluginLoader } from '../plugin/loader.js';
 import { PluginInstaller } from '../plugin/installer.js';
-import { MarketplaceSearcher } from '../plugin/marketplace-search.js';
 import { NPMSearcher } from '../plugin/npm-search.js';
 import { startDaemonProcess, stopDaemonProcess, getDaemonProcessStatus } from '../daemon/daemon.js';
 import { outputResult, outputError } from './output.js';
-import { getMarketplaceUrl, NPM_REGISTRY_URL, resolveNpmPackageWithFallback } from '../config.js';
+import { NPM_REGISTRY_URL, resolveNpmPackageWithFallback } from '../config.js';
 import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 import { getPluginLoader as getGlobalPluginLoader } from '../utils/plugin-singleton.js';
 
@@ -16,10 +15,6 @@ function getPluginLoader(): XBrowserPluginLoader {
   return pluginLoader;
 }
 
-/**
- * Load all plugins and build a map of plugin-name → command names from runtime.
- * This captures commands even for plugins without package.json metadata.
- */
 async function buildRuntimeCommandsMap(): Promise<Map<string, string[]>> {
   const loader = await getGlobalPluginLoader();
   const sites = loader.getCore().loader.getSites();
@@ -40,6 +35,88 @@ function applyRegistryOverride(options: Record<string, unknown>): void {
   }
 }
 
+function extractItems(result: unknown): Array<Record<string, unknown>> {
+  if (!result || typeof result !== 'object') return [];
+  const r = result as Record<string, unknown>;
+  if ('data' in r) {
+    const data = r.data as Record<string, unknown>;
+    if (data && 'items' in data && Array.isArray(data.items)) {
+      return data.items as Array<Record<string, unknown>>;
+    }
+  }
+  if ('items' in r && Array.isArray(r.items)) {
+    return r.items as Array<Record<string, unknown>>;
+  }
+  return [];
+}
+
+async function searchFromMarketplacePlugin(
+  options: { query?: string; tag?: string; site?: string; limit?: number },
+  loader: XBrowserPluginLoader,
+): Promise<Array<Record<string, unknown>>> {
+  const sites = loader.getCore().loader.getSites();
+  // 只找 marketplace site（由 marketplace 插件注册）
+  const marketplaceSite = sites.find(s => s.name === 'marketplace');
+  if (!marketplaceSite) return [];
+
+  const searchCmd = marketplaceSite.getCommand('search');
+  if (!searchCmd) return [];
+
+  try {
+    const result = await searchCmd.handler(
+      {
+        query: options.query,
+        tag: options.tag,
+        site: options.site,
+        limit: options.limit,
+      },
+      {} as never,
+    );
+
+    const items = extractItems(result);
+    return items.map(item => ({ ...item, source: 'marketplace' }));
+  } catch {
+    // marketplace 插件搜索失败，静默跳过
+    return [];
+  }
+}
+
+async function infoFromMarketplacePlugin(
+  slug: string,
+  loader: XBrowserPluginLoader,
+): Promise<Record<string, unknown> | null> {
+  const sites = loader.getCore().loader.getSites();
+  const marketplaceSite = sites.find(s => s.name === 'marketplace');
+  if (!marketplaceSite) return null;
+
+  const infoCmd = marketplaceSite.getCommand('info');
+  if (!infoCmd) return null;
+
+  try {
+    const result = await infoCmd.handler({ slug }, {} as never);
+
+    if (!result || typeof result !== 'object') return null;
+    const r = result as Record<string, unknown>;
+
+    let plugin: Record<string, unknown> | null = null;
+    if ('data' in r) {
+      const data = r.data as Record<string, unknown>;
+      plugin = (data?.plugin as Record<string, unknown>) || null;
+    }
+    if (!plugin && 'plugin' in r) {
+      plugin = r.plugin as Record<string, unknown>;
+    }
+
+    if (plugin && plugin.name) {
+      return { ...plugin, source: 'marketplace' };
+    }
+  } catch {
+    // marketplace 插件 info 失败，静默跳过
+  }
+
+  return null;
+}
+
 async function handleSearch(
   args: string[],
   options: Record<string, unknown>,
@@ -54,12 +131,11 @@ async function handleSearch(
 
   const results: Array<Record<string, unknown>> = [];
 
-  const marketplaceResults = await MarketplaceSearcher.search(searchOpts);
-  for (const r of marketplaceResults) {
-    results.push({ ...r, source: 'marketplace' });
-  }
+  const loader = await getGlobalPluginLoader();
+  const pluginResults = await searchFromMarketplacePlugin(searchOpts, loader);
+  results.push(...pluginResults);
 
-  if (marketplaceResults.length === 0) {
+  if (pluginResults.length === 0) {
     try {
       const npmResults = await NPMSearcher.search(searchOpts);
       for (const r of npmResults) {
@@ -101,16 +177,12 @@ async function handlePluginInfo(
   applyRegistryOverride(options);
   await ensureProxyFetch();
 
-  const marketplaceUrl = getMarketplaceUrl();
+  const loader = await getGlobalPluginLoader();
 
   try {
-    const resp = await fetch(`${marketplaceUrl}/api/plugins/${slug}`);
-    if (resp.ok) {
-      const raw = (await resp.json()) as {
-        success?: boolean;
-        data?: Record<string, unknown>;
-      };
-      const d = raw.data || (raw as Record<string, unknown>);
+    const pluginInfo = await infoFromMarketplacePlugin(slug, loader);
+    if (pluginInfo) {
+      const d = pluginInfo;
       if (mode === 'json') {
         outputResult({ source: 'marketplace', ...d }, mode);
         return;
@@ -118,16 +190,15 @@ async function handlePluginInfo(
       console.log(`名称: ${d.name || ''}`);
       console.log(`版本: ${d.version || ''}`);
       console.log(`描述: ${d.description || ''}`);
-      console.log(`作者: ${d.authorName || d.author || ''}`);
-      console.log(`状态: ${d.status || ''}`);
+      console.log(`作者: ${d.author || ''}`);
       console.log(`命令: ${((d.commands || []) as string[]).join(', ')}`);
-      console.log(`下载量: ${d.downloadCount || 0}`);
+      console.log(`下载量: ${d.downloads || 0}`);
       console.log(`标签: ${((d.tags || []) as string[]).join(', ')}`);
-      console.log(`网站: ${((d.siteUrls || []) as string[]).join(', ')}`);
+      console.log(`网站: ${((d.sites || []) as string[]).join(', ')}`);
       return;
     }
   } catch {
-    // marketplace unavailable, fallback to npm
+    // Plugin-based info unavailable, fallback to npm
   }
 
   try {
@@ -206,15 +277,12 @@ export async function handlePlugin(
     case 'list': {
       const plugins = await installer.list();
 
-      // Load runtime commands from all plugins (including bare ones without package.json)
       const runtimeCommands = await buildRuntimeCommandsMap();
 
-      // Merge static metadata + runtime commands into enriched plugin list
       const enrichedPlugins = plugins.map(p => {
         const metadata = p.metadata as Record<string, unknown> | undefined;
         const staticCommands = metadata?.commands as string[] | undefined;
         const dynamicCommands = runtimeCommands.get(p.name);
-        // Runtime commands take precedence (more accurate), fallback to static metadata
         const commands = dynamicCommands || staticCommands;
         return {
           ...p,

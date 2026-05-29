@@ -6,7 +6,7 @@
 
 ## 项目定位
 xbrowser 是基于 @dyyz1993/xcli-core 的浏览器自动化 CLI 工具。
-- npm: @dyyz1993/xbrowser v0.4.0
+- npm: @xbrowser/cli v0.4.0
 - GitHub: https://github.com/dyyz1993/xbrowser
 
 ## 核心能力

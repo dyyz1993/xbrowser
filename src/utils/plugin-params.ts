@@ -23,7 +23,19 @@ export function parsePluginParams(
         if (value === 'true') params[key] = true;
         else if (value === 'false') params[key] = false;
         else if (/^\d+$/.test(value)) params[key] = parseInt(value, 10);
-        else params[key] = value;
+        else {
+          // Try JSON parse for arrays/objects (e.g. --urls '["https://..."]')
+          try {
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed) || (typeof parsed === 'object' && parsed !== null)) {
+              params[key] = parsed;
+            } else {
+              params[key] = value;
+            }
+          } catch {
+            params[key] = value;
+          }
+        }
         i++;
       } else {
         params[key] = true;

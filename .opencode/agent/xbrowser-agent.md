@@ -24,7 +24,7 @@ permission:
 - **框架**: `@dyyz1993/xcli-core`（CLI 框架）+ Playwright（浏览器引擎）
 - **语言**: TypeScript (ESM)，构建用 tsup
 - **CLI 入口**: `bin/cli.ts` → `src/router.ts`
-- **包名**: `@dyyz1993/xbrowser`
+- **包名**: `@xbrowser/cli`
 
 ### 核心目录结构
 
@@ -604,7 +604,7 @@ git commit -m "feat/fix/refactor: 简洁描述"
 
 #### npm link 的作用
 
-`npm run build` 产出的是本地 `dist/` 目录的文件，但 `npx xbrowser` 执行的是**全局安装的版本**（`~/.nvm/versions/node/v25.2.1/lib/node_modules/@dyyz1993/xbrowser/dist/cli.js`）。
+`npm run build` 产出的是本地 `dist/` 目录的文件，但 `npx xbrowser` 执行的是**全局安装的版本**（`~/.nvm/versions/node/v25.2.1/lib/node_modules/@xbrowser/cli/dist/cli.js`）。
 
 `npm link` 会创建一个符号链接，让全局命令指向本地开发目录，这样 `npm run build` 后立即生效。
 
@@ -617,7 +617,7 @@ git commit -m "feat/fix/refactor: 简洁描述"
 ```bash
 # 清除旧的全局链接残留
 rm -rf ~/.nvm/versions/node/v25.2.1/lib/node_modules/@dyyz1993/.xbrowser-*
-rm -rf ~/.nvm/versions/node/v25.2.1/lib/node_modules/@dyyz1993/xbrowser
+rm -rf ~/.nvm/versions/node/v25.2.1/lib/node_modules/@xbrowser/cli
 npm link
 ```
 

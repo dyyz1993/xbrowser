@@ -1,8 +1,80 @@
 import type { BuiltinCommand } from './session.js';
 import { NPMSearcher } from '../plugin/npm-search.js';
-import { MarketplaceSearcher } from '../plugin/marketplace-search.js';
 import { PluginMetadataParser } from '../plugin/metadata-parser.js';
 import type { SearchOptions } from '../plugin/types.js';
+import { XBrowserPluginLoader } from '../plugin/loader.js';
+import { getPluginLoader } from '../utils/plugin-singleton.js';
+
+export interface PluginSearchResult {
+  source: string;
+  name: string;
+  version: string;
+  description: string;
+  author?: string;
+  homepage?: string;
+  tags?: string[];
+  downloads?: number;
+  slug?: string;
+  commands?: string[];
+  links?: { npm: string; homepage?: string; repository?: string };
+}
+
+async function searchFromMarketplacePlugin(
+  options: SearchOptions,
+  loader: XBrowserPluginLoader,
+): Promise<PluginSearchResult[]> {
+  const sites = loader.getCore().loader.getSites();
+  // 只找 marketplace site（由 marketplace 插件注册）
+  const marketplaceSite = sites.find(s => s.name === 'marketplace');
+  if (!marketplaceSite) return [];
+
+  const searchCmd = marketplaceSite.getCommand('search');
+  if (!searchCmd) return [];
+
+  try {
+    const result = await searchCmd.handler(
+      {
+        query: options.query,
+        tag: options.tag,
+        site: options.site,
+        limit: options.limit,
+      },
+      {} as never,
+    );
+
+    const items = extractItems(result);
+    return items.map((item) => ({
+      source: 'marketplace',
+      name: String(item.name || ''),
+      version: String(item.version || 'latest'),
+      description: String(item.description || ''),
+      author: String(item.author || ''),
+      homepage: typeof item.homepage === 'string' ? item.homepage : undefined,
+      tags: Array.isArray(item.tags) ? item.tags.map(String) : [],
+      downloads: typeof item.downloads === 'number' ? item.downloads : 0,
+      slug: String(item.slug || ''),
+      commands: Array.isArray(item.commands) ? item.commands.map(String) : [],
+    }));
+  } catch {
+    // marketplace 插件搜索失败，静默跳过
+    return [];
+  }
+}
+
+function extractItems(result: unknown): Array<Record<string, unknown>> {
+  if (!result || typeof result !== 'object') return [];
+  const r = result as Record<string, unknown>;
+  if ('data' in r) {
+    const data = r.data as Record<string, unknown>;
+    if (data && 'items' in data && Array.isArray(data.items)) {
+      return data.items as Array<Record<string, unknown>>;
+    }
+  }
+  if ('items' in r && Array.isArray(r.items)) {
+    return r.items as Array<Record<string, unknown>>;
+  }
+  return [];
+}
 
 function handleSearchHelp(): string {
   return [
@@ -25,7 +97,7 @@ export const pluginSearchBuiltin: BuiltinCommand = {
   description: 'Search for xbrowser plugins on npm registry and marketplace',
   help: {
     usage: 'xbrowser plugin search <query> [options]',
-    description: 'Search npm registry and marketplace for xbrowser-compatible plugins',
+    description: 'Search npm registry and installed plugin search providers for xbrowser-compatible plugins',
     options: [
       { name: '--tag <tag>', description: 'Filter by plugin tag' },
       { name: '--site <site>', description: 'Filter by target site' },
@@ -49,32 +121,31 @@ export const pluginSearchBuiltin: BuiltinCommand = {
       };
 
       console.log(
-        `Searching npm registry and marketplace for xbrowser plugins...${query ? ` (query: "${query}")` : ''}`
+        `Searching for xbrowser plugins...${query ? ` (query: "${query}")` : ''}`
       );
 
-      const [npmSettled, marketplaceSettled] = await Promise.allSettled([
+      const loader = await getPluginLoader();
+
+      const [npmSettled, pluginSettled] = await Promise.allSettled([
         NPMSearcher.search(searchOptions),
-        MarketplaceSearcher.search(searchOptions),
+        searchFromMarketplacePlugin(searchOptions, loader),
       ]);
 
       const npmResults = npmSettled.status === 'fulfilled' ? npmSettled.value : [];
-      const marketplaceResults = marketplaceSettled.status === 'fulfilled' ? marketplaceSettled.value : [];
+      const pluginResults = pluginSettled.status === 'fulfilled' ? pluginSettled.value : [];
 
       if (npmSettled.status === 'rejected') {
         console.warn(`Warning: npm search failed: ${npmSettled.reason}`);
       }
-      if (marketplaceSettled.status === 'rejected') {
-        console.warn(`Warning: marketplace search failed: ${marketplaceSettled.reason}`);
-      }
 
-      const total = npmResults.length + marketplaceResults.length;
+      const total = npmResults.length + pluginResults.length;
 
       if (total === 0) {
         console.log('No plugins found.');
         return;
       }
 
-      console.log(`Found ${total} plugin(s) (npm: ${npmResults.length}, marketplace: ${marketplaceResults.length}):\n`);
+      console.log(`Found ${total} plugin(s) (npm: ${npmResults.length}, plugins: ${pluginResults.length}):\n`);
 
       if (npmResults.length > 0) {
         console.log('--- npm ---\n');
@@ -103,14 +174,14 @@ export const pluginSearchBuiltin: BuiltinCommand = {
         });
       }
 
-      if (marketplaceResults.length > 0) {
+      if (pluginResults.length > 0) {
         console.log('--- marketplace ---\n');
-        marketplaceResults.forEach((result, idx) => {
+        pluginResults.forEach((result, idx) => {
           console.log(`${idx + 1}. ${result.name} [marketplace]`);
           console.log(`   ${result.description}`);
           console.log(`   Version: ${result.version}`);
-          console.log(`   Author: ${result.author}`);
-          console.log(`   Downloads: ${result.downloads}`);
+          if (result.author) console.log(`   Author: ${result.author}`);
+          if (result.downloads) console.log(`   Downloads: ${result.downloads}`);
 
           if (result.tags && result.tags.length > 0) {
             console.log(`   Tags: ${result.tags.join(', ')}`);
@@ -124,7 +195,9 @@ export const pluginSearchBuiltin: BuiltinCommand = {
             console.log(`   Homepage: ${result.homepage}`);
           }
 
-          console.log(`   Install: xbrowser plugin install ${result.slug} --from-marketplace`);
+          if (result.slug) {
+            console.log(`   Install: xbrowser plugin install ${result.slug} --from-marketplace`);
+          }
           console.log('');
         });
       }

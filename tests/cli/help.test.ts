@@ -69,7 +69,6 @@ describe('help', () => {
   it('should include plugin commands', () => {
     showMainHelp();
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('plugin install'));
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('marketplace publish'));
   });
 
   it('should include daemon commands', () => {

@@ -30,7 +30,7 @@ function createTestPlugin(dir: string, name: string, commands: string[]): void {
   writeFileSync(
     join(dir, 'index.ts'),
     [
-      `import type { XCLIAPI } from '@dyyz1993/xbrowser';`,
+      `import type { XCLIAPI } from '@xbrowser/cli';`,
       ``,
       `export default function (xcli: XCLIAPI): void {`,
       `  const site = xcli.createSite({ name: '${name}', url: 'https://example.com' });`,
