@@ -119,4 +119,77 @@ export default function (xcli: XCLIAPI): void {
       }
     },
   });
+
+  bing.command('webmaster-config', {
+    description: '保存 Bing Webmaster/IndexNow API 配置',
+    scope: 'cli',
+    parameters: z.object({
+      host: z.string().describe('站点域名（如 xbrowser.dev）'),
+      key: z.string().describe('IndexNow API key'),
+    }),
+    examples: [
+      { cmd: 'xbrowser bing webmaster-config --host xbrowser.dev --key mykey123', description: '保存 IndexNow 配置' },
+    ],
+    result: z.object({ host: z.string(), saved: z.boolean() }),
+    handler: async (params, ctx) => {
+      await ctx.storage.set('bing_webmaster', { host: params.host, key: params.key });
+      return ok({ host: params.host, saved: true }, [`已保存 IndexNow 配置: host=${params.host}`]);
+    },
+  });
+
+  bing.command('push-url', {
+    description: '通过 Bing IndexNow API 即时推送 URL（即时索引协议）',
+    scope: 'cli',
+    parameters: z.object({
+      urls: z.array(z.string()).describe('要推送的 URL 列表'),
+      host: z.string().optional().describe('站点域名，默认使用已保存的配置'),
+      key: z.string().optional().describe('IndexNow API key，默认使用已保存的配置'),
+    }),
+    examples: [
+      { cmd: 'xbrowser bing push-url --urls \'["https://xbrowser.dev/"]\'', description: '推送 URL 到 Bing' },
+    ],
+    result: z.object({ success: z.boolean(), urlCount: z.number() }),
+    handler: async (params, ctx) => {
+      const saved = (await ctx.storage.get('bing_webmaster')) as { host?: string; key?: string } | null;
+      const host = params.host || saved?.host;
+      const key = params.key || saved?.key;
+
+      if (!host || !key) {
+        return fail('缺少 host 或 key，请先运行 webmaster-config 或通过参数传入', [
+          '用法: xbrowser bing webmaster-config --host xbrowser.dev --key YOUR_KEY',
+        ]);
+      }
+
+      try {
+        const apiUrl = 'https://api.indexnow.org/indexnow';
+        const body = JSON.stringify({
+          host,
+          key,
+          keyLocation: `https://${host}/${key}.txt`,
+          urlList: params.urls,
+        });
+
+        const res = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+        });
+
+        // IndexNow: 200 = OK, 202 = accepted for processing
+        if (res.status === 200 || res.status === 202) {
+          return ok({ success: true, urlCount: params.urls.length }, [
+            `成功推送 ${params.urls.length} 条 URL 到 Bing IndexNow`,
+            `HTTP ${res.status}${res.status === 202 ? '（已接受，处理中）' : ''}`,
+          ]);
+        }
+
+        const text = await res.text().catch(() => '');
+        return fail(`IndexNow 推送失败: HTTP ${res.status} ${text}`, [
+          '确保 key 文件已部署到 https://' + host + '/' + key + '.txt',
+        ]);
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : '推送请求失败');
+      }
+    },
+  });
 }

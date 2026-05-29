@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import { humanFill, humanClick, humanBrowse, randomPause } from '../../utils/humanize.js';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -79,7 +80,8 @@ export default function (xcli: XCLIAPI): void {
     scope: 'page',
     parameters: z.object({
       title: z.string().describe('文章标题'),
-      content: z.string().describe('文章内容（Markdown）'),
+      content: z.string().optional().describe('文章内容（Markdown，与 file 二选一）'),
+      file: z.string().optional().describe('Markdown 文件路径（与 content 二选一）'),
       tags: z.string().optional().describe('标签，逗号分隔（最多4个）'),
       keepAlive: z.boolean().optional().default(false).describe('发布后保留 session（默认关闭）'),
     }),
@@ -92,54 +94,67 @@ export default function (xcli: XCLIAPI): void {
         cmd: 'xbrowser devto publish --title "My Guide" --content "# Hello" --keep-alive',
         description: '发布文章并保留 session（调试用）',
       },
+      {
+        cmd: 'xbrowser devto publish --title "My Article" --file ./article.md --tags "webdev,cli"',
+        description: '从 Markdown 文件发布文章',
+      },
     ],
     result: z.object({ title: z.string(), tags: z.string().optional(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
 
+      let content = params.content;
+      if (!content && params.file) {
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const filePath = path.resolve(params.file);
+        content = await fs.readFile(filePath, 'utf-8');
+      }
+      if (!content) {
+        return fail('必须提供 --content 或 --file 参数');
+      }
+
       await page.goto('https://dev.to/new', {
         waitUntil: 'domcontentloaded',
         timeout: 15000,
       });
       await page.waitForLoadState('domcontentloaded');
-      await page.waitForTimeout(3000);
+      await humanBrowse(page, 3000);
 
       const titleInput = page.locator(
-        'input#article_title, input[name="article[title]"], input[placeholder*="Title"]'
+        'textarea#article-form-title, input#article_title, input[name="article[title]"], textarea[aria-label="Post Title"]'
       ).first();
       if (await titleInput.isVisible().catch(() => false)) {
-        await titleInput.fill(params.title);
+        await humanFill(page, titleInput, params.title);
       }
 
       const bodyInput = page.locator(
         'textarea#article_body_markdown, textarea[name="article[body_markdown]"], textarea[placeholder*="Write"]'
       ).first();
       if (await bodyInput.isVisible().catch(() => false)) {
-        await bodyInput.fill(params.content);
+        await humanFill(page, bodyInput, content);
       }
+
+      await humanBrowse(page, 2000);
 
       if (params.tags) {
         const tagsInput = page.locator(
           'input#article_tag_list, input[name="article[tag_list]"], input[placeholder*="tag"]'
         ).first();
         if (await tagsInput.isVisible().catch(() => false)) {
-          await tagsInput.fill(params.tags);
+          await humanFill(page, tagsInput, params.tags);
         }
       }
 
-      await ctx.waitForHuman?.({
-        reason: 'Review and publish article (resolve CAPTCHA if present)',
-        timeout: 120,
-        autoDetect: true,
-      });
+      await randomPause(1000, 3000);
 
       const publishBtn = page.locator(
         'button[value="Publish"], button:has-text("Publish"), button:has-text("发布"), input[value="Publish"]'
       ).first();
       if (await publishBtn.isVisible().catch(() => false)) {
-        await publishBtn.click();
-        await page.waitForTimeout(3000);
+        await humanClick(page, publishBtn);
+        await randomPause(2000, 4000);
       }
 
       const finalUrl = page.url();
@@ -183,28 +198,30 @@ export default function (xcli: XCLIAPI): void {
         timeout: 15000,
       });
       await page.waitForLoadState('domcontentloaded');
-      await page.waitForTimeout(3000);
+      await humanBrowse(page, 3000);
 
       const titleInput = page.locator(
         'input#article_title, input[name="article[title]"]'
       ).first();
       if (await titleInput.isVisible().catch(() => false)) {
-        await titleInput.fill(params.title);
+        await humanFill(page, titleInput, params.title);
       }
 
       const bodyInput = page.locator(
         'textarea#article_body_markdown, textarea[name="article[body_markdown]"]'
       ).first();
       if (await bodyInput.isVisible().catch(() => false)) {
-        await bodyInput.fill(params.content);
+        await humanFill(page, bodyInput, params.content);
       }
+
+      await humanBrowse(page, 2000);
 
       const saveBtn = page.locator(
         'button:has-text("Save draft"), button:has-text("保存草稿"), button[value="Save"]'
       ).first();
       if (await saveBtn.isVisible().catch(() => false)) {
-        await saveBtn.click();
-        await page.waitForTimeout(3000);
+        await humanClick(page, saveBtn);
+        await randomPause(2000, 4000);
       }
 
       return ok({
@@ -238,14 +255,14 @@ export default function (xcli: XCLIAPI): void {
         timeout: 15000,
       });
       await page.waitForLoadState('domcontentloaded');
-      await page.waitForTimeout(2000);
+      await humanBrowse(page, 2000);
 
       if (params.bio) {
         const bioInput = page.locator(
           'textarea[name="user[summary]"], textarea[aria-label*="Bio"], textarea[placeholder*="bio"]'
         ).first();
         if (await bioInput.isVisible().catch(() => false)) {
-          await bioInput.fill(`${params.bio}\n\n${params.url}`);
+          await humanFill(page, bioInput, `${params.bio}\n\n${params.url}`);
         }
       }
 
@@ -253,15 +270,17 @@ export default function (xcli: XCLIAPI): void {
         'input[name="user[website_url]"], input[aria-label*="Website"], input[placeholder*="website"]'
       ).first();
       if (await webInput.isVisible().catch(() => false)) {
-        await webInput.fill(params.url);
+        await humanFill(page, webInput, params.url);
       }
+
+      await randomPause(500, 1500);
 
       const submitBtn = page.locator(
         'button:has-text("Save"), button:has-text("保存"), input[type="submit"]'
       ).first();
       if (await submitBtn.isVisible().catch(() => false)) {
-        await submitBtn.click();
-        await page.waitForTimeout(2000);
+        await humanClick(page, submitBtn);
+        await randomPause(2000, 3000);
       }
 
       return ok({ url: params.url, updated: true }, ['Profile 已更新，包含外链']);

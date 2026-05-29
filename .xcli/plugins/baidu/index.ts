@@ -580,6 +580,84 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  baidu.command('webmaster-config', {
+    description: '保存百度站长 API 配置（site 和 token）',
+    scope: 'cli',
+    parameters: z.object({
+      site: z.string().describe('站点域名（如 https://xbrowser.dev）'),
+      token: z.string().describe('百度站长 API token'),
+    }),
+    examples: [
+      { cmd: 'xbrowser baidu webmaster-config --site https://xbrowser.dev --token M23Z6mE2ngo4rQDX', description: '保存站长配置' },
+    ],
+    result: z.object({ site: z.string(), saved: z.boolean() }),
+    handler: async (params, ctx) => {
+      const { site, token } = params;
+      await ctx.storage.set('baidu_webmaster', { site, token });
+      return ok({ site, saved: true }, [`已保存站长配置: site=${site}`]);
+    },
+  });
+
+  baidu.command('push-url', {
+    description: '通过百度站长 API 主动推送 URL',
+    scope: 'cli',
+    parameters: z.object({
+      urls: z.array(z.string()).describe('要推送的 URL 列表'),
+      site: z.string().optional().describe('站点域名，默认使用已保存的配置'),
+      token: z.string().optional().describe('百度站长 API token，默认使用已保存的配置'),
+    }),
+    examples: [
+      { cmd: 'xbrowser baidu push-url --urls \'["https://xbrowser.dev/", "https://xbrowser.dev/cli"]\'', description: '推送 URL 到百度' },
+      { cmd: 'xbrowser baidu push-url --urls \'["https://xbrowser.dev/"]\' --site https://xbrowser.dev --token xxx', description: '推送时指定配置' },
+    ],
+    result: z.object({ success: z.number(), remain: z.number() }),
+    handler: async (params, ctx) => {
+      const saved = (await ctx.storage.get('baidu_webmaster')) as { site?: string; token?: string } | null;
+      const site = params.site || saved?.site;
+      const token = params.token || saved?.token;
+
+      if (!site || !token) {
+        return fail('缺少 site 或 token，请先运行 webmaster-config 或通过参数传入', [
+          '用法: xbrowser baidu webmaster-config --site https://xbrowser.dev --token YOUR_TOKEN',
+        ]);
+      }
+
+      try {
+        const apiUrl = `http://data.zz.baidu.com/urls?site=${encodeURIComponent(site)}&token=${encodeURIComponent(token)}`;
+        const body = params.urls.join('\n');
+        const res = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
+          body,
+        });
+
+        const text = await res.text();
+        let data: Record<string, unknown>;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          return fail(`百度 API 返回非 JSON: ${text}`, [`HTTP ${res.status}`]);
+        }
+
+        if (!res.ok || 'error' in data) {
+          const errMsg = data.message || (typeof data.error === 'string' ? data.error : String(data.error)) || text;
+          return fail(`百度推送失败: ${errMsg}`, [
+            `HTTP ${res.status}`,
+          ]);
+        }
+
+        const success = typeof data.success === 'number' ? data.success : 0;
+        const remain = typeof data.remain === 'number' ? data.remain : 0;
+        return ok({ success, remain }, [
+          `成功推送 ${success} 条 URL`,
+          `剩余可推送额度: ${remain}`,
+        ]);
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : '推送请求失败');
+      }
+    },
+  });
+
   baidu.login(async (ctx) => {
     const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
     if (!page) return;

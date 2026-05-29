@@ -24,9 +24,49 @@ import { resolveRefParams } from './utils/resolve-selector.js';
 import { loadHooks } from './hooks/loader.js';
 import { homedir } from 'os';
 import { join } from 'path';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 
 const NAVIGATION_COMMANDS = new Set(['goto', 'back', 'forward', 'refresh']);
 const snapshotHintShown = new WeakSet<ManagedSession>();
+
+const STORAGE_DIR = join(homedir(), '.xbrowser', 'storage');
+
+export interface SimpleStorage {
+  get: <T>(key: string) => Promise<T | null>;
+  set: <T>(key: string, value: T) => Promise<void>;
+  delete: (key: string) => Promise<void>;
+  clear: () => Promise<void>;
+  keys: () => Promise<string[]>;
+}
+
+const storageCache = new Map<string, SimpleStorage>();
+
+export function getPluginStorage(pluginName: string): SimpleStorage {
+  if (!storageCache.has(pluginName)) {
+    const filePath = join(STORAGE_DIR, `${pluginName}.json`);
+    let data: Record<string, unknown> = {};
+
+    const load = (): void => {
+      if (existsSync(filePath)) {
+        try { data = JSON.parse(readFileSync(filePath, 'utf-8')); } catch { data = {}; }
+      }
+    };
+    const save = (): void => {
+      mkdirSync(STORAGE_DIR, { recursive: true });
+      writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
+    };
+
+    load();
+    storageCache.set(pluginName, {
+      get: async <T>(key: string): Promise<T | null> => (data[key] ?? null) as T | null,
+      set: async <T>(key: string, value: T): Promise<void> => { data[key] = value; save(); },
+      delete: async (key: string): Promise<void> => { delete data[key]; save(); },
+      clear: async (): Promise<void> => { data = {}; save(); },
+      keys: async (): Promise<string[]> => Object.keys(data),
+    });
+  }
+  return storageCache.get(pluginName)!;
+}
 
 let archiveInitialized = false;
 function ensureArchiveInit(): void {
@@ -227,13 +267,7 @@ export async function executeCommand(
     args: [],
     options: {},
     cwd: process.cwd(),
-    storage: {
-      get: async () => null,
-      set: async () => {},
-      delete: async () => {},
-      clear: async () => {},
-      keys: async () => [],
-    },
+    storage: getPluginStorage(commandName),
     output: {
       mode: 'text' as const,
       showTips: false,
@@ -507,13 +541,7 @@ export async function executeChain(
             browser: session!.context.browser()!,
             browserContext: session!.context,
             sessionId: session!.id,
-            storage: {
-              get: async <T>(_key: string): Promise<T | null> => null,
-              set: async <T>(_key: string, _value: T): Promise<void> => {},
-              delete: async (_key: string): Promise<void> => {},
-              clear: async (): Promise<void> => {},
-              keys: async (): Promise<string[]> => [],
-            },
+            storage: getPluginStorage(cmdName),
             output: { mode: 'text' as const, showTips: false, color: false, emoji: false },
             error: (msg: string) => { throw new Error(msg); },
             config: {},

@@ -1,7 +1,7 @@
 import { parseArgs, outputFormatter, isCommandResult, type CommandResult, helpGenerator } from '@dyyz1993/xcli-core';
 import { parsePluginParams } from './utils/plugin-params.js';
 import { version } from './version.js';
-import { executeChain, isChainInput } from './executor.js';
+import { executeChain, isChainInput, getPluginStorage } from './executor.js';
 import { allBuiltins } from './builtins/index.js';
 import {
   handleBrowserCommand,
@@ -497,13 +497,7 @@ export async function routeCommand(
             browser: needsBrowser ? session!.context.browser()! : null,
             browserContext: needsBrowser ? session!.context : null,
             sessionId: needsBrowser ? session!.id : '',
-            storage: {
-              get: async <T>(_key: string): Promise<T | null> => null,
-              set: async <T>(_key: string, _value: T): Promise<void> => { },
-              delete: async (_key: string): Promise<void> => { },
-              clear: async (): Promise<void> => { },
-              keys: async (): Promise<string[]> => [],
-            },
+            storage: getPluginStorage(command),
             output: { mode: mode as 'text' | 'json' | 'yaml', showTips: true, color: true, emoji: true },
             error: (msg: string) => { outputError(msg); },
             config: {},

@@ -42,13 +42,13 @@ describe('baidu plugin', () => {
     );
   });
 
-  it('should register 6 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(6);
+  it('should register 8 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(8);
   });
 
   it('should register expected command names', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
-    expect(names).toEqual(expect.arrayContaining(['search', 'hotsearch', 'suggest', 'news', 'seo-rank']));
+    expect(names).toEqual(expect.arrayContaining(['search', 'hotsearch', 'suggest', 'news', 'seo-rank', 'webmaster-config', 'push-url']));
   });
 
   it('should register login and logout', () => {

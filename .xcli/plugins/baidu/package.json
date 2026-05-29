@@ -5,7 +5,7 @@
   },
   "_npmSource": {
     "name": "@xbrowser/baidu",
-    "version": "2.0.0"
+    "version": "2.1.0"
   },
   "author": "dyyz1993",
   "dependencies": {
@@ -24,7 +24,7 @@
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
   "type": "module",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "xbrowser": {
     "author": "dyyz1993",
     "commands": [
@@ -32,7 +32,9 @@
       "hotsearch",
       "suggest",
       "news",
-      "seo-rank"
+      "seo-rank",
+      "webmaster-config",
+      "push-url"
     ],
     "description": "百度搜索 - 真实浏览器操作",
     "name": "@xbrowser/baidu",
@@ -46,6 +48,6 @@
       "baidu",
       "search-engine"
     ],
-    "version": "2.0.0"
+    "version": "2.1.0"
   }
 }

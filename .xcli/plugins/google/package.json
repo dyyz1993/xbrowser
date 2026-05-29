@@ -20,11 +20,13 @@
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
   "type": "module",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "xbrowser": {
     "author": "dyyz1993",
     "commands": [
-      "search-image"
+      "search-image",
+      "webmaster-config",
+      "push-url"
     ],
     "description": "Google Search & Images",
     "name": "google",
@@ -33,8 +35,10 @@
     "sites": [],
     "slug": "google",
     "tags": [
-      "google"
+      "google",
+      "sitemap-ping",
+      "seo"
     ],
-    "version": "3.0.0"
+    "version": "3.1.0"
   }
 }

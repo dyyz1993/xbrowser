@@ -20,21 +20,24 @@
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
   "type": "module",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "xbrowser": {
     "author": "dyyz1993",
     "commands": [
-      "search-image"
+      "search-image",
+      "webmaster-config",
+      "push-url"
     ],
-    "description": "Bing Search & Images",
+    "description": "Bing Search & Images + IndexNow URL Push",
     "name": "bing",
     "requiresLogin": false,
     "site": "https://www.bing.com",
     "sites": [],
     "slug": "bing",
     "tags": [
-      "bing"
+      "bing",
+      "indexnow"
     ],
-    "version": "3.0.0"
+    "version": "3.1.0"
   }
 }

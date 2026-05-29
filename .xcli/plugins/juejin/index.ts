@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import { humanFill, humanClick, humanBrowse, randomPause } from '../../utils/humanize.js';
 
 function buildCdpTips(ctx: Record<string, unknown>): string[] {
   const cdpEndpoint = ctx.cdpEndpoint as string | undefined;
@@ -60,7 +61,7 @@ export default function (xcli: XCLIAPI): void {
           waitUntil: 'domcontentloaded',
           timeout: 15000,
         });
-        await page.waitForTimeout(2000);
+        await randomPause(1400, 2600);
 
         await ctx.waitForHuman?.({
           reason: '完成掘金登录（GitHub OAuth 或手机验证码）',
@@ -71,7 +72,7 @@ export default function (xcli: XCLIAPI): void {
           waitUntil: 'domcontentloaded',
           timeout: 15000,
         });
-        await page.waitForTimeout(2000);
+        await randomPause(1400, 2600);
 
         const loggedIn = await page
           .locator(
@@ -95,7 +96,8 @@ export default function (xcli: XCLIAPI): void {
     scope: 'page',
     parameters: z.object({
       title: z.string().describe('文章标题'),
-      content: z.string().describe('文章内容（Markdown）'),
+      content: z.string().optional().describe('文章内容（Markdown，与 file 二选一）'),
+      file: z.string().optional().describe('Markdown 文件路径（与 content 二选一）'),
       tags: z.string().optional().describe('标签，逗号分隔'),
       category: z.string().optional().describe('分类（前端/后端/Android/iOS 等）'),
       keepAlive: z.boolean().optional().default(false).describe('发布后保留 session（默认关闭）'),
@@ -109,6 +111,10 @@ export default function (xcli: XCLIAPI): void {
         cmd: 'xbrowser juejin publish --title "我的指南" --content "# Hello" --keep-alive',
         description: '发布文章并保留 session（调试用）',
       },
+      {
+        cmd: 'xbrowser juejin publish --title "我的文章" --file ./article.md --tags "前端,JavaScript"',
+        description: '从 Markdown 文件发布文章',
+      },
     ],
     result: z.object({ title: z.string(), tags: z.string().optional(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
@@ -117,28 +123,40 @@ export default function (xcli: XCLIAPI): void {
       const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
 
       try {
+        let content = params.content;
+        if (!content && params.file) {
+          const fs = await import('fs/promises');
+          const path = await import('path');
+          const filePath = path.resolve(params.file);
+          content = await fs.readFile(filePath, 'utf-8');
+        }
+        if (!content) {
+          return fail('必须提供 --content 或 --file 参数');
+        }
+
         await page.goto('https://juejin.cn/editor/draft', {
           waitUntil: 'domcontentloaded',
           timeout: 20000,
         });
         await page.waitForLoadState('domcontentloaded');
-        await page.waitForTimeout(4000);
+        await randomPause(2800, 5200);
+        await humanBrowse(page, 3000);
 
         const titleInput = page.locator(
           'input[placeholder*="输入文章标题"], input[class*="title-input"], input[name*="title"], input[placeholder*="标题"], input[data-testid*="title"]'
         ).first();
         if (await titleInput.isVisible().catch(() => false)) {
-          await titleInput.fill(params.title);
+          await humanFill(page, titleInput, params.title);
         }
 
-        await page.waitForTimeout(500);
+        await randomPause(350, 650);
 
         const editor = page.locator(
           'div[contenteditable="true"][class*="editor"], textarea[class*="editor"], div[class*="CodeMirror"], textarea[placeholder*="请输入"], div[contenteditable="true"][class*="CodeMirror"], div[contenteditable="true"][data-placeholder], textarea[id*="editor"]'
         ).first();
         if (await editor.isVisible().catch(() => false)) {
           await editor.click();
-          await page.keyboard.insertText(params.content);
+          await page.keyboard.insertText(content);
         }
 
         if (params.tags) {
@@ -148,13 +166,13 @@ export default function (xcli: XCLIAPI): void {
           if (await tagsInput.isVisible().catch(() => false)) {
             const tags = params.tags.split(',');
             for (const tag of tags) {
-              await tagsInput.fill(tag.trim());
-              await page.waitForTimeout(500);
+              await humanFill(page, tagsInput, tag.trim());
+              await randomPause(350, 650);
               const tagOption = page.locator(
                 '[class*="tag-item"], [class*="tag-suggestion"], [role="option"], [class*="tag-wrap"]'
               ).first();
               if (await tagOption.isVisible().catch(() => false)) {
-                await tagOption.click();
+                await humanClick(page, tagOption);
               }
             }
           }
@@ -165,13 +183,13 @@ export default function (xcli: XCLIAPI): void {
             'select[class*="category"], [class*="category-selector"], [class*="select"]'
           ).first();
           if (await categorySelect.isVisible().catch(() => false)) {
-            await categorySelect.click();
-            await page.waitForTimeout(500);
+            await humanClick(page, categorySelect);
+            await randomPause(350, 650);
             const option = page.locator(
               `[class*="option"]:has-text("${params.category}"), [class*="item"]:has-text("${params.category}")`
             ).first();
             if (await option.isVisible().catch(() => false)) {
-              await option.click();
+              await humanClick(page, option);
             }
           }
         }
@@ -186,15 +204,15 @@ export default function (xcli: XCLIAPI): void {
           'button:has-text("发布文章"), button:has-text("发布"), button[class*="publish"]'
         ).first();
         if (await publishBtn.isVisible().catch(() => false)) {
-          await publishBtn.click();
-          await page.waitForTimeout(2000);
+          await humanClick(page, publishBtn);
+          await randomPause(1400, 2600);
 
           const confirmBtn = page.locator(
             'button:has-text("确认发布"), button:has-text("确定")'
           ).first();
           if (await confirmBtn.isVisible().catch(() => false)) {
-            await confirmBtn.click();
-            await page.waitForTimeout(3000);
+            await humanClick(page, confirmBtn);
+            await randomPause(2100, 3900);
           }
         }
 
@@ -244,16 +262,17 @@ export default function (xcli: XCLIAPI): void {
           timeout: 20000,
         });
         await page.waitForLoadState('domcontentloaded');
-        await page.waitForTimeout(4000);
+        await randomPause(2800, 5200);
+        await humanBrowse(page, 3000);
 
         const titleInput = page.locator(
           'input[placeholder*="输入文章标题"], input[class*="title-input"], input[name*="title"], input[placeholder*="标题"]'
         ).first();
         if (await titleInput.isVisible().catch(() => false)) {
-          await titleInput.fill(params.title);
+          await humanFill(page, titleInput, params.title);
         }
 
-        await page.waitForTimeout(500);
+        await randomPause(350, 650);
 
         const editor = page.locator(
           'div[contenteditable="true"][class*="editor"], textarea[class*="editor"], div[class*="CodeMirror"], div[contenteditable="true"][data-placeholder], textarea[id*="editor"]'
@@ -267,8 +286,8 @@ export default function (xcli: XCLIAPI): void {
           'button:has-text("保存草稿"), button:has-text("保存"), button[class*="draft"]'
         ).first();
         if (await saveBtn.isVisible().catch(() => false)) {
-          await saveBtn.click();
-          await page.waitForTimeout(2000);
+          await humanClick(page, saveBtn);
+          await randomPause(1400, 2600);
         }
 
         return ok({
@@ -307,14 +326,14 @@ export default function (xcli: XCLIAPI): void {
           timeout: 15000,
         });
         await page.waitForLoadState('domcontentloaded');
-        await page.waitForTimeout(2000);
+        await randomPause(1400, 2600);
 
         if (params.bio) {
           const bioInput = page.locator(
             'textarea[name*="bio"], textarea[placeholder*="介绍"], textarea[placeholder*="bio"], textarea[class*="intro"]'
           ).first();
           if (await bioInput.isVisible().catch(() => false)) {
-            await bioInput.fill(`${params.bio}\n\n${params.url}`);
+            await humanFill(page, bioInput, `${params.bio}\n\n${params.url}`);
           }
         }
 
@@ -322,15 +341,15 @@ export default function (xcli: XCLIAPI): void {
           'input[name*="url"], input[placeholder*="网站"], input[placeholder*="blog"], input[class*="website"]'
         ).first();
         if (await webInput.isVisible().catch(() => false)) {
-          await webInput.fill(params.url);
+          await humanFill(page, webInput, params.url);
         }
 
         const submitBtn = page.locator(
           'button:has-text("保存"), button:has-text("提交"), button[type="submit"]'
         ).first();
         if (await submitBtn.isVisible().catch(() => false)) {
-          await submitBtn.click();
-          await page.waitForTimeout(2000);
+          await humanClick(page, submitBtn);
+          await randomPause(1400, 2600);
         }
 
         return ok({ url: params.url, updated: true }, [...cdpTips, 'Profile 已更新，包含外链']);
@@ -363,7 +382,7 @@ export default function (xcli: XCLIAPI): void {
           timeout: 15000,
         });
         await page.waitForLoadState('domcontentloaded');
-        await page.waitForTimeout(3000);
+        await randomPause(2100, 3900);
 
         const articles = await page.evaluate((maxItems: number) => {
           const items: Array<{

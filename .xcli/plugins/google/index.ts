@@ -160,4 +160,66 @@ export default function(xcli: XCLIAPI): void {
       }
     },
   });
+
+  google.command('webmaster-config', {
+    description: '保存 Google Search Console 配置（站点域名）',
+    scope: 'cli',
+    parameters: z.object({
+      site: z.string().describe('站点域名（如 https://xbrowser.dev）'),
+    }),
+    examples: [
+      { cmd: 'xbrowser google webmaster-config --site https://xbrowser.dev', description: '保存 GSC 配置' },
+    ],
+    result: z.object({ site: z.string(), saved: z.boolean() }),
+    handler: async (params, ctx) => {
+      await ctx.storage.set('google_webmaster', { site: params.site });
+      return ok({ site: params.site, saved: true }, [`已保存 Google Webmaster 配置: site=${params.site}`]);
+    },
+  });
+
+  google.command('push-url', {
+    description: '通过 Google ping 通知 Google 抓取 sitemap，或在浏览器中提交 URL',
+    scope: 'cli',
+    parameters: z.object({
+      sitemapUrl: z.string().optional().describe('Sitemap URL，用于 ping 通知 Google'),
+      urls: z.array(z.string()).optional().describe('要推送的 URL 列表（通过浏览器操作 GSC）'),
+      site: z.string().optional().describe('站点域名，默认使用已保存的配置'),
+    }),
+    examples: [
+      { cmd: 'xbrowser google push-url --sitemapUrl https://xbrowser.dev/sitemap.xml', description: 'Ping Google 抓取 sitemap' },
+    ],
+    result: z.object({ success: z.boolean(), method: z.string() }),
+    handler: async (params, ctx) => {
+      if (params.sitemapUrl) {
+        // Method 1: Ping Google sitemap endpoint
+        try {
+          const pingUrl = `https://www.google.com/ping?sitemap=${encodeURIComponent(params.sitemapUrl)}`;
+          const res = await fetch(pingUrl, { method: 'GET', signal: AbortSignal.timeout(15000) });
+          if (res.ok) {
+            return ok({ success: true, method: 'sitemap-ping' }, [
+              `Sitemap ping 成功: ${params.sitemapUrl}`,
+              `HTTP ${res.status}`,
+              'Google 将在后续抓取中处理 sitemap',
+            ]);
+          }
+          return fail(`Sitemap ping 失败: HTTP ${res.status}`, [
+            '在中国大陆可能无法直接访问 google.com',
+            '可通过浏览器打开 Google Search Console 手动提交',
+          ]);
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : '未知错误';
+          return fail(`Sitemap ping 失败: ${msg}`, [
+            '在中国大陆可能无法直接访问 google.com',
+            '可通过浏览器打开 Google Search Console 手动提交 sitemap',
+            `GSC 地址: https://search.google.com/search-console/sitemaps`,
+          ]);
+        }
+      }
+
+      return fail('请指定 --sitemapUrl 或 --urls 参数', [
+        '用法: xbrowser google push-url --sitemapUrl https://xbrowser.dev/sitemap.xml',
+        '或通过浏览器访问 Google Search Console 手动提交',
+      ]);
+    },
+  });
 }
