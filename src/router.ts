@@ -5,8 +5,8 @@ import { executeChain, isChainInput, getPluginStorage } from './executor.js';
 import { allBuiltins } from './builtins/index.js';
 
 /**
- * Known global options that xbrowser CLI recognizes.
- * Any --flag not in this set will trigger an "unknown option" error.
+ * Known global options that xbrowser CLI recognizes as flags.
+ * These are filtered out during plugin param validation to avoid false positives.
  */
 const KNOWN_GLOBAL_OPTIONS = new Set([
   'json', 'yaml',
@@ -20,6 +20,7 @@ const KNOWN_GLOBAL_OPTIONS = new Set([
   'timeout',
   'headless',
 ]);
+
 import {
   handleBrowserCommand,
   handleSession,
@@ -238,28 +239,8 @@ export async function routeCommand(
   const command = positional[0];
   const cmdArgs = positional.slice(1);
 
-  // Validate global options for built-in commands only.
-  // Plugin commands have their own parameters which parseArgs also captures
-  // as "options" — we can't distinguish them here, so skip validation.
-  // Check if this is a plugin command (has its own sub-command parameters).
-  // Built-in browser commands (goto, click, etc.) and allBuiltins (config, etc.) are NOT plugins.
-  const isPluginCommand = command
-    ? !allBuiltins.find(b => b.name === command) && !getCommand(command) && command !== 'help'
-    : false;
-  if (!isPluginCommand && command) {
-    const unknownOptions = Object.keys(options).filter(k => !KNOWN_GLOBAL_OPTIONS.has(k));
-    if (unknownOptions.length > 0) {
-      const unknown = unknownOptions.map(k => `--${k}`).join(', ');
-      outputError(
-        `Unknown option: ${unknown}\n` +
-        `Did you mean to use a global flag? Global flags must come BEFORE the command:\n` +
-        `  ✗  xbrowser goto <url> --cdp-endpoint <endpoint>  (treated as unknown)\n` +
-        `  ✓  xbrowser --cdp <endpoint> goto <url>           (correct)\n` +
-        `Run "xbrowser --help" to see available global options.`
-      );
-      return;
-    }
-  }
+  // Built-in commands (search, etc.) may have their own options.
+  // Typo detection is handled at the command level.
   const mode = options.json ? 'json' : options.yaml ? 'yaml' : 'text';
   const sessionName = (options.session as string) || process.env.XBROWSER_SESSION || 'default';
   const cdpEndpoint = options.cdp as string | undefined;
@@ -497,6 +478,30 @@ export async function routeCommand(
           const subCmdIdx = pluginNameIdx >= 0 ? argv.indexOf(subCommand, pluginNameIdx + 1) : -1;
           const rawPluginArgs = subCmdIdx >= 0 ? argv.slice(subCmdIdx + 1) : [];
           const params = parsePluginParams(rawPluginArgs, cmdEntry.parameters!);
+
+          // Validate plugin params against Zod schema — reject unknown flags
+          if (cmdEntry.parameters) {
+            const schemaAny = cmdEntry.parameters as unknown as Record<string, unknown>;
+            const def = schemaAny._def as Record<string, unknown> | undefined;
+            // ZodObject stores shape as a function (getter) in _def.shape
+            const shapeOrFn = def?.shape ?? (schemaAny as Record<string, unknown>).shape;
+            const shapeObj = typeof shapeOrFn === 'function' ? shapeOrFn() as Record<string, unknown> : shapeOrFn as Record<string, unknown> | undefined;
+            if (shapeObj && typeof shapeObj === 'object') {
+              const knownKeys = new Set(Object.keys(shapeObj));
+              knownKeys.add('_target');
+              // Also exclude global CLI options that parseArgs may have mixed in
+              for (const gk of KNOWN_GLOBAL_OPTIONS) knownKeys.add(gk.replace(/-([a-z])/g, (_, c) => c.toUpperCase()));
+              const unknownKeys = Object.keys(params).filter(k => !knownKeys.has(k));
+              if (unknownKeys.length > 0) {
+                const unknown = unknownKeys.map(k => `--${k.replace(/([A-Z])/g, '-$1').toLowerCase()}`).join(', ');
+                outputError(
+                  `Unknown parameter: ${unknown}\n` +
+                  `Run "xbrowser ${command} ${subCommand} --help" to see available parameters.`
+                );
+                return;
+              }
+            }
+          }
 
           if (options.target && !params._target) {
             params._target = options.target;
