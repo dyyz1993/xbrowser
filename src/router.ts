@@ -3,6 +3,23 @@ import { parsePluginParams } from './utils/plugin-params.js';
 import { version } from './version.js';
 import { executeChain, isChainInput, getPluginStorage } from './executor.js';
 import { allBuiltins } from './builtins/index.js';
+
+/**
+ * Known global options that xbrowser CLI recognizes.
+ * Any --flag not in this set will trigger an "unknown option" error.
+ */
+const KNOWN_GLOBAL_OPTIONS = new Set([
+  'json', 'yaml',
+  'session',
+  'cdp', 'cdp-endpoint',
+  'version', 'v',
+  'help', 'h',
+  'target',
+  'port',
+  'token',
+  'timeout',
+  'headless',
+]);
 import {
   handleBrowserCommand,
   handleSession,
@@ -218,6 +235,31 @@ export async function routeCommand(
 
   const parsed = parseArgs(argv);
   const { positional, options } = parsed;
+  const command = positional[0];
+  const cmdArgs = positional.slice(1);
+
+  // Validate global options for built-in commands only.
+  // Plugin commands have their own parameters which parseArgs also captures
+  // as "options" — we can't distinguish them here, so skip validation.
+  // Check if this is a plugin command (has its own sub-command parameters).
+  // Built-in browser commands (goto, click, etc.) and allBuiltins (config, etc.) are NOT plugins.
+  const isPluginCommand = command
+    ? !allBuiltins.find(b => b.name === command) && !getCommand(command) && command !== 'help'
+    : false;
+  if (!isPluginCommand && command) {
+    const unknownOptions = Object.keys(options).filter(k => !KNOWN_GLOBAL_OPTIONS.has(k));
+    if (unknownOptions.length > 0) {
+      const unknown = unknownOptions.map(k => `--${k}`).join(', ');
+      outputError(
+        `Unknown option: ${unknown}\n` +
+        `Did you mean to use a global flag? Global flags must come BEFORE the command:\n` +
+        `  ✗  xbrowser goto <url> --cdp-endpoint <endpoint>  (treated as unknown)\n` +
+        `  ✓  xbrowser --cdp <endpoint> goto <url>           (correct)\n` +
+        `Run "xbrowser --help" to see available global options.`
+      );
+      return;
+    }
+  }
   const mode = options.json ? 'json' : options.yaml ? 'yaml' : 'text';
   const sessionName = (options.session as string) || process.env.XBROWSER_SESSION || 'default';
   const cdpEndpoint = options.cdp as string | undefined;
@@ -230,9 +272,6 @@ export async function routeCommand(
     showMainHelp();
     return;
   }
-
-  const command = positional[0];
-  const cmdArgs = positional.slice(1);
 
   if ((options.help || options.h) && positional.length > 0) {
     const loader = await getPluginLoader();
