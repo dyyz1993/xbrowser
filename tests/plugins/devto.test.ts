@@ -25,7 +25,7 @@ function createMockPage() {
     goto: vi.fn(),
     waitForTimeout: vi.fn(),
     waitForLoadState: vi.fn(),
-    evaluate: vi.fn(),
+    evaluate: vi.fn(() => Promise.resolve({ x: 640, y: 360 })),
     locator: vi.fn(() => locator),
     fill: vi.fn(),
     click: vi.fn(),
@@ -35,6 +35,11 @@ function createMockPage() {
       insertText: vi.fn(),
       press: vi.fn(),
     },
+    mouse: {
+      wheel: vi.fn(() => Promise.resolve()),
+      move: vi.fn(() => Promise.resolve()),
+    },
+    viewportSize: vi.fn(() => ({ width: 1280, height: 720 })),
   };
 }
 
@@ -211,14 +216,14 @@ describe('devto plugin', () => {
       expect(result.tips[0]).toContain('Dev.to');
     });
 
-    it('should call waitForHuman before publish', async () => {
+    it('should simulate human browsing behavior before publish', async () => {
       const handler = getHandler('publish');
       const page = createMockPage();
       const ctx = createMockCtx(page);
       await handler({ title: 'T', content: 'C' }, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalledWith(
-        expect.objectContaining({ autoDetect: true })
-      );
+      // humanBrowse uses mouse.wheel and mouse.move
+      expect(page.mouse.wheel).toHaveBeenCalled();
+      expect(page.mouse.move).toHaveBeenCalled();
     });
   });
 
