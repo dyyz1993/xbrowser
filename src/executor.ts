@@ -7,6 +7,8 @@ import {
   appendCommandToArchive,
   type CommandArchiveEntry,
   checkGuard,
+  PluginStorage,
+  type StorageContext,
 } from '@dyyz1993/xcli-core';
 import { parsePluginParams } from './utils/plugin-params.js';
 import { getCommand, getAllCommands } from './commands/index.js';
@@ -24,46 +26,19 @@ import { resolveRefParams } from './utils/resolve-selector.js';
 import { loadHooks } from './hooks/loader.js';
 import { homedir } from 'os';
 import { join } from 'path';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 
 const NAVIGATION_COMMANDS = new Set(['goto', 'back', 'forward', 'refresh']);
 const snapshotHintShown = new WeakSet<ManagedSession>();
 
 const STORAGE_DIR = join(homedir(), '.xbrowser', 'storage');
 
-export interface SimpleStorage {
-  get: <T>(key: string) => Promise<T | null>;
-  set: <T>(key: string, value: T) => Promise<void>;
-  delete: (key: string) => Promise<void>;
-  clear: () => Promise<void>;
-  keys: () => Promise<string[]>;
-}
+export type SimpleStorage = StorageContext;
 
-const storageCache = new Map<string, SimpleStorage>();
+const storageCache = new Map<string, PluginStorage>();
 
-export function getPluginStorage(pluginName: string): SimpleStorage {
+export function getPluginStorage(pluginName: string): StorageContext {
   if (!storageCache.has(pluginName)) {
-    const filePath = join(STORAGE_DIR, `${pluginName}.json`);
-    let data: Record<string, unknown> = {};
-
-    const load = (): void => {
-      if (existsSync(filePath)) {
-        try { data = JSON.parse(readFileSync(filePath, 'utf-8')); } catch { data = {}; }
-      }
-    };
-    const save = (): void => {
-      mkdirSync(STORAGE_DIR, { recursive: true });
-      writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf-8');
-    };
-
-    load();
-    storageCache.set(pluginName, {
-      get: async <T>(key: string): Promise<T | null> => (data[key] ?? null) as T | null,
-      set: async <T>(key: string, value: T): Promise<void> => { data[key] = value; save(); },
-      delete: async (key: string): Promise<void> => { delete data[key]; save(); },
-      clear: async (): Promise<void> => { data = {}; save(); },
-      keys: async (): Promise<string[]> => Object.keys(data),
-    });
+    storageCache.set(pluginName, new PluginStorage(pluginName, STORAGE_DIR));
   }
   return storageCache.get(pluginName)!;
 }
@@ -250,6 +225,10 @@ export async function executeCommand(
     }
   } else if ((command.scope === 'page' || command.scope === 'project') && params.url) {
     session = await createSession(sessionName, params.url as string, {
+      cdpEndpoint: extraOpts?.cdpEndpoint,
+    });
+  } else if (command.scope === 'browser') {
+    session = await createSession(sessionName, undefined, {
       cdpEndpoint: extraOpts?.cdpEndpoint,
     });
   } else if (command.scope !== 'project') {

@@ -20,6 +20,8 @@ async function dismissBaiduDialogs(page: import('playwright').Page) {
     '.close-btn',
     '[class*="consent"] button',
     '.dialog-close',
+    '.passMod_dialog-close',
+    '.passMod_dialog-header .close',
   ];
   for (const sel of dismissSelectors) {
     await page.click(sel, { timeout: 1000 }).catch((err) => {
@@ -28,7 +30,7 @@ async function dismissBaiduDialogs(page: import('playwright').Page) {
   }
   await page.evaluate(() => {
     document
-      .querySelectorAll('[class*="mask"], [class*="overlay"], [class*="popup"]')
+      .querySelectorAll('[class*="mask"], [class*="overlay"], [class*="popup"], .passMod_dialog-wrapper, .passMod_dialog-mask, .passMod_dialog-container')
       .forEach((el) => {
         if (el instanceof HTMLElement) el.style.display = 'none';
       });
@@ -78,15 +80,67 @@ export default function (xcli: XCLIAPI): void {
           position: number;
         }> = [];
 
+        await page.addInitScript(() => {
+          const origAssign = window.location.assign;
+          const origReplace = window.location.replace;
+          if (origAssign) window.location.assign = function() {};
+          if (origReplace) window.location.replace = function() {};
+          Object.defineProperty(window, 'location', {
+            get() { return window.document.location; },
+            set(v) {},
+          });
+        });
+
         await page.goto(`https://www.baidu.com/s?wd=${encodeURIComponent(query)}`, {
           waitUntil: 'domcontentloaded',
           timeout: 15000,
         });
-        await page.waitForTimeout(3000);
-        await dismissBaiduDialogs(page);
+        await page.waitForSelector('h3', { timeout: 5000 }).catch(() => {});
 
-        for (let pageNum = 1; pageNum <= pages; pageNum++) {
-          if (pageNum > 1) {
+        const pageResults = await page.evaluate((pNum: number) => {
+          const results: Array<{
+            title: string;
+            url: string;
+            snippet: string;
+            source: string;
+            page: number;
+            position: number;
+          }> = [];
+
+          const h3s = document.querySelectorAll('h3');
+          h3s.forEach((h3, idx) => {
+            const a = h3.querySelector('a');
+            if (!a) return;
+            const title = a.textContent?.trim() || '';
+            const url = a.getAttribute('href') || '';
+            if (!title || !url || url.startsWith('javascript:')) return;
+
+            const container = h3.closest('.result, .c-container, [class*="result"]')
+              || h3.parentElement?.parentElement?.parentElement
+              || h3.parentElement?.parentElement
+              || h3.parentElement;
+
+            const snippetEl = container?.querySelector('.c-abstract, [class*="abstract"], .c-span-last')
+              || container?.querySelector('[class*="content-text"]')
+              || container?.querySelector('p');
+            const sourceEl = container?.querySelector('.c-showurl, [class*="showurl"], .c-color-gray')
+              || container?.querySelector('[class*="source"]')
+              || container?.querySelector('[class*="url"]');
+
+            const snippet = snippetEl?.textContent?.trim().slice(0, 300) || '';
+            const source = sourceEl?.textContent?.trim() || '';
+
+            results.push({ title, url, snippet, source, page: pNum, position: idx + 1 });
+          });
+
+          return results;
+        }, 1);
+
+        allResults.push(...pageResults);
+
+        if (pages > 1) {
+          await dismissBaiduDialogs(page);
+          for (let pageNum = 2; pageNum <= pages; pageNum++) {
             const nextBtn = page.locator('a.n:has-text("下一页")').first();
             const hasNext = await nextBtn.isVisible().catch(() => false);
             if (!hasNext) break;
@@ -94,56 +148,27 @@ export default function (xcli: XCLIAPI): void {
             await page.waitForLoadState('domcontentloaded');
             await dismissBaiduDialogs(page);
             await page.waitForTimeout(1500);
+
+            const extraResults = await page.evaluate((pNum: number) => {
+              const results: Array<{ title: string; url: string; snippet: string; source: string; page: number; position: number }> = [];
+              document.querySelectorAll('h3').forEach((h3, idx) => {
+                const a = h3.querySelector('a');
+                if (!a) return;
+                const title = a.textContent?.trim() || '';
+                const url = a.getAttribute('href') || '';
+                if (!title || !url || url.startsWith('javascript:')) return;
+                const container = h3.closest('.result, .c-container, [class*="result"]') || h3.parentElement?.parentElement?.parentElement || h3.parentElement;
+                const snippetEl = container?.querySelector('.c-abstract, [class*="abstract"], .c-span-last') || container?.querySelector('[class*="content-text"]') || container?.querySelector('p');
+                const sourceEl = container?.querySelector('.c-showurl, [class*="showurl"], .c-color-gray') || container?.querySelector('[class*="source"]') || container?.querySelector('[class*="url"]');
+                results.push({ title, url, snippet: snippetEl?.textContent?.trim().slice(0, 300) || '', source: sourceEl?.textContent?.trim() || '', page: pNum, position: idx + 1 });
+              });
+              return results;
+            }, pageNum);
+            allResults.push(...extraResults);
           }
-
-          const pageResults = await page.evaluate((pNum: number) => {
-            const results: Array<{
-              title: string;
-              url: string;
-              snippet: string;
-              source: string;
-              page: number;
-              position: number;
-            }> = [];
-
-            let containers = document.querySelectorAll('.result, .c-container');
-            if (containers.length === 0) {
-              containers = document.querySelectorAll('[class*="result"]');
-            }
-            if (containers.length === 0) {
-              containers = document.querySelectorAll('[data-testid="result"]');
-            }
-
-            containers.forEach((container, idx) => {
-              const titleEl = container.querySelector('h3 a, .t a')
-                || container.querySelector('h3 a')
-                || container.querySelector('[class*="title"] a');
-              const snippetEl = container.querySelector('.c-abstract, [class*="abstract"], .c-span-last')
-                || container.querySelector('[class*="content-text"]')
-                || container.querySelector('p');
-              const sourceEl = container.querySelector('.c-showurl, [class*="showurl"], .c-color-gray')
-                || container.querySelector('[class*="source"]')
-                || container.querySelector('[class*="url"]');
-
-              const title = titleEl?.textContent?.trim() || '';
-              const url = titleEl?.getAttribute('href') || '';
-              const snippet = snippetEl?.textContent?.trim().slice(0, 300) || '';
-              const source = sourceEl?.textContent?.trim() || '';
-
-              if (title) {
-                results.push({ title, url, snippet, source, page: pNum, position: idx + 1 });
-              }
-            });
-
-            return results;
-          }, pageNum);
-
-          allResults.push(...pageResults);
         }
 
-        const finalResults = limit ? allResults.slice(0, limit) : allResults;
-
-        return ok(finalResults, [
+        return ok(limit ? allResults.slice(0, limit) : allResults, [
             ...cdpTips,
             `关键词: "${query}"`,
             `采集 ${pages} 页，共 ${allResults.length} 条结果${limit ? `，截取前 ${limit} 条` : ''}`,

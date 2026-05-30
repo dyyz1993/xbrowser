@@ -16,7 +16,9 @@ function createMockPage(evaluateResult: unknown = []) {
     goto: vi.fn(),
     waitForTimeout: vi.fn(),
     waitForLoadState: vi.fn(),
-    evaluate: vi.fn(() => evaluateResult),
+    waitForSelector: vi.fn(() => Promise.resolve(null)),
+    addInitScript: vi.fn(),
+    evaluate: vi.fn((_fn: Function | unknown, ..._args: unknown[]) => evaluateResult),
     click: vi.fn(() => Promise.resolve()),
     locator: vi.fn(() => ({
       first: vi.fn(() => ({

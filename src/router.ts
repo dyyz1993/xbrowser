@@ -2,6 +2,7 @@ import { parseArgs, outputFormatter, isCommandResult, type CommandResult, helpGe
 import { parsePluginParams } from './utils/plugin-params.js';
 import { version } from './version.js';
 import { executeChain, isChainInput, getPluginStorage } from './executor.js';
+import { loadHooks } from './hooks/loader.js';
 import { allBuiltins } from './builtins/index.js';
 
 /**
@@ -195,8 +196,23 @@ async function handleEvalMode(argv: string[]): Promise<void> {
 
 async function handleChainInput(input: string, argv?: string[]): Promise<void> {
   const cdpEndpoint = argv ? extractCdpFromArgv(argv) : undefined;
+  const jsonMode = argv ? argv.includes('--json') || argv.includes('-j') : false;
   const chainResult = await executeChain(input, { cdpEndpoint });
-  printChainResult(chainResult);
+  if (jsonMode) {
+    const output = {
+      success: chainResult.success,
+      steps: chainResult.steps.map(s => ({
+        command: s.raw,
+        success: s.success,
+        data: s.data,
+        duration: s.duration,
+        ...(s.hookOutputs?.length ? { hooks: s.hookOutputs } : {}),
+      })),
+    };
+    console.log(JSON.stringify(output, null, 2));
+  } else {
+    printChainResult(chainResult);
+  }
   if (!chainResult.success) throw new Error("Command failed");
 }
 
@@ -507,7 +523,7 @@ export async function routeCommand(
             params._target = options.target;
           }
 
-          const needsBrowser = cmdEntry.scope === 'page';
+          const needsBrowser = cmdEntry.scope === 'page' || cmdEntry.scope === 'browser';
           if (needsBrowser && !process.env.XBROWSER_DAEMON_WORKER) {
             const { forwardExec } = await import('./client/daemon-client.js');
             const userTimeout = typeof params.timeout === 'number' && params.timeout > 0 ? params.timeout * 1000 + 30000 : undefined;
@@ -559,7 +575,21 @@ export async function routeCommand(
           };
 
           try {
+            const cmdStart = Date.now()
+            const cmdHooks = await loadHooks();
+            if (cmdHooks.length > 0 && session?.page) {
+              await Promise.all(cmdHooks.map(h => h.onBeforeCommand?.({ page: session.page!, command: `${command} ${subCommand}`, params })));
+            }
+
             const result = await cmdEntry.handler(params, ctx) as CommandResult;
+
+            const hookOutputs: Array<Record<string, unknown>> = [];
+            if (cmdHooks.length > 0 && session?.page) {
+              for (const h of cmdHooks) {
+                const output = await h.onAfterCommand?.({ page: session.page!, command: `${command} ${subCommand}`, params, result, duration: Date.now() - cmdStart });
+                if (output) hookOutputs.push({ _hook: h.name, ...output });
+              }
+            }
             // Auto-save conversationUrl to session file for cross-process recovery
             if (session && result && result.data) {
               const convUrl = (result.data as Record<string, unknown>).conversationUrl as string | undefined;
@@ -567,33 +597,28 @@ export async function routeCommand(
                 saveSessionDiskMeta(sessionName, { conversationUrl: convUrl, cdpEndpoint });
               }
             }
-            if (isCommandResult(result)) {
-              // Framework-controlled output: json/yaml → pure data on stdout, tips on stderr
-              if (mode === 'json' || mode === 'yaml') {
-                console.log(outputFormatter.format(result.data, { mode: mode as 'json' | 'yaml', color: false, emoji: false }));
-                if (result.tips?.length) {
-                  for (const tip of result.tips) console.error(`\u{1F4A1} ${tip}`);
-                }
-              } else {
-                console.log(outputFormatter.format(result.data, { mode: 'text', color: true, emoji: true }));
-                if (result.tips?.length) {
-                  for (const tip of result.tips) console.log(`  \u{1F4A1} ${tip}`);
-                }
+            const outputData = isCommandResult(result) ? result.data : (result && typeof result === 'object' ? ((result as Record<string, unknown>).data ?? result) : result);
+            const tips = isCommandResult(result) ? result.tips : ((result && typeof result === 'object') ? (result as Record<string, unknown>).tips as string[] | undefined : undefined);
+
+            if (mode === 'json' || mode === 'yaml') {
+              const finalOutput: Record<string, unknown> = {
+                data: outputData,
+              };
+              if (hookOutputs.length > 0) {
+                finalOutput.hooks = hookOutputs;
               }
-            } else if (result && typeof result === 'object') {
-              // Legacy plugins that don't return standard CommandResult
-              const obj = result as Record<string, unknown>;
-              if (mode === 'json' || mode === 'yaml') {
-                console.log(outputFormatter.format(obj.data ?? obj, { mode: mode as 'json' | 'yaml', color: false, emoji: false }));
-                const tips = obj.tips as string[] | undefined;
-                if (tips?.length) {
-                  for (const tip of tips) console.error(`\u{1F4A1} ${tip}`);
-                }
-              } else {
-                if (obj.data) outputResult(obj.data, mode);
-                const tips = obj.tips as string[] | undefined;
-                if (tips?.length) {
-                  for (const tip of tips) console.log(`  \u{1F4A1} ${tip}`);
+              console.log(outputFormatter.format(finalOutput, { mode: mode as 'json' | 'yaml', color: false, emoji: false }));
+              if (tips?.length) {
+                for (const tip of tips) console.error(`\u{1F4A1} ${tip}`);
+              }
+            } else {
+              console.log(outputFormatter.format(outputData, { mode: 'text', color: true, emoji: true }));
+              if (tips?.length) {
+                for (const tip of tips) console.log(`  \u{1F4A1} ${tip}`);
+              }
+              if (hookOutputs.length > 0) {
+                for (const ho of hookOutputs) {
+                  console.log(`  📸 screenshot: ${(ho.screenshot as Record<string, unknown>)?.url || 'captured'}`);
                 }
               }
             }

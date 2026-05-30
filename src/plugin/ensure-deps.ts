@@ -5,7 +5,7 @@ import { readJsonFile } from '../utils/json-file.js';
 
 const SHARED_PLUGIN_DEPENDENCIES: Record<string, string> = {
   'zod': '^3.24.0',
-  '@dyyz1993/xcli-core': '^0.9.2',
+  '@dyyz1993/xcli-core': '^0.12.1',
 };
 
 /**
