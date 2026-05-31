@@ -548,6 +548,7 @@ export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'backlink-auto',
     url: 'https://omnivideo.net',
+    requiresLogin: true,
     description: '自动注册+提交外链（CDP安全模式，逐站执行）',
   });
 

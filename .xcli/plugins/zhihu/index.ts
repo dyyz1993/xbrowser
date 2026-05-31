@@ -466,7 +466,7 @@ export default function (xcli: XCLIAPI): void {
     name: 'zhihu',
     url: 'https://www.zhihu.com',
     description: '知乎 - 知识问答与内容采集 (DA 93)',
-    requiresLogin: false,
+    requiresLogin: true,
     loginConfig: {
       loginUrls: ['/login', '/passport'],
       loginSelectors: ['[class*="login"]', '[class*="modal"]'],

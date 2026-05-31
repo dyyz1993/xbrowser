@@ -243,7 +243,7 @@ export default function (xcli: XCLIAPI): void {
     name: 'douyin',
     url: DOUYIN_BASE,
     description: '抖音数据采集',
-    requiresLogin: false,
+    requiresLogin: true,
     loginConfig: {
       loginUrls: ['/login', '/passport'],
       loginSelectors: ['[class*="login"]', '[class*="modal"]'],

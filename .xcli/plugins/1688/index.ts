@@ -221,7 +221,7 @@ export default function (xcli: XCLIAPI): void {
     name: '1688',
     url: 'https://www.1688.com',
     description: '1688阿里巴巴 - 店铺信息、商品列表、商品详情、搜索采集',
-    requiresLogin: false,
+    requiresLogin: true,
     loginConfig: {
       loginUrls: ['/login', '/passport'],
       loginSelectors: ['[class*="login"]', '[class*="modal"]'],

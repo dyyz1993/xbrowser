@@ -237,7 +237,7 @@ export default function (xcli: XCLIAPI): void {
     name: 'xiaohongshu',
     url: XHS_BASE,
     description: '小红书数据采集',
-    requiresLogin: false,
+    requiresLogin: true,
     loginConfig: {
       loginUrls: ['/login', '/passport'],
       loginSelectors: ['[class*="login"]', '[class*="modal"]'],

@@ -80,4 +80,13 @@ if [ $? -ne 0 ]; then
 fi
 echo "✅ Plugin code check passed"
 
+echo "🔍 [pre-commit] Checking plugin requiresLogin consistency..."
+node lint-scripts/check-plugin-requires-login.js
+if [ $? -ne 0 ]; then
+  echo "❌ Plugin requiresLogin check failed. Fix requiresLogin declarations."
+  echo "   → See lint-scripts/RULES.md for guidelines."
+  exit 1
+fi
+echo "✅ Plugin requiresLogin check passed"
+
 echo "✅ [pre-commit] All checks passed!"

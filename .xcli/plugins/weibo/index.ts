@@ -7,10 +7,7 @@ export default function (xcli: XCLIAPI): void {
     name: 'weibo',
     url: 'https://s.weibo.com',
     description: '微博图片搜索',
-    requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
+    requiresLogin: true,
   });
 
   weibo.command('search-image', {

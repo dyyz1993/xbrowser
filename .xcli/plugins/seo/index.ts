@@ -17,6 +17,7 @@ export default function (xcli: XCLIAPI): void {
   const seo = xcli.createSite({
     name: 'seo',
     description: '搜索引擎提交工具 — 通知搜索引擎收录你的 URL',
+    requiresLogin: false,
   });
 
   seo.command('ping', {

@@ -12,6 +12,8 @@ lint-scripts/
 ├── check-result-schema.mjs        # 检查命令是否声明 result Zod schema
 ├── check-plugin-metadata.mjs      # 检查已安装插件是否有合法 package.json
 ├── check-plugin-code.mjs          # 检查插件源码质量（ok/fail、z.any、空 catch 等）
+├── check-plugin-code.mjs          # 检查插件源码质量（ok/fail、z.any、空 catch 等）
+├── check-plugin-requires-login.js # 检查插件 requiresLogin 声明一致性
 └── eslint-no-raw-output.mjs       # ESLint 规则：禁止直接 console.log(JSON.stringify)
 ```
 
@@ -400,7 +402,50 @@ const site = xcli.createSite({
 - 需要登录的插件应同时实现 `site.login()` 和 `site.logout()` 处理器
 - 验证码处理应使用 `ctx.waitForHuman()` 让用户在浏览器中手动完成
 
-### 9. 渐进式 Result Schema 优化策略
+### 9. requiresLogin 声明规范
+
+**执行方式**：
+- Husky pre-commit：`lint-scripts/check-plugin-requires-login.js`
+
+**规则**：
+- 所有 `createSite()` 必须声明 `requiresLogin: true|false`
+- `requiresLogin: true` 的插件的所有子命令应检查登录态
+- `requiresLogin: false` 的插件应能在无登录状态下正常工作
+
+**判断标准**：
+
+| requiresLogin | 含义 | 典型插件 |
+|---|---|---|
+| `true` | 需要登录才能使用核心功能 | douyin, xiaohongshu, zhihu, AI 助手, SEO 外链站 |
+| `false` | 纯公开 API，无需任何登录 | 搜索引擎、图片素材站、工具类 |
+
+**原因**：
+`requiresLogin` 影响：
+- `plugin list` 中显示 `[need login]` / `[logged in]` 状态
+- 框架的 `checkGuard()` 登录守卫判断
+- 用户对插件使用条件的预期
+
+**正确示例**：
+```typescript
+const site = xcli.createSite({
+  name: 'douyin',
+  url: 'https://www.douyin.com',
+  description: '抖音数据采集',
+  requiresLogin: true,  // ✅ 需要 CDP 浏览器登录
+});
+```
+
+**错误示例**：
+```typescript
+// ❌ 虽然需要登录但声明为 false
+const site = xcli.createSite({
+  name: 'douyin',
+  url: 'https://www.douyin.com',
+  requiresLogin: false,  // 实际需要 CDP 登录才能获取评论数据
+});
+```
+
+### 10. 渐进式 Result Schema 优化策略
 
 本策略解决 `result: z.any()` 到精确 `z.object()` 的过渡问题。
 

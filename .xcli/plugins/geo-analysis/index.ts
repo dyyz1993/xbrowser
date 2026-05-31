@@ -822,7 +822,7 @@ export default function (xcli: XCLIAPI): void {
     name: 'geo-analysis',
     url: 'https://multi-engine',
     description: 'GEO 外链排名分析 - 多引擎数据采集、域名排名、企业排名、趋势分析 (v2.0 SSE+DOM)',
-    requiresLogin: false,
+    requiresLogin: true,
     isLogin: async () => true,
   });
 

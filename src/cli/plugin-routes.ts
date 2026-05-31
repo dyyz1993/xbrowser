@@ -30,15 +30,19 @@ async function buildRuntimePluginInfo(): Promise<Map<string, PluginRuntimeInfo>>
     const cmds = site.getAllCommands();
     const commandNames = cmds.map(c => c.name);
     if (commandNames.length === 0) continue;
-    const hasLoginCommand = commandNames.includes('login');
+    const anySite = site as never as Record<string, unknown>;
+    const hasLoginHandler = typeof anySite.hasLoginCommand === 'function'
+      && (anySite.hasLoginCommand as () => boolean)();
+    const configRequiresLogin = !!site.config.requiresLogin;
+    const hasLogin = hasLoginHandler || configRequiresLogin;
     let loggedIn: boolean | null = null;
-    if (hasLoginCommand) {
+    if (hasLogin) {
       try { loggedIn = await site.isLoggedIn(); } catch { loggedIn = null; }
     }
     const requiresLoginCommands = cmds
       .filter(c => c.requiresLogin === true)
       .map(c => c.name);
-    map.set(site.name, { commands: commandNames, hasLogin: hasLoginCommand, loggedIn, requiresLoginCommands });
+    map.set(site.name, { commands: commandNames, hasLogin, loggedIn, requiresLoginCommands });
   }
   return map;
 }
