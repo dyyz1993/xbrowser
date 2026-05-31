@@ -193,7 +193,10 @@ describe('plugin-routes', () => {
       await handlePlugin(['list'], {}, 'json');
 
       expect(mockOutputResult).toHaveBeenCalledWith(
-        { plugins: [{ name: 'plugin-a', path: '/tmp/a' }, { name: 'plugin-b', path: '/tmp/b' }] },
+        { plugins: [
+          { name: 'plugin-a', path: '/tmp/a', commands: undefined, version: undefined, description: undefined, hasLogin: false, loggedIn: null, requiresLoginCommands: [] },
+          { name: 'plugin-b', path: '/tmp/b', commands: undefined, version: undefined, description: undefined, hasLogin: false, loggedIn: null, requiresLoginCommands: [] },
+        ] },
         'json'
       );
     });

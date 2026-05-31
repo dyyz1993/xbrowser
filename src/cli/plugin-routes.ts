@@ -15,15 +15,30 @@ function getPluginLoader(): XBrowserPluginLoader {
   return pluginLoader;
 }
 
-async function buildRuntimeCommandsMap(): Promise<Map<string, string[]>> {
+interface PluginRuntimeInfo {
+  commands: string[];
+  hasLogin: boolean;
+  loggedIn: boolean | null;
+  requiresLoginCommands: string[];
+}
+
+async function buildRuntimePluginInfo(): Promise<Map<string, PluginRuntimeInfo>> {
   const loader = await getGlobalPluginLoader();
   const sites = loader.getCore().loader.getSites();
-  const map = new Map<string, string[]>();
+  const map = new Map<string, PluginRuntimeInfo>();
   for (const site of sites) {
-    const cmds = site.getAllCommands().map(c => c.name);
-    if (cmds.length > 0) {
-      map.set(site.name, cmds);
+    const cmds = site.getAllCommands();
+    const commandNames = cmds.map(c => c.name);
+    if (commandNames.length === 0) continue;
+    const hasLoginCommand = commandNames.includes('login');
+    let loggedIn: boolean | null = null;
+    if (hasLoginCommand) {
+      try { loggedIn = await site.isLoggedIn(); } catch { loggedIn = null; }
     }
+    const requiresLoginCommands = cmds
+      .filter(c => c.requiresLogin === true)
+      .map(c => c.name);
+    map.set(site.name, { commands: commandNames, hasLogin: hasLoginCommand, loggedIn, requiresLoginCommands });
   }
   return map;
 }
@@ -277,18 +292,21 @@ export async function handlePlugin(
     case 'list': {
       const plugins = await installer.list();
 
-      const runtimeCommands = await buildRuntimeCommandsMap();
+      const runtimeInfo = await buildRuntimePluginInfo();
 
       const enrichedPlugins = plugins.map(p => {
         const metadata = p.metadata as Record<string, unknown> | undefined;
         const staticCommands = metadata?.commands as string[] | undefined;
-        const dynamicCommands = runtimeCommands.get(p.name);
-        const commands = dynamicCommands || staticCommands;
+        const rt = runtimeInfo.get(p.name);
+        const commands = rt?.commands || staticCommands;
         return {
           ...p,
           commands,
           version: metadata?.version as string | undefined,
           description: metadata?.description as string | undefined,
+          hasLogin: rt?.hasLogin ?? false,
+          loggedIn: rt?.loggedIn ?? null,
+          requiresLoginCommands: rt?.requiresLoginCommands ?? [],
         };
       });
 
@@ -300,13 +318,17 @@ export async function handlePlugin(
           return;
         }
         for (const p of enrichedPlugins) {
+          const loginTag = p.hasLogin ? (p.loggedIn ? ' [logged in]' : ' [need login]') : '';
           if (p.version && p.description) {
-            console.log(`${p.name} (${p.version}) - ${p.description}`);
+            console.log(`${p.name} (${p.version}) - ${p.description}${loginTag}`);
           } else {
-            console.log(p.name);
+            console.log(`${p.name}${loginTag}`);
           }
           if (p.commands && p.commands.length > 0) {
             console.log(`  ${p.commands.join(', ')}`);
+          }
+          if (p.requiresLoginCommands.length > 0) {
+            console.log(`  requires login: ${p.requiresLoginCommands.join(', ')}`);
           }
         }
         console.log(`\nTotal: ${enrichedPlugins.length} plugins`);
