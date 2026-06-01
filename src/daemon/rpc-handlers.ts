@@ -277,7 +277,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const existingSession = findSession(sessionName);
     let endpoint: string | undefined;
     if (cdp) {
-      endpoint = cdp;
+      try { endpoint = await resolveCDPEndpoint(cdp); } catch { endpoint = cdp; }
     } else if (existingSession?.cdpEndpoint) {
       endpoint = existingSession.cdpEndpoint;
     } else {

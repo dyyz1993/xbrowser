@@ -13,7 +13,7 @@ import {
 import { parsePluginParams } from './utils/plugin-params.js';
 import { getCommand, getAllCommands } from './commands/index.js';
 import type { BrowserCommandContext } from './context.js';
-import { findOrRestoreSession, createSession, saveSessionDiskMeta, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
+import { findOrRestoreSession, createSession, saveSessionDiskMeta, closeSessionByName, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
 import {
   parseCommandChain,
   splitCommand,
@@ -217,7 +217,18 @@ export async function executeCommand(
   const existing = await findOrRestoreSession(sessionName, extraOpts?.cdpEndpoint);
   if (existing) {
     session = existing;
-    if (targetPageOverride && session.page) {
+    if (session.page) {
+      try {
+        await Promise.race([
+          session.page.evaluate(() => true),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
+        ]);
+      } catch {
+        await closeSessionByName(session.name);
+        session = undefined;
+      }
+    }
+    if (session && targetPageOverride && session.page) {
       const currentUrl = session.page.url();
       if (currentUrl !== targetPageOverride.url) {
         await session.page.goto(targetPageOverride.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
@@ -242,7 +253,7 @@ export async function executeCommand(
     browser: session?.context.browser() as BrowserCommandContext['browser'],
     browserContext: session?.context as BrowserCommandContext['browserContext'],
     sessionId: session?.id,
-    cdpEndpoint: extraOpts?.cdpEndpoint || session?.cdpEndpoint,
+    cdpEndpoint: session?.cdpEndpoint || extraOpts?.cdpEndpoint,
     args: [],
     options: {},
     cwd: process.cwd(),

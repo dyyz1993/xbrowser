@@ -527,7 +527,7 @@ export async function routeCommand(
           if (needsBrowser && !process.env.XBROWSER_DAEMON_WORKER) {
             const { forwardExec } = await import('./client/daemon-client.js');
             const userTimeout = typeof params.timeout === 'number' && params.timeout > 0 ? params.timeout * 1000 + 30000 : undefined;
-            const result = await forwardExec(command, params, sessionName, cdpEndpoint, userTimeout);
+            const result = await forwardExec(`${command}.${subCommand}`, params, sessionName, cdpEndpoint, userTimeout);
             if (result && result.success !== false) {
               if (isCommandResult(result)) {
                 if (mode === 'json' || mode === 'yaml') {
@@ -563,6 +563,7 @@ export async function routeCommand(
             browser: needsBrowser ? session!.context.browser()! : null,
             browserContext: needsBrowser ? session!.context : null,
             sessionId: needsBrowser ? session!.id : '',
+            cdpEndpoint: cdpEndpoint || (needsBrowser ? (session as Record<string, unknown>)?.cdpEndpoint as string : undefined),
             storage: getPluginStorage(command),
             output: { mode: mode as 'text' | 'json' | 'yaml', showTips: true, color: true, emoji: true },
             error: (msg: string) => { outputError(msg); },

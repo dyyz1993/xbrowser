@@ -113,7 +113,16 @@ function parseVideo(item: Record<string, unknown>) {
     createTimeStr: formatTime(ct),
     author: {
       uid: s(auth.uid),
+      secUid: s(auth.sec_uid),
       nickname: s(auth.nickname),
+      signature: s(auth.signature),
+      avatar: firstUrl(auth.avatar_larger) || firstUrl(auth.avatar_thumb),
+      homepage: s(auth.sec_uid) ? `${DOUYIN_BASE}/user/${s(auth.sec_uid)}` : '',
+      ipLocation: s(auth.ip_location),
+      followerCount: n(auth.follower_count),
+      followingCount: n(auth.following_count),
+      awemeCount: n(auth.aweme_count),
+      favoritingCount: n(auth.favoriting_count),
     },
     video: {
       playUrl: firstUrl(vid.play_addr),
@@ -238,6 +247,54 @@ function parseComment(item: Record<string, unknown>) {
   };
 }
 
+const CAPTCHA_DETECTORS = [
+  { selector: '[class*="captcha"]', name: '验证码' },
+  { selector: '#captcha_container', name: '验证码容器' },
+  { selector: '[id*="captcha"]', name: '验证码' },
+  { selector: '[class*="secsdk"]', name: '安全验证' },
+  { selector: '[class*="captcha-slider"]', name: '滑块验证' },
+];
+
+async function checkCaptcha(
+  page: Page,
+  tips: string[],
+  waitForHuman?: (opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>,
+): Promise<boolean> {
+  try {
+    for (const detector of CAPTCHA_DETECTORS) {
+      const el = await page.$(detector.selector);
+      if (!el) continue;
+      const visible = await el.isVisible().catch(() => false);
+      if (!visible) continue;
+
+      tips.push(`⚠️ 检测到${detector.name}，需要人工介入`);
+      const port = process.env.XBROWSER_DAEMON_PORT || '9224';
+      const viewerUrl = `http://localhost:${port}/preview/default`;
+      tips.push(`🔗 Viewer 地址: ${viewerUrl}`);
+
+      if (waitForHuman) {
+        tips.push('请在 Viewer 中完成验证...');
+        await waitForHuman({
+          reason: `检测到${detector.name}，请在 Viewer 中完成验证`,
+          timeout: 120,
+        });
+        await new Promise<void>(r => setTimeout(r, 2000));
+        const stillThere = await page.$(detector.selector);
+        if (stillThere && await stillThere.isVisible().catch(() => false)) {
+          return true;
+        }
+        tips.push('验证码已解决');
+        return false;
+      }
+
+      return true;
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'douyin',
@@ -328,108 +385,386 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  async function resolveTargetProfileUrl(input: string, page: Page, tips: string[]): Promise<string> {
+    let url = input;
+
+    const urlMatch = url.match(/(https?:\/\/[^\s]+)/);
+    if (urlMatch) {
+      url = urlMatch[1];
+      if (urlMatch[0] !== input.trim()) {
+        tips.push('从文本中提取到 URL');
+      }
+    }
+
+    if (url.includes('v.douyin.com')) {
+      tips.push('解析短链...');
+      const resp = await page.request.get(url, { maxRedirects: 5 });
+      const finalUrl = resp.url();
+      tips.push(`跳转到: ${finalUrl}`);
+      url = finalUrl;
+    }
+
+    if (/^\d{15,25}$/.test(url.trim())) {
+      tips.push(`检测到纯 awemeId: ${url}`);
+      return await resolveFromAwemeId(url.trim(), page, tips);
+    }
+
+    const videoMatch = url.match(/video\/(\d+)/);
+    if (videoMatch) {
+      tips.push(`检测到视频详情页，提取 awemeId: ${videoMatch[1]}`);
+      return await resolveFromAwemeId(videoMatch[1], page, tips);
+    }
+
+    const userMatch = url.match(/user\/([A-Za-z0-9_-]+)/);
+    if (userMatch) {
+      tips.push(`检测到用户主页 secUid: ${userMatch[1].slice(0, 20)}...`);
+      return `${DOUYIN_BASE}/user/${userMatch[1]}`;
+    }
+
+    if (!url.startsWith('http')) {
+      tips.push('检测到纯 secUid 输入');
+      return `${DOUYIN_BASE}/user/${url}`;
+    }
+
+    throw new Error(
+      `无法识别输入格式。支持的格式：\n` +
+      `  1. 用户主页 URL: https://www.douyin.com/user/SEC_UID\n` +
+      `  2. 短链: https://v.douyin.com/xxx/\n` +
+      `  3. 视频详情页: https://www.douyin.com/video/xxx\n` +
+      `  4. 纯 awemeId（19位数字）\n` +
+      `  5. 纯 secUid\n` +
+      `  6. 包含上述 URL 的文本`,
+    );
+  }
+
+  async function resolveFromAwemeId(awemeId: string, page: Page, tips: string[]): Promise<string> {
+    tips.push(`通过视频详情获取作者 secUid...`);
+    await page.goto(DOUYIN_BASE, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await new Promise<void>(r => setTimeout(r, 2000));
+
+    let secUid = '';
+
+    const detailHandler = async (response: Response) => {
+      if (!response.url().includes('aweme/v1/web/aweme/detail')) return;
+      try {
+        const json = await response.json();
+        const uid = s(g(json, 'aweme_detail.author.sec_uid'));
+        if (uid) secUid = uid;
+      } catch {
+        if (process.env.DEBUG) console.warn('[douyin] Failed to parse detail API response');
+      }
+    };
+
+    page.on('response', detailHandler);
+    try {
+      await page.goto(`${DOUYIN_BASE}/video/${awemeId}`, {
+        waitUntil: 'domcontentloaded',
+        timeout: 30000,
+      });
+      const waitMs = 8000;
+      const intervalMs = 500;
+      for (let elapsed = 0; elapsed < waitMs && !secUid; elapsed += intervalMs) {
+        await new Promise<void>(r => setTimeout(r, intervalMs));
+      }
+    } finally {
+      page.off('response', detailHandler);
+    }
+
+    if (!secUid) {
+      throw new Error(`无法从视频 ${awemeId} 获取作者 secUid，请确认视频 ID 有效且已登录`);
+    }
+
+    tips.push(`获取到 secUid: ${secUid.slice(0, 20)}...`);
+    return `${DOUYIN_BASE}/user/${secUid}`;
+  }
+
   site.command('profile', {
-    description: '获取用户资料',
+    description: '获取用户详细资料（XHR 拦截）',
     scope: 'browser',
     parameters: z.object({
-      url: z.string().describe('用户主页 URL'),
+      url: z.string().describe('用户主页 URL 或 secUid'),
     }),
     examples: [
-      { cmd: 'xbrowser douyin profile --url "https://www.douyin.com/user/xxx"', description: '获取用户资料' },
+      { cmd: 'xbrowser douyin profile --url "https://www.douyin.com/user/MS4wLjAB..."', description: '获取用户资料' },
     ],
     result: z.object({
+      uid: z.string(),
+      secUid: z.string(),
       nickname: z.string(),
       signature: z.string(),
-      stats: z.record(z.string()),
+      avatar: z.string(),
+      homepage: z.string(),
+      ipLocation: z.string(),
+      gender: z.number(),
+      followerCount: z.number(),
+      followingCount: z.number(),
+      awemeCount: z.number(),
+      favoritingCount: z.number(),
+      totalFavorited: z.number(),
+      verificationType: z.number(),
+      customVerify: z.string(),
+      shortId: z.string(),
+      uniqueId: z.string(),
+      roomId: z.string(),
+      liveStatus: z.number(),
+      schoolName: z.string(),
+      province: z.string(),
+      city: z.string(),
     }),
     handler: async (params, ctx) => {
+      const tips: string[] = [];
       try {
-        const page = (ctx as Record<string, unknown>).page as Page;
-        if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const sessionPage = (ctx as Record<string, unknown>).page as Page;
+        if (!sessionPage) throw new Error('需要浏览器页面');
 
-        await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await page.waitForTimeout(5000);
+        const targetUrl = await resolveTargetProfileUrl(params.url, sessionPage, tips);
 
-        const ssr = await detectSsr(page);
-        if (ssr) {
-          tips.push(ssr.tip);
-          if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
+        let userProfile: Record<string, unknown> | null = null;
+        let intercepted = false;
+
+        const onProfileResponse = async (response: Response) => {
+          if (!response.url().includes('aweme/v1/web/user/profile')) return;
+          if (intercepted) return;
+          try {
+            const json = await response.json();
+            const user = g(json, 'user') as Record<string, unknown> | null;
+            if (user && user.nickname) {
+              userProfile = user;
+              intercepted = true;
+            }
+          } catch {
+            if (process.env.DEBUG) console.warn('[douyin] Failed to parse profile API response');
+          }
+        };
+
+        sessionPage.on('response', onProfileResponse);
+        try {
+          await sessionPage.goto(targetUrl, {
+            waitUntil: 'domcontentloaded',
+            timeout: 30000,
+          });
+          const _waitForHuman = (ctx as Record<string, unknown>).waitForHuman as
+            | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
+            | undefined;
+          const _hasCaptcha = await checkCaptcha(sessionPage, tips, _waitForHuman);
+          if (_hasCaptcha) {
+            return fail('需要完成验证码验证后重试', tips);
+          }
+          const waitMs = 10000;
+          const intervalMs = 500;
+          for (let elapsed = 0; elapsed < waitMs && !intercepted; elapsed += intervalMs) {
+            await new Promise<void>(r => setTimeout(r, intervalMs));
+          }
+        } finally {
+          sessionPage.off('response', onProfileResponse);
         }
 
-        const userInfo = await page.evaluate(() => {
-          const nickname =
-            document.querySelector('[class*="nickname"]')?.textContent?.trim() || '';
-          const signature =
-            document.querySelector('[class*="signature"]')?.textContent?.trim() || '';
-          const stats: Record<string, string> = {};
-          document.querySelectorAll('[class*="count"]').forEach((el) => {
-            const label = el.previousElementSibling?.textContent?.trim() || '';
-            if (label) stats[label] = el.textContent?.trim() || '';
-          });
-          return { nickname, signature, stats };
-        });
+        if (!userProfile) {
+          return fail('未获取到用户资料，请确认 URL 有效且已登录', tips);
+        }
 
-        tips.push(`用户: ${userInfo.nickname}`);
-        return ok(userInfo, tips);
+        const result = {
+          uid: s(userProfile.uid),
+          secUid: s(userProfile.sec_uid),
+          nickname: s(userProfile.nickname),
+          signature: s(userProfile.signature),
+          avatar: firstUrl(userProfile.avatar_larger),
+          homepage: `${DOUYIN_BASE}/user/${s(userProfile.sec_uid)}`,
+          ipLocation: s(userProfile.ip_location),
+          gender: n(userProfile.gender),
+          followerCount: n(userProfile.follower_count),
+          followingCount: n(userProfile.following_count),
+          awemeCount: n(userProfile.aweme_count),
+          favoritingCount: n(userProfile.favoriting_count),
+          totalFavorited: n(userProfile.total_favorited),
+          verificationType: n(userProfile.verification_type),
+          customVerify: s(userProfile.custom_verify),
+          shortId: s(userProfile.short_id),
+          uniqueId: s(userProfile.unique_id),
+          roomId: s(userProfile.room_id),
+          liveStatus: n(userProfile.live_status),
+          schoolName: s(userProfile.school_name),
+          province: s(userProfile.province),
+          city: s(userProfile.city),
+        };
+
+        tips.push(`用户: ${result.nickname}`);
+        tips.push(`粉丝: ${result.followerCount} | 关注: ${result.followingCount} | 作品: ${result.awemeCount}`);
+        tips.push(`获赞: ${result.totalFavorited}`);
+
+        return ok(result, tips);
       } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误', ['获取用户资料失败']);
+        const msg = error instanceof Error ? error.message : String(error);
+        return fail(msg, [`获取用户资料失败: ${msg}`, ...tips]);
       }
     },
   });
 
   site.command('detail', {
-    description: '获取视频详情（DOM）',
+    description: '获取视频详细信息（XHR 拦截，支持短链）',
     scope: 'browser',
     parameters: z.object({
-      awemeId: z.string().describe('视频 ID'),
+      url: z.string().describe('视频 URL / 短链 / 或纯 awemeId'),
     }),
     examples: [
-      { cmd: 'xbrowser douyin detail --awemeId "7xxxxxxxxxxxxx"', description: '获取视频详情' },
+      { cmd: 'xbrowser douyin detail --url "https://www.douyin.com/video/7xxx"', description: '获取视频详情' },
+      { cmd: 'xbrowser douyin detail --url "https://v.douyin.com/xxx"', description: '短链获取详情' },
+      { cmd: 'xbrowser douyin detail --url "7643743295886642939"', description: '用 awemeId 获取详情' },
     ],
     result: z.object({
       awemeId: z.string(),
       desc: z.string(),
-      author: z.string(),
-      likeCount: z.string(),
-      commentCount: z.string(),
+      author: z.object({
+        uid: z.string(),
+        secUid: z.string(),
+        nickname: z.string(),
+        signature: z.string(),
+        avatar: z.string(),
+        homepage: z.string(),
+        ipLocation: z.string(),
+        followerCount: z.number(),
+        followingCount: z.number(),
+        awemeCount: z.number(),
+        favoritingCount: z.number(),
+      }),
+      video: z.object({
+        duration: z.number(),
+        width: z.number(),
+        height: z.number(),
+        ratio: z.string(),
+        format: z.string(),
+        cover: z.string(),
+        dynamicCover: z.string(),
+        playUrl: z.string(),
+        bitRates: z.array(z.object({
+          gearName: z.string(),
+          qualityType: z.number(),
+          playAddr: z.string(),
+          size: z.number(),
+          width: z.number(),
+          height: z.number(),
+          dataSize: z.number(),
+          bitRate: z.number(),
+        })),
+      }),
+      statistics: z.object({
+        diggCount: z.number(),
+        commentCount: z.number(),
+        shareCount: z.number(),
+        collectCount: z.number(),
+        playCount: z.number(),
+      }),
+      music: z.object({ title: z.string(), author: z.string(), playUrl: z.string() }).optional(),
+      tagNames: z.array(z.string()),
+      createTime: z.number(),
+      createTimeStr: z.string(),
     }),
     handler: async (params, ctx) => {
+      const tips: string[] = [];
       try {
         const page = (ctx as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as Record<string, unknown>);
 
-        await page.goto(`${DOUYIN_BASE}/video/${params.awemeId}`, {
-          waitUntil: 'domcontentloaded',
-          timeout: 30000,
-        });
-        await page.waitForTimeout(5000);
+        let input = params.url;
+        let awemeId = '';
 
-        const ssr = await detectSsr(page);
-        if (ssr) {
-          tips.push(ssr.tip);
-          if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
+        if (/^\d{15,25}$/.test(input)) {
+          awemeId = input;
+        } else if (input.includes('v.douyin.com')) {
+          tips.push('解析短链...');
+          const resp = await page.request.get(input, { maxRedirects: 5 });
+          const finalUrl = resp.url();
+          tips.push(`跳转到: ${finalUrl}`);
+          const m = finalUrl.match(/video\/(\d+)/);
+          if (!m) throw new Error('无法从短链中提取视频 ID');
+          awemeId = m[1];
+        } else {
+          const m = input.match(/video\/(\d+)/);
+          if (!m) throw new Error('无法从 URL 中提取视频 ID');
+          awemeId = m[1];
         }
 
-        const info = await page.evaluate(() => {
-          const desc =
-            document.querySelector('[class*="desc"]')?.textContent?.trim() || '';
-          const author =
-            document.querySelector('[class*="nickname"]')?.textContent?.trim() || '';
-          const likeCount =
-            document.querySelector('[class*="like"] [class*="count"]')?.textContent?.trim() ||
-            '';
-          const commentCount =
-            document.querySelector('[class*="comment"] [class*="count"]')?.textContent?.trim() ||
-            '';
-          return { desc, author, likeCount, commentCount };
-        });
+        let detail: Record<string, unknown> | null = null;
 
-        tips.push(`视频: ${info.desc?.slice(0, 50)}`);
-        return ok({ awemeId: params.awemeId, ...info }, tips);
+        const handler = async (response: Response) => {
+          if (!response.url().includes('aweme/v1/web/aweme/detail')) return;
+          try {
+            const json = await response.json();
+            detail = g(json, 'aweme_detail') as Record<string, unknown> ?? null;
+          } catch {
+            if (process.env.DEBUG) console.warn('[douyin] Failed to parse detail API response');
+          }
+        };
+
+        page.on('response', handler);
+        try {
+          await page.goto(`${DOUYIN_BASE}/video/${awemeId}`, {
+            waitUntil: 'domcontentloaded',
+            timeout: 30000,
+          });
+          const _waitForHuman = (ctx as Record<string, unknown>).waitForHuman as
+            | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
+            | undefined;
+          const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
+          if (_hasCaptcha) {
+            return fail('需要完成验证码验证后重试', tips);
+          }
+          await page.waitForTimeout(5000);
+        } finally {
+          page.off('response', handler);
+        }
+
+        if (!detail) {
+          return fail('XHR 拦截未获取到详情数据，请确认页面正常加载', tips);
+        }
+
+        const parsed = parseVideo(detail);
+        const vid = (detail.video ?? {}) as Record<string, unknown>;
+        const music = detail.music as Record<string, unknown> | undefined;
+
+        const result = {
+          awemeId: parsed.awemeId,
+          desc: parsed.desc,
+          author: parsed.author,
+          video: {
+            duration: parsed.video.duration,
+            width: parsed.video.width,
+            height: parsed.video.height,
+            ratio: s(vid.ratio),
+            format: s(vid.format),
+            cover: parsed.video.cover,
+            dynamicCover: firstUrl(vid.dynamic_cover),
+            playUrl: parsed.video.playUrl,
+            bitRates: parsed.video.bitRates.map((br, i) => {
+              const raw = (Array.isArray(vid.bit_rate) ? vid.bit_rate[i] : {}) as Record<string, unknown>;
+              return {
+                ...br,
+                width: n((raw.play_addr as Record<string, unknown>)?.width),
+                height: n((raw.play_addr as Record<string, unknown>)?.height),
+                dataSize: br.size,
+                bitRate: n(raw.bit_rate),
+              };
+            }),
+          },
+          statistics: parsed.statistics,
+          music: music ? {
+            title: s(music.title),
+            author: s(music.author),
+            playUrl: firstUrl(music.play_url),
+          } : undefined,
+          tagNames: parsed.tagNames,
+          createTime: parsed.createTime,
+          createTimeStr: parsed.createTimeStr,
+        };
+
+        tips.push(`标题: ${parsed.desc?.slice(0, 50)}`);
+        tips.push(`作者: ${parsed.author.nickname}`);
+        tips.push(`点赞: ${parsed.statistics.diggCount} | 评论: ${parsed.statistics.commentCount} | 播放: ${parsed.statistics.playCount}`);
+        tips.push(`${parsed.video.bitRates.length} 个画质可选`);
+
+        return ok(result, tips);
       } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误', ['获取视频详情失败']);
+        return fail(error instanceof Error ? error.message : '未知错误', ['获取视频详情失败', ...tips]);
       }
     },
   });
@@ -470,6 +805,13 @@ export default function (xcli: XCLIAPI): void {
             waitUntil: 'domcontentloaded',
             timeout: 30000,
           });
+          const _waitForHuman = (ctx as Record<string, unknown>).waitForHuman as
+            | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
+            | undefined;
+          const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
+          if (_hasCaptcha) {
+            return fail('需要完成验证码验证后重试', tips);
+          }
           await page.waitForTimeout(3000);
 
           const ssr = await detectSsr(page);
@@ -532,6 +874,13 @@ export default function (xcli: XCLIAPI): void {
             waitUntil: 'domcontentloaded',
             timeout: 30000,
           });
+          const _waitForHuman = (ctx as Record<string, unknown>).waitForHuman as
+            | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
+            | undefined;
+          const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
+          if (_hasCaptcha) {
+            return fail('需要完成验证码验证后重试', tips);
+          }
           await page.waitForTimeout(3000);
 
           const ssr = await detectSsr(page);
@@ -653,6 +1002,13 @@ export default function (xcli: XCLIAPI): void {
         page.on('response', handler);
         try {
           await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          const _waitForHuman = (ctx as Record<string, unknown>).waitForHuman as
+            | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
+            | undefined;
+          const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
+          if (_hasCaptcha) {
+            return fail('需要完成验证码验证后重试', tips);
+          }
           await page.waitForTimeout(6000);
 
           const ssr = await detectSsr(page);
@@ -760,6 +1116,163 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  site.command('download', {
+    description: '下载抖音视频（无需登录）',
+    scope: 'browser',
+    parameters: z.object({
+      url: z.string().describe('视频 URL 或短链（如 https://v.douyin.com/xxx）'),
+      output: z.string().optional().describe('保存路径（默认 ./douyin_{awemeId}.mp4）'),
+      quality: z.enum(['auto', 'highest', 'lowest']).optional().default('auto').describe('画质选择'),
+    }),
+    examples: [
+      { cmd: 'xbrowser douyin download --url "https://www.douyin.com/video/7xxx"', description: '下载视频' },
+      { cmd: 'xbrowser douyin download --url "https://v.douyin.com/xxx" --output ~/Desktop/video.mp4', description: '指定保存路径' },
+      { cmd: 'xbrowser douyin download --url "https://www.douyin.com/video/7xxx" --quality highest', description: '下载最高画质' },
+    ],
+    result: z.object({
+      awemeId: z.string(),
+      filePath: z.string(),
+      fileSize: z.string(),
+      desc: z.string(),
+      author: z.string(),
+    }),
+    handler: async (params, ctx) => {
+      const tips: string[] = [];
+      try {
+        const page = (ctx as Record<string, unknown>).page as Page;
+        if (!page) throw new Error('需要浏览器页面');
+
+        let videoUrl = params.url;
+        if (videoUrl.includes('v.douyin.com')) {
+          tips.push('解析短链...');
+          const resp = await page.request.get(videoUrl, { maxRedirects: 5 });
+          videoUrl = resp.url();
+          tips.push(`跳转到: ${videoUrl}`);
+        }
+
+        const idMatch = videoUrl.match(/video\/(\d+)/);
+        if (!idMatch) throw new Error('无法从 URL 中提取视频 ID');
+        const awemeId = idMatch[1];
+
+        let bestUrl = '';
+        let bestGear = '';
+        let videoInfo: { desc: string; author: string } = { desc: '', author: '' };
+
+        const handler = async (response: Response) => {
+          if (!response.url().includes('aweme/v1/web/aweme/detail')) return;
+          try {
+            const json = await response.json();
+            const aweme = g(json, 'aweme_detail') as Record<string, unknown> | undefined;
+            if (!aweme) return;
+
+            videoInfo = {
+              desc: s(aweme.desc),
+              author: s(g(aweme, 'author.nickname')),
+            };
+
+            const vid = (aweme.video ?? {}) as Record<string, unknown>;
+
+            // bit_rate 中的 play_addr 是无水印的，download_addr 带水印
+            const bitRates = vid.bit_rate as Record<string, unknown>[] | undefined;
+            if (Array.isArray(bitRates) && bitRates.length > 0) {
+              const sorted = [...bitRates].sort((a, b) => {
+                const sizeA = n((a.play_addr as Record<string, unknown>)?.data_size);
+                const sizeB = n((b.play_addr as Record<string, unknown>)?.data_size);
+                return sizeB - sizeA;
+              });
+
+              if (params.quality === 'lowest') {
+                const pick = sorted[sorted.length - 1];
+                const url = firstUrl(pick.play_addr);
+                if (url) { bestUrl = url; bestGear = s(pick.gear_name); }
+              } else {
+                // auto / highest: 选最大（最高画质，无水印）
+                const pick = sorted[0];
+                const url = firstUrl(pick.play_addr);
+                if (url) { bestUrl = url; bestGear = s(pick.gear_name); }
+              }
+            }
+
+            // fallback: play_addr（通常也无水印）
+            if (!bestUrl) {
+              bestUrl = firstUrl(vid.play_addr);
+              bestGear = 'play_addr';
+            }
+          } catch {
+            if (process.env.DEBUG) console.warn('[douyin] Failed to parse detail API response');
+          }
+        };
+
+        page.on('response', handler);
+        try {
+          await page.goto(`${DOUYIN_BASE}/video/${awemeId}`, {
+            waitUntil: 'domcontentloaded',
+            timeout: 30000,
+          });
+          const _waitForHuman = (ctx as Record<string, unknown>).waitForHuman as
+            | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
+            | undefined;
+          const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
+          if (_hasCaptcha) {
+            return fail('需要完成验证码验证后重试', tips);
+          }
+          await page.waitForTimeout(5000);
+        } finally {
+          page.off('response', handler);
+        }
+
+        if (!bestUrl) {
+          const videoEl = await page.$('video');
+          if (videoEl) {
+            const src = await videoEl.getAttribute('src');
+            if (src) bestUrl = src;
+          }
+        }
+
+        if (!bestUrl) {
+          throw new Error('未找到视频播放地址（XHR 拦截失败）');
+        }
+
+        const outputPath = params.output || `douyin_${awemeId}.mp4`;
+
+        tips.push(`正在下载: ${videoInfo.desc?.slice(0, 50) || awemeId}`);
+        tips.push(`画质: ${bestGear}（无水印）`);
+
+        const { execSync } = await import('node:child_process');
+        const path = await import('node:path');
+        const fs = await import('node:fs');
+
+        const absPath = path.resolve(outputPath);
+        const dir = path.dirname(absPath);
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+        execSync(
+          `curl -Lf -o "${absPath}" ` +
+          `-H "Referer: ${DOUYIN_BASE}/" ` +
+          `-H "User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36" ` +
+          `"${bestUrl}"`,
+          { timeout: 180000, stdio: 'pipe' },
+        );
+
+        const stat = fs.statSync(absPath);
+        const sizeStr = stat.size > 1048576
+          ? `${(stat.size / 1048576).toFixed(1)}MB`
+          : `${(stat.size / 1024).toFixed(0)}KB`;
+
+        tips.push(`下载完成: ${sizeStr}`);
+        return ok({
+          awemeId,
+          filePath: absPath,
+          fileSize: sizeStr,
+          desc: videoInfo.desc,
+          author: videoInfo.author,
+        }, tips);
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : '未知错误', ['下载视频失败', ...tips]);
+      }
+    },
+  });
+
   site.command('ai-subtitle', {
     description: '通过抖音 AI 提取视频字幕',
     scope: 'browser',
@@ -818,6 +1331,8 @@ export default function (xcli: XCLIAPI): void {
         if (isUserPage) {
           tips.push('进入用户主页...');
           await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          const _wh = waitForHuman;
+          await checkCaptcha(page, tips, _wh);
           await page.waitForTimeout(3000);
 
           const videoSelectors = [
@@ -853,6 +1368,8 @@ export default function (xcli: XCLIAPI): void {
         } else {
           tips.push('进入视频详情页...');
           await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          const _wh = waitForHuman;
+          await checkCaptcha(page, tips, _wh);
           await page.waitForTimeout(3000);
         }
 
