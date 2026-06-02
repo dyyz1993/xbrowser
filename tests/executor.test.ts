@@ -2,9 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod';
 
 const mockBrowserPage = {
-  goto: vi.fn().mockResolvedValue(null),
+  goto: vi.fn().mockResolvedValue({ status: () => 200 }),
   url: vi.fn().mockReturnValue('about:blank'),
   close: vi.fn().mockResolvedValue(undefined),
+  evaluate: vi.fn().mockResolvedValue(true),
+  title: vi.fn().mockResolvedValue('Test Page'),
+  goBack: vi.fn().mockResolvedValue(null),
+  goForward: vi.fn().mockResolvedValue(null),
+  reload: vi.fn().mockResolvedValue(null),
 };
 const mockBrowserContext = {
   newPage: vi.fn().mockResolvedValue(mockBrowserPage),
@@ -48,6 +53,16 @@ vi.mock('os', () => ({
   default: { homedir: () => '/tmp/xbrowser-test-executor' },
   homedir: vi.fn().mockReturnValue('/tmp/xbrowser-test-executor'),
 }));
+
+vi.mock('../src/tips/index.js', () => {
+  return {
+    getTipsManager: vi.fn(() => ({
+      beforeCommand: vi.fn().mockResolvedValue(undefined),
+      afterCommand: vi.fn().mockResolvedValue([]),
+      formatTips: vi.fn().mockReturnValue([]),
+    })),
+  };
+});
 
 vi.mock('../src/plugin/loader.js', () => {
   const mockLoader = {
@@ -225,10 +240,10 @@ describe('Chain Execution', () => {
     const { resetForTesting } = await import('../src/browser.js');
     resetForTesting();
     const { executeChain } = await import('../src/executor.js');
-    const result = await executeChain('title && title');
+    const result = await executeChain('title && nonexistent_cmd');
     expect(result.success).toBe(false);
     expect(result.stoppedReason).toContain('failed');
-    expect(result.stoppedAt).toBe(1);
+    expect(result.stoppedAt).toBe(2);
   });
 
   it('should return error for command not found in chain', async () => {
@@ -244,8 +259,8 @@ describe('Chain Execution', () => {
     const { resetForTesting } = await import('../src/browser.js');
     resetForTesting();
     const { executeChain } = await import('../src/executor.js');
-    const result = await executeChain('title && title');
-    expect(result.stoppedAt).toBe(1);
+    const result = await executeChain('title && nonexistent_cmd');
+    expect(result.stoppedAt).toBe(2);
     expect(typeof result.stoppedAt).toBe('number');
   });
 
@@ -288,7 +303,7 @@ describe('Chain Execution', () => {
     const { resetForTesting } = await import('../src/browser.js');
     resetForTesting();
     const { executeChain } = await import('../src/executor.js');
-    const result = await executeChain('title ; title');
+    const result = await executeChain('title ; nonexistent_cmd');
     expect(result.success).toBe(false);
   });
 
@@ -296,9 +311,9 @@ describe('Chain Execution', () => {
     const { resetForTesting } = await import('../src/browser.js');
     resetForTesting();
     const { executeChain } = await import('../src/executor.js');
-    const result = await executeChain('title || title');
-    expect(result.success).toBe(false);
-    expect(result.steps.length).toBeGreaterThanOrEqual(1);
+    const result = await executeChain('nonexistent_cmd || title');
+    expect(result.success).toBe(true);
+    expect(result.steps.length).toBeGreaterThanOrEqual(2);
   });
 
   it('should return steps with correct structure', async () => {
@@ -326,10 +341,10 @@ describe('Chain Execution', () => {
     const { resetForTesting } = await import('../src/browser.js');
     resetForTesting();
     const { executeChain } = await import('../src/executor.js');
-    const result = await executeChain('title && screenshot && click #btn');
+    const result = await executeChain('title && url && nonexistent_cmd');
     expect(result.success).toBe(false);
-    expect(result.stoppedAt).toBe(1);
-    expect(result.steps.length).toBe(1);
+    expect(result.stoppedAt).toBe(3);
+    expect(result.steps.length).toBe(3);
   });
 
   it('should handle sequence with ; creating separate pipelines', async () => {
@@ -345,7 +360,7 @@ describe('Chain Execution', () => {
     const { resetForTesting } = await import('../src/browser.js');
     resetForTesting();
     const { executeChain } = await import('../src/executor.js');
-    const result = await executeChain('title && click #btn');
+    const result = await executeChain('title && nonexistent_cmd');
     expect(result.stoppedReason).toContain('&& chain');
   });
 

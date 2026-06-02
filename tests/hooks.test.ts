@@ -209,6 +209,7 @@ describe('Hook integration with executeCommand', () => {
       close: vi.fn().mockResolvedValue(undefined),
       screenshot: vi.fn().mockResolvedValue(Buffer.from('fake-screenshot')),
       title: vi.fn().mockResolvedValue('Test Page'),
+      evaluate: vi.fn().mockResolvedValue(true),
     };
     const browserContext = {
       newPage: vi.fn().mockResolvedValue(page),

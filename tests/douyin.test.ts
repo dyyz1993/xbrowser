@@ -520,32 +520,46 @@ describe('Douyin Plugin', () => {
 
     beforeEach(() => {
       commandConfig = registeredCommands.get('profile');
-      mockPage.evaluate.mockResolvedValue({
-        nickname: 'Test User',
-        signature: 'This is a test signature',
-        stats: {
-          '粉丝': '1000',
-          '关注': '100',
-        },
-      });
     });
 
     it('should be registered with correct parameters', () => {
       expect(commandConfig).toBeDefined();
-      expect(commandConfig.description).toBe('获取用户资料');
+      expect(commandConfig.description).toBe('获取用户详细资料（XHR 拦截）');
       expect(commandConfig.scope).toBe('browser');
     });
 
-    it('should get user profile from DOM', async () => {
-      const result = await commandConfig.handler(
+    it('should get user profile via XHR interception', async () => {
+      let responseHandler: ((res: any) => Promise<void>) | null = null;
+      mockPage.on.mockImplementation((event: string, handler: any) => {
+        if (event === 'response') {
+          responseHandler = handler;
+        }
+      });
+
+      const handlerPromise = commandConfig.handler(
         { url: 'https://www.douyin.com/user/testuser' },
         { page: mockPage }
       );
 
-      expect(mockPage.goto).toHaveBeenCalledWith(
-        'https://www.douyin.com/user/testuser',
-        { waitUntil: 'domcontentloaded', timeout: 30000 }
-      );
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const mockResponse = {
+        url: () => 'https://www.douyin.com/aweme/v1/web/user/profile/',
+        json: async () => ({
+          user: {
+            nickname: 'Test User',
+            signature: 'This is a test signature',
+            uid: '123',
+            sec_uid: 'testuser',
+            follower_count: 1000,
+            following_count: 100,
+          },
+        }),
+      };
+
+      await responseHandler?.(mockResponse);
+      const result = await handlerPromise;
+
       expect(result.data.nickname).toBe('Test User');
       expect(result.data.signature).toBe('This is a test signature');
     });
@@ -556,33 +570,51 @@ describe('Douyin Plugin', () => {
 
     beforeEach(() => {
       commandConfig = registeredCommands.get('detail');
-      mockPage.evaluate.mockResolvedValue({
-        desc: 'Test video description',
-        author: 'Test Author',
-        likeCount: '1000',
-        commentCount: '500',
-      });
     });
 
     it('should be registered with correct parameters', () => {
       expect(commandConfig).toBeDefined();
-      expect(commandConfig.description).toBe('获取视频详情（DOM）');
+      expect(commandConfig.description).toBe('获取视频详细信息（XHR 拦截，支持短链）');
       expect(commandConfig.scope).toBe('browser');
     });
 
-    it('should get video detail from DOM', async () => {
-      const result = await commandConfig.handler(
-        { awemeId: 'vid123' },
-        { page: mockPage, cdpEndpoint: 'ws://localhost:9222', sessionId: 'session-1' }
+    it('should get video detail via XHR interception', async () => {
+      let responseHandler: ((res: any) => Promise<void>) | null = null;
+      mockPage.on.mockImplementation((event: string, handler: any) => {
+        if (event === 'response') {
+          responseHandler = handler;
+        }
+      });
+
+      let resolveWait: () => void;
+      mockPage.waitForTimeout.mockReturnValue(new Promise<void>(r => { resolveWait = r; }));
+
+      const handlerPromise = commandConfig.handler(
+        { url: 'https://www.douyin.com/video/7123456789123456789' },
+        { page: mockPage }
       );
 
-      expect(mockPage.goto).toHaveBeenCalledWith(
-        'https://www.douyin.com/video/vid123',
-        { waitUntil: 'domcontentloaded', timeout: 30000 }
-      );
+      await new Promise(resolve => setTimeout(resolve, 50));
+
+      const mockResponse = {
+        url: () => 'https://www.douyin.com/aweme/v1/web/aweme/detail/',
+        json: async () => ({
+          aweme_detail: {
+            aweme_id: '7123456789123456789',
+            desc: 'Test video description',
+            author: { uid: 'u1', nickname: 'Test Author', sec_uid: 's1' },
+            statistics: { digg_count: 1000, comment_count: 500 },
+          },
+        }),
+      };
+
+      await responseHandler?.(mockResponse);
+      resolveWait!();
+
+      const result = await handlerPromise;
+
       expect(result.data.desc).toBe('Test video description');
-      expect(result.data.author).toBe('Test Author');
-      expect(result.tips).toContain('Session: session-1');
+      expect(result.data.author.nickname).toBe('Test Author');
     });
   });
 

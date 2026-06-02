@@ -37,8 +37,8 @@ describe('douyin plugin', () => {
     );
   });
 
-  it('should register 7 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(7);
+  it('should register 8 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(8);
   });
 
   it('should register expected command names', () => {
@@ -58,9 +58,33 @@ describe('douyin plugin', () => {
       expect(result.data).toBeNull();
     });
 
-    it('should return user info', async () => {
-      const mockPage = createMockPage({ nickname: 'TestUser', signature: 'sig', stats: {} });
-      const result = await handler({ url: 'https://douyin.com/user/123' }, { page: mockPage });
+    it('should return user info via XHR interception', async () => {
+      let responseHandler: ((res: any) => Promise<void>) | null = null;
+      const mockPage = createMockPage();
+      mockPage.on = vi.fn().mockImplementation((event: string, handler: any) => {
+        if (event === 'response') {
+          responseHandler = handler;
+        }
+      });
+
+      const handlerPromise = handler({ url: 'https://douyin.com/user/123' }, { page: mockPage });
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const mockResponse = {
+        url: () => 'https://www.douyin.com/aweme/v1/web/user/profile/',
+        json: async () => ({
+          user: {
+            nickname: 'TestUser',
+            signature: 'sig',
+            uid: '123',
+            sec_uid: 'abc',
+          },
+        }),
+      };
+
+      await responseHandler?.(mockResponse);
+      const result = await handlerPromise;
       expect(result.data.nickname).toBe('TestUser');
     });
   });
@@ -77,11 +101,10 @@ describe('douyin plugin', () => {
       expect(result.data).toBeNull();
     });
 
-    it('should return video info', async () => {
-      const mockPage = createMockPage({ desc: 'Video desc', author: 'Auth', likeCount: '100', commentCount: '10' });
-      const result = await handler({ awemeId: 'v1' }, { page: mockPage });
-      expect(result.data.awemeId).toBe('v1');
-      expect(result.data.desc).toBe('Video desc');
+    it('should return error when no XHR response intercepted', async () => {
+      const mockPage = createMockPage();
+      const result = await handler({ url: 'https://www.douyin.com/video/7123456789123456789' }, { page: mockPage });
+      expect(result.data).toBeNull();
     });
   });
 
