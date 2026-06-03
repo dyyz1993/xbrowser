@@ -1,0 +1,45 @@
+{
+  "name": "@xbrowser/stats",
+  "version": "1.0.0",
+  "description": "国家统计局 — 分省年度经济数据（GDP、社消零售、人口等）",
+  "author": "dyyz1993",
+  "main": "index.ts",
+  "type": "module",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "data.stats.gov.cn"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "@xbrowser/stats",
+    "slug": "stats",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "国家统计局 — 分省年度经济数据（新版 API 模式，数据查询接口待官方上线后可用）",
+    "site": "https://data.stats.gov.cn/",
+    "sites": [
+      "data.stats.gov.cn"
+    ],
+    "tags": [
+      "stats",
+      "economic-data",
+      "gdp"
+    ],
+    "requiresLogin": false,
+    "commands": [
+      "indicators",
+      "gdp",
+      "retail",
+      "query",
+      "report",
+      "export"
+    ]
+  }
+}
