@@ -3,9 +3,11 @@
     "slug": "udio",
     "url": "https://marketplace.xbrowser.dev"
   },
+  "author": "dyyz1993",
   "dependencies": {
     "zod": "^3.24.0"
   },
+  "license": "MIT",
   "description": "Udio AI Music Generation - AI 音乐生成、Credits 查询、歌曲管理、hCaptcha 处理",
   "keywords": [
     "xbrowser",
@@ -30,7 +32,8 @@
       "status",
       "result",
       "library",
-      "billing"
+      "billing",
+      "download"
     ],
     "description": "Udio AI 音乐生成",
     "name": "udio",

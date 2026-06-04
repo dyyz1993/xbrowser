@@ -34,7 +34,8 @@
       "search",
       "comments",
       "feed",
-      "resolve-url"
+      "resolve-url",
+      "search-image"
     ],
     "description": "小红书 - 笔记详情、用户信息、搜索、评论采集",
     "name": "xiaohongshu",

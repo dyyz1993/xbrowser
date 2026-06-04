@@ -142,9 +142,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const { chromium } = await import('playwright');
 
-      const getPluginLoader = (await import('../../src/utils/plugin-singleton.js')).getPluginLoader;
-      const loader = await getPluginLoader();
-      const internalLoader = loader.getCore().loader;
+      const getSite = (name: string) => xcli.createSite({ name, url: '' });
 
       const isCDP = !!(ctx as Record<string, unknown>).cdpEndpoint;
       let browser: import('playwright').Browser;
@@ -180,8 +178,8 @@ export default function (xcli: XCLIAPI): void {
               throw new Error(`Unknown engine: ${engineKey}. Available: ${Object.keys(IMAGE_ENGINES).join(', ')}`);
             }
 
-            const pluginSite = internalLoader.getSite(engineConfig.plugin);
-            if (!pluginSite) {
+            const pluginSite = getSite(engineConfig.plugin);
+            if (!pluginSite.getCommand(engineConfig.command)) {
               throw new Error(`Plugin "${engineConfig.plugin}" not loaded. Install it first: xbrowser plugin install ${engineConfig.plugin}`);
             }
 

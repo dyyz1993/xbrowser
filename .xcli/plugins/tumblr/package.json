@@ -7,7 +7,7 @@
   "dependencies": {
     "zod": "^3.24.0"
   },
-  "description": "Tumblr SEO 外链 - 博客平台 (DA 86, dofollow)",
+  "description": "Tumblr 图片搜索",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
@@ -24,14 +24,11 @@
   "xbrowser": {
     "author": "dyyz1993",
     "commands": [
-      "login",
-      "publish",
-      "update-profile",
-      "reblog"
+      "search-image"
     ],
-    "description": "Tumblr SEO 外链 - 博客平台 (DA 86, dofollow)",
+    "description": "Tumblr 图片搜索",
     "name": "tumblr",
-    "requiresLogin": true,
+    "requiresLogin": false,
     "site": "https://www.tumblr.com",
     "sites": [],
     "slug": "tumblr",

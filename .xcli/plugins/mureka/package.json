@@ -30,7 +30,8 @@
       "status",
       "result",
       "library",
-      "billing"
+      "billing",
+      "download"
     ],
     "description": "Mureka AI 音乐生成",
     "name": "mureka",

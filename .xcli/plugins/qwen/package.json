@@ -30,7 +30,8 @@
     "commands": [
       "image",
       "result",
-      "billing"
+      "billing",
+      "history"
     ],
     "description": "千问 (Qwen) AI 图片生成",
     "name": "qwen",

@@ -27,7 +27,8 @@
       "profile",
       "timeline",
       "replies",
-      "liked"
+      "liked",
+      "search-image"
     ],
     "description": "X (Twitter) 数据采集插件（XHR 拦截模式）",
     "name": "twitter",

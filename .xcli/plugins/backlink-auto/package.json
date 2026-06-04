@@ -3,6 +3,7 @@
     "slug": "backlink-auto",
     "url": "https://marketplace.xbrowser.dev"
   },
+  "author": "dyyz1993",
   "dependencies": {
     "zod": "^3.24.0"
   },
@@ -11,6 +12,7 @@
     "xbrowser",
     "xbrowser-plugin"
   ],
+  "license": "MIT",
   "main": "index.ts",
   "name": "xbrowser-plugin-backlink-auto",
   "peerDependencies": {
@@ -25,7 +27,8 @@
       "sms",
       "read-email"
     ],
-    "description": "自动注册+提交外链（CDP安全模式，CAPTCHA检测）",
+  "license": "MIT",
+  "description": "自动注册+提交外链（CDP安全模式，CAPTCHA检测）",
     "name": "backlink-auto",
     "sites": [],
     "slug": "backlink-auto",

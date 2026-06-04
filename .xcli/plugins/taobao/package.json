@@ -35,7 +35,8 @@
       "shop",
       "seller-items",
       "coupons",
-      "update-profile"
+      "update-profile",
+      "search-image"
     ],
     "description": "淘宝 - 商品搜索、详情、店铺、评价与优惠券采集（需登录态）",
     "name": "taobao",

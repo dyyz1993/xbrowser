@@ -34,7 +34,8 @@
       "news",
       "seo-rank",
       "webmaster-config",
-      "push-url"
+      "push-url",
+      "search-image"
     ],
     "description": "百度搜索 - 真实浏览器操作",
     "name": "@xbrowser/baidu",

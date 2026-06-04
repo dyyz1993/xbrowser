@@ -3,10 +3,11 @@
     "slug": "deepseek",
     "url": "https://marketplace.xbrowser.dev"
   },
-  "author": "xbrowser",
+    "author": "dyyz1993",
   "dependencies": {
     "zod": "^3.24.0"
   },
+  "license": "MIT",
   "description": "DeepSeek 聊天助手 - 会话管理、消息发送、模式切换、附件支持",
   "keywords": [
     "xbrowser",
@@ -20,7 +21,7 @@
   "type": "module",
   "version": "3.0.0",
   "xbrowser": {
-    "author": "xbrowser",
+  "author": "dyyz1993",
     "commands": [
       "list",
       "new",

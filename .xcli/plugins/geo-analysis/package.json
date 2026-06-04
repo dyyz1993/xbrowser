@@ -3,7 +3,7 @@
     "slug": "geo-analysis",
     "url": "https://marketplace.xbrowser.dev"
   },
-  "author": "xbrowser",
+  "author": "dyyz1993",
   "category": "analytics",
   "commands": [
     {
@@ -59,7 +59,7 @@
   ],
   "license": "MIT",
   "main": "index.ts",
-  "name": "geo-analysis",
+  "name": "xbrowser-plugin-geo-analysis",
   "peerDependencies": {
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
@@ -92,7 +92,7 @@
       "status"
     ],
     "description": "GEO 外链排名分析",
-    "name": "geo-analysis",
+  "name": "xbrowser-plugin-geo-analysis",
     "sites": [
       "multi-engine"
     ],

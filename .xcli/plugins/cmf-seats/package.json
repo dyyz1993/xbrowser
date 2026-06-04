@@ -3,6 +3,7 @@
     "slug": "cmf-seats",
     "url": "https://marketplace.xbrowser.dev"
   },
+  "author": "dyyz1993",
   "dependencies": {
     "zod": "^3.22.4"
   },
@@ -11,6 +12,7 @@
     "xbrowser",
     "xbrowser-plugin"
   ],
+  "license": "MIT",
   "main": "index.ts",
   "name": "xbrowser-plugin-cmf-seats",
   "peerDependencies": {
@@ -20,7 +22,8 @@
   "version": "3.0.0",
   "xbrowser": {
     "author": "dyyz1993",
-    "description": "座椅CMF评论查询（颜色/材质/触感）- 从821条真实车主评论中提取",
+  "license": "MIT",
+  "description": "座椅CMF评论查询（颜色/材质/触感）- 从821条真实车主评论中提取",
     "commands": [
       "query",
       "list",
