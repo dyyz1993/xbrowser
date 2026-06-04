@@ -138,6 +138,7 @@ export default function(xcli: XCLIAPI): void {
           `语言分布: ${Object.entries(langs).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([k, v]) => `${k}(${v})`).join(', ')}`,
         ]);
     },
+  });
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -188,4 +189,6 @@ interface SteamApiResponse {
   query_summary: SteamApiQuerySummary;
   reviews: SteamApiReview[];
   cursor: string;
+}
+
 }

@@ -976,7 +976,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser geo-analysis rank', description: '生成域名排名（前20）' },
       { cmd: 'xbrowser geo-analysis rank --top 50 --format markdown', description: '前50名，Markdown 格式' },
     ],
-    result: z.union([z.array(z.object({ domain: z.string(), count: z.number(), urls: z.array(z.string()), platform: z.string().optional(), firstSeen: z.string(), lastSeen: z.string() })), z.object({ markdown: z.string() })]).passthrough(),
+    result: z.union([z.array(z.object({ domain: z.string(), count: z.number(), urls: z.array(z.string()), platform: z.string().optional(), firstSeen: z.string(), lastSeen: z.string() })), z.object({ markdown: z.string() })]),
     handler: async (params) => {
       try {
         const history = await loadAllHistory(500);
@@ -1196,7 +1196,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser geo-analysis company', description: '生成企业排名' },
       { cmd: 'xbrowser geo-analysis company --top 30 --format markdown', description: '前30名，Markdown 格式' },
     ],
-    result: z.union([z.array(z.object({ name: z.string(), domain: z.string(), type: z.string(), score: z.number(), occurrences: z.number(), engines: z.array(z.string()), firstSeen: z.string(), lastSeen: z.string() })), z.object({ markdown: z.string() })]).passthrough(),
+    result: z.union([z.array(z.object({ name: z.string(), domain: z.string(), type: z.string(), score: z.number(), occurrences: z.number(), engines: z.array(z.string()), firstSeen: z.string(), lastSeen: z.string() })), z.object({ markdown: z.string() })]),
     handler: async (params) => {
       try {
         const history = await loadAllHistory(500);
@@ -1240,7 +1240,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser geo-analysis trend', description: '分析趋势' },
       { cmd: 'xbrowser geo-analysis trend --top 10 --format markdown', description: '前10个趋势，Markdown 格式' },
     ],
-    result: z.union([z.array(z.object({ domain: z.string(), dates: z.array(z.string()), counts: z.array(z.number()), growthRate: z.number(), trend: z.enum(['up', 'down', 'stable']) })), z.object({ markdown: z.string() })]).passthrough(),
+    result: z.union([z.array(z.object({ domain: z.string(), dates: z.array(z.string()), counts: z.array(z.number()), growthRate: z.number(), trend: z.enum(['up', 'down', 'stable']) })), z.object({ markdown: z.string() })]),
     handler: async (params) => {
       try {
         const history = await loadAllHistory(500);

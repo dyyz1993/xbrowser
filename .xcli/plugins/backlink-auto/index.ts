@@ -622,7 +622,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       filter: z.string().optional().describe('过滤关键词'),
     }),
-    result: z.object({ code: z.string().nullable(), text: z.string(), time: z.string() }).nullable().passthrough(),
+    result: z.object({ code: z.string().nullable(), text: z.string(), time: z.string() }).passthrough().nullable(),
     handler: async (params) => {
       const sms = readLatestSMS(params.filter);
       return ok(sms, [sms ? `验证码: ${sms.code} (${sms.time})` : '未找到验证码短信']);

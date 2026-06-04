@@ -457,7 +457,7 @@ export default function (xcli: XCLIAPI): void {
             `分类: ${data.categories.length} 个`,
             ...(loginState.isLoggedIn ? [`[登录] 用户: ${loginState.loginId}`] : ['[未登录] 部分数据需要登录获取']),
           ],
-        };
+        );
       } catch (error) {
         return fail('参数错误', [
             ...ctxTips,
