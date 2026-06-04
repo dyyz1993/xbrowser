@@ -572,14 +572,21 @@ describe('executeCommand cdpEndpoint forwarding', () => {
 describe('Plugin positional args (executeChain integration)', () => {
   let capturedParams: Record<string, unknown> | null = null;
 
-  function makeMockSite(commands: Record<string, { schema: z.ZodObject<Record<string, z.ZodTypeAny>>; handler?: (params: Record<string, unknown>) => Promise<unknown> }>) {
+  function makeMockSite(
+    commands: Record<string, { schema: z.ZodObject<Record<string, z.ZodTypeAny>>; handler?: (params: Record<string, unknown>) => Promise<unknown>; requiresLogin?: boolean }>,
+    options: { name?: string; requiresLogin?: boolean; isLoggedIn?: () => boolean | Promise<boolean> } = {},
+  ) {
     return {
+      name: options.name || 'doubao',
+      config: { requiresLogin: options.requiresLogin ?? false },
+      isLoggedIn: options.isLoggedIn,
       getCommand: vi.fn((name: string) => {
         const entry = commands[name];
         if (!entry) return null;
         return {
           name,
           parameters: entry.schema,
+          requiresLogin: entry.requiresLogin,
           handler: entry.handler ?? (async (params: Record<string, unknown>) => {
             capturedParams = params;
             return { success: true, data: params };
@@ -590,6 +597,7 @@ describe('Plugin positional args (executeChain integration)', () => {
         Object.entries(commands).map(([name, entry]) => ({
           name,
           parameters: entry.schema,
+          requiresLogin: entry.requiresLogin,
           handler: entry.handler ?? (async (params: Record<string, unknown>) => {
             capturedParams = params;
             return { success: true, data: params };
@@ -675,6 +683,32 @@ describe('Plugin positional args (executeChain integration)', () => {
     expect(result.steps[0].success).toBe(true);
     expect(capturedParams).toBeDefined();
     expect((capturedParams as Record<string, unknown>).query).toBe('天气');
+  });
+
+  it('returns LOGIN_REQUIRED and skips handler when plugin requires login', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+
+    const handler = vi.fn(async () => ({ success: true, data: { ok: true } }));
+    const site = makeMockSite({
+      publish: { schema: z.object({ title: z.string() }), handler },
+    }, {
+      name: 'secure',
+      requiresLogin: true,
+      isLoggedIn: () => false,
+    });
+    mockGetSite.mockImplementation((cmd: string) => cmd === 'secure' ? site : null);
+
+    const { executeChain } = await import('../src/executor.js');
+    const result = await executeChain('secure publish --title hello');
+
+    expect(result.success).toBe(false);
+    expect(result.steps[0]).toMatchObject({
+      success: false,
+      data: { code: 'LOGIN_REQUIRED', plugin: 'secure', command: 'publish' },
+    });
+    expect(handler).not.toHaveBeenCalled();
   });
 
   it('no positional args, only --prompt flag', async () => {

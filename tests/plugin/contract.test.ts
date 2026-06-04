@@ -126,4 +126,23 @@ describe('plugin contract', () => {
       },
     });
   });
+
+  it('inherits site-level login requirement into command contract', () => {
+    const contract = buildPluginContract({
+      name: 'secure',
+      config: { requiresLogin: true },
+      getAllCommands: () => [
+        { name: 'publish', description: 'Publish', scope: 'page', parameters: z.object({ title: z.string() }) },
+        { name: 'login', description: 'Login', scope: 'page', parameters: z.object({}) },
+      ],
+    });
+
+    expect(contract.commands.find(command => command.name === 'publish')).toMatchObject({
+      requiresLogin: true,
+      capabilities: ['browser.page', 'auth.login'],
+    });
+    expect(contract.commands.find(command => command.name === 'login')).toMatchObject({
+      requiresLogin: false,
+    });
+  });
 });

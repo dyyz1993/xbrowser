@@ -41,6 +41,7 @@ import { outputError, outputResult } from './cli/output.js';
 import { showMainHelp } from './cli/help.js';
 import { printChainResult, printChainResultBrief } from './cli/chain-output.js';
 import { getPluginLoader } from './utils/plugin-singleton.js';
+import { checkPluginLoginRequired } from './plugin/login-guard.js';
 import { findOrRestoreSession, createSession, saveSessionDiskMeta } from './browser.js';
 import { HTTPServer } from './server/http-server.js';
 import { getCommand } from './commands/command-registry.js';
@@ -85,6 +86,20 @@ function showCommandHelp(siteName: string, cmd: unknown, siteConfig: { descripti
     console.log(text);
     console.log('');
   }
+}
+
+function outputLoginRequired(result: { message?: string; tips?: string[] }, mode: string): void {
+  if (mode === 'json' || mode === 'yaml') {
+    console.log(outputFormatter.format(result, { mode: mode as 'json' | 'yaml', color: false, emoji: false }));
+    return;
+  }
+
+  const message = result.message || 'Login required';
+  console.error(message);
+  for (const tip of result.tips || []) {
+    if (tip !== message) console.error(`  \u{1F4A1} ${tip}`);
+  }
+  process.exit(1);
 }
 
 /** Extract type info from a Zod field (handles Optional, Default, Enum wrappers) */
@@ -528,6 +543,11 @@ export async function routeCommand(
             const { forwardExec } = await import('./client/daemon-client.js');
             const userTimeout = typeof params.timeout === 'number' && params.timeout > 0 ? params.timeout * 1000 + 30000 : undefined;
             const result = await forwardExec(`${command}.${subCommand}`, params, sessionName, cdpEndpoint, userTimeout);
+            const resultData = result && typeof result === 'object' ? (result as unknown as Record<string, unknown>).data as Record<string, unknown> | undefined : undefined;
+            if (result && result.success === false && resultData?.code === 'LOGIN_REQUIRED') {
+              outputLoginRequired(result, mode);
+              return;
+            }
             if (result && result.success !== false) {
               if (isCommandResult(result)) {
                 if (mode === 'json' || mode === 'yaml') {
@@ -577,6 +597,29 @@ export async function routeCommand(
 
           try {
             const cmdStart = Date.now()
+            const loginGuard = await checkPluginLoginRequired({
+              site,
+              command: cmdEntry,
+              commandName: subCommand,
+              ctx,
+              page: needsBrowser ? session?.page : null,
+              sessionName,
+            });
+            if (!loginGuard.ok) {
+              const result = {
+                success: false,
+                data: loginGuard.data ?? null,
+                message: loginGuard.message,
+                tips: loginGuard.tips || [],
+              };
+              if (mode === 'json' || mode === 'yaml') {
+                outputLoginRequired(result, mode);
+              } else {
+                outputLoginRequired(result, mode);
+              }
+              return;
+            }
+
             const cmdHooks = await loadHooks();
             if (cmdHooks.length > 0 && session?.page) {
               await Promise.all(cmdHooks.map(h => h.onBeforeCommand?.({ page: session.page!, command: `${command} ${subCommand}`, params })));

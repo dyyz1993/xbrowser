@@ -398,7 +398,7 @@ const API_KEY = 'sk-abc123';
 
 ### 9. 网站类插件登录检测规范（loginConfig）
 
-**这是新规范，不是 lint 规则，而是开发指南。**
+**这是运行时约定，也是开发指南。**
 
 **适用范围**：所有面向网站的插件（如 douyin、twitter、xiaohongshu、zhihu、bilibili 等）
 
@@ -443,13 +443,34 @@ const site = xcli.createSite({
 ```
 
 **登录检测策略优先级**：
-1. **URL 跳转检测**（最可靠）：当前 URL 是否包含 `/login` 等路径
-2. **DOM 选择器检测**：页面上是否存在登录弹窗/面板
-3. **Body 文本关键词**：页面内容是否包含"登录"+"注册"
-4. **正向确认**：已登录状态的特征元素是否存在
+1. **个性化检测**：如果插件实现了 `site.isLoggedIn(ctx)`，运行时优先使用它
+2. **正向确认**：`loggedInSelectors` 中任意元素可见则视为已登录
+3. **URL 跳转检测**：当前 URL 是否包含 `/login` 等路径
+4. **DOM 选择器检测**：页面上是否存在登录弹窗/面板
+5. **Body 文本关键词**：页面内容是否包含"登录"+"注册"
+
+**未登录返回规范**：
+需要登录的命令在执行 handler 前会被拦截，并返回结构化失败：
+
+```json
+{
+  "success": false,
+  "data": {
+    "code": "LOGIN_REQUIRED",
+    "plugin": "example",
+    "command": "collect",
+    "viewerUrl": "http://localhost:9224/preview/default",
+    "loginUrl": "https://example.com/login"
+  },
+  "message": "请先登录",
+  "tips": ["Open viewer to complete login: http://localhost:9224/preview/default"]
+}
+```
+
+这意味着 handler 不会继续执行。用户完成登录后，重新运行原命令即可。
 
 **注意事项**：
-- `loginConfig` 仅供框架和 lint 检查使用，不是运行时必需字段
+- `loginConfig` 会被通用登录检测读取；复杂站点应同时实现个性化 `site.isLoggedIn(ctx)`
 - 简单的公开数据采集插件（如搜索引擎、图片站）可以不配置 `loginConfig`
 - 需要登录的插件应同时实现 `site.login()` 和 `site.logout()` 处理器
 - 验证码处理应使用 `ctx.waitForHuman()` 让用户在浏览器中手动完成

@@ -210,6 +210,50 @@ site.logout(async (ctx) => {
 
 检查登录状态（需要在 login handler 中设置 storage）。
 
+### 登录检测与未登录返回
+
+需要登录的插件应在 `createSite()` 中声明 `requiresLogin: true`，并尽量提供
+`loginConfig`：
+
+```typescript
+const site = xcli.createSite({
+  name: 'example',
+  url: 'https://example.com',
+  description: 'Example 插件',
+  requiresLogin: true,
+  loginConfig: {
+    loginUrl: 'https://example.com/login',
+    loginUrls: ['/login', '/signin', '/auth'],
+    loginSelectors: ['[class*="login-modal"]', '#login-panel'],
+    loggedInSelectors: ['[class*="avatar"]', '[data-testid="user-menu"]'],
+    loginKeywords: ['登录', '注册'],
+    loginPrompt: '请先在 viewer 中完成登录',
+  },
+});
+```
+
+运行时登录检测分两层：
+
+1. 如果插件实现了 `site.isLoggedIn(ctx)`，优先使用站点个性化检测。
+2. 否则使用 `loginConfig` 的 URL、DOM、关键词做通用检测。
+
+当命令需要登录但检测到未登录时，框架会在执行 handler 前返回：
+
+```json
+{
+  "success": false,
+  "data": {
+    "code": "LOGIN_REQUIRED",
+    "plugin": "example",
+    "command": "collect",
+    "viewerUrl": "http://localhost:9224/preview/default",
+    "loginUrl": "https://example.com/login"
+  }
+}
+```
+
+这时 handler 不会继续执行。用户打开 `viewerUrl` 完成登录后，重新运行原命令即可。
+
 ---
 
 ## 命令定义

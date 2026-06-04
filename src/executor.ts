@@ -21,6 +21,7 @@ import {
 } from './chain-parser.js';
 import type { WSServer, CommandMessage } from './websocket-server.js';
 import { getPluginLoader } from './utils/plugin-singleton.js';
+import { checkPluginLoginRequired } from './plugin/login-guard.js';
 import { getTipsManager } from './tips/index.js';
 import { resolveRefParams } from './utils/resolve-selector.js';
 import { loadHooks } from './hooks/loader.js';
@@ -541,6 +542,47 @@ export async function executeChain(
 
           const start = Date.now();
           try {
+            const loginGuard = await checkPluginLoginRequired({
+              site,
+              command: cmdEntry,
+              commandName: subCommand,
+              ctx: pluginCtx,
+              page: session?.page,
+              sessionName,
+            });
+            if (!loginGuard.ok) {
+              const duration = Date.now() - start;
+              const data = loginGuard.data ?? null;
+              recordArchive(session!.id, sessionName, {
+                step: results.length,
+                command: `${cmdName} ${subCommand}`,
+                params: pluginParams,
+                result: { success: false, data, message: loginGuard.message, tips: loginGuard.tips || [] },
+                toolCalls: [],
+                duration,
+                timestamp: start,
+              });
+              results.push({
+                command: `${cmdName} ${subCommand}`,
+                raw: cmdStr,
+                success: false,
+                data,
+                message: loginGuard.message,
+                tips: loginGuard.tips || [],
+                duration,
+              });
+              if (type === 'and') {
+                return {
+                  success: false,
+                  steps: results,
+                  totalDuration: Date.now() - totalStart,
+                  stoppedAt: results.length,
+                  stoppedReason: `Command '${cmdName} ${subCommand}' failed (&& chain): ${loginGuard.message}`,
+                };
+              }
+              continue;
+            }
+
             const hooks = await loadHooks();
             if (hooks.length > 0) {
               await Promise.all(hooks.map(h => h.onBeforeCommand?.({ page: session!.page!, command: `${cmdName} ${subCommand}`, params: pluginParams })));

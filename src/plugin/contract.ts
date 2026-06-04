@@ -48,7 +48,9 @@ type SiteLike = {
 export function buildPluginContract(site: SiteLike): PluginContract {
   const commands = site
     .getAllCommands()
-    .map(command => buildCommandContract(site.getCommand?.(command.name) || command));
+    .map(command => buildCommandContract(site.getCommand?.(command.name) || command, {
+      siteRequiresLogin: site.config?.requiresLogin,
+    }));
   return {
     version: 2,
     plugin: {
@@ -61,19 +63,21 @@ export function buildPluginContract(site: SiteLike): PluginContract {
   };
 }
 
-export function buildCommandContract(command: CommandLike): PluginCommandContract {
+export function buildCommandContract(command: CommandLike, options: { siteRequiresLogin?: boolean } = {}): PluginCommandContract {
   const extension = command.xbrowser || {};
   const inferredFields = fieldsFromZodObject(command.parameters);
   const fields = mergeFields(inferredFields, extension.form?.fields || []);
   const positional = extension.positional || fields.filter(field => field.positional).map(field => field.name);
-  const capabilities = extension.capabilities || inferCapabilities(command.scope || 'project', command.requiresLogin);
+  const requiresLogin = command.requiresLogin === true
+    || (options.siteRequiresLogin === true && command.name !== 'login' && command.name !== 'logout');
+  const capabilities = extension.capabilities || inferCapabilities(command.scope || 'project', requiresLogin);
   const outputSchema = command.result ? summarizeZod(command.result) : undefined;
 
   return {
     name: command.name,
     description: command.description || '',
     scope: command.scope || 'project',
-    requiresLogin: command.requiresLogin === true,
+    requiresLogin,
     category: extension.category,
     capabilities,
     positional,
