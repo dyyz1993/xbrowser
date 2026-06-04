@@ -47,6 +47,7 @@ describe('Plugin Builtins', () => {
     expect(help).toContain('install');
     expect(help).toContain('uninstall');
     expect(help).toContain('list');
+    expect(help).toContain('schema');
     expect(help).toContain('reload');
   });
 });

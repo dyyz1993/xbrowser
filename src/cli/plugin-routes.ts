@@ -7,6 +7,7 @@ import { outputResult, outputError } from './output.js';
 import { NPM_REGISTRY_URL, resolveNpmPackageWithFallback } from '../config.js';
 import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 import { getPluginLoader as getGlobalPluginLoader } from '../utils/plugin-singleton.js';
+import type { PluginCommandContract, PluginContract } from '../plugin/types.js';
 
 let pluginLoader: XBrowserPluginLoader | null = null;
 
@@ -250,6 +251,65 @@ async function handlePluginInfo(
   }
 }
 
+async function handlePluginSchema(
+  args: string[],
+  mode: string
+): Promise<void> {
+  const pluginName = args[0];
+  const commandName = args[1];
+  if (!pluginName) outputError('Usage: xbrowser plugin schema <name> [command] [--json]');
+
+  const loader = await getGlobalPluginLoader();
+  const contract = loader.getPluginContract(pluginName, commandName);
+  if (!contract) {
+    outputError(commandName
+      ? `Command "${commandName}" not found in plugin "${pluginName}"`
+      : `Plugin "${pluginName}" not found`);
+    return;
+  }
+
+  if (mode === 'json') {
+    outputResult(contract, mode);
+    return;
+  }
+
+  if ('commands' in contract) {
+    printPluginContract(contract);
+  } else {
+    printCommandContract(pluginName, contract);
+  }
+}
+
+function printPluginContract(contract: PluginContract): void {
+  console.log(`${contract.plugin.name} contract v${contract.version}`);
+  if (contract.plugin.description) console.log(contract.plugin.description);
+  console.log('');
+  for (const command of contract.commands) {
+    printCommandContract(contract.plugin.name, command);
+  }
+}
+
+function printCommandContract(pluginName: string, command: PluginCommandContract): void {
+  console.log(`${pluginName} ${command.name}`);
+  if (command.description) console.log(`  ${command.description}`);
+  console.log(`  scope: ${command.scope}`);
+  if (command.capabilities.length > 0) {
+    console.log(`  capabilities: ${command.capabilities.join(', ')}`);
+  }
+  if (command.positional.length > 0) {
+    console.log(`  positional: ${command.positional.join(', ')}`);
+  }
+  if (command.form.fields.length > 0) {
+    console.log('  fields:');
+    for (const field of command.form.fields) {
+      const required = field.required ? 'required' : 'optional';
+      const choices = field.enum ? ` [${field.enum.join('|')}]` : '';
+      console.log(`    --${field.name}: ${field.type}/${field.widget} ${required}${choices}`);
+    }
+  }
+  console.log('');
+}
+
 export async function handlePlugin(
   args: string[],
   options: Record<string, unknown>,
@@ -339,6 +399,9 @@ export async function handlePlugin(
       }
       break;
     }
+    case 'schema':
+      await handlePluginSchema(subArgs, mode);
+      break;
     case 'reload': {
       const name = subArgs[0];
       if (!name) outputError('Usage: xbrowser plugin reload <name>');

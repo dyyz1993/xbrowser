@@ -33,6 +33,7 @@ function handlePluginHelp(): string {
     '  install <slug> --from-marketplace             Install from marketplace',
     '  uninstall <name>                              Uninstall a plugin',
     '  list [--json]                                 List installed plugins',
+    '  schema <name> [command] [--json]              Show plugin contract and command forms',
     '  reload <name>                                 Reload a plugin',
     '',
     'Examples:',
@@ -41,6 +42,7 @@ function handlePluginHelp(): string {
     '  xbrowser plugin install ./my-plugin',
     '  xbrowser plugin uninstall my-plugin',
     '  xbrowser plugin list',
+    '  xbrowser plugin schema my-plugin --json',
     '  xbrowser plugin reload my-plugin',
   ].join('\n');
 }

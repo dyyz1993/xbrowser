@@ -11,6 +11,8 @@ import { existsSync, readdirSync } from 'fs';
 import { homedir } from 'os';
 import { PluginMetadataParser } from './metadata-parser.js';
 import { ensurePluginDependencies } from './ensure-deps.js';
+import { buildPluginContract } from './contract.js';
+import type { PluginCommandContract, PluginContract } from './types.js';
 
 export type { PluginInstance, PluginStatus, XCLIAPI };
 
@@ -78,6 +80,14 @@ export class XBrowserPluginLoader {
 
   getLoadedPlugins(): PluginInstance[] {
     return this.loader.getLoadedPlugins();
+  }
+
+  getPluginContract(siteName: string, commandName?: string): PluginContract | PluginCommandContract | undefined {
+    const site = this.core.loader.getSite(siteName);
+    if (!site) return undefined;
+    const contract = buildPluginContract(site);
+    if (!commandName) return contract;
+    return contract.commands.find(command => command.name === commandName);
   }
 
   async loadPlugin(pluginPath: string, id?: string): Promise<PluginInstance> {

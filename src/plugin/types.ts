@@ -12,6 +12,88 @@ export interface XBrowserPluginMetadata {
   license?: string;
 }
 
+export type PluginFormWidget =
+  | 'text'
+  | 'textarea'
+  | 'number'
+  | 'checkbox'
+  | 'select'
+  | 'multi-select'
+  | 'json'
+  | 'file'
+  | 'url'
+  | 'password';
+
+export type PluginCapability =
+  | 'browser.page'
+  | 'browser.context'
+  | 'browser.cdp'
+  | 'network'
+  | 'storage'
+  | 'filesystem'
+  | 'external-api'
+  | 'auth.login'
+  | (string & {});
+
+export interface PluginFormField {
+  name: string;
+  label: string;
+  type: string;
+  widget: PluginFormWidget;
+  required: boolean;
+  description?: string;
+  default?: unknown;
+  enum?: string[];
+  positional?: boolean;
+  placeholder?: string;
+  secret?: boolean;
+  multiple?: boolean;
+}
+
+export interface PluginCommandContractExtension {
+  category?: string;
+  capabilities?: PluginCapability[];
+  positional?: string[];
+  form?: {
+    title?: string;
+    description?: string;
+    submitLabel?: string;
+    fields?: Partial<PluginFormField>[];
+  };
+  output?: {
+    schema?: unknown;
+    examples?: unknown[];
+  };
+}
+
+export interface PluginCommandContract {
+  name: string;
+  description: string;
+  scope: string;
+  requiresLogin: boolean;
+  category?: string;
+  capabilities: PluginCapability[];
+  positional: string[];
+  form: {
+    title: string;
+    description?: string;
+    submitLabel: string;
+    fields: PluginFormField[];
+  };
+  output?: PluginCommandContractExtension['output'];
+}
+
+export interface PluginContract {
+  version: 2;
+  plugin: {
+    name: string;
+    url?: string;
+    description?: string;
+    requiresLogin?: boolean;
+  };
+  commands: PluginCommandContract[];
+}
+
 export interface NPMPluginSearchResult {
   name: string;
   version: string;

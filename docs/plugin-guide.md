@@ -10,6 +10,7 @@
 - [插件结构](#插件结构)
 - [XCLIAPI 接口](#xcliapi-接口)
 - [命令定义](#命令定义)
+- [Plugin Contract v2](#plugin-contract-v2)
 - [Scope 系统](#scope-系统)
 - [参数校验](#参数校验)
 - [返回值规范](#返回值规范)
@@ -246,6 +247,83 @@ handler: async (
   ctx: CommandContext               // 命令上下文
 ) => CommandResult | unknown
 ```
+
+---
+
+## Plugin Contract v2
+
+Plugin Contract v2 是面向 agent 和 UI 的稳定 JSON 描述，用来回答：
+
+- 插件有哪些命令
+- 命令需要哪些参数
+- 参数应该以什么表单控件呈现
+- 命令需要哪些能力，例如 `browser.page`、`network`、`auth.login`
+- 哪些参数可以作为 positional 参数
+
+查询方式：
+
+```bash
+xbrowser plugin schema <plugin>
+xbrowser plugin schema <plugin> <command>
+xbrowser plugin schema <plugin> <command> --json
+```
+
+如果命令只声明 Zod `parameters`，xbrowser 会自动推导表单字段：
+
+```typescript
+parameters: z.object({
+  query: z.string().describe('搜索关键词'),
+  limit: z.number().optional().default(10),
+  engine: z.enum(['google', 'bing']).optional().default('google'),
+})
+```
+
+会生成类似：
+
+```json
+{
+  "form": {
+    "fields": [
+      { "name": "query", "type": "string", "widget": "text", "required": true },
+      { "name": "limit", "type": "number", "widget": "number", "required": false, "default": 10 },
+      { "name": "engine", "type": "enum", "widget": "select", "required": false, "enum": ["google", "bing"] }
+    ]
+  }
+}
+```
+
+如果需要更明确的表单、分类或能力声明，可以在命令定义上添加 `xbrowser`
+扩展字段：
+
+```typescript
+site.command('search', {
+  description: '搜索内容',
+  scope: 'page',
+  parameters: z.object({
+    query: z.string(),
+    limit: z.number().optional().default(10),
+  }),
+  xbrowser: {
+    category: 'search',
+    capabilities: ['browser.page', 'network'],
+    positional: ['query'],
+    form: {
+      title: '搜索',
+      submitLabel: '执行',
+      fields: [
+        { name: 'query', label: '关键词', placeholder: 'agent browser' },
+        { name: 'limit', label: '数量', widget: 'number' },
+      ],
+    },
+  },
+  handler: async (params, ctx) => {
+    // ...
+  },
+});
+```
+
+`xbrowser.form.fields` 会覆盖同名 Zod 推导字段，但不会删除未覆盖字段。这样插件
+作者只需要补充 UI 语义，不需要重复维护完整参数 schema。
 
 ---
 

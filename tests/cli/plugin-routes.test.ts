@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockSearchHandler = vi.fn().mockResolvedValue({ data: { items: [] } });
 
-const { mockOutputResult, mockOutputError, mockInstallerInstall, mockInstallerInstallFromMarketplace, mockInstallerInstallWithMarketplaceFallback, mockInstallerUninstall, mockInstallerList, mockReloadPlugin, mockGetPluginLoader } = vi.hoisted(() => ({
+const { mockOutputResult, mockOutputError, mockInstallerInstall, mockInstallerInstallFromMarketplace, mockInstallerInstallWithMarketplaceFallback, mockInstallerUninstall, mockInstallerList, mockReloadPlugin, mockGetPluginContract, mockGetPluginLoader } = vi.hoisted(() => ({
   mockOutputResult: vi.fn(),
   mockOutputError: vi.fn(),
   mockInstallerInstall: vi.fn(),
@@ -11,12 +11,14 @@ const { mockOutputResult, mockOutputError, mockInstallerInstall, mockInstallerIn
   mockInstallerUninstall: vi.fn(),
   mockInstallerList: vi.fn(),
   mockReloadPlugin: vi.fn(),
+  mockGetPluginContract: vi.fn(),
   mockGetPluginLoader: vi.fn().mockResolvedValue({
     getCore: () => ({
       loader: {
         getSites: () => [],
       },
     }),
+    getPluginContract: vi.fn(),
   }),
 }));
 
@@ -108,6 +110,7 @@ describe('plugin-routes', () => {
       throw new Error(msg);
     });
     setupMockLoaderWithSites([]);
+    mockGetPluginContract.mockReturnValue(undefined);
     mockSearchHandler.mockResolvedValue({ data: { items: [] } });
   });
 
@@ -224,6 +227,71 @@ describe('plugin-routes', () => {
       await expect(
         handlePlugin(['reload'], {}, 'text')
       ).rejects.toThrow();
+    });
+  });
+
+  describe('handlePlugin - schema', () => {
+    beforeEach(() => {
+      mockGetPluginLoader.mockResolvedValue({
+        getCore: () => ({
+          loader: {
+            getSites: () => [],
+          },
+        }),
+        getPluginContract: mockGetPluginContract,
+      });
+    });
+
+    it('should output plugin contract as JSON', async () => {
+      const contract = {
+        version: 2,
+        plugin: { name: 'demo' },
+        commands: [
+          {
+            name: 'search',
+            description: 'Search',
+            scope: 'page',
+            requiresLogin: false,
+            capabilities: ['browser.page'],
+            positional: ['query'],
+            form: {
+              title: 'Search',
+              submitLabel: 'Run',
+              fields: [{ name: 'query', label: 'Query', type: 'string', widget: 'text', required: true }],
+            },
+          },
+        ],
+      };
+      mockGetPluginContract.mockReturnValueOnce(contract);
+
+      await handlePlugin(['schema', 'demo'], {}, 'json');
+
+      expect(mockGetPluginContract).toHaveBeenCalledWith('demo', undefined);
+      expect(mockOutputResult).toHaveBeenCalledWith(contract, 'json');
+    });
+
+    it('should output command contract as JSON', async () => {
+      const command = {
+        name: 'search',
+        description: 'Search',
+        scope: 'page',
+        requiresLogin: false,
+        capabilities: ['browser.page'],
+        positional: [],
+        form: { title: 'Search', submitLabel: 'Run', fields: [] },
+      };
+      mockGetPluginContract.mockReturnValueOnce(command);
+
+      await handlePlugin(['schema', 'demo', 'search'], {}, 'json');
+
+      expect(mockGetPluginContract).toHaveBeenCalledWith('demo', 'search');
+      expect(mockOutputResult).toHaveBeenCalledWith(command, 'json');
+    });
+
+    it('should error when plugin contract is missing', async () => {
+      mockGetPluginContract.mockReturnValueOnce(undefined);
+
+      await expect(handlePlugin(['schema', 'missing'], {}, 'json')).rejects.toThrow('Plugin "missing" not found');
     });
   });
 
