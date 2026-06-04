@@ -127,6 +127,12 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
           return handleExec(params);
         case 'chain':
           return handleChain(params);
+        case 'agent:observe':
+          return handleAgentObserve(params);
+        case 'agent:act':
+          return handleAgentAct(params);
+        case 'agent:wait':
+          return handleAgentWait(params);
 
         // ── Utility ──
         case 'ping':
@@ -305,6 +311,48 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const sessionName = (params.session as string) || 'default';
     const cdp = params.cdpEndpoint as string | undefined;
     const result = await executeChain(input, { cdpEndpoint: cdp, sessionName });
+    registerSessionIfNew(sessionName);
+    return result;
+  }
+
+  async function handleAgentObserve(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const commandParams = {
+      includeHidden: !!params.includeHidden,
+      ...(typeof params.limit === 'number' ? { limit: params.limit } : {}),
+    };
+    const result = await executeCommand('observe', commandParams, sessionName, {
+      cdpEndpoint: params.cdpEndpoint as string | undefined,
+    });
+    registerSessionIfNew(sessionName);
+    return result;
+  }
+
+  async function handleAgentAct(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const commandParams: Record<string, unknown> = {
+      action: params.action || 'click',
+      force: !!params.force,
+    };
+    for (const key of ['ref', 'selector', 'value', 'key', 'timeout']) {
+      if (params[key] !== undefined) commandParams[key] = params[key];
+    }
+    const result = await executeCommand('act', commandParams, sessionName, {
+      cdpEndpoint: params.cdpEndpoint as string | undefined,
+    });
+    registerSessionIfNew(sessionName);
+    return result;
+  }
+
+  async function handleAgentWait(params: Record<string, unknown>) {
+    const sessionName = (params.session as string) || 'default';
+    const commandParams: Record<string, unknown> = {};
+    for (const key of ['selector', 'state', 'text', 'url', 'load', 'fn', 'screenHashChanged', 'timeout', 'pollInterval']) {
+      if (params[key] !== undefined) commandParams[key] = params[key];
+    }
+    const result = await executeCommand('waitFor', commandParams, sessionName, {
+      cdpEndpoint: params.cdpEndpoint as string | undefined,
+    });
     registerSessionIfNew(sessionName);
     return result;
   }

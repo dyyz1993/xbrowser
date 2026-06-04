@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { extractRefs, resolveRefParams, clearRefCache } from '../../src/utils/resolve-selector.js';
+import { clearAllRefs, replaceRefs } from '../../src/runtime/ref-store.js';
 import type { Page, Locator } from 'playwright';
 
 describe('extractRefs', () => {
@@ -62,6 +63,7 @@ heading "Login" [ref=e1]
 describe('resolveRefParams', () => {
   beforeEach(() => {
     clearRefCache();
+    clearAllRefs();
   });
 
   it('returns empty for params without refs', async () => {
@@ -87,6 +89,38 @@ describe('resolveRefParams', () => {
     expect(result.tips[0]).toContain('e1');
     expect(result.tips[0]).toContain('#submit-btn');
     expect(result.params.selector).toBe('#submit-btn');
+  });
+
+  it('resolves @ref syntax through Playwright aria refs', async () => {
+    const mockLocator = {
+      count: vi.fn().mockResolvedValue(1),
+      first: () => ({ evaluate: vi.fn().mockResolvedValue('#submit-btn') }),
+    };
+    const page = { locator: vi.fn().mockReturnValue(mockLocator) } as unknown as Page;
+    const result = await resolveRefParams(page, { selector: '@e1' }, ['selector']);
+    expect(result.params.selector).toBe('#submit-btn');
+    expect(page.locator).toHaveBeenCalledWith('internal:ref=e1');
+  });
+
+  it('prefers observe runtime refs when session id is provided', async () => {
+    replaceRefs('session-1', 'hash-a', [
+      {
+        ref: 'e1',
+        selector: '#runtime-submit',
+        role: 'button',
+        name: 'Submit',
+        tag: 'button',
+        visible: true,
+        enabled: true,
+        editable: false,
+        actions: ['click'],
+      },
+    ]);
+    const page = { locator: vi.fn() } as unknown as Page;
+    const result = await resolveRefParams(page, { selector: '@e1' }, ['selector'], undefined, 'session-1');
+    expect(result.params.selector).toBe('#runtime-submit');
+    expect(result.tips[0]).toContain('(observe)');
+    expect(page.locator).not.toHaveBeenCalled();
   });
 
   it('warns when ref element not found (stale ref)', async () => {

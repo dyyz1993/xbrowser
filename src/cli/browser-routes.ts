@@ -201,6 +201,25 @@ export async function handleBrowserCommand(
         cmdName = 'text';
         params = { selector: (options.selector || options.s) as string | undefined };
         break;
+      case 'find': {
+        if (!args[0] || !args[1]) {
+          outputError('Usage: xbrowser find <text|role|label|placeholder|testid|alt|title|first|last|nth> <value> [action] [--name <name>]');
+        }
+        const strategy = args[0];
+        const value = args[1];
+        const operation = args.slice(2).join(' ') || undefined;
+        cmdName = 'find';
+        params = {
+          strategy,
+          value,
+          ...(operation ? { operation } : {}),
+          name: options.name as string | undefined,
+          exact: !!options.exact,
+          timeout: options.timeout ? Number(options.timeout) : undefined,
+          index: options.index ? Number(options.index) : undefined,
+        };
+        break;
+      }
       case 'back':
         cmdName = 'back';
         params = {};

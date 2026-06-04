@@ -132,6 +132,38 @@ export async function forwardChain(
   }
 }
 
+export async function forwardAgentObserve(
+  session: string = 'default',
+  options?: { cdpEndpoint?: string; includeHidden?: boolean; limit?: number },
+): Promise<ExecutionResult> {
+  const params: Record<string, unknown> = { session };
+  if (options?.cdpEndpoint) params.cdpEndpoint = options.cdpEndpoint;
+  if (options?.includeHidden !== undefined) params.includeHidden = options.includeHidden;
+  if (options?.limit !== undefined) params.limit = options.limit;
+  return rpcCall<ExecutionResult>('agent:observe', params, 30000);
+}
+
+export async function forwardAgentAct(
+  session: string = 'default',
+  params: Record<string, unknown>,
+  cdpEndpoint?: string,
+): Promise<ExecutionResult> {
+  const rpcParams: Record<string, unknown> = { ...params, session };
+  if (cdpEndpoint) rpcParams.cdpEndpoint = cdpEndpoint;
+  return rpcCall<ExecutionResult>('agent:act', rpcParams, 30000);
+}
+
+export async function forwardAgentWait(
+  session: string = 'default',
+  params: Record<string, unknown>,
+  cdpEndpoint?: string,
+  timeoutMs: number = 30000,
+): Promise<ExecutionResult> {
+  const rpcParams: Record<string, unknown> = { ...params, session };
+  if (cdpEndpoint) rpcParams.cdpEndpoint = cdpEndpoint;
+  return rpcCall<ExecutionResult>('agent:wait', rpcParams, timeoutMs + 5000);
+}
+
 // ─── Network analysis ────────────────────────────────────────────
 
 export async function forwardNetworkList(

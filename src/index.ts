@@ -92,6 +92,8 @@ export {
   type ParsedPipeline,
 } from './chain-parser.js';
 export { normalizeSelector } from './utils/selector.js';
+export { observePage, actOnPage, waitForPage, getPageScreenHash } from './runtime/agent-runtime.js';
+export type { AgentObservation, AgentTarget, AgentActionInput, AgentActionResult, AgentWaitInput, AgentWaitResult } from './runtime/types.js';
 export { generateJSScript, generatePythonScript, generateBashScript } from './commands/convert.js';
 export { extractRecording, extractAndSave, printExtractSummary } from './commands/extract.js';
 export { filterRecording, parseExcludeTypes } from './commands/filter.js';

@@ -4,6 +4,7 @@ import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { resolveSelectors } from '../utils/resolve-selector.js';
 import { extractSemanticElements, extractDomain, saveSemantics, enhanceSemanticsWithLLM } from '../utils/site-semantics.js';
+import { buildSelectorMap, formatObservationCompact, observePage } from '../runtime/agent-runtime.js';
 
 export const snapshotCommand = registerCommand({
   name: 'snapshot',
@@ -14,6 +15,13 @@ export const snapshotCommand = registerCommand({
     type: z.enum(['aria', 'text', 'dom', 'all']).default('aria').describe('Snapshot type: aria (accessibility tree), text (visible text), dom (element summary), all (combined)'),
     selector: z.string().optional().describe('Scope to a specific element'),
     depth: z.number().optional().default(6).describe('Max depth for DOM/aria tree'),
+    interactive: z.boolean().optional().default(false).describe('Return interactive agent refs only'),
+    interactiveOnly: z.boolean().optional().default(false).describe('Alias for interactive'),
+    i: z.boolean().optional().default(false).describe('Short alias for interactive'),
+    compact: z.boolean().optional().default(false).describe('Include compact agent-browser style snapshot text'),
+    c: z.boolean().optional().default(false).describe('Short alias for compact'),
+    selectors: z.boolean().optional().default(false).describe('Include ref to CSS selector map'),
+    all: z.boolean().optional().default(false).describe('Include hidden interactive targets when using interactive snapshot'),
   }),
   result: z.object({
     url: z.string(),
@@ -27,6 +35,19 @@ export const snapshotCommand = registerCommand({
 
     const url = page.url();
     const title = await page.title().catch(() => '');
+
+    if (p.interactive || p.interactiveOnly || p.i || p.compact || p.c || p.selectors) {
+      const observation = await observePage(page, ctx.sessionId, {
+        includeHidden: p.all,
+      });
+      if (p.selectors) observation.selectors = buildSelectorMap(observation);
+      if (p.compact || p.c || p.interactive || p.interactiveOnly || p.i) {
+        observation.compact = formatObservationCompact(observation, { selectors: p.selectors });
+      }
+      return ok(observation, [
+        `refs refreshed for ${observation.targets.length} targets; use click @e1 or fill @e2 "text"`,
+      ]);
+    }
 
     if (p.type === 'aria') {
       const aria = await captureAriaSnapshot(page, p.selector, p.depth);

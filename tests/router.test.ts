@@ -438,6 +438,22 @@ describe('router', () => {
     );
   });
 
+  it('passes explicit --session to browser commands', async () => {
+    const { handleBrowserCommand } = await import('../src/cli/index.js');
+    const { isChainInput } = await import('../src/executor.js');
+    vi.mocked(isChainInput).mockReturnValue(false);
+
+    await routeCommand(['--session', 'agent-task', 'snapshot']);
+    expect(handleBrowserCommand).toHaveBeenCalledWith(
+      'snapshot',
+      [],
+      expect.any(Object),
+      'agent-task',
+      'text',
+      undefined
+    );
+  });
+
   it('handles default chain input in switch default', async () => {
     const { executeChain } = await import('../src/executor.js');
     const { isChainInput } = await import('../src/executor.js');

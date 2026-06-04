@@ -292,7 +292,7 @@ export async function executeCommand(
   let refTips: string[] = [];
   if (session?.page && command.selectorParams && command.selectorParams.length > 0) {
     const cache = new Map<string, string>();
-    const resolved = await resolveRefParams(session.page, params, command.selectorParams, cache);
+    const resolved = await resolveRefParams(session.page, params, command.selectorParams, cache, session.id);
     if (resolved.tips.length > 0) {
       refTips = resolved.tips;
       params = resolved.params;

@@ -1,4 +1,5 @@
 import type { Page } from 'playwright';
+import { getRefTarget, normalizeAgentRef } from '../runtime/ref-store.js';
 
 export interface RefMapping {
   ref: string;
@@ -211,7 +212,7 @@ export function formatRefMappings(mappings: RefMapping[]): string {
   return mappings.map(m => `  ref=${m.ref} => ${m.selector}  (${m.method})`).join('\n');
 }
 
-const REF_ONLY = /^(e\d+)$/;
+const REF_ONLY = /^@?(e\d+)$/;
 
 const refCache = new Map<string, string>();
 
@@ -224,6 +225,7 @@ export async function resolveRefParams(
   params: Record<string, unknown>,
   selectorKeys: string[],
   cache?: Map<string, string>,
+  sessionId?: string,
 ): Promise<{ params: Record<string, unknown>; tips: string[] }> {
   const tips: string[] = [];
   const newParams = { ...params };
@@ -236,7 +238,18 @@ export async function resolveRefParams(
     const val = params[key];
     if (typeof val !== 'string' || !REF_ONLY.test(val)) continue;
 
-    const ref = val;
+    const match = val.match(REF_ONLY);
+    if (!match) continue;
+    const ref = normalizeAgentRef(match[1]);
+
+    if (sessionId) {
+      const runtimeTarget = getRefTarget(sessionId, ref);
+      if (runtimeTarget) {
+        tips.push(`ref=@${ref} (${key}) => ${runtimeTarget.target.selector}  (observe)`);
+        newParams[key] = runtimeTarget.target.selector;
+        continue;
+      }
+    }
 
     const activeCache = cache ?? refCache;
     const cached = activeCache.get(ref);

@@ -258,7 +258,7 @@ export function parseCommandArgs(
     } else {
       if (positionalIndex < positionalKeys.length) {
         const isLast = positionalIndex === positionalKeys.length - 1;
-        if (isLast && name === 'eval') {
+        if (isLast && (name === 'eval' || name === 'find')) {
           const remaining = args.slice(i).map(unquote).join(' ');
           params[positionalKeys[positionalIndex]] = remaining;
           break;
@@ -314,7 +314,7 @@ const commandDefCache: Record<string, CommandDef> = {
   frames: { positional: [] },
   frame: { positional: ['selector'] },
   actions: { positional: ['url'] },
-  find: { positional: ['strategy', 'value'] },
+  find: { positional: ['strategy', 'value', 'operation'] },
   addinitscript: { positional: ['script'] },
   tab: { positional: ['subcommand'] },
 };
