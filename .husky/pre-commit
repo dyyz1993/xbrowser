@@ -80,6 +80,16 @@ if [ $? -ne 0 ]; then
 fi
 echo "✅ Plugin code check passed"
 
+echo "🔍 [pre-commit] Checking plugin contract extraction..."
+node lint-scripts/check-plugin-contract.mjs
+if [ $? -ne 0 ]; then
+  echo "❌ Plugin contract check failed. Fix plugin loading and parameter schemas."
+  echo "   → All plugin commands must load and expose Zod object parameters for form extraction."
+  echo "   → Use parameters: z.object({}) for commands without arguments."
+  exit 1
+fi
+echo "✅ Plugin contract check passed"
+
 echo "🔍 [pre-commit] Checking plugin requiresLogin consistency..."
 node lint-scripts/check-plugin-requires-login.js
 if [ $? -ne 0 ]; then

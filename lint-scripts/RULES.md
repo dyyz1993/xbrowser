@@ -12,7 +12,7 @@ lint-scripts/
 ├── check-result-schema.mjs        # 检查命令是否声明 result Zod schema
 ├── check-plugin-metadata.mjs      # 检查已安装插件是否有合法 package.json
 ├── check-plugin-code.mjs          # 检查插件源码质量（ok/fail、z.any、空 catch 等）
-├── check-plugin-code.mjs          # 检查插件源码质量（ok/fail、z.any、空 catch 等）
+├── check-plugin-contract.mjs      # 检查插件能加载且参数能提取成表单 contract
 ├── check-plugin-requires-login.js # 检查插件 requiresLogin 声明一致性
 └── eslint-no-raw-output.mjs       # ESLint 规则：禁止直接 console.log(JSON.stringify)
 ```
@@ -253,7 +253,59 @@ export function showMainHelp(): void {
 }
 ```
 
-### 6. 插件代码质量（plugin-code）
+### 6. 插件 Contract / 表单提取（plugin-contract）
+
+**执行方式**：
+- Husky pre-commit：`lint-scripts/check-plugin-contract.mjs`
+- 手动执行：`npm run lint:plugin-contract`
+
+**规则**：
+- `.xcli/plugins/*/index.ts` 或 `index.js` 必须能被 xcli-core loader 加载
+- 每个插件命令必须声明 `parameters`
+- 无参数命令也必须写 `parameters: z.object({})`
+- `parameters` 必须是 Zod object，便于 Plugin Contract v2 自动提取表单字段
+
+**原因**：
+Agent 和 UI 依赖 `xbrowser plugin schema <plugin> [command] --json` 获取稳定表单契约。
+如果插件语法错误、Zod 链式调用非法，或参数不是 object，命令就无法被 agent 可靠调用。
+
+**正确示例**：
+```typescript
+site.command('search', {
+  description: '搜索',
+  scope: 'page',
+  parameters: z.object({
+    query: z.string().describe('关键词'),
+    limit: z.number().optional().default(10),
+  }),
+  handler: async (params, ctx) => {
+    // ...
+  },
+});
+
+site.command('status', {
+  description: '状态',
+  scope: 'project',
+  parameters: z.object({}),
+  handler: async () => {
+    // ...
+  },
+});
+```
+
+**错误示例**：
+```typescript
+// ❌ 无法提取表单字段
+parameters: z.record(z.any())
+
+// ❌ z.union 没有 passthrough()
+result: z.union([z.array(z.object({})), z.object({ markdown: z.string() })]).passthrough()
+
+// ❌ nullable 后不再是 ZodObject
+result: z.object({ code: z.string() }).nullable().passthrough()
+```
+
+### 7. 插件代码质量（plugin-code）
 
 **执行方式**：
 - Husky pre-commit：`lint-scripts/check-plugin-code.mjs`
@@ -302,7 +354,7 @@ try { ... } catch {}
 const API_KEY = 'sk-abc123';
 ```
 
-### 7. 插件元数据完整性（plugin-metadata 增强）
+### 8. 插件元数据完整性（plugin-metadata 增强）
 
 **执行方式**：
 - Husky pre-commit：`lint-scripts/check-plugin-metadata.mjs`
@@ -344,7 +396,7 @@ const API_KEY = 'sk-abc123';
 }
 ```
 
-### 8. 网站类插件登录检测规范（loginConfig）
+### 9. 网站类插件登录检测规范（loginConfig）
 
 **这是新规范，不是 lint 规则，而是开发指南。**
 
@@ -402,7 +454,7 @@ const site = xcli.createSite({
 - 需要登录的插件应同时实现 `site.login()` 和 `site.logout()` 处理器
 - 验证码处理应使用 `ctx.waitForHuman()` 让用户在浏览器中手动完成
 
-### 9. requiresLogin 声明规范
+### 10. requiresLogin 声明规范
 
 **执行方式**：
 - Husky pre-commit：`lint-scripts/check-plugin-requires-login.js`
@@ -445,7 +497,7 @@ const site = xcli.createSite({
 });
 ```
 
-### 10. 渐进式 Result Schema 优化策略
+### 11. 渐进式 Result Schema 优化策略
 
 本策略解决 `result: z.any()` 到精确 `z.object()` 的过渡问题。
 

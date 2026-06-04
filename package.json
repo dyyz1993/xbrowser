@@ -73,6 +73,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "lint": "eslint src/ bin/ --ext .ts",
+    "lint:plugin-contract": "node lint-scripts/check-plugin-contract.mjs",
     "typecheck": "tsc --noEmit",
     "start": "node dist/cli.js",
     "test": "vitest run",
