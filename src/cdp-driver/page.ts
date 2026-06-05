@@ -248,7 +248,13 @@ export class XBPageImpl implements XBPage {
         if (visible) return;
       }
 
-      if (state === 'hidden' && !exists) return;
+      if (state === 'hidden') {
+        if (!exists) return;
+        const visible = await this.evaluate<boolean>(
+          `(function() { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; const rect = el.getBoundingClientRect(); const style = window.getComputedStyle(el); return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'; })()`,
+        );
+        if (!visible) return;
+      }
 
       await this.waitForTimeout(100);
     }
@@ -509,7 +515,14 @@ export class XBPageImpl implements XBPage {
     }
 
     if (opts.clip) {
-      params.clip = opts.clip;
+      const clip = {
+        x: Math.round(opts.clip.x),
+        y: Math.round(opts.clip.y),
+        width: Math.round(Math.max(1, opts.clip.width)),
+        height: Math.round(Math.max(1, opts.clip.height)),
+        scale: 1,
+      };
+      params.clip = clip;
     }
 
     if (opts.omitBackground) {
