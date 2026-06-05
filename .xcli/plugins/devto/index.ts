@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page, Locator } from 'playwright';
+import type { Page, Locator } from '../../src/browser-shim.js';
 
 type Point = { x: number; y: number };
 

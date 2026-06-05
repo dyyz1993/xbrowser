@@ -4,6 +4,7 @@
  * Each method is a separate handler function, grouped by domain.
  * This replaces the giant switch/case in the old daemon-worker.ts.
  */
+import type { Page } from '../browser-shim.js';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -91,7 +92,7 @@ const RECORDING_INJECT_JS = `
 /**
  * Injects recording JS into a page and registers auto-reinject on navigation.
  */
-async function injectRecording(page: import('playwright').Page): Promise<void> {
+async function injectRecording(page: Page): Promise<void> {
   try {
     await page.evaluate(RECORDING_INJECT_JS);
   } catch {
@@ -454,7 +455,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const sess = findSession((params.session as string) || 'default');
     if (!sess) return { recording: false, error: 'No session' };
     try {
-      const result = await sess.page.evaluate(() => ({
+      const result = await sess.page.evaluate<{ active: boolean; events: number; url: string }>(() => ({
         active: !!(window as unknown as Record<string, unknown>).__xb_rec,
         events: ((window as unknown as Record<string, unknown>).__xb_evts as unknown[])?.length || 0,
         url: location.href,

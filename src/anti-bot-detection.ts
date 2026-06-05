@@ -4,6 +4,8 @@
  * 主动检测页面的反机器人检测机制，在执行自动化动作前拦截可疑情况。
  */
 
+import type { Page } from './browser-shim.js';
+
 /**
  * 检测结果类型
  */
@@ -70,7 +72,7 @@ const BLOCKED_URL_PATTERNS = [
  * 执行主动检测
  */
 export async function detectAntiBot(
-  page: import('playwright').Page,
+  page: Page,
   config: DetectionConfig = {}
 ): Promise<DetectionResult> {
   const {
@@ -131,7 +133,7 @@ export async function detectAntiBot(
 /**
  * 检测验证码
  */
-async function detectCaptcha(page: import('playwright').Page): Promise<DetectionResult> {
+async function detectCaptcha(page: Page): Promise<DetectionResult> {
   try {
     // 检查 iframe src
     const iframes = await page.frames();
@@ -185,9 +187,9 @@ async function detectCaptcha(page: import('playwright').Page): Promise<Detection
 /**
  * 检测警告文本
  */
-async function detectWarningText(page: import('playwright').Page): Promise<DetectionResult> {
+async function detectWarningText(page: Page): Promise<DetectionResult> {
   try {
-    const pageText = await page.textContent('body', { timeout: 1000 }).catch(() => '') || '';
+    const pageText = await page.textContent('body').catch(() => '') || '';
     const lowerText = pageText.toLowerCase();
 
     for (const { text, severity } of WARNING_TEXTS) {
@@ -211,7 +213,7 @@ async function detectWarningText(page: import('playwright').Page): Promise<Detec
 /**
  * 检测阻断页面
  */
-async function detectBlockedPage(page: import('playwright').Page): Promise<DetectionResult> {
+async function detectBlockedPage(page: Page): Promise<DetectionResult> {
   try {
     const url = page.url();
 
@@ -236,9 +238,9 @@ async function detectBlockedPage(page: import('playwright').Page): Promise<Detec
 /**
  * 检测 webdriver 标记暴露
  */
-async function detectWebdriverExposure(page: import('playwright').Page): Promise<DetectionResult> {
+async function detectWebdriverExposure(page: Page): Promise<DetectionResult> {
   try {
-    const webdriver = await page.evaluate(() => {
+    const webdriver = await page.evaluate<{ webdriver: boolean; webdriverScriptFn: boolean; webdriverEvaluate: boolean; chrome: boolean; permissions: unknown } | null>(() => {
       return {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         webdriver: (window as any).navigator?.webdriver,
@@ -293,7 +295,7 @@ async function detectWebdriverExposure(page: import('playwright').Page): Promise
 /**
  * 检测未登录状态
  */
-async function detectLoginRequired(page: import('playwright').Page): Promise<DetectionResult> {
+async function detectLoginRequired(page: Page): Promise<DetectionResult> {
   try {
     const loginSelectors = [
       'a[href*="login"]',

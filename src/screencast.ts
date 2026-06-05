@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Page, CDPSession } from './browser-shim.js';
 
 /**
  * A single screencast frame with binary image data.
@@ -48,7 +48,7 @@ export class ScreencastCapturer {
   private frameCallback: ((frame: ScreencastFrame) => void) | null = null;
 
   // CDP Cast state
-  private cdpSession: import('playwright').CDPSession | null = null;
+  private cdpSession: CDPSession | null = null;
   private sessionId = '';
 
   // Fallback polling state

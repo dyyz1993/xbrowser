@@ -21,7 +21,7 @@ const waitForSelectorDef = {
     const startTime = Date.now();
 
     const checkElement = async (): Promise<boolean> => {
-      return ctx.page.evaluate(({ sel, st }) => {
+      return ctx.page.evaluate(({ sel, st }: { sel: string; st: string }) => {
         const el = document.querySelector(sel);
         if (!el) return st === 'hidden' || st === 'detached';
         if (st === 'attached') return true;

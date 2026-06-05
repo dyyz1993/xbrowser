@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { chromium, type Browser, type Page } from 'playwright';
+import type { Browser, Page } from '../../src/browser-shim.js';
 import { transformSync } from 'esbuild';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';

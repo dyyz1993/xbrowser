@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Page } from './browser-shim.js';
 import { execSync } from 'child_process';
 import { WSServer } from './websocket-server.js';
 import { ScreencastCapturer } from './screencast.js';

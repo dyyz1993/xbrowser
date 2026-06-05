@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Page } from 'playwright';
+import type { Page } from '../../src/browser-shim.js';
 import { actOnPage, buildSelectorMap, formatObservationCompact, observePage, waitForPage } from '../../src/runtime/agent-runtime.js';
 import { clearAllRefs } from '../../src/runtime/ref-store.js';
 

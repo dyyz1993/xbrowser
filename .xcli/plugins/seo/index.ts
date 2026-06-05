@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page } from 'playwright';
+import type { Page } from '../../src/browser-shim.js';
 import { backlinkPlatforms, categories } from './backlinks-data.js';
 import { fetchVerificationCode, initEmailAuth, setupEmailConfig } from './email-helper.js';
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Page, ElementHandle } from 'playwright';
+import type { Page, ElementHandle } from '../src/browser-shim.js';
 import { CaptchaDetector } from '../src/captcha-detector.js';
 
 function mockElement(visible: boolean): ElementHandle<HTMLElement> {

@@ -1,33 +1,41 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod';
 
-const mockBrowserPage = {
-  goto: vi.fn().mockResolvedValue({ status: () => 200 }),
-  url: vi.fn().mockReturnValue('about:blank'),
-  close: vi.fn().mockResolvedValue(undefined),
-  evaluate: vi.fn().mockResolvedValue(true),
-  title: vi.fn().mockResolvedValue('Test Page'),
-  goBack: vi.fn().mockResolvedValue(null),
-  goForward: vi.fn().mockResolvedValue(null),
-  reload: vi.fn().mockResolvedValue(null),
-};
-const mockBrowserContext = {
-  newPage: vi.fn().mockResolvedValue(mockBrowserPage),
-  pages: vi.fn().mockReturnValue([]),
-  close: vi.fn().mockResolvedValue(undefined),
-  browser: vi.fn().mockReturnValue({ close: vi.fn().mockResolvedValue(undefined) }),
-};
-const mockBrowser = {
-  newContext: vi.fn().mockResolvedValue(mockBrowserContext),
-  contexts: vi.fn().mockReturnValue([]),
-  close: vi.fn().mockResolvedValue(undefined),
-};
+const hoisted = vi.hoisted(() => {
+  const mockBrowserPage = {
+    goto: vi.fn().mockResolvedValue({ status: () => 200 }),
+    url: vi.fn().mockReturnValue('about:blank'),
+    close: vi.fn().mockResolvedValue(undefined),
+    evaluate: vi.fn().mockResolvedValue(true),
+    title: vi.fn().mockResolvedValue('Test Page'),
+    goBack: vi.fn().mockResolvedValue(null),
+    goForward: vi.fn().mockResolvedValue(null),
+    reload: vi.fn().mockResolvedValue(null),
+  };
+  const mockBrowserContext = {
+    newPage: vi.fn().mockResolvedValue(mockBrowserPage),
+    pages: vi.fn().mockReturnValue([]),
+    close: vi.fn().mockResolvedValue(undefined),
+    browser: vi.fn().mockReturnValue({ close: vi.fn().mockResolvedValue(undefined) }),
+  };
+  const mockBrowser = {
+    newContext: vi.fn().mockResolvedValue(mockBrowserContext),
+    contexts: vi.fn().mockReturnValue([]),
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+  return { mockBrowser };
+});
 
-vi.mock('playwright', () => ({
-  chromium: {
-    launch: vi.fn().mockResolvedValue(mockBrowser),
-    connectOverCDP: vi.fn().mockResolvedValue(mockBrowser),
-  },
+vi.mock('../src/cdp-driver/index.js', () => ({
+  launch: vi.fn().mockResolvedValue({ browser: hoisted.mockBrowser, wsEndpoint: 'ws://localhost:0' }),
+}));
+
+vi.mock('../src/utils/cdp.js', () => ({
+  resolveCDPEndpoint: vi.fn((ep: string) => Promise.resolve(ep)),
+}));
+
+vi.mock('../src/recorder/session-recorder.js', () => ({
+  SessionRecorder: { cleanup: vi.fn() },
 }));
 
 const mockGetSite = vi.fn(() => null);

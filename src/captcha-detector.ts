@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Page } from './browser-shim.js';
 
 /**
  * Result of a CAPTCHA detection scan.

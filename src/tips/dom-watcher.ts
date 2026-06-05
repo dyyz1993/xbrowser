@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Page } from '../browser-shim.js';
 import type { DetectedElement, TipCategory } from './types.js';
 
 const DOM_WATCHER_SCRIPT = `

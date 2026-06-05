@@ -3,7 +3,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { createEphemeralContext, closeEphemeralContext, resolveLaunchOpts } from '../browser.js';
-import type { Response } from 'playwright';
+import type { Response } from '../browser-shim.js';
 
 interface NetworkCapture {
   method: string;
@@ -262,18 +262,18 @@ export const networkCommand = registerCommand({
       page.on('response', handler);
 
       if (p.console) {
-        page.on('console', (msg) => {
+        page.on('console', (msg: { type(): string; text(): string }) => {
           consoleMessages.push(`${msg.type()}: ${msg.text()}`);
         });
       }
 
-      page.on('websocket', (ws) => {
+      page.on('websocket', (ws: { url(): string; on(event: string, handler: (payload: { payload: unknown }) => void): void }) => {
         const wsUrl = ws.url();
-        ws.on('framesent', ({ payload }) => {
+        ws.on('framesent', ({ payload }: { payload: unknown }) => {
           const dataStr = typeof payload === 'string' ? payload.slice(0, 500) : `[binary ${(payload as Buffer).byteLength || 0} bytes]`;
           wsCaptures.push({ url: wsUrl, direction: 'sent', data: dataStr, timestamp: Date.now() });
         });
-        ws.on('framereceived', ({ payload }) => {
+        ws.on('framereceived', ({ payload }: { payload: unknown }) => {
           const dataStr = typeof payload === 'string' ? payload.slice(0, 500) : `[binary ${(payload as Buffer).byteLength || 0} bytes]`;
           wsCaptures.push({ url: wsUrl, direction: 'received', data: dataStr, timestamp: Date.now() });
         });
@@ -318,18 +318,18 @@ export const networkCommand = registerCommand({
       page.on('response', (response: Response) => responseHandler(response, captures, p.limit));
 
       if (p.console) {
-        page.on('console', (msg) => {
+        page.on('console', (msg: { type(): string; text(): string }) => {
           consoleMessages.push(`${msg.type()}: ${msg.text()}`);
         });
       }
 
-      page.on('websocket', (ws) => {
+      page.on('websocket', (ws: { url(): string; on(event: string, handler: (payload: { payload: unknown }) => void): void }) => {
         const wsUrl = ws.url();
-        ws.on('framesent', ({ payload }) => {
+        ws.on('framesent', ({ payload }: { payload: unknown }) => {
           const dataStr = typeof payload === 'string' ? payload.slice(0, 500) : `[binary ${(payload as Buffer).byteLength || 0} bytes]`;
           wsCaptures.push({ url: wsUrl, direction: 'sent', data: dataStr, timestamp: Date.now() });
         });
-        ws.on('framereceived', ({ payload }) => {
+        ws.on('framereceived', ({ payload }: { payload: unknown }) => {
           const dataStr = typeof payload === 'string' ? payload.slice(0, 500) : `[binary ${(payload as Buffer).byteLength || 0} bytes]`;
           wsCaptures.push({ url: wsUrl, direction: 'received', data: dataStr, timestamp: Date.now() });
         });
@@ -340,7 +340,7 @@ export const networkCommand = registerCommand({
         timeout: p.timeout,
       });
 
-      await page.waitForLoadState('networkidle', { timeout: p.timeout }).catch(() => {});
+      await page.waitForLoadState('networkidle', p.timeout).catch(() => {});
 
       await page.waitForTimeout(p.wait);
 

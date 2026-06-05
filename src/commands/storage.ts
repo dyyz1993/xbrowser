@@ -78,10 +78,10 @@ export const getLocalStorageCommand = registerCommand({
   ]),
   handler: async (p, ctx: BrowserCommandContext) => {
     if (p.key) {
-      const value = await ctx.page.evaluate((k) => localStorage.getItem(k), p.key);
+      const value = await ctx.page.evaluate<string | null>((k: string) => localStorage.getItem(k), p.key);
       return ok({ key: p.key, value });
     }
-    const data = await ctx.page.evaluate(() => {
+    const data = await ctx.page.evaluate<Record<string, string>>(() => {
       const entries: Record<string, string> = {};
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
@@ -105,7 +105,7 @@ export const setLocalStorageCommand = registerCommand({
   result: z.object({ key: z.string() }),
   handler: async (p, ctx: BrowserCommandContext) => {
     await ctx.page.evaluate(
-      (args) => {
+      (args: { key: string; value: string }) => {
         localStorage.setItem(args.key, args.value);
       },
       { key: p.key, value: p.value }

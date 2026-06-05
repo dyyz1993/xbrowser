@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Page } from 'playwright';
+import type { Page } from '../../src/browser-shim.js';
 
 function createMockPage(): Page {
   return {

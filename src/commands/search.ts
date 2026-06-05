@@ -6,7 +6,7 @@ import { registerCommand } from './command-registry.js';
 import { htmlToMarkdown } from '../lib/html-to-markdown.js';
 import { createEphemeralContext, closeEphemeralContext, getBrowser, resolveLaunchOpts } from '../browser.js';
 import { shouldSkipUrl } from '../utils/url.js';
-import type { Page, BrowserContext } from 'playwright';
+import type { Page, BrowserContext } from '../browser-shim.js';
 
 type SearchEngineKey = 'bing' | 'google' | 'baidu';
 
@@ -419,7 +419,7 @@ async function fetchFullContent(urls: string[], timeout: number, cdpEndpoint?: s
             const pg = await context.newPage();
             try {
               await pg.goto(url, { waitUntil: 'domcontentloaded', timeout });
-              await pg.waitForLoadState('networkidle', { timeout }).catch(() => { });
+              await pg.waitForLoadState('networkidle', timeout).catch(() => { });
               const html = await pg.content();
               contentMap.set(url, htmlToMarkdown(html, { onlyMainContent: true }));
             } finally {

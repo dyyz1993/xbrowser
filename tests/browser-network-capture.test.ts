@@ -7,90 +7,126 @@ vi.mock('../src/daemon/network-store.js', () => ({
     inspect: vi.fn().mockReturnValue({ session: 'default', capture: null }),
     clear: vi.fn(),
   },
+  commandLogStore: {
+    clear: vi.fn(),
+  },
 }));
 
-vi.mock('playwright', () => {
-  const responseCallbacks: Array<(response: any) => void> = [];
+vi.mock('fs', () => ({
+  existsSync: vi.fn().mockReturnValue(false),
+  mkdirSync: vi.fn(),
+  readdirSync: vi.fn().mockReturnValue([]),
+  unlinkSync: vi.fn(),
+  writeFileSync: vi.fn(),
+  readFileSync: vi.fn().mockReturnValue('{}'),
+}));
+
+// Use vi.hoisted to share mock state between factory and test
+const hoisted = vi.hoisted(() => {
+  const eventCallbacks = new Map<string, Array<(...args: unknown[]) => void>>();
   const mockPage = {
     url: vi.fn().mockReturnValue('about:blank'),
     goto: vi.fn().mockResolvedValue(undefined),
-    on: vi.fn((event: string, callback: any) => {
-      if (event === 'response') responseCallbacks.push(callback);
+    on: vi.fn((event: string, callback: (...args: unknown[]) => void) => {
+      if (!eventCallbacks.has(event)) eventCallbacks.set(event, []);
+      eventCallbacks.get(event)!.push(callback);
     }),
-    _responseCallbacks: responseCallbacks,
+    off: vi.fn(),
+    close: vi.fn().mockResolvedValue(undefined),
+    evaluate: vi.fn().mockResolvedValue(true),
+    isClosed: vi.fn().mockReturnValue(false),
+    _cdpSend: vi.fn().mockResolvedValue({ body: '', base64Encoded: false }),
   };
   const mockContext = {
     close: vi.fn().mockResolvedValue(undefined),
     newPage: vi.fn().mockResolvedValue(mockPage),
     pages: vi.fn().mockReturnValue([]),
+    on: vi.fn(),
+    off: vi.fn(),
   };
   const mockBrowser = {
     close: vi.fn().mockResolvedValue(undefined),
     newContext: vi.fn().mockResolvedValue(mockContext),
     contexts: vi.fn().mockReturnValue([]),
-    isConnected: vi.fn().mockReturnValue(true),
+    on: vi.fn(),
+    off: vi.fn(),
+    disconnected: false,
   };
-  return {
-    chromium: {
-      launch: vi.fn().mockResolvedValue(mockBrowser),
-      connectOverCDP: vi.fn().mockResolvedValue(mockBrowser),
-    },
-    _mockBrowser: mockBrowser,
-    _mockContext: mockContext,
-    _mockPage: mockPage,
-  };
+  return { mockPage, mockContext, mockBrowser, eventCallbacks };
 });
 
-const mockFetch = vi.fn();
-vi.stubGlobal('fetch', mockFetch);
+vi.mock('../src/cdp-driver/index.js', () => ({
+  launch: vi.fn().mockResolvedValue({ browser: hoisted.mockBrowser, wsEndpoint: 'ws://localhost:0' }),
+}));
 
-import { _mockBrowser, _mockContext, _mockPage } from 'playwright';
+vi.mock('../src/utils/cdp.js', () => ({
+  resolveCDPEndpoint: vi.fn((ep: string) => Promise.resolve(ep)),
+}));
+
+vi.mock('../src/recorder/session-recorder.js', () => ({
+  SessionRecorder: { cleanup: vi.fn() },
+}));
+
 import { createSession, resetForTesting } from '../src/browser.js';
 import { networkStore } from '../src/daemon/network-store.js';
 
-const mockPage = _mockPage as typeof _mockPage & {
-  url: ReturnType<typeof vi.fn>;
-  goto: ReturnType<typeof vi.fn>;
-  on: ReturnType<typeof vi.fn>;
-  _responseCallbacks: Array<(response: any) => void>;
-};
-const mockContext = _mockContext as typeof _mockContext & {
-  close: ReturnType<typeof vi.fn>;
-  newPage: ReturnType<typeof vi.fn>;
-  pages: ReturnType<typeof vi.fn>;
-};
-const mockBrowser = _mockBrowser as typeof _mockBrowser & {
-  close: ReturnType<typeof vi.fn>;
-  newContext: ReturnType<typeof vi.fn>;
-  contexts: ReturnType<typeof vi.fn>;
-};
+const { mockPage, eventCallbacks } = hoisted;
 
-function createMockResponse(overrides: {
+function emitEvent(event: string, params: unknown): void {
+  const cbs = eventCallbacks.get(event);
+  if (cbs) {
+    for (const cb of cbs) cb(params);
+  }
+}
+
+function simulateNetworkRequest(opts: {
+  requestId?: string;
   url?: string;
+  method?: string;
   status?: number;
   contentType?: string;
-  method?: string;
+  mimeType?: string;
   resourceType?: string;
   body?: string;
-  textError?: Error;
-}) {
-  const textFn = overrides.textError
-    ? vi.fn().mockRejectedValue(overrides.textError)
-    : vi.fn().mockResolvedValue(overrides.body ?? '');
-  return {
-    url: vi.fn().mockReturnValue(overrides.url ?? 'https://api.example.com/data'),
-    status: vi.fn().mockReturnValue(overrides.status ?? 200),
-    headers: vi.fn().mockReturnValue({
-      'content-type': overrides.contentType ?? 'application/json',
-    }),
-    request: vi.fn().mockReturnValue({
-      method: vi.fn().mockReturnValue(overrides.method ?? 'GET'),
-      resourceType: vi.fn().mockReturnValue(overrides.resourceType ?? 'fetch'),
-      headers: vi.fn().mockReturnValue({}),
-      postData: vi.fn().mockReturnValue(null),
-    }),
-    text: textFn,
-  };
+  requestHeaders?: Record<string, string>;
+  postData?: string | null;
+  responseHeaders?: Record<string, string>;
+}): void {
+  const requestId = opts.requestId ?? `req-${Date.now()}`;
+  const url = opts.url ?? 'https://api.example.com/data';
+  const method = opts.method ?? 'GET';
+  const status = opts.status ?? 200;
+  const contentType = opts.contentType ?? 'application/json';
+  const responseHeaders = opts.responseHeaders ?? { 'content-type': contentType };
+
+  emitEvent('request', {
+    requestId,
+    request: {
+      url,
+      method,
+      headers: opts.requestHeaders ?? {},
+      postData: opts.postData ?? undefined,
+    },
+    type: opts.resourceType ?? 'fetch',
+  });
+
+  emitEvent('response', {
+    requestId,
+    type: opts.resourceType ?? 'fetch',
+    response: {
+      status,
+      url,
+      headers: responseHeaders,
+      mimeType: opts.mimeType ?? contentType,
+    },
+  });
+
+  mockPage._cdpSend.mockResolvedValueOnce({
+    body: opts.body ?? '',
+    base64Encoded: false,
+  });
+
+  emitEvent('requestfinished', { requestId });
 }
 
 describe('network capture', () => {
@@ -98,12 +134,15 @@ describe('network capture', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockPage._responseCallbacks.length = 0;
-    mockContext.close.mockResolvedValue(undefined);
-    mockContext.pages.mockReturnValue([]);
-    mockContext.newPage.mockResolvedValue(mockPage);
+    eventCallbacks.clear();
+    hoisted.mockContext.close.mockResolvedValue(undefined);
+    hoisted.mockContext.pages.mockReturnValue([]);
+    hoisted.mockContext.newPage.mockResolvedValue(mockPage);
     mockPage.url.mockReturnValue('about:blank');
     mockPage.goto.mockResolvedValue(undefined);
+    // mockReset clears the mockResolvedValueOnce queue AND implementation, then re-set default
+    mockPage._cdpSend.mockReset();
+    mockPage._cdpSend.mockResolvedValue({ body: '', base64Encoded: false });
     delete process.env.XBROWSER_DAEMON_WORKER;
     resetForTesting();
   });
@@ -122,6 +161,7 @@ describe('network capture', () => {
 
     await createSession('no-daemon');
 
+    expect(mockPage.on).not.toHaveBeenCalledWith('request', expect.any(Function));
     expect(mockPage.on).not.toHaveBeenCalledWith('response', expect.any(Function));
   });
 
@@ -130,8 +170,9 @@ describe('network capture', () => {
 
     await createSession('daemon-session');
 
+    expect(mockPage.on).toHaveBeenCalledWith('request', expect.any(Function));
     expect(mockPage.on).toHaveBeenCalledWith('response', expect.any(Function));
-    expect(mockPage._responseCallbacks.length).toBe(1);
+    expect(mockPage.on).toHaveBeenCalledWith('requestfinished', expect.any(Function));
   });
 
   it('should capture response data and push to networkStore', async () => {
@@ -139,7 +180,9 @@ describe('network capture', () => {
 
     await createSession('capture-session');
 
-    const mockResponse = createMockResponse({
+    await new Promise(r => setTimeout(r, 100));
+
+    simulateNetworkRequest({
       url: 'https://api.example.com/data',
       status: 200,
       contentType: 'application/json',
@@ -148,7 +191,7 @@ describe('network capture', () => {
       body: '{"key":"value"}',
     });
 
-    await mockPage._responseCallbacks[0](mockResponse);
+    await new Promise(r => setTimeout(r, 200));
 
     expect(networkStore.add).toHaveBeenCalledWith('capture-session', expect.objectContaining({
       url: 'https://api.example.com/data',
@@ -166,11 +209,15 @@ describe('network capture', () => {
 
     await createSession('error-session');
 
-    const mockResponse = createMockResponse({
-      textError: new Error('response body read failed'),
+    await new Promise(r => setTimeout(r, 100));
+
+    mockPage._cdpSend.mockRejectedValueOnce(new Error('body read failed'));
+
+    simulateNetworkRequest({
+      body: '',
     });
 
-    await expect(mockPage._responseCallbacks[0](mockResponse)).resolves.toBeUndefined();
+    await new Promise(r => setTimeout(r, 200));
 
     expect(networkStore.add).toHaveBeenCalledWith('error-session', expect.objectContaining({
       url: 'https://api.example.com/data',
@@ -183,13 +230,15 @@ describe('network capture', () => {
 
     await createSession('json-session');
 
+    await new Promise(r => setTimeout(r, 100));
+
     const smallJson = '{"name":"test","items":[1,2,3]}';
-    const mockResponse = createMockResponse({
+    simulateNetworkRequest({
       contentType: 'application/json',
       body: smallJson,
     });
 
-    await mockPage._responseCallbacks[0](mockResponse);
+    await new Promise(r => setTimeout(r, 200));
 
     expect(networkStore.add).toHaveBeenCalledWith('json-session', expect.objectContaining({
       body: { name: 'test', items: [1, 2, 3] },
@@ -202,13 +251,15 @@ describe('network capture', () => {
 
     await createSession('large-body-session');
 
+    await new Promise(r => setTimeout(r, 100));
+
     const largeBody = 'x'.repeat(10241);
-    const mockResponse = createMockResponse({
+    simulateNetworkRequest({
       contentType: 'application/json',
       body: largeBody,
     });
 
-    await mockPage._responseCallbacks[0](mockResponse);
+    await new Promise(r => setTimeout(r, 200));
 
     expect(networkStore.add).toHaveBeenCalledWith('large-body-session', expect.objectContaining({
       body: undefined,
@@ -221,13 +272,15 @@ describe('network capture', () => {
 
     await createSession('text-session');
 
+    await new Promise(r => setTimeout(r, 100));
+
     const textBody = 'not valid json content';
-    const mockResponse = createMockResponse({
+    simulateNetworkRequest({
       contentType: 'text/html',
       body: textBody,
     });
 
-    await mockPage._responseCallbacks[0](mockResponse);
+    await new Promise(r => setTimeout(r, 200));
 
     expect(networkStore.add).toHaveBeenCalledWith('text-session', expect.objectContaining({
       body: textBody.slice(0, 200),
@@ -240,16 +293,19 @@ describe('network capture', () => {
 
     await createSession('binary-session');
 
-    const mockResponse = createMockResponse({
+    await new Promise(r => setTimeout(r, 100));
+
+    const binBody = 'binary-data-here';
+    simulateNetworkRequest({
       contentType: 'image/png',
-      body: 'binary-data-here',
+      body: binBody,
     });
 
-    await mockPage._responseCallbacks[0](mockResponse);
+    await new Promise(r => setTimeout(r, 200));
 
     expect(networkStore.add).toHaveBeenCalledWith('binary-session', expect.objectContaining({
       body: undefined,
-      size: 'binary-data-here'.length,
+      size: binBody.length,
     }));
   });
 
@@ -258,22 +314,17 @@ describe('network capture', () => {
 
     await createSession('capture-error-session');
 
-    const badResponse = {
-      url: vi.fn().mockReturnValue('https://api.example.com/data'),
-      status: vi.fn().mockReturnValue(200),
-      headers: vi.fn().mockImplementation(() => {
-        throw new Error('headers access failed');
-      }),
-      request: vi.fn().mockReturnValue({
-        method: vi.fn().mockReturnValue('GET'),
-        resourceType: vi.fn().mockReturnValue('fetch'),
-        headers: vi.fn().mockReturnValue({}),
-        postData: vi.fn().mockReturnValue(null),
-      }),
-      text: vi.fn().mockResolvedValue(''),
-    };
+    await new Promise(r => setTimeout(r, 100));
 
-    await expect(mockPage._responseCallbacks[0](badResponse)).resolves.toBeUndefined();
+    emitEvent('request', {
+      requestId: 'bad-req',
+      request: { url: 'https://api.example.com/data', method: 'GET', headers: {} },
+      type: 'fetch',
+    });
+
+    emitEvent('requestfinished', { requestId: 'bad-req' });
+
+    await new Promise(r => setTimeout(r, 200));
 
     expect(networkStore.add).not.toHaveBeenCalled();
   });

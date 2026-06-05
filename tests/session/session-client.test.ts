@@ -1,19 +1,33 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('playwright', () => ({
-  chromium: {
-    launch: vi.fn().mockResolvedValue({
-      newContext: vi.fn().mockResolvedValue({
-        newPage: vi.fn().mockResolvedValue({
-          goto: vi.fn().mockResolvedValue({ status: () => 200 }),
-          url: vi.fn().mockReturnValue('https://example.com'),
-        }),
-        close: vi.fn().mockResolvedValue(undefined),
-        browser: vi.fn().mockReturnValue({ close: vi.fn().mockResolvedValue(undefined) }),
+const hoisted = vi.hoisted(() => {
+  const mockBrowser = {
+    newContext: vi.fn().mockResolvedValue({
+      newPage: vi.fn().mockResolvedValue({
+        goto: vi.fn().mockResolvedValue({ status: () => 200 }),
+        url: vi.fn().mockReturnValue('https://example.com'),
       }),
       close: vi.fn().mockResolvedValue(undefined),
+      browser: vi.fn().mockReturnValue({ close: vi.fn().mockResolvedValue(undefined) }),
     }),
-  },
+    close: vi.fn().mockResolvedValue(undefined),
+  };
+  return { mockBrowser };
+});
+
+vi.mock('../../src/cdp-driver/index.js', () => ({
+  launch: vi.fn().mockResolvedValue({
+    browser: hoisted.mockBrowser,
+    wsEndpoint: 'ws://localhost:0',
+  }),
+}));
+
+vi.mock('../../src/utils/cdp.js', () => ({
+  resolveCDPEndpoint: vi.fn((ep: string) => Promise.resolve(ep)),
+}));
+
+vi.mock('../../src/recorder/session-recorder.js', () => ({
+  SessionRecorder: { cleanup: vi.fn() },
 }));
 
 vi.mock('fs', () => ({

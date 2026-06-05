@@ -1,4 +1,4 @@
-import { chromium } from 'playwright';
+import { launch } from '../src/cdp-driver/index.js';
 
 const CDP = 'http://localhost:9221';
 
@@ -16,7 +16,7 @@ const platforms = [
 ];
 
 async function main(): Promise<void> {
-  const browser = await chromium.connectOverCDP(CDP);
+  const { browser } = await launch({ cdpEndpoint: CDP });
   const context = browser.contexts()[0];
   const page = await context.newPage();
 

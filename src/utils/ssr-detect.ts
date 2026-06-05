@@ -1,3 +1,5 @@
+import type { Page } from '../browser-shim.js';
+
 export interface SsrDetectionResult {
   detected: boolean;
   framework?: string;
@@ -25,9 +27,9 @@ function buildTip(framework: string, variable: string): string {
   return `检测到 ${framework} SSR 页面，数据在 ${variable} 中，可直接提取`;
 }
 
-export async function detectSsr(page: import('playwright').Page): Promise<SsrDetectionResult | undefined> {
+export async function detectSsr(page: Page): Promise<SsrDetectionResult | undefined> {
   try {
-    const result = await page.evaluate((vars) => {
+    const result = await page.evaluate<{ variable: string; keys: string[] } | null>((vars: string[]) => {
       for (const varName of vars) {
         const value = (window as unknown as Record<string, unknown>)[varName];
         if (value != null && typeof value === 'object') {

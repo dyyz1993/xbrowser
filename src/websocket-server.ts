@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import type { Server } from 'http';
-import type { Page } from 'playwright';
+import type { Page } from './browser-shim.js';
 import { ScreencastCapturer, type ScreencastFrame } from './screencast.js';
 import { StreamStateManager, FrameRateController, FrameProcessor, STATE_CONFIGS } from './stream/index.js';
 import type { StreamState, CropConfig } from './stream/index.js';
@@ -466,10 +466,10 @@ export class WSServer extends EventEmitter {
           try {
             const vp = this.lastFrameViewport
               || initSc.page.viewportSize()
-              || await initSc.page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+              || await initSc.page.evaluate<{ width: number; height: number }>(() => ({ width: window.innerWidth, height: window.innerHeight }));
             this.sendToClient(clientId, {
               type: 'status',
-              data: { status: 'connected', sessionId: client.sessionId || undefined, viewport: vp },
+              data: { status: 'connected', sessionId: client.sessionId || undefined, viewport: vp ?? undefined },
             });
           } catch { /* ignore */ }
         })();
@@ -653,7 +653,7 @@ export class WSServer extends EventEmitter {
             // Focus the element under the click point and set __xb_last_focused
             // (mouse.click doesn't auto-focus or trigger focusin in CDP mode)
             try {
-              await p.evaluate(({ x, y }) => {
+              await p.evaluate(({ x, y }: { x: number; y: number }) => {
                 const el = document.elementFromPoint(x, y) as HTMLElement | null;
                 if (el && typeof el.focus === 'function') {
                   el.focus();
@@ -712,7 +712,7 @@ export class WSServer extends EventEmitter {
         if (!p) break;
         try {
           const selector = msg.selector || 'input[type="file"]';
-          const result = await p.evaluate(({ sel, fileName, base64Data, mimeType }: { sel: string; fileName: string; base64Data: string; mimeType: string }) => {
+          const result = await p.evaluate<{ ok: boolean; error?: string }>(({ sel, fileName, base64Data, mimeType }: { sel: string; fileName: string; base64Data: string; mimeType: string }) => {
             const input = document.querySelector(sel) as HTMLInputElement;
             if (!input) return { ok: false, error: 'File input not found: ' + sel };
             const binaryString = atob(base64Data);
@@ -911,10 +911,10 @@ export class WSServer extends EventEmitter {
         try {
           const vp = this.lastFrameViewport
             || sc.page.viewportSize()
-            || await sc.page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+            || await sc.page.evaluate<{ width: number; height: number }>(() => ({ width: window.innerWidth, height: window.innerHeight }));
           this.sendToClient(clientId, {
             type: 'status',
-            data: { status: 'connected', sessionId, viewport: vp },
+            data: { status: 'connected', sessionId, viewport: vp ?? undefined },
           });
         } catch { /* ignore */ }
       })();

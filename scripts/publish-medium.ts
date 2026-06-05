@@ -1,9 +1,9 @@
-import { chromium } from 'playwright';
+import { launch } from '../src/cdp-driver/index.js';
 
 const CDP = 'http://localhost:9221';
 
 async function main(): Promise<void> {
-  const browser = await chromium.connectOverCDP(CDP);
+  const { browser } = await launch({ cdpEndpoint: CDP });
   const context = browser.contexts()[0];
   // Use existing page (shares cookies/login state) instead of new tab
   const pages = context.pages();

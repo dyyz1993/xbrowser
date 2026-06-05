@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as yaml from 'yaml';
-import type { Page } from 'playwright';
+import type { Page } from '../browser-shim.js';
 import type { RecordingSession, RecordedEvent } from './recorder.js';
 import type { CheckpointEntry } from './session-recorder.js';
 

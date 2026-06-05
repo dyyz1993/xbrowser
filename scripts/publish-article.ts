@@ -1,4 +1,5 @@
-import { chromium } from 'playwright';
+import { launch } from '../src/cdp-driver/index.js';
+import type { Page } from '../src/browser-shim.js';
 
 const CDP = 'http://localhost:9221';
 
@@ -86,7 +87,7 @@ const BODY_CN = [
 
 type Platform = 'hashnode' | 'wordpress' | 'csdn';
 
-async function typeLines(page: import('playwright').Page, lines: string[]): Promise<void> {
+async function typeLines(page: Page, lines: string[]): Promise<void> {
   for (const line of lines) {
     if (line === '') {
       await page.keyboard.press('Enter');
@@ -100,7 +101,7 @@ async function typeLines(page: import('playwright').Page, lines: string[]): Prom
 
 async function publishHashnode(): Promise<void> {
   console.log('\n=== Hashnode ===');
-  const browser = await chromium.connectOverCDP(CDP);
+  const { browser } = await launch({ cdpEndpoint: CDP });
   const context = browser.contexts()[0];
   const page = await context.newPage();
 
@@ -146,7 +147,7 @@ async function publishHashnode(): Promise<void> {
 
 async function publishWordPress(): Promise<void> {
   console.log('\n=== WordPress.com ===');
-  const browser = await chromium.connectOverCDP(CDP);
+  const { browser } = await launch({ cdpEndpoint: CDP });
   const context = browser.contexts()[0];
   const page = await context.newPage();
 
@@ -186,7 +187,7 @@ async function publishWordPress(): Promise<void> {
 
 async function publishCSDN(): Promise<void> {
   console.log('\n=== CSDN ===');
-  const browser = await chromium.connectOverCDP(CDP);
+  const { browser } = await launch({ cdpEndpoint: CDP });
   const context = browser.contexts()[0];
   const page = await context.newPage();
 

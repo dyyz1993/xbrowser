@@ -4,7 +4,7 @@
  * 主动检测页面的反机器人检测机制。
  */
 
-import { Page } from 'playwright';
+import type { Page } from '../browser-shim.js';
 import { detectAntiBot, formatDetectionMessage, type DetectionConfig, type DetectionResult } from '../anti-bot-detection.js';
 
 /**

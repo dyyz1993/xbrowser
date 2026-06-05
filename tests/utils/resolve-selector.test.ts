@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { extractRefs, resolveRefParams, clearRefCache } from '../../src/utils/resolve-selector.js';
 import { clearAllRefs, replaceRefs } from '../../src/runtime/ref-store.js';
-import type { Page, Locator } from 'playwright';
+import type { Page, Locator } from '../../src/browser-shim.js';
 
 describe('extractRefs', () => {
   it('parses single ref from aria snapshot', () => {

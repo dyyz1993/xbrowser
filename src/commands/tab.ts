@@ -3,6 +3,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { getSessionById, setActivePage } from '../browser.js';
+import type { Page } from '../browser-shim.js';
 
 const TabParams = z.object({
   subcommand: z.enum(['list', 'new', 'close', 'switch']),
@@ -44,7 +45,7 @@ export const tabCommand = registerCommand({
 });
 
 function handleList(
-  pages: import('playwright').Page[],
+  pages: Page[],
   ctx: BrowserCommandContext,
 ): unknown {
   const currentIndex = pages.indexOf(ctx.page);
@@ -72,7 +73,7 @@ function handleList(
 
 async function handleNew(
   p: TabParamsType,
-  _pages: import('playwright').Page[],
+  _pages: Page[],
   ctx: BrowserCommandContext,
 ): Promise<unknown> {
   const newPage = await ctx.browserContext.newPage();
@@ -107,7 +108,7 @@ async function handleNew(
 
 async function handleClose(
   p: TabParamsType,
-  pages: import('playwright').Page[],
+  pages: Page[],
   ctx: BrowserCommandContext,
 ): Promise<unknown> {
   if (pages.length <= 1) {
@@ -147,7 +148,7 @@ async function handleClose(
 
 async function handleSwitch(
   p: TabParamsType,
-  pages: import('playwright').Page[],
+  pages: Page[],
   ctx: BrowserCommandContext,
 ): Promise<unknown> {
   if (p.index === undefined) {

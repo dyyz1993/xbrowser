@@ -30,7 +30,7 @@ export const consoleCheckCommand = registerCommand({
       await page.goto(p.url, { waitUntil: 'domcontentloaded' });
     }
 
-    const messages = await page.evaluate((args) => {
+    const messages = await page.evaluate<Array<{ type: string; text: string; location: string; timestamp: string; stack?: string }>>((args: { duration: number }) => {
       return new Promise<Array<{ type: string; text: string; location: string; timestamp: string; stack?: string }>>((resolve) => {
         const collected: Array<{ type: string; text: string; location: string; timestamp: string; stack?: string }> = [];
 
@@ -280,7 +280,7 @@ export const perfCheckCommand = registerCommand({
         await page.reload({ waitUntil: 'load' });
       }
 
-      const metrics = await page.evaluate(() => {
+      const metrics = await page.evaluate<Record<string, unknown>>(() => {
         const navEntries = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
         const nav = navEntries.length > 0 ? navEntries[navEntries.length - 1] : null;
         const paint = performance.getEntriesByType('paint');
@@ -387,7 +387,7 @@ export const healthCheckCommand = registerCommand({
       await page.goto(p.url, { waitUntil: 'load' });
     }
 
-    const result = await page.evaluate(async (args) => {
+    const result = await page.evaluate<{ issues: Array<{ severity: string; category: string; message: string; element?: string }>; url: string; title: string }>(async (args: { checkLinks: boolean; checkImages: boolean; checkMeta: boolean; maxLinks: number }) => {
       const issues: Array<{ severity: 'error' | 'warning' | 'info'; category: string; message: string; element?: string }> = [];
 
       if (args.checkImages) {

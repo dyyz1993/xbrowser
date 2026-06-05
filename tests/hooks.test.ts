@@ -202,7 +202,7 @@ describe('screenshotHook', () => {
 });
 
 describe('Hook integration with executeCommand', () => {
-  vi.mock('playwright', () => {
+  const hoisted = vi.hoisted(() => {
     const page = {
       goto: vi.fn().mockResolvedValue(null),
       url: vi.fn().mockReturnValue('about:blank'),
@@ -222,13 +222,20 @@ describe('Hook integration with executeCommand', () => {
       contexts: vi.fn().mockReturnValue([]),
       close: vi.fn().mockResolvedValue(undefined),
     };
-    return {
-      chromium: {
-        launch: vi.fn().mockResolvedValue(browser),
-        connectOverCDP: vi.fn().mockResolvedValue(browser),
-      },
-    };
+    return { browser };
   });
+
+  vi.mock('../src/cdp-driver/index.js', () => ({
+    launch: vi.fn().mockResolvedValue({ browser: hoisted.browser, wsEndpoint: 'ws://localhost:0' }),
+  }));
+
+  vi.mock('../src/utils/cdp.js', () => ({
+    resolveCDPEndpoint: vi.fn((ep: string) => Promise.resolve(ep)),
+  }));
+
+  vi.mock('../src/recorder/session-recorder.js', () => ({
+    SessionRecorder: { cleanup: vi.fn() },
+  }));
 
   vi.mock('../src/client/daemon-client.js', () => ({
     isDaemonRunning: vi.fn().mockResolvedValue(false),

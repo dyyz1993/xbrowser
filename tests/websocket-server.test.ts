@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { Page } from 'playwright';
+import type { Page } from '../src/browser-shim.js';
 import { WSServer } from '../src/websocket-server.js';
 
 function createMockPage(): Page {

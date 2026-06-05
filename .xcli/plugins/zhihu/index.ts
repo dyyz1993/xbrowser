@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page } from 'playwright';
+import type { Page } from '../../src/browser-shim.js';
 
 const ZHIDA_URL = 'https://zhida.zhihu.com';
 
