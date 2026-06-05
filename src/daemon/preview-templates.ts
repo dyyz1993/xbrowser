@@ -286,9 +286,8 @@ function resizeCanvas(){
 window.addEventListener('resize',resizeCanvas);
 resizeCanvas();
 
-function drawFrame(bitmap){
-  resizeCanvas();
-  const cw=canvas.width,ch=canvas.height;
+ function drawFrame(bitmap){
+   const cw=canvas.width,ch=canvas.height;
   if(!cw||!ch) return;
   ctx.drawImage(bitmap,0,0,cw,ch);
 }
@@ -318,7 +317,7 @@ function connectWS(){
           });
           canvas.style.display='block';
           wait.style.display='none';
-          if(header.data.viewport&&!viewportLocked){remoteViewport=header.data.viewport;viewportLocked=true;}
+          if(header.data.viewport&&!viewportLocked){remoteViewport=header.data.viewport;viewportLocked=true;resizeCanvas();}
           if(header.data.url&&header.data.url!==currentUrl){
             currentUrl=header.data.url;
             urlEl.textContent=currentUrl;
@@ -341,7 +340,7 @@ function connectWS(){
           canvas.style.display='block';
           wait.style.display='none';
         }
-        if(m.data.viewport&&!viewportLocked) remoteViewport=m.data.viewport;
+        if(m.data.viewport&&!viewportLocked){remoteViewport=m.data.viewport;resizeCanvas();}
         if(m.data.url&&m.data.url!==currentUrl){
           currentUrl=m.data.url;
           urlEl.textContent=currentUrl;
@@ -489,8 +488,8 @@ window.addEventListener('beforeunload',function(){shouldReconnect=false;});
    const rect=canvas.getBoundingClientRect();
   const cx=clamp(v.x,rect.left,rect.right);
   const cy=clamp(v.y,rect.top,rect.bottom);
-  const ox=(deviceMode==='mobile'||deviceMode==='tablet')?15:0;
-  const oy=(deviceMode==='mobile'||deviceMode==='tablet')?-30:0;
+   const ox=0;
+   const oy=0;
   const colors={idle:'rgba(0,120,255,0.6)',moving:'rgba(0,200,100,0.8)',click:'rgba(255,60,60,0.9)',drag:'rgba(255,160,0,0.9)'};
   const sizes={idle:8,moving:10,click:8,drag:10};
   cursorEl.style.background=colors[state]||colors.idle;
@@ -677,56 +676,54 @@ touchpadEl.addEventListener('touchend',(e)=>{
   tpStartPos=e.touches.length>0?{x:e.touches[0].clientX,y:e.touches[0].clientY}:null;
 },{passive:false});
 
-// --- Tablet: Canvas Touch (indirect cursor, same as touchpad but on canvas) ---
+// --- Tablet: Direct Touch (tap where you want to click) ---
 viewportEl.addEventListener('touchstart',(e)=>{
   if(deviceMode!=='tablet') return;
   e.preventDefault();
-  if(tpScrollCooldown) return;
   sendUserActivity();
   const t=e.touches[0];
-  tpStartPos={x:t.clientX,y:t.clientY};
-  tpStartTime=Date.now();
   if(e.touches.length===1){
+    const r=viewerToRemote(t.clientX,t.clientY);
+    tpCursorRemote.x=clamp(r.x,0,remoteViewport.width);
+    tpCursorRemote.y=clamp(r.y,0,remoteViewport.height);
+    setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'click');
+    sendMsg({type:'input_mouse',action:'down',x:tpCursorRemote.x,y:tpCursorRemote.y});
+    tpStartTime=Date.now();
+    tpIsDragging=false;
     tpLongPressTimer=setTimeout(()=>{
       tpIsDragging=true;
       tpShowGesture('DRAG');
       setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'drag');
-      sendMsg({type:'input_mouse',action:'down',x:tpCursorRemote.x,y:tpCursorRemote.y});
     },500);
   }
 },{passive:false});
 viewportEl.addEventListener('touchmove',(e)=>{
   if(deviceMode!=='tablet') return;
   e.preventDefault();
-  if(!tpStartPos) return;
-  if(e.touches.length===1&&!tpIsScrolling){
+  if(e.touches.length===1){
     clearTimeout(tpLongPressTimer);
     const t=e.touches[0];
-    const dx=t.clientX-tpStartPos.x;
-    const dy=t.clientY-tpStartPos.y;
-    const now=Date.now();
-    const dt=Math.max(now-tpStartTime,1);
-    const dist=Math.sqrt(dx*dx+dy*dy);
-    const velocity=dist/dt;
-    const accel=computeAcceleration(velocity);
-    const rect=canvas.getBoundingClientRect();
-    const sf=remoteViewport.width/(rect.width||300)*0.08;
-    tpCursorRemote.x=clamp(tpCursorRemote.x+dx*accel*sf,0,remoteViewport.width);
-    tpCursorRemote.y=clamp(tpCursorRemote.y+dy*accel*sf,0,remoteViewport.height);
+    const r=viewerToRemote(t.clientX,t.clientY);
+    tpCursorRemote.x=clamp(r.x,0,remoteViewport.width);
+    tpCursorRemote.y=clamp(r.y,0,remoteViewport.height);
     setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,tpIsDragging?'drag':'moving');
-    sendMsg({type:'input_mouse',action:'move',x:Math.round(tpCursorRemote.x),y:Math.round(tpCursorRemote.y)});
-    tpStartPos={x:t.clientX,y:t.clientY};
-    tpStartTime=now;
+    sendMsg({type:'input_mouse',action:'move',x:tpCursorRemote.x,y:tpCursorRemote.y});
   }
   if(e.touches.length===2){
     clearTimeout(tpLongPressTimer);
-    tpIsScrolling=true;
-    tpShowGesture('SCROLL');
-    const t0=e.touches[0];
-    const dx=t0.clientX-tpStartPos.x;
-    const dy=t0.clientY-tpStartPos.y;
-    sendMsg({type:'scroll',deltaX:Math.round(dx*2),deltaY:Math.round(dy*2)});
-    tpStartPos={x:t0.clientX,y:t0.clientY};
+    if(!tpIsScrolling){
+      tpIsScrolling=true;
+      tpShowGesture('SCROLL');
+      const t0=e.touches[0];
+      tpStartPos={x:t0.clientX,y:t0.clientY};
+    }
+    if(tpStartPos){
+      const t0=e.touches[0];
+      const dx=t0.clientX-tpStartPos.x;
+      const dy=t0.clientY-tpStartPos.y;
+      sendMsg({type:'scroll',deltaX:Math.round(dx*2),deltaY:Math.round(dy*2)});
+      tpStartPos={x:t0.clientX,y:t0.clientY};
+    }
   }
 },{passive:false});
 viewportEl.addEventListener('touchend',(e)=>{
@@ -735,17 +732,15 @@ viewportEl.addEventListener('touchend',(e)=>{
   clearTimeout(tpLongPressTimer);
   if(tpIsDragging){
     tpIsDragging=false;
-    sendMsg({type:'input_mouse',action:'up',x:Math.round(tpCursorRemote.x),y:Math.round(tpCursorRemote.y)});
+    sendMsg({type:'input_mouse',action:'up',x:tpCursorRemote.x,y:tpCursorRemote.y});
     setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'idle');
-  }else if(e.touches.length===0&&!tpIsScrolling&&tpStartPos){
-    sendMsg({type:'input_mouse',action:'click',x:Math.round(tpCursorRemote.x),y:Math.round(tpCursorRemote.y)});
+  }else if(e.touches.length===0&&!tpIsScrolling){
+    sendMsg({type:'input_mouse',action:'up',x:tpCursorRemote.x,y:tpCursorRemote.y});
     setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'click');
     setTimeout(()=>setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'idle'),150);
   }
   if(e.touches.length===0){
     tpIsScrolling=false;
-    tpScrollCooldown=true;
-    setTimeout(()=>{tpScrollCooldown=false;},300);
   }
   tpStartPos=e.touches.length>0?{x:e.touches[0].clientX,y:e.touches[0].clientY}:null;
 },{passive:false});
