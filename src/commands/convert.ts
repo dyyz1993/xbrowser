@@ -24,12 +24,12 @@ export function generateJSScript(recording: Recording): string {
 // Start URL: ${recording.startUrl}
 // Events: ${events.length}
 
-import { chromium } from 'playwright';
+import { launch } from '@xbrowser/cli';
 
 const START_URL = '${escapeString(recording.startUrl)}';
 
 async function main() {
-  const browser = await chromium.launch({ headless: true });
+  const { browser } = await launch({ headless: true });
   const context = await browser.newContext();
   const page = await context.newPage();
 
@@ -101,7 +101,8 @@ function generateJSEvent(event: RecordingEvent): string {
  * Generate a Python replay script from a recording.
  *
  * @param recording - The recording session to convert.
- * @returns A self-contained Python script string using Playwright async API.
+ * @returns A self-contained Python script string using Playwright async API
+ *          (requires: pip install playwright && playwright install chromium).
  */
 export function generatePythonScript(recording: Recording): string {
   const events = recording.events || [];

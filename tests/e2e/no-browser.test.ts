@@ -130,7 +130,7 @@ describe('E2E: Convert recording to scripts', () => {
 
   it('should generate a valid JavaScript replay script', () => {
     const script = generateJSScript(recording);
-    expect(script).toContain("import { chromium } from 'playwright'");
+    expect(script).toContain("import { launch } from '@xbrowser/cli'");
     expect(script).toContain("const START_URL = 'https://example.com'");
     expect(script).toContain("page.click('#btn')");
     expect(script).toContain("page.fill('#input', 'hello')");

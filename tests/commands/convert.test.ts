@@ -17,7 +17,7 @@ describe('convert', () => {
     it('should generate a valid JS script with shebang', () => {
       const script = generateJSScript(baseRecording);
       expect(script).toContain('#!/usr/bin/env node');
-      expect(script).toContain("import { chromium } from 'playwright'");
+      expect(script).toContain("import { launch } from '@xbrowser/cli'");
     });
 
     it('should include start URL in script', () => {
