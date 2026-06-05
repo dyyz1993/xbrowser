@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Page } from '../browser-shim.js';
 import { getRefTarget, normalizeAgentRef, replaceRefs } from './ref-store.js';
 import type { AgentActionInput, AgentActionResult, AgentObservation, AgentTarget, AgentTargetAction, AgentWaitInput, AgentWaitResult } from './types.js';
 
@@ -41,8 +41,8 @@ export async function observePage(
 ): Promise<AgentObservation> {
   const [title, raw] = await Promise.all([
     page.title().catch(() => ''),
-    page.evaluate(
-      ({ includeHidden, limit }) => {
+    page.evaluate<RawObservation>(
+      ({ includeHidden, limit }: { includeHidden: boolean; limit: number }) => {
         function hash(input: string): string {
           let h = 2166136261;
           for (let i = 0; i < input.length; i++) {
@@ -277,7 +277,7 @@ export function formatObservationCompact(
 }
 
 export async function getPageScreenHash(page: Page): Promise<string> {
-  const observation = await page.evaluate(() => {
+  const observation = await page.evaluate<string>(() => {
     let h = 2166136261;
     const input = [location.href, document.title, document.body?.innerText?.slice(0, 5000) || ''].join('\n');
     for (let i = 0; i < input.length; i++) {
@@ -290,7 +290,7 @@ export async function getPageScreenHash(page: Page): Promise<string> {
 }
 
 async function actionability(page: Page, selector: string): Promise<{ ok: boolean; reason?: string; target?: AgentTarget }> {
-  return await page.evaluate((sel) => {
+  return await page.evaluate<{ ok: boolean; reason?: string }>((sel: string) => {
     const el = document.querySelector(sel);
     if (!el) return { ok: false, reason: 'not_found' };
     const rect = el.getBoundingClientRect();
@@ -369,13 +369,13 @@ export async function actOnPage(
         break;
       case 'select':
         if (input.value === undefined) throw new Error('select requires value');
-        await page.locator(selector).first().selectOption(input.value, { timeout, force: !!input.force });
+        await page.locator(selector).first().selectOption(input.value);
         break;
       case 'check':
-        await page.locator(selector).first().check({ timeout, force: !!input.force });
+        await page.locator(selector).first().check({ timeout });
         break;
       case 'hover':
-        await page.locator(selector).first().hover({ timeout, force: !!input.force });
+        await page.locator(selector).first().hover({ timeout });
         break;
       default: {
         const neverAction: never = input.action;
@@ -388,7 +388,7 @@ export async function actOnPage(
       selector,
       ref: normalizedRef,
       success: false,
-      reason: 'playwright_error',
+      reason: 'browser_error',
       message: (error as Error).message,
       stale,
       screenHash: hash,
@@ -457,7 +457,7 @@ export async function waitForPage(page: Page, input: AgentWaitInput): Promise<Ag
     }
 
     if (input.load) {
-      await page.waitForLoadState(input.load, { timeout });
+      await page.waitForLoadState(input.load, timeout);
       return { success: true, matched: 'load', timeout, elapsed: Date.now() - startedAt };
     }
 

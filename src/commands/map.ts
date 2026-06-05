@@ -4,7 +4,7 @@ import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { createEphemeralContext, closeEphemeralContext, resolveLaunchOpts } from '../browser.js';
 import { getBaseDomain, deduplicateUrls, isSpaHashRoute } from '../utils/url.js';
-import type { Page } from 'playwright';
+import type { Page } from '../browser-shim.js';
 
 export { deduplicateUrls };
 
@@ -110,7 +110,7 @@ async function extractPageLinks(page: Page, baseUrl: string): Promise<string[]> 
   });
   await new Promise(resolve => setTimeout(resolve, 1000));
   const origin = new URL(baseUrl).origin;
-  const rawLinks = await page.evaluate((evalOrigin: string) => {
+  const rawLinks = await page.evaluate<string[]>((evalOrigin: string) => {
     return Array.from(document.querySelectorAll('a[href]'))
       .map((a) => {
         const href = a.getAttribute('href') || '';

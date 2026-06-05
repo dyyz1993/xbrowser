@@ -34,7 +34,7 @@ export const scrapeCommand = registerCommand({
           // For SPA pages, 'domcontentloaded' may hang. Use 'commit' + wait for body.
           await page.waitForSelector('body', { timeout: p.timeout }).catch(() => {});
           // Wait for network to settle (with fallback — some SPAs never fully idle)
-          await page.waitForLoadState('networkidle', { timeout: Math.min(p.timeout, 8000) }).catch(() => {});
+          await page.waitForLoadState('networkidle', Math.min(p.timeout, 8000)).catch(() => {});
           // Extra wait for JS rendering
           await page.waitForTimeout(p.waitAfterLoad > 0 ? p.waitAfterLoad : 2000);
 
@@ -47,7 +47,15 @@ export const scrapeCommand = registerCommand({
           const finalUrl = page.url();
 
           if (p.mode === 'clean' || p.mode === 'compact' || p.mode === 'smart') {
-            const structured = await page.evaluate(() => {
+            const structured = await page.evaluate<{
+              url: string;
+              title: string;
+              navigation?: string;
+              tables: Array<{ headers: string[]; rows: Record<string, string>[] }>;
+              forms: Array<Record<string, string>>;
+              links: Array<{ text: string; href: string }>;
+              mainText: string;
+            }>(() => {
               const noiseSelectors = 'script, style, noscript, svg, path, link[rel="stylesheet"], meta, head';
               document.querySelectorAll(noiseSelectors).forEach(el => el.remove());
               document.querySelectorAll('*').forEach(el => {

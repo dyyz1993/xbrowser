@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 
-vi.mock('playwright-core', () => {
+vi.mock('../src/cdp-driver/index.js', () => {
   const mockPage = {
     url: vi.fn().mockReturnValue('https://www.douyin.com'),
     goto: vi.fn().mockResolvedValue(undefined),
@@ -20,10 +20,7 @@ vi.mock('playwright-core', () => {
     contexts: vi.fn().mockReturnValue([mockContext]),
   };
   return {
-    chromium: {
-      launch: vi.fn().mockResolvedValue(mockBrowser),
-      connectOverCDP: vi.fn().mockResolvedValue(mockBrowser),
-    },
+    launch: vi.fn().mockResolvedValue(mockBrowser),
     _mockBrowser: mockBrowser,
     _mockContext: mockContext,
     _mockPage: mockPage,
@@ -32,7 +29,7 @@ vi.mock('playwright-core', () => {
 
 import douyinPlugin from '../.xcli/plugins/douyin/index.js';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
-import { _mockBrowser, _mockContext, _mockPage } from 'playwright-core';
+import { _mockBrowser, _mockContext, _mockPage } from '../src/cdp-driver/index.js';
 
 const mockBrowser = _mockBrowser as typeof _mockBrowser & {
   close: ReturnType<typeof vi.fn>;

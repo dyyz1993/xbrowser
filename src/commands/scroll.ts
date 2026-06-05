@@ -29,7 +29,7 @@ export const scrollCommand = registerCommand({
 
     if (p.selector) {
       const element = ctx.page.locator(p.selector).first();
-      await element.evaluate((el, args) => {
+      await element.evaluate((el: Element, args: [number, number]) => {
         const [dxx, dyy] = args as [number, number];
         el.scrollBy(dxx, dyy);
       }, [dx, dy] as [number, number]);

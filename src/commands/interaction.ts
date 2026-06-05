@@ -3,6 +3,7 @@ import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { detectCaptcha, waitForCaptchaSolved } from '../lib/captcha.js';
+import type { Page } from '../browser-shim.js';
 
 export const clickCommand = registerCommand({
   name: 'click',
@@ -24,16 +25,16 @@ export const clickCommand = registerCommand({
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
     // 用 Promise 监听新 Tab 打开事件（target="_blank" 链接等）
-    let detectedNewPage: import('playwright').Page | undefined;
+    let detectedNewPage: Page | undefined;
     let cleanup: (() => void) | undefined;
 
     if (ctx.browserContext?.on) {
-      const pagePromise = new Promise<import('playwright').Page | undefined>((resolve) => {
+      const pagePromise = new Promise<Page | undefined>((resolve) => {
         const timer = setTimeout(() => {
           ctx.browserContext.off('page', handler);
           resolve(undefined);
         }, 3000);
-        const handler = (page: import('playwright').Page) => {
+        const handler = (page: Page) => {
           clearTimeout(timer);
           ctx.browserContext.off('page', handler);
           resolve(page);
@@ -182,7 +183,7 @@ export const pressCommand = registerCommand({
     key: z.string(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
-    await ctx.page.press(p.selector || 'body', p.key, { delay: p.delay, timeout: 10000 });
+    await ctx.page.press(p.selector || 'body', p.key, { timeout: 10000 });
     return ok({ key: p.key });
   },
 });
@@ -202,7 +203,7 @@ export const selectCommand = registerCommand({
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
     const values = typeof p.value === 'string' ? [p.value] : p.value;
-    await ctx.page.selectOption(p.selector, values, { force: true, timeout: 10000 });
+    await ctx.page.selectOption(p.selector, values);
     return ok({ selector: p.selector, value: p.value });
   },
 });
@@ -219,7 +220,7 @@ export const checkCommand = registerCommand({
     selector: z.string(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
-    await ctx.page.check(p.selector, { force: true, timeout: 10000 });
+    await ctx.page.check(p.selector, { timeout: 10000 });
     return ok({ selector: p.selector });
   },
 });
@@ -237,7 +238,7 @@ export const hoverCommand = registerCommand({
     selector: z.string(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
-    await ctx.page.hover(p.selector, { modifiers: p.modifiers, force: true, timeout: 10000 });
+    await ctx.page.hover(p.selector, { timeout: 10000 });
     return ok({ selector: p.selector });
   },
 });

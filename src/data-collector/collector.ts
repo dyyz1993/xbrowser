@@ -11,7 +11,7 @@ import {
   detectInternetSearch,
 } from '../commands/ai-search-engines.js';
 import type { AIEngineKey, EngineConfig } from '../commands/ai-search-engines.js';
-import type { Page } from 'playwright';
+import type { Page, BrowserContext } from '../browser-shim.js';
 import type { SearchResult, CollectResult, BatchCollectResult, CollectorConfig } from './types.js';
 import { DataStorage } from './storage.js';
 import { DEFAULT_COLLECTOR_CONFIG, getPlatformName } from './config.js';
@@ -77,7 +77,7 @@ async function navigateToChat(page: Page, config: EngineConfig): Promise<void> {
 
 async function extractSourcesFromPage(page: Page): Promise<{ total: number; domains: string[]; urls: Array<{ url: string; domain: string }> } | undefined> {
   try {
-    const data = await page.evaluate(() => {
+    const data = await page.evaluate<Array<{ url: string; domain: string }>>(() => {
       const links = document.querySelectorAll('a[href*="http"]');
       const seen = new Set<string>();
       const result: Array<{ url: string; domain: string }> = [];
@@ -450,9 +450,9 @@ export class DataCollector {
     return results;
   }
 
-  private async createBrowserContext(): Promise<import('playwright').BrowserContext> {
-    const { chromium } = await import('playwright');
-    const browser = await chromium.launch({
+  private async createBrowserContext(): Promise<BrowserContext> {
+    const { launch } = await import('../cdp-driver/index.js');
+    const { browser } = await launch({
       headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'],
     });

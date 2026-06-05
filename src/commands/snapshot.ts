@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
+import type { Page } from '../browser-shim.js';
 import { registerCommand } from './command-registry.js';
 import { resolveSelectors } from '../utils/resolve-selector.js';
 import { extractSemanticElements, extractDomain, saveSemantics, enhanceSemanticsWithLLM } from '../utils/site-semantics.js';
@@ -96,7 +97,7 @@ function persistSemantics(url: string, aria: string | undefined): void {
   }
 }
 
-async function buildRefTips(page: import('playwright').Page, aria: string | undefined): Promise<string[]> {
+async function buildRefTips(page: Page, aria: string | undefined): Promise<string[]> {
   if (!aria) return [];
   try {
     const mappings = await resolveSelectors(page, aria);
@@ -106,10 +107,10 @@ async function buildRefTips(page: import('playwright').Page, aria: string | unde
   }
 }
 
-async function captureAriaSnapshot(page: import('playwright').Page, selector?: string, depth?: number): Promise<string> {
+async function captureAriaSnapshot(page: Page, selector?: string, _depth?: number): Promise<string> {
   try {
     const locator = selector ? page.locator(selector).first() : page.locator('body');
-    return await locator.ariaSnapshot({ depth });
+    return await locator.ariaSnapshot();
   } catch {
     try {
       return await page.locator('body').ariaSnapshot();
@@ -119,16 +120,16 @@ async function captureAriaSnapshot(page: import('playwright').Page, selector?: s
   }
 }
 
-async function captureTextSnapshot(page: import('playwright').Page, selector?: string): Promise<string> {
+async function captureTextSnapshot(page: Page, selector?: string): Promise<string> {
   if (selector) {
-    return await page.locator(selector).first().innerText({ timeout: 5000 }).catch(() => '');
+    return await page.locator(selector).first().innerText().catch(() => '');
   }
-  return await page.evaluate(() => document.body?.innerText || '').catch(() => '');
+  return await page.evaluate<string>(() => document.body?.innerText || '').catch(() => '');
 }
 
-async function captureDomSnapshot(page: import('playwright').Page, selector?: string, maxDepth?: number): Promise<Record<string, unknown>> {
-  return await page.evaluate(
-    (args) => {
+async function captureDomSnapshot(page: Page, selector?: string, maxDepth?: number): Promise<Record<string, unknown>> {
+  return await page.evaluate<Record<string, unknown>>(
+    (args: { sel: string; depth: number }) => {
       const root = args.sel ? document.querySelector(args.sel) : document.body;
       if (!root) return { tag: 'none' };
 

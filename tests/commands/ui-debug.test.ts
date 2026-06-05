@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { BrowserCommandContext } from '../../src/context.js';
-import type { Page, CDPSession, BrowserContext } from 'playwright';
+import type { Page, CDPSession, BrowserContext } from '../../src/browser-shim.js';
 
 function createMockCDPSession(): CDPSession {
   const listeners: Record<string, Array<(...args: unknown[]) => void>> = {};

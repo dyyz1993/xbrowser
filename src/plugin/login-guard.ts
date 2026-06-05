@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { XBPage } from '../cdp-driver/types.js';
 import { getDaemonConfig, getDaemonProcessStatus } from '../daemon/daemon.js';
 
 export interface LoginRequiredData {
@@ -46,7 +46,7 @@ export async function checkPluginLoginRequired(options: {
   command: CommandLike;
   commandName: string;
   ctx: unknown;
-  page?: Page | null;
+  page?: XBPage | null;
   sessionName: string;
 }): Promise<PluginLoginGuardResult> {
   const { site, command, commandName, ctx, page, sessionName } = options;
@@ -136,11 +136,11 @@ function buildViewerUrl(sessionName: string): string | undefined {
   }
 }
 
-async function detectLoginFromPage(page: Page, config: LoginConfigLike): Promise<'logged-in' | 'logged-out' | 'unknown'> {
+async function detectLoginFromPage(page: XBPage, config: LoginConfigLike): Promise<'logged-in' | 'logged-out' | 'unknown'> {
   const url = page.url();
   if (config.loginUrls?.some(part => url.includes(part))) return 'logged-out';
 
-  const result = await page.evaluate((cfg) => {
+  const result = await page.evaluate((cfg: { loginSelectors: string[]; loginKeywords: string[]; loggedInSelectors: string[] }) => {
     const visible = (selector: string) => {
       try {
         const el = document.querySelector(selector);
@@ -158,7 +158,7 @@ async function detectLoginFromPage(page: Page, config: LoginConfigLike): Promise
 
     const bodyText = document.body?.innerText || '';
     const keywords = cfg.loginKeywords || [];
-    if (keywords.length > 0 && keywords.every(keyword => bodyText.includes(keyword))) {
+    if (keywords.length > 0 && keywords.every((keyword: string) => bodyText.includes(keyword))) {
       return 'logged-out';
     }
 

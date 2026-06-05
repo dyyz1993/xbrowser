@@ -16,8 +16,8 @@ export const structureCommand = registerCommand({
     structure: z.record(z.unknown()),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
-    const structure = await ctx.page.evaluate(
-      (args) => {
+    const structure = await ctx.page.evaluate<Record<string, unknown>>(
+      (args: { sel: string; maxDepth: number }) => {
         const { sel, maxDepth } = args;
         const root = sel ? document.querySelector(sel) : document.body;
         if (!root) return { tag: 'none', role: '', text: '', children: [] };

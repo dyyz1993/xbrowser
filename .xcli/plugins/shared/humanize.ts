@@ -1,4 +1,4 @@
-import type { Page, Locator } from 'playwright';
+import type { Page, Locator } from '../../src/browser-shim.js';
 
 function gaussianRandom(mean: number, stdDev: number): number {
   const u1 = Math.random();

@@ -69,7 +69,7 @@ describe('HumanInteractionManager', () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     wsServer = createMockWSServer();
-    manager = new HumanInteractionManager(wsServer, mockPage as unknown as import('playwright').Page);
+    manager = new HumanInteractionManager(wsServer, mockPage as unknown as import('../src/browser-shim.js').Page);
   });
 
   afterEach(() => {

@@ -13,7 +13,7 @@
 import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import type { BrowserContext, Frame, Page, Request, Response } from 'playwright';
+import type { BrowserContext, Frame, Page, Request, Response, Dialog } from '../browser-shim.js';
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -1158,7 +1158,7 @@ export class SessionRecorder {
     });
   };
 
-  private handleDialog = async (dialog: import('playwright').Dialog): Promise<void> => {
+  private handleDialog = async (dialog: Dialog): Promise<void> => {
     this.checkpointCounter++;
     this.checkpoints.push({
       id: this.checkpointCounter,
@@ -1166,9 +1166,9 @@ export class SessionRecorder {
       timestamp: Date.now(),
       url: this.page.url(),
       pageTitle: await this.page.title().catch(() => ''),
-      hint: `Dialog [${dialog.type()}]: "${dialog.message()}"`,
+      hint: `Dialog [${dialog.type}]: "${dialog.message()}"`,
       source: 'auto',
-      context: { dialogType: dialog.type(), message: dialog.message() },
+      context: { dialogType: dialog.type, message: dialog.message() },
     });
     await dialog.dismiss().catch(() => {});
   };
@@ -1262,7 +1262,7 @@ export class SessionRecorder {
     await new Promise(r => setTimeout(r, 300));
 
     try {
-      const ctx = await page.evaluate(([cx, cy]) => {
+      const ctx = await page.evaluate(([cx, cy]: [number, number]) => {
         const POPOVER_SELECTORS = [
           '[role="menu"]','[role="listbox"]','[role="dialog"]','[role="tooltip"]','[role="popover"]',
           '[role="combobox"]','[role="tree"]','[role="grid"]',
@@ -1368,7 +1368,7 @@ export class SessionRecorder {
     ];
 
     try {
-      const found = await page.evaluate((rules) => {
+      const found = await page.evaluate<Array<{ type: string; selector: string; text: string }>>((rules: Array<{ type: string; selectors: string[] }>) => {
         const results: Array<{ type: string; selector: string; text: string }> = [];
         for (const rule of rules) {
           for (const sel of rule.selectors) {

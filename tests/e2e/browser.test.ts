@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import type { Browser, BrowserContext, Page } from '../../src/browser-shim.js';
 import * as fs from 'fs';
 
 // Mock daemon to avoid 17s timeouts on every page-scope command

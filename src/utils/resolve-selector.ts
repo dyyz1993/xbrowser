@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Page } from '../browser-shim.js';
 import { getRefTarget, normalizeAgentRef } from '../runtime/ref-store.js';
 
 export interface RefMapping {
@@ -194,7 +194,7 @@ export async function resolveSelectors(page: Page, ariaSnapshot: string): Promis
       const count = await locator.count();
       if (count === 0) continue;
 
-      const selector = await locator.first().evaluate(buildElementSelector).catch(() => '');
+      const selector = await locator.first().evaluate<string>(buildElementSelector).catch(() => '');
 
       if (selector) {
         results.push({ ref, ariaLine: line, selector, method: detectMethod(selector) });
@@ -267,7 +267,7 @@ export async function resolveRefParams(
         continue;
       }
 
-      const selector = await locator.first().evaluate(buildElementSelector).catch(() => '');
+      const selector = await locator.first().evaluate<string>(buildElementSelector).catch(() => '');
 
       if (selector) {
         const method = detectMethod(selector);

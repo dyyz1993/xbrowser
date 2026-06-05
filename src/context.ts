@@ -1,5 +1,5 @@
 import type { CommandContext, CommandScope } from '@dyyz1993/xcli-core';
-import type { Page, Browser, BrowserContext } from 'playwright';
+import type { Page, Browser, BrowserContext } from './browser-shim.js';
 import type { WaitForHumanOptions, WaitForHumanResult } from './human-interaction.js';
 import type { WSServer } from './websocket-server.js';
 

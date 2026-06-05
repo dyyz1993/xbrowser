@@ -1,4 +1,5 @@
-import { chromium, type Page } from 'playwright';
+import { launch } from '../src/cdp-driver/index.js';
+import type { XBPage, XBContext } from '../src/cdp-driver/types.js';
 
 const CDP = 'http://localhost:9221';
 
@@ -134,11 +135,11 @@ xbrowser 让浏览器自动化变得简单，无需编写复杂的代码，命�
 
 GitHub: [github.com/dyyz1993/xbrowser](https://github.com/dyyz1993/xbrowser)`;
 
-async function tryClick(page: Page, selectors: string[], label: string): Promise<boolean> {
+async function tryClick(page: XBPage, selectors: string[], label: string): Promise<boolean> {
   for (const sel of selectors) {
     try {
       const loc = page.locator(sel).first();
-      if (await loc.isVisible({ timeout: 2000 }).catch(() => false)) {
+      if (await loc.isVisible().catch(() => false)) {
         await loc.click();
         console.log(`  ✅ Clicked ${label}: ${sel}`);
         return true;
@@ -149,11 +150,11 @@ async function tryClick(page: Page, selectors: string[], label: string): Promise
   return false;
 }
 
-async function tryFill(page: Page, selectors: string[], value: string, label: string): Promise<boolean> {
+async function tryFill(page: XBPage, selectors: string[], value: string, label: string): Promise<boolean> {
   for (const sel of selectors) {
     try {
       const loc = page.locator(sel).first();
-      if (await loc.isVisible({ timeout: 2000 }).catch(() => false)) {
+      if (await loc.isVisible().catch(() => false)) {
         await loc.fill(value);
         console.log(`  ✅ Filled ${label}`);
         return true;
@@ -165,7 +166,7 @@ async function tryFill(page: Page, selectors: string[], value: string, label: st
 }
 
 // === Dev.to ===
-async function publishDevto(context: import('playwright').BrowserContext): Promise<void> {
+async function publishDevto(context: XBContext): Promise<void> {
   console.log('\n=== Dev.to ===');
   const page = await context.newPage();
   try {
@@ -221,7 +222,7 @@ async function publishDevto(context: import('playwright').BrowserContext): Promi
 }
 
 // === WordPress.com ===
-async function publishWordPress(context: import('playwright').BrowserContext): Promise<void> {
+async function publishWordPress(context: XBContext): Promise<void> {
   console.log('\n=== WordPress.com ===');
   const page = await context.newPage();
   try {
@@ -250,7 +251,7 @@ async function publishWordPress(context: import('playwright').BrowserContext): P
       '.editor-block-list__layout, ' +
       '[data-type="core/paragraph"]'
     ).first();
-    if (await bodyEditor.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await bodyEditor.isVisible().catch(() => false)) {
       await bodyEditor.click();
     }
 
@@ -288,7 +289,7 @@ async function publishWordPress(context: import('playwright').BrowserContext): P
 }
 
 // === Blogger ===
-async function publishBlogger(context: import('playwright').BrowserContext): Promise<void> {
+async function publishBlogger(context: XBContext): Promise<void> {
   console.log('\n=== Blogger ===');
   const page = await context.newPage();
   try {
@@ -314,7 +315,7 @@ async function publishBlogger(context: import('playwright').BrowserContext): Pro
     const bodyEditor = page.locator(
       '[contenteditable="true"]',
     ).nth(1);
-    if (await bodyEditor.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await bodyEditor.isVisible().catch(() => false)) {
       await bodyEditor.click();
     }
 
@@ -344,7 +345,7 @@ async function publishBlogger(context: import('playwright').BrowserContext): Pro
 }
 
 // === CSDN ===
-async function publishCSDN(context: import('playwright').BrowserContext): Promise<void> {
+async function publishCSDN(context: XBContext): Promise<void> {
   console.log('\n=== CSDN ===');
   const page = await context.newPage();
   try {
@@ -379,7 +380,7 @@ async function publishCSDN(context: import('playwright').BrowserContext): Promis
     const bodyEditor = page.locator(
       '[contenteditable="true"], .ql-editor, .CodeMirror, textarea[class*="markdown"]'
     ).first();
-    if (await bodyEditor.isVisible({ timeout: 2000 }).catch(() => false)) {
+    if (await bodyEditor.isVisible().catch(() => false)) {
       await bodyEditor.click();
     }
 
@@ -409,7 +410,7 @@ async function publishCSDN(context: import('playwright').BrowserContext): Promis
 }
 
 // === Quora ===
-async function publishQuora(context: import('playwright').BrowserContext): Promise<void> {
+async function publishQuora(context: XBContext): Promise<void> {
   console.log('\n=== Quora ===');
   const page = await context.newPage();
   try {
@@ -427,13 +428,13 @@ async function publishQuora(context: import('playwright').BrowserContext): Promi
 
     // Click "Answer" on the first question
     const answerBtn = page.locator('span:has-text("Answer"), button:has-text("Answer")').first();
-    if (await answerBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+    if (await answerBtn.isVisible().catch(() => false)) {
       await answerBtn.click();
       await page.waitForTimeout(2000);
 
       // Type answer in the editor
       const editor = page.locator('[contenteditable="true"], .ql-editor, div[role="textbox"]').first();
-      if (await editor.isVisible({ timeout: 2000 }).catch(() => false)) {
+      if (await editor.isVisible().catch(() => false)) {
         await editor.click();
 
         const answer = `I have been using xbrowser (https://xbrowser.dev) for browser automation and it has been a game changer. It is a CLI tool built on Playwright and Chrome DevTools Protocol that supports 35+ browser commands.
@@ -482,7 +483,7 @@ async function main(): Promise<void> {
   const platform = process.argv[2];
   console.log(`Publishing to: ${platform || 'ALL'}`);
 
-  const browser = await chromium.connectOverCDP(CDP);
+  const { browser } = await launch({ cdpEndpoint: CDP });
   const context = browser.contexts()[0];
 
   switch (platform) {

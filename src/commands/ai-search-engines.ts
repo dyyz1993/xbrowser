@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Page } from 'playwright';
+import type { Page } from '../browser-shim.js';
 
 export type AIEngineKey =
   | 'deepseek' | 'doubao' | 'chatgpt' | 'claude'
@@ -341,7 +341,7 @@ export async function detectInternetSearch(
       }
     }
     if (config.internetSearch.toggleTexts?.length) {
-      const bodyText = await page.evaluate(() => document.body?.textContent || '');
+      const bodyText = await page.evaluate<string>(() => document.body?.textContent || '');
       for (const t of config.internetSearch.toggleTexts) {
         if (bodyText.includes(t)) {
           return { supported: true, enabled: false, details: `检测到"${t}"文本但未找到开关元素` };
@@ -366,7 +366,7 @@ export async function fillContentEditable(page: Page, selector: string, text: st
   try {
     await page.keyboard.type(text, { delay: 10 });
     // 验证输入是否生效
-    const currentText = await el.evaluate((node: HTMLElement) => node.textContent || '');
+    const currentText = await el.evaluate<string>((node: HTMLElement) => node.textContent || '');
     if (currentText.trim().length > 0) return true;
   } catch { /* fallback */ }
 
@@ -454,7 +454,7 @@ export async function findAndFillInput(page: Page, config: EngineConfig, text: s
       if (count === 0) continue;
       const el = page.locator(sel).first();
       await el.waitFor({ state: 'visible', timeout: 3000 });
-      const tag = await el.evaluate((n) => n.tagName.toLowerCase());
+      const tag = await el.evaluate<string>((n: Element) => n.tagName.toLowerCase());
       if (tag === 'textarea' || tag === 'input') {
         await el.click();
         await page.waitForTimeout(300);
@@ -482,7 +482,7 @@ export async function navigateToChat(page: Page, config: EngineConfig): Promise<
     }
   } else if (config.key === 'tiangong') {
     await page.waitForTimeout(3000);
-    const chatLinks = await page.evaluate(() => {
+    const chatLinks = await page.evaluate<Array<{ href: string; text: string }>>(() => {
       return Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'))
         .filter(a => a.href.includes('/chat') || a.href.includes('/project'))
         .map(a => ({ href: a.href, text: a.textContent?.trim()?.slice(0, 30) || '' }));
@@ -513,7 +513,7 @@ export async function waitForAIResponse(page: Page, timeoutMs: number): Promise<
   while (Date.now() - startTime < Math.min(timeoutMs, 15000)) {
     await page.waitForTimeout(1000);
     try {
-      const state = await page.evaluate(() => {
+      const state = await page.evaluate<{ hasLoading: boolean; isThinking: boolean }>(() => {
         const body = document.body?.textContent || '';
         const hasLoading = !!document.querySelector(
           '[class*="loading"], [class*="typing"], [class*="spinner"], ' +
@@ -538,7 +538,7 @@ export async function waitForAIResponse(page: Page, timeoutMs: number): Promise<
     }
   }
 
-  const baselineKeys = await page.evaluate(() => {
+  const baselineKeys = await page.evaluate<string[]>(() => {
     const containers = document.querySelectorAll(
       '[class*="markdown"], [class*="message-content"], [class*="message-list"], [class*="response"], ' +
       '[class*="answer"], .prose, article, ' +
@@ -559,7 +559,7 @@ export async function waitForAIResponse(page: Page, timeoutMs: number): Promise<
   while (Date.now() - startTime < timeoutMs) {
     await page.waitForTimeout(2000);
     try {
-      const result = await page.evaluate((baseline: string[]) => {
+      const result = await page.evaluate<{ status: string; text?: string; isNew?: boolean }>((baseline: string[]) => {
         const baseSet = new Set(baseline);
 
         const loadingEl = document.querySelector(

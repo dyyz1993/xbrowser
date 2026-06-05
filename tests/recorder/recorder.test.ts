@@ -5,7 +5,7 @@ import type { RecordingSession } from '../../src/recorder/recorder.js';
 import { mkdirSync, rmSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 import { tmpdir } from 'os';
-import type { Page } from 'playwright';
+import type { Page } from '../../src/browser-shim.js';
 
 const TEST_DIR = resolve(tmpdir(), 'xbrowser-test-recorder');
 

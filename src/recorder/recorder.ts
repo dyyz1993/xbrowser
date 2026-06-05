@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'yaml';
-import type { Page } from 'playwright';
+import type { Page } from '../browser-shim.js';
 
 /**
  * A single recorded browser event (click, type, scroll, navigate, etc.).

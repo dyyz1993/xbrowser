@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
-import type { Locator } from 'playwright';
+import type { Locator, Page } from '../browser-shim.js';
 
 const actionSchema = z.enum(['click', 'fill', 'type', 'select', 'hover', 'check']);
 
@@ -64,21 +64,20 @@ export const findCommand = registerCommand({
       return okWithTips({ matched: count, selector, action: 'click' }, tips);
     } else if (actionName === 'fill') {
       if (actionValue === undefined) return fail('find fill requires a value');
-      await target.fill(actionValue, { timeout: p.timeout, force: true });
-      return okWithTips({ matched: count, selector, action: `fill("${actionValue}")` }, tips);
+      await target.fill(actionValue, { timeout: p.timeout, force: true });      return okWithTips({ matched: count, selector, action: `fill("${actionValue}")` }, tips);
     } else if (actionName === 'type') {
       if (actionValue === undefined) return fail('find type requires a value');
       await target.type(actionValue, { delay: 10, timeout: p.timeout });
       return okWithTips({ matched: count, selector, action: `type("${actionValue}")` }, tips);
     } else if (actionName === 'select') {
       if (actionValue === undefined) return fail('find select requires a value');
-      await target.selectOption(actionValue, { timeout: p.timeout, force: true });
+      await target.selectOption(actionValue);
       return okWithTips({ matched: count, selector, action: `select("${actionValue}")` }, tips);
     } else if (actionName === 'hover') {
       await target.hover({ timeout: p.timeout, force: true });
       return okWithTips({ matched: count, selector, action: 'hover' }, tips);
     } else if (actionName === 'check') {
-      await target.check({ timeout: p.timeout, force: true });
+      await target.check({ timeout: p.timeout });
       return okWithTips({ matched: count, selector, action: 'check' }, tips);
     }
 
@@ -153,7 +152,7 @@ function inferLegacyAction(p: {
 }
 
 function buildLocator(
-  page: import('playwright').Page,
+  page: Page,
   strategy: string,
   value: string,
   opts: { name?: string; exact?: boolean; index?: number },

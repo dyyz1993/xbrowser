@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { Page } from 'playwright';
+import type { Page } from '../../src/browser-shim.js';
 import { htmlToMarkdown } from '../../src/lib/html-to-markdown.js';
 
 describe('htmlToMarkdown', () => {

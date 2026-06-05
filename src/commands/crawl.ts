@@ -5,7 +5,7 @@ import { registerCommand } from './command-registry.js';
 import { htmlToMarkdown } from '../lib/html-to-markdown.js';
 import { getBrowser, resolveLaunchOpts } from '../browser.js';
 import { normalizeUrl, shouldSkipUrl, getBaseDomain, isSpaHashRoute } from '../utils/url.js';
-import type { Page } from 'playwright';
+import type { Page, BrowserContext } from '../browser-shim.js';
 
 function stripHashAnchorQuery(url: string): string {
   try {
@@ -264,7 +264,7 @@ export const crawlCommand = registerCommand({
       }
 
       const browser = await getBrowser(resolveLaunchOpts(ctx));
-      const contexts: import('playwright').BrowserContext[] = [];
+      const contexts: BrowserContext[] = [];
 
       try {
         const seedContext = await browser.newContext();

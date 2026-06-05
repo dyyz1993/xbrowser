@@ -7,7 +7,7 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page, BrowserContext } from 'playwright';
+import type { Page, BrowserContext } from '../../src/browser-shim.js';
 import { execSync } from 'child_process';
 
 const BACKLINK_EMAIL = process.env.BACKLINK_EMAIL || '';

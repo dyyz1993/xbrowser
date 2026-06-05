@@ -1,27 +1,28 @@
-import { chromium, type Page } from 'playwright';
+import { launch } from '../src/cdp-driver/index.js';
+import type { XBPage } from '../src/cdp-driver/types.js';
 
 const STEPS: string[] = [];
 
-async function safeClick(page: Page, selector: string): Promise<boolean> {
-  const handle = await page.evaluateHandle((sel: string) => {
-    return document.querySelector(sel);
+async function safeClick(page: XBPage, selector: string): Promise<boolean> {
+  const box = await page.evaluate<{ x: number; y: number; width: number; height: number } | null>((sel: string) => {
+    const el = document.querySelector(sel) as HTMLElement | null;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   }, selector);
-  const element = handle.asElement();
-  if (!element) return false;
-  const box = await element.boundingBox();
   if (!box) return false;
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   return true;
 }
 
-async function safeClickByText(page: Page, text: string): Promise<boolean> {
-  const handle = await page.evaluateHandle((t: string) => {
-    return Array.from(document.querySelectorAll('button, a, div[role="button"], span, div'))
-      .find(e => e.textContent?.trim() === t);
+async function safeClickByText(page: XBPage, text: string): Promise<boolean> {
+  const box = await page.evaluate<{ x: number; y: number; width: number; height: number } | null>((t: string) => {
+    const el = Array.from(document.querySelectorAll('button, a, div[role="button"], span, div'))
+      .find(e => e.textContent?.trim() === t) as HTMLElement | undefined;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   }, text);
-  const element = handle.asElement();
-  if (!element) return false;
-  const box = await element.boundingBox();
   if (!box) return false;
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   return true;
@@ -29,7 +30,7 @@ async function safeClickByText(page: Page, text: string): Promise<boolean> {
 
 async function run() {
   console.log('Connecting to CDP tunnel...');
-  const browser = await chromium.connectOverCDP('http://localhost:9221');
+  const { browser } = await launch({ cdpEndpoint: 'http://localhost:9221' });
   const ctx = browser.contexts()[0];
   if (!ctx) throw new Error('No browser context found');
 

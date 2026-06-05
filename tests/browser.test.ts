@@ -3,35 +3,48 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('fs', () => ({
   existsSync: vi.fn().mockReturnValue(false),
   mkdirSync: vi.fn(),
+  readdirSync: vi.fn().mockReturnValue([]),
+  unlinkSync: vi.fn(),
   writeFileSync: vi.fn(),
+  readFileSync: vi.fn().mockReturnValue('{}'),
 }));
 
-vi.mock('playwright', () => {
+const hoisted = vi.hoisted(() => {
   const mockPage = {
     url: vi.fn().mockReturnValue('about:blank'),
     goto: vi.fn().mockResolvedValue(undefined),
+    on: vi.fn(),
+    close: vi.fn().mockResolvedValue(undefined),
+    evaluate: vi.fn().mockResolvedValue(true),
+    isClosed: vi.fn().mockReturnValue(false),
   };
   const mockContext = {
     close: vi.fn().mockResolvedValue(undefined),
     newPage: vi.fn().mockResolvedValue(mockPage),
     pages: vi.fn().mockReturnValue([]),
+    on: vi.fn(),
+    off: vi.fn(),
   };
   const mockBrowser = {
     close: vi.fn().mockResolvedValue(undefined),
     newContext: vi.fn().mockResolvedValue(mockContext),
     contexts: vi.fn().mockReturnValue([]),
-    isConnected: vi.fn().mockReturnValue(true),
+    on: vi.fn(),
+    off: vi.fn(),
+    disconnected: false,
   };
-  return {
-    chromium: {
-      launch: vi.fn().mockResolvedValue(mockBrowser),
-      connectOverCDP: vi.fn().mockResolvedValue(mockBrowser),
-    },
-    _mockBrowser: mockBrowser,
-    _mockContext: mockContext,
-    _mockPage: mockPage,
-  };
+  return { mockPage, mockContext, mockBrowser };
 });
+
+vi.mock('../src/cdp-driver/index.js', () => ({
+  launch: vi.fn().mockResolvedValue({ browser: hoisted.mockBrowser, wsEndpoint: 'ws://localhost:0' }),
+}));
+
+// Don't mock resolveCDPEndpoint — let it use real impl which calls fetch (mocked via stubGlobal)
+
+vi.mock('../src/recorder/session-recorder.js', () => ({
+  SessionRecorder: { cleanup: vi.fn() },
+}));
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
@@ -47,22 +60,10 @@ import {
   destroyBrowser,
   resetForTesting,
 } from '../src/browser.js';
-import { chromium, _mockBrowser, _mockContext, _mockPage } from 'playwright';
+import { launch } from '../src/cdp-driver/index.js';
 
-const mockBrowser = _mockBrowser as typeof _mockBrowser & {
-  close: ReturnType<typeof vi.fn>;
-  newContext: ReturnType<typeof vi.fn>;
-  contexts: ReturnType<typeof vi.fn>;
-};
-const mockContext = _mockContext as typeof _mockContext & {
-  close: ReturnType<typeof vi.fn>;
-  newPage: ReturnType<typeof vi.fn>;
-  pages: ReturnType<typeof vi.fn>;
-};
-const mockPage = _mockPage as typeof _mockPage & {
-  url: ReturnType<typeof vi.fn>;
-  goto: ReturnType<typeof vi.fn>;
-};
+const { mockPage, mockContext, mockBrowser } = hoisted;
+const mockLaunch = launch as ReturnType<typeof vi.fn>;
 
 describe('browser', () => {
   beforeEach(() => {
@@ -72,6 +73,11 @@ describe('browser', () => {
     mockContext.newPage.mockResolvedValue(mockPage);
     mockPage.url.mockReturnValue('about:blank');
     mockPage.goto.mockResolvedValue(undefined);
+    mockBrowser.close.mockResolvedValue(undefined);
+    mockBrowser.newContext.mockResolvedValue(mockContext);
+    mockBrowser.contexts.mockReturnValue([]);
+    mockLaunch.mockResolvedValue({ browser: mockBrowser, wsEndpoint: 'ws://localhost:0' });
+    mockBrowser.disconnected = false;
     resetForTesting();
   });
 
@@ -83,7 +89,7 @@ describe('browser', () => {
     it('should launch browser on first call', async () => {
       const b = await getBrowser({ headless: true });
 
-      expect(chromium.launch).toHaveBeenCalledWith({ executablePath: undefined, headless: true });
+      expect(mockLaunch).toHaveBeenCalledWith({ executablePath: undefined, headless: true });
       expect(b).toBe(mockBrowser);
     });
 
@@ -92,7 +98,7 @@ describe('browser', () => {
       const b2 = await getBrowser();
 
       expect(b1).toBe(b2);
-      expect(chromium.launch).toHaveBeenCalledTimes(1);
+      expect(mockLaunch).toHaveBeenCalledTimes(1);
     });
 
     it('should connect via CDP when cdpEndpoint is provided', async () => {
@@ -100,7 +106,7 @@ describe('browser', () => {
 
       const b = await getBrowser({ cdpEndpoint: 'ws://localhost:9222/devtools/browser/id' });
 
-      expect(chromium.connectOverCDP).toHaveBeenCalledWith('ws://localhost:9222/devtools/browser/id');
+      expect(mockLaunch).toHaveBeenCalledWith({ cdpEndpoint: 'ws://localhost:9222/devtools/browser/id' });
       expect(b).toBe(mockBrowser);
     });
 
@@ -114,7 +120,7 @@ describe('browser', () => {
       await getBrowser({ cdpEndpoint: 'auto' });
 
       expect(mockFetch).toHaveBeenCalledWith('http://localhost:9222/json/version');
-      expect(chromium.connectOverCDP).toHaveBeenCalledWith('ws://auto-discovered:9222/ws');
+      expect(mockLaunch).toHaveBeenCalledWith({ cdpEndpoint: 'ws://auto-discovered:9222/ws' });
     });
 
     it('should discover CDP from port number', async () => {
@@ -127,7 +133,7 @@ describe('browser', () => {
       await getBrowser({ cdpEndpoint: '9333' });
 
       expect(mockFetch).toHaveBeenCalledWith('http://localhost:9333/json/version');
-      expect(chromium.connectOverCDP).toHaveBeenCalledWith('ws://localhost:9333/ws');
+      expect(mockLaunch).toHaveBeenCalledWith({ cdpEndpoint: 'ws://localhost:9333/ws' });
     });
 
     it('should throw when auto-discover fails', async () => {
@@ -147,7 +153,7 @@ describe('browser', () => {
 
       await getBrowser({ executablePath: '/usr/bin/chromium' });
 
-      expect(chromium.launch).toHaveBeenCalledWith({
+      expect(mockLaunch).toHaveBeenCalledWith({
         executablePath: '/usr/bin/chromium',
         headless: true,
       });
@@ -188,6 +194,10 @@ describe('browser', () => {
       const existingPage = {
         url: vi.fn().mockReturnValue('https://existing.com'),
         goto: vi.fn(),
+        on: vi.fn(),
+        close: vi.fn(),
+        evaluate: vi.fn().mockResolvedValue(true),
+        isClosed: vi.fn().mockReturnValue(false),
       };
       mockBrowser.contexts.mockReturnValue([mockContext]);
       mockContext.pages.mockReturnValue([existingPage]);

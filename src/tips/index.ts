@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Page } from '../browser-shim.js';
 import type { SmartTip, Snapshot } from './types.js';
 import { DomWatcher } from './dom-watcher.js';
 import { ContextTracker } from './context-tracker.js';

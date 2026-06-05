@@ -2,7 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { chromium, type Browser, type BrowserContext, type Page, type Response } from 'playwright';
+import type { Browser, BrowserContext, Page } from './browser-shim.js';
+import { launch } from './cdp-driver/index.js';
+import type { XBPage } from './cdp-driver/types.js';
 import { CDPInterceptorProxy } from './cdp-interceptor/proxy.js';
 import type { CDPInterceptorConfig } from './cdp-interceptor/types.js';
 import type { BrowserCommandContext } from './context.js';
@@ -209,20 +211,23 @@ export async function createBrowser(options?: BrowserLaunchOptions): Promise<Bro
         ? { ...options.intercept, cdpEndpoint: realEndpoint }
         : { cdpEndpoint: realEndpoint };
 
-      const proxy = new CDPInterceptorProxy(config);
-      const proxyPort = await proxy.start();
+      _sharedCdpProxy = new CDPInterceptorProxy(config);
+      const proxyPort = await _sharedCdpProxy.start();
       console.error(`[CDP Interceptor] Proxy running on ws://localhost:${proxyPort}, forwarding to ${realEndpoint}`);
-      return await chromium.connectOverCDP(`ws://localhost:${proxyPort}`);
+      const { browser } = await launch({ cdpEndpoint: `ws://localhost:${proxyPort}` });
+      return browser;
     }
 
-    return await chromium.connectOverCDP(realEndpoint);
+    const { browser } = await launch({ cdpEndpoint: realEndpoint });
+    return browser;
   }
 
   const executablePath =
     options?.executablePath ||
     process.env.XBROWSER_CHROMIUM_PATH ||
     discoverChromiumPath();
-  return await chromium.launch({ executablePath, headless: options?.headless ?? true });
+  const { browser } = await launch({ executablePath, headless: options?.headless ?? true });
+  return browser;
 }
 
 /**
@@ -451,7 +456,7 @@ export async function createEphemeralContext(
     // CDP mode: create a dedicated connection (new client) for isolation.
     // CDP Tunnel assigns each connectOverCDP a separate clientId.
     const endpoint = await resolveCDPEndpoint(options.cdpEndpoint);
-    const b = await chromium.connectOverCDP(endpoint);
+    const { browser: b } = await launch({ cdpEndpoint: endpoint });
     const contexts = b.contexts();
     const ctx = contexts[0] || await b.newContext();
     const page = await ctx.newPage();
@@ -520,41 +525,95 @@ async function installNetworkCapture(page: Page, sessionName: string): Promise<v
 
   const { networkStore } = await import('./daemon/network-store.js');
 
-  page.on('response', async (response: Response) => {
-    try {
-      const request = response.request();
-      const url = response.url();
-      const contentType = response.headers()['content-type'] || '';
+  // Store request data by requestId for later correlation with response events
+  const requestData = new Map<string, {
+    method: string;
+    headers: Record<string, string>;
+    postData: string | null;
+    resourceType: string;
+  }>();
 
-      // Capture response headers
-      const headers: Record<string, string> = {};
-      for (const [k, v] of Object.entries(response.headers())) {
-        headers[k] = v;
-      }
+  // Store response metadata by requestId for body fetching on requestfinished
+  const responseMeta = new Map<string, {
+    status: number;
+    url: string;
+    headers: Record<string, string>;
+    mimeType: string;
+    type: string;
+  }>();
+
+  const xbPage = page as unknown as XBPage;
+
+  // Capture request data
+  xbPage.on('request', (params: unknown) => {
+    try {
+      const p = params as {
+        requestId: string;
+        request: { url: string; method: string; headers: Record<string, string>; postData?: string };
+        type: string;
+      };
+      requestData.set(p.requestId, {
+        method: p.request.method,
+        headers: p.request.headers,
+        postData: p.request.postData ?? null,
+        resourceType: p.type,
+      });
+    } catch {
+      // ignore
+    }
+  });
+
+  // Capture response metadata
+  xbPage.on('response', (params: unknown) => {
+    try {
+      const p = params as {
+        requestId: string;
+        type: string;
+        response: {
+          status: number;
+          url: string;
+          headers: Record<string, string>;
+          mimeType: string;
+        };
+      };
+      responseMeta.set(p.requestId, {
+        status: p.response.status,
+        url: p.response.url,
+        headers: p.response.headers,
+        mimeType: p.response.mimeType,
+        type: p.type,
+      });
+    } catch {
+      // ignore
+    }
+  });
+
+  // On request finished, combine all data and fetch body
+  xbPage.on('requestfinished', async (params: unknown) => {
+    try {
+      const p = params as { requestId: string };
+      const meta = responseMeta.get(p.requestId);
+      if (!meta) return;
+
+      const req = requestData.get(p.requestId);
+      const method = req?.method ?? 'GET';
+      const contentType = meta.headers['content-type'] || meta.headers['Content-Type'] || '';
+      const resourceType = req?.resourceType ?? meta.type;
 
       // Capture request headers
-      const requestHeaders: Record<string, string> = {};
-      for (const [k, v] of Object.entries(request.headers())) {
-        requestHeaders[k] = v;
-      }
+      const requestHeaders = req?.headers ?? {};
 
       // Capture request body for POST/PATCH/PUT with JSON
       let requestBody: unknown = undefined;
-      const method = request.method();
       const isPostLike = ['POST', 'PATCH', 'PUT'].includes(method);
       if (isPostLike && requestHeaders['content-type']?.includes('application/json')) {
-        try {
-          const postData = request.postData();
-          if (postData) {
-            try {
-              requestBody = JSON.parse(postData);
-            } catch {
-              // Keep as string if not valid JSON
-              requestBody = postData;
-            }
+        const postData = req?.postData;
+        if (postData) {
+          try {
+            requestBody = JSON.parse(postData);
+          } catch {
+            requestBody = postData;
           }
-        } catch {
-          // Ignore errors reading post data
         }
       }
 
@@ -567,7 +626,11 @@ async function installNetworkCapture(page: Page, sessionName: string): Promise<v
         contentType.includes('text/');
       if (isJsonish) {
         try {
-          const text = await response.text();
+          const bodyResult = await xbPage._cdpSend<{ body?: string; base64Encoded?: boolean }>(
+            'Network.getResponseBody',
+            { requestId: p.requestId },
+          );
+          const text = bodyResult.body ?? '';
           size = text.length;
           if (size <= 10240) {
             try {
@@ -577,12 +640,15 @@ async function installNetworkCapture(page: Page, sessionName: string): Promise<v
             }
           }
         } catch {
-          /* unable to read body */
+          // body may not be available
         }
       } else {
         try {
-          const text = await response.text();
-          size = text.length;
+          const bodyResult = await xbPage._cdpSend<{ body?: string; base64Encoded?: boolean }>(
+            'Network.getResponseBody',
+            { requestId: p.requestId },
+          );
+          size = bodyResult.body?.length ?? 0;
         } catch {
           size = 0;
         }
@@ -591,17 +657,21 @@ async function installNetworkCapture(page: Page, sessionName: string): Promise<v
       networkStore.add(sessionName, {
         timestamp: Date.now(),
         method,
-        url,
-        path: new URL(url).pathname,
-        status: response.status(),
+        url: meta.url,
+        path: new URL(meta.url).pathname,
+        status: meta.status,
         contentType,
         size,
-        headers,
+        headers: meta.headers,
         body: responseBody,
         requestHeaders,
         requestBody,
-        resourceType: request.resourceType(),
+        resourceType,
       });
+
+      // Cleanup
+      requestData.delete(p.requestId);
+      responseMeta.delete(p.requestId);
     } catch {
       // Silently ignore capture errors
     }

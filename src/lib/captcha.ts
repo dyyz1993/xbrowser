@@ -1,4 +1,4 @@
-import type { Page } from 'playwright-core';
+import type { Page } from '../browser-shim.js';
 
 export interface CaptchaInfo {
   type: 'hcaptcha' | 'recaptcha' | 'turnstile' | 'unknown';
