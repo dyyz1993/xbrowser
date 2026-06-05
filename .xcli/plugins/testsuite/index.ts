@@ -2,7 +2,7 @@ import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 
-type Page = import('playwright-core').Page;
+type Page = import('../types').Page;
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({

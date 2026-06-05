@@ -304,7 +304,7 @@ export default function (xcli: XCLIAPI): void {
     },
     isLogin: async (ctx) => {
       const ctxAny = ctx as Record<string, unknown>;
-      const page = ctxAny.page as import('playwright-core').Page;
+      const page = ctxAny.page as import('../types').Page;
       if (!page) return true;
       try {
         const url = page.url();

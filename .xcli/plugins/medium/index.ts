@@ -18,7 +18,7 @@ export default function (xcli: XCLIAPI): void {
     },
     isLogin: async (ctx) => {
       const ctxAny = ctx as Record<string, unknown>;
-      const page = ctxAny.page as import('playwright-core').Page;
+      const page = ctxAny.page as import('../types').Page;
       if (!page) return true;
       try {
         const url = page.url();
@@ -40,7 +40,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [{ cmd: 'xbrowser medium login', description: '登录 Medium' }],
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://medium.com/m/signin', {
@@ -94,7 +94,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://medium.com/new-story', {
@@ -173,7 +173,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), saved: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://medium.com/new-story', {
@@ -228,7 +228,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ importedFrom: z.string(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://medium.com/p/import', {
@@ -283,7 +283,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ url: z.string(), updated: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://medium.com/me/settings', {
@@ -322,7 +322,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+    const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
     if (!page) return;
     await page.goto('https://medium.com/m/signin');
     await ctx.storage.set('medium_login', { at: Date.now() });

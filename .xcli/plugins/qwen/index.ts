@@ -4,8 +4,8 @@ import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
 
-type Page = import('playwright-core').Page;
-type Response = import('playwright-core').Response;
+type Page = import('../types').Page;
+type Response = import('../types').Response;
 
 const QWEN_URL = 'https://www.qianwen.com';
 
@@ -524,7 +524,7 @@ export default function (xcli: XCLIAPI): void {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('捕获认证参数超时（10s），请确认已登录')), 10000);
 
-      const handler = (request: import('playwright-core').Request) => {
+      const handler = (request: import('../types').Request) => {
         const url = request.url();
         if (url.includes('chat2-api.qianwen.com') && url.includes('ut=')) {
           const queryString = url.split('?')[1];

@@ -196,7 +196,7 @@ const EXCLUDE_DOMAINS = new Set([
   'baidu.com', 'www.baidu.com',
 ]);
 
-type Page = import('playwright-core').Page;
+type Page = import('../types').Page;
 
 interface EngineConfig {
   key: string;
@@ -449,15 +449,17 @@ async function extractSourcesFromDOM(page: Page, config: EngineConfig): Promise<
   return [...new Set(links)];
 }
 
-async function createBrowserContext(cdpEndpoint?: string): Promise<{ browser: import('playwright').Browser; context: import('playwright').BrowserContext }> {
-  const { chromium } = await import('playwright');
-  let browser: import('playwright').Browser;
-  let context: import('playwright').BrowserContext;
+async function createBrowserContext(cdpEndpoint?: string): Promise<{ browser: import('../types').Browser; context: import('../types').BrowserContext }> {
+  const { launch } = await import('../../src/cdp-driver/index.js');
+  let browser: import('../types').Browser;
+  let context: import('../types').BrowserContext;
   if (cdpEndpoint) {
-    browser = await chromium.connectOverCDP(cdpEndpoint);
-    context = browser.contexts()[0] || await browser.newContext();
+    const result = await launch({ cdpEndpoint });
+    browser = result.browser;
+    context = result.browser.contexts()[0] || await result.browser.newContext();
   } else {
-    browser = await chromium.launch({ headless: true });
+    const result = await launch({ headless: true });
+    browser = result.browser;
     context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', viewport: { width: 1920, height: 1080 } });
   }
   return { browser, context };
@@ -482,7 +484,7 @@ async function executeSingleEngineOnPage(page: Page, config: EngineConfig, param
   if (loginStatus === 'logged_out') throw new Error(`[${config.name}] 未登录。请先用 xbrowser open ${config.url} 并手动登录，然后再使用 ai-search。`);
   const internetSearchInfo = await detectInternetSearch(page, config);
   const interceptedUrls: string[] = [];
-  const responseListener = async (response: import('playwright').Response) => {
+  const responseListener = async (response: import('../types').Response) => {
     const respUrl = response.url();
     const contentType = response.headers()['content-type'] || '';
     const isJsonOrStream = contentType.includes('text/event-stream') || contentType.includes('application/json');

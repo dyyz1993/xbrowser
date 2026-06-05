@@ -13,7 +13,7 @@ function buildCdpTips(ctx: Record<string, unknown>): string[] {
   return tips;
 }
 
-async function dismissBaiduDialogs(page: import('playwright').Page) {
+async function dismissBaiduDialogs(page: import('../types').Page) {
   const dismissSelectors = [
     '.ec_wise_ad_popup_close',
     '#closeBtn',
@@ -65,7 +65,7 @@ export default function (xcli: XCLIAPI): void {
       source: z.string(), page: z.number(), position: z.number(),
     })),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
 
@@ -195,7 +195,7 @@ export default function (xcli: XCLIAPI): void {
       heat: z.string(), tag: z.string(),
     })),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
 
@@ -266,7 +266,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.array(z.string()),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
 
@@ -304,7 +304,7 @@ export default function (xcli: XCLIAPI): void {
       time: z.string(), snippet: z.string(),
     })),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
 
@@ -384,7 +384,7 @@ export default function (xcli: XCLIAPI): void {
       checked: z.boolean(),
     }),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
 
@@ -481,7 +481,7 @@ export default function (xcli: XCLIAPI): void {
       timestamp: z.string().optional(),
     }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (params.page || (ctx as Record<string, unknown>).page) as import('playwright').Page;
+      const page = (params.page || (ctx as Record<string, unknown>).page) as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
 
@@ -684,7 +684,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   baidu.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+    const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
     if (!page) return;
     await page.goto('https://www.baidu.com');
     await page.click('#s-top-loginbtn').catch((err) => {

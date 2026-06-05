@@ -291,7 +291,7 @@ export default function (xcli: XCLIAPI): void {
     },
     isLogin: async (ctx) => {
       const ctxAny = ctx as Record<string, unknown>;
-      const page = ctxAny.page as import('playwright-core').Page;
+      const page = ctxAny.page as import('../types').Page;
       if (!page) return true;
       try {
         const url = page.url();
@@ -313,7 +313,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [{ cmd: 'xbrowser devto login', description: '登录 Dev.to' }],
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://dev.to/enter', {
@@ -373,7 +373,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), tags: z.string().optional(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       let content = params.content;
@@ -462,7 +462,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), saved: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://dev.to/new', {
@@ -519,7 +519,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ url: z.string(), updated: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://dev.to/settings', {
@@ -560,7 +560,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+    const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
     if (!page) return;
     await page.goto('https://dev.to/enter');
     await ctx.storage.set('devto_login', { at: Date.now() });

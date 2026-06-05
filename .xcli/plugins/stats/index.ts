@@ -25,19 +25,19 @@ var PROVINCE_CODES: Array<{text: string; value: string}> = [
   {text:'澳门特别行政区',value:'820000000000'},{text:'台湾省',value:'710000000000'},
 ];
 
-function gp(ctx: Record<string, unknown>): import('playwright').Page {
-  var p = ctx.page as import('playwright').Page | undefined;
+function gp(ctx: Record<string, unknown>): import('../types').Page {
+  var p = ctx.page as import('../types').Page | undefined;
   if (!p) throw new Error('需要浏览器页面，请使用 --cdp 9221');
   return p;
 }
 
-async function ensureOnSite(page: import('playwright').Page): Promise<void> {
+async function ensureOnSite(page: import('../types').Page): Promise<void> {
   if (page.url().indexOf('data.stats.gov.cn') >= 0) return;
   await page.goto(BASE_URL, { waitUntil: 'load', timeout: 30000 });
   await page.waitForTimeout(2000);
 }
 
-async function apiCall(page: import('playwright').Page, path: string, body?: unknown): Promise<unknown> {
+async function apiCall(page: import('../types').Page, path: string, body?: unknown): Promise<unknown> {
   await ensureOnSite(page);
   return page.evaluate(function(args: {apiBase: string; path: string; body?: string}) {
     var url = args.apiBase + args.path;
@@ -51,13 +51,13 @@ async function apiCall(page: import('playwright').Page, path: string, body?: unk
   }, { apiBase: API_BASE, path: path, body: body ? JSON.stringify(body) : undefined });
 }
 
-async function getTreeNodes(page: import('playwright').Page, pid: string): Promise<TreeNode[]> {
+async function getTreeNodes(page: import('../types').Page, pid: string): Promise<TreeNode[]> {
   var data = await apiCall(page, '/new/queryIndexTreeAsync?pid=' + pid + '&code=6') as any;
   var raw = (data && data.data) || [];
   return raw.map(function(n: any) { return { id: n._id || n.id, name: n._name || n.name, children: [] }; });
 }
 
-async function findIndicatorId(page: import('playwright').Page, name: string): Promise<{cid: string; indicatorId: string} | null> {
+async function findIndicatorId(page: import('../types').Page, name: string): Promise<{cid: string; indicatorId: string} | null> {
   var rootNodes = await getTreeNodes(page, '');
   for (var i = 0; i < rootNodes.length; i++) {
     var childNodes = await getTreeNodes(page, rootNodes[i].id);
@@ -91,7 +91,7 @@ function toN(s: string): number | null {
   return isNaN(n) ? null : n;
 }
 
-async function fetchAllProvinces(page: import('playwright').Page, indicatorName: string): Promise<ProvinceRow[]> {
+async function fetchAllProvinces(page: import('../types').Page, indicatorName: string): Promise<ProvinceRow[]> {
   var found = await findIndicatorId(page, indicatorName);
   if (!found) throw new Error('未找到指标: ' + indicatorName);
 

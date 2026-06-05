@@ -18,7 +18,7 @@ export default function (xcli: XCLIAPI): void {
     },
     isLogin: async (ctx) => {
       const ctxAny = ctx as Record<string, unknown>;
-      const page = ctxAny.page as import('playwright-core').Page;
+      const page = ctxAny.page as import('../types').Page;
       if (!page) return true;
       try {
         const url = page.url();
@@ -40,7 +40,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [{ cmd: 'xbrowser blogger login', description: '登录 Blogger' }],
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://www.blogger.com/about/', {
@@ -88,7 +88,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), address: z.string(), completed: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://www.blogger.com/blog/create', {
@@ -147,7 +147,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), labels: z.string().optional(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://www.blogger.com/blog/post/create/', {
@@ -219,7 +219,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ url: z.string(), updated: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://www.blogger.com/profile/edit', {
@@ -247,7 +247,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+    const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
     if (!page) return;
     await page.goto('https://www.blogger.com/about/');
     await page.locator('a[href*="sign-in"]').first().click().catch(() => {});

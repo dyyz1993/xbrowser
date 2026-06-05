@@ -302,7 +302,7 @@ export default function (xcli: XCLIAPI): void {
     },
     isLogin: async (ctx) => {
       const ctxAny = ctx as Record<string, unknown>;
-      const page = ctxAny.page as import('playwright-core').Page;
+      const page = ctxAny.page as import('../types').Page;
       if (!page) return true;
       try {
         const url = page.url();
@@ -324,7 +324,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [{ cmd: 'xbrowser juejin login', description: '登录掘金' }],
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
 
@@ -390,7 +390,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), tags: z.string().optional(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
 
@@ -524,7 +524,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), saved: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
 
@@ -588,7 +588,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ url: z.string(), updated: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
 
@@ -644,7 +644,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.array(z.object({ title: z.string(), url: z.string(), views: z.string(), likes: z.string(), comments: z.string(), date: z.string() })),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
 
@@ -713,7 +713,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+    const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
     if (!page) return;
     await page.goto('https://juejin.cn/login');
     await ctx.storage.set('juejin_login', { at: Date.now() });

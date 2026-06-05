@@ -21,7 +21,7 @@ const SSR_VARIABLE_TO_FRAMEWORK: Record<string, string> = {
 
 const SSR_VARIABLES = Object.keys(SSR_VARIABLE_TO_FRAMEWORK);
 
-export async function detectSsr(page: import('playwright-core').Page): Promise<SsrDetectionResult | undefined> {
+export async function detectSsr(page: import('../types').Page): Promise<SsrDetectionResult | undefined> {
   try {
     const result = await page.evaluate((vars) => {
       for (const varName of vars) {

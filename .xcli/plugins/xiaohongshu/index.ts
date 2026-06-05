@@ -2,8 +2,8 @@ import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 
-type Page = import('playwright-core').Page;
-type Response = import('playwright-core').Response;
+type Page = import('../types').Page;
+type Response = import('../types').Response;
 
 const SSR_VARIABLE_TO_FRAMEWORK: Record<string, string> = {
   __NEXT_DATA__: 'Next.js',
@@ -248,7 +248,7 @@ export default function (xcli: XCLIAPI): void {
     },
     isLogin: async (ctx) => {
       const ctxAny = ctx as Record<string, unknown>;
-      const page = ctxAny.page as import('playwright-core').Page;
+      const page = ctxAny.page as import('../types').Page;
       if (!page) return true;
       try {
         const url = page.url();
@@ -607,7 +607,7 @@ export default function (xcli: XCLIAPI): void {
       timestamp: z.number(),
     }),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       try {
         await page.goto('https://www.xiaohongshu.com/search_result?keyword=' + encodeURIComponent(params.query) + '&source=web_search_result_notes', { waitUntil: 'networkidle', timeout: params.timeout });

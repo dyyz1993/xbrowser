@@ -18,7 +18,7 @@ export default function (xcli: XCLIAPI): void {
     },
     isLogin: async (ctx) => {
       const ctxAny = ctx as Record<string, unknown>;
-      const page = ctxAny.page as import('playwright-core').Page;
+      const page = ctxAny.page as import('../types').Page;
       if (!page) return true;
       try {
         const url = page.url();
@@ -40,7 +40,7 @@ export default function (xcli: XCLIAPI): void {
   // ─── 工具 ──────────────────────────────────────
 
   function getPage(ctx: Record<string, unknown>) {
-    const page = ctx.page as import('playwright').Page;
+    const page = ctx.page as import('../types').Page;
     if (!page) throw new Error('需要浏览器页面，请使用 --cdp 参数连接');
     return page;
   }
@@ -55,7 +55,7 @@ export default function (xcli: XCLIAPI): void {
   // ─── 通用：拦截 GraphQL API ────────────────────
 
   interface CaptureOptions {
-    page: import('playwright').Page;
+    page: import('../types').Page;
     urlPattern: string;
     dataExtractor: (json: Record<string, unknown>) => Record<string, unknown> | null;
     timeout?: number;
@@ -65,7 +65,7 @@ export default function (xcli: XCLIAPI): void {
     const { page, urlPattern, dataExtractor, timeout = 15000 } = opts;
 
     return new Promise((resolve) => {
-      const handler = async (resp: import('playwright').Response) => {
+      const handler = async (resp: import('../types').Response) => {
         if (!resp.url().includes(urlPattern)) return;
         try {
           const json = await resp.json() as Record<string, unknown>;
@@ -402,7 +402,7 @@ export default function (xcli: XCLIAPI): void {
     }),
     result: z.object({ query: z.string(), engine: z.string(), results: z.array(z.object({ title: z.string(), thumbnailUrl: z.string(), sourceUrl: z.string(), originalUrl: z.string(), width: z.number(), height: z.number(), format: z.string(), sourceSite: z.string() })), total: z.number(), timestamp: z.number() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       try {
         await page.goto(`https://x.com/search?q=${encodeURIComponent(params.query)}%20filter%3Aimages&f=live`, { waitUntil: 'domcontentloaded', timeout: params.timeout });
@@ -431,7 +431,7 @@ export default function (xcli: XCLIAPI): void {
   // ─── login/logout ──────────────────────────────
 
   site.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as import('playwright').Page | undefined;
+    const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
     console.log('⚠️  请使用 --cdp 参数连接到已登录 X.com 的浏览器');
     console.log('     xbrowser twitter timeline --username elonmusk --cdp http://localhost:9221');
     if (page) {

@@ -4,7 +4,7 @@ import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
 
-type Page = import('playwright-core').Page;
+type Page = import('../types').Page;
 
 const DB_URL = 'https://www.doubao.com';
 
@@ -1392,7 +1392,7 @@ export default function (xcli: XCLIAPI): void {
           const timeout = (waitSeconds > 0 ? waitSeconds : 60) * 1000;
           const timer = setTimeout(() => resolve(null), timeout);
 
-          const responseHandler = async (response: import('playwright-core').Response) => {
+          const responseHandler = async (response: import('../types').Response) => {
             const url = response.url();
             if (url.includes('bigmusic/get_video')) {
               try {

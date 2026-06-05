@@ -2,8 +2,8 @@ import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 
-type Page = import('playwright-core').Page;
-type Response = import('playwright-core').Response;
+type Page = import('../types').Page;
+type Response = import('../types').Response;
 
 const SSR_VARIABLE_TO_FRAMEWORK: Record<string, string> = {
   __NEXT_DATA__: 'Next.js',
@@ -311,7 +311,7 @@ export default function (xcli: XCLIAPI): void {
     },
     isLogin: async (ctx) => {
       const ctxAny = ctx as Record<string, unknown>;
-      const page = ctxAny.page as import('playwright-core').Page;
+      const page = ctxAny.page as import('../types').Page;
       if (!page) return true;
       try {
         const url = page.url();
@@ -1342,7 +1342,7 @@ export default function (xcli: XCLIAPI): void {
             'a[href*="/video/"]',
           ];
 
-          let videoEl: import('playwright-core').ElementHandle | null = null;
+          let videoEl: import('../types').ElementHandle | null = null;
           for (const sel of videoSelectors) {
             const videos = await page.$$(sel);
             if (videos.length > 0 && params.videoIndex < videos.length) {
@@ -1376,7 +1376,7 @@ export default function (xcli: XCLIAPI): void {
         return videoUrl;
       }
 
-      async function findIframe(timeout: number): Promise<import('playwright-core').FrameLocator | null> {
+      async function findIframe(timeout: number): Promise<import('../types').FrameLocator | null> {
         const startTime = Date.now();
         while (Date.now() - startTime < timeout) {
           for (const sel of IFRAME_SELECTORS) {
@@ -1416,7 +1416,7 @@ export default function (xcli: XCLIAPI): void {
         return null;
       }
 
-      function extractTextFromFrame(frame: import('playwright-core').FrameLocator): Promise<string> {
+      function extractTextFromFrame(frame: import('../types').FrameLocator): Promise<string> {
         return frame.locator([
           ...RESPONSE_SELECTORS,
           '[class*="markdown"]',
@@ -1560,7 +1560,7 @@ export default function (xcli: XCLIAPI): void {
         tips.push("已点击播放器底部 AI 图标");
 
         tips.push("等待 AI iframe...");
-        let aiFrame: import('playwright-core').Frame | null = null;
+        let aiFrame: import('../types').Frame | null = null;
         const frameDeadline = Date.now() + 15000;
         while (Date.now() < frameDeadline && !aiFrame) {
           aiFrame = page.frames().find((f) => f.url().includes("search_ai")) ?? null;

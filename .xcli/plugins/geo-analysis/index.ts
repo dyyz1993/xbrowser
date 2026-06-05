@@ -5,8 +5,8 @@ import fs from 'fs/promises';
 import path from 'path';
 import { createHash } from 'crypto';
 
-type Page = import('playwright-core').Page;
-type PlaywrightResponse = import('playwright').Response;
+type Page = import('../types').Page;
+type PlaywrightResponse = import('../types').Response;
 
 const DATA_BASE = './data/geo-analysis';
 const DEFAULT_TIMEOUT = 60000;
@@ -516,7 +516,7 @@ async function collectFromEngine(
     await navigateToChat(page, config as EngineConfig & { key: string });
 
     const interceptedUrls: string[] = [];
-    const responseListener = async (response: import('playwright').Response) => {
+    const responseListener = async (response: import('../types').Response) => {
       const respUrl = response.url();
       const contentType = response.headers()['content-type'] || '';
       const isJsonOrStream = contentType.includes('text/event-stream') || contentType.includes('application/json');

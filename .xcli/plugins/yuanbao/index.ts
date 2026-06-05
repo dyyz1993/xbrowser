@@ -4,7 +4,7 @@ import { z } from 'zod';
 import path from 'path';
 import fs from 'fs';
 
-type Page = import('playwright-core').Page;
+type Page = import('../types').Page;
 
 const SITE_URL = 'https://yuanbao.tencent.com';
 

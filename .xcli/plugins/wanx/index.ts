@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 
-type Page = import('playwright-core').Page;
+type Page = import('../types').Page;
 
 const WANX_PAGE = 'https://tongyi.aliyun.com/wan/explore';
 const API_BASE = 'https://wanx.biz.aliyun.com';

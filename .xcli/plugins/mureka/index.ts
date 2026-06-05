@@ -2,8 +2,8 @@ import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod';
 
-type Page = import('playwright-core').Page;
-type Response = import('playwright-core').Response;
+type Page = import('../types').Page;
+type Response = import('../types').Response;
 
 const MUREKA_URL = 'https://www.mureka.cn';
 const CREATE_URL = 'https://www.mureka.cn/create';
