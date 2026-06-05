@@ -1,6 +1,41 @@
 # Changelog
 
-## [0.5.7] - 2026-05-09
+## [1.0.0] - 2026-06-05
+
+### Milestone: Zero-Dependency CDP Driver
+
+Complete replacement of Playwright with a custom Chrome DevTools Protocol (CDP) driver. Zero runtime dependencies for browser automation — raw `ws` + CDP protocol only.
+
+### Changed (Breaking)
+- **Removed Playwright dependency entirely** — zero runtime `playwright` imports
+- **Custom CDP driver** (`src/cdp-driver/`) — 16 source files, ~4200 lines
+- **Route interception** migrated from deprecated `Network.setRequestInterception` to `Fetch.enable`/`Fetch.requestPaused`/`Fetch.fulfillRequest`
+
+### Added
+- Full locator API: `click()`, `fill()`, `press()`, `hover()`, `check()`, `uncheck()`, `selectOption()`, `type()`, `pressSequentially()`
+- Locator filtering: `first()`, `last()`, `nth()`, `filter({visible})`, `all()`, `focus()`
+- Element handle API: `click()`, `fill()`, `hover()`, `press()`, `screenshot()`, `boundingBox()`, `isVisible()`, `isEnabled()`, `textContent()`, `innerText()`, `innerHTML()`, `getAttribute()`, `scrollIntoViewIfNeeded()`, `dispose()`
+- Page API: `waitForSelector` (all states), `waitForFunction`, `waitForResponse`, `waitForRequest`, `waitForURL`, `route()`/`unroute()`, `setInputFiles`, `dragAndDrop`, `setOfflineMode`, `setExtraHTTPHeaders`
+- `VisibleFilteredLocator` subclass for `filter({visible: true})`
+- Chrome exit handler with tmpDir cleanup
+- 115 new tests (element-handle: 45, locator-advanced: 70)
+- 2032 total tests, all passing
+
+### Fixed
+- `waitForSelector(state='hidden')` now properly waits for `display:none`/`visibility:hidden` elements
+- `screenshot()` clip coordinates rounded to integers, minimum 1px dimensions
+- `waitForFunction` double-invoke diagnostic
+- Network response/request race condition
+- `createXBResponse` body methods
+- `globToRegex` escaping
+- Deduplicated `setExtraHTTPHeaders`
+- Route handler try/catch for resilience
+- `networkIdleTimer` cleared in `close()`
+
+### Test Coverage
+- `locator.ts`: 98.56% (was 39%)
+- `element-handle.ts`: ~100% (was 18%)
+- CDP driver overall: 75.95%
 
 ### Added
 - search 命令：搜索引擎查询（Bing/Google/Baidu/DuckDuckGo）

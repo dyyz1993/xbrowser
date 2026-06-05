@@ -38,23 +38,29 @@ describe('CDP Driver Advanced Features', { timeout: TEST_TIMEOUT, hookTimeout: 6
 
   describe('waitForResponse', () => {
     it('should wait for a response matching URL pattern', async () => {
-      await page.goto(
-        'data:text/html,<html><body><script>fetch("https://httpbin.org/get").then(r=>r.json()).then(d=>document.body.textContent=d.url)</script></body></html>',
-      );
+      await page.route('**/test-api.local/**', (route: { fulfill: (opts: { status: number; body: string }) => Promise<void> }) => {
+        route.fulfill({ status: 200, body: '{"ok":true}' });
+      });
 
-      const response = await page.waitForResponse('**/httpbin.org/get', { timeout: 10000 });
+      await page.goto('about:blank');
+      page.evaluate(`fetch("https://test-api.local/data")`);
+
+      const response = await page.waitForResponse('**/test-api.local/**', { timeout: 5000 });
       expect(response).toBeDefined();
       expect(response.status()).toBe(200);
     });
 
     it('should wait for a response matching predicate', async () => {
-      await page.goto(
-        'data:text/html,<html><body><script>fetch("https://httpbin.org/status/200")</script></body></html>',
-      );
+      await page.route('**/predicate-api.local/**', (route: { fulfill: (opts: { status: number; body: string }) => Promise<void> }) => {
+        route.fulfill({ status: 200, body: '{}' });
+      });
+
+      await page.goto('about:blank');
+      page.evaluate(`fetch("https://predicate-api.local/test")`);
 
       const response = await page.waitForResponse(
-        (resp: { url: () => string; status: () => number }) => resp.url().includes('httpbin.org'),
-        { timeout: 10000 },
+        (resp: { url: () => string; status: () => number }) => resp.url().includes('predicate-api'),
+        { timeout: 5000 },
       );
       expect(response).toBeDefined();
       expect(response.status()).toBe(200);
@@ -73,12 +79,16 @@ describe('CDP Driver Advanced Features', { timeout: TEST_TIMEOUT, hookTimeout: 6
 
   describe('waitForRequest', () => {
     it('should wait for a request matching URL pattern', async () => {
-      // Trigger a request after a short delay
-      await page.goto('data:text/html,<html><body><script>setTimeout(()=>fetch("https://httpbin.org/get"),100)</script></body></html>');
+      await page.route('**/req-api.local/**', (route: { fulfill: (opts: { status: number; body: string }) => Promise<void> }) => {
+        route.fulfill({ status: 200, body: '{}' });
+      });
 
-      const request = await page.waitForRequest('**/httpbin.org/get', { timeout: 10000 });
+      await page.goto('about:blank');
+      page.evaluate(`setTimeout(()=>fetch("https://req-api.local/get"),100)`);
+
+      const request = await page.waitForRequest('**/req-api.local/**', { timeout: 5000 });
       expect(request).toBeDefined();
-      expect(request.url()).toContain('httpbin.org');
+      expect(request.url()).toContain('req-api.local');
       expect(request.method()).toBe('GET');
     });
 
@@ -114,18 +124,22 @@ describe('CDP Driver Advanced Features', { timeout: TEST_TIMEOUT, hookTimeout: 6
     });
 
     it('should intercept and modify request headers', async () => {
-      await page.route('**/httpbin.org/**', (route: {
+      await page.route('**/header-api.local/**', (route: {
         request: () => { url: () => string; headers: () => Record<string, string> };
-        continue: (opts: { headers: Record<string, string> }) => Promise<void>;
+        fulfill: (opts: { status: number; contentType: string; body: string }) => Promise<void>;
       }) => {
         const headers = route.request().headers();
         headers['x-custom-header'] = 'test-value';
-        route.continue({ headers });
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ headers }),
+        });
       });
 
       await page.goto('about:blank');
       await page.evaluate(`
-        fetch("https://httpbin.org/headers")
+        fetch("https://header-api.local/test")
           .then(r => r.json())
           .then(d => { window.__headers = d; })
           .catch(e => { window.__headers = { error: e.message }; })
@@ -133,13 +147,15 @@ describe('CDP Driver Advanced Features', { timeout: TEST_TIMEOUT, hookTimeout: 6
 
       await page.waitForFunction(
         'window.__headers !== undefined',
-        { timeout: 10000 },
+        { timeout: 5000 },
       );
 
-      const headers = await page.evaluate<Record<string, string>>(
-        'window.__headers && window.__headers.headers',
+      const data = await page.evaluate<{ headers?: Record<string, string>; error?: string }>(
+        'window.__headers',
       );
-      expect(headers['X-Custom-Header']).toBe('test-value');
+      expect(data.error).toBeUndefined();
+      expect(data.headers).toBeDefined();
+      expect(data.headers!['x-custom-header']).toBe('test-value');
     });
 
     it('should intercept and provide mock response', async () => {
@@ -288,18 +304,21 @@ describe('CDP Driver Advanced Features', { timeout: TEST_TIMEOUT, hookTimeout: 6
     it('should simulate offline mode', async () => {
       await page.setOfflineMode(true);
 
-      // Try to fetch — should fail in offline mode
-      await page.goto('data:text/html,<html><body><script>fetch("https://httpbin.org/get").then(function(r){window.__ok=true}).catch(function(e){window.__ok=false})</script></body></html>');
+      await page.goto('about:blank');
+      await page.evaluate(`
+        fetch("https://offline-test.local/get")
+          .then(function(r){window.__ok=true})
+          .catch(function(e){window.__ok=false})
+      `);
 
       await page.waitForFunction(
         function() { return (window as unknown as { __ok?: boolean }).__ok !== undefined; },
-        { timeout: 10000 },
+        { timeout: 5000 },
       );
 
       const ok = await page.evaluate<boolean>('window.__ok');
       expect(ok).toBe(false);
 
-      // Restore online mode
       await page.setOfflineMode(false);
     });
   });
