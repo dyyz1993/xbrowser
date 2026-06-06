@@ -29,6 +29,16 @@ async function ensureDaemonRunning(): Promise<void> {
     _ensurePromise = null;
     throw new Error('Daemon not available');
   }
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const ready = await fetch(`${DAEMON_BASE}/health`, { signal: AbortSignal.timeout(1000) })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { status?: string } | null) => d?.status === 'ok')
+      .catch(() => false);
+    if (ready) return;
+    await new Promise(r => setTimeout(r, 200));
+  }
+  throw new Error('Daemon HTTP server not ready after 4s');
 }
 
 /**

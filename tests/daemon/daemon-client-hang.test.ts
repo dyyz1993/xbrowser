@@ -62,13 +62,20 @@ describe('ensureDaemonRunning — CLI hang prevention', () => {
   });
 
   it('should call startDaemonProcess only when health check fails all retries', async () => {
+    let daemonStarted = false;
     mockFetch.mockImplementation((url: string) => {
       if (url.includes('/health')) {
+        if (daemonStarted) {
+          return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+        }
         return Promise.reject(new Error('ECONNREFUSED'));
       }
       return Promise.resolve({ ok: true, json: () => Promise.resolve([]) });
     });
-    mockStartDaemon.mockResolvedValue({ pid: 12345, port: 9224 });
+    mockStartDaemon.mockImplementation(() => {
+      daemonStarted = true;
+      return Promise.resolve({ pid: 12345, port: 9224 });
+    });
 
     const { forwardSessionList } = await importFresh();
     await forwardSessionList();

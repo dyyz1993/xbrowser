@@ -130,10 +130,11 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
 .bar .url{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8899aa;font-size:12px}
 .bar .conn{color:#556;font-size:11px;flex-shrink:0}
 .viewport{position:fixed;top:40px;left:0;right:0;bottom:0;display:flex;align-items:flex-start;justify-content:center;overflow:hidden;background:#1a1a2e}
-.viewport.mobile-mode{bottom:35vh}
+.viewport.mobile-mode{bottom:calc(35vh + 38px)}
 .viewport canvas#screen{display:none;user-select:none;-webkit-user-drag:none}
 .waiting{color:#556;font-size:14px;text-align:center}
 .toolbar{position:fixed;left:0;right:0;top:40px;background:#16213e;border-bottom:1px solid #0f3460;display:none;flex-direction:column;z-index:90;padding:4px 6px}
+.toolbar.mobile-bottom{top:auto;bottom:35vh;border-bottom:none;border-top:1px solid #0f3460}
 .toolbar-btn{min-width:44px;height:44px;border:none;border-radius:6px;background:#0f3460;color:#cde;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .toolbar-btn:active{background:#1a5276}
 .toolbar-toggle{display:flex;align-items:center;justify-content:center;padding:2px 0}
@@ -183,6 +184,13 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
 .mode-btn{height:22px;border:none;border-radius:4px;background:#0f3460;color:#cde;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0 6px}
 .mode-btn:active{background:#1a5276}
 .viewport.tablet-mode{bottom:0;touch-action:none}
+.view-tabs{position:fixed;top:40px;left:0;right:0;display:none;z-index:95;background:#1a1a2e;border-bottom:1px solid #2a2a4e;padding:2px 4px;overflow-x:auto;white-space:nowrap;gap:2px;height:28px;align-items:center}
+.view-tabs.visible{display:flex}
+.view-tab{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:4px 4px 0 0;background:#2a2a4e;color:#8af;font-size:11px;cursor:pointer;border:none;font-family:inherit;max-width:140px;overflow:hidden;position:relative;height:28px}
+.view-tab img{width:36px;height:22px;object-fit:cover;border-radius:2px;flex-shrink:0}
+.view-tab span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.view-tab.active{background:#0f3460;color:#cde;font-weight:600}
+.view-tab:active{background:#1a5276}
 </style></head><body>
 <div class="bar">
   <span class="dot" id="status"></span>
@@ -191,6 +199,7 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
   <button class="mode-btn" id="mode-btn" title="Switch mode (Mobile/Tablet/PC)">📱</button>
   <div id="qualityBadge" class="quality-badge quality-static" style="font-size:10px;padding:2px 8px;border-radius:10px;background:#556;color:#eee;white-space:nowrap;flex-shrink:0">static</div>
 </div>
+<div class="view-tabs" id="view-tabs"></div>
 <div class="viewport" id="viewport">
   <canvas id="screen"></canvas>
   <div class="waiting" id="wait">Waiting for screencast...</div>
@@ -254,9 +263,11 @@ let connected=false;
 let remoteViewport={width:1920,height:1080};
 let viewportLocked=false;
 let originalViewport=null;
+let viewSwitching=false;
 let currentUrl='';
 let currentFocusedSelector='';
 let currentFocusedValue='';
+let suppressFocus=false;
 let deviceMode='desktop';
 let lastHoverSent=0;
 
@@ -265,6 +276,24 @@ const canvas=$('screen'),ctx=canvas.getContext('2d');wait=$('wait'),dot=$('statu
 const viewportEl=$('viewport'),cursorEl=$('cursor'),cursorLabelEl=$('cursor-label');
 const touchpadEl=$('touchpad'),toolbarEl=$('toolbar'),toolbarKeys=$('toolbar-keys');
 const inputPanel=$('input-panel'),inputField=$('input-field'),inputLabel=$('input-label');
+
+function updateLayout(){
+  var top=40;
+  if(detectedViews.length>0){viewTabsEl.style.top='40px';top=68;}
+  if(toolbarEl.classList.contains('mobile-bottom')){
+    var tbH=toolbarEl.offsetHeight||38;
+    viewportEl.style.bottom='calc(35vh + '+tbH+'px)';
+  }else{
+    viewportEl.style.bottom='';
+    if(toolbarEl.style.display==='flex'){
+      toolbarEl.style.top=top+'px';
+      var tbH2=toolbarEl.offsetHeight;
+      if(tbH2>0)top+=tbH2;else top+=38;
+    }
+  }
+  viewportEl.style.top=top+'px';
+  resizeCanvas();
+}
 
 function resizeCanvas(){
   const box=viewportEl.getBoundingClientRect();
@@ -275,22 +304,32 @@ function resizeCanvas(){
   let cw,ch;
   if(vpAspect>boxAspect){cw=bw;ch=bw/vpAspect;}
   else{ch=bh;cw=bh*vpAspect;}
-  canvas.width=cw;
-  canvas.height=ch;
+  if(canvas.width!==Math.round(cw)||canvas.height!==Math.round(ch)){
+    canvas.width=Math.round(cw);
+    canvas.height=Math.round(ch);
+  }
   canvas.style.width=cw+'px';
   canvas.style.height=ch+'px';
   canvas.style.position='absolute';
-  canvas.style.left=(box.left+(bw-cw)/2)+'px';
-  canvas.style.top=(box.top+(bh-ch)/2)+'px';
+  canvas.style.left=((bw-cw)/2)+'px';
+  canvas.style.top=((bh-ch)/2)+'px';
 }
 window.addEventListener('resize',resizeCanvas);
 resizeCanvas();
 
  function drawFrame(bitmap){
    const cw=canvas.width,ch=canvas.height;
-  if(!cw||!ch) return;
-  ctx.drawImage(bitmap,0,0,cw,ch);
-}
+   if(!cw||!ch) return;
+   ctx.drawImage(bitmap,0,0,cw,ch);
+    if(activeViewId==='main'&&!viewSwitching){
+     if(!fullPageSnapshot) fullPageSnapshot=document.createElement('canvas');
+     if(fullPageSnapshot.width!==cw||fullPageSnapshot.height!==ch){
+       fullPageSnapshot.width=cw;fullPageSnapshot.height=ch;
+     }
+     fullPageSnapshot.getContext('2d').drawImage(canvas,0,0);
+   }
+   if(detectedViews.length>0) generateThumbnails();
+ }
 
 function connectWS(){
   ws=new WebSocket(PROTO+'//'+location.host+'/preview/'+sid);
@@ -298,12 +337,19 @@ function connectWS(){
     connected=true;
     dot.className='dot ok';
     connEl.textContent='WS';
-    if(deviceMode==='desktop') createHiddenInput();
+    if(deviceMode==='desktop') createPCKeyboard();
     checkFocus();
   };
   ws.binaryType='arraybuffer';
   ws.onmessage=(e)=>{
     try{
+      if(typeof e.data==='string'){
+        var _m=JSON.parse(e.data);
+        if(_m.type==='views_update'){
+          updateViewTabs(_m.views);
+          return;
+        }
+      }
       if(e.data instanceof ArrayBuffer){
         const buf=new Uint8Array(e.data);
         const headerLen=(buf[0]<<24)|(buf[1]<<16)|(buf[2]<<8)|buf[3];
@@ -317,7 +363,7 @@ function connectWS(){
           });
           canvas.style.display='block';
           wait.style.display='none';
-          if(header.data.viewport&&!viewportLocked){remoteViewport=header.data.viewport;viewportLocked=true;resizeCanvas();}
+           if(header.data.viewport&&!viewportLocked&&!viewSwitching){remoteViewport=header.data.viewport;viewportLocked=true;resizeCanvas();}
           if(header.data.url&&header.data.url!==currentUrl){
             currentUrl=header.data.url;
             urlEl.textContent=currentUrl;
@@ -359,15 +405,23 @@ function connectWS(){
         connEl.textContent=m.data.status==='connected'?'OK':'...';
         if(m.data.message) urlEl.textContent=m.data.message;
         if(m.data.viewport){
-          if(!originalViewport) originalViewport={width:remoteViewport.width,height:remoteViewport.height};
-          remoteViewport=m.data.viewport;
-          viewportLocked=true;
+          if(viewSwitching){
+            remoteViewport=m.data.viewport;
+            viewportLocked=true;
+            viewSwitching=false;
+            if(activeViewId==='main'){originalViewport=null;}
+          }else{
+            if(!originalViewport) originalViewport={width:remoteViewport.width,height:remoteViewport.height};
+            remoteViewport=m.data.viewport;
+            viewportLocked=true;
+          }
           resizeCanvas();
         }
       }else if(m.type==='navigation'){
         currentUrl=m.url||'';
         urlEl.textContent=currentUrl;
       }else if(m.type==='input_focused'){
+        if(suppressFocus) return;
         currentFocusedSelector=m.selector||'';
         currentFocusedValue=m.value||'';
         inputLabel.textContent=(m.tag||'input')+(m.placeholder?' — '+m.placeholder:'');
@@ -403,6 +457,8 @@ function connectWS(){
           alink.href=burl;alink.download=m.fileName;alink.click();
           URL.revokeObjectURL(burl);
         }
+      }else if(m.type==='views_update'){
+        updateViewTabs(m.views);
       }
     }catch{}
   };
@@ -413,11 +469,96 @@ function connectWS(){
     urlEl.textContent='disconnected';
     wait.style.display='block';
     canvas.style.display='none';
-    removeHiddenInput();
-    if(originalViewport){remoteViewport=originalViewport;originalViewport=null;viewportLocked=false;}
+      if(originalViewport){remoteViewport=originalViewport;originalViewport=null;viewportLocked=false;}
+     viewSwitching=false;
     if(shouldReconnect) setTimeout(connectWS,2000);
   };
   ws.onerror=()=>{dot.className='dot';connEl.textContent='err'};
+}
+
+// --- View Tabs (modal/form/dialog switcher) ---
+var detectedViews=[];
+var activeViewId='main';
+var viewTabsEl=$('view-tabs');
+var fullPageSnapshot=null;
+function updateViewTabs(views){
+  detectedViews=views||[];
+  if(activeViewId!=='main'&&!detectedViews.some(function(v){return v.id===activeViewId})){
+    selectView('main');
+  }
+  renderViewTabs();
+}
+function renderViewTabs(){
+  if(detectedViews.length===0){
+    viewTabsEl.classList.remove('visible');
+    viewTabsEl.innerHTML='';
+    updateLayout();
+    return;
+  }
+  viewTabsEl.classList.add('visible');
+  updateLayout();
+  var html='<button class="view-tab'+(activeViewId==='main'?' active':'')+'" data-vid="main"><span>主页面</span></button>';
+  for(var i=0;i<detectedViews.length;i++){
+    var v=detectedViews[i];
+    var label=v.label||v.id;
+    html+='<button class="view-tab'+(activeViewId===v.id?' active':'')+'" data-vid="'+v.id+'" title="'+label+' '+v.rect.width+'x'+v.rect.height+'"><img id="vt-img-'+v.id+'" /><span>'+label+'</span></button>';
+  }
+  viewTabsEl.innerHTML=html;
+  var btns=viewTabsEl.querySelectorAll('.view-tab');
+  for(var j=0;j<btns.length;j++){
+    btns[j].addEventListener('click',function(e){
+      var t=e.target.closest('.view-tab')||e.target;
+      selectView(t.getAttribute('data-vid'));
+    });
+  }
+  generateThumbnails();
+}
+function generateThumbnails(){
+  var src=(activeViewId==='main')?canvas:fullPageSnapshot;
+  if(!src||!src.width||!src.height) return;
+  var fullVP=originalViewport||remoteViewport;
+  var scaleW=src.width/fullVP.width;
+  var scaleH=src.height/fullVP.height;
+  for(var i=0;i<detectedViews.length;i++){
+    var v=detectedViews[i];
+    var imgEl=document.getElementById('vt-img-'+v.id);
+    if(!imgEl) continue;
+    try{
+      var sx=Math.round(v.rect.x*scaleW);
+      var sy=Math.round(v.rect.y*scaleH);
+      var sw=Math.round(v.rect.width*scaleW);
+      var sh=Math.round(v.rect.height*scaleH);
+      sw=Math.max(1,Math.min(sw,src.width-sx));
+      sh=Math.max(1,Math.min(sh,src.height-sy));
+      var tw=36,th=22;
+      var tc=document.createElement('canvas');
+      tc.width=tw;tc.height=th;
+      var tctx=tc.getContext('2d');
+      tctx.drawImage(src,sx,sy,sw,sh,0,0,tw,th);
+      imgEl.src=tc.toDataURL('image/jpeg',0.5);
+    }catch(err){/* ignore */}
+  }
+}
+function selectView(vid){
+  viewSwitching=true;
+  activeViewId=vid;
+  if(vid==='main'){
+    sendMsg({type:'select_view',rect:null});
+    if(originalViewport){
+      remoteViewport={width:originalViewport.width,height:originalViewport.height};
+    }
+    viewportLocked=true;
+  }else{
+    var v=detectedViews.find(function(x){return x.id===vid});
+    if(v){
+      if(!originalViewport) originalViewport={width:remoteViewport.width,height:remoteViewport.height};
+      sendMsg({type:'select_view',rect:v.rect});
+      remoteViewport={width:v.rect.width,height:v.rect.height};
+      viewportLocked=true;
+    }
+  }
+  resizeCanvas();
+  renderViewTabs();
 }
 
  function getImgContentRect(){
@@ -510,41 +651,80 @@ window.addEventListener('beforeunload',function(){shouldReconnect=false;});
  }
 
 // --- Desktop Mouse + Keyboard ---
-let hiddenInput=null;
-function createHiddenInput(){
-  if(hiddenInput) return;
-  hiddenInput=document.createElement('input');
-  hiddenInput.id='hidden-input';
-  hiddenInput.style.cssText='position:fixed;left:-9999px;top:-9999px;opacity:0;width:1px;height:1px';
-  hiddenInput.setAttribute('autocomplete','off');
-  document.body.appendChild(hiddenInput);
-  hiddenInput.addEventListener('keydown',(e)=>{
-    if(e.target===inputField) return;
+var _pcKBInit=false;
+var _pcComposing=false;
+var pcHiddenInput=null;
+var pcLastInputValue='';
+function createPCKeyboard(){
+  if(_pcKBInit) return;
+  _pcKBInit=true;
+  pcHiddenInput=document.createElement('input');
+  pcHiddenInput.type='text';
+  pcHiddenInput.autocomplete='off';
+  pcHiddenInput.autocapitalize='off';
+  pcHiddenInput.spellcheck=false;
+  pcHiddenInput.style.cssText='position:fixed;top:-100px;left:0;width:1px;height:1px;opacity:0;border:none;outline:none;z-index:-1';
+  document.body.appendChild(pcHiddenInput);
+  pcHiddenInput.addEventListener('compositionstart',function(){
+    _pcComposing=true;
+    pcLastInputValue=pcHiddenInput.value;
+  });
+  pcHiddenInput.addEventListener('compositionend',function(){
+    _pcComposing=false;
+    var t=pcHiddenInput.value.slice(pcLastInputValue.length);
+    if(t){sendMsg({type:'input_insert_text',text:t});sendUserActivity();}
+    pcHiddenInput.value='';
+  });
+  pcHiddenInput.addEventListener('input',function(){
+    if(_pcComposing) return;
+    var t=pcHiddenInput.value;
+    if(t){sendMsg({type:'input_insert_text',text:t});sendUserActivity();}
+    pcHiddenInput.value='';
+  });
+  document.addEventListener('keydown',function(e){
+    if(deviceMode!=='desktop') return;
+    if(e.isComposing||_pcComposing) return;
+    var tag=e.target&&e.target.tagName;
+    if(tag==='INPUT'||tag==='TEXTAREA') return;
+    var key=e.key;
+    if(!key) return;
     e.preventDefault();
-    sendMsg({type:'input_keyboard',action:'down',key:e.key});
+    sendMsg({type:'input_keyboard',action:'down',key:key});
+    if(key.length===1){
+      sendMsg({type:'input_insert_text',text:key});
+    }
     sendUserActivity();
   });
-  hiddenInput.addEventListener('keyup',(e)=>{
-    if(e.target===inputField) return;
+  document.addEventListener('keyup',function(e){
+    if(deviceMode!=='desktop') return;
+    if(e.isComposing||_pcComposing) return;
+    var tag=e.target&&e.target.tagName;
+    if(tag==='INPUT'||tag==='TEXTAREA') return;
+    var key=e.key;
+    if(!key) return;
     e.preventDefault();
-    sendMsg({type:'input_keyboard',action:'up',key:e.key});
+    sendMsg({type:'input_keyboard',action:'up',key:key});
     sendUserActivity();
   });
 }
-function removeHiddenInput(){
-  if(hiddenInput){hiddenInput.remove();hiddenInput=null;}
-}
-function focusHiddenInput(){
-  if(hiddenInput&&document.activeElement!==inputField) hiddenInput.focus();
+function removePCKeyboard(){}
+function pcFocusHiddenInput(){
+  if(deviceMode==='desktop'&&pcHiddenInput&&document.activeElement!==pcHiddenInput){
+    var tag=document.activeElement&&document.activeElement.tagName;
+    if(tag!=='INPUT'&&tag!=='TEXTAREA'){
+      pcHiddenInput.focus({preventScroll:true});
+    }
+  }
 }
 
 viewportEl.addEventListener('mousedown',(e)=>{
   if(deviceMode!=='desktop') return;
+  suppressFocus=false;
   const r=viewerToRemote(e.clientX,e.clientY);
   sendMsg({type:'input_mouse',action:'down',x:r.x,y:r.y});
   setCursorAtRemote(r.x,r.y,'click');
-  focusHiddenInput();
   sendUserActivity();
+  setTimeout(pcFocusHiddenInput,100);
 });
 viewportEl.addEventListener('mousemove',(e)=>{
   if(deviceMode!=='desktop') return;
@@ -585,15 +765,11 @@ let tpLongPressTimer=null;
 let tpIsDragging=false;
 let tpIsScrolling=false;
 let tpScrollCooldown=false;
+let tpTotalDist=0;
 let tpCursorRemote={x:Math.round(remoteViewport.width/2),y:Math.round(remoteViewport.height/2)};
 
-function computeAcceleration(velocity){
-  if(velocity<0.2) return 1.0;
-  if(velocity<0.5) return 1.8;
-  if(velocity<1.0) return 3.0;
-  if(velocity<2.0) return 5.0;
-  if(velocity<4.0) return 8.0;
-  return 12.0;
+function computeAccel(velocity){
+  return 1+Math.min(velocity*0.6,2.5);
 }
 function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
 
@@ -608,10 +784,12 @@ function tpShowGesture(text){
 touchpadEl.addEventListener('touchstart',(e)=>{
   e.preventDefault();
   if(tpScrollCooldown) return;
+  suppressFocus=false;
   sendUserActivity();
   const t=e.touches[0];
   tpStartPos={x:t.clientX,y:t.clientY};
   tpStartTime=Date.now();
+  tpTotalDist=0;
   if(e.touches.length===1){
     tpLongPressTimer=setTimeout(()=>{
       tpIsDragging=true;
@@ -634,11 +812,13 @@ touchpadEl.addEventListener('touchmove',(e)=>{
     const dt=Math.max(now-tpStartTime,1);
     const dist=Math.sqrt(dx*dx+dy*dy);
     const velocity=dist/dt;
-    const accel=computeAcceleration(velocity);
+    const accel=computeAccel(velocity);
+    tpTotalDist+=dist;
     const rect=touchpadEl.getBoundingClientRect();
-    const sf=remoteViewport.width/(rect.width||300)*0.15;
-    tpCursorRemote.x=clamp(tpCursorRemote.x+dx*accel*sf,0,remoteViewport.width);
-    tpCursorRemote.y=clamp(tpCursorRemote.y+dy*accel*sf,0,remoteViewport.height);
+    const sfx=remoteViewport.width/(rect.width||300)*0.6;
+    const sfy=remoteViewport.height/(rect.height||200)*0.6;
+    tpCursorRemote.x=clamp(tpCursorRemote.x+dx*accel*sfx,0,remoteViewport.width);
+    tpCursorRemote.y=clamp(tpCursorRemote.y+dy*accel*sfy,0,remoteViewport.height);
     setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,tpIsDragging?'drag':'moving');
     sendMsg({type:'input_mouse',action:'move',x:Math.round(tpCursorRemote.x),y:Math.round(tpCursorRemote.y)});
     tpStartPos={x:t.clientX,y:t.clientY};
@@ -663,7 +843,7 @@ touchpadEl.addEventListener('touchend',(e)=>{
     tpIsDragging=false;
     sendMsg({type:'input_mouse',action:'up',x:Math.round(tpCursorRemote.x),y:Math.round(tpCursorRemote.y)});
     setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'idle');
-  }else if(e.touches.length===0&&!tpIsScrolling&&tpStartPos){
+  }else if(e.touches.length===0&&!tpIsScrolling&&tpStartPos&&tpTotalDist<15){
     sendMsg({type:'input_mouse',action:'click',x:Math.round(tpCursorRemote.x),y:Math.round(tpCursorRemote.y)});
     setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'click');
     setTimeout(()=>setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'idle'),150);
@@ -680,20 +860,22 @@ touchpadEl.addEventListener('touchend',(e)=>{
 viewportEl.addEventListener('touchstart',(e)=>{
   if(deviceMode!=='tablet') return;
   e.preventDefault();
+  suppressFocus=false;
   sendUserActivity();
   const t=e.touches[0];
   if(e.touches.length===1){
     const r=viewerToRemote(t.clientX,t.clientY);
     tpCursorRemote.x=clamp(r.x,0,remoteViewport.width);
     tpCursorRemote.y=clamp(r.y,0,remoteViewport.height);
-    setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'click');
-    sendMsg({type:'input_mouse',action:'down',x:tpCursorRemote.x,y:tpCursorRemote.y});
-    tpStartTime=Date.now();
+    tpStartPos={x:t.clientX,y:t.clientY};
+    tpTotalDist=0;
+    setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'moving');
     tpIsDragging=false;
     tpLongPressTimer=setTimeout(()=>{
       tpIsDragging=true;
       tpShowGesture('DRAG');
       setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'drag');
+      sendMsg({type:'input_mouse',action:'down',x:tpCursorRemote.x,y:tpCursorRemote.y});
     },500);
   }
 },{passive:false});
@@ -704,6 +886,12 @@ viewportEl.addEventListener('touchmove',(e)=>{
     clearTimeout(tpLongPressTimer);
     const t=e.touches[0];
     const r=viewerToRemote(t.clientX,t.clientY);
+    if(tpStartPos){
+      const dx=t.clientX-tpStartPos.x;
+      const dy=t.clientY-tpStartPos.y;
+      tpTotalDist+=Math.sqrt(dx*dx+dy*dy);
+      tpStartPos={x:t.clientX,y:t.clientY};
+    }
     tpCursorRemote.x=clamp(r.x,0,remoteViewport.width);
     tpCursorRemote.y=clamp(r.y,0,remoteViewport.height);
     setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,tpIsDragging?'drag':'moving');
@@ -734,8 +922,8 @@ viewportEl.addEventListener('touchend',(e)=>{
     tpIsDragging=false;
     sendMsg({type:'input_mouse',action:'up',x:tpCursorRemote.x,y:tpCursorRemote.y});
     setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'idle');
-  }else if(e.touches.length===0&&!tpIsScrolling){
-    sendMsg({type:'input_mouse',action:'up',x:tpCursorRemote.x,y:tpCursorRemote.y});
+  }else if(e.touches.length===0&&!tpIsScrolling&&tpTotalDist<15){
+    sendMsg({type:'input_mouse',action:'click',x:tpCursorRemote.x,y:tpCursorRemote.y});
     setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'click');
     setTimeout(()=>setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'idle'),150);
   }
@@ -750,6 +938,7 @@ const toggleBtn=$('toolbar-toggle-btn');
 toggleBtn.addEventListener('click',()=>{
   const open=toolbarKeys.classList.toggle('open');
   toggleBtn.textContent=open?'\u2212':'+';
+  updateLayout();
 });
 toolbarKeys.addEventListener('click',(e)=>{
   const btn=e.target.closest('[data-key]');
@@ -767,11 +956,15 @@ function showInputPanel(val){
   toolbarEl.style.display='none';
   viewportEl.classList.remove('mobile-mode');
   viewportEl.classList.remove('tablet-mode');
+  updateLayout();
   inputField.value=val||'';
   setTimeout(()=>inputField.focus(),50);
 }
 function hideInputPanel(){
   inputPanel.style.display='none';
+  suppressFocus=true;
+  sendMsg({type:'input_blur'});
+  currentFocusedSelector='';
   if(deviceMode==='mobile'){
     touchpadEl.style.display='flex';
     toolbarEl.style.display='flex';
@@ -779,6 +972,7 @@ function hideInputPanel(){
   }else if(deviceMode==='tablet'){
     viewportEl.classList.add('tablet-mode');
   }
+  updateLayout();
   inputField.blur();
 }
 function syncInputValue(){
@@ -801,6 +995,13 @@ $('input-send').addEventListener('click',()=>{
 });
 inputField.addEventListener('keydown',(e)=>{
   if(e.key==='Escape'){hideInputPanel();e.preventDefault();}
+  if(e.key==='Enter'){
+    e.preventDefault();
+    syncInputValue();
+    sendMsg({type:'input_keyboard',action:'down',key:'Enter'});
+    sendMsg({type:'input_keyboard',action:'up',key:'Enter'});
+    hideInputPanel();
+  }
 });
 
 // --- Device Mode ---
@@ -821,20 +1022,24 @@ function applyMode(mode){
   viewportEl.classList.remove('mobile-mode','tablet-mode');
   touchpadEl.style.display='none';
   toolbarEl.style.display='none';
+  toolbarEl.classList.remove('mobile-bottom');
+  toolbarEl.style.top='';
   inputPanel.style.display='none';
   cursorEl.style.display='none';
-  removeHiddenInput();
+  removePCKeyboard();
   if(mode==='mobile'){
     touchpadEl.style.display='flex';
     toolbarEl.style.display='flex';
+    toolbarEl.classList.add('mobile-bottom');
     viewportEl.classList.add('mobile-mode');
   }else if(mode==='tablet'){
     viewportEl.classList.add('tablet-mode');
     setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'idle');
   }else{
-    createHiddenInput();
+    createPCKeyboard();
+    setTimeout(pcFocusHiddenInput,50);
   }
-  resizeCanvas();
+  updateLayout();
 }
 var manualMode=false;
 function cycleMode(){
@@ -879,11 +1084,12 @@ $('file-close').addEventListener('click',()=>{
   }else if(deviceMode==='tablet'){
     viewportEl.classList.add('tablet-mode');
   }
+  updateLayout();
 });
 
 const fileBtn=document.createElement('button');
 fileBtn.className='toolbar-btn';
-fileBtn.textContent='F';
+fileBtn.textContent='📁';
 fileBtn.title='Files';
 fileBtn.addEventListener('click',()=>{
   if(filePanel.style.display==='flex'){

@@ -28,7 +28,14 @@ export type WSMessage =
   | { type: 'file_upload_result'; success: boolean; fileName: string; error?: string }
   | { type: 'file_list_result'; path: string; files: Array<{ name: string; isDir: boolean; size: number; modified: string }>; error?: string }
   | { type: 'file_download_result'; fileName: string; mimeType: string; data: string; error?: string }
+  | { type: 'views_update'; views: ViewInfo[] }
   | { type: 'error'; data: { code: string; message: string; availableSessions?: string[] } };
+
+export interface ViewInfo {
+  id: string;
+  label: string;
+  rect: { x: number; y: number; width: number; height: number };
+}
 
 /**
  * Inbound WebSocket message types received from clients.
@@ -48,7 +55,9 @@ export type WSInboundMessage =
   | { type: 'file_list'; path: string }
   | { type: 'file_download'; path: string }
   | { type: 'focus_element'; selector: string }
-  | { type: 'focus_clear' };
+  | { type: 'focus_clear' }
+  | { type: 'input_blur' }
+  | { type: 'select_view'; rect: { x: number; y: number; width: number; height: number } | null };
 
   /**
    * A screencast frame message with binary image data.
@@ -108,6 +117,8 @@ interface SessionScreencast {
   page: Page;
   clientCount: number;
   focusPoll?: ReturnType<typeof setInterval>;
+  lastFocusKey?: string;
+  elementScan?: ReturnType<typeof setInterval>;
 }
 
 /**
@@ -144,34 +155,38 @@ export class WSServer extends EventEmitter {
     this.stateManager.setStateChangeCallback((newState: StreamState, _previousState: StreamState) => {
       if (this.lastFrameData && this.lastFrameViewport) {
         const config = STATE_CONFIGS[newState];
-        this.frameProcessor.process(
-          this.lastFrameData,
-          config,
-          this.lastFrameViewport.width,
-          this.lastFrameViewport.height,
-        ).then(async (processedBuffer) => {
-          const actualViewport = this.lastFrameViewport!;
-          for (const [sid, sc] of this.screencasts) {
-            if (sc.clientCount > 0) {
-              const header = Buffer.from(JSON.stringify({
-                type: 'screenshot',
-                data: {
-                  sessionId: sid,
-                  id: crypto.randomUUID(),
-                  timestamp: Date.now(),
-                  url: '',
-                  viewport: actualViewport,
-                  streamState: newState,
-                  fps: this.frameRateController.getCurrentFps(),
-                },
-              }), 'utf-8');
-              const headerLen = Buffer.alloc(4);
-              headerLen.writeUInt32BE(header.length, 0);
-              const payload = Buffer.concat([headerLen, header, processedBuffer]);
-              this.broadcastBinaryToSession(sid, payload);
-            }
-          }
-        }).catch(() => {});
+        for (const [sid, sc] of this.screencasts) {
+          if (sc.clientCount <= 0) continue;
+          const crop = this.sessionCrops.get(sid);
+          const cropConfig: CropConfig | undefined = crop ? crop.box : undefined;
+          const effectiveViewport = crop
+            ? { width: crop.box.width, height: crop.box.height }
+            : this.lastFrameViewport!;
+          this.frameProcessor.process(
+            this.lastFrameData,
+            config,
+            effectiveViewport.width,
+            effectiveViewport.height,
+            cropConfig,
+          ).then((processedBuffer) => {
+            const header = Buffer.from(JSON.stringify({
+              type: 'screenshot',
+              data: {
+                sessionId: sid,
+                id: crypto.randomUUID(),
+                timestamp: Date.now(),
+                url: '',
+                viewport: effectiveViewport,
+                streamState: newState,
+                fps: this.frameRateController.getCurrentFps(),
+              },
+            }), 'utf-8');
+            const headerLen = Buffer.alloc(4);
+            headerLen.writeUInt32BE(header.length, 0);
+            const payload = Buffer.concat([headerLen, header, processedBuffer]);
+            this.broadcastBinaryToSession(sid, payload);
+          }).catch(() => {});
+        }
       }
     });
   }
@@ -236,29 +251,27 @@ export class WSServer extends EventEmitter {
     });
 
      const injectFocusListeners = () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (window as any).__xb_focus_fn = () => {
-      document.addEventListener('focusin', (e) => {
-        const el = e.target as HTMLElement;
-        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.contentEditable === 'true') {
-          const info: { selector: string; tag: string; value: string; placeholder: string } = {
-            selector: '',
-            tag: el.tagName,
-            value: (el as HTMLInputElement).value || '',
-            placeholder: (el as HTMLInputElement).placeholder || '',
-          };
-          if (el.id) info.selector = '#' + el.id;
-          else if (el.getAttribute('name')) info.selector = '[name="' + el.getAttribute('name') + '"]';
-          else info.selector = el.tagName.toLowerCase();
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (window as any).__xb_last_focused = info;
-        }
-      }, true);
-      document.addEventListener('focusout', () => {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (window as any).__xb_last_focused = null;
-      }, true);
-     }; };
+       document.addEventListener('focusin', (e) => {
+         const el = e.target as HTMLElement;
+         if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.contentEditable === 'true') {
+           const info: { selector: string; tag: string; value: string; placeholder: string } = {
+             selector: '',
+             tag: el.tagName,
+             value: (el as HTMLInputElement).value || '',
+             placeholder: (el as HTMLInputElement).placeholder || '',
+           };
+           if (el.id) info.selector = '#' + el.id;
+           else if (el.getAttribute('name')) info.selector = '[name="' + el.getAttribute('name') + '"]';
+           else info.selector = el.tagName.toLowerCase();
+           // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           (window as any).__xb_last_focused = info;
+         }
+       }, true);
+       document.addEventListener('focusout', () => {
+         // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         (window as any).__xb_last_focused = null;
+       }, true);
+     };
      page.evaluate(injectFocusListeners).catch(() => {});
 
       // Re-inject focus listeners after navigation (page.evaluate listeners are lost on navigation)
@@ -270,35 +283,76 @@ export class WSServer extends EventEmitter {
       const sc = this.screencasts.get(sessionId);
       if (!sc || !this.getSessionClientCount(sessionId)) return;
        try {
-         type FocusInfo = { focused: boolean; selector?: string; value?: string; tag?: string; placeholder?: string };
-          const info: FocusInfo = await page.evaluate(() => {
-            // Check __xb_last_focused first, then fallback to activeElement
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const f = (window as any).__xb_last_focused;
-           if (f) return { focused: true, ...(f as Record<string, string>) };
-           // Fallback: check document.activeElement directly
-           const active = document.activeElement as HTMLElement | null;
-           if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.contentEditable === 'true')) {
-             const sel = active.id ? '#' + active.id : (active.getAttribute('name') ? '[name="' + active.getAttribute('name') + '"]' : active.tagName.toLowerCase());
-             return {
-               focused: true,
-               selector: sel,
-               tag: active.tagName,
-               value: (active as HTMLInputElement).value || '',
-               placeholder: (active as HTMLInputElement).placeholder || '',
-             };
-           }
-           return { focused: false };
-         });
-         if (info.focused && info.selector) {
-           this.broadcastToSession(sessionId, { type: 'input_focused', selector: info.selector, value: info.value || '', tag: info.tag || '', placeholder: info.placeholder });
-         } else {
-           this.broadcastToSession(sessionId, { type: 'input_blur', selector: '' });
-         }
-       } catch { /* ignore evaluate errors */ }
-    }, 500);
+          type FocusInfo = { focused: boolean; selector?: string; value?: string; tag?: string; placeholder?: string };
+           const info: FocusInfo = await page.evaluate(() => {
+             // Check __xb_last_focused first, then fallback to activeElement
+             // eslint-disable-next-line @typescript-eslint/no-explicit-any
+             const f = (window as any).__xb_last_focused;
+            if (f) return { focused: true, ...(f as Record<string, string>) };
+            // Fallback: check document.activeElement directly
+            const active = document.activeElement as HTMLElement | null;
+            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.contentEditable === 'true')) {
+              const sel = active.id ? '#' + active.id : (active.getAttribute('name') ? '[name="' + active.getAttribute('name') + '"]' : active.tagName.toLowerCase());
+              return {
+                focused: true,
+                selector: sel,
+                tag: active.tagName,
+                value: (active as HTMLInputElement).value || '',
+                placeholder: (active as HTMLInputElement).placeholder || '',
+              };
+            }
+            return { focused: false };
+          });
+          const focusKey = info.focused ? (info.selector || 'unknown') : '';
+          if (focusKey === sc.lastFocusKey) return;
+          sc.lastFocusKey = focusKey;
+          if (info.focused && info.selector) {
+            this.broadcastToSession(sessionId, { type: 'input_focused', selector: info.selector, value: info.value || '', tag: info.tag || '', placeholder: info.placeholder });
+          } else {
+            this.broadcastToSession(sessionId, { type: 'input_blur', selector: '' });
+          }
+        } catch { /* ignore evaluate errors */ }
+     }, 500);
 
-    this.screencasts.get(sessionId)!.focusPoll = focusPoll;
+     this.screencasts.get(sessionId)!.focusPoll = focusPoll;
+
+    // Periodic element scan for modal/form/dialog detection (every 3s)
+    const elementScan = setInterval(async () => {
+      const sc2 = this.screencasts.get(sessionId);
+      if (!sc2 || !this.getSessionClientCount(sessionId)) return;
+      try {
+        type ElInfo = { tag: string; id: string; cls: string; rect: { x: number; y: number; width: number; height: number } };
+        const elements: ElInfo[] = await page.evaluate(() => {
+          const sel = '[role="dialog"],dialog,[class*="modal"],[class*="popup"],[class*="overlay"],[class*="drawer"],form';
+          const els = document.querySelectorAll(sel);
+          const results: ElInfo[] = [];
+          const vpW = window.innerWidth, vpH = window.innerHeight;
+          for (const el of els) {
+            const r = el.getBoundingClientRect();
+            if (r.width < 50 || r.height < 30) continue;
+            // Skip if covers >90% of viewport (it's the main content)
+            if (r.width * r.height > vpW * vpH * 0.9) continue;
+            const style = window.getComputedStyle(el);
+            if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
+            const htmlEl = el as HTMLElement;
+            results.push({
+              tag: el.tagName,
+              id: el.id || '',
+              cls: (typeof htmlEl.className === 'string' ? htmlEl.className : '').slice(0, 40),
+              rect: { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) },
+            });
+          }
+          return results;
+        });
+        const views: ViewInfo[] = elements.map((e, i) => ({
+          id: 'el-' + i + '-' + (e.id || e.tag),
+          label: e.id || e.cls || e.tag,
+          rect: e.rect,
+        }));
+        this.broadcastToSession(sessionId, { type: 'views_update', views });
+      } catch { /* ignore */ }
+    }, 3000);
+    this.screencasts.get(sessionId)!.elementScan = elementScan;
 
     for (const [clientId, client] of this.clients) {
       if (client.requestedSessionId === sessionId && !client.sessionId) {
@@ -318,6 +372,9 @@ export class WSServer extends EventEmitter {
       }
       if (sc.focusPoll) {
         clearInterval(sc.focusPoll);
+      }
+      if (sc.elementScan) {
+        clearInterval(sc.elementScan);
       }
       this.screencasts.delete(sessionId);
     }
@@ -603,12 +660,16 @@ export class WSServer extends EventEmitter {
     const page = client?.sessionId
       ? this.screencasts.get(client.sessionId)?.page ?? null
       : null;
+    // Adjust coordinates for active crop (sub-view offset)
+    const crop = client?.sessionId ? this.sessionCrops.get(client.sessionId) : undefined;
+    const ox = crop ? crop.box.x : 0;
+    const oy = crop ? crop.box.y : 0;
 
     switch (msg.type) {
       case 'click':
         this.stateManager.onUserInteraction();
         if (page) {
-          await page.mouse.click(msg.x, msg.y, { button: msg.button || 'left' });
+          await page.mouse.click(msg.x + ox, msg.y + oy, { button: msg.button || 'left' });
         }
         break;
 
@@ -645,11 +706,11 @@ export class WSServer extends EventEmitter {
         const p = this.getClientPage(clientId);
         if (!p) break;
         switch (msg.action) {
-          case 'move': await p.mouse.move(msg.x, msg.y); break;
+          case 'move': await p.mouse.move(msg.x + ox, msg.y + oy); break;
           case 'down': await p.mouse.down({ button: msg.button || 'left' }); break;
           case 'up': await p.mouse.up({ button: msg.button || 'left' }); break;
           case 'click': {
-            await p.mouse.click(msg.x, msg.y, { button: msg.button || 'left' });
+            await p.mouse.click(msg.x + ox, msg.y + oy, { button: msg.button || 'left' });
             // Focus the element under the click point and set __xb_last_focused
             // (mouse.click doesn't auto-focus or trigger focusin in CDP mode)
             try {
@@ -672,7 +733,7 @@ export class WSServer extends EventEmitter {
                      (window as any).__xb_last_focused = info;
                   }
                 }
-              }, { x: msg.x, y: msg.y });
+              }, { x: msg.x + ox, y: msg.y + oy });
             } catch (err) {
               this.emit('error', new Error(`focus-after-click failed: ${err}`));
             }
@@ -830,6 +891,52 @@ export class WSServer extends EventEmitter {
             Date.now(),
             '',
           );
+        }
+        break;
+      }
+
+      case 'select_view': {
+        const sid = client?.sessionId || '';
+        if (!msg.rect) {
+          this.sessionCrops.delete(sid);
+          if (this.lastFrameViewport) {
+            this.broadcastToSession(sid, {
+              type: 'status',
+              data: { status: 'connected', viewport: this.lastFrameViewport },
+            });
+          }
+        } else {
+          this.sessionCrops.set(sid, { selector: 'view', box: msg.rect });
+          this.broadcastToSession(sid, {
+            type: 'status',
+            data: { status: 'connected', viewport: { width: msg.rect.width, height: msg.rect.height } },
+          });
+        }
+        if (this.lastFrameData && this.lastFrameViewport) {
+          await this.processAndBroadcast(
+            this.lastFrameData,
+            this.lastFrameViewport,
+            sid,
+            sid,
+            crypto.randomUUID(),
+            Date.now(),
+            '',
+          );
+        }
+        break;
+      }
+
+      case 'input_blur': {
+        const sid = client?.sessionId || '';
+        const sc = this.screencasts.get(sid);
+        if (sc?.page) {
+          sc.lastFocusKey = '';
+          try {
+            await sc.page.evaluate(() => {
+              (document.activeElement as HTMLElement)?.blur();
+              (window as unknown as Record<string, unknown>).__xb_last_focused = null;
+            });
+          } catch { /* ignore */ }
         }
         break;
       }
