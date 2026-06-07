@@ -549,6 +549,13 @@ export default function (xcli: XCLIAPI): void {
     name: 'backlink-auto',
     url: 'https://omnivideo.net',
     requiresLogin: true,
+    loginConfig: {
+      requiresLogin: true,
+      loginKeywords: ['登录', 'login', 'sign in'],
+      loginSelectors: ['a[href*="login"]', 'a[href*="passport"]', 'a[href*="signin"]'],
+      loggedInSelectors: [],
+      loginUrls: ['/login', '/signin', '/auth'],
+    },
     description: '自动注册+提交外链（CDP安全模式，逐站执行）',
   });
 

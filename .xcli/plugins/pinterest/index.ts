@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import { detectAntiBot } from '../../../src/anti-bot-detection.js';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -63,6 +64,11 @@ export default function (xcli: XCLIAPI): void {
         await page.goto(`https://www.pinterest.com/search/pins/?q=${encodeURIComponent(params.query)}`, { waitUntil: 'networkidle', timeout: params.timeout });
         await page.waitForTimeout(3000);
 
+        const antiBotResult = await detectAntiBot(page);
+        if (antiBotResult.detected) {
+          return fail(`${antiBotResult.message}。请使用 --cdp http://localhost:9221 连接真实浏览器重试`);
+        }
+
         const currentUrl = page.url();
         if (currentUrl.includes('/login') || currentUrl.includes('/signup')) {
           return fail('Pinterest 需要登录。请使用 --cdp http://localhost:9221 连接带登录态的浏览器');
@@ -93,7 +99,13 @@ export default function (xcli: XCLIAPI): void {
         }, params.limit);
 
         return ok({ query: params.query, engine: 'pinterest', results, total: results.length, timestamp: Date.now() }, [`Pinterest "${params.query}"，共 ${results.length} 张`]);
-      } catch (error) { return fail(error instanceof Error ? error.message : '未知错误'); }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : '未知错误';
+        if (msg.includes('timeout') || msg.includes('Timeout') || msg.includes('net::')) {
+          return fail(`请求超时或网络错误: ${msg}。可尝试 --cdp http://localhost:9221 连接真实浏览器`);
+        }
+        return fail(`搜索失败: ${msg}。可尝试 --cdp http://localhost:9221 连接真实浏览器`);
+      }
     },
   });
 }

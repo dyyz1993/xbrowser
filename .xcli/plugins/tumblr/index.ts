@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import { detectAntiBot } from '../../../src/anti-bot-detection.js';
 
 export default function (xcli: XCLIAPI): void {
   const tumblr = xcli.createSite({
@@ -48,6 +49,11 @@ export default function (xcli: XCLIAPI): void {
         const url = `https://www.tumblr.com/search/${encodeURIComponent(params.query)}`;
         await page.goto(url, { waitUntil: 'networkidle', timeout: params.timeout });
         await page.waitForTimeout(6000);
+
+        const antiBotResult = await detectAntiBot(page);
+        if (antiBotResult.detected) {
+          return fail(`${antiBotResult.message}。请使用 --cdp http://localhost:9221 连接真实浏览器重试`);
+        }
         for (let i = 0; i < 5; i++) {
           await page.evaluate(() => window.scrollBy(0, window.innerHeight));
           await page.waitForTimeout(1200);
@@ -89,7 +95,11 @@ export default function (xcli: XCLIAPI): void {
             timestamp: Date.now(),
           });
       } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误');
+        const msg = error instanceof Error ? error.message : '未知错误';
+        if (msg.includes('timeout') || msg.includes('Timeout') || msg.includes('net::')) {
+          return fail(`请求超时或网络错误: ${msg}。可尝试 --cdp http://localhost:9221 连接真实浏览器`);
+        }
+        return fail(`搜索失败: ${msg}。可尝试 --cdp http://localhost:9221 连接真实浏览器`);
       }
     },
   });

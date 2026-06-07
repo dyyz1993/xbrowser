@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import { detectAntiBot } from '../../../src/anti-bot-detection.js';
 
 function buildCdpTips(ctx: Record<string, unknown>): string[] {
   const cdpEndpoint = ctx.cdpEndpoint as string | undefined;
@@ -97,6 +98,14 @@ export default function (xcli: XCLIAPI): void {
           timeout: 15000,
         });
         await page.waitForSelector('h3', { timeout: 5000 }).catch(() => {});
+
+        const antiBot = await detectAntiBot(page).catch(() => ({ detected: false } as const));
+        if (antiBot.detected) {
+          return fail(`Baidu blocked the request (detected anti-bot: ${antiBot.type})`, [
+            ...cdpTips,
+            '建议使用 --cdp 连接真实浏览器以绕过检测',
+          ]);
+        }
 
         const pageResults = await page.evaluate((pNum: number) => {
           const results: Array<{
@@ -216,6 +225,14 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForLoadState('networkidle');
         await page.waitForTimeout(2000);
 
+        const antiBot = await detectAntiBot(page).catch(() => ({ detected: false } as const));
+        if (antiBot.detected) {
+          return fail(`Baidu hotsearch blocked (detected anti-bot: ${antiBot.type})`, [
+            ...cdpTips,
+            '建议使用 --cdp 连接真实浏览器以绕过检测',
+          ]);
+        }
+
         const items = await page.evaluate(() => {
           const results: Array<{
             rank: number;
@@ -317,6 +334,14 @@ export default function (xcli: XCLIAPI): void {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForLoadState('networkidle');
 
+        const antiBot = await detectAntiBot(page).catch(() => ({ detected: false } as const));
+        if (antiBot.detected) {
+          return fail(`Baidu news blocked (detected anti-bot: ${antiBot.type})`, [
+            ...cdpTips,
+            '建议使用 --cdp 连接真实浏览器以绕过检测',
+          ]);
+        }
+
         const news = await page.evaluate((maxItems: number) => {
           const items: Array<{
             title: string;
@@ -403,6 +428,14 @@ export default function (xcli: XCLIAPI): void {
         });
         await page.waitForTimeout(3000);
         await dismissBaiduDialogs(page);
+
+        const antiBot = await detectAntiBot(page).catch(() => ({ detected: false } as const));
+        if (antiBot.detected) {
+          return fail(`Baidu SEO rank blocked (detected anti-bot: ${antiBot.type})`, [
+            ...cdpTips,
+            '建议使用 --cdp 连接真实浏览器以绕过检测',
+          ]);
+        }
 
         for (let pageNum = 1; pageNum <= pages; pageNum++) {
           if (pageNum > 1) {

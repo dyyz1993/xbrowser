@@ -107,7 +107,7 @@ describe('tumblr plugin', () => {
       ctx.page.goto = vi.fn(() => { throw new Error('Navigation failed'); });
       const result = await handler({ query: 'cats' }, ctx);
       expect((result as Record<string, unknown>).data).toBeNull();
-      expect((result as Record<string, unknown>).message).toBe('Navigation failed');
+      expect((result as Record<string, unknown>).message).toContain('Navigation failed');
     });
   });
 

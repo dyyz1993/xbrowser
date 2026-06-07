@@ -8,6 +8,13 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://s.weibo.com',
     description: '微博图片搜索',
     requiresLogin: true,
+    loginConfig: {
+      requiresLogin: true,
+      loginKeywords: ['登录', 'login', 'sign in'],
+      loginSelectors: ['a[href*="login"]', 'a[href*="passport"]', 'a[href*="signin"]', '.W_login_form'],
+      loggedInSelectors: ['[class*="avatar"]', '[class*="W_face"]', '[class*="user"]'],
+      loginUrls: ['/login', '/passport'],
+    },
   });
 
   weibo.command('search-image', {

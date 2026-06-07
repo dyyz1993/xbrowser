@@ -823,6 +823,13 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://multi-engine',
     description: 'GEO 外链排名分析 - 多引擎数据采集、域名排名、企业排名、趋势分析 (v2.0 SSE+DOM)',
     requiresLogin: true,
+    loginConfig: {
+      requiresLogin: true,
+      loginKeywords: ['登录', 'login', 'sign in'],
+      loginSelectors: ['a[href*="login"]', 'a[href*="passport"]', 'a[href*="signin"]'],
+      loggedInSelectors: ['[contenteditable="true"]', 'textarea', '[role="textbox"]'],
+      loginUrls: ['/login', '/auth', '/passport'],
+    },
     isLogin: async () => true,
   });
 
