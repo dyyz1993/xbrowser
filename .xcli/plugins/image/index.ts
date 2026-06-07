@@ -141,7 +141,7 @@ export default function (xcli: XCLIAPI): void {
     }),
     result: z.object({ query: z.string(), engines: z.array(z.string()), results: z.array(z.object({ title: z.string(), thumbnailUrl: z.string(), sourceUrl: z.string(), originalUrl: z.string(), width: z.number(), height: z.number(), fileSize: z.string().optional(), format: z.string().optional(), sourceSite: z.string() })), total: z.number(), download: z.object({ downloaded: z.number(), failed: z.number(), files: z.array(z.string()) }).optional(), errors: z.array(z.object({ engine: z.string(), error: z.string() })).optional(), timestamp: z.number(), content: z.string().optional() }).passthrough(),
     handler: async (params, ctx) => {
-      const { launch } = await import('../../src/cdp-driver/index.js');
+      const { launch } = await import('../../../src/cdp-driver/index.js');
 
       const getSite = (name: string) => xcli.createSite({ name, url: '' });
 

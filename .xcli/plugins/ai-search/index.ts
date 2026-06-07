@@ -450,7 +450,7 @@ async function extractSourcesFromDOM(page: Page, config: EngineConfig): Promise<
 }
 
 async function createBrowserContext(cdpEndpoint?: string): Promise<{ browser: import('../types').Browser; context: import('../types').BrowserContext }> {
-  const { launch } = await import('../../src/cdp-driver/index.js');
+  const { launch } = await import('../../../src/cdp-driver/index.js');
   let browser: import('../types').Browser;
   let context: import('../types').BrowserContext;
   if (cdpEndpoint) {

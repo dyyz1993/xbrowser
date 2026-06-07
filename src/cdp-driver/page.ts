@@ -865,7 +865,11 @@ export class XBPageImpl implements XBPage {
           url: p.response.url,
           headers: p.response.headers,
         });
-        this._emit('response', p);
+        this._emit('response', createXBResponse(
+          { requestId: p.requestId, status: p.response.status, url: p.response.url, headers: p.response.headers },
+          this.conn,
+          this.sessionId,
+        ));
       }),
     );
 
