@@ -101,9 +101,10 @@ export class XBContextImpl implements XBContext {
     this._browser._removeContext(this.contextId);
   }
 
-  async newCDPSession(_page?: XBPage): Promise<XBCDPSessionImpl> {
-    // For browser context-level CDP session, create a raw session wrapper
-    // that shares the browser connection
+  async newCDPSession(page?: XBPage): Promise<XBCDPSessionImpl> {
+    if (page instanceof XBPageImpl) {
+      return new XBCDPSessionImpl(this.conn, page.sessionId);
+    }
     return new XBCDPSessionImpl(this.conn);
   }
 

@@ -26,6 +26,7 @@ export type WSMessage =
   | { type: 'input_focused'; selector: string; value: string; tag: string; placeholder?: string }
   | { type: 'input_blur'; selector: string }
   | { type: 'file_upload_result'; success: boolean; fileName: string; error?: string }
+  | { type: 'file_input_clicked'; selector: string }
   | { type: 'file_list_result'; path: string; files: Array<{ name: string; isDir: boolean; size: number; modified: string }>; error?: string }
   | { type: 'file_download_result'; fileName: string; mimeType: string; data: string; error?: string }
   | { type: 'views_update'; views: ViewInfo[] }
@@ -119,6 +120,7 @@ interface SessionScreencast {
   focusPoll?: ReturnType<typeof setInterval>;
   lastFocusKey?: string;
   elementScan?: ReturnType<typeof setInterval>;
+  staticSnapshotTimer?: ReturnType<typeof setTimeout>;
 }
 
 /**
@@ -146,6 +148,9 @@ export class WSServer extends EventEmitter {
   private lastFrameData: string | null = null;
   private lastFrameViewport: { width: number; height: number } | null = null;
   private sessionCrops: Map<string, { selector: string; box: { x: number; y: number; width: number; height: number } }> = new Map();
+
+  /** No CDP frame for this long → page is static → take one high-quality screenshot */
+  private readonly STATIC_SNAPSHOT_DELAY_MS = 3000;
 
   constructor(config: WSServerConfig = {}) {
     super();
@@ -232,6 +237,51 @@ export class WSServer extends EventEmitter {
   }
 
   /**
+   * Dead man's switch: reset the static snapshot timer.
+   * Called on every CDP frame. If no frame arrives within STATIC_SNAPSHOT_DELAY_MS,
+   * the timer fires and takes a single high-quality screenshot.
+   */
+  private resetStaticSnapshotTimer(sessionId: string): void {
+    const sc = this.screencasts.get(sessionId);
+    if (!sc) return;
+    if (sc.staticSnapshotTimer) clearTimeout(sc.staticSnapshotTimer);
+    sc.staticSnapshotTimer = setTimeout(() => {
+      sc.staticSnapshotTimer = undefined;
+      this.takeStaticSnapshot(sessionId).catch(() => {});
+    }, this.STATIC_SNAPSHOT_DELAY_MS);
+  }
+
+  /**
+   * Take a single high-quality screenshot when the page appears static.
+   * Uses page.screenshot() at quality 100 — cleaner than re-encoded CDP frames.
+   */
+  private async takeStaticSnapshot(sessionId: string): Promise<void> {
+    const sc = this.screencasts.get(sessionId);
+    if (!sc || sc.clientCount <= 0) return;
+
+    let viewport = sc.page.viewportSize();
+    if (!viewport) {
+      try {
+        viewport = await sc.page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+      } catch { viewport = { width: 1920, height: 1080 }; }
+    }
+
+    const screenshot = await sc.page.screenshot({ type: 'jpeg', quality: 100 });
+    this.lastFrameData = screenshot.toString('base64');
+    this.lastFrameViewport = viewport;
+
+    await this.processAndBroadcast(
+      this.lastFrameData,
+      viewport!,
+      sessionId,
+      sessionId,
+      crypto.randomUUID(),
+      Date.now(),
+      sc.page.url(),
+    );
+  }
+
+  /**
    * Register a session page for screencast streaming.
    * Call this when a session is created. The capturer will only start
    * when a WS client binds to this session.
@@ -240,7 +290,7 @@ export class WSServer extends EventEmitter {
     if (this.screencasts.has(sessionId)) return;
     this.screencasts.set(sessionId, {
       capturer: new ScreencastCapturer({
-        interval: options?.interval ?? 500,
+        interval: options?.interval ?? 100,
         quality: options?.quality ?? 80,
         type: options?.type ?? 'jpeg',
         width: options?.width ?? 1920,
@@ -250,23 +300,29 @@ export class WSServer extends EventEmitter {
       clientCount: 0,
     });
 
-     const injectFocusListeners = () => {
-       document.addEventListener('focusin', (e) => {
-         const el = e.target as HTMLElement;
-         if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.contentEditable === 'true') {
-           const info: { selector: string; tag: string; value: string; placeholder: string } = {
-             selector: '',
-             tag: el.tagName,
-             value: (el as HTMLInputElement).value || '',
-             placeholder: (el as HTMLInputElement).placeholder || '',
-           };
-           if (el.id) info.selector = '#' + el.id;
-           else if (el.getAttribute('name')) info.selector = '[name="' + el.getAttribute('name') + '"]';
-           else info.selector = el.tagName.toLowerCase();
-           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-           (window as any).__xb_last_focused = info;
-         }
-       }, true);
+      const injectFocusListeners = () => {
+        document.addEventListener('focusin', (e) => {
+          const el = e.target as HTMLElement;
+          if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.contentEditable === 'true') {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const w = window as any;
+            w.__xb_focus_seq = (w.__xb_focus_seq || 0) + 1;
+            const info: { selector: string; tag: string; value: string; placeholder: string; isFileInput?: boolean; seq: number } = {
+              selector: '',
+              tag: el.tagName,
+              value: (el as HTMLInputElement).value || '',
+              placeholder: (el as HTMLInputElement).placeholder || '',
+              seq: w.__xb_focus_seq as number,
+            };
+            if (el.id) info.selector = '#' + el.id;
+            else if (el.getAttribute('name')) info.selector = '[name="' + el.getAttribute('name') + '"]';
+            else info.selector = el.tagName.toLowerCase();
+            if (el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'file') {
+              info.isFileInput = true;
+            }
+            w.__xb_last_focused = info;
+          }
+        }, true);
        document.addEventListener('focusout', () => {
          // eslint-disable-next-line @typescript-eslint/no-explicit-any
          (window as any).__xb_last_focused = null;
@@ -279,40 +335,45 @@ export class WSServer extends EventEmitter {
         page.evaluate(injectFocusListeners).catch(() => {});
       });
 
-    const focusPoll = setInterval(async () => {
+     const focusPoll = setInterval(async () => {
       const sc = this.screencasts.get(sessionId);
       if (!sc || !this.getSessionClientCount(sessionId)) return;
        try {
-          type FocusInfo = { focused: boolean; selector?: string; value?: string; tag?: string; placeholder?: string };
-           const info: FocusInfo = await page.evaluate(() => {
-             // Check __xb_last_focused first, then fallback to activeElement
-             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-             const f = (window as any).__xb_last_focused;
-            if (f) return { focused: true, ...(f as Record<string, string>) };
-            // Fallback: check document.activeElement directly
-            const active = document.activeElement as HTMLElement | null;
-            if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.contentEditable === 'true')) {
-              const sel = active.id ? '#' + active.id : (active.getAttribute('name') ? '[name="' + active.getAttribute('name') + '"]' : active.tagName.toLowerCase());
-              return {
-                focused: true,
-                selector: sel,
-                tag: active.tagName,
-                value: (active as HTMLInputElement).value || '',
-                placeholder: (active as HTMLInputElement).placeholder || '',
-              };
-            }
-            return { focused: false };
-          });
-          const focusKey = info.focused ? (info.selector || 'unknown') : '';
-          if (focusKey === sc.lastFocusKey) return;
-          sc.lastFocusKey = focusKey;
-          if (info.focused && info.selector) {
-            this.broadcastToSession(sessionId, { type: 'input_focused', selector: info.selector, value: info.value || '', tag: info.tag || '', placeholder: info.placeholder });
-          } else {
-            this.broadcastToSession(sessionId, { type: 'input_blur', selector: '' });
-          }
-        } catch { /* ignore evaluate errors */ }
-     }, 500);
+            type FocusInfo = { focused: boolean; selector?: string; value?: string; tag?: string; placeholder?: string; isFileInput?: boolean; seq?: number };
+            const info: FocusInfo = await page.evaluate(() => {
+              // Check __xb_last_focused first, then fallback to activeElement
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const f = (window as any).__xb_last_focused;
+              if (f) return { focused: true, ...f };
+             // Fallback: check document.activeElement directly
+             const active = document.activeElement as HTMLElement | null;
+             if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.contentEditable === 'true')) {
+               const sel = active.id ? '#' + active.id : (active.getAttribute('name') ? '[name="' + active.getAttribute('name') + '"]' : active.tagName.toLowerCase());
+               return {
+                 focused: true,
+                 selector: sel,
+                 tag: active.tagName,
+                 value: (active as HTMLInputElement).value || '',
+                 placeholder: (active as HTMLInputElement).placeholder || '',
+                 isFileInput: active.tagName === 'INPUT' && (active as HTMLInputElement).type === 'file',
+               };
+             }
+             return { focused: false };
+           });
+            const focusKey = info.focused ? `${info.selector || 'unknown'}#${info.seq ?? 0}` : '';
+           if (focusKey === sc.lastFocusKey) return;
+           sc.lastFocusKey = focusKey;
+           if (info.focused && info.selector) {
+             if (info.isFileInput) {
+               this.broadcastToSession(sessionId, { type: 'file_input_clicked', selector: info.selector });
+             } else {
+               this.broadcastToSession(sessionId, { type: 'input_focused', selector: info.selector, value: info.value || '', tag: info.tag || '', placeholder: info.placeholder });
+             }
+           } else {
+             this.broadcastToSession(sessionId, { type: 'input_blur', selector: '' });
+           }
+         } catch { /* ignore evaluate errors */ }
+      }, 500);
 
      this.screencasts.get(sessionId)!.focusPoll = focusPoll;
 
@@ -375,6 +436,9 @@ export class WSServer extends EventEmitter {
       }
       if (sc.elementScan) {
         clearInterval(sc.elementScan);
+      }
+      if (sc.staticSnapshotTimer) {
+        clearTimeout(sc.staticSnapshotTimer);
       }
       this.screencasts.delete(sessionId);
     }
@@ -543,6 +607,7 @@ export class WSServer extends EventEmitter {
 
     if (sc.clientCount === 0 && !sc.capturer.isActive()) {
       sc.capturer.startCapture(sc.page, sessionId, (frame: ScreencastFrame) => {
+        this.resetStaticSnapshotTimer(sessionId);
         (async () => {
           this.lastFrameData = frame.data.toString('base64');
           this.lastFrameViewport = frame.viewport;
@@ -614,6 +679,7 @@ export class WSServer extends EventEmitter {
     const sc = this.screencasts.get(sessionId);
     if (sc && !sc.capturer.isActive() && sc.clientCount > 0) {
       await sc.capturer.startCapture(sc.page, sessionId, (frame: ScreencastFrame) => {
+        this.resetStaticSnapshotTimer(sessionId);
         (async () => {
           this.lastFrameData = frame.data.toString('base64');
           this.lastFrameViewport = frame.viewport;
@@ -711,32 +777,6 @@ export class WSServer extends EventEmitter {
           case 'up': await p.mouse.up({ button: msg.button || 'left' }); break;
           case 'click': {
             await p.mouse.click(msg.x + ox, msg.y + oy, { button: msg.button || 'left' });
-            // Focus the element under the click point and set __xb_last_focused
-            // (mouse.click doesn't auto-focus or trigger focusin in CDP mode)
-            try {
-              await p.evaluate(({ x, y }: { x: number; y: number }) => {
-                const el = document.elementFromPoint(x, y) as HTMLElement | null;
-                if (el && typeof el.focus === 'function') {
-                  el.focus();
-                  // Manually set __xb_last_focused since focusin may not fire in CDP mode
-                  if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.contentEditable === 'true') {
-                    const info: { selector: string; tag: string; value: string; placeholder: string } = {
-                      selector: '',
-                      tag: el.tagName,
-                      value: (el as HTMLInputElement).value || '',
-                      placeholder: (el as HTMLInputElement).placeholder || '',
-                    };
-                    if (el.id) info.selector = '#' + el.id;
-                    else if (el.getAttribute('name')) info.selector = '[name="' + el.getAttribute('name') + '"]';
-                     else info.selector = el.tagName.toLowerCase();
-                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                     (window as any).__xb_last_focused = info;
-                  }
-                }
-              }, { x: msg.x + ox, y: msg.y + oy });
-            } catch (err) {
-              this.emit('error', new Error(`focus-after-click failed: ${err}`));
-            }
             break;
           }
         }

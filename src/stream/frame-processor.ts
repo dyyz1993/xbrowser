@@ -10,9 +10,9 @@ export interface StreamStateConfig {
 }
 
 export const STATE_CONFIGS: Record<StreamState, StreamStateConfig> = {
-  user_interacting: { format: 'jpeg', quality: 80, maxFps: 60, scale: 0.6 },
-  screen_moving: { format: 'jpeg', quality: 75, maxFps: 8, scale: 0.8 },
-  static: { format: 'jpeg', quality: 80, maxFps: 2, scale: 1 },
+  user_interacting: { format: 'jpeg', quality: 85, maxFps: 60, scale: 0.8 },
+  screen_moving: { format: 'jpeg', quality: 85, maxFps: 8, scale: 0.8 },
+  static: { format: 'jpeg', quality: 95, maxFps: 2, scale: 1 },
 };
 
 export type StateChangeCallback = (newState: StreamState, previousState: StreamState) => void;

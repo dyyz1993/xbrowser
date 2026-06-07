@@ -124,24 +124,18 @@ export function previewHTML(sessionId: string, _host: string): string {
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden;background:#1a1a2e;color:#eee;font-family:system-ui,-apple-system,sans-serif}
 body{display:flex;flex-direction:column;touch-action:manipulation}
-.bar{position:fixed;top:0;left:0;right:0;height:40px;padding:0 12px;background:#16213e;display:flex;align-items:center;gap:10px;font-size:13px;z-index:100;border-bottom:1px solid #0f3460}
+.bar{flex-shrink:0;height:40px;padding:0 12px;background:#16213e;display:flex;align-items:center;gap:10px;font-size:13px;z-index:100;border-bottom:1px solid #0f3460}
 .bar .dot{width:8px;height:8px;border-radius:50%;background:#e74c3c;flex-shrink:0;transition:background .3s}
 .bar .dot.ok{background:#2ecc71}
 .bar .url{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8899aa;font-size:12px}
 .bar .conn{color:#556;font-size:11px;flex-shrink:0}
-.viewport{position:fixed;top:40px;left:0;right:0;bottom:0;display:flex;align-items:flex-start;justify-content:center;overflow:hidden;background:#1a1a2e}
-.viewport.mobile-mode{bottom:calc(35vh + 38px)}
+.viewport{flex-shrink:0;display:flex;align-items:flex-start;justify-content:center;overflow:hidden;background:#1a1a2e;position:relative}
 .viewport canvas#screen{display:none;user-select:none;-webkit-user-drag:none}
 .waiting{color:#556;font-size:14px;text-align:center}
-.toolbar{position:fixed;left:0;right:0;top:40px;background:#16213e;border-bottom:1px solid #0f3460;display:none;flex-direction:column;z-index:90;padding:4px 6px}
-.toolbar.mobile-bottom{top:auto;bottom:35vh;border-bottom:none;border-top:1px solid #0f3460}
-.toolbar-btn{min-width:44px;height:44px;border:none;border-radius:6px;background:#0f3460;color:#cde;font-size:18px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.toolbar{flex-shrink:0;background:#16213e;border-top:1px solid #0f3460;display:none;flex-direction:row;z-index:90;padding:4px 6px;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch}
+.toolbar-btn{min-width:40px;height:36px;border:none;border-radius:6px;background:#0f3460;color:#cde;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .toolbar-btn:active{background:#1a5276}
-.toolbar-toggle{display:flex;align-items:center;justify-content:center;padding:2px 0}
-.toolbar-toggle .toolbar-btn{width:36px;height:30px;font-size:16px;border-radius:4px}
-.toolbar-keys{display:none;flex-wrap:wrap;gap:4px;padding:4px 0}
-.toolbar-keys.open{display:flex}
-.touchpad{position:fixed;left:0;right:0;bottom:0;height:35vh;background:#111827;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:80;border-top:2px solid #1e3a5f;touch-action:none;user-select:none;padding-bottom:env(safe-area-inset-bottom)}
+.touchpad{flex:1;background:#111827;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:80;border-top:2px solid #1e3a5f;touch-action:none;user-select:none;padding-bottom:env(safe-area-inset-bottom)}
 .touchpad-hint{color:#334;font-size:11px;pointer-events:none}
 .touchpad-gesture{position:absolute;top:8px;right:12px;color:#f90;font-size:10px;font-weight:600;opacity:0;transition:opacity .2s}
 .cursor{position:fixed;pointer-events:none;z-index:9999;width:8px;height:8px;border-radius:50%;background:rgba(0,120,255,.6);transform:translate(-50%,-50%);transition:background .1s,width .1s,height .1s;display:none}
@@ -183,8 +177,8 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
 .quality-badge.quality-static{background:#556;color:#ddd}
 .mode-btn{height:22px;border:none;border-radius:4px;background:#0f3460;color:#cde;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:0 6px}
 .mode-btn:active{background:#1a5276}
-.viewport.tablet-mode{bottom:0;touch-action:none}
-.view-tabs{position:fixed;top:40px;left:0;right:0;display:none;z-index:95;background:#1a1a2e;border-bottom:1px solid #2a2a4e;padding:2px 4px;overflow-x:auto;white-space:nowrap;gap:2px;height:28px;align-items:center}
+.viewport.tablet-mode{touch-action:none}
+.view-tabs{flex-shrink:0;display:none;z-index:95;background:#1a1a2e;border-bottom:1px solid #2a2a4e;padding:2px 4px;overflow-x:auto;white-space:nowrap;gap:2px;height:28px;align-items:center}
 .view-tabs.visible{display:flex}
 .view-tab{display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:4px 4px 0 0;background:#2a2a4e;color:#8af;font-size:11px;cursor:pointer;border:none;font-family:inherit;max-width:140px;overflow:hidden;position:relative;height:28px}
 .view-tab img{width:36px;height:22px;object-fit:cover;border-radius:2px;flex-shrink:0}
@@ -205,17 +199,14 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
   <div class="waiting" id="wait">Waiting for screencast...</div>
 </div>
 <div class="toolbar" id="toolbar">
-  <div class="toolbar-toggle"><button class="toolbar-btn" id="toolbar-toggle-btn">+</button></div>
-  <div class="toolbar-keys" id="toolbar-keys">
-    <button class="toolbar-btn" data-key="Tab">Tab</button>
-    <button class="toolbar-btn" data-key="ArrowUp">&uarr;</button>
-    <button class="toolbar-btn" data-key="ArrowLeft">&larr;</button>
-    <button class="toolbar-btn" data-key="ArrowDown">&darr;</button>
-    <button class="toolbar-btn" data-key="ArrowRight">&rarr;</button>
-    <button class="toolbar-btn" data-key="Enter">&crarr;</button>
-    <button class="toolbar-btn" data-key="Backspace">&larr;b</button>
-    <button class="toolbar-btn" data-key="Escape">Esc</button>
-  </div>
+  <button class="toolbar-btn" data-key="Tab">Tab</button>
+  <button class="toolbar-btn" data-key="ArrowUp">&uarr;</button>
+  <button class="toolbar-btn" data-key="ArrowLeft">&larr;</button>
+  <button class="toolbar-btn" data-key="ArrowDown">&darr;</button>
+  <button class="toolbar-btn" data-key="ArrowRight">&rarr;</button>
+  <button class="toolbar-btn" data-key="Enter">&crarr;</button>
+  <button class="toolbar-btn" data-key="Backspace">&larr;b</button>
+  <button class="toolbar-btn" data-key="Escape">Esc</button>
 </div>
 <div class="touchpad" id="touchpad">
   <span class="touchpad-hint">touchpad</span>
@@ -274,45 +265,22 @@ let lastHoverSent=0;
 const $=id=>document.getElementById(id);
 const canvas=$('screen'),ctx=canvas.getContext('2d');wait=$('wait'),dot=$('status'),urlEl=$('url'),connEl=$('conn');
 const viewportEl=$('viewport'),cursorEl=$('cursor'),cursorLabelEl=$('cursor-label');
-const touchpadEl=$('touchpad'),toolbarEl=$('toolbar'),toolbarKeys=$('toolbar-keys');
+const touchpadEl=$('touchpad'),toolbarEl=$('toolbar');
 const inputPanel=$('input-panel'),inputField=$('input-field'),inputLabel=$('input-label');
-
-function updateLayout(){
-  var top=40;
-  if(detectedViews.length>0){viewTabsEl.style.top='40px';top=68;}
-  if(toolbarEl.classList.contains('mobile-bottom')){
-    var tbH=toolbarEl.offsetHeight||38;
-    viewportEl.style.bottom='calc(35vh + '+tbH+'px)';
-  }else{
-    viewportEl.style.bottom='';
-    if(toolbarEl.style.display==='flex'){
-      toolbarEl.style.top=top+'px';
-      var tbH2=toolbarEl.offsetHeight;
-      if(tbH2>0)top+=tbH2;else top+=38;
-    }
-  }
-  viewportEl.style.top=top+'px';
-  resizeCanvas();
-}
 
 function resizeCanvas(){
   const box=viewportEl.getBoundingClientRect();
-  const bw=box.width,bh=box.height;
-  if(!bw||!bh||!remoteViewport.width||!remoteViewport.height) return;
+  const bw=box.width;
+  if(!bw||!remoteViewport.width||!remoteViewport.height) return;
   const vpAspect=remoteViewport.width/remoteViewport.height;
-  const boxAspect=bw/bh;
-  let cw,ch;
-  if(vpAspect>boxAspect){cw=bw;ch=bw/vpAspect;}
-  else{ch=bh;cw=bh*vpAspect;}
+  const cw=bw;
+  const ch=bw/vpAspect;
   if(canvas.width!==Math.round(cw)||canvas.height!==Math.round(ch)){
     canvas.width=Math.round(cw);
     canvas.height=Math.round(ch);
   }
   canvas.style.width=cw+'px';
   canvas.style.height=ch+'px';
-  canvas.style.position='absolute';
-  canvas.style.left=((bw-cw)/2)+'px';
-  canvas.style.top=((bh-ch)/2)+'px';
 }
 window.addEventListener('resize',resizeCanvas);
 resizeCanvas();
@@ -459,6 +427,16 @@ function connectWS(){
         }
       }else if(m.type==='views_update'){
         updateViewTabs(m.views);
+      }else if(m.type==='file_input_clicked'){
+        pendingFileSelector=m.selector||'';
+        if(filePanel.style.display!=='flex'){
+          filePanel.style.display='flex';
+          touchpadEl.style.display='none';
+        }
+        document.querySelectorAll('.file-tab').forEach(function(t){
+          if(t.getAttribute('data-tab')==='upload'){t.click();}
+        });
+        fileUploadStatus.textContent='Select a file for: '+(m.selector||'file input');
       }
     }catch{}
   };
@@ -492,11 +470,11 @@ function renderViewTabs(){
   if(detectedViews.length===0){
     viewTabsEl.classList.remove('visible');
     viewTabsEl.innerHTML='';
-    updateLayout();
+    resizeCanvas();
     return;
   }
   viewTabsEl.classList.add('visible');
-  updateLayout();
+  resizeCanvas();
   var html='<button class="view-tab'+(activeViewId==='main'?' active':'')+'" data-vid="main"><span>主页面</span></button>';
   for(var i=0;i<detectedViews.length;i++){
     var v=detectedViews[i];
@@ -758,19 +736,16 @@ viewportEl.addEventListener('wheel',(e)=>{
   sendUserActivity();
 },{passive:false});
 
-// --- Mobile Touchpad ---
+// --- Mobile Touchpad (incremental, smooth) ---
 let tpStartPos=null;
-let tpStartTime=0;
 let tpLongPressTimer=null;
 let tpIsDragging=false;
 let tpIsScrolling=false;
 let tpScrollCooldown=false;
 let tpTotalDist=0;
-let tpCursorRemote={x:Math.round(remoteViewport.width/2),y:Math.round(remoteViewport.height/2)};
+// Float precision — never round until sending
+let tpCursorRemote={x:remoteViewport.width/2,y:remoteViewport.height/2};
 
-function computeAccel(velocity){
-  return 1+Math.min(velocity*0.6,2.5);
-}
 function clamp(v,min,max){return Math.max(min,Math.min(max,v));}
 
 function tpShowGesture(text){
@@ -788,14 +763,13 @@ touchpadEl.addEventListener('touchstart',(e)=>{
   sendUserActivity();
   const t=e.touches[0];
   tpStartPos={x:t.clientX,y:t.clientY};
-  tpStartTime=Date.now();
   tpTotalDist=0;
   if(e.touches.length===1){
     tpLongPressTimer=setTimeout(()=>{
       tpIsDragging=true;
       tpShowGesture('DRAG');
       setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'drag');
-      sendMsg({type:'input_mouse',action:'down',x:tpCursorRemote.x,y:tpCursorRemote.y});
+      sendMsg({type:'input_mouse',action:'down',x:Math.round(tpCursorRemote.x),y:Math.round(tpCursorRemote.y)});
     },800);
   }
 },{passive:false});
@@ -808,30 +782,28 @@ touchpadEl.addEventListener('touchmove',(e)=>{
     const t=e.touches[0];
     const dx=t.clientX-tpStartPos.x;
     const dy=t.clientY-tpStartPos.y;
-    const now=Date.now();
-    const dt=Math.max(now-tpStartTime,1);
-    const dist=Math.sqrt(dx*dx+dy*dy);
-    const velocity=dist/dt;
-    const accel=computeAccel(velocity);
-    tpTotalDist+=dist;
+    tpTotalDist+=Math.sqrt(dx*dx+dy*dy);
+    // Incremental: finger delta → cursor delta, constant sensitivity (no accel curve)
     const rect=touchpadEl.getBoundingClientRect();
-    const sfx=remoteViewport.width/(rect.width||300)*0.6;
-    const sfy=remoteViewport.height/(rect.height||200)*0.6;
-    tpCursorRemote.x=clamp(tpCursorRemote.x+dx*accel*sfx,0,remoteViewport.width);
-    tpCursorRemote.y=clamp(tpCursorRemote.y+dy*accel*sfy,0,remoteViewport.height);
+    const rw=rect.width||300;
+    const rh=rect.height||200;
+    // Sensitivity: 1.5x — finger moves 100px on a 300px touchpad → cursor moves 50% of viewport
+    const sx=remoteViewport.width/rw*1.5;
+    const sy=remoteViewport.height/rh*1.5;
+    tpCursorRemote.x=clamp(tpCursorRemote.x+dx*sx,0,remoteViewport.width);
+    tpCursorRemote.y=clamp(tpCursorRemote.y+dy*sy,0,remoteViewport.height);
     setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,tpIsDragging?'drag':'moving');
     sendMsg({type:'input_mouse',action:'move',x:Math.round(tpCursorRemote.x),y:Math.round(tpCursorRemote.y)});
     tpStartPos={x:t.clientX,y:t.clientY};
-    tpStartTime=now;
   }
   if(e.touches.length===2){
     clearTimeout(tpLongPressTimer);
     tpIsScrolling=true;
     tpShowGesture('SCROLL');
     const t0=e.touches[0];
-    const dx=t0.clientX-tpStartPos.x;
-    const dy=t0.clientY-tpStartPos.y;
-    sendMsg({type:'scroll',deltaX:Math.round(dx*2),deltaY:Math.round(dy*2)});
+    const ddx=t0.clientX-tpStartPos.x;
+    const ddy=t0.clientY-tpStartPos.y;
+    sendMsg({type:'scroll',deltaX:Math.round(ddx*2),deltaY:Math.round(ddy*2)});
     tpStartPos={x:t0.clientX,y:t0.clientY};
   }
 },{passive:false});
@@ -843,15 +815,17 @@ touchpadEl.addEventListener('touchend',(e)=>{
     tpIsDragging=false;
     sendMsg({type:'input_mouse',action:'up',x:Math.round(tpCursorRemote.x),y:Math.round(tpCursorRemote.y)});
     setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'idle');
-  }else if(e.touches.length===0&&!tpIsScrolling&&tpStartPos&&tpTotalDist<15){
+  }else if(e.touches.length===0&&!tpIsScrolling&&tpTotalDist<15){
     sendMsg({type:'input_mouse',action:'click',x:Math.round(tpCursorRemote.x),y:Math.round(tpCursorRemote.y)});
     setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'click');
     setTimeout(()=>setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'idle'),150);
   }
   if(e.touches.length===0){
+    if(tpIsScrolling){
+      tpScrollCooldown=true;
+      setTimeout(()=>{tpScrollCooldown=false;},300);
+    }
     tpIsScrolling=false;
-    tpScrollCooldown=true;
-    setTimeout(()=>{tpScrollCooldown=false;},300);
   }
   tpStartPos=e.touches.length>0?{x:e.touches[0].clientX,y:e.touches[0].clientY}:null;
 },{passive:false});
@@ -934,13 +908,7 @@ viewportEl.addEventListener('touchend',(e)=>{
 },{passive:false});
 
 // --- Virtual Keyboard Toolbar ---
-const toggleBtn=$('toolbar-toggle-btn');
-toggleBtn.addEventListener('click',()=>{
-  const open=toolbarKeys.classList.toggle('open');
-  toggleBtn.textContent=open?'\u2212':'+';
-  updateLayout();
-});
-toolbarKeys.addEventListener('click',(e)=>{
+toolbarEl.addEventListener('click',(e)=>{
   const btn=e.target.closest('[data-key]');
   if(!btn) return;
   const key=btn.getAttribute('data-key');
@@ -954,9 +922,7 @@ function showInputPanel(val){
   inputPanel.style.display='flex';
   touchpadEl.style.display='none';
   toolbarEl.style.display='none';
-  viewportEl.classList.remove('mobile-mode');
-  viewportEl.classList.remove('tablet-mode');
-  updateLayout();
+  resizeCanvas();
   inputField.value=val||'';
   setTimeout(()=>inputField.focus(),50);
 }
@@ -968,11 +934,8 @@ function hideInputPanel(){
   if(deviceMode==='mobile'){
     touchpadEl.style.display='flex';
     toolbarEl.style.display='flex';
-    viewportEl.classList.add('mobile-mode');
-  }else if(deviceMode==='tablet'){
-    viewportEl.classList.add('tablet-mode');
   }
-  updateLayout();
+  resizeCanvas();
   inputField.blur();
 }
 function syncInputValue(){
@@ -1019,19 +982,15 @@ function applyMode(mode){
   var modeBtn=$('mode-btn');
   var icons={'mobile':'📱','tablet':'📟','desktop':'🖥️'};
   if(modeBtn) modeBtn.textContent=icons[mode]||'📱';
-  viewportEl.classList.remove('mobile-mode','tablet-mode');
+  viewportEl.classList.remove('tablet-mode');
   touchpadEl.style.display='none';
   toolbarEl.style.display='none';
-  toolbarEl.classList.remove('mobile-bottom');
-  toolbarEl.style.top='';
   inputPanel.style.display='none';
   cursorEl.style.display='none';
   removePCKeyboard();
   if(mode==='mobile'){
     touchpadEl.style.display='flex';
     toolbarEl.style.display='flex';
-    toolbarEl.classList.add('mobile-bottom');
-    viewportEl.classList.add('mobile-mode');
   }else if(mode==='tablet'){
     viewportEl.classList.add('tablet-mode');
     setCursorAtRemote(tpCursorRemote.x,tpCursorRemote.y,'idle');
@@ -1039,7 +998,7 @@ function applyMode(mode){
     createPCKeyboard();
     setTimeout(pcFocusHiddenInput,50);
   }
-  updateLayout();
+  resizeCanvas();
 }
 var manualMode=false;
 function cycleMode(){
@@ -1074,40 +1033,16 @@ const filePathInput=$('file-path-input');
 const fileListEl=$('file-list');
 let currentFileTab='upload';
 let currentFilePath='/Users';
+let pendingFileSelector='';
 
 $('file-close').addEventListener('click',()=>{
   filePanel.style.display='none';
   if(deviceMode==='mobile'){
     touchpadEl.style.display='flex';
     toolbarEl.style.display='flex';
-    viewportEl.classList.add('mobile-mode');
-  }else if(deviceMode==='tablet'){
-    viewportEl.classList.add('tablet-mode');
   }
-  updateLayout();
+  resizeCanvas();
 });
-
-const fileBtn=document.createElement('button');
-fileBtn.className='toolbar-btn';
-fileBtn.textContent='📁';
-fileBtn.title='Files';
-fileBtn.addEventListener('click',()=>{
-  if(filePanel.style.display==='flex'){
-    filePanel.style.display='none';
-    if(deviceMode==='mobile'){
-      touchpadEl.style.display='flex';
-      viewportEl.classList.add('mobile-mode');
-    }else if(deviceMode==='tablet'){
-      viewportEl.classList.add('tablet-mode');
-    }
-  }else{
-    filePanel.style.display='flex';
-    touchpadEl.style.display='none';
-    viewportEl.classList.remove('mobile-mode');
-    viewportEl.classList.remove('tablet-mode');
-  }
-});
-toolbarEl.querySelector('.toolbar-toggle').insertBefore(fileBtn,$('toolbar-toggle-btn'));
 
 document.querySelectorAll('.file-tab').forEach(tab=>{
   tab.addEventListener('click',()=>{
@@ -1134,7 +1069,7 @@ fileUploadInput.addEventListener('change',()=>{
   const reader=new FileReader();
   reader.onload=()=>{
     const base64=String(reader.result).split(',')[1];
-    sendMsg({type:'file_upload',fileName:file.name,mimeType:file.type||'application/octet-stream',data:base64});
+    sendMsg({type:'file_upload',fileName:file.name,mimeType:file.type||'application/octet-stream',data:base64,selector:pendingFileSelector||undefined});
     fileUploadStatus.textContent='Sending '+file.name+'...';
   };
   reader.readAsDataURL(file);

@@ -233,7 +233,7 @@ describe('WSServer view tabs', () => {
         box: { x: 100, y: 200, width: 400, height: 300 },
       });
       // input_mouse click also calls page.evaluate for focus; mock it to resolve cleanly
-      (pageMock as unknown as Record<string, ReturnType<typeof vi.fn>>).evaluate = vi.fn().mockResolvedValue(undefined);
+      (pageMock as unknown as Record<string, ReturnType<typeof vi.fn>>).evaluate = vi.fn().mockResolvedValue({ isFile: false, selector: '' });
 
       await server['handleInboundMessage'](clientId, {
         type: 'input_mouse',
