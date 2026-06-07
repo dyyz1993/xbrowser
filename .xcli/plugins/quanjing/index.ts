@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   quanjing.command('search-image', {
     description: '全景网图片搜索 - 搜索创意素材图片',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),

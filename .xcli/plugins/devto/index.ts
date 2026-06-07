@@ -308,6 +308,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('login', {
     description: '登录 Dev.to（GitHub OAuth / 邮箱）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser devto login', description: '登录 Dev.to' }],
@@ -349,6 +350,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('publish', {
     description: '在 Dev.to 发布文章（Markdown，含外链）',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       title: z.string().describe('文章标题'),
@@ -449,6 +451,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('draft', {
     description: '在 Dev.to 保存草稿',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       title: z.string().describe('文章标题'),
@@ -506,6 +509,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('update-profile', {
     description: '更新 Dev.to 个人资料（添加外链）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('要添加到 Profile 的 URL'),

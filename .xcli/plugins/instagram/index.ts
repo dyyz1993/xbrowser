@@ -35,6 +35,7 @@ export default function (xcli: XCLIAPI): void {
 
   instagram.command('search-image', {
     description: 'Instagram 标签图片搜索 - 搜索 #tag 下的图片',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索标签（不含 #）'),

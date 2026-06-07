@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   gettyimages.command('search-image', {
     description: 'Getty Images image search',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('Search query'),

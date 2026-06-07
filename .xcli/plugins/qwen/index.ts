@@ -309,6 +309,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('image', {
     description: '千问 AI 图片生成（文生图）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       prompt: z.string().describe('图片描述提示词'),
@@ -459,6 +460,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('result', {
     description: '获取千问页面中已生成的图片 URL',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(10).describe('返回条数（默认 10）'),
@@ -617,6 +619,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('history', {
     description: '获取千问会话历史及生成的图片',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(10).describe('返回会话数量'),
@@ -691,6 +694,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('billing', {
     description: '检查千问登录状态',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({}),
     result: z.object({ loggedIn: z.boolean(), hasImageMode: z.boolean(), url: z.string() }).passthrough(),

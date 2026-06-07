@@ -234,6 +234,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('shop', {
     description: '获取1688店铺信息',
+    loginRequired: 'required',
     scope: 'browser',
     result: z.object({
       source: z.string(), memberId: z.string(),
@@ -469,6 +470,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('products', {
     description: '获取1688店铺商品列表',
+    loginRequired: 'required',
     scope: 'browser',
     result: z.object({
       memberId: z.string(), sort: z.string(), count: z.number(), source: z.string(),
@@ -629,6 +631,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('product-detail', {
     description: '获取1688商品详情',
+    loginRequired: 'required',
     scope: 'browser',
     result: z.object({
       source: z.string(), offerId: z.string(),
@@ -903,6 +906,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search', {
     description: '搜索1688商品',
+    loginRequired: 'none',
     scope: 'browser',
     result: z.object({
       query: z.string(), sort: z.string(), count: z.number(), source: z.string(),
@@ -1059,6 +1063,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('categories', {
     description: '获取1688店铺分类列表',
+    loginRequired: 'required',
     scope: 'browser',
     result: z.object({
       memberId: z.string(), count: z.number(),

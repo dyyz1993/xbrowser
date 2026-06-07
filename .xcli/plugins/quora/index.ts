@@ -35,6 +35,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('login', {
     description: '登录 Quora（Google / 邮箱）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser quora login', description: '登录 Quora' }],
@@ -76,6 +77,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('answer', {
     description: '回答问题（含外链）',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       questionUrl: z.string().describe('问题页面 URL'),
@@ -154,6 +156,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('publish-article', {
     description: '创建 Quora 文章（Space 帖子）',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       title: z.string().describe('文章标题'),
@@ -230,6 +233,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('update-profile', {
     description: '更新 Quora 个人资料（添加外链）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('要添加到 Profile 的网站 URL'),

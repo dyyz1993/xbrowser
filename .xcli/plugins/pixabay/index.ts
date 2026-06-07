@@ -13,6 +13,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search-image', {
     description: 'Search Pixabay photos with metadata',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string(), limit: z.number().optional().default(20),

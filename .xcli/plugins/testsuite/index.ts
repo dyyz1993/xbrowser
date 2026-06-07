@@ -13,6 +13,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('testsuite', {
     description: 'Run a sequence of test steps (navigate + interact + assert) and report results',
+    loginRequired: 'optional',
     scope: 'page',
     parameters: z.object({
       steps: z.array(z.object({

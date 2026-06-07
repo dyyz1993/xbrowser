@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   p500px.command('search-image', {
     description: 'Search images on 500px',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('Search query'),

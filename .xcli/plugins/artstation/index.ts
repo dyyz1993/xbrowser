@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   artstation.command('search-image', {
     description: 'Search images on ArtStation',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('Search query'),

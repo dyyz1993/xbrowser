@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   jd.command('search-image', {
     description: '京东商品图片搜索 - 搜索京东商品图片',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),

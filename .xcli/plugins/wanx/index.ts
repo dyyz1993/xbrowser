@@ -104,6 +104,7 @@ export default function (xcli: XCLIAPI): void {
      ════════════════════════════════════════════ */
   site.command('sign', {
     description: '万相签到，领取灵感奖励，查询剩余次数',
+    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ signed: z.boolean(), bonus: z.number(), availableCount: z.number() }).passthrough(),
     parameters: z.object({}),
@@ -142,6 +143,7 @@ export default function (xcli: XCLIAPI): void {
      ════════════════════════════════════════════ */
   site.command('video', {
     description: '生成万相视频，支持文生视频和图生视频（首帧/尾帧）',
+    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ taskId: z.string(), status: z.string(), videoUrl: z.string().optional(), results: z.array(z.record(z.any())).optional() }).passthrough(),
     parameters: z.object({
@@ -270,6 +272,7 @@ export default function (xcli: XCLIAPI): void {
      ════════════════════════════════════════════ */
   site.command('result', {
     description: '查询万相视频生成结果',
+    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ taskId: z.string(), status: z.number(), statusText: z.string(), videoUrl: z.string(), results: z.array(z.record(z.any())) }).passthrough(),
     parameters: z.object({

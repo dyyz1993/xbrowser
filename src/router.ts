@@ -38,6 +38,7 @@ import {
   handleNetCommand,
 } from './cli/index.js';
 import { outputError, outputResult } from './cli/output.js';
+import { getDaemonProcessStatus, getDaemonConfig } from './daemon/daemon.js';
 import { showMainHelp } from './cli/help.js';
 import { printChainResult, printChainResultBrief } from './cli/chain-output.js';
 import { getPluginLoader } from './utils/plugin-singleton.js';
@@ -46,8 +47,18 @@ import { findOrRestoreSession, createSession, saveSessionDiskMeta } from './brow
 import { HTTPServer } from './server/http-server.js';
 import { getCommand } from './commands/command-registry.js';
 
+function buildViewerUrl(sessionName: string): string | undefined {
+  try {
+    const status = getDaemonProcessStatus();
+    const port = status.running ? status.port : getDaemonConfig().basePort;
+    return `http://localhost:${port}/preview/${encodeURIComponent(sessionName)}`;
+  } catch {
+    try { return `http://localhost:9224/preview/${encodeURIComponent(sessionName)}`; } catch { return undefined; }
+  }
+}
+
 function showCommandHelp(siteName: string, cmd: unknown, siteConfig: { description?: string; name: string; url: string }, mode: string): void {
-  const c = cmd as { name: string; description: string; scope: string; parameters?: unknown; examples?: Array<{ cmd: string; description: string }> };
+  const c = cmd as { name: string; description: string; scope: string; parameters?: unknown; examples?: Array<{ cmd: string; description: string }>; loginRequired?: 'required' | 'optional' | 'none' };
 
   if (mode === 'json') {
     const paramsList: Array<{ name: string; type: string; required: boolean; default_: unknown; description: string; enumValues?: string[] }> = [];
@@ -73,6 +84,7 @@ function showCommandHelp(siteName: string, cmd: unknown, siteConfig: { descripti
       command: c.name,
       description: c.description,
       scope: c.scope,
+      ...(c.loginRequired ? { loginRequired: c.loginRequired } : {}),
       parameters: paramsList,
     }, mode);
   } else {
@@ -84,6 +96,9 @@ function showCommandHelp(siteName: string, cmd: unknown, siteConfig: { descripti
       examples: c.examples,
     }, { color: false, emoji: false });
     console.log(text);
+    if (c.loginRequired) {
+      console.log(`  Login: ${c.loginRequired}`);
+    }
     console.log('');
   }
 }
@@ -641,6 +656,20 @@ export async function routeCommand(
                 saveSessionDiskMeta(sessionName, { conversationUrl: convUrl, cdpEndpoint });
               }
             }
+            // Inject viewerUrl for login-related failures (custom fail() calls that bypass login-guard)
+            const LOGIN_FAIL_KEYWORDS = ['登录','login','Login','未登录','not logged in','cdp','CDP','验证码','验证','captcha','需要登录','requires login'];
+            const isLoginFail = isCommandResult(result) && result.success === false &&
+              [result.message, ...(result.tips || [])].filter(Boolean).join(' ').toLowerCase()
+                .match(new RegExp(LOGIN_FAIL_KEYWORDS.join('|'), 'i'));
+            if (isLoginFail) {
+              const viewerUrl = buildViewerUrl(sessionName);
+              if (viewerUrl && !(result.data as Record<string, unknown> | undefined)?.viewerUrl) {
+                (result.data as Record<string, unknown>) ??= {};
+                (result.data as Record<string, unknown>).viewerUrl = viewerUrl;
+                result.tips = [...(result.tips || []), `Open viewer to complete login: ${viewerUrl}`];
+              }
+            }
+
             const outputData = isCommandResult(result) ? result.data : (result && typeof result === 'object' ? ((result as Record<string, unknown>).data ?? result) : result);
             const tips = isCommandResult(result) ? result.tips : ((result && typeof result === 'object') ? (result as Record<string, unknown>).tips as string[] | undefined : undefined);
 

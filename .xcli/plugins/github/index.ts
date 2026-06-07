@@ -60,6 +60,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('update-profile', {
     description: '更新 GitHub 个人资料页（Bio、网站、公司等）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       bio: z.string().optional().describe('个人简介'),
@@ -132,6 +133,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('add-social-link', {
     description: '添加社交链接到 GitHub Profile',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('社交链接 URL'),
@@ -197,6 +199,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('create-gist', {
     description: '创建 GitHub Gist（带外链）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       filename: z.string().default('readme.md').describe('文件名'),
@@ -275,6 +278,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('get-profile', {
     description: '获取 GitHub 用户 Profile 信息',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       username: z.string().optional().describe('GitHub 用户名，不填则获取自己的'),
@@ -346,6 +350,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('create-repo', {
     description: '创建 GitHub 仓库',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       name: z.string().describe('仓库名称'),
@@ -424,6 +429,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('edit-readme', {
     description: '编辑 GitHub 仓库的 README.md 文件',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       repo: z.string().describe('仓库名称（owner/repo 格式）'),

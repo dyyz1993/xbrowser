@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   dribbble.command('search-image', {
     description: 'Search images on Dribbble',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('Search query'),

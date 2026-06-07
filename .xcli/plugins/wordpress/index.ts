@@ -35,6 +35,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('login', {
     description: '登录 WordPress.com',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       email: z.string().optional().describe('WordPress.com 邮箱'),
@@ -89,6 +90,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('publish', {
     description: '在 WordPress.com 发布文章（dofollow 外链）',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       title: z.string().describe('文章标题'),
@@ -202,6 +204,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('draft', {
     description: '在 WordPress.com 保存草稿',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       title: z.string().describe('文章标题'),
@@ -260,6 +263,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('update-profile', {
     description: '更新 WordPress.com 个人资料（添加外链）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('要添加到 Profile 的 URL'),
@@ -313,6 +317,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('create-page', {
     description: '在 WordPress.com 创建静态页面（dofollow 外链）',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       title: z.string().describe('页面标题'),

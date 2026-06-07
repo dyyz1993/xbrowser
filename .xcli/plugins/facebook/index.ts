@@ -37,6 +37,7 @@ export default function (xcli: XCLIAPI): void {
 
   facebook.command('search-image', {
     description: 'Facebook 图片搜索 - 搜索 Facebook 中的公开图片',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),

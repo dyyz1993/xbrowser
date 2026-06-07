@@ -13,6 +13,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('assert', {
     description: 'Assert page state — check text, visibility, URL, title, element count',
+    loginRequired: 'optional',
     scope: 'page',
     parameters: z.object({
       type: z.enum(['text', 'visible', 'hidden', 'url', 'title', 'count', 'attribute', 'css', 'enabled', 'checked']).describe('Assertion type'),

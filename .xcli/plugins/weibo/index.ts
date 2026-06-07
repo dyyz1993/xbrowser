@@ -12,6 +12,7 @@ export default function (xcli: XCLIAPI): void {
 
   weibo.command('search-image', {
     description: '微博图片搜索 - 搜索微博中的图片内容',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),

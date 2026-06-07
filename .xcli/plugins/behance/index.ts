@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   behance.command('search-image', {
     description: 'Search images on Behance',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('Search query'),

@@ -35,6 +35,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('login', {
     description: '登录 Medium（Google / 邮箱）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser medium login', description: '登录 Medium' }],
@@ -76,6 +77,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('publish', {
     description: '在 Medium 发布文章（含外链）',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       title: z.string().describe('文章标题'),
@@ -160,6 +162,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('draft', {
     description: '在 Medium 保存草稿',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       title: z.string().describe('文章标题'),
@@ -216,6 +219,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('import', {
     description: '在 Medium 导入文章（设置 canonical URL）',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       url: z.string().describe('要导入的文章 URL（设置 canonical）'),
@@ -270,6 +274,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('update-profile', {
     description: '更新 Medium 个人资料（添加外链）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('要添加到 Profile 的 URL'),

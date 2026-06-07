@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   tumblr.command('search-image', {
     description: 'Tumblr 图片搜索 - 搜索 Tumblr 上的图片内容',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),

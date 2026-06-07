@@ -13,6 +13,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('diff', {
     description: 'Compare current page screenshot against a baseline image for visual regression',
+    loginRequired: 'optional',
     scope: 'page',
     parameters: z.object({
       baseline: z.string().describe('Path to baseline screenshot file'),

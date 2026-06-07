@@ -321,6 +321,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('login', {
     description: '登录 CSDN（GitHub / 邮箱 / 手机号）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser csdn login', description: '登录 CSDN' }],
@@ -365,6 +366,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('publish', {
     description: '在 CSDN 发布博客文章（含外链）',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       title: z.string().describe('文章标题'),
@@ -484,6 +486,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('draft', {
     description: '在 CSDN 保存草稿',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       title: z.string().describe('文章标题'),
@@ -546,6 +549,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('update-profile', {
     description: '更新 CSDN 个人资料（添加外链）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('要添加到 Profile 的网站 URL'),
@@ -602,6 +606,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('fetch-articles', {
     description: '获取 CSDN 用户文章列表或搜索文章',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       keyword: z.string().optional().describe('搜索关键词（不填则获取个人文章列表）'),

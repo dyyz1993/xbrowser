@@ -276,6 +276,7 @@ export default function (xcli: XCLIAPI): void {
      ════════════════════════════════════════════ */
   site.command('billing', {
     description: '查询 Mureka 积分余额、免费试用次数、可用模型',
+    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ credits: z.number(), freeTtsDuration: z.number(), userStatus: z.string(), models: z.array(z.object({ name: z.string(), model: z.string(), credits: z.number(), freeToUse: z.number(), trialsRemaining: z.number().nullable(), description: z.string() }).passthrough()) }).passthrough(),
     parameters: z.object({}),
@@ -331,6 +332,7 @@ export default function (xcli: XCLIAPI): void {
      ════════════════════════════════════════════ */
   site.command('library', {
     description: '查看已创作的歌曲列表',
+    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ songs: z.array(z.record(z.any())) }).passthrough(),
     parameters: z.object({
@@ -389,6 +391,7 @@ export default function (xcli: XCLIAPI): void {
      ════════════════════════════════════════════ */
   site.command('create', {
     description: '在 Mureka 上创建音乐。支持简易/自定义/配乐模式，--wait 同步等待结果',
+    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ songs: z.array(z.record(z.any())).optional(), songId: z.string().optional(), status: z.string().optional() }).passthrough(),
     parameters: z.object({
@@ -763,6 +766,7 @@ export default function (xcli: XCLIAPI): void {
      ════════════════════════════════════════════ */
   site.command('status', {
     description: '检查当前音乐生成状态',
+    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ status: z.string().optional(), songs: z.array(z.record(z.any())).optional() }).passthrough(),
     parameters: z.object({}),
@@ -826,6 +830,7 @@ export default function (xcli: XCLIAPI): void {
      ════════════════════════════════════════════ */
   site.command('download', {
     description: '下载音乐到本地（返回 curl 命令或直接下载）',
+    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ url: z.string(), size: z.number().optional() }).passthrough(),
     parameters: z.object({
@@ -904,6 +909,7 @@ export default function (xcli: XCLIAPI): void {
      ════════════════════════════════════════════ */
   site.command('result', {
     description: '获取最新生成的音乐音频 URL（被动拦截页面数据）',
+    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ songs: z.array(z.record(z.any())) }).passthrough(),
     parameters: z.object({

@@ -97,6 +97,7 @@ export default function (xcli: XCLIAPI): void {
   // ═══════════════════════════════════════════════════
   site.command('list', {
     description: '列出所有历史会话',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({}),
     result: z.array(z.object({ index: z.number(), title: z.string(), url: z.string() }).passthrough()),
@@ -133,6 +134,7 @@ export default function (xcli: XCLIAPI): void {
   // ═══════════════════════════════════════════════════
   site.command('new', {
     description: '创建新的空白对话',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({}),
     result: z.object({ created: z.boolean() }).passthrough(),
@@ -188,6 +190,7 @@ export default function (xcli: XCLIAPI): void {
   // ═══════════════════════════════════════════════════
   site.command('open', {
     description: '通过标题打开指定会话（模糊匹配）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       title: z.string().describe('会话标题（支持模糊匹配）'),
@@ -232,6 +235,7 @@ export default function (xcli: XCLIAPI): void {
   // ═══════════════════════════════════════════════════
   site.command('chat', {
     description: '发送消息并等待 AI 回复',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       message: z.string().describe('消息内容'),
@@ -524,6 +528,7 @@ export default function (xcli: XCLIAPI): void {
   // ═══════════════════════════════════════════════════
   site.command('mode', {
     description: '切换快速模式/专家模式',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       mode: z.enum(['normal', 'expert']).describe('模式：normal=快速模式, expert=专家模式'),
@@ -606,6 +611,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('think', {
     description: '切换深度思考模式',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       state: z.enum(['on', 'off']).describe('on=开启, off=关闭'),
@@ -642,6 +648,7 @@ export default function (xcli: XCLIAPI): void {
   // ═══════════════════════════════════════════════════
   site.command('search', {
     description: '切换智能搜索（联网搜索）',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       state: z.enum(['on', 'off']).describe('on=开启, off=关闭'),
@@ -678,6 +685,7 @@ export default function (xcli: XCLIAPI): void {
   // ═══════════════════════════════════════════════════
   site.command('attach', {
     description: '发送附件（图片/文件/URL）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       type: z.enum(['image', 'file', 'url']).describe('附件类型'),

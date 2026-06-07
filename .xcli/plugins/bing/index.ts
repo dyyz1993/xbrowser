@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   bing.command('search-image', {
     description: 'Bing Images search - extract image URLs, sizes, and metadata',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('Search query'),
@@ -122,6 +123,7 @@ export default function (xcli: XCLIAPI): void {
 
   bing.command('webmaster-config', {
     description: '保存 Bing Webmaster/IndexNow API 配置',
+    loginRequired: 'none',
     scope: 'cli',
     parameters: z.object({
       host: z.string().describe('站点域名（如 xbrowser.dev）'),
@@ -139,6 +141,7 @@ export default function (xcli: XCLIAPI): void {
 
   bing.command('push-url', {
     description: '通过 Bing IndexNow API 即时推送 URL（即时索引协议）',
+    loginRequired: 'none',
     scope: 'cli',
     parameters: z.object({
       urls: z.array(z.string()).describe('要推送的 URL 列表'),

@@ -573,6 +573,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('ai-search', {
     description: 'Search via AI engines (14 engines: DeepSeek/Doubao/ChatGPT/Claude/Kimi/通义千问/元宝/智谱/文心/秘塔/天工/星火/海螺/纳米AI) with structured results',
+    loginRequired: 'optional',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),

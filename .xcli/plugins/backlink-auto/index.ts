@@ -554,6 +554,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('run', {
     description: '逐个站点自动注册并提交外链（CDP安全模式）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       startFrom: z.number().optional().describe('从第几个站点开始（0-based）').default(0),
@@ -618,6 +619,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('sms', {
     description: '读取最新短信验证码',
+    loginRequired: 'required',
     scope: 'project',
     parameters: z.object({
       filter: z.string().optional().describe('过滤关键词'),
@@ -631,6 +633,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('read-email', {
     description: '从163网页邮箱读取验证码',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       from: z.string().describe('发件人域名'),

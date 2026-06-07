@@ -479,6 +479,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search', {
     description: '搜索知乎问题、回答、文章',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),
@@ -534,6 +535,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('trending', {
     description: '获取知乎热榜',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       limit: z.number().optional().default(20),
@@ -582,6 +584,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('question', {
     description: '获取知乎问题及其回答',
+    loginRequired: 'optional',
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('知乎问题 URL'),
@@ -634,6 +637,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('answer', {
     description: '回答知乎问题（支持外链）',
+    loginRequired: 'optional',
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('知乎问题 URL'),
@@ -692,6 +696,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('chat', {
     description: '知乎知答 AI 搜索 — 支持思考模式选择和知识来源过滤，返回 AI 回复及引用来源',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('问题或查询内容'),
@@ -851,6 +856,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('article', {
     description: '在知乎发布文章（含外链）',
+    loginRequired: 'optional',
     scope: 'browser',
     parameters: z.object({
       title: z.string().describe('文章标题'),

@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   pic699.command('search-image', {
     description: '摄图网图片搜索',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),

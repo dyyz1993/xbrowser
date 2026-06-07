@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   freepik.command('search-image', {
     description: 'Freepik image search',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('Search query'),

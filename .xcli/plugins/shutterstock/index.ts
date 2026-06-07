@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   shutterstock.command('search-image', {
     description: 'Shutterstock image search',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('Search query'),

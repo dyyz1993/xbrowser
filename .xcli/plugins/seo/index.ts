@@ -22,6 +22,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('ping', {
     description: '通过 sitemap ping 通知搜索引擎抓取站点地图',
+    loginRequired: 'none',
     scope: 'project',
     result: z.object({ sitemap: z.string(), engines: z.array(z.object({ engine: z.string(), ok: z.boolean(), status: z.string() })) }).passthrough(),
     parameters: z.object({
@@ -76,6 +77,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('submit', {
     description: '通过 IndexNow 协议提交 URL 给搜索引擎（Bing/Yandex/Seznam 等）',
+    loginRequired: 'none',
     scope: 'project',
     result: z.object({ url: z.string(), host: z.string(), indexnow: z.object({ ok: z.boolean(), status: z.string() }) }).passthrough(),
     parameters: z.object({
@@ -123,6 +125,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('bulk-submit', {
     description: '批量提交多个 URL 到 IndexNow（最多 10000 条）',
+    loginRequired: 'none',
     scope: 'project',
     result: z.object({ host: z.string(), submitted: z.number(), ok: z.boolean(), status: z.string() }).passthrough().nullable(),
     parameters: z.object({
@@ -188,6 +191,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('setup-indexnow', {
     description: '生成 IndexNow key — 配置后 xbrowser seo submit 才能工作',
+    loginRequired: 'none',
     scope: 'project',
     result: z.object({ domain: z.string(), key: z.string(), keyUrl: z.string() }).passthrough(),
     parameters: z.object({
@@ -220,6 +224,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('check', {
     description: '检查域名的 IndexNow / robots.txt / sitemap 等 SEO 基础配置',
+    loginRequired: 'none',
     scope: 'project',
     result: z.object({ domain: z.string(), checks: z.array(z.object({ item: z.string(), status: z.string(), detail: z.string().optional() })), indexnowKeyFound: z.boolean() }).passthrough(),
     parameters: z.object({
@@ -319,6 +324,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('analyze', {
     description: '分析页面 SEO 因素，给出评分和优化建议',
+    loginRequired: 'none',
     scope: 'project',
     result: z.object({ url: z.string().optional(), title: z.string(), description: z.string(), robots: z.string(), canonical: z.string(), openGraph: z.object({ title: z.string(), description: z.string(), image: z.string(), url: z.string() }), twitter: z.object({ card: z.string(), title: z.string(), description: z.string(), image: z.string() }), headings: z.object({ h1Count: z.number(), h1s: z.array(z.string()), h2Count: z.number(), h2s: z.array(z.string()) }), images: z.object({ total: z.number(), withoutAlt: z.number() }), links: z.object({ internal: z.number(), external: z.number() }), structuredData: z.array(z.any()), score: z.object({ passed: z.number(), total: z.number(), percentage: z.number() }) }).passthrough().nullable(),
     parameters: z.object({
@@ -473,6 +479,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('setup-guide', {
     description: '输出完整的搜索引擎收录配置指南',
+    loginRequired: 'none',
     scope: 'project',
     result: z.object({ domain: z.string() }).passthrough(),
     parameters: z.object({
@@ -508,6 +515,7 @@ export default function (xcli: XCLIAPI): void {
   // ───── backlinks ───────────────────────────────
   seo.command('backlinks', {
     description: '列出外链提交平台及精确入口 URL（57 个平台，11 个类别）',
+    loginRequired: 'none',
     scope: 'project',
     result: z.object({ total: z.number(), filtered: z.boolean(), categories: z.array(z.string()), platforms: z.array(z.object({ name: z.string(), url: z.string(), entryUrl: z.string(), category: z.string(), steps: z.string() })) }).passthrough(),
     parameters: z.object({
@@ -564,6 +572,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('login', {
     description: '在浏览器中登录外链平台，保存登录状态',
+    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ platform: z.string(), loggedIn: z.boolean() }).passthrough().nullable(),
     parameters: z.object({
@@ -613,6 +622,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('logout', {
     description: '清除平台的登录状态',
+    loginRequired: 'none',
     scope: 'project',
     result: z.object({ cleared: z.number().optional(), keys: z.array(z.string()).optional(), platform: z.string().optional() }).passthrough().nullable(),
     parameters: z.object({
@@ -853,6 +863,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('submit-backlink', {
     description: '在浏览器中打开外链平台的外链提交入口页面，可选自动填写 URL',
+    loginRequired: 'none',
     scope: 'browser',
     result: z.object({ platform: z.string(), entryUrl: z.string(), category: z.string(), steps: z.string(), autoFill: z.object({ filled: z.boolean(), saved: z.boolean() }).optional() }).passthrough().nullable(),
     parameters: z.object({
@@ -961,6 +972,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('submit-guest-post', {
     description: '在浏览器中提交客座文章到支持 Guest Post 的平台',
+    loginRequired: 'none',
     scope: 'browser',
     result: z.object({ platform: z.string(), formUrl: z.string(), submitted: z.boolean().optional(), type: z.string().optional() }).passthrough().nullable(),
     parameters: z.object({
@@ -1164,6 +1176,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('setup-email', {
     description: '配置邮箱 IMAP 授权（用于自动获取验证码，支持 QQ 邮箱等）',
+    loginRequired: 'none',
     scope: 'project',
     result: z.object({ configured: z.boolean() }).passthrough(),
     parameters: z.object({
@@ -1200,6 +1213,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('verify-email', {
     description: '从 Gmail 获取最新的验证邮件，提取验证码或验证链接',
+    loginRequired: 'none',
     scope: 'project',
     result: z.object({ subject: z.string(), from: z.string(), code: z.string().optional(), link: z.string().optional() }).passthrough(),
     parameters: z.object({
@@ -1241,6 +1255,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('register', {
     description: '在浏览器中自动注册外链平台账号',
+    loginRequired: 'none',
     scope: 'browser',
     result: z.object({ platform: z.string(), email: z.string(), password: z.string(), signupUrl: z.string(), submitted: z.boolean() }).passthrough(),
     parameters: z.object({
@@ -1395,6 +1410,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('batch-submit', {
     description: '批量提交网站 URL 到多个外链平台（自动填写并保存）',
+    loginRequired: 'none',
     scope: 'browser',
     result: z.object({ url: z.string(), total: z.number(), summary: z.object({ reachable: z.number(), logged: z.number(), filled: z.number(), saved: z.number() }) }).passthrough().nullable(),
     parameters: z.object({

@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   gag.command('search-image', {
     description: '9GAG 图片搜索 - 搜索 9GAG 上的搞笑图片和梗图',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),

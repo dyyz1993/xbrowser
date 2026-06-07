@@ -33,6 +33,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search-image', {
     description: 'Pinterest image search (requires login via --cdp)',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string(), limit: z.number().optional().default(20),

@@ -319,6 +319,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('login', {
     description: '登录掘金（GitHub OAuth / 手机号）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser juejin login', description: '登录掘金' }],
@@ -365,6 +366,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('publish', {
     description: '在掘金发布文章（Markdown，含外链）',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       title: z.string().describe('文章标题'),
@@ -511,6 +513,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('draft', {
     description: '在掘金保存草稿',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       title: z.string().describe('文章标题'),
@@ -575,6 +578,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('update-profile', {
     description: '更新掘金个人资料（添加外链）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('要添加到 Profile 的网站 URL'),
@@ -633,6 +637,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('fetch-articles', {
     description: '获取当前登录用户的掘金文章列表',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       limit: z.number().optional().default(20).describe('获取文章数量上限'),

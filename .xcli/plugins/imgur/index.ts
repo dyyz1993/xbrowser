@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   imgur.command('search-image', {
     description: 'Imgur 图片搜索 - 搜索 Imgur 上的图片',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),

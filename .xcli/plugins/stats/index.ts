@@ -155,6 +155,7 @@ export default function(xcli: XCLIAPI): void {
 
   stats.command('indicators', {
     description: '列出分省年度数据所有可用指标',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser stats indicators', description: '列出所有经济指标' }],
@@ -175,6 +176,7 @@ export default function(xcli: XCLIAPI): void {
 
   stats.command('gdp', {
     description: '获取各省地区生产总值（GDP）',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       format: z.enum(['json', 'csv']).optional().default('json').describe('输出格式'),
@@ -197,6 +199,7 @@ export default function(xcli: XCLIAPI): void {
 
   stats.command('retail', {
     description: '获取各省社会消费品零售总额',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       format: z.enum(['json', 'csv']).optional().default('json').describe('输出格式'),
@@ -216,6 +219,7 @@ export default function(xcli: XCLIAPI): void {
 
   stats.command('query', {
     description: '通用指标查询（输入指标名称查询各省数据）',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       indicator: z.string().describe('指标名称'),
@@ -233,6 +237,7 @@ export default function(xcli: XCLIAPI): void {
 
   stats.command('report', {
     description: '生成 HTML 可视化报告',
+    loginRequired: 'none',
     scope: 'cli',
     parameters: z.object({
       output: z.string().optional().default('./stats-report.html').describe('输出路径'),
@@ -258,6 +263,7 @@ export default function(xcli: XCLIAPI): void {
 
   stats.command('export', {
     description: '导出缓存数据为 JSON/CSV',
+    loginRequired: 'none',
     scope: 'cli',
     parameters: z.object({
       format: z.enum(['json', 'csv']).optional().default('json').describe('格式'),

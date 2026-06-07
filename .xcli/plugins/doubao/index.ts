@@ -227,6 +227,7 @@ export default function (xcli: XCLIAPI): void {
   //  1. list — 列出所有会话
   site.command('list', {
     description: '列出所有历史会话',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({}),
     examples: [
@@ -261,6 +262,7 @@ export default function (xcli: XCLIAPI): void {
   //  2. new — 新建对话
   site.command('new', {
     description: '创建新的空白对话',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({}),
     examples: [
@@ -310,6 +312,7 @@ export default function (xcli: XCLIAPI): void {
   //  3. open — 通过标题打开会话
   site.command('open', {
     description: '通过标题打开指定会话（模糊匹配）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       title: z.string().describe('会话标题（支持模糊匹配）'),
@@ -350,6 +353,7 @@ export default function (xcli: XCLIAPI): void {
   //  4. chat — 发送消息（支持文件上传 + 搜索来源提取）
   site.command('chat', {
     description: '发送消息并等待 AI 回复，支持文件上传和搜索来源提取',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       message: z.string().describe('消息内容'),
@@ -643,6 +647,7 @@ export default function (xcli: XCLIAPI): void {
   //  5. image — 文生图
   site.command('image', {
     description: '文生图（Text-to-Image）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       prompt: z.string().describe('图片描述提示词'),
@@ -849,6 +854,7 @@ export default function (xcli: XCLIAPI): void {
   //  6. image-edit — 图片编辑（重绘/扩图/擦除/增强）
   site.command('image-edit', {
     description: '图片编辑：重绘(redraw)、扩图(expand)、擦除(erase)、增强(enhance)',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       action: z.enum(['redraw', 'expand', 'erase', 'enhance']).describe('编辑操作：redraw=重绘, expand=扩图, erase=擦除, enhance=增强'),
@@ -941,6 +947,7 @@ export default function (xcli: XCLIAPI): void {
   //  7. image-cutout — AI 抠图
   site.command('image-cutout', {
     description: 'AI 抠图（背景移除）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       image: z.string().describe('待抠图图片路径'),
@@ -1006,6 +1013,7 @@ export default function (xcli: XCLIAPI): void {
   //  8. image-vary — 图片衍生（以图生图）
   site.command('image-vary', {
     description: '以图生图（Variation），基于参考图生成变体',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       image: z.string().describe('参考图片路径'),
@@ -1065,6 +1073,7 @@ export default function (xcli: XCLIAPI): void {
   //  9. my-creations — 创作历史
   site.command('my-creations', {
     description: '查看创作历史（图片/视频/全部）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       type: z.enum(['image', 'video', 'all']).optional().describe('筛选类型：image=图片, video=视频, all=全部'),
@@ -1127,6 +1136,7 @@ export default function (xcli: XCLIAPI): void {
   //  10. video — 提交视频生成
   site.command('video', {
     description: '提交视频生成任务（异步，返回 taskId）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       prompt: z.string().describe('视频描述提示词'),
@@ -1191,6 +1201,7 @@ export default function (xcli: XCLIAPI): void {
   //  11. video-status — 检查视频生成状态
   site.command('video-status', {
     description: '检查视频生成任务状态（pending/processing/completed/failed）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       task: z.string().describe('任务 ID'),
@@ -1236,6 +1247,7 @@ export default function (xcli: XCLIAPI): void {
   //  12. video-result — 获取视频结果
   site.command('video-result', {
     description: '获取已完成视频的 URL',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       task: z.string().describe('任务 ID'),
@@ -1290,6 +1302,7 @@ export default function (xcli: XCLIAPI): void {
   //  13. music — 音乐生成（verified flow via 音乐生成 button + bigmusic/get_video interceptor）
   site.command('music', {
     description: '通过豆包音乐生成面板创建音乐。传 --lyric 使用自定义歌词，传 --timeout 同步等待音频 URL，否则异步提交',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       description: z.string().optional().describe('歌词主题描述（如"春天的田野"、"友情岁月"），AI 写歌词模式使用'),
@@ -1774,6 +1787,7 @@ export default function (xcli: XCLIAPI): void {
   //  14. music-status — 检查音乐生成状态
   site.command('music-status', {
     description: '检查当前页面音乐生成状态（需保持同一 --session）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       task: z.string().optional().describe('任务 ID（可选，仅供标记）'),
@@ -1830,6 +1844,7 @@ export default function (xcli: XCLIAPI): void {
   //  15. music-result — 获取已生成的音乐 URL
   site.command('music-result', {
     description: '获取已完成音乐的音频 URL（需保持同一 --session）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       task: z.string().optional().describe('任务 ID（可选，仅供标记）'),
@@ -1895,6 +1910,7 @@ export default function (xcli: XCLIAPI): void {
   //  16. upload — 上传文件到豆包
   site.command('upload', {
     description: '上传文件到豆包',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       path: z.string().describe('待上传文件路径'),
@@ -1956,6 +1972,7 @@ export default function (xcli: XCLIAPI): void {
   //  17. cloud-drive — 云盘文件管理
   site.command('cloud-drive', {
     description: '查看豆包云盘文件列表',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       list: z.boolean().optional().describe('列出云盘文件'),
@@ -2012,6 +2029,7 @@ export default function (xcli: XCLIAPI): void {
   //  18. mode — 切换 AI 模型
   site.command('mode', {
     description: '切换豆包 AI 模型',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       model: z.string().describe('模型名称（如：豆包Pro、豆包1.5、Seedream、Seedance 等）'),
@@ -2068,6 +2086,7 @@ export default function (xcli: XCLIAPI): void {
   //  19. search — 联网搜索
   site.command('search', {
     description: '联网搜索并返回带来源的结果',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索查询词'),
@@ -2242,6 +2261,7 @@ export default function (xcli: XCLIAPI): void {
   //  20. attach — 上传附件（支持多种文件格式，最多50个文件）
   site.command('attach', {
     description: '上传附件（支持 pdf/txt/csv/docx/xlsx/pptx/md/mobi/epub 及图片，最多50个文件）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       type: z.enum(['image', 'file']).describe('附件类型：image=图片, file=文件'),

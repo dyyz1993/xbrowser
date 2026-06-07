@@ -15,6 +15,7 @@ export default function(xcli: XCLIAPI): void {
 
   steam.command('reviews', {
     description: '抓取 Steam 游戏的全部评论（cursor 分页，100/页）',
+    loginRequired: 'none',
     scope: 'browser',
     result: z.record(z.any()),
     parameters: z.object({

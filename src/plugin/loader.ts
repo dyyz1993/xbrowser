@@ -13,6 +13,7 @@ import { PluginMetadataParser } from './metadata-parser.js';
 import { ensurePluginDependencies } from './ensure-deps.js';
 import { buildPluginContract } from './contract.js';
 import type { PluginCommandContract, PluginContract } from './types.js';
+import { patchLoginRequired } from './login-required-patch.js';
 
 export type { PluginInstance, PluginStatus, XCLIAPI };
 
@@ -39,6 +40,7 @@ export class XBrowserPluginLoader {
   private options: PluginLoaderOptions;
 
   constructor(options?: PluginLoaderOptions) {
+    patchLoginRequired();
     this.options = options ?? {};
     const cwd = this.options.cwd || process.cwd();
 

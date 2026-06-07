@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   reddit.command('search-image', {
     description: 'Reddit 图片搜索 - 搜索 Reddit 中的图片帖子',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),

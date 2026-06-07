@@ -828,6 +828,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('collect', {
     description: '从单个 AI 搜索引擎采集数据（SSE 拦截 + DOM 提取），提取外链域名排名',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       keyword: z.string().describe('搜索关键词'),
@@ -882,6 +883,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('batch', {
     description: '批量从多个 AI 搜索引擎采集数据（SSE + DOM 提取），汇总域名排名',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       keyword: z.string().describe('搜索关键词'),
@@ -967,6 +969,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('rank', {
     description: '基于历史采集数据生成域名排名和平台排名（去噪后统计）',
+    loginRequired: 'required',
     scope: 'global',
     parameters: z.object({
       format: z.enum(['json', 'markdown', 'text']).default('json').describe('输出格式'),
@@ -1011,6 +1014,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('all', {
     description: '一键搜索所有 AI 引擎（SSE 拦截 + DOM 提取 + 去噪过滤），自动聚合排名',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       keyword: z.string().describe('搜索关键词'),
@@ -1187,6 +1191,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('company', {
     description: '基于历史采集数据生成企业排名，按跨引擎出现频次评分',
+    loginRequired: 'required',
     scope: 'global',
     parameters: z.object({
       format: z.enum(['json', 'markdown', 'text']).default('json').describe('输出格式'),
@@ -1231,6 +1236,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('trend', {
     description: '基于历史采集数据分析域名出现趋势，识别上升/下降/稳定域名',
+    loginRequired: 'required',
     scope: 'global',
     parameters: z.object({
       format: z.enum(['json', 'markdown', 'text']).default('json').describe('输出格式'),
@@ -1276,6 +1282,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('report', {
     description: '基于历史数据生成完整的 GEO 分析报告，包含域名排名、企业排名和趋势分析',
+    loginRequired: 'required',
     scope: 'global',
     parameters: z.object({
       keyword: z.string().default('').describe('报告关联的关键词（留空则包含所有数据）'),
@@ -1335,6 +1342,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('history', {
     description: '查看历史采集记录，按时间倒序排列',
+    loginRequired: 'required',
     scope: 'global',
     parameters: z.object({
       limit: z.number().default(20).describe('显示条数'),
@@ -1374,6 +1382,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('status', {
     description: '查看 GEO 分析系统状态，包括数据量、引擎分布、存储占用',
+    loginRequired: 'required',
     scope: 'global',
     parameters: z.object({}),
     examples: [

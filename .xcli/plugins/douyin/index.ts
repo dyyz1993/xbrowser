@@ -328,6 +328,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('videos', {
     description: '采集用户作品列表（网络拦截）',
+    loginRequired: 'optional',
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('用户主页 URL'),
@@ -480,6 +481,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('profile', {
     description: '获取用户详细资料（XHR 拦截）',
+    loginRequired: 'optional',
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('用户主页 URL 或 secUid'),
@@ -602,6 +604,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('detail', {
     description: '获取视频详细信息（XHR 拦截，支持短链）',
+    loginRequired: 'optional',
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('视频 URL / 短链 / 或纯 awemeId'),
@@ -771,6 +774,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('comments', {
     description: '获取视频评论（网络拦截）',
+    loginRequired: 'optional',
     scope: 'browser',
     parameters: z.object({
       awemeId: z.string().describe('视频 ID'),
@@ -836,6 +840,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('user-comments', {
     description: '获取用户喜欢的视频列表（网络拦截）',
+    loginRequired: 'optional',
     scope: 'browser',
     parameters: z.object({
       uid: z.string().describe('用户 ID'),
@@ -908,6 +913,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search', {
     description: '搜索抖音视频',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       keyword: z.string().describe('搜索关键词'),
@@ -1118,6 +1124,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('download', {
     description: '下载抖音视频（无需登录）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('视频 URL 或短链（如 https://v.douyin.com/xxx）'),
@@ -1275,6 +1282,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('ai-subtitle', {
     description: '通过抖音 AI 提取视频字幕',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('视频详情页 URL 或用户主页 URL'),

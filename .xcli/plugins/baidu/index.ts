@@ -50,6 +50,7 @@ export default function (xcli: XCLIAPI): void {
 
   baidu.command('search', {
     description: '百度搜索并提取多页结果',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),
@@ -181,6 +182,7 @@ export default function (xcli: XCLIAPI): void {
 
   baidu.command('hotsearch', {
     description: '获取百度热搜榜',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       category: z
@@ -257,6 +259,7 @@ export default function (xcli: XCLIAPI): void {
 
   baidu.command('suggest', {
     description: '获取百度搜索建议/联想词',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('输入关键词'),
@@ -293,6 +296,7 @@ export default function (xcli: XCLIAPI): void {
 
   baidu.command('news', {
     description: '获取百度新闻资讯',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('新闻关键词'),
@@ -363,6 +367,7 @@ export default function (xcli: XCLIAPI): void {
 
   baidu.command('seo-rank', {
     description: '查询指定域名在百度搜索中的排名',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       domain: z.string().describe('目标域名（如 example.com）'),
@@ -450,6 +455,7 @@ export default function (xcli: XCLIAPI): void {
 
   baidu.command('search-image', {
     description: '百度图片搜索',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),
@@ -607,6 +613,7 @@ export default function (xcli: XCLIAPI): void {
 
   baidu.command('webmaster-config', {
     description: '保存百度站长 API 配置（site 和 token）',
+    loginRequired: 'none',
     scope: 'cli',
     parameters: z.object({
       site: z.string().describe('站点域名（如 https://xbrowser.dev）'),
@@ -625,6 +632,7 @@ export default function (xcli: XCLIAPI): void {
 
   baidu.command('push-url', {
     description: '通过百度站长 API 主动推送 URL',
+    loginRequired: 'none',
     scope: 'cli',
     parameters: z.object({
       urls: z.array(z.string()).describe('要推送的 URL 列表'),

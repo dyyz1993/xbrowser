@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   deviantart.command('search-image', {
     description: 'Search images on DeviantArt',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('Search query'),

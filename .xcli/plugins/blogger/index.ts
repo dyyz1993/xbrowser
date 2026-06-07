@@ -35,6 +35,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('login', {
     description: '登录 Blogger（Google 账号）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser blogger login', description: '登录 Blogger' }],
@@ -75,6 +76,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('create-blog', {
     description: '创建新的 Blogger 博客',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       title: z.string().describe('博客标题'),
@@ -133,6 +135,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('publish', {
     description: '在 Blogger 发布文章（dofollow 外链）',
+    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       title: z.string().describe('文章标题'),
@@ -206,6 +209,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('update-profile', {
     description: '更新 Blogger 个人资料（添加外链）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('要添加到 Profile 的 URL'),

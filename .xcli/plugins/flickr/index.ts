@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   flickr.command('search-image', {
     description: 'Search images on Flickr',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('Search query'),

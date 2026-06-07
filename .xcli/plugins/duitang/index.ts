@@ -15,6 +15,7 @@ export default function (xcli: XCLIAPI): void {
 
   duitang.command('search-image', {
     description: '堆糖图片搜索',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),

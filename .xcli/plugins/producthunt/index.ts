@@ -35,6 +35,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('login', {
     description: '登录 Product Hunt（Google OAuth）',
+    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     parameters: z.object({}),
@@ -76,6 +77,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('submit-product', {
     description: '提交新产品（含 dofollow 外链）',
+    loginRequired: 'required',
     scope: 'page',
     result: z.object({ name: z.string(), url: z.string(), pageUrl: z.string() }).passthrough(),
     parameters: z.object({
@@ -171,6 +173,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('comment', {
     description: '在产品页面评论（含外链）',
+    loginRequired: 'required',
     scope: 'page',
     result: z.object({ productUrl: z.string(), commented: z.boolean(), url: z.string() }).passthrough(),
     parameters: z.object({
@@ -226,6 +229,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('update-profile', {
     description: '更新 Product Hunt 个人资料（添加外链）',
+    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ url: z.string(), updated: z.boolean() }).passthrough(),
     parameters: z.object({

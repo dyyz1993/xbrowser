@@ -124,6 +124,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('image', {
     description: 'Search images across multiple sites with unified result format',
+    loginRequired: 'optional',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('Search query'),

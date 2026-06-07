@@ -110,6 +110,7 @@ export default function(api: XCLIAPI): void {
   // 查询车型的CMF评论
   site.command('query', {
     description: '查询指定车型的座椅CMF评论',
+    loginRequired: 'optional',
     scope: 'page',
     parameters: z.object({
       car: z.string().describe('车型名称（如：日产N7、奔驰S级、奥迪A8L）'),
@@ -206,6 +207,7 @@ export default function(api: XCLIAPI): void {
   // 列出所有支持的车型
   site.command('list', {
     description: '列出所有支持的车型',
+    loginRequired: 'optional',
     scope: 'any',
     parameters: z.object({}),
     result: z.object({
@@ -240,6 +242,7 @@ export default function(api: XCLIAPI): void {
   // 统计CMF关键词频率
   site.command('stats', {
     description: '统计CMF关键词频率',
+    loginRequired: 'optional',
     scope: 'page',
     parameters: z.object({
       car: z.string().optional().describe('车型名称，不指定则统计所有车型'),

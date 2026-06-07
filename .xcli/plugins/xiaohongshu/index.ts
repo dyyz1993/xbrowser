@@ -265,6 +265,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('detail', {
     description: '获取笔记详情（API 拦截）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({ noteId: z.string().describe('笔记 ID') }),
     examples: [{ cmd: 'xbrowser xiaohongshu detail --noteId "67xxxxxxxxxxxxxx"', description: '获取笔记详情' }],
@@ -317,6 +318,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('notes', {
     description: '采集用户笔记列表（API 拦截）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({ userId: z.string().describe('用户 ID'), maxPages: z.number().default(5).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu notes --userId "5xxxxxxxxxxxx"', description: '采集用户笔记' }],
@@ -361,6 +363,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('profile', {
     description: '获取用户资料（API 拦截 + DOM 兜底）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({ userId: z.string().describe('用户 ID') }),
     examples: [{ cmd: 'xbrowser xiaohongshu profile --userId "5xxxxxxxxxxxx"', description: '获取用户资料' }],
@@ -428,6 +431,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search', {
     description: '搜索笔记（API 拦截）',
+    loginRequired: 'optional',
     scope: 'browser',
     parameters: z.object({ keyword: z.string().describe('搜索关键词'), maxPages: z.number().default(3).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu search --keyword "美食推荐"', description: '搜索笔记' }],
@@ -468,6 +472,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('comments', {
     description: '获取笔记评论（API 拦截）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({ noteId: z.string().describe('笔记 ID'), maxPages: z.number().default(8).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu comments --noteId "67xxxxxxxxxxxxxx"', description: '获取笔记评论' }],
@@ -512,6 +517,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('feed', {
     description: '获取首页推荐（API 拦截）',
+    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({ maxPages: z.number().default(3).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu feed', description: '获取首页推荐' }],
@@ -551,6 +557,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('resolve-url', {
     description: '解析小红书短链',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({ url: z.string().describe('短链 URL') }),
     examples: [{ cmd: 'xbrowser xiaohongshu resolve-url --url "https://xhslink.com/xxx"', description: '解析短链' }],
@@ -589,6 +596,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search-image', {
     description: '小红书图片搜索',
+    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string(),
