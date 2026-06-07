@@ -657,16 +657,15 @@ export async function routeCommand(
               }
             }
             // Inject viewerUrl for login-related failures (custom fail() calls that bypass login-guard)
+            let injectedViewerUrl: string | undefined;
             const LOGIN_FAIL_KEYWORDS = ['登录','login','Login','未登录','not logged in','cdp','CDP','验证码','验证','captcha','需要登录','requires login'];
             const isLoginFail = isCommandResult(result) && result.success === false &&
               [result.message, ...(result.tips || [])].filter(Boolean).join(' ').toLowerCase()
                 .match(new RegExp(LOGIN_FAIL_KEYWORDS.join('|'), 'i'));
             if (isLoginFail) {
-              const viewerUrl = buildViewerUrl(sessionName);
-              if (viewerUrl && !(result.data as Record<string, unknown> | undefined)?.viewerUrl) {
-                (result.data as Record<string, unknown>) ??= {};
-                (result.data as Record<string, unknown>).viewerUrl = viewerUrl;
-                result.tips = [...(result.tips || []), `Open viewer to complete login: ${viewerUrl}`];
+              injectedViewerUrl = buildViewerUrl(sessionName);
+              if (injectedViewerUrl) {
+                result.tips = [...(result.tips || []), `Open viewer to complete login: ${injectedViewerUrl}`];
               }
             }
 
@@ -677,6 +676,12 @@ export async function routeCommand(
               const finalOutput: Record<string, unknown> = {
                 data: outputData,
               };
+              if (injectedViewerUrl) {
+                finalOutput.viewerUrl = injectedViewerUrl;
+              }
+              if (tips?.length) {
+                finalOutput.tips = tips;
+              }
               if (hookOutputs.length > 0) {
                 finalOutput.hooks = hookOutputs;
               }
