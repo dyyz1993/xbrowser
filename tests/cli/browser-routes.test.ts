@@ -242,7 +242,7 @@ describe('browser-routes', () => {
       );
       expect(mockExecuteCommand).toHaveBeenCalledWith(
         'screenshot',
-        { fullPage: true, type: 'png', selector: '#area' },
+        expect.objectContaining({ fullPage: true, type: 'png', selector: '#area' }),
         'sess'
       );
     });

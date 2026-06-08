@@ -1,58 +1,43 @@
-import { writeFileSync, mkdirSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
-import type { ExecutionHook, HookResultContext } from './types.js';
+/**
+ * screenshot-hook — 截图钩子
+ *
+ * 在命令执行后自动截图，返回 base64 编码的截图数据。
+ * 通过 XBROWSER_HOOKS=screenshot 启用。
+ * 截图质量通过 XBROWSER_SCREENSHOT_QUALITY 环境变量控制（默认 40）。
+ */
 
-const SCREENSHOTS_DIR = join(homedir(), '.xbrowser', 'screenshots', 'hooks');
+import type { Page } from '../browser-shim.js';
 
-function ensureDir(): void {
-  mkdirSync(SCREENSHOTS_DIR, { recursive: true });
-}
-
-export interface ScreenshotEntry {
-  step: string;
+interface HookContext {
+  page: Page;
   command: string;
-  /** File path to the screenshot on disk */
-  path: string;
-  /** Deprecated: base64 data (only when XBROWSER_SCREENSHOT_BASE64=1 is set) */
-  base64?: string;
-  url: string;
-  timestamp: number;
+  params: Record<string, unknown>;
 }
 
-export const screenshotHook: ExecutionHook = {
-  name: 'screenshot',
-  async onAfterCommand(ctx: HookResultContext): Promise<Record<string, unknown> | void> {
+interface AfterHookContext extends HookContext {
+  result: unknown;
+  duration: number;
+}
+
+export const screenshotHook = {
+  name: 'screenshot' as const,
+  onAfterCommand: async (ctx: AfterHookContext): Promise<Record<string, unknown> | undefined> => {
     try {
-      const quality = parseInt(process.env.XBROWSER_SCREENSHOT_QUALITY || '40');
-      const buffer = await ctx.page.screenshot({
-        type: 'jpeg',
-        quality: Math.max(10, Math.min(100, quality)),
-      });
+      const quality = parseInt(process.env.XBROWSER_SCREENSHOT_QUALITY || '40', 10);
+      const buf = await ctx.page.screenshot({ type: 'jpeg', quality }).catch(() => null);
+      if (!buf) return;
 
-      const timestamp = Date.now();
-      const random = Math.random().toString(36).slice(2, 8);
-      const screenshotPath = join(SCREENSHOTS_DIR, `hook-${timestamp}-${random}.jpg`);
-
-      ensureDir();
-      writeFileSync(screenshotPath, buffer);
-
-      const entry: ScreenshotEntry = {
-        step: ctx.command,
-        command: ctx.command,
-        path: screenshotPath,
-        url: ctx.page.url(),
-        timestamp,
+      return {
+        screenshot: {
+          step: ctx.command,
+          command: ctx.command,
+          base64: buf.toString('base64'),
+          url: ctx.page.url(),
+          timestamp: Date.now(),
+        },
       };
-
-      // Keep base64 for backward compat when env var is set
-      if (process.env.XBROWSER_SCREENSHOT_BASE64 === '1') {
-        entry.base64 = buffer.toString('base64');
-      }
-
-      return { screenshot: entry };
     } catch {
-      return undefined;
+      return;
     }
   },
 };

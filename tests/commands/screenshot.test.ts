@@ -77,7 +77,7 @@ describe('Screenshot Commands', () => {
 
     it('should return base64 data in screenshot result', async () => {
       const { screenshotCommand } = await import('../../src/commands/screenshot.js');
-      const result = await screenshotCommand.handler({}, ctx);
+      const result = await screenshotCommand.handler({ base64: true }, ctx);
       expect(typeof (result as any).data.data).toBe('string');
       expect((result as any).data.data.length).toBeGreaterThan(0);
     });

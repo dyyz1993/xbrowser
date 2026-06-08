@@ -65,7 +65,7 @@ describe('actions command', () => {
     it('should execute wait with milliseconds', async () => {
       const cmd = await getHandler();
       const result = await cmd.handler(
-        { url: 'https://example.com', actions: [{ type: 'wait', milliseconds: 100 }], output: 'json' },
+        { url: 'https://example.com', actions: [{ type: 'wait', milliseconds: 500 }], output: 'json' },
         ctx,
       );
       const data = (result as { data: { results: unknown[] } }).data;
@@ -678,7 +678,7 @@ describe('actions command', () => {
       (mockPage.screenshot as ReturnType<typeof vi.fn>).mockResolvedValueOnce(fakeBuf);
       const cmd = await getHandler();
       const result = await cmd.handler(
-        { url: 'https://example.com', actions: [{ type: 'screenshot' }], output: 'json' },
+        { url: 'https://example.com', actions: [{ type: 'screenshot', base64: true }], output: 'json' },
         ctx,
       );
       const data = (result as { data: { results: { type: string; result: string }[] } }).data;
