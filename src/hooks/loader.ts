@@ -9,7 +9,7 @@
  */
 
 import type { Page } from '../browser-shim.js';
-import { getDaemonConfig, getDaemonProcessStatus } from '../daemon/daemon.js';
+import { buildViewerUrl } from '../utils/viewer-url.js';
 
 interface HookContext {
   page: Page;
@@ -26,16 +26,6 @@ interface ExecutionHook {
   name: string;
   onBeforeCommand?: (ctx: HookContext) => Promise<void>;
   onAfterCommand?: (ctx: AfterHookContext) => Promise<Record<string, unknown> | undefined>;
-}
-
-function buildViewerUrl(sessionName?: string): string | undefined {
-  try {
-    const status = getDaemonProcessStatus();
-    const port = status.running ? status.port : getDaemonConfig().basePort;
-    return `http://localhost:${port}/preview/${encodeURIComponent(sessionName || 'default')}`;
-  } catch {
-    return undefined;
-  }
 }
 
 // ── 内置钩子注册表 ──
