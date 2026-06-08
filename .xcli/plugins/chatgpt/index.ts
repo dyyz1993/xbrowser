@@ -53,6 +53,8 @@ async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
 async function checkChatGPTLogin(page: Page): Promise<boolean> {
   try {
     const url = page.url();
+    if (url === 'about:blank' || url === '') return true;
+    if (!url.includes('chatgpt.com')) return true;
     if (url.includes('/auth') || url.includes('/login') || url.includes('/signup')) return false;
     const hasProfileBtn = await page.evaluate(() => {
       return !!document.querySelector('[data-testid="accounts-profile-button"]');
@@ -97,10 +99,11 @@ export default function (xcli: XCLIAPI): void {
     isLogin: async (ctx) => {
       try {
         const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-        if (!page) return false;
+        // No page or blank page — assume logged in, handler will navigate
+        if (!page) return true;
         return await checkChatGPTLogin(page);
       } catch {
-        return false;
+        return true;
       }
     },
   });

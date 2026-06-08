@@ -259,8 +259,10 @@ export default function (xcli: XCLIAPI): void {
     isLogin: async (ctx) => {
       try {
         const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-        if (!page) return false;
+        if (!page) return true;
         const url = page.url();
+        if (url === 'about:blank' || url === '') return true;
+        if (!url.includes('mureka.cn')) return true;
         if (url.includes('/login') || url.includes('/auth')) return false;
         const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '');
         if (!body) return false;
