@@ -20,8 +20,17 @@ const GEMINI_URL = 'https://gemini.google.com';
 type Page = import('../types').Page;
 
 async function getPage(ctx: CommandContext): Promise<Page> {
-  const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
+  let page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
   if (!page) throw new Error('需要浏览器页面');
+  if (typeof (page as any).goto !== 'function') {
+    const bc = (ctx as any).browserContext;
+    if (bc && typeof bc.newPage === 'function') {
+      page = await bc.newPage();
+    }
+    if (typeof (page as any).goto !== 'function') {
+      throw new Error('页面不可用');
+    }
+  }
   return page;
 }
 
