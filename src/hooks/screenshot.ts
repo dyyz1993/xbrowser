@@ -1,9 +1,21 @@
+import { writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 import type { ExecutionHook, HookResultContext } from './types.js';
+
+const SCREENSHOTS_DIR = join(homedir(), '.xbrowser', 'screenshots', 'hooks');
+
+function ensureDir(): void {
+  mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+}
 
 export interface ScreenshotEntry {
   step: string;
   command: string;
-  base64: string;
+  /** File path to the screenshot on disk */
+  path: string;
+  /** Deprecated: base64 data (only when XBROWSER_SCREENSHOT_BASE64=1 is set) */
+  base64?: string;
   url: string;
   timestamp: number;
 }
@@ -17,13 +29,27 @@ export const screenshotHook: ExecutionHook = {
         type: 'jpeg',
         quality: Math.max(10, Math.min(100, quality)),
       });
+
+      const timestamp = Date.now();
+      const random = Math.random().toString(36).slice(2, 8);
+      const screenshotPath = join(SCREENSHOTS_DIR, `hook-${timestamp}-${random}.jpg`);
+
+      ensureDir();
+      writeFileSync(screenshotPath, buffer);
+
       const entry: ScreenshotEntry = {
         step: ctx.command,
         command: ctx.command,
-        base64: buffer.toString('base64'),
+        path: screenshotPath,
         url: ctx.page.url(),
-        timestamp: Date.now(),
+        timestamp,
       };
+
+      // Keep base64 for backward compat when env var is set
+      if (process.env.XBROWSER_SCREENSHOT_BASE64 === '1') {
+        entry.base64 = buffer.toString('base64');
+      }
+
       return { screenshot: entry };
     } catch {
       return undefined;

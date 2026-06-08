@@ -166,6 +166,8 @@ export async function handleBrowserCommand(
           fullPage: !!(options['full-page'] || options.fullPage),
           type: options.type as string | undefined,
           selector: (options.selector || options.s) as string | undefined,
+          base64: !!(options.base64),
+          output: (options.output || options.o) as string | undefined,
         };
         break;
       case 'eval':

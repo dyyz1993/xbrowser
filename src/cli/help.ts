@@ -26,7 +26,7 @@ Commands:
   dblclick <selector>               Double click (-s <sel>)
   check <selector>                  Check checkbox (-s <sel>)
   uncheck <selector>                Uncheck checkbox (-s <sel>)
-  screenshot [--full-page]          Take screenshot
+  screenshot [--full-page] [--base64]  Take screenshot (saves to ~/.xbrowser/screenshots/; use --base64 for inline data)
   eval <expression>                 Evaluate JS
   wait <selector> [--timeout <ms>]  Wait for element (-s <sel>)
   scroll <direction> [--distance N] Scroll page

@@ -1,7 +1,23 @@
 import { z } from 'zod';
 import { ok } from '@dyyz1993/xcli-core';
+import { writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
+
+const SCREENSHOTS_DIR = join(homedir(), '.xbrowser', 'screenshots');
+
+function ensureScreenshotsDir(): void {
+  mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+}
+
+function generateScreenshotPath(format: string): string {
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).slice(2, 8);
+  const ext = format === 'jpeg' ? 'jpg' : 'png';
+  return join(SCREENSHOTS_DIR, `screenshot-${timestamp}-${random}.${ext}`);
+}
 
 const waitActionSchema = z.object({
   type: z.literal('wait'),
@@ -24,6 +40,7 @@ const screenshotActionSchema = z.object({
   fullPage: z.boolean().optional(),
   quality: z.number().min(1).max(100).optional(),
   viewport: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).optional(),
+  base64: z.boolean().optional().describe('Return base64 data instead of file path'),
 });
 
 const writeActionSchema = z.object({
@@ -73,7 +90,7 @@ export const actionSchema = z.union([
 type Action = z.infer<typeof actionSchema>;
 
 type ActionResult =
-  | { type: 'screenshot'; result: string }
+  | { type: 'screenshot'; result: string; base64?: boolean }
   | { type: 'scrape'; result: { url: string; html: string } }
   | { type: 'executeJavascript'; result: { type: string; value: unknown } }
   | { type: 'pdf'; result: string }
@@ -110,7 +127,13 @@ async function executeAction(page: BrowserCommandContext['page'], action: Action
         quality: action.quality ?? 80,
         ...(action.viewport ? { clip: { x: 0, y: 0, ...action.viewport } } : {}),
       });
-      return { type: 'screenshot', result: buf.toString('base64') };
+      if (action.base64) {
+        return { type: 'screenshot', result: buf.toString('base64'), base64: true };
+      }
+      ensureScreenshotsDir();
+      const screenshotPath = generateScreenshotPath('jpg');
+      writeFileSync(screenshotPath, buf);
+      return { type: 'screenshot', result: screenshotPath };
     }
 
     case 'write':

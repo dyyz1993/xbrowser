@@ -208,9 +208,12 @@ export default function (xcli: XCLIAPI): void {
     isLogin: async (ctx) => {
       try {
         const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-        if (!page) return false;
         const url = page.url();
         if (url.includes('/login') || url.includes('/auth') || url.includes('/passport')) return false;
+        // If URL already at the chat app page, user is definitely logged in
+        if (url.includes('/chat')) return true;
+        // Blank/new page — not navigated yet, assume not logged in
+        if (url === 'about:blank' || url === '') return false;
         const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
         if (!body || body.includes('登录') && body.includes('注册')) return false;
         return true;
@@ -222,7 +225,6 @@ export default function (xcli: XCLIAPI): void {
 
   // ═══════════════════════════════════════════════════
   //  SESSION MANAGEMENT (4 commands)
-  // ═══════════════════════════════════════════════════
 
   //  1. list — 列出所有会话
   site.command('list', {
