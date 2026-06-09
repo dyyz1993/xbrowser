@@ -295,6 +295,8 @@ export default function (xcli: XCLIAPI): void {
       style: z.string().optional().describe('音乐风格标签，逗号分隔（如 "electronic guitar, pop"），会点击对应风格标签'),
       instrumental: z.boolean().optional().describe('纯音乐模式（无歌词）'),
       model: z.string().optional().describe('模型版本（如 "v4.5-all", "v5Pro"），默认使用页面当前模型'),
+      minCredits: z.coerce.number().int().nonnegative().optional().default(1)
+        .describe('最少所需积分数，不足则拒绝创建'),
       wait: z.coerce.number().int().positive().optional()
         .describe('同步等待秒数（如 --wait 120），不传则异步提交'),
     }),
@@ -326,6 +328,28 @@ export default function (xcli: XCLIAPI): void {
               if (taCount >= 3) break;
             } catch { /* page still loading */ }
           }
+        }
+
+        // ── Check credits before creating ──
+        const creditInfo = await page.evaluate(() => {
+          const allText = document.body?.textContent || '';
+          // Suno shows "50 Credits" or "Credits remaining: 50" in the sidebar
+          const match = allText.match(/(\d+)\s*Credits?/);
+          if (match) return { credits: parseInt(match[1], 10), source: match[0] };
+          return null;
+        });
+        const minCredits = params.minCredits ?? 1;
+        if (creditInfo) {
+          tips.push(`积分: ${creditInfo.credits} (最少需要 ${minCredits})`);
+          if (creditInfo.credits < minCredits) {
+            return fail('❌ 积分不足', [
+              ...tips,
+              `当前积分 ${creditInfo.credits}，需要至少 ${minCredits}`,
+              '请充值后重试',
+            ]);
+          }
+        } else {
+          tips.push('⚠ 无法读取积分信息，跳过检查');
         }
 
         // ── Capture EXISTING clip IDs from the page BEFORE generation ──

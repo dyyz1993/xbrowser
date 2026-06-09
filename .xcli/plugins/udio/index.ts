@@ -151,7 +151,7 @@ async function checkLoggedIn(page: Page): Promise<boolean> {
     };
 
     page.on('response', handler);
-    await page.reload({ waitUntil: 'load', timeout: 30000 }).catch(() => {});
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
   });
 }
 
@@ -199,9 +199,9 @@ export default function (xcli: XCLIAPI): void {
         );
 
         if (!page.url().includes('/create')) {
-          await page.goto(CREATE_URL, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
+          await page.goto(CREATE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
         } else {
-          await page.reload({ waitUntil: 'load', timeout: 60000 }).catch(() => {});
+          await page.reload({ waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
         }
 
         const apiData = await apiDataPromise;
@@ -291,6 +291,8 @@ export default function (xcli: XCLIAPI): void {
       lyrics: z.string().optional().describe('自定义歌词文本'),
       style: z.string().optional().describe('音乐风格标签（逗号分隔，如 "ambient, piano, classical"）'),
       instrumental: z.boolean().optional().describe('纯音乐模式（无歌词）'),
+      minCredits: z.coerce.number().int().nonnegative().optional().default(1)
+        .describe('最少所需积分数，不足则拒绝创建'),
       wait: z.coerce.number().int().positive().optional()
         .describe('同步等待秒数（如 --wait 120），不传则异步提交'),
     }),
@@ -312,7 +314,7 @@ export default function (xcli: XCLIAPI): void {
         // ── Phase 1: Natural browsing warm-up ──
         // Navigate to homepage first (not directly to /create) to build natural browsing history.
         // Then navigate to /create via a "click" or navigation, mimicking human behavior.
-        await page.goto(UDIO_URL, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
+        await page.goto(UDIO_URL, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
         await humanDelay(2000, 4000);
 
         // Random mouse movement on homepage
@@ -320,7 +322,7 @@ export default function (xcli: XCLIAPI): void {
         await humanDelay(1000, 2000);
 
         // Now navigate to create page
-        await page.goto(CREATE_URL, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
+        await page.goto(CREATE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
         await humanDelay(2000, 4000);
 
         // Dismiss cookie consent if present (Cookie-Script banner)
@@ -351,6 +353,29 @@ export default function (xcli: XCLIAPI): void {
           return fail('未登录，请先登录 Udio', [...tips]);
         }
         tips.push('✅ 登录验证通过');
+
+        // ── Check credits before creating ──
+        const minCredits = (params as Record<string, unknown>).minCredits ?? 1;
+        const creditInfo = await page.evaluate(() => {
+          const text = document.body?.textContent || '';
+          // Udio shows "remaining" or "credits" info
+          const remMatch = text.match(/(\d+)\s*remaining/i);
+          const credMatch = text.match(/(\d+)\s*credits?\s*(left|remaining)?/i);
+          const val = remMatch?.[1] || credMatch?.[1];
+          return val ? { credits: parseInt(val, 10), source: (remMatch || credMatch)?.[0] || '' } : null;
+        });
+        if (creditInfo) {
+          tips.push(`积分: ${creditInfo.credits} (最少需要 ${minCredits})`);
+          if (creditInfo.credits < minCredits) {
+            return fail('❌ 积分不足', [
+              ...tips,
+              `当前积分 ${creditInfo.credits}，需要至少 ${minCredits}`,
+              '请充值后重试',
+            ]);
+          }
+        } else {
+          tips.push('⚠ 无法读取积分信息，跳过检查');
+        }
 
         // Scroll down slightly to simulate reading the page
         await page.evaluate(() => window.scrollBy(0, 200 + Math.random() * 300));

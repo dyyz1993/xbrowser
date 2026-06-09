@@ -189,7 +189,7 @@ async function captureApis(
 
     page.on('response', handler);
 
-    await page.goto(targetUrl, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
+    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
   });
 }
 
@@ -402,6 +402,8 @@ export default function (xcli: XCLIAPI): void {
       style: z.string().optional().describe('音乐风格描述'),
       lyric: z.string().optional().describe('歌词文本（自定义模式使用）'),
       title: z.string().optional().describe('歌曲标题'),
+      minCredits: z.coerce.number().int().nonnegative().optional().default(1)
+        .describe('最少所需积分数，不足则拒绝创建'),
       wait: z.coerce.number().int().positive().optional()
         .describe('同步等待秒数（如 --wait 120），不传则异步提交'),
     }),
@@ -431,7 +433,7 @@ export default function (xcli: XCLIAPI): void {
           page.on('response', handler);
         });
 
-        await page.goto(MUREKA_URL, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
+        await page.goto(MUREKA_URL, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
         await page.waitForTimeout(3000);
 
         // Also try direct fetch as fallback
@@ -452,6 +454,30 @@ export default function (xcli: XCLIAPI): void {
           );
         }
         tips.push('✅ 已确认登录');
+
+        // ── Check credits before creating ──
+        const minCredits = (params as Record<string, unknown>).minCredits ?? 1;
+        try {
+          const creditProfile = await page.evaluate(async () => {
+            const resp = await fetch('/api/pgc/profile', { credentials: 'include' });
+            if (!resp.ok) return null;
+            const json = await resp.json() as Record<string, unknown>;
+            const data = json.data as Record<string, unknown> || json;
+            return { credits: data.credits as number || 0 };
+          });
+          if (creditProfile) {
+            tips.push(`积分: ${creditProfile.credits} (最少需要 ${minCredits})`);
+            if (creditProfile.credits < minCredits) {
+              return fail('❌ 积分不足', [
+                ...tips,
+                `当前积分 ${creditProfile.credits}，需要至少 ${minCredits}`,
+                '请充值后重试',
+              ]);
+            }
+          } else {
+            tips.push('⚠ 无法读取积分信息，跳过检查');
+          }
+        } catch { tips.push('⚠ 积分检查失败，跳过'); }
 
         const beforeFeedItems = await page.evaluate(async () => {
           try {
