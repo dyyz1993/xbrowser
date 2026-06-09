@@ -285,7 +285,7 @@ function resizeCanvas(){
 window.addEventListener('resize',resizeCanvas);
 resizeCanvas();
 
- function drawFrame(bitmap){
+function drawFrame(bitmap){
    const cw=canvas.width,ch=canvas.height;
    if(!cw||!ch) return;
    ctx.drawImage(bitmap,0,0,cw,ch);

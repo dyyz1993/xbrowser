@@ -1,5 +1,5 @@
-import { outputResult, outputError } from './output.js';
-import { getDaemonConfig, getDaemonProcessStatus } from '../daemon/daemon.js';
+import { outputResult } from './output.js';
+import { getDaemonConfig, getDaemonProcessStatus, startDaemonProcess } from '../daemon/daemon.js';
 import { forwardViewerCheckSelector } from '../client/daemon-client.js';
 
 export async function handleViewer(
@@ -11,10 +11,10 @@ export async function handleViewer(
   const name = (options.name as string) || process.env.XBROWSER_SESSION || 'default';
   const selector = options.selector as string | undefined;
 
-  const status = getDaemonProcessStatus();
+  let status = getDaemonProcessStatus();
   if (!status.running) {
-    outputError('Daemon is not running. Start with: xbrowser daemon start');
-    return;
+    await startDaemonProcess();
+    status = getDaemonProcessStatus();
   }
 
   const port = status.port || getDaemonConfig().basePort;
@@ -27,7 +27,7 @@ export async function handleViewer(
         url += `#focus=${encodeURIComponent(selector)}`;
       }
     } catch {
-      // Daemon doesn't support this RPC or error — fallback to full view
+      /* fallback to full view */
     }
   }
 
