@@ -344,31 +344,28 @@ export class XBPageImpl implements XBPage {
     return result.result?.value as R;
   }
 
-  /** Simplified evaluateHandle — returns a wrapper for element bounding box */
-  async evaluateHandle<T = unknown>(
+  /** evaluateHandle — evaluates fn and returns a handle for element bounding box */
+  async evaluateHandle(
     fn: string | Function,
     ...args: unknown[]
   ): Promise<{
     asElement: () => { boundingBox: () => Promise<{ x: number; y: number; width: number; height: number } | null> } | null;
   }> {
-    const result = await this.evaluate<(T & { __isElement?: boolean }) | null>(fn, ...args);
-    const self = this;
+    let expression: string;
+    if (typeof fn === 'string') {
+      expression = fn;
+    } else {
+      const argStr = args.length > 0 ? `...${JSON.stringify(args)}` : '';
+      expression = `(()=>{const __fn=(${fn.toString()});const __el=__fn(${argStr});if(__el&&typeof __el.getBoundingClientRect==='function'){const r=__el.getBoundingClientRect();return JSON.parse(JSON.stringify({x:r.x,y:r.y,w:r.width,h:r.height}));}return null;})()`;
+    }
+    const result = await this.conn.send<{
+      result?: { value?: string | null };
+      exceptionDetails?: unknown;
+    }>('Runtime.evaluate', { expression, returnByValue: true }).catch(() => ({ result: { value: null } }));
+    let box: { x: number; y: number; width: number; height: number } | null = null;
+    try { box = JSON.parse(result.result?.value as string); } catch { /* ignore */ }
     return {
-      asElement: () => {
-        if (result === null || result === undefined) return null;
-        return {
-          boundingBox: async () => {
-            // Try to get bounding box of the element that was just clicked
-            return self.evaluate(() => {
-              // Last resort: find the active element
-              const el = document.activeElement || document.querySelector(':hover');
-              if (!el) return null;
-              const rect = el.getBoundingClientRect();
-              return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-            });
-          },
-        };
-      },
+      asElement: () => box ? { boundingBox: async () => box } : null,
     };
   }
 
