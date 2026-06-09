@@ -207,18 +207,21 @@ export default function (xcli: XCLIAPI): void {
     requiresLogin: true,
     isLogin: async (ctx) => {
       try {
-        const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-        const url = page.url();
+        const pg = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
+        // No page or blank page — assume logged in
+        if (!pg) return true;
+        const url = pg.url();
+        if (url === 'about:blank' || url === '') return true;
         if (url.includes('/login') || url.includes('/auth') || url.includes('/passport')) return false;
-        // If URL already at the chat app page, user is definitely logged in
+        // Already at the chat app page
         if (url.includes('/chat')) return true;
-        // Blank/new page — not navigated yet, assume not logged in
-        if (url === 'about:blank' || url === '') return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        // Not on doubao domain — assume logged in
+        if (!url.includes('doubao.com')) return true;
+        const body = await pg.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
         if (!body || body.includes('登录') && body.includes('注册')) return false;
         return true;
       } catch {
-        return false;
+        return true;
       }
     },
   });

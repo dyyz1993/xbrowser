@@ -105,7 +105,7 @@ function extractSchema(plugin: string, command: string): SchemaField[] | null {
 /**
  * 执行指令并校验输出
  */
-async function runTest(plugin: string, command: string, cmdArgs: string[], options: Record<string, unknown>) {
+async function runTest(plugin: string, command: string, cmdArgs: string[], options: Record<string, unknown>): Promise<Record<string, unknown>> {
   const cdp = options.cdp || options.cdpEndpoint || 'http://localhost:9221';
   const argsStr = cmdArgs.filter(a => !a.startsWith('--cdp')).join(' ');
 
@@ -176,7 +176,18 @@ async function runTest(plugin: string, command: string, cmdArgs: string[], optio
   const data = rawData;
 
   if (data === null || data === undefined) {
-    return { status: 'NULL', message: (parsed.message as string) || 'null' };
+    const msg = (parsed.message as string) || '';
+    const tips = rawTips.join(' ');
+    const viewerUrl = (parsed.viewerUrl as string) || (rawData as Record<string, unknown> | null)?.viewerUrl as string || '';
+    let status = 'NO_DATA';
+    if (msg.includes('block') || msg.includes('anti-bot') || msg.includes('captcha') || tips.includes('viewer')) {
+      status = 'BLOCKED';
+    } else if (msg.includes('登录') || msg.includes('login')) {
+      status = 'LOGIN_REQUIRED';
+    }
+    const ret: Record<string, unknown> = { status, message: msg || '暂无数据' };
+    if (viewerUrl) ret.viewerUrl = viewerUrl;
+    return ret as unknown as { status: string; message?: string; viewerUrl?: string; count?: number; data?: string; errors?: string[]; note?: string; };
   }
 
   // 4. Schema 校验
@@ -256,26 +267,29 @@ export async function handleTest(
     return;
   }
 
+  const r = result as Record<string, unknown>;
   const icons: Record<string, string> = {
     OK: '✅', LOGIN_REQUIRED: '🔑', CAPTCHA: '🚨',
-    SCHEMA_ERROR: '❌', NULL: '⚠️', EXEC_ERROR: '💥',
+    SCHEMA_ERROR: '❌', BLOCKED: '🚧', NO_DATA: '📭', EXEC_ERROR: '💥',
   };
-  const icon = icons[result.status] || '❓';
+  const status = String(r.status);
+  const icon = icons[status] || '❓';
 
   console.log(`\n${icon}  ${plugin}.${command}`);
-  console.log(`   状态: ${result.status}`);
-
-  if (result.status === 'OK') {
-    if (result.count) console.log(`   数据: ${result.count} 项`);
-    if (result.data) console.log(`   预览: ${result.data}`);
-  } else if (result.status === 'LOGIN_REQUIRED' || result.status === 'CAPTCHA') {
-    console.log(`   信息: ${result.message}`);
-    console.log(`   Viewer: ${result.viewerUrl}`);
-  } else if (result.status === 'SCHEMA_ERROR') {
-    console.log(`   错误: ${(result.errors as string[]).join('; ')}`);
-  } else if (result.status === 'NULL') {
-    console.log(`   信息: ${result.message}`);
+  console.log(`   状态: ${status}`);
+  if (status === 'OK') {
+    if (r.count) console.log(`   数据: ${r.count} 项`);
+    if (r.data) console.log(`   预览: ${String(r.data).slice(0, 150)}`);
+  } else if (status === 'LOGIN_REQUIRED' || status === 'CAPTCHA') {
+    console.log(`   信息: ${String(r.message)}`);
+    console.log(`   Viewer: ${String(r.viewerUrl)}`);
+  } else if (status === 'SCHEMA_ERROR') {
+    const errs = r.errors as string[] | undefined;
+    if (errs) console.log(`   错误: ${errs.join('; ')}`);
+  } else if (['NO_DATA', 'BLOCKED'].includes(status)) {
+    console.log(`   信息: ${String(r.message)}`);
+    if (r.viewerUrl) console.log(`   Viewer: ${String(r.viewerUrl)}`);
   } else {
-    console.log(`   信息: ${result.message}`);
+    console.log(`   信息: ${String(r.message)}`);
   }
 }
