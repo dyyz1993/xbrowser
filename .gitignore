@@ -18,24 +18,10 @@ output/
 
 # ── Project state / metadata tools ─────────────────────
 .codenomad/
+.opencode/
 
 # ── Archive (历史归档) ──────────────────────────────
 .archive/
-
-# ── OpenCode runtime (会话、临时编辑脚本) ──────────────
-.opencode/opencode.jsonc.bak*
-.opencode/session-registry.json
-.opencode/sessions/
-.opencode/idle-auto-continue/
-.opencode/*.cjs
-.opencode/auto-edit-*.mjs
-.opencode/edit-*.mjs
-.opencode/edit-*.cjs
-.opencode/final-*.mjs
-.opencode/keyboard-save.mjs
-.opencode/react-edits.cjs
-.opencode/react-edits2.cjs
-.opencode/redo-all.cjs
 
 # ── Plugin local node_modules & package.json ───────────
 .xcli/plugins/node_modules/
