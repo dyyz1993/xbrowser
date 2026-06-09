@@ -15,7 +15,16 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { getPluginLoader } from '../utils/plugin-singleton.js';
 
-const PLUGINS_DIR = resolve(import.meta.dirname, '../../.xcli/plugins');
+function findPluginPath(plugin: string): string {
+  const candidates = [
+    resolve(process.cwd(), '.xcli/plugins', plugin, 'index.ts'),
+    resolve(process.cwd(), 'node_modules/@xbrowser/cli/.xcli/plugins', plugin, 'index.ts'),
+  ];
+  for (const p of candidates) {
+    try { readFileSync(p, 'utf-8'); return p; } catch { /* try next */ }
+  }
+  return resolve(process.cwd(), '.xcli/plugins', plugin, 'index.ts');
+}
 
 interface SchemaField {
   name: string;
@@ -27,7 +36,7 @@ interface SchemaField {
  * 从插件源码提取指定指令的 result schema
  */
 function extractSchema(plugin: string, command: string): SchemaField[] | null {
-  const pluginPath = resolve(PLUGINS_DIR, plugin, 'index.ts');
+  const pluginPath = findPluginPath(plugin);
   let src: string;
   try {
     src = readFileSync(pluginPath, 'utf-8');
