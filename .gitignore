@@ -27,36 +27,23 @@ output/
 .xcli/plugins/node_modules/
 .xcli/plugins/package.json
 
-# ── Debug scripts (根目录和子目录) ───────────────────
-debug-*
-test-*.js
-test-*.mjs
-test-cdp.ts
-test-cdp-*.mjs
-test-url-*.mjs
-test-bing-images.js
-_test_bing.js
-
-# ── 根目录临时脚本（与主代码无关的调研脚本） ─────────
-/check-models.ts
-/check-new-models.ts
-/search-models.ts
-/search-new-models.ts
-/explore-n7.ts
-/explore-gemini.mjs
-/open-qianwen.mjs
+# ── Root-level scripts (禁止根目录零散脚本) ────────
+# 如果不是正式代码，放 output/.scripts/ 或沉淀为插件
+/check-*.ts
+/search-*.ts
+/explore-*.ts
+/crawl-*.ts
+/generate-*.ts
+/extract-*.ts
+/direct-api-*.ts
+/province-*.ts
 /run-checklist.mjs
+/open-qianwen.mjs
+/_test_bing.js
+/test-*.js
+/test-*.mjs
+/test-cdp-*.mjs
 /scrape-progress.log
-/province-gdp-crawler.ts
-/direct-api-crawler.ts
-/extract-cmf-reviews.ts
-/crawl-all-cmf-reviews.ts
-/crawl-batch-cmf.ts
-/crawl-batch-cmf-v2.ts
-/crawl-stats-final.ts
-/generate-comprehensive-report.ts
-/generate-final-report.ts
-/generate-gdp-report.ts
 /preview.html
 /cmf-analysis-dashboard.html
 /amah-love-letters-lyrics.md
