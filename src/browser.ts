@@ -402,8 +402,12 @@ export function deleteSessionDiskMeta(name: string): void {
     }
 
     const targetUrl = meta.conversationUrl || meta.url;
-    if (targetUrl && page.url() !== targetUrl && !page.url().includes(new URL(targetUrl).hostname)) {
-      await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+    if (targetUrl && page.url() !== targetUrl) {
+      try {
+        if (!page.url().includes(new URL(targetUrl).hostname)) {
+          await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+        }
+      } catch { /* ignore URL parse errors */ }
     }
 
     const session: ManagedSession = {
