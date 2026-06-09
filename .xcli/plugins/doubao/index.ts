@@ -1393,8 +1393,20 @@ export default function (xcli: XCLIAPI): void {
         }
 
         // === Phase 1: Click 音乐生成 ===
+        // First try clicking "更多" to expand tools menu
+        const moreClicked = await safeClickByText(page, '更多');
+        if (moreClicked) {
+          tips.push('已展开更多工具');
+          await page.waitForTimeout(1000);
+        }
         const musicClicked = await safeClickByText(page, '音乐生成');
         if (!musicClicked) {
+          // Try scrolling down in case it's off-screen
+          await page.evaluate(() => window.scrollBy(0, 300)).catch(() => {});
+          await page.waitForTimeout(500);
+        }
+        const musicClicked2 = musicClicked || await safeClickByText(page, '音乐生成');
+        if (!musicClicked2) {
           return fail('找不到「音乐生成」按钮', ['请确保豆包页面已加载且音乐生成功能可用']);
         }
         tips.push('已点击「音乐生成」按钮');
