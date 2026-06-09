@@ -27,8 +27,8 @@ output/
 .xcli/plugins/node_modules/
 .xcli/plugins/package.json
 
-# ── Root-level scripts (禁止根目录零散脚本) ────────
-# 如果不是正式代码，放 output/.scripts/ 或沉淀为插件
+# ── Root-level artifacts (禁止根目录零散文件) ──────
+# 脚本
 /check-*.ts
 /search-*.ts
 /explore-*.ts
@@ -43,22 +43,19 @@ output/
 /test-*.js
 /test-*.mjs
 /test-cdp-*.mjs
-/scrape-progress.log
-/preview.html
-/cmf-analysis-dashboard.html
-/amah-love-letters-lyrics.md
-/douyin_works_sample.json
+# 数据 & 报告
 /ai-test-results.json
 /checklist-progress.json
+/cmf-analysis-dashboard.html
+/douyin_works_sample.json
 /links.json
-/stats-home.png
-/stats-page-full.png
+/stats-*.png
+/ctrip-report.html
+/scrape-progress.log
+/amah-love-letters-lyrics.md
 /steam-reviews.json
 /steam-stats.json
 /steam-reviews-site/
-
-# ── 临时报告（git 历史已忽略） ──────────────────────
-ctrip-report.html
 
 # ── data/ 下的临时爬虫输出 ─────────────────────────
 /data/geo/batch2/
