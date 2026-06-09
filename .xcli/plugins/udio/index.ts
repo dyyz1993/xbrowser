@@ -777,27 +777,21 @@ export default function (xcli: XCLIAPI): void {
         }
 
         try {
-          const resp = await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => null);
-          if (!resp) {
+          const resp = await fetch(params.url);
+          if (!resp.ok) {
             return ok(
               { url: params.url },
-              [...tips, '无法访问音频 URL，请检查 URL 是否有效或是否过期'],
+              [...tips, `无法访问音频 URL (HTTP ${resp.status})`],
             );
           }
-          const buffer = await resp.body();
-          if (!buffer) {
-            return ok(
-              { url: params.url },
-              [...tips, '响应体为空'],
-            );
-          }
+          const buffer = Buffer.from(await resp.arrayBuffer());
           const fs = await import('fs');
           const pathMod = await import('path');
           const dir = pathMod.dirname(outputPath);
           fs.mkdirSync(dir, { recursive: true });
           fs.writeFileSync(outputPath, buffer);
           return ok(
-            { size: buffer.length },
+            { url: outputPath, size: buffer.length },
             [
               ...tips,
               `✅ 已下载: ${outputPath} (${(buffer.length / 1024).toFixed(1)} KB)`,

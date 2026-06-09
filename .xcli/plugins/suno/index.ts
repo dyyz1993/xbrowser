@@ -171,7 +171,7 @@ async function captureFeed(
     page.on('response', handler);
 
     // Navigate to trigger feed loading
-    await page.goto(targetUrl, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
+    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
   });
 }
 
@@ -314,20 +314,19 @@ export default function (xcli: XCLIAPI): void {
           return fail('❌ 缺少必要参数', ['请提供 --prompt 或 --lyric 或 --style']);
         }
 
-        // 1. Navigate to create page
-        await page.goto(CREATE_URL, { waitUntil: 'load', timeout: 60000 }).catch(() => {});
-
-        // 2. Wait for create page to be ready (hook-driven, no waitForTimeout)
-        // Suno has multiple textareas:
-        //   - lyrics-textarea (data-testid, for lyrics input) — may be hidden in Simple mode
-        //   - style input (placeholder: "electronic guitar, twee pop...")
-        //   - description input (placeholder: "Studio-quality epic song...")
-        //   - describe-sound input (placeholder: "Describe the sound you want")
-        // Wait for ANY visible textarea (the page is loaded when at least one appears)
-        await page.waitForFunction(
-          () => Array.from(document.querySelectorAll('textarea')).some(t => t.offsetParent !== null && t.getBoundingClientRect().height > 0),
-          { timeout: 20000 }
-        );
+        // 1. Navigate to create page and wait for React SPA to fully hydrate
+        const pageUrl = page.url();
+        if (!pageUrl.includes('suno.com/create')) {
+          await page.goto(CREATE_URL, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
+          // Wait for React SPA to render the create form (3+ textareas)
+          for (let i = 0; i < 40; i++) {
+            await page.waitForTimeout(1000);
+            try {
+              const taCount = await page.evaluate(() => document.querySelectorAll('textarea').length);
+              if (taCount >= 3) break;
+            } catch { /* page still loading */ }
+          }
+        }
 
         // ── Capture EXISTING clip IDs from the page BEFORE generation ──
         const beforeClipIds = new Set<string>();
@@ -346,97 +345,118 @@ export default function (xcli: XCLIAPI): void {
           ? captureGeneration(page, beforeClipIds, waitSeconds * 1000)
           : null;
 
-        // 3. Fill textarea — choose the right one based on what user provides
-        // If user provides lyric → use lyrics-textarea (data-testid)
-        // If user provides prompt (description) → use description textarea (placeholder contains "Studio-quality")
-        if (params.lyric) {
-          await page.evaluate((text: string) => {
-            const ta = document.querySelector('textarea[data-testid="lyrics-textarea"]') as HTMLTextAreaElement;
-            if (ta) {
-              const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-              if (setter) setter.call(ta, text);
-              else ta.value = text;
-              ta.dispatchEvent(new Event('input', { bubbles: true }));
-              ta.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-          }, params.lyric);
-          tips.push(`已输入歌词: "${params.lyric.slice(0, 50)}..."`);
-        } else if (params.prompt) {
-          // Description mode — use the description textarea (placeholder "Studio-quality...")
-          await page.evaluate((text: string) => {
-            const tas = Array.from(document.querySelectorAll('textarea')) as HTMLTextAreaElement[];
-            const ta = tas.find(t => t.placeholder.includes('Studio-quality') || t.placeholder.includes('Describe'));
-            if (ta) {
-              const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
-              if (setter) setter.call(ta, text);
-              else ta.value = text;
-              ta.dispatchEvent(new Event('input', { bubbles: true }));
-              ta.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-          }, params.prompt);
-          tips.push(`已输入描述: "${params.prompt.slice(0, 50)}..."`);
-        }
-
-        // 4. Style tag — click by text (the style chips are button>span elements)
-        if (params.style) {
-          const styleTags = params.style.split(',').map(s => s.trim()).filter(Boolean);
-          for (const tag of styleTags) {
-            // Wait for style tag to appear on page
-            try {
-              await page.waitForFunction(
-                (t: string) => {
-                  const els = Array.from(document.querySelectorAll('button, span'));
-                  return els.some(e => e.textContent?.trim() === t && e.offsetParent !== null);
-                },
-                tag,
-                { timeout: 5000 }
-              );
-            } catch { /* tag may not exist, try anyway */ }
-            const clicked = await safeClickByText(page, tag);
-            if (clicked) tips.push(`已选择风格: ${tag}`);
-            else tips.push(`⚠ 未找到风格标签: ${tag}`);
+        // 3. Fill textarea — target textarea[2] (Simple mode main prompt input)
+        const textToType = params.lyric || params.prompt || '';
+        if (textToType) {
+          const result = await page.evaluate((text: string) => {
+            const tas = document.querySelectorAll('textarea');
+            // textarea[2] is the main prompt in Simple mode. Fall back to first visible.
+            const ta = tas[2] || Array.from(tas).find(t => t.offsetParent !== null) || tas[0];
+            if (!ta) return { ok: false, reason: 'no textarea' };
+            ta.focus();
+            const ns = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
+            if (ns) ns.call(ta, text);
+            else ta.value = text;
+            ta.dispatchEvent(new Event('input', { bubbles: true }));
+            ta.dispatchEvent(new Event('change', { bubbles: true }));
+            return { ok: true, value: ta.value };
+          }, textToType);
+          if (result?.ok && result?.value) {
+            tips.push(`已输入${params.lyric ? '歌词' : '描述'}: "${textToType.slice(0, 50)}..."`);
+          } else {
+            tips.push(`⚠ 输入失败: ${result?.reason || '值未更新'}`);
           }
         }
 
-        // 5. Instrumental toggle — click by text
+        // 4. Click instrumental checkbox if requested
         if (params.instrumental) {
-          const clicked = await safeClickByText(page, 'Instrumental');
-          if (clicked) tips.push('已切换到纯音乐模式');
+          const instrBox = await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button, span, label'));
+            const btn = btns.find(b =>
+              (b.textContent?.trim().includes('Instrumental') || b.textContent?.trim().includes('instrumental'))
+              && b.offsetParent !== null
+            );
+            if (!btn) return null;
+            const r = btn.getBoundingClientRect();
+            return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+          });
+          if (instrBox) {
+            await page.mouse.click(instrBox.x, instrBox.y);
+            await page.waitForTimeout(1000);
+            tips.push('已勾选纯音乐');
+          }
+        }
+
+        // 5. Style tags — click by reading coordinates, then mouse.click
+        if (params.style) {
+          const styleTags = params.style.split(',').map(s => s.trim()).filter(Boolean);
+          for (const tag of styleTags) {
+            const box = await page.evaluate((t: string) => {
+              const btns = Array.from(document.querySelectorAll('button, span'));
+              const el = btns.find(e =>
+                e.textContent?.trim() === t && e.offsetParent !== null &&
+                e.getBoundingClientRect().width > 10
+              );
+              if (!el) return null;
+              const r = el.getBoundingClientRect();
+              return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+            }, tag);
+            if (box) {
+              await page.mouse.click(box.x, box.y);
+              await page.waitForTimeout(300);
+              tips.push(`已选择风格: ${tag}`);
+            } else {
+              tips.push(`⚠ 未找到风格标签: ${tag}`);
+            }
+          }
         }
 
         // 6. Model selection (optional)
         if (params.model) {
-          const modelBtnClicked = await safeClickByText(page, params.model);
-          if (modelBtnClicked) {
+          const box = await page.evaluate((name: string) => {
+            const result = document.evaluate(
+              `//button[contains(.,"${name}")]`,
+              document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
+            );
+            const btn = result.singleNodeValue as HTMLButtonElement | null;
+            if (!btn || btn.offsetParent === null) return null;
+            const r = btn.getBoundingClientRect();
+            return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+          }, params.model);
+          if (box) {
+            await page.mouse.click(box.x, box.y);
             await page.waitForTimeout(500);
             tips.push(`已选择模型: ${params.model}`);
           }
         }
 
-        // 7. Click Create — use safeClickByText (the create button is a span, not a <button>)
-        // Wait for Create button to be visible first
-        try {
-          await page.waitForFunction(
-            () => {
-              const els = Array.from(document.querySelectorAll('button, span, a'));
-              return els.some(e => e.textContent?.trim() === 'Create' && e.offsetParent !== null);
-            },
-            { timeout: 10000 }
-          );
-        } catch {
-          // Debug: dump all Create-like elements
-          const debugInfo = await page.evaluate(() => {
-            return Array.from(document.querySelectorAll('*'))
-              .filter(e => e.textContent?.trim() === 'Create')
-              .map(e => ({ tag: e.tagName, vis: e.offsetParent !== null, w: Math.round(e.getBoundingClientRect().width), h: Math.round(e.getBoundingClientRect().height) }));
+        // 7. Click Create button — wait for enabled, then click
+        let createBtnBox = null;
+        for (let i = 0; i < 30; i++) {
+          const result = await page.evaluate(() => {
+            const r = document.evaluate(
+              "//button[contains(.,'Create') and not(contains(.,'Create New'))]",
+              document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
+            );
+            const btn = r.singleNodeValue as HTMLButtonElement | null;
+            if (!btn) return 'not_found';
+            if (btn.disabled) return 'disabled';
+            if (btn.offsetParent === null) return 'hidden';
+            const rect = btn.getBoundingClientRect();
+            return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
           });
-          tips.push(`⚠ Create 元素: ${JSON.stringify(debugInfo.slice(0, 5))}`);
+          if (typeof result === 'object' && result !== null) {
+            createBtnBox = result as { x: number; y: number };
+            break;
+          }
+          if (i === 0) tips.push(`Create 按钮: ${result}`);
+          await page.waitForTimeout(1000);
         }
-        const createClicked = await safeClickByText(page, 'Create', { preferLarge: true, debug: true });
-
-        if (!createClicked) {
+        if (!createBtnBox) {
           return fail('❌ 无法点击 Create', [...tips, '❌ Create 按钮不可用（可能积分不足或参数未正确填入）']);
         }
+        await page.mouse.click(createBtnBox.x, createBtnBox.y);
+        await page.waitForTimeout(1000);
         tips.push('✅ 已点击 Create');
 
         // ── Wait for results ──
