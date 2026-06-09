@@ -1,0 +1,28 @@
+{
+  "name": "@xbrowser/ctrip-review",
+  "version": "1.0.0",
+  "description": "携程景点评论爬取 - 支持自动翻页和 CDP 登录态",
+  "author": "xbrowser-agent",
+  "license": "MIT",
+  "type": "module",
+  "main": "index.ts",
+  "keywords": ["xbrowser", "xbrowser-plugin", "ctrip.com", "携程", "评论爬取"],
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "xbrowser": {
+    "name": "@xbrowser/ctrip-review",
+    "slug": "ctrip-review",
+    "description": "携程景点评论爬取",
+    "author": "xbrowser-agent",
+    "site": "https://you.ctrip.com",
+    "sites": ["ctrip.com", "you.ctrip.com"],
+    "requiresLogin": false,
+    "commands": ["reviews"],
+    "tags": ["ctrip", "reviews", "scraping"],
+    "version": "1.0.0"
+  }
+}

@@ -32,5 +32,9 @@ scripts/debug-*
 .opencode/opencode.jsonc.bak*
 .opencode/session-registry.json
 .opencode/sessions/
+.opencode/*.cjs
+
+# Generated reports
+ctrip-report.html
 .xcli/plugins/node_modules/
 .xcli/plugins/package.json
