@@ -53,36 +53,40 @@ function extractSchema(plugin: string, command: string): SchemaField[] | null {
   const resultIdx = after.indexOf('result:');
   if (resultIdx < 0) return null;
 
-  // 提取 result 到下一个 }), 或 }) 之前的块
+  // 提取从 result: 到下一个顶级 }, 之间的内容
+  // 跳过 parameters 等后续字段
   let block = after.slice(resultIdx + 7);
   let depth = 0;
   let schemaStr = '';
-  let started = false;
-
   for (const ch of block) {
-    if (!started && (ch === '{' || ch === 'z')) {
-      started = true;
-    }
-    if (!started) continue;
     if (ch === '{' || ch === '(' || ch === '[') depth++;
-    if (ch === '}' || ch === ')' || ch === ']') depth--;
-    if (depth < 0) break;
+    if (ch === '}' || ch === ')' || ch === ']') {
+      depth--;
+      if (depth < 0) break; // 超出 result 块
+    }
+    // 遇到下一个顶级字段（不缩进的单词）时停止
+    if (depth === 0 && /\w/.test(ch) && schemaStr.trim().endsWith(',')) {
+      break;
+    }
     schemaStr += ch;
   }
 
-  // 提取字段: z.object({ key: z.string(), ... })
+  // 找到 z.object({...}) 块
+  const objStart = schemaStr.indexOf('z.object({');
+  const objEnd = objStart >= 0 ? schemaStr.indexOf('})', objStart) : -1;
+  const objStr = objStart >= 0 && objEnd > objStart ? schemaStr.slice(objStart + 10, objEnd) : schemaStr;
+
+  // 提取字段: key: z.type
   const fields: SchemaField[] = [];
+  const SKIP_NAMES = new Set(['passthrough', 'optional', 'describe', 'default']);
   const fieldRegex = /(\w+)\s*:\s*z\.(\w+)/g;
   let match;
-  while ((match = fieldRegex.exec(schemaStr)) !== null) {
+  while ((match = fieldRegex.exec(objStr)) !== null) {
     const name = match[1];
     const type = match[2];
-    // 跳过非 schema 字段
-    if (['object', 'array', 'union', 'enum'].includes(type)) continue;
-    if (name === 'passthrough' || name === 'optional' || name === 'describe') continue;
+    if (SKIP_NAMES.has(name) || type === 'union' || type === 'enum') continue;
 
-    // 检查是否 optional
-    const afterField = schemaStr.slice(match.index + match[0].length);
+    const afterField = objStr.slice(match.index + match[0].length);
     const isOptional = afterField.trimStart().startsWith('.optional()');
 
     fields.push({
