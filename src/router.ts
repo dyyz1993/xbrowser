@@ -36,6 +36,7 @@ import {
   handleRun,
   handleViewer,
   handleNetCommand,
+  handleTest,
 } from './cli/index.js';
 import { outputError, outputResult } from './cli/output.js';
 import { getDaemonProcessStatus, getDaemonConfig } from './daemon/daemon.js';
@@ -433,6 +434,9 @@ export async function routeCommand(
         break;
       case 'help':
         showMainHelp();
+        break;
+      case 'test':
+        await handleTest(cmdArgs, options, mode, cdpEndpoint);
         break;
       case 'net':
         await handleNetCommand(cmdArgs, options, mode, sessionName);

@@ -12,3 +12,4 @@ export {
 export { handleRun } from './run-routes.js';
 export { handleViewer } from './viewer-routes.js';
 export { handleNetCommand } from './net-routes.js';
+export { handleTest } from './test-routes.js';
