@@ -4,6 +4,9 @@
   "description": "Google Gemini AI 助手 — 对话、图片生成、音乐生成、文件分析",
   "type": "module",
   "main": "index.ts",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
   "peerDependencies": {
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
@@ -13,7 +16,10 @@
     "slug": "gemini",
     "version": "1.0.0",
     "author": "dyyz1993",
-    "tags": ["ai", "gemini", "google"]
+    "tags": ["ai", "gemini", "google"],
+    "commands": ["list", "chat", "new", "open", "image", "model"],
+    "sites": ["gemini"],
+    "site": "https://gemini.google.com"
   },
   "keywords": ["xbrowser", "xbrowser-plugin", "gemini", "google", "ai"]
 }
