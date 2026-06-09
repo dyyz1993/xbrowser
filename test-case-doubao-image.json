@@ -1,0 +1,261 @@
+{
+  "type": "image_generation",
+  "plugin": "doubao",
+  "command": "image",
+  "timestamp": "2026-06-09T02:21:05.408Z",
+  "prompt": "一只可爱的小猫咪，水彩风格，高清",
+  "result": {
+    "imageCount": 71,
+    "largeImages": [
+      {
+        "src": "https://lf-flow-web-cdn.doubao.com/obj/flow-doubao/doubao/web/doubao_avatar.png",
+        "width": 160,
+        "height": 160,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/FileBizType.BIZ_BOT_BG_IMAGE/1880597638692441_1736343063413519519.jpeg~tplv-a9rns2rl98-image-qvalue.jpeg?lk3s=a16ed425&lrcfp=e440b5d2&rcl=202606",
+        "width": 864,
+        "height": 1536,
+        "alt": "avatar"
+      },
+      {
+        "src": "https://p6-flow-imagex-sign.byteimg.com/ocean-cloud-tos/FileBizType.BIZ_BOT_ICON/3463881269446858_1748515448130142719.png~tplv-a9rns2rl98-image-qvalue.png?lk3s=a16ed425&lrcfp=e440b5d2&rcl=202606091020",
+        "width": 1024,
+        "height": 1024,
+        "alt": "avatar"
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/FileBizType.BIZ_BOT_ICON/3463881269446858_1764633201620659160.png~tplv-a9rns2rl98-image-qvalue.png?lk3s=a16ed425&lrcfp=e440b5d2&rcl=202606091020",
+        "width": 1024,
+        "height": 1024,
+        "alt": "avatar"
+      },
+      {
+        "src": "https://p9-passport.byteacctimg.com/img/user-avatar/0ffee7e9abfc95fe3e9084802467a4d5~300x300.image",
+        "width": 300,
+        "height": 300,
+        "alt": ""
+      },
+      {
+        "src": "https://lf-flow-web-cdn.doubao.com/obj/flow-doubao/doubao/chat/static/image/example-remove-bg.ee63add8.png",
+        "width": 240,
+        "height": 240,
+        "alt": ""
+      },
+      {
+        "src": "https://lf-flow-web-cdn.doubao.com/obj/flow-doubao/doubao/chat/static/image/example-erase.b0b0e182.png",
+        "width": 240,
+        "height": 240,
+        "alt": ""
+      },
+      {
+        "src": "https://lf-flow-web-cdn.doubao.com/obj/flow-doubao/doubao/chat/static/image/example-in-painting.c5e58393.png",
+        "width": 240,
+        "height": 240,
+        "alt": ""
+      },
+      {
+        "src": "https://lf-flow-web-cdn.doubao.com/obj/flow-doubao/doubao/chat/static/image/example-out-painting.d78ca71a.png",
+        "width": 240,
+        "height": 240,
+        "alt": ""
+      },
+      {
+        "src": "https://lf-flow-web-cdn.doubao.com/obj/flow-doubao/doubao/chat/static/image/example-enhance.1fb4dc90.png",
+        "width": 240,
+        "height": 240,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/6db596af7f53c6374bce6aedfa4e49ee_1778310616846112081.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/86707712adac551f08a13a8ed9aef731_1778310618095247426.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/64142108bb7a5c11288e8a883a402b6c_1778310615647887418.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/be7eb9432cc0de2bd6bcc9bef053be38_1778310617733636141.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/f26d4662fed65c3f8c8647018347543f_1778310618021346434.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/22d4bdb8b377e32fc63b57feea2b54cd_1778310616691677715.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 326,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/0915e9cd0e11d73ed776e39d32425a83_1778310618184280802.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 580,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/a51706d7af21b536b19376c19f294cdf_1778310618427023746.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/b31e0c952dd97fd1b49c5944482d563d_1778310617910367518.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/0f45b1ff5ff369a468c223d0abae12b7_1778310617661376307.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/14dc331799759133e40be557613ec78d_1778310618436783624.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/faaa594f55b6dda58dc40fc475658db4_1778310618501969846.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/1661fbcf42e411ded3539fa9eca80c0e_1778310616585793553.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/fb3cdb39fc67172de26b29e64c470cdb_1778310618680272809.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/98ffcbfd678866e56fe0913e9c7f3263_1778310617128189971.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/77b48a0781af9a373982441e0cd65608_1778310617105114904.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 580,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/6ce5f62796a604fd3dd464c0020bcf09_1778310618642204192.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/2069fa29c334908ea2686c38ce6aee1f_1778310618340956263.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/2a3c3ec7e03bc2643346606cf6b944e3_1778310617187986874.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 580,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/320ad1f4becbf9069480c9ceb4d0ce44_1778310617750174172.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/61b0e46b8061ea42aa9241aa65a554eb_1778310618447788024.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/233ba5a0e64c0c0cbf8b6d59c8fa4af0_1778310618212615689.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/010c6dc70a54b5fdb36e10ca0953fe65_1778310615727186802.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/8b650f817ae5a280049e38073caa0eae_1778310618293418072.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/fb437d90c816e5a7ab5dd0fe7e403803_1778310617271367896.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 326,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/c01154c187426d8b5ac9d7bc10656a68_1778310617751889205.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/afe0d7e07c560793551cccbf2bebeb05_1778310617007980679.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/4c586ff9f4766ef6e33bf12d5579b8f8_1778310617481855909.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/a6edbc2ee8caabcd75a79dcf8eb586a5_1778310615495127168.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://p3-flow-imagex-sign.byteimg.com/ocean-cloud-tos/image_generation/c035a0bdf1d395e238b116012c633710_1778310618082963158.jpeg~tplv-a9rns2rl98-web-operation.webp?rk3s=25bff839&x-expires=1783563563",
+        "width": 435,
+        "height": 580,
+        "alt": ""
+      },
+      {
+        "src": "https://lf-flow-web-cdn.doubao.com/obj/flow-doubao/doubao/chat/static/image/intro.12b8f8ef.png",
+        "width": 421,
+        "height": 360,
+        "alt": ""
+      }
+    ],
+    "totalBodyLen": 405,
+    "bodyEnding": "豆包 · 新对话 · ⌘ K · AI 创作 · 云盘 · 更多 · 历史对话 · 8 路 IIC 模块化设计 · 七套 · 工期评估 · 总结 · 中炬高新股票分析 · 小型桌面机器人扩展设计 · 18 岁后每月提取规划 · 小红书风格封面图制作 · Claude Code、Hermes记忆层与OpenClaw核心差异 · 1 · 世界杯队伍数量与获胜概率分析 · Jina Reader介绍 · 痰的来源与相关情况 · DeepSeek-GUI项目审核、修改文件及回滚操作分析 · 交易系统的核心作用 · harness释义及compaction模块说明 · Git worktree同分支使用问题 · 疱疹性咽峡炎咳血问题 · 主对话 · 咳嗽痰中带血丝及医保补充 · 谷歌图标接口与百度地址 · 家有💩娃 · 我的创作 ·  · AI 创作 ·  · 让创作随灵感而生 ·  · 图像 · 视频 · Previous slide · Next slide · 参考图 · Seedream 4.5 · 比例 · 风格 ·  ·  ·  ·  · AI 抠图 · 擦除 · 区域重绘 · 扩图 · 变清晰"
+  },
+  "passed": true
+}

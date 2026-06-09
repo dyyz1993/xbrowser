@@ -228,5 +228,21 @@
         }
       ]
     }
-  ]
+  ],
+  "image_tests": {
+    "doubao_image": {
+      "status": "ok",
+      "note": "/create-image 页面加载正常，历史生图可用（18张HD图片）",
+      "hd_images_found": 18,
+      "dimensions": "435×580, 580×580"
+    },
+    "gemini_image": {
+      "status": "ok",
+      "note": "有输入框 + 制作图片工具",
+      "hasInput": true,
+      "hasImageTool": true
+    },
+    "test_case": "test-case-doubao-image.json"
+  },
+  "last_updated": "2026-06-09T02:21:57.414Z"
 }
