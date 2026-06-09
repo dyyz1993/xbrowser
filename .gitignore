@@ -1,40 +1,114 @@
+# ── Dependencies & Build ───────────────────────────────
 node_modules/
 dist/
 *.tgz
+
+# ── Environment & Secrets ──────────────────────────────
 .env
+
+# ── OS & Editor ─────────────────────────────────────────
+.DS_Store
+*.log
+
+# ── Runtime & Cache ─────────────────────────────────────
 .xcli/storage/
 recordings/
 coverage/
-*.log
-.DS_Store
+output/
+
+# ── Project state / metadata tools ─────────────────────
 .codenomad/
 
-# Archive
+# ── Archive (历史归档) ──────────────────────────────
 .archive/
 
-# Debug scripts & temp outputs
-debug-*
-crawl-*.ts
-test-*.js
-test-*.mjs
-test-cdp.ts
-test-url-*.mjs
-output/
-docs/debug-*
-docs/plans/
-scripts/debug-*
-*.mjs
-
-# IDE / editor
-.opencode/opencode.jsonc.bak*
-# OpenCode runtime files
-.opencode/session-registry.json
+# ── OpenCode runtime (会话、临时编辑脚本) ──────────────
 .opencode/opencode.jsonc.bak*
 .opencode/session-registry.json
 .opencode/sessions/
+.opencode/idle-auto-continue/
 .opencode/*.cjs
+.opencode/auto-edit-*.mjs
+.opencode/edit-*.mjs
+.opencode/edit-*.cjs
+.opencode/final-*.mjs
+.opencode/keyboard-save.mjs
+.opencode/react-edits.cjs
+.opencode/react-edits2.cjs
+.opencode/redo-all.cjs
 
-# Generated reports
-ctrip-report.html
+# ── Plugin local node_modules & package.json ───────────
 .xcli/plugins/node_modules/
 .xcli/plugins/package.json
+
+# ── Debug scripts (根目录和子目录) ───────────────────
+debug-*
+test-*.js
+test-*.mjs
+test-cdp.ts
+test-cdp-*.mjs
+test-url-*.mjs
+test-bing-images.js
+_test_bing.js
+
+# ── 根目录临时脚本（与主代码无关的调研脚本） ─────────
+/check-models.ts
+/check-new-models.ts
+/search-models.ts
+/search-new-models.ts
+/explore-n7.ts
+/explore-gemini.mjs
+/open-qianwen.mjs
+/run-checklist.mjs
+/scrape-progress.log
+/province-gdp-crawler.ts
+/direct-api-crawler.ts
+/extract-cmf-reviews.ts
+/crawl-all-cmf-reviews.ts
+/crawl-batch-cmf.ts
+/crawl-batch-cmf-v2.ts
+/crawl-stats-final.ts
+/generate-comprehensive-report.ts
+/generate-final-report.ts
+/generate-gdp-report.ts
+/preview.html
+/cmf-analysis-dashboard.html
+/amah-love-letters-lyrics.md
+/douyin_works_sample.json
+/ai-test-results.json
+/checklist-progress.json
+/links.json
+/stats-home.png
+/stats-page-full.png
+/steam-reviews.json
+/steam-stats.json
+/steam-reviews-site/
+
+# ── 临时报告（git 历史已忽略） ──────────────────────
+ctrip-report.html
+
+# ── data/ 下的临时爬虫输出 ─────────────────────────
+/data/geo/batch2/
+/data/geo/v2/
+/data/geo/v3/
+/data/geo/*-results.json
+/data/geo/clothing-ranking/
+/data/test-imports/
+
+# ── docs/ 下的临时/规划文档 ──────────────────────────
+docs/debug-*
+docs/plans/
+
+# ── scripts/ 下的历史/一次性脚本（保留 publish 相关） ─
+/scripts/debug-*
+/scripts/serper-*
+/scripts/seo-*
+/scripts/geo-*
+/scripts/analyze-*.mjs
+/scripts/collect-*.mjs
+/scripts/gen_*music*.mjs
+/scripts/image-server.mjs
+/scripts/test-*.mjs
+/scripts/demo-*
+/scripts/export-report.mjs
+/scripts/gsc-bing-submit.mjs
