@@ -344,6 +344,34 @@ export class XBPageImpl implements XBPage {
     return result.result?.value as R;
   }
 
+  /** Simplified evaluateHandle — returns a wrapper for element bounding box */
+  async evaluateHandle<T = unknown>(
+    fn: string | Function,
+    ...args: unknown[]
+  ): Promise<{
+    asElement: () => { boundingBox: () => Promise<{ x: number; y: number; width: number; height: number } | null> } | null;
+  }> {
+    const result = await this.evaluate<(T & { __isElement?: boolean }) | null>(fn, ...args);
+    const self = this;
+    return {
+      asElement: () => {
+        if (result === null || result === undefined) return null;
+        return {
+          boundingBox: async () => {
+            // Try to get bounding box of the element that was just clicked
+            return self.evaluate(() => {
+              // Last resort: find the active element
+              const el = document.activeElement || document.querySelector(':hover');
+              if (!el) return null;
+              const rect = el.getBoundingClientRect();
+              return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+            });
+          },
+        };
+      },
+    };
+  }
+
   async $eval<R = unknown>(selector: string, fn: string | Function, ...args: unknown[]): Promise<R> {
     const fnBody = typeof fn === 'function' ? fn.toString() : fn;
     return this.evaluate<R>(
@@ -843,7 +871,11 @@ export class XBPageImpl implements XBPage {
           postData: p.request.postData ?? null,
           resourceType: p.type,
         });
-        this._emit('request', p);
+        this._emit('request', createXBRequest(
+          null,
+          { requestId: p.requestId, url: p.request.url, method: p.request.method,
+            headers: p.request.headers, postData: p.request.postData ?? null, resourceType: p.type },
+        ));
         this.checkNetworkIdle();
       }),
     );

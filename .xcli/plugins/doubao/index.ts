@@ -156,13 +156,12 @@ async function uploadFileViaDataTransfer(page: Page, absPath: string): Promise<b
 }
 
 async function safeClickSelector(page: Page, selector: string): Promise<boolean> {
-  const handle = await page.evaluateHandle(
-    (sel: string) => document.querySelector(sel),
-    selector
-  );
-  const el = handle.asElement();
-  if (!el) return false;
-  const box = await el.boundingBox();
+  const box = await page.evaluate((sel: string) => {
+    const el = document.querySelector(sel);
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+  }, selector);
   if (!box) return false;
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   return true;
@@ -184,16 +183,16 @@ async function waitForGone(page: Page, selector: string, timeout = 5000): Promis
 }
 
 async function safeClickByText(page: Page, text: string): Promise<boolean> {
-  const handle = await page.evaluateHandle((t: string) => {
+  const box = await page.evaluate((t: string) => {
     const all = document.querySelectorAll('div, button, span');
     for (const el of all) {
-      if (el.textContent?.trim() === t && el.offsetParent !== null) return el;
+      if (el.textContent?.trim() === t && el.offsetParent !== null) {
+        const rect = el.getBoundingClientRect();
+        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      }
     }
     return null;
   }, text);
-  const element = handle.asElement();
-  if (!element) return false;
-  const box = await element.boundingBox();
   if (!box) return false;
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   return true;
