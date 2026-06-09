@@ -249,15 +249,16 @@ export default function (xcli: XCLIAPI): void {
     isLogin: async (ctx) => {
       try {
         const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-        if (!page) return false;
+        if (!page) return true;
         const url = page.url();
+        if (url === 'about:blank' || url === '') return true;
+        if (!url.includes('suno.com')) return true;
         if (url.includes('/login') || url.includes('clerk')) return false;
         const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
-        if (!body) return false;
-        // Suno logged-in pages show credits
+        if (!body) return true;
         return body.includes('Credits') || body.includes('credits') || body.includes('Studio') || body.includes('Library');
       } catch {
-        return false;
+        return true;
       }
     },
   });

@@ -164,14 +164,16 @@ export default function (xcli: XCLIAPI): void {
     isLogin: async (ctx) => {
       try {
         const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-        if (!page) return false;
+        if (!page) return true;
         const url = page.url();
+        if (url === 'about:blank' || url === '') return true;
+        if (!url.includes('udio.com')) return true;
         if (url.includes('/login') || url.includes('/signin') || url.includes('/auth')) return false;
         const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '');
-        if (!body) return false;
+        if (!body) return true;
         return body.includes('Create') || body.includes('Library') || body.includes('udio');
       } catch {
-        return false;
+        return true;
       }
     },
   });
