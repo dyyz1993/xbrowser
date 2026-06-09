@@ -110,32 +110,60 @@ async function runTest(plugin: string, command: string, cmdArgs: string[], optio
       env: { ...process.env, FORCE_COLOR: '0' },
     });
   } catch (e) {
-    const stderr = (e as { stderr?: Buffer }).stderr?.toString() || '';
-    stdout = (e as { stdout?: Buffer }).stdout?.toString() || '';
+    const err = e as { stdout?: Buffer; stderr?: Buffer; message?: string };
+    stdout = (err.stdout?.toString() || '');
 
-    // 检查 LOGIN_REQUIRED
-    if (stdout.includes('LOGIN_REQUIRED') || stderr.includes('LOGIN_REQUIRED')) {
-      return { status: 'LOGIN_REQUIRED', message: '需要登录', viewerUrl: 'http://localhost:9224/preview/default' };
+    // 解析 stdout 中的 JSON（含 LOGIN_REQUIRED 等正常响应）
+    const jsonLine = stdout.split('\n').find(l => {
+      try { JSON.parse(l); return true; } catch { return false; }
+    });
+    if (jsonLine) {
+      try {
+        const parsed = JSON.parse(jsonLine);
+        const code = parsed?.data?.code || '';
+        if (code === 'LOGIN_REQUIRED') {
+          return { status: 'LOGIN_REQUIRED', message: parsed.message || '需要登录', viewerUrl: 'http://localhost:9224/preview/default' };
+        }
+      } catch { /* JSON 解析失败则继续 */ }
     }
-    return { status: 'ERROR', message: (e as Error).message?.slice(0, 200) || '执行失败' };
+
+    // 检查 CAPTCHA
+    const stderr = (err.stderr?.toString() || '');
+    if (stdout.includes('captcha') || stderr.includes('captcha') || stdout.includes('CAPTCHA')) {
+      return { status: 'CAPTCHA', message: '检测到验证码', viewerUrl: 'http://localhost:9224/preview/default' };
+    }
+    return { status: 'EXEC_ERROR', message: (err.message || '').slice(0, 200) || '执行失败' };
   }
 
-  // 3. 解析 JSON 输出
-  const jsonLine = stdout.split('\n').find(l => {
-    try { JSON.parse(l); return true; } catch { return false; }
-  });
-  if (!jsonLine) return { status: 'ERROR', message: '无法解析输出' };
+  // 3. 解析 JSON 输出（跨多行）
+  const allLines = stdout.split('\n');
+  const jsonStart = allLines.findIndex(l => l.trim().startsWith('{'));
+  const jsonStr = jsonStart >= 0 ? allLines.slice(jsonStart).join('\n') : '';
+  let parsed: Record<string, unknown> = {};
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch {
+    return { status: 'EXEC_ERROR', message: '无法解析 CLI 输出' };
+  }
 
-  const result = JSON.parse(jsonLine);
-  const data = result.data;
+  const rawData = parsed.data;
+  const rawTips = (parsed.tips || []) as string[];
+
+  // 检查 LOGIN_REQUIRED
+  if (parsed.success === false) {
+    const code = (rawData as Record<string, unknown> | null)?.code || '';
+    if (code === 'LOGIN_REQUIRED') {
+      return { status: 'LOGIN_REQUIRED', message: (parsed.message as string) || '需要登录', viewerUrl: 'http://localhost:9224/preview/default' };
+    }
+    if (rawTips.join(' ').includes('captcha') || rawTips.join(' ').includes('CAPTCHA')) {
+      return { status: 'CAPTCHA', message: (parsed.message as string) || '验证码', viewerUrl: 'http://localhost:9224/preview/default' };
+    }
+  }
+
+  const data = rawData;
 
   if (data === null || data === undefined) {
-    const msg = result.message || 'null';
-    const tips = (result.tips || []).join(' ');
-    if (msg.includes('LOGIN_REQUIRED') || tips.includes('LOGIN_REQUIRED')) {
-      return { status: 'LOGIN_REQUIRED', message: msg, viewerUrl: 'http://localhost:9224/preview/default' };
-    }
-    return { status: 'NULL', message: msg };
+    return { status: 'NULL', message: (parsed.message as string) || 'null' };
   }
 
   // 4. Schema 校验
@@ -216,7 +244,8 @@ export async function handleTest(
   }
 
   const icons: Record<string, string> = {
-    OK: '✅', LOGIN_REQUIRED: '🔑', SCHEMA_ERROR: '❌', NULL: '⚠️', ERROR: '💥',
+    OK: '✅', LOGIN_REQUIRED: '🔑', CAPTCHA: '🚨',
+    SCHEMA_ERROR: '❌', NULL: '⚠️', EXEC_ERROR: '💥',
   };
   const icon = icons[result.status] || '❓';
 
@@ -226,11 +255,13 @@ export async function handleTest(
   if (result.status === 'OK') {
     if (result.count) console.log(`   数据: ${result.count} 项`);
     if (result.data) console.log(`   预览: ${result.data}`);
-  } else if (result.status === 'LOGIN_REQUIRED') {
+  } else if (result.status === 'LOGIN_REQUIRED' || result.status === 'CAPTCHA') {
     console.log(`   信息: ${result.message}`);
     console.log(`   Viewer: ${result.viewerUrl}`);
   } else if (result.status === 'SCHEMA_ERROR') {
     console.log(`   错误: ${(result.errors as string[]).join('; ')}`);
+  } else if (result.status === 'NULL') {
+    console.log(`   信息: ${result.message}`);
   } else {
     console.log(`   信息: ${result.message}`);
   }
