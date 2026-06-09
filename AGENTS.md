@@ -26,7 +26,7 @@
 | `tests/` | 单元/E2E 测试 |
 | `lint-scripts/` | lint 规则（Plugin Contract 校验、参数检查） |
 | `docs/` | 用户文档（`quickstart.md` / `plugin-guide.md` / `recording.md` / `captcha-interaction.md` …） |
-| `.opencode/skills/xbrowser-dev/` | 项目内 skill（**精简版**，详细说明见全局 skill） |
+| `skill/` | 项目 skill 目录（SKILL.md + references） |
 | `.opencode/ui-automator/` | 内部技巧库（patterns / selectors / specs / troubleshooting） |
 | `output/` | 临时输出（截图、JSON、HTML） |
 | `recordings/` | 录制文件 |
@@ -622,6 +622,6 @@ xbrowser marketplace publish <name>         # 发插件
 | SEO 插件 | `docs/seo-plugins.md` |
 | Plugin Contract | `docs/plugin-contract-audit.md` |
 | xcli-core PR | `docs/xcli-core-hook-pr.md` |
-| 全局 xbrowser skill | `.opencode/skills/xbrowser-dev/SKILL.md`（精简版） |
+| xbrowser skill | `skill/SKILL.md` |
 | UI 自动化技巧 | `.opencode/ui-automator/README.md` |
 | 平台推广模式 | `.opencode/ui-automator/plugins/platform-promotion-guide.md` |
