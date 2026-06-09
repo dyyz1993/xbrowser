@@ -137,4 +137,52 @@ export default function (xcli: XCLIAPI): void {
       }
     },
   });
+
+  // ── music — 生成音乐 ──
+  site.command('music', {
+    description: '生成音乐（打开制作音乐工具并发送提示）',
+    loginRequired: 'required',
+    scope: 'page',
+    parameters: z.object({
+      prompt: z.string().describe('音乐描述，如"一首轻快的钢琴曲"'),
+    }),
+    result: z.object({ url: z.string() }),
+    handler: async (params, ctx) => {
+      const page = await getPage(ctx);
+      const tips = buildCdpTips(ctx);
+      try {
+        // Navigate to Gemini
+        await (page as any).goto(GEMINI_URL + '/app', { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await new Promise(r => setTimeout(r, 4000));
+
+        // Click upload/tools button
+        await (page as any).evaluate(() => {
+          const btn = document.querySelector('[aria-label*="上传和工具"]');
+          if (btn) (btn as HTMLElement).click();
+        });
+        await new Promise(r => setTimeout(r, 1000));
+
+        // Click "制作音乐"
+        await (page as any).evaluate(() => {
+          const items = document.querySelectorAll('[class*="drawer-item"], div, button');
+          for (const el of items) {
+            if ((el.textContent || '').includes('制作音乐')) {
+              (el as HTMLElement).click();
+              return;
+            }
+          }
+        });
+        await new Promise(r => setTimeout(r, 1000));
+
+        // Type prompt and send
+        const inputSel = '[aria-label*="输入提示"], [contenteditable="true"]';
+        await (page as any).fill(inputSel, params.prompt);
+        await (page as any).keyboard.press('Enter');
+
+        return ok({ url: '' }, [...tips, `音乐生成请求已发送: "${params.prompt}"`]);
+      } catch (error) {
+        return fail((error as Error).message || '未知错误', tips);
+      }
+    },
+  });
 }

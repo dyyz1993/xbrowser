@@ -17,7 +17,7 @@
     "version": "1.0.0",
     "author": "dyyz1993",
     "tags": ["ai", "gemini", "google"],
-    "commands": ["list", "chat", "new", "open", "image", "model"],
+    "commands": ["list", "chat", "new", "open", "image", "model", "music"],
     "sites": ["gemini"],
     "site": "https://gemini.google.com"
   },
