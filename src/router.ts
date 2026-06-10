@@ -39,7 +39,6 @@ import {
   handleTest,
 } from './cli/index.js';
 import { outputError, outputResult } from './cli/output.js';
-import { getDaemonProcessStatus, getDaemonConfig } from './daemon/daemon.js';
 import { showMainHelp } from './cli/help.js';
 import { printChainResult, printChainResultBrief } from './cli/chain-output.js';
 import { getPluginLoader } from './utils/plugin-singleton.js';
@@ -47,16 +46,7 @@ import { checkPluginLoginRequired } from './plugin/login-guard.js';
 import { findOrRestoreSession, createSession, saveSessionDiskMeta, type ManagedSession } from './browser.js';
 import { HTTPServer } from './server/http-server.js';
 import { getCommand } from './commands/command-registry.js';
-
-function buildViewerUrl(sessionName: string): string | undefined {
-  try {
-    const status = getDaemonProcessStatus();
-    const port = status.running ? status.port : getDaemonConfig().basePort;
-    return `http://localhost:${port}/preview/${encodeURIComponent(sessionName)}`;
-  } catch {
-    try { return `http://localhost:9224/preview/${encodeURIComponent(sessionName)}`; } catch { return undefined; }
-  }
-}
+import { buildViewerUrl } from './utils/viewer-url.js';
 
 function showCommandHelp(siteName: string, cmd: unknown, siteConfig: { description?: string; name: string; url: string }, mode: string): void {
   const c = cmd as { name: string; description: string; scope: string; parameters?: unknown; examples?: Array<{ cmd: string; description: string }>; loginRequired?: 'required' | 'optional' | 'none' };

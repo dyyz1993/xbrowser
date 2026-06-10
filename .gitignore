@@ -51,6 +51,7 @@ output/
 /links.json
 /stats-*.png
 /ctrip-report.html
+/preview.html
 /scrape-progress.log
 /amah-love-letters-lyrics.md
 /steam-reviews.json

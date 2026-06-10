@@ -1,5 +1,5 @@
 import type { XBPage } from '../cdp-driver/types.js';
-import { getDaemonConfig, getDaemonProcessStatus } from '../daemon/daemon.js';
+import { buildViewerUrl } from '../utils/viewer-url.js';
 
 export interface LoginRequiredData {
   code: 'LOGIN_REQUIRED';
@@ -124,16 +124,6 @@ function buildLoginRequired(options: {
     message,
     tips,
   };
-}
-
-function buildViewerUrl(sessionName: string): string | undefined {
-  try {
-    const status = getDaemonProcessStatus();
-    const port = status.running ? status.port : getDaemonConfig().basePort;
-    return `http://localhost:${port}/preview/${encodeURIComponent(sessionName)}`;
-  } catch {
-    return undefined;
-  }
 }
 
 async function detectLoginFromPage(page: XBPage, config: LoginConfigLike): Promise<'logged-in' | 'logged-out' | 'unknown'> {
