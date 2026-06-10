@@ -3,7 +3,7 @@
  * list — 从页面文本提取会话历史
  * chat — 发送消息
  */
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 

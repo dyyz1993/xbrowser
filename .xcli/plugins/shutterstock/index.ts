@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { fail } from '@dyyz1993/xcli-core';
 import { detectAntiBot } from '../../../src/anti-bot-detection.js';

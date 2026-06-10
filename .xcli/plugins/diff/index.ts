@@ -1,6 +1,6 @@
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok } from '@dyyz1993/xcli-core';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 type Page = import('../types').Page;
 

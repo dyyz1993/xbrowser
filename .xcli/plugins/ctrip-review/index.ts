@@ -14,7 +14,7 @@
  *   --verbose     显示进度信息
  */
 
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';

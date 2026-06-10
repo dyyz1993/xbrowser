@@ -5,7 +5,7 @@
  * parameter schema. This module eliminates ~420 lines of duplication
  * across 28+ plugins.
  */
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import { ok, fail } from '@dyyz1993/xcli-core';
 
 // ─── Result Schema ──────────────────────────────────────────────────────────

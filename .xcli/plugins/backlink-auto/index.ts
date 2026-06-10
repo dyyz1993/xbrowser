@@ -4,7 +4,7 @@
  * - BACKLINK_PHONE: Registration phone number
  * - BACKLINK_PASSWORD: Base password for all site registrations
  */
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok } from '@dyyz1993/xcli-core';
 import type { Page } from '../../src/browser-shim.js';

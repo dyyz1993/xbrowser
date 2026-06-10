@@ -1,6 +1,6 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
