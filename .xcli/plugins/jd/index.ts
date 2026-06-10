@@ -1,6 +1,6 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
-import { searchImageResultSchema, baseSearchParams, getPage, buildResult, buildFail } from '../shared/image-search.js';
+import { searchImageResultSchema, baseSearchParams, buildResult, buildFail } from '../shared/image-search.js';
 
 export default function (xcli: XCLIAPI): void {
   const jd = xcli.createSite({
@@ -16,7 +16,8 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object(baseSearchParams),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx);
+      const page = ctx.page;
+      if (!page) throw new Error('需要浏览器页面');
       try {
         const url = `https://search.jd.com/Search?keyword=${encodeURIComponent(params.query)}&enc=utf-8`;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout });

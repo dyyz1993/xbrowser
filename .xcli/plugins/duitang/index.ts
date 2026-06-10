@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { fail } from '@dyyz1993/xcli-core';
-import { searchImageResultSchema, baseSearchParams, getPage, scrollPage, buildResult, buildFail } from '../shared/image-search.js';
+import { searchImageResultSchema, baseSearchParams, scrollPage, buildResult, buildFail } from '../shared/image-search.js';
 
 export default function (xcli: XCLIAPI): void {
   const duitang = xcli.createSite({
@@ -17,7 +17,8 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object(baseSearchParams),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx);
+      const page = ctx.page;
+      if (!page) throw new Error('需要浏览器页面');
       try {
         const url = `https://www.duitang.com/search/?kw=${encodeURIComponent(params.query)}`;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout }).catch(() => {});

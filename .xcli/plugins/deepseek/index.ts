@@ -34,7 +34,7 @@ async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
     const isLogin = (ctx as unknown as Record<string, unknown>).__loginChecked as boolean;
     if (!isLogin) {
       (ctx as unknown as Record<string, unknown>).__loginChecked = true;
-      const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '');
+      const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '') as string;
       if (bodyText.includes('登录') && bodyText.includes('注册') && !bodyText.includes('深度思考')) {
         const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint;
         throw new Error(
@@ -84,7 +84,7 @@ export default function (xcli: XCLIAPI): void {
         // DeepSeek 未登录时会在 URL 中带 /login 或在 body 显示"登录"
         const url = page.url();
         if (url.includes('/login') || url.includes('/auth')) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
         if (!body || body.includes('登录') && body.includes('注册')) return false;
         return true;
       } catch {
@@ -96,12 +96,13 @@ export default function (xcli: XCLIAPI): void {
   // ═══════════════════════════════════════════════════
   //  1. list — 列出所有会话
   // ═══════════════════════════════════════════════════
+  const listResultSchema = z.array(z.object({ index: z.number(), title: z.string(), url: z.string() }).passthrough());
   site.command('list', {
     description: '列出所有历史会话',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'page',
     parameters: z.object({}),
-    result: z.array(z.object({ index: z.number(), title: z.string(), url: z.string() }).passthrough()),
+    result: listResultSchema,
     examples: [
       { cmd: 'xbrowser deepseek list', description: '列出所有会话' },
       { cmd: 'xbrowser deepseek list --json', description: 'JSON 格式输出' },
@@ -119,13 +120,13 @@ export default function (xcli: XCLIAPI): void {
             title: (a.textContent || '').trim(),
             url: (a as HTMLAnchorElement).href,
           })).filter(c => c.title.length > 0);
-        });
+        }) as Array<{ index: number; title: string; url: string }>;
 
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
-        return ok(conversations, tips);
+        return ok(conversations, tips) as unknown as z.infer<typeof listResultSchema>;
       } catch {
-        return fail('未知错误', ['获取会话列表失败']);
+        return fail('未知错误', ['获取会话列表失败']) as unknown as z.infer<typeof listResultSchema>;
       }
     },
   });
@@ -133,12 +134,13 @@ export default function (xcli: XCLIAPI): void {
   // ═══════════════════════════════════════════════════
   //  2. new — 新建对话
   // ═══════════════════════════════════════════════════
+  const newResultSchema = z.object({ created: z.boolean() }).passthrough();
   site.command('new', {
     description: '创建新的空白对话',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({}),
-    result: z.object({ created: z.boolean() }).passthrough(),
+    result: newResultSchema,
     examples: [
       { cmd: 'xbrowser deepseek new', description: '新建对话' },
     ],
@@ -179,9 +181,9 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(1500);
         const tips = buildTips(ctx);
         tips.push('已创建新对话');
-        return ok({ created: true }, tips);
+        return ok({ created: true }, tips) as unknown as z.infer<typeof newResultSchema>;
       } catch {
-        return fail('未知错误', ['创建新对话失败']);
+        return fail('未知错误', ['创建新对话失败']) as unknown as z.infer<typeof newResultSchema>;
       }
     },
   });
@@ -189,14 +191,15 @@ export default function (xcli: XCLIAPI): void {
   // ═══════════════════════════════════════════════════
   //  3. open <title> — 打开指定会话
   // ═══════════════════════════════════════════════════
+  const openResultSchema = z.object({ opened: z.string() }).passthrough();
   site.command('open', {
     description: '通过标题打开指定会话（模糊匹配）',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({
       title: z.string().describe('会话标题（支持模糊匹配）'),
     }),
-    result: z.object({ opened: z.string() }).passthrough(),
+    result: openResultSchema,
     examples: [
       { cmd: 'xbrowser deepseek open "1加1等于2"', description: '打开指定会话' },
       { cmd: 'xbrowser deepseek open "股票"', description: '模糊匹配打开' },
@@ -217,16 +220,16 @@ export default function (xcli: XCLIAPI): void {
             }
           }
           return { found: false, title: '' };
-        }, { searchTitle: params.title });
+        }, { searchTitle: params.title }) as { found: boolean; title: string };
 
         if (!clicked.found) throw new Error(`未找到包含"${params.title}"的会话`);
 
         await page.waitForTimeout(2000);
         const tips = buildTips(ctx);
         tips.push(`已打开会话：${clicked.title}`);
-        return ok({ opened: clicked.title }, tips);
+        return ok({ opened: clicked.title }, tips) as unknown as z.infer<typeof openResultSchema>;
       } catch {
-        return fail('未知错误', ['打开会话失败']);
+        return fail('未知错误', ['打开会话失败']) as unknown as z.infer<typeof openResultSchema>;
       }
     },
   });
@@ -234,9 +237,10 @@ export default function (xcli: XCLIAPI): void {
   // ═══════════════════════════════════════════════════
   //  4. chat <message> — 发送消息
   // ═══════════════════════════════════════════════════
+  const chatResultSchema = z.object({ response: z.string(), duration: z.string().optional(), conversationId: z.string().optional(), sources: z.record(z.string(), z.any()).optional() }).passthrough();
   site.command('chat', {
     description: '发送消息并等待 AI 回复',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({
       message: z.string().describe('消息内容'),
@@ -247,7 +251,7 @@ export default function (xcli: XCLIAPI): void {
       search: z.boolean().optional().describe('开启联网搜索'),
       showSources: z.boolean().optional().describe('显示联网搜索引用的来源 URL 和域名'),
     }),
-    result: z.object({ response: z.string(), duration: z.string().optional(), conversationId: z.string().optional(), sources: z.record(z.any()).optional() }).passthrough(),
+    result: chatResultSchema,
     examples: [
       { cmd: 'xbrowser deepseek chat "你好"', description: '发送消息' },
       { cmd: 'xbrowser deepseek chat "分析这张图" --attach /path/to/img.jpg', description: '发送消息+图片' },
@@ -269,9 +273,9 @@ export default function (xcli: XCLIAPI): void {
             const allElements = document.querySelectorAll('*');
             for (const el of allElements) {
               const text = el.textContent?.trim() || '';
-              if ((text.includes('专家模式') || text.includes('深度思考')) && el.children.length <= 3 && el.offsetParent !== null) {
+              if ((text.includes('专家模式') || text.includes('深度思考')) && el.children.length <= 3 && (el as HTMLElement).offsetParent !== null) {
                 if (targetMode === 'expert' && !text.includes('专家')) {
-                  el.click();
+                  (el as HTMLElement).click();
                   return 'expert_toggled';
                 }
                 break;
@@ -279,8 +283,8 @@ export default function (xcli: XCLIAPI): void {
             }
             for (const el of allElements) {
               const text = el.textContent?.trim() || '';
-              if (targetMode === 'expert' && text.includes('专家') && el.offsetParent !== null) {
-                el.click();
+              if (targetMode === 'expert' && text.includes('专家') && (el as HTMLElement).offsetParent !== null) {
+                (el as HTMLElement).click();
                 return 'expert_clicked';
               }
             }
@@ -389,7 +393,8 @@ export default function (xcli: XCLIAPI): void {
         let capturedStream = '';
         if (wantSources) {
           await page.route('**/api/v0/chat/completion', async (route) => {
-            const resp = await route.fetch();
+            const r = route as unknown as { fetch(): Promise<{ text(): Promise<string>; headers(): Record<string, string>; status(): number }> };
+            const resp = await r.fetch();
             const body = await resp.text();
             capturedStream += body;
             await route.fulfill({ body, headers: resp.headers(), status: resp.status() });
@@ -426,7 +431,7 @@ export default function (xcli: XCLIAPI): void {
                 return '';
               }
               return '';
-            }, { fileMode: hasFile });
+            }, { fileMode: hasFile }) as string;
             if (responseText) break;
           } catch {
             // continue polling on page evaluate failure
@@ -476,7 +481,7 @@ export default function (xcli: XCLIAPI): void {
                     seen.add(h);
                     return true;
                   }).map(a => a.getAttribute('href') || '');
-                });
+                }) as string[];
                 allUrls = domData;
               }
 
@@ -515,13 +520,13 @@ export default function (xcli: XCLIAPI): void {
             }
           }
 
-          return ok(result, tips);
+          return ok(result, tips) as unknown as z.infer<typeof chatResultSchema>;
         } else {
           tips.push('AI 回复超时或未检测到');
-          return ok({ response: '' }, tips);
+          return ok({ response: '' }, tips) as unknown as z.infer<typeof chatResultSchema>;
         }
       } catch {
-        return fail('未知错误', ['发送消息失败']);
+        return fail('未知错误', ['发送消息失败']) as unknown as z.infer<typeof chatResultSchema>;
       }
     },
   });
@@ -529,14 +534,15 @@ export default function (xcli: XCLIAPI): void {
   // ═══════════════════════════════════════════════════
   //  5. mode <normal|expert> — 切换模式
   // ═══════════════════════════════════════════════════
+  const modeResultSchema = z.object({ mode: z.string(), action: z.string().optional() }).passthrough();
   site.command('mode', {
     description: '切换快速模式/专家模式',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({
       mode: z.enum(['normal', 'expert']).describe('模式：normal=快速模式, expert=专家模式'),
     }),
-    result: z.object({ mode: z.string(), action: z.string().optional() }).passthrough(),
+    result: modeResultSchema,
     examples: [
       { cmd: 'xbrowser deepseek mode expert', description: '专家模式' },
       { cmd: 'xbrowser deepseek mode normal', description: '快速模式' },
@@ -568,15 +574,15 @@ export default function (xcli: XCLIAPI): void {
 
         if (clicked === 'not_found') {
           // 可能已经进了具体对话，模式选择器不在页面上
-          return ok({ mode: params.mode }, [...buildTips(ctx), '提示：模式切换仅在首页可用，已进入对话时无法切换']);
+          return ok({ mode: params.mode }, [...buildTips(ctx), '提示：模式切换仅在首页可用，已进入对话时无法切换']) as unknown as z.infer<typeof modeResultSchema>;
         }
 
         const status = clicked === 'already' ? '已经是' : '已切换为';
         const tips = buildTips(ctx);
         tips.push(`${status} ${label}`);
-        return ok({ mode: params.mode, action: clicked }, tips);
+        return ok({ mode: params.mode, action: clicked }, tips) as unknown as z.infer<typeof modeResultSchema>;
       } catch {
-        return fail('未知错误', ['切换模式失败']);
+        return fail('未知错误', ['切换模式失败']) as unknown as z.infer<typeof modeResultSchema>;
       }
     },
   });
@@ -589,7 +595,7 @@ export default function (xcli: XCLIAPI): void {
   async function toggleButton(page: Page, buttonText: string, wanted: boolean): Promise<string> {
     await page.waitForTimeout(2000);
     // 主方案：locator + 稳定 class 选择器
-    const btn = page.locator('div[role="button"][class*="ds-toggle-button"]', { hasText: buttonText }).first();
+    const btn = page.locator('div[role="button"][class*="ds-toggle-button"]').first();
     const count = await btn.count();
     if (count > 0) {
       const pressed = await btn.getAttribute('aria-pressed');
@@ -609,17 +615,18 @@ export default function (xcli: XCLIAPI): void {
         }
       }
       return 'not_found';
-    }, { text: buttonText, on: wanted });
+    }, { text: buttonText, on: wanted }) as string;
   }
 
+  const thinkResultSchema = z.object({ think: z.string(), action: z.string().optional() }).passthrough();
   site.command('think', {
     description: '切换深度思考模式',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({
       state: z.enum(['on', 'off']).describe('on=开启, off=关闭'),
     }),
-    result: z.object({ think: z.string(), action: z.string().optional() }).passthrough(),
+    result: thinkResultSchema,
     examples: [
       { cmd: 'xbrowser deepseek think on', description: '开启深度思考' },
       { cmd: 'xbrowser deepseek think off', description: '关闭深度思考' },
@@ -629,19 +636,19 @@ export default function (xcli: XCLIAPI): void {
         const page = getPage(ctx);
         await ensurePage(page, ctx);
         const targetPressed = params.state === 'on';
-        const result = await toggleButton(page, '深度思考', targetPressed);
+        const toggleResult = await toggleButton(page, '深度思考', targetPressed);
         await page.waitForTimeout(500);
 
         const stateName = params.state === 'on' ? '开启' : '关闭';
-        if (result === 'not_found') {
-          return ok({ think: params.state }, [...buildTips(ctx), '提示：未找到深度思考按钮，可能页面尚未完全加载']);
+        if (toggleResult === 'not_found') {
+          return ok({ think: params.state }, [...buildTips(ctx), '提示：未找到深度思考按钮，可能页面尚未完全加载']) as unknown as z.infer<typeof thinkResultSchema>;
         }
-        const status = result === 'already' ? `已经是${stateName}状态` : `已${stateName}`;
+        const status = toggleResult === 'already' ? `已经是${stateName}状态` : `已${stateName}`;
         const tips = buildTips(ctx);
         tips.push(`深度思考：${status}`);
-        return ok({ think: params.state, action: result }, tips);
+        return ok({ think: params.state, action: toggleResult }, tips) as unknown as z.infer<typeof thinkResultSchema>;
       } catch {
-        return fail('未知错误', ['切换深度思考失败']);
+        return fail('未知错误', ['切换深度思考失败']) as unknown as z.infer<typeof thinkResultSchema>;
       }
     },
   });
@@ -649,14 +656,15 @@ export default function (xcli: XCLIAPI): void {
   // ═══════════════════════════════════════════════════
   //  7. search <on|off> — 智能搜索开关
   // ═══════════════════════════════════════════════════
+  const searchResultSchema = z.object({ search: z.string(), action: z.string().optional() }).passthrough();
   site.command('search', {
     description: '切换智能搜索（联网搜索）',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'browser',
     parameters: z.object({
       state: z.enum(['on', 'off']).describe('on=开启, off=关闭'),
     }),
-    result: z.object({ search: z.string(), action: z.string().optional() }).passthrough(),
+    result: searchResultSchema,
     examples: [
       { cmd: 'xbrowser deepseek search on', description: '开启智能搜索' },
       { cmd: 'xbrowser deepseek search off', description: '关闭智能搜索' },
@@ -666,19 +674,19 @@ export default function (xcli: XCLIAPI): void {
         const page = getPage(ctx);
         await ensurePage(page, ctx);
         const targetPressed = params.state === 'on';
-        const result = await toggleButton(page, '智能搜索', targetPressed);
+        const toggleResult = await toggleButton(page, '智能搜索', targetPressed);
         await page.waitForTimeout(500);
 
         const stateName = params.state === 'on' ? '开启' : '关闭';
-        if (result === 'not_found') {
-          return ok({ search: params.state }, [...buildTips(ctx), '提示：未找到智能搜索按钮，可能页面尚未完全加载']);
+        if (toggleResult === 'not_found') {
+          return ok({ search: params.state }, [...buildTips(ctx), '提示：未找到智能搜索按钮，可能页面尚未完全加载']) as unknown as z.infer<typeof searchResultSchema>;
         }
-        const status = result === 'already' ? `已经是${stateName}状态` : `已${stateName}`;
+        const status = toggleResult === 'already' ? `已经是${stateName}状态` : `已${stateName}`;
         const tips = buildTips(ctx);
         tips.push(`智能搜索：${status}`);
-        return ok({ search: params.state, action: result }, tips);
+        return ok({ search: params.state, action: toggleResult }, tips) as unknown as z.infer<typeof searchResultSchema>;
       } catch {
-        return fail('未知错误', ['切换智能搜索失败']);
+        return fail('未知错误', ['切换智能搜索失败']) as unknown as z.infer<typeof searchResultSchema>;
       }
     },
   });
@@ -686,15 +694,16 @@ export default function (xcli: XCLIAPI): void {
   // ═══════════════════════════════════════════════════
   //  8. attach <type> <path> — 发送附件
   // ═══════════════════════════════════════════════════
+  const attachResultSchema = z.object({ type: z.string().optional(), sent: z.boolean().optional(), file: z.string().optional(), uploaded: z.boolean().optional() }).passthrough();
   site.command('attach', {
     description: '发送附件（图片/文件/URL）',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({
       type: z.enum(['image', 'file', 'url']).describe('附件类型'),
       path: z.string().describe('文件路径 或 URL 链接'),
     }),
-    result: z.object({ type: z.string().optional(), sent: z.boolean().optional(), file: z.string().optional(), uploaded: z.boolean().optional() }).passthrough(),
+    result: attachResultSchema,
     examples: [
       { cmd: 'xbrowser deepseek attach image ~/photo.jpg', description: '上传图片' },
       { cmd: 'xbrowser deepseek attach url "https://example.com"', description: '发送 URL 链接' },
@@ -715,7 +724,7 @@ export default function (xcli: XCLIAPI): void {
           await page.waitForTimeout(300);
           await page.press(inputSel, 'Enter');
           tips.push(`URL "${params.path}" 已作为消息发送`);
-          return ok({ type: 'url', sent: true }, tips);
+          return ok({ type: 'url', sent: true }, tips) as unknown as z.infer<typeof attachResultSchema>;
         }
 
         // 图片或文件上传（DataTransfer 方案，绕过 OS 文件选择器）
@@ -729,9 +738,9 @@ export default function (xcli: XCLIAPI): void {
         }
         await page.waitForTimeout(1000);
         tips.push(`附件 "${path.basename(absPath)}" 已上传`);
-        return ok({ type: params.type, file: absPath, uploaded: true }, tips);
+        return ok({ type: params.type, file: absPath, uploaded: true }, tips) as unknown as z.infer<typeof attachResultSchema>;
       } catch {
-        return fail('未知错误', ['上传附件失败']);
+        return fail('未知错误', ['上传附件失败']) as unknown as z.infer<typeof attachResultSchema>;
       }
     },
   });
@@ -747,7 +756,7 @@ export default function (xcli: XCLIAPI): void {
     if (cdp && page) {
       await page.goto(DS_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
       await page.waitForTimeout(2000);
-      const loggedIn = await site.isLoggedIn(ctx).catch(() => false);
+      const loggedIn = await site.isLoggedIn();
       if (loggedIn) {
         console.log('✅ CDP 浏览器已登录 DeepSeek');
         return;
@@ -846,7 +855,7 @@ async function uploadFileViaDataTransfer(page: Page, absPath: string): Promise<b
   const mime = mimeMap[ext] || 'application/octet-stream';
 
   const result = await page.evaluate(({ b64data, filename, mimeType }) => {
-    const fi = document.querySelector('input[type="file"]');
+    const fi = document.querySelector('input[type="file"]') as HTMLInputElement | null;
     if (!fi) return false;
 
     const byteChars = atob(b64data);
@@ -863,5 +872,5 @@ async function uploadFileViaDataTransfer(page: Page, absPath: string): Promise<b
     return fi.files.length > 0;
   }, { b64data: b64, filename: path.basename(absPath), mimeType: mime });
 
-  return result;
+  return result as boolean;
 }
