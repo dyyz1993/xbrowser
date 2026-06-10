@@ -391,8 +391,11 @@ export default function (xcli: XCLIAPI): void {
 
     if (url.includes('v.douyin.com')) {
       tips.push('解析短链...');
-      const resp = await (page as unknown as import('../types').PluginPage).request().get(url, { maxRedirects: 5 });
-      const finalUrl = resp.url();
+      // 跟踪短链重定向：用 fetch 获取最终 URL
+      const fetchResp = await page.evaluate(async (u: string) => {
+        try { const r = await fetch(u, { redirect: 'follow' }); return r.url; } catch { return u; }
+      }, url) as string;
+      const finalUrl = fetchResp;
       tips.push(`跳转到: ${finalUrl}`);
       url = finalUrl;
     }
@@ -667,8 +670,9 @@ export default function (xcli: XCLIAPI): void {
           awemeId = input;
         } else if (input.includes('v.douyin.com')) {
           tips.push('解析短链...');
-          const resp = await (page as unknown as import('../types').PluginPage).request().get(input, { maxRedirects: 5 });
-          const finalUrl = resp.url();
+          const finalUrl = await page.evaluate(async (u: string) => {
+            try { const r = await fetch(u, { redirect: 'follow' }); return r.url; } catch { return u; }
+          }, input) as string;
           tips.push(`跳转到: ${finalUrl}`);
           const m = finalUrl.match(/video\/(\d+)/);
           if (!m) throw new Error('无法从短链中提取视频 ID');
@@ -1145,8 +1149,9 @@ export default function (xcli: XCLIAPI): void {
         let videoUrl = params.url;
         if (videoUrl.includes('v.douyin.com')) {
           tips.push('解析短链...');
-          const resp = await (page as unknown as import('../types').PluginPage).request().get(videoUrl, { maxRedirects: 5 });
-          videoUrl = resp.url();
+          videoUrl = await page.evaluate(async (u: string) => {
+            try { const r = await fetch(u, { redirect: 'follow' }); return r.url; } catch { return u; }
+          }, videoUrl) as string;
           tips.push(`跳转到: ${videoUrl}`);
         }
 
