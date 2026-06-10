@@ -65,7 +65,7 @@ function buildSearchPrompt(query: string, isSearchFirst?: boolean): string {
 
 async function detectLoginStatus(page: Page, config: EngineConfig): Promise<'logged_in' | 'logged_out' | 'unknown'> {
   try {
-    const bodyText = await page.evaluate(() => document.body?.textContent || '');
+    const bodyText = await page.evaluate(() => document.body?.textContent || '') as string;
     if (bodyText.includes('登录') && bodyText.includes('注册') && bodyText.length < 5000) return 'logged_out';
     for (const sel of config.input.selectors) {
       const count = await page.locator(sel).count();
@@ -85,7 +85,7 @@ async function fillContentEditable(page: Page, selector: string, text: string): 
   await page.waitForTimeout(300);
   try {
     await page.keyboard.type(text, { delay: 10 });
-    const currentText = await el.evaluate((node: HTMLElement) => node.textContent || '');
+    const currentText = await el.evaluate((node: HTMLElement) => node.textContent || '') as string;
     if (currentText.trim().length > 0) return true;
   } catch { /* fallback */ }
   await el.evaluate((node: HTMLElement, t: string) => {
@@ -146,7 +146,7 @@ async function navigateToChat(page: Page, config: EngineConfig): Promise<void> {
       Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'))
         .filter(a => a.href.includes('/chat') || a.href.includes('/project'))
         .map(a => ({ href: a.href }))
-    );
+    ) as Array<{ href: string }>;
     if (chatLinks.length > 0) {
       await page.goto(chatLinks[0].href, { waitUntil: 'domcontentloaded', timeout: 20000 });
       await page.waitForTimeout(3000);
@@ -172,7 +172,7 @@ async function waitForAIResponse(page: Page, timeoutMs: number): Promise<string>
         const body = document.body?.textContent || '';
         const isThinking = body.includes('正在搜索') || body.includes('Searching') || body.includes('Generating') || body.includes('停止生成');
         return { hasLoading, isThinking };
-      });
+      }) as { hasLoading: boolean; isThinking: boolean };
       if (state.hasLoading || state.isThinking) break;
       if (Date.now() - startTime > 5000) break;
     } catch { /* ignore */ }
@@ -187,7 +187,7 @@ async function waitForAIResponse(page: Page, timeoutMs: number): Promise<string>
       if (txt.length > 20) keys.add(txt.slice(0, 100));
     });
     return Array.from(keys);
-  });
+  }) as string[];
   let stableCount = 0;
   let lastResponse = '';
   while (Date.now() - startTime < timeoutMs) {
@@ -222,7 +222,7 @@ async function waitForAIResponse(page: Page, timeoutMs: number): Promise<string>
         }
         if (bestFallbackText) return { status: 'ready', text: bestFallbackText.slice(0, 5000) };
         return { status: 'waiting' };
-      }, baselineKeys);
+      }, baselineKeys) as { status: string; text?: string };
       if (result.status === 'processing') { stableCount = 0; lastResponse = ''; continue; }
       if (result.status === 'ready' && result.text) {
         if (result.text === lastResponse) { stableCount++; if (stableCount >= 3) return result.text; }
@@ -255,7 +255,7 @@ async function extractSourcesFromDOM(page: Page, config: EngineConfig): Promise<
         if (!href.startsWith('http')) return false;
         try { const u = new URL(href); return u.hostname !== host && !u.hostname.endsWith('.' + host); } catch { return false; }
       });
-  }, engineHost);
+  }, engineHost) as string[];
   return [...new Set(links)];
 }
 
@@ -359,7 +359,7 @@ interface CollectResult {
   success: boolean;
   engine: string;
   query: string;
-  data: SearchResult | null;
+  result: SearchResult | null;
   errors?: string[];
   timestamp: number;
   duration: number;
@@ -499,7 +499,7 @@ async function collectFromEngine(
   const config = getEngineConfig(engineKey);
 
   if (!config) {
-    return ok(null, []);
+    return { success: false, engine: engineKey, query, result: null, errors: ['未知引擎'], timestamp: Date.now(), duration: Date.now() - startTime };
   }
 
   try {
@@ -529,14 +529,14 @@ async function collectFromEngine(
     const loginStatus = await detectLoginStatus(page, config);
     if (loginStatus === 'logged_out') {
       page.off('response', responseListener);
-    return ok(null, []);
+    return { success: false, engine: engineKey, query, result: null, errors: ['需要登录'], timestamp: Date.now(), duration: Date.now() - startTime };
     }
 
     const inputText = buildSearchPrompt(query, config.isSearchFirst);
     const inputFilled = await findAndFillInput(page, config as EngineConfig & { key: string }, inputText);
     if (!inputFilled) {
       page.off('response', responseListener);
-    return ok(null, []);
+    return { success: false, engine: engineKey, query, result: null, errors: ['输入框未找到'], timestamp: Date.now(), duration: Date.now() - startTime };
     }
 
     await page.waitForTimeout(500);
@@ -552,7 +552,7 @@ async function collectFromEngine(
       await page.keyboard.press('Meta+Enter');
     } else if (config.navigateOnSend) {
       await Promise.all([
-        page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}),
+        page.waitForLoadState('domcontentloaded', 15000).catch(() => {}),
         page.keyboard.press('Enter'),
       ]);
       await page.waitForTimeout(3000);
@@ -571,7 +571,7 @@ async function collectFromEngine(
     page.off('response', responseListener);
 
     if (!rawResponse || rawResponse.length < 10) {
-    return ok(null, []);
+    return { success: false, engine: engineKey, query, result: null, errors: ['无响应'], timestamp: Date.now(), duration: Date.now() - startTime };
     }
 
     const domUrls = await extractSourcesFromDOM(page, config as EngineConfig & { key: string });
@@ -621,9 +621,9 @@ async function collectFromEngine(
 
     await saveResult(searchResult);
 
-    return ok(searchResult, []);
+    return { success: true, engine: engineKey, query, result: searchResult, timestamp: Date.now(), duration: Date.now() - startTime };
   } catch {
-    return ok(null, []);
+    return { success: false, engine: engineKey, query, result: null, errors: ['采集异常'], timestamp: Date.now(), duration: Date.now() - startTime };
   }
 }
 
@@ -820,7 +820,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('collect', {
     description: '从单个 AI 搜索引擎采集数据（SSE 拦截 + DOM 提取），提取外链域名排名',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       keyword: z.string().describe('搜索关键词'),
@@ -850,7 +849,7 @@ export default function (xcli: XCLIAPI): void {
           ]);
         }
 
-        const output = result.data;
+        const output = result.result;
         if (params.format === 'markdown' && output) {
           const md = buildMarkdownReport(params.keyword, undefined, output.domainExtraction ? [{
             domain: '',
@@ -868,7 +867,7 @@ export default function (xcli: XCLIAPI): void {
     return ok(output, [
       `引擎: ${params.engine}`,
     ]);
-  } catch {
+  } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['采集失败']);
   }
     },
@@ -876,7 +875,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('batch', {
     description: '批量从多个 AI 搜索引擎采集数据（SSE + DOM 提取），汇总域名排名',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       keyword: z.string().describe('搜索关键词'),
@@ -891,7 +889,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ totalEngines: z.number(), successfulEngines: z.number(), failedEngines: z.number(), results: z.array(z.any()), summary: z.object({ totalResults: z.number(), totalUrls: z.number(), uniqueDomains: z.number(), topEngines: z.array(z.object({ engine: z.string(), count: z.number() })) }), timestamp: z.number(), duration: z.number(), markdown: z.string().optional() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         await ensureDir(DATA_BASE);
 
         const engineList = params.engines.split(',').map(e => e.trim()).filter(Boolean);
@@ -906,7 +905,7 @@ export default function (xcli: XCLIAPI): void {
           results.push(result);
 
           if (result.success) {
-            console.log(`  ✅ ${engine}: ${result.data?.domainExtraction?.totalDomains || 0} 域名`);
+            console.log(`  ✅ ${engine}: ${result.result?.domainExtraction?.totalDomains || 0} 域名`);
           } else {
             console.log(`  ❌ ${engine}: ${result.errors?.join(', ')}`);
           }
@@ -918,11 +917,11 @@ export default function (xcli: XCLIAPI): void {
 
         const successful = results.filter(r => r.success);
         const failed = results.filter(r => !r.success);
-        const allData = successful.map(r => r.data!).filter(Boolean);
+        const allData = successful.map(r => r.result!).filter(Boolean);
 
         const urlMap = new Map<string, number>();
         successful.forEach(r => {
-          r.data?.domainExtraction?.domains.forEach(d => {
+          r.result?.domainExtraction?.domains.forEach(d => {
             urlMap.set(d.domain, (urlMap.get(d.domain) || 0) + d.count);
           });
         });
@@ -962,7 +961,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('rank', {
     description: '基于历史采集数据生成域名排名和平台排名（去噪后统计）',
-    loginRequired: 'required',
     scope: 'global',
     parameters: z.object({
       format: z.enum(['json', 'markdown', 'text']).default('json').describe('输出格式'),
@@ -999,7 +997,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
     return ok(rankings, [`数据点: ${history.length}`]);
-      } catch {
+      } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['排名生成失败']);
       }
     },
@@ -1007,7 +1005,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('all', {
     description: '一键搜索所有 AI 引擎（SSE 拦截 + DOM 提取 + 去噪过滤），自动聚合排名',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       keyword: z.string().describe('搜索关键词'),
@@ -1036,7 +1033,7 @@ export default function (xcli: XCLIAPI): void {
           results.push(result);
 
           if (result.success) {
-            console.log(`  ✅ ${config?.name}: ${result.data?.domainExtraction?.totalDomains || 0} 域名`);
+            console.log(`  ✅ ${config?.name}: ${result.result?.domainExtraction?.totalDomains || 0} 域名`);
           } else {
             console.log(`  ❌ ${config?.name}: ${result.errors?.join(', ')}`);
           }
@@ -1051,7 +1048,7 @@ export default function (xcli: XCLIAPI): void {
 
         const domainRanking = new Map<string, { count: number; urls: string[]; engines: Set<string> }>();
         successful.forEach(r => {
-          r.data?.domainExtraction?.domains.forEach(d => {
+          r.result?.domainExtraction?.domains.forEach(d => {
             if (!domainRanking.has(d.domain)) {
               domainRanking.set(d.domain, { count: 0, urls: [], engines: new Set() });
             }
@@ -1105,9 +1102,9 @@ export default function (xcli: XCLIAPI): void {
               engine: r.engine,
               name: config?.name || r.engine,
               success: r.success,
-              urlCount: r.data?.domainExtraction?.totalUrls || 0,
-              domainCount: r.data?.domainExtraction?.totalDomains || 0,
-              duration: r.data?.duration,
+              urlCount: r.result?.domainExtraction?.totalUrls || 0,
+              domainCount: r.result?.domainExtraction?.totalDomains || 0,
+              duration: r.result?.duration,
               error: r.errors?.join(', '),
             };
           }),
@@ -1176,7 +1173,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
     return ok(aggResult, [`引擎: ${aggResult.totalEngines}`]);
-      } catch {
+      } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['聚合搜索失败']);
       }
     },
@@ -1184,7 +1181,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('company', {
     description: '基于历史采集数据生成企业排名，按跨引擎出现频次评分',
-    loginRequired: 'required',
     scope: 'global',
     parameters: z.object({
       format: z.enum(['json', 'markdown', 'text']).default('json').describe('输出格式'),
@@ -1221,7 +1217,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
     return ok(rankings, [`数据点: ${history.length}`]);
-      } catch {
+      } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['企业排名生成失败']);
       }
     },
@@ -1229,7 +1225,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('trend', {
     description: '基于历史采集数据分析域名出现趋势，识别上升/下降/稳定域名',
-    loginRequired: 'required',
     scope: 'global',
     parameters: z.object({
       format: z.enum(['json', 'markdown', 'text']).default('json').describe('输出格式'),
@@ -1275,7 +1270,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('report', {
     description: '基于历史数据生成完整的 GEO 分析报告，包含域名排名、企业排名和趋势分析',
-    loginRequired: 'required',
     scope: 'global',
     parameters: z.object({
       keyword: z.string().default('').describe('报告关联的关键词（留空则包含所有数据）'),
@@ -1327,7 +1321,7 @@ export default function (xcli: XCLIAPI): void {
         await fs.writeFile(filepath, JSON.stringify(reportData, null, 2), 'utf-8');
 
     return ok({ path: filepath }, []);
-      } catch {
+      } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['报告生成失败']);
       }
     },
@@ -1335,7 +1329,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('history', {
     description: '查看历史采集记录，按时间倒序排列',
-    loginRequired: 'required',
     scope: 'global',
     parameters: z.object({
       limit: z.number().default(20).describe('显示条数'),
@@ -1375,13 +1368,12 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('status', {
     description: '查看 GEO 分析系统状态，包括数据量、引擎分布、存储占用',
-    loginRequired: 'required',
     scope: 'global',
     parameters: z.object({}),
     examples: [
       { cmd: 'xbrowser geo-analysis status', description: '查看系统状态' },
     ],
-    result: z.object({ version: z.string(), totalRecords: z.number(), totalEngines: z.number(), availableEngines: z.array(z.string()), totalQueries: z.number(), storageSizeBytes: z.number(), storageSizeMB: z.string(), engineDistribution: z.record(z.number()), top10Domains: z.array(z.object({ domain: z.string(), platform: z.string().nullable().optional(), count: z.number() })), oldestRecord: z.string().nullable(), newestRecord: z.string().nullable() }).passthrough(),
+    result: z.object({ version: z.string(), totalRecords: z.number(), totalEngines: z.number(), availableEngines: z.array(z.string()), totalQueries: z.number(), storageSizeBytes: z.number(), storageSizeMB: z.string(), engineDistribution: z.record(z.string(), z.number()), top10Domains: z.array(z.object({ domain: z.string(), platform: z.string().nullable().optional(), count: z.number() })), oldestRecord: z.string().nullable(), newestRecord: z.string().nullable() }).passthrough(),
     handler: async () => {
       try {
         const history = await loadAllHistory(10000);
