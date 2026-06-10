@@ -56,12 +56,6 @@ function buildTips(ctx: CommandContext): string[] {
   return tips;
 }
 
-function getPage(ctx: CommandContext): Page {
-  const page = ctx.page;
-  if (!page) throw new Error('需要浏览器页面，请使用 --cdp 参数连接');
-  return page;
-}
-
 interface CapturedApiData {
   user?: Record<string, unknown>;
   apiUsage?: Record<string, unknown>;
@@ -718,7 +712,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (_params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         const tips = buildTips(ctx);
 
         if (!page.url().includes('udio.com')) {
@@ -847,7 +842,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         const tips = buildTips(ctx);
 
         if (!page.url().includes('udio.com')) {

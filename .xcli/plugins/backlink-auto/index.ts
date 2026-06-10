@@ -182,11 +182,11 @@ interface SiteResult {
 
 const RESULTS: SiteResult[] = [];
 
-function addResult(r: SiteResult) {
+async function addResult(r: SiteResult) {
   RESULTS.push(r);
   // Also write to file
-  const fs = require('fs');
-  const path = require('path');
+  const fs = await import('fs');
+  const path = await import('path');
   const outPath = path.join('/Users/xuyingzhou/Downloads', 'backlink-results.json');
   fs.writeFileSync(outPath, JSON.stringify(RESULTS, null, 2));
 }
@@ -200,7 +200,7 @@ async function registerIssuu(page: Page): Promise<SiteResult> {
     await page.waitForTimeout(3000);
 
     const captcha = await detectCaptcha(page);
-    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; addResult(r); return r; }
+    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; await addResult(r); return r; }
 
     // Click "Sign up with email" if it exists
     await safeClickByText(page, 'sign up with email');
@@ -250,7 +250,7 @@ async function registerIssuu(page: Page): Promise<SiteResult> {
   } catch (e: unknown) {
     r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
-  addResult(r);
+  await addResult(r);
   return r;
 }
 
@@ -260,7 +260,7 @@ async function registerSubstack(page: Page): Promise<SiteResult> {
     await safeGoto(page, 'https://substack.com/signup');
     await page.waitForTimeout(3000);
     const captcha = await detectCaptcha(page);
-    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; addResult(r); return r; }
+    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; await addResult(r); return r; }
 
     // Fill email
     await safeFill(page, 'input[type="email"], input[name="email"]', r.email);
@@ -285,7 +285,7 @@ async function registerSubstack(page: Page): Promise<SiteResult> {
   } catch (e: unknown) {
     r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
-  addResult(r);
+  await addResult(r);
   return r;
 }
 
@@ -295,7 +295,7 @@ async function registerAboutMe(page: Page): Promise<SiteResult> {
     await safeGoto(page, 'https://about.me/signup');
     await page.waitForTimeout(3000);
     const captcha = await detectCaptcha(page);
-    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; addResult(r); return r; }
+    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; await addResult(r); return r; }
 
     await safeFill(page, 'input[name="email"], input[type="email"]', r.email);
     await safeFill(page, 'input[name="password"], input[type="password"]', r.password);
@@ -324,7 +324,7 @@ async function registerAboutMe(page: Page): Promise<SiteResult> {
   } catch (e: unknown) {
     r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
-  addResult(r);
+  await addResult(r);
   return r;
 }
 
@@ -334,7 +334,7 @@ async function registerDisqus(page: Page): Promise<SiteResult> {
     await safeGoto(page, 'https://disqus.com/profile/signup/');
     await page.waitForTimeout(3000);
     const captcha = await detectCaptcha(page);
-    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; addResult(r); return r; }
+    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; await addResult(r); return r; }
 
     await safeFill(page, 'input[name="email"], input[type="email"]', r.email);
     await safeFill(page, 'input[name="password"], input[type="password"]', r.password);
@@ -357,7 +357,7 @@ async function registerDisqus(page: Page): Promise<SiteResult> {
   } catch (e: unknown) {
     r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
-  addResult(r);
+  await addResult(r);
   return r;
 }
 
@@ -367,7 +367,7 @@ async function registerCalCom(page: Page): Promise<SiteResult> {
     await safeGoto(page, 'https://app.cal.com/signup');
     await page.waitForTimeout(3000);
     const captcha = await detectCaptcha(page);
-    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; addResult(r); return r; }
+    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; await addResult(r); return r; }
 
     await safeFill(page, 'input[name="email"], input[type="email"]', r.email);
     await safeFill(page, 'input[name="password"], input[type="password"]', r.password);
@@ -393,7 +393,7 @@ async function registerCalCom(page: Page): Promise<SiteResult> {
   } catch (e: unknown) {
     r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
-  addResult(r);
+  await addResult(r);
   return r;
 }
 
@@ -403,7 +403,7 @@ async function registerHashnode(page: Page): Promise<SiteResult> {
     await safeGoto(page, 'https://hashnode.com/onboard');
     await page.waitForTimeout(3000);
     const captcha = await detectCaptcha(page);
-    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; addResult(r); return r; }
+    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; await addResult(r); return r; }
 
     await safeFill(page, 'input[name="email"], input[type="email"]', r.email);
     await safeFill(page, 'input[name="password"], input[type="password"]', r.password);
@@ -416,7 +416,7 @@ async function registerHashnode(page: Page): Promise<SiteResult> {
   } catch (e: unknown) {
     r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
-  addResult(r);
+  await addResult(r);
   return r;
 }
 
@@ -426,7 +426,7 @@ async function registerGreasyFork(page: Page): Promise<SiteResult> {
     await safeGoto(page, 'https://greasyfork.org/zh-CN/users/sign_up');
     await page.waitForTimeout(3000);
     const captcha = await detectCaptcha(page);
-    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; addResult(r); return r; }
+    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; await addResult(r); return r; }
 
     await safeFill(page, 'input[name="user[email]"], input[type="email"]', r.email);
     await safeFill(page, 'input[name="user[password]"], input[type="password"]', r.password);
@@ -450,7 +450,7 @@ async function registerGreasyFork(page: Page): Promise<SiteResult> {
   } catch (e: unknown) {
     r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
-  addResult(r);
+  await addResult(r);
   return r;
 }
 
@@ -460,7 +460,7 @@ async function registerSeaArt(page: Page): Promise<SiteResult> {
     await safeGoto(page, 'https://www.seaart.ai/user/register');
     await page.waitForTimeout(3000);
     const captcha = await detectCaptcha(page);
-    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; addResult(r); return r; }
+    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; await addResult(r); return r; }
 
     await safeFill(page, 'input[name="email"], input[type="email"]', r.email);
     await safeFill(page, 'input[name="password"], input[type="password"]', r.password);
@@ -482,7 +482,7 @@ async function registerSeaArt(page: Page): Promise<SiteResult> {
   } catch (e: unknown) {
     r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
-  addResult(r);
+  await addResult(r);
   return r;
 }
 
@@ -492,7 +492,7 @@ async function registerLeetCode(page: Page): Promise<SiteResult> {
     await safeGoto(page, 'https://leetcode.com/accounts/signup/');
     await page.waitForTimeout(3000);
     const captcha = await detectCaptcha(page);
-    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; addResult(r); return r; }
+    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; await addResult(r); return r; }
 
     await safeFill(page, 'input[name="email"], input[type="email"]', r.email);
     await safeFill(page, 'input[name="password"], input[type="password"]', r.password);
@@ -505,7 +505,7 @@ async function registerLeetCode(page: Page): Promise<SiteResult> {
   } catch (e: unknown) {
     r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
-  addResult(r);
+  await addResult(r);
   return r;
 }
 
@@ -515,7 +515,7 @@ async function registerDevTo(page: Page): Promise<SiteResult> {
     await safeGoto(page, 'https://dev.to/enter');
     await page.waitForTimeout(3000);
     const captcha = await detectCaptcha(page);
-    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; addResult(r); return r; }
+    if (captcha) { r.captchaType = captcha; r.notes = `CAPTCHA: ${captcha}, skipped`; await addResult(r); return r; }
 
     await safeFill(page, 'input[name="email"], input[type="email"]', r.email);
     await safeClick(page, 'button[type="submit"]');
@@ -527,7 +527,7 @@ async function registerDevTo(page: Page): Promise<SiteResult> {
   } catch (e: unknown) {
     r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
-  addResult(r);
+  await addResult(r);
   return r;
 }
 

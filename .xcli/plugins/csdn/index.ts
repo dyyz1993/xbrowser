@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page, Locator } from '../types.js';
 
@@ -275,11 +275,11 @@ async function humanFill(
   }
 }
 
-function resolvePage(ctx: Record<string, unknown>): { page: Page; tips: string[] } {
-  const page = ctx.page as Page;
+function resolvePage(ctx: CommandContext): { page: Page; tips: string[] } {
+  const page = ctx.page;
   if (!page) throw new Error('需要浏览器页面');
-  const cdpEndpoint = ctx.cdpEndpoint as string | undefined;
-  const sessionId = ctx.sessionId as string | undefined;
+  const cdpEndpoint = ctx.cdpEndpoint;
+  const sessionId = ctx.sessionId;
   const tips: string[] = [];
   if (!cdpEndpoint) {
     tips.push('建议使用 --cdp 9221 连接 Chrome 浏览器以获取登录态');
@@ -319,7 +319,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [{ cmd: 'xbrowser csdn login', description: '登录 CSDN' }],
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (_params, ctx) => {
-      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx);
 
       try {
         await page.goto('https://passport.csdn.net/login', {
@@ -383,7 +383,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), tags: z.string().optional(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx);
 
       try {
         let content = params.content;
@@ -492,7 +492,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), saved: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx);
 
       try {
         await page.goto('https://mp.csdn.net/mp_blog/creation/editor', {
@@ -555,7 +555,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ url: z.string(), updated: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx);
 
       try {
         await page.goto('https://mp.csdn.net/mp/profile/profile', {
@@ -615,7 +615,7 @@ export default function (xcli: XCLIAPI): void {
       articles: z.array(z.object({ title: z.string(), link: z.string(), views: z.string(), date: z.string() })),
     }).passthrough(),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx);
 
       try {
         let targetUrl: string;
@@ -675,7 +675,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.login(async (ctx) => {
-    const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
+    const page = ctx.page;
     if (!page) return;
     await page.goto('https://passport.csdn.net/login');
     await ctx.storage.set('csdn_login', { at: Date.now() });

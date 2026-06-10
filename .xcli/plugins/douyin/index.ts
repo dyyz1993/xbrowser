@@ -1,4 +1,4 @@
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
 
@@ -207,7 +207,7 @@ async function scrollAndCollect(
   }
 }
 
-function buildCtxTips(ctx: Record<string, unknown>): string[] {
+function buildCtxTips(ctx: CommandContext): string[] {
   const tips: string[] = [];
   if (!ctx.cdpEndpoint) {
     tips.push('建议使用 --cdp 9221 参数连接到 Chrome 浏览器');
@@ -302,8 +302,7 @@ export default function (xcli: XCLIAPI): void {
     description: '抖音数据采集',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const ctxAny = ctx as unknown as Record<string, unknown>;
-      const page = ctxAny.page as import('../types').Page;
+      const page = ctx.page;
       if (!page) return true;
       try {
         const url = page.url();
@@ -349,9 +348,9 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = (ctx as unknown as Record<string, unknown>).page as Page;
+        const page = ctx.page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
+        const tips = buildCtxTips(ctx);
 
         const interceptor = interceptApi(page, API.AWEME_POST, 'aweme_list', 'aweme_id');
         try {
@@ -511,7 +510,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const tips: string[] = [];
       try {
-        const sessionPage = (ctx as unknown as Record<string, unknown>).page as Page;
+        const sessionPage = ctx.page;
         if (!sessionPage) throw new Error('需要浏览器页面');
 
         const targetUrl = await resolveTargetProfileUrl(params.url, sessionPage, tips);
@@ -540,7 +539,7 @@ export default function (xcli: XCLIAPI): void {
             waitUntil: 'domcontentloaded',
             timeout: 30000,
           });
-          const _waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as
+          const _waitForHuman = ctx.waitForHuman as
             | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(sessionPage, tips, _waitForHuman);
@@ -660,7 +659,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const tips: string[] = [];
       try {
-        const page = (ctx as unknown as Record<string, unknown>).page as Page;
+        const page = ctx.page;
         if (!page) throw new Error('需要浏览器页面');
 
         let input = params.url;
@@ -701,7 +700,7 @@ export default function (xcli: XCLIAPI): void {
             waitUntil: 'domcontentloaded',
             timeout: 30000,
           });
-          const _waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as
+          const _waitForHuman = ctx.waitForHuman as
             | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
@@ -795,9 +794,9 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = (ctx as unknown as Record<string, unknown>).page as Page;
+        const page = ctx.page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
+        const tips = buildCtxTips(ctx);
 
         const interceptor = interceptApi(page, API.COMMENT_LIST, 'comments', 'cid');
         try {
@@ -805,7 +804,7 @@ export default function (xcli: XCLIAPI): void {
             waitUntil: 'domcontentloaded',
             timeout: 30000,
           });
-          const _waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as
+          const _waitForHuman = ctx.waitForHuman as
             | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
@@ -865,9 +864,9 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = (ctx as unknown as Record<string, unknown>).page as Page;
+        const page = ctx.page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
+        const tips = buildCtxTips(ctx);
 
         const interceptor = interceptApi(page, API.FAVORITES, 'aweme_list', 'aweme_id');
         try {
@@ -875,7 +874,7 @@ export default function (xcli: XCLIAPI): void {
             waitUntil: 'domcontentloaded',
             timeout: 30000,
           });
-          const _waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as
+          const _waitForHuman = ctx.waitForHuman as
             | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
@@ -944,9 +943,9 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = (ctx as unknown as Record<string, unknown>).page as Page;
+        const page = ctx.page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
+        const tips = buildCtxTips(ctx);
 
         const searchUrl = `${DOUYIN_BASE}/search/${encodeURIComponent(params.keyword)}`;
 
@@ -1004,7 +1003,7 @@ export default function (xcli: XCLIAPI): void {
         page.on('response', handler);
         try {
           await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-          const _waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as
+          const _waitForHuman = ctx.waitForHuman as
             | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
@@ -1143,7 +1142,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const tips: string[] = [];
       try {
-        const page = (ctx as unknown as Record<string, unknown>).page as Page;
+        const page = ctx.page;
         if (!page) throw new Error('需要浏览器页面');
 
         let videoUrl = params.url;
@@ -1214,7 +1213,7 @@ export default function (xcli: XCLIAPI): void {
             waitUntil: 'domcontentloaded',
             timeout: 30000,
           });
-          const _waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as
+          const _waitForHuman = ctx.waitForHuman as
             | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
@@ -1301,10 +1300,10 @@ export default function (xcli: XCLIAPI): void {
       mode: z.string(),
     }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as unknown as Record<string, unknown>).page as Page;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面');
-      const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
-      const waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as
+      const tips = buildCtxTips(ctx);
+      const waitForHuman = ctx.waitForHuman as
         | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
         | undefined;
 

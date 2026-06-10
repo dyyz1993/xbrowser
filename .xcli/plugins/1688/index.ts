@@ -4,9 +4,8 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 /// <reference path="../types.d.ts" />
 import type { Page, Response } from '../types.js';
 
-function encodeURIComponentGBK(str: string): string {
-   
-  const iconv = require('iconv-lite') as { encode: (s: string, enc: string) => Buffer };
+async function encodeURIComponentGBK(str: string): Promise<string> {
+  const iconv = (await import('iconv-lite')).default as { encode: (s: string, enc: string) => Buffer };
   const gbkBuf = iconv.encode(str, 'gbk');
   return Array.from(gbkBuf)
     .map((b: number) => '%' + b.toString(16).padStart(2, '0').toUpperCase())
@@ -990,7 +989,7 @@ export default function (xcli: XCLIAPI): void {
       const { tips: ctxTips } = buildCtxTips(ctx);
 
       const sortParam = SORT_MAP[params.sort] || '';
-      const gbkKeywords = encodeURIComponentGBK(params.query);
+      const gbkKeywords = await encodeURIComponentGBK(params.query);
       const searchUrl = `https://s.1688.com/selloffer/offer_search.htm?keywords=${gbkKeywords}${sortParam}`;
 
       let interceptor: Interceptor | null = null;

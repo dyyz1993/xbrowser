@@ -20,11 +20,11 @@ const SOURCE_MAP: Record<string, string> = {
   my: '我的知识库',
 };
 
-function resolvePage(ctx: Record<string, unknown>): { page: Page; tips: string[] } {
-  const page = ctx.page as Page;
+function resolvePage(ctx: CommandContext): { page: Page; tips: string[] } {
+  const page = ctx.page;
   if (!page) throw new Error('需要浏览器页面');
-  const cdpEndpoint = ctx.cdpEndpoint as string | undefined;
-  const sessionId = ctx.sessionId as string | undefined;
+  const cdpEndpoint = ctx.cdpEndpoint;
+  const sessionId = ctx.sessionId;
   const tips: string[] = [];
   if (!cdpEndpoint) {
     tips.push('建议使用 --cdp 9221 连接 Chrome 浏览器以获取登录态（知乎知答需要登录）');
@@ -77,7 +77,7 @@ async function ensureZhidaPage(page: Page, ctx?: CommandContext): Promise<void> 
   const hasZhihuContent = bodyText.includes('知乎直答') || bodyText.includes('知答') || bodyText.includes('AI 搜索');
 
   if (isLoginPage && !hasZhihuContent) {
-    const cdp = (ctx as unknown as Record<string, unknown>)?.cdpEndpoint;
+    const cdp = ctx?.cdpEndpoint;
     throw new Error(
       '知乎知答 (zhida) 未登录！\n' +
       (cdp
@@ -490,7 +490,7 @@ export default function (xcli: XCLIAPI): void {
       })),
     }),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx);
 
       try {
         const searchUrl = `https://www.zhihu.com/search?type=${params.type}&q=${encodeURIComponent(params.query)}`;
@@ -542,7 +542,7 @@ export default function (xcli: XCLIAPI): void {
       })),
     }),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx);
 
       try {
         await page.goto('https://www.zhihu.com/hot', { waitUntil: 'domcontentloaded' });
@@ -593,7 +593,7 @@ export default function (xcli: XCLIAPI): void {
       })),
     }),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx);
 
       try {
         await page.goto(params.url, { waitUntil: 'domcontentloaded' });
@@ -647,7 +647,7 @@ export default function (xcli: XCLIAPI): void {
       pageUrl: z.string(),
     }),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx);
 
       try {
         await page.goto(params.url, { waitUntil: 'domcontentloaded' });
@@ -717,7 +717,7 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
+        const { page, tips } = resolvePage(ctx);
 
         // 1. 导航到知乎知答页面
         await ensureZhidaPage(page, ctx);
@@ -869,7 +869,7 @@ export default function (xcli: XCLIAPI): void {
       url: z.string(),
     }),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx);
 
       try {
         await page.goto('https://zhuanlan.zhihu.com/write', {

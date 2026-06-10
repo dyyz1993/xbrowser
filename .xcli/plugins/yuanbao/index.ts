@@ -92,12 +92,6 @@ async function safeClickSelector(page: Page, selector: string): Promise<boolean>
   return clicked;
 }
 
-function getPage(ctx: CommandContext): Page {
-  const page = ctx.page;
-  if (!page) throw new Error('需要浏览器页面');
-  return page;
-}
-
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'yuanbao',
@@ -135,7 +129,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (_params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         await ensurePage(page, ctx);
         await page.waitForTimeout(1500);
 
@@ -227,7 +222,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         await ensurePage(page, ctx);
         await page.waitForTimeout(1000);
 
@@ -275,7 +271,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         await ensurePage(page, ctx);
         await page.waitForTimeout(3000);
         const tips = buildTips(ctx);
@@ -533,7 +530,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         await ensurePage(page, ctx);
         const tips = buildTips(ctx);
 

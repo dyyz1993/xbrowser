@@ -1,11 +1,11 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { detectAntiBot } from '../../../src/anti-bot-detection.js';
 
-function buildCdpTips(ctx: Record<string, unknown>): string[] {
-  const cdpEndpoint = ctx.cdpEndpoint as string | undefined;
-  const sessionId = ctx.sessionId as string | undefined;
+function buildCdpTips(ctx: CommandContext): string[] {
+  const cdpEndpoint = ctx.cdpEndpoint;
+  const sessionId = ctx.sessionId;
   const tips: string[] = [];
   if (!cdpEndpoint) {
     tips.push('建议使用 --cdp 9221 连接 Chrome 浏览器以获取登录态');
@@ -63,9 +63,9 @@ export default function (xcli: XCLIAPI): void {
       source: z.string(), page: z.number(), position: z.number(),
     })),
     handler: async (params, ctx) => {
-      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx);
 
       try {
         const { query, pages, limit } = params;
@@ -84,7 +84,7 @@ export default function (xcli: XCLIAPI): void {
             const origReplace = window.location.replace;
             if (origAssign) window.location.assign = function() {};
             if (origReplace) window.location.replace = function() {};
-          } catch {}
+          } catch { /* suppress — runs in browser context */ }
         `);
 
         await page.goto(`https://www.baidu.com/s?wd=${encodeURIComponent(query)}`, {
@@ -199,9 +199,9 @@ export default function (xcli: XCLIAPI): void {
       heat: z.string(), tag: z.string(),
     })),
     handler: async (params, ctx) => {
-      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx);
 
       try {
         const categoryMap: Record<string, string> = {
@@ -278,9 +278,9 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.array(z.string()),
     handler: async (params, ctx) => {
-      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx);
 
       try {
         await page.goto(`https://suggestion.baidu.com/su?wd=${encodeURIComponent(params.query)}`);
@@ -316,9 +316,9 @@ export default function (xcli: XCLIAPI): void {
       time: z.string(), snippet: z.string(),
     })),
     handler: async (params, ctx) => {
-      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx);
 
       try {
         const url = `https://www.baidu.com/s?wd=${encodeURIComponent(params.query)}&tn=news`;
@@ -404,9 +404,9 @@ export default function (xcli: XCLIAPI): void {
       checked: z.boolean(),
     }),
     handler: async (params, ctx) => {
-      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx);
 
       try {
         const { domain, keyword, pages } = params;
@@ -511,7 +511,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx);
 
       try {
         const { query, limit, color } = params;
@@ -712,7 +712,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   baidu.login(async (ctx) => {
-    const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page | undefined;
+    const page = ctx.page;
     if (!page) return;
     await page.goto('https://www.baidu.com');
     await page.click('#s-top-loginbtn').catch((err) => {

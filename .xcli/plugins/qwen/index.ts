@@ -13,12 +13,6 @@ const QWEN_URL = 'https://www.qianwen.com';
 const CDN_HOST = 'workspace-zb-cdn.qianwen.com';
 const WANX_HOST = 'wanx.alicdn.com';
 
-function getPage(ctx: CommandContext): Page {
-  const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-  if (!page) throw new Error('需要浏览器页面，请使用 --cdp 参数连接');
-  return page;
-}
-
 function buildTips(ctx: CommandContext): string[] {
   const tips: string[] = [];
   const ctxAny = ctx as unknown as Record<string, unknown>;
@@ -328,7 +322,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         const tips = buildTips(ctx);
         const waitSeconds = typeof params.wait === 'number' ? params.wait : 0;
 
@@ -633,7 +628,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         const tips = buildTips(ctx);
 
         const currentUrl = page.url();
@@ -703,7 +699,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (_params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         const tips = buildTips(ctx);
 
         await ensurePage(page);
