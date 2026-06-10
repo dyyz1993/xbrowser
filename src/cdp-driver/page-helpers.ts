@@ -5,6 +5,7 @@
  * Separated to keep page.ts focused on core page operations.
  */
 
+import { EventEmitter } from 'node:events';
 import type { CDPConnection } from './connection.js';
 import type { XBResponse, XBRequest, XBRoute } from './types.js';
 
@@ -175,6 +176,7 @@ export function createXBRouteFetch(
   conn: CDPConnection,
   sessionId: string,
   params: FetchPausedParams,
+  emitter?: EventEmitter,
 ): XBRoute {
   const request = createXBRequest(null, {
     requestId: params.requestId,
@@ -215,6 +217,19 @@ export function createXBRouteFetch(
         responseHeaders: Object.entries(headers).map(([k, v]) => ({ name: k, value: v })),
         body: bodyBytes.toString('base64'),
       }, sessionId);
+
+      // Emit response event for waitForResponse listeners
+      // (Fetch.fulfillRequest does not trigger Network.responseReceived)
+      if (emitter) {
+        const responseData = {
+          requestId: params.requestId,
+          status: opts.status ?? 200,
+          url: params.request.url,
+          headers,
+        };
+        const response = createXBResponse(responseData, conn, sessionId);
+        emitter.emit('response', response);
+      }
     },
   };
 }

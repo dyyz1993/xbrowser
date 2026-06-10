@@ -1013,15 +1013,22 @@ export class XBPageImpl implements XBPage {
       }, timeout);
 
       const handler = (params: unknown): void => {
-        const p = params as { requestId?: string; response?: { status?: number; url?: string; headers?: Record<string, string> } };
-        if (!p.response) return;
-        const data = {
-          requestId: p.requestId || '',
-          status: p.response.status || 0,
-          url: p.response.url || '',
-          headers: p.response.headers || {},
-        };
-        const response = createXBResponse(data, this.conn, this.sessionId);
+        // Handle both raw CDP format and pre-built XBResponse objects
+        let response: XBResponse;
+        const respObj = params as { requestId?: string; response?: { status?: number; url?: string; headers?: Record<string, string> } };
+        if (respObj.response) {
+          const data = {
+            requestId: respObj.requestId || '',
+            status: respObj.response.status || 0,
+            url: respObj.response.url || '',
+            headers: respObj.response.headers || {},
+          };
+          response = createXBResponse(data, this.conn, this.sessionId);
+        } else if (typeof (params as XBResponse).status === 'function') {
+          response = params as XBResponse;
+        } else {
+          return;
+        }
         if (predicate(response)) {
           clearTimeout(timer);
           this._emitter.removeListener('response', handler);
@@ -1056,17 +1063,23 @@ export class XBPageImpl implements XBPage {
       }, timeout);
 
       const handler = (params: unknown): void => {
-        const p = params as { requestId?: string; request?: { url?: string; method?: string; headers?: Record<string, string>; postData?: string }; type?: string };
-        if (!p.request) return;
-        const data = {
-          requestId: p.requestId || '',
-          url: p.request.url || '',
-          method: p.request.method || '',
-          headers: p.request.headers || {},
-          postData: p.request.postData ?? null,
-          resourceType: p.type || '',
-        };
-        const request = createXBRequest(this, data);
+        // Handle both raw CDP format and pre-built XBRequest objects
+        let request: XBRequest;
+        const reqObj = params as { requestId?: string; request?: { url?: string; method?: string; headers?: Record<string, string>; postData?: string }; type?: string };
+        if (reqObj.request) {
+          request = createXBRequest(this, {
+            requestId: reqObj.requestId || '',
+            url: reqObj.request.url || '',
+            method: reqObj.request.method || '',
+            headers: reqObj.request.headers || {},
+            postData: reqObj.request.postData ?? null,
+            resourceType: reqObj.type || '',
+          });
+        } else if (typeof (params as XBRequest).url === 'function') {
+          request = params as XBRequest;
+        } else {
+          return;
+        }
         if (predicate(request)) {
           clearTimeout(timer);
           this._emitter.removeListener('request', handler);
@@ -1156,7 +1169,17 @@ export class XBPageImpl implements XBPage {
 
     for (const { regex, handler } of this._routeHandlers) {
       if (regex.test(requestUrl)) {
-        const route = createXBRouteFetch(this.conn, this.sessionId, params);
+        // Emit request event for waitForRequest listeners
+        // (Fetch.requestPaused may not be preceded by Network.requestWillBeSent)
+        this._emit('request', createXBRequest(
+          null,
+          { requestId: params.requestId, url: params.request.url,
+            method: params.request.method,
+            headers: params.request.headers,
+            postData: params.request.postData ?? null, resourceType: params.resourceType },
+        ));
+
+        const route = createXBRouteFetch(this.conn, this.sessionId, params, this._emitter);
         try {
           await handler(route);
         } catch {
