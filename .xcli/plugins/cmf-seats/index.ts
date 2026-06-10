@@ -82,14 +82,16 @@ const CARS = [
   { id: '4219', name: '魏牌高山' }
 ];
 
-// 检查是否包含CMF关键词
-function hasCMFKeyword(text: string): boolean {
+// 检查是否包含CMF关键词（预留）
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _hasCMFKeyword(text: string): boolean {
   const lowerText = text.toLowerCase();
   return CMF_KEYWORDS.some(kw => lowerText.includes(kw.toLowerCase()));
 }
 
-// 提取CMF关键词
-function extractKeywords(text: string): string[] {
+// 提取CMF关键词（预留）
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _extractKeywords(text: string): string[] {
   const keywords: string[] = [];
   const lowerText = text.toLowerCase();
   for (const kw of CMF_KEYWORDS) {
@@ -135,12 +137,13 @@ export default function(api: XCLIAPI): void {
       tips: z.array(z.string())
     }),
     handler: async (params, ctx) => {
-      const page = (ctx as any).page as any;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const _page = (ctx as unknown as Record<string, unknown>).page;
       
       // 查找车型ID
       const car = CARS.find(c => c.name === params.car);
       if (!car) {
-        return fail({ data: null as any,
+        return fail({ data: null as unknown,
           tips: [`未找到车型 "${params.car}"，支持的车型：${CARS.slice(0, 10).map(c => c.name).join(', ')}等${CARS.length}个车型`]
         });
       }
@@ -156,7 +159,7 @@ export default function(api: XCLIAPI): void {
         const dataFile = path.join(__dirname, '..', '..', 'output', 'cmf_seat_reviews_batch.json');
 
         if (!fs.existsSync(dataFile)) {
-          return fail({ data: null as any,
+          return fail({ data: null as unknown,
             tips: [`CMF评论数据文件不存在，请先运行批量爬取脚本`]
           });
         }
@@ -165,11 +168,11 @@ export default function(api: XCLIAPI): void {
         const data = JSON.parse(rawData);
 
         // 过滤指定车型的评论
-        let reviews = data.reviews.filter((r: any) => r.car === params.car);
+        let reviews = data.reviews.filter((r: Record<string, unknown>) => r.car === params.car);
 
         // 按关键词过滤
         if (params.keyword) {
-          reviews = reviews.filter((r: any) => 
+          reviews = reviews.filter((r: Record<string, unknown>) => 
             r.content.toLowerCase().includes(params.keyword.toLowerCase()) ||
             r.keywords?.some((k: string) => k.toLowerCase().includes(params.keyword.toLowerCase()))
           );
@@ -184,21 +187,21 @@ export default function(api: XCLIAPI): void {
             total: reviews.length,
             returned: limitedReviews.length,
             keyword: params.keyword || null,
-            reviews: limitedReviews.map((r: any) => ({
+            reviews: limitedReviews.map((r: Record<string, unknown>) => ({
               car: r.car,
               content: r.content,
               keywords: r.keywords || [],
               timestamp: r.timestamp
             }))
-          } as any,
+          } as unknown,
           tips: [
             `找到 ${reviews.length} 条${params.car}的CMF评论`,
             limitedReviews.length < reviews.length ? `（返回前${limitedReviews.length}条）` : ''
           ]
         });
-      } catch (error) {
-        return fail({ data: null as any,
-          tips: [`查询失败: ${(error as Error).message}`]
+      } catch {
+        return fail({ data: null as unknown,
+          tips: [`查询失败: ${(_error as Error).message}`]
         });
       }
     }
@@ -222,7 +225,7 @@ export default function(api: XCLIAPI): void {
       }),
       tips: z.array(z.string())
     }),
-    handler: async (params, ctx) => {
+    handler: async (_params, _ctx) => {
       return ok({ data: {
   total: CARS.length,
           cars: CARS.map(c => ({
@@ -230,7 +233,7 @@ export default function(api: XCLIAPI): void {
             name: c.name,
             autohome_url: `https://k.m.autohome.com.cn/${c.id}/`
           }))
-        } as any,
+        } as unknown,
         tips: [
           `共支持 ${CARS.length} 个车型`,
           `使用 "cmf-seats query --car <车型名称>" 查询CMF评论`
@@ -261,18 +264,18 @@ export default function(api: XCLIAPI): void {
       }),
       tips: z.array(z.string())
     }),
-    handler: async (params, ctx) => {
+    handler: async (params, _ctx) => {
       try {
         const fs = await import('fs');
         const path = await import('path');
         const { fileURLToPath } = await import('url');
-        
+
         const __filename = fileURLToPath(import.meta.url);
         const __dirname = path.dirname(__filename);
         const dataFile = path.join(__dirname, '..', '..', 'output', 'cmf_seat_reviews_batch.json');
 
         if (!fs.existsSync(dataFile)) {
-          return fail({ data: null as any,
+          return fail({ data: null as unknown,
             tips: [`CMF评论数据文件不存在，请先运行批量爬取脚本`]
           });
         }
@@ -283,13 +286,13 @@ export default function(api: XCLIAPI): void {
         // 过滤指定车型
         let reviews = data.reviews;
         if (params.car) {
-          reviews = reviews.filter((r: any) => r.car === params.car);
+          reviews = reviews.filter((r: Record<string, unknown>) => r.car === params.car);
         }
 
         // 统计关键词频率
         const keywordCounts = new Map<string, number>();
-        reviews.forEach((r: any) => {
-          (r.keywords || []).forEach((kw: string) => {
+        reviews.forEach((r: Record<string, unknown>) => {
+          ((r.keywords as string[]) || []).forEach((kw: string) => {
             const count = keywordCounts.get(kw) || 0;
             keywordCounts.set(kw, count + 1);
           });
@@ -305,16 +308,16 @@ export default function(api: XCLIAPI): void {
             total_reviews: reviews.length,
             total_keywords: keywordCounts.size,
             top_keywords: sortedKeywords.map(([kw, count]) => ({ keyword: kw, count }))
-          } as any,
+          } as unknown,
           tips: [
             `${params.car ? params.car : '所有车型'} 共 ${reviews.length} 条评论`,
             `包含 ${keywordCounts.size} 个不同的CMF关键词`,
             `显示前 ${sortedKeywords.length} 个关键词`
           ]
         });
-      } catch (error) {
-        return fail({ data: null as any,
-          tips: [`统计失败: ${(error as Error).message}`]
+      } catch {
+        return fail({ data: null as unknown,
+          tips: [`统计失败: ${(_error as Error).message}`]
         });
       }
     }

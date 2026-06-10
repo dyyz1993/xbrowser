@@ -3,7 +3,7 @@ import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from '../../src/browser-shim.js';
 import { backlinkPlatforms, categories } from './backlinks-data.js';
-import { fetchVerificationCode, initEmailAuth, setupEmailConfig } from './email-helper.js';
+import { fetchVerificationCode, setupEmailConfig } from './email-helper.js';
 
 function proxyFetch(url: string, init?: RequestInit): Promise<Response> {
   const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '';
@@ -314,6 +314,7 @@ export default function (xcli: XCLIAPI): void {
         const text = await resp.text();
         if (resp.ok && /^[a-z0-9-]{8,128}$/i.test(text.trim())) {
           keyFound = true;
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           keyValue = text.trim();
           checks.push({ item: 'IndexNow key', status: '✅ 已配置' });
         }
@@ -1529,6 +1530,7 @@ export default function (xcli: XCLIAPI): void {
       if (!params.skipProbe) {
         for (const p of targets) {
           try {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const resp = await proxyFetch(p.entryUrl, {
               method: 'HEAD',
               signal: AbortSignal.timeout(5000),

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
-import { ok, fail } from '@dyyz1993/xcli-core';
+import { searchImageResultSchema, baseSearchParams, getPage, scrollPage, buildResult, buildFail } from '../shared/image-search.js';
 
 export default function (xcli: XCLIAPI): void {
   const gettyimages = xcli.createSite({
@@ -17,43 +17,15 @@ export default function (xcli: XCLIAPI): void {
     description: 'Getty Images image search',
     loginRequired: 'none',
     scope: 'browser',
-    parameters: z.object({
-      query: z.string().describe('Search query'),
-      limit: z.number().optional().default(10),
-      timeout: z.number().optional().default(20000),
-    }),
-    result: z.object({
-      query: z.string(),
-      engine: z.string(),
-      results: z.array(z.object({
-        title: z.string(),
-        thumbnailUrl: z.string(),
-        sourceUrl: z.string(),
-        originalUrl: z.string().optional(),
-        width: z.number(),
-        height: z.number(),
-        format: z.string().optional(),
-        sourceSite: z.string(),
-        fileSize: z.string().optional(),
-      }).passthrough()),
-      total: z.number().optional(),
-      timestamp: z.union([z.string(), z.number()]).optional(),
-    }).passthrough(),
+    parameters: z.object(baseSearchParams),
+    result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = (params.page as import('../types').Page)
-        || (ctx as Record<string, unknown>).page as import('../types').Page;
-      if (!page) throw new Error('需要浏览器页面');
-
+      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
       try {
         const url = `https://www.gettyimages.com/search/2/image?phrase=${encodeURIComponent(params.query)}`;
-
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout });
         await page.waitForTimeout(6000);
-
-        for (let i = 0; i < 4; i++) {
-          await page.evaluate(() => window.scrollBy(0, window.innerHeight));
-          await page.waitForTimeout(1000);
-        }
+        await scrollPage(page, 4, 1000);
 
         const results = await page.evaluate((limit: number) => {
           const images: Array<{
@@ -85,13 +57,9 @@ export default function (xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit);
 
-        return ok({
-            query: params.query,
-            engine: 'gettyimages',
-            results: results.map(r => ({ ...r, sourceSite: 'gettyimages' })),
-            }, [`Getty Images "${params.query}"，共 ${results.length} 张`]);
+        return buildResult(params.query, 'gettyimages', results.map(r => ({ ...r, sourceSite: 'gettyimages' })));
       } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误');
+        return buildFail(error, 'gettyimages');
       }
     },
   });

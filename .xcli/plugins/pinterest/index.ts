@@ -80,7 +80,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         const results = await page.evaluate((limit: number) => {
-          const images: any[] = [];
+          const images: Record<string, unknown>[] = [];
           const items = document.querySelectorAll('[data-test-id="pin"], [data-test-pin-id], .GrowthUnauthPin_image');
           items.forEach((item, idx) => {
             if (idx >= limit) return;
@@ -99,7 +99,7 @@ export default function (xcli: XCLIAPI): void {
         }, params.limit);
 
         return ok({ query: params.query, engine: 'pinterest', results, total: results.length, timestamp: Date.now() }, [`Pinterest "${params.query}"，共 ${results.length} 张`]);
-      } catch (error) {
+      } catch {
         const msg = error instanceof Error ? error.message : '未知错误';
         if (msg.includes('timeout') || msg.includes('Timeout') || msg.includes('net::')) {
           return fail(`请求超时或网络错误: ${msg}。可尝试 --cdp http://localhost:9221 连接真实浏览器`);

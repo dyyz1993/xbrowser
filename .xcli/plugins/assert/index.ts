@@ -47,7 +47,7 @@ export default function (xcli: XCLIAPI): void {
           case 'enabled': { const element = page.locator(p.selector!).first(); passed = await element.isEnabled(); actual = passed; message = `Element "${p.selector}" is ${passed ? 'enabled' : 'disabled'}`; break; }
           case 'checked': { const element = page.locator(p.selector!).first(); passed = await element.isChecked(); actual = passed; message = `Element "${p.selector}" is ${passed ? 'checked' : 'unchecked'}`; break; }
         }
-      } catch (error) { passed = false; message = `Assertion failed: ${(error as Error).message}`; }
+      } catch { passed = false; message = `Assertion failed: ${(error as Error).message}`; }
       if (!passed) return ok({ passed: false, type: p.type, actual: String(actual), expected: p.value ?? String(p.expected ?? ''), message });
       return ok({ passed: true, type: p.type, actual: String(actual), message });
     },

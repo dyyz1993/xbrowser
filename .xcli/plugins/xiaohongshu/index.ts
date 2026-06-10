@@ -312,7 +312,7 @@ export default function (xcli: XCLIAPI): void {
           tips.push(`笔记: ${note.title?.slice(0, 50) || note.desc?.slice(0, 50)}`);
           return ok(note, tips);
         } finally { interceptor.dispose(); }
-      } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['获取笔记详情失败']); }
+      } catch { return errResult(error instanceof Error ? error.message : '未知错误', ['获取笔记详情失败']); }
     },
   });
 
@@ -357,7 +357,7 @@ export default function (xcli: XCLIAPI): void {
           tips.push(`采集到 ${notes.length} 条笔记`);
           return ok({ total: notes.length, notes }, tips);
         } finally { interceptor.dispose(); }
-      } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['采集用户笔记失败']); }
+      } catch { return errResult(error instanceof Error ? error.message : '未知错误', ['采集用户笔记失败']); }
     },
   });
 
@@ -425,7 +425,7 @@ export default function (xcli: XCLIAPI): void {
           tips.push(`用户(DOM): ${domInfo.nickname}`);
           return ok({ userId: params.userId, ...domInfo }, tips);
         } finally { interceptor.dispose(); }
-      } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['获取用户资料失败']); }
+      } catch { return errResult(error instanceof Error ? error.message : '未知错误', ['获取用户资料失败']); }
     },
   });
 
@@ -466,7 +466,7 @@ export default function (xcli: XCLIAPI): void {
           tips.push(`搜索到 ${notes.length} 条笔记`);
           return ok({ keyword: params.keyword, total: notes.length, notes }, tips);
         } finally { interceptor.dispose(); }
-      } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['搜索笔记失败']); }
+      } catch { return errResult(error instanceof Error ? error.message : '未知错误', ['搜索笔记失败']); }
     },
   });
 
@@ -511,7 +511,7 @@ export default function (xcli: XCLIAPI): void {
           tips.push(`采集到 ${comments.length} 条评论`);
           return ok({ total: comments.length, comments }, tips);
         } finally { interceptor.dispose(); }
-      } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['获取笔记评论失败']); }
+      } catch { return errResult(error instanceof Error ? error.message : '未知错误', ['获取笔记评论失败']); }
     },
   });
 
@@ -551,7 +551,7 @@ export default function (xcli: XCLIAPI): void {
           tips.push(`获取到 ${notes.length} 条推荐笔记`);
           return ok({ total: notes.length, notes }, tips);
         } finally { interceptor.dispose(); }
-      } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['获取首页推荐失败']); }
+      } catch { return errResult(error instanceof Error ? error.message : '未知错误', ['获取首页推荐失败']); }
     },
   });
 
@@ -590,7 +590,7 @@ export default function (xcli: XCLIAPI): void {
         if (noteId) tips.push(`笔记 ID: ${noteId}`);
         if (userId) tips.push(`用户 ID: ${userId}`);
         return ok({ originalUrl: params.url, finalUrl, noteId, userId }, tips);
-      } catch (error) { return errResult(error instanceof Error ? error.message : '未知错误', ['解析短链失败']); }
+      } catch { return errResult(error instanceof Error ? error.message : '未知错误', ['解析短链失败']); }
     },
   });
 
@@ -644,7 +644,7 @@ export default function (xcli: XCLIAPI): void {
           return imgs;
         }, params.limit);
         return ok({ query: params.query, engine: 'xiaohongshu', results, total: results.length, timestamp: Date.now() }, [`小红书 "${params.query}"，共 ${results.length} 张`]);
-      } catch (error) { return fail(error instanceof Error ? error.message : '未知错误'); }
+      } catch { return fail(error instanceof Error ? error.message : '未知错误'); }
     },
   });
 }

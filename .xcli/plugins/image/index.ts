@@ -219,7 +219,7 @@ export default function (xcli: XCLIAPI): void {
                   page,
                   timeout: params.timeout,
                 },
-                pluginCtx as any
+                pluginCtx as unknown
               ) as { data: ImageSearchResult; tips?: string[] };
 
               if (result?.data) {

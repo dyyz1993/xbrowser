@@ -527,7 +527,7 @@ export default function (xcli: XCLIAPI): void {
         }, params.limit);
 
         return ok({ query: params.query, count: results.length, results }, [...tips, `找到 ${results.length} 条结果`]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
@@ -576,7 +576,7 @@ export default function (xcli: XCLIAPI): void {
         }, params.limit);
 
         return ok({ count: items.length, items }, [...tips, `热榜 ${items.length} 条`]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
@@ -629,7 +629,7 @@ export default function (xcli: XCLIAPI): void {
         }, params.limit);
 
         return ok(data, [...tips, `问题: ${data.title}`, `${data.answers.length} 条回答`]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
@@ -686,7 +686,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok({ url: params.url, submitted: true, pageUrl: page.url() }, [...tips, '回答已提交']);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
@@ -764,7 +764,8 @@ export default function (xcli: XCLIAPI): void {
 
         // 5. 拦截 AI 响应
         let aiResponse = '';
-        const responsePromise = new Promise<void>(resolve => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const responsePromise = new Promise<void>(_resolve => {
           page.on('response', async (response) => {
             const url = response.url();
             if (url.includes('ai_ingress/stream/completion')) {
@@ -832,6 +833,7 @@ export default function (xcli: XCLIAPI): void {
             // 去重并提取域名
             const seen = new Set<string>();
             const uniqueUrls = allUrls.filter(u => { const k = u.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const domains = new Set<string>();
             sources = {
               total: uniqueUrls.length,
@@ -848,7 +850,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok(result, [...tips, responseText ? '✅ AI 回复完成' : '⏱ 查询已发送']);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['chat 失败']);
       }
     },
@@ -931,7 +933,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok({ title: params.title, topic: params.topic, url: page.url() }, [...tips, `文章 "${params.title}" 已在知乎发布`]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },

@@ -380,7 +380,7 @@ export default function (xcli: XCLIAPI): void {
         } finally {
           interceptor.dispose();
         }
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['采集用户作品失败']);
       }
     },
@@ -595,7 +595,7 @@ export default function (xcli: XCLIAPI): void {
         tips.push(`获赞: ${result.totalFavorited}`);
 
         return ok(result, tips);
-      } catch (error) {
+      } catch {
         const msg = error instanceof Error ? error.message : String(error);
         return fail(msg, [`获取用户资料失败: ${msg}`, ...tips]);
       }
@@ -766,7 +766,7 @@ export default function (xcli: XCLIAPI): void {
         tips.push(`${parsed.video.bitRates.length} 个画质可选`);
 
         return ok(result, tips);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', ['获取视频详情失败', ...tips]);
       }
     },
@@ -832,7 +832,7 @@ export default function (xcli: XCLIAPI): void {
         } finally {
           interceptor.dispose();
         }
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['获取视频评论失败']);
       }
     },
@@ -905,7 +905,7 @@ export default function (xcli: XCLIAPI): void {
         } finally {
           interceptor.dispose();
         }
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['获取用户喜欢列表失败']);
       }
     },
@@ -1046,6 +1046,7 @@ export default function (xcli: XCLIAPI): void {
                 const expandIdx = fullText.indexOf('...展开');
                 if (expandIdx >= 0) {
                   const afterExpand = fullText.slice(expandIdx + 5);
+                  // eslint-disable-next-line @typescript-eslint/no-unused-vars
                   const statPattern = /\d+[\.\d]*[万]?$/;
                   const lines = afterExpand.split(/\n/).map(l => l.trim()).filter(Boolean);
                   const descParts: string[] = [];
@@ -1116,7 +1117,7 @@ export default function (xcli: XCLIAPI): void {
         } finally {
           page.off('response', handler);
         }
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['搜索视频失败']);
       }
     },
@@ -1274,7 +1275,7 @@ export default function (xcli: XCLIAPI): void {
           desc: videoInfo.desc,
           author: videoInfo.author,
         }, tips);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', ['下载视频失败', ...tips]);
       }
     },
@@ -1631,7 +1632,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok({ subtitle, prompt: usedSummary ? "视频总结" : aiPrompt, videoUrl, mode: "auto" }, [...tips, "字幕提取完成"]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },

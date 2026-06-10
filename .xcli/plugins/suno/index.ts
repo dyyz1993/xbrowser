@@ -28,6 +28,7 @@ function buildTips(ctx: CommandContext): string[] {
 }
 
 /** Safe click by visible text — finds element with exact text match, uses mouse.click */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function safeClickByText(page: Page, text: string, opts?: { preferLarge?: boolean; debug?: boolean }): Promise<boolean> {
   const preferLarge = opts?.preferLarge ?? false;
   const debug = opts?.debug ?? false;
@@ -82,6 +83,7 @@ async function safeClickByText(page: Page, text: string, opts?: { preferLarge?: 
 }
 
 /** Wait for specific text to appear on page */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function waitForText(page: Page, text: string, timeout = 10000): Promise<void> {
   await page.waitForFunction(
     (t: string) => document.body.innerText.includes(t), text, { timeout },
@@ -525,7 +527,7 @@ export default function (xcli: XCLIAPI): void {
             '等待 30-120 秒后检查:',
             '  xbrowser suno result --cdp 9221',
           ]);
-      } catch (error) {
+      } catch {
         const msg = error instanceof Error ? error.message : String(error);
         console.error('[SUNO ERROR]', msg);
         return fail(`生成失败: ${msg}`, ['生成失败']);
@@ -585,7 +587,7 @@ export default function (xcli: XCLIAPI): void {
             `共 ${songs.length} 首，${withUrl.length} 首可播放`,
             ...withUrl.slice(0, 3).map(s => `🎵 ${s.title || '未命名'} [${s.status}] → ${s.audioUrl}`),
           ]);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['获取结果失败']);
       }
     },
@@ -629,7 +631,7 @@ export default function (xcli: XCLIAPI): void {
 
         const songs = clips.map(mapClip);
         return ok({ clips: songs, total: songs.length }, [...tips, `共 ${songs.length} 个剪辑`]);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['检查状态失败']);
       }
     },
@@ -664,7 +666,7 @@ export default function (xcli: XCLIAPI): void {
         const songs = clips.map(mapClip);
 
         return ok({ songs, total: songs.length }, [...tips, `共 ${songs.length} 首音乐`]);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['获取音乐库失败']);
       }
     },
@@ -676,6 +678,7 @@ export default function (xcli: XCLIAPI): void {
   site.login(async (ctx) => {
     const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
     const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const sessionId = (ctx as unknown as Record<string, unknown>).sessionId as string | undefined;
 
     if (cdp && page) {

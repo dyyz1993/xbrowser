@@ -61,7 +61,8 @@ const SEL = {
 
 // ─── 帮助常量 ────────────────────────────────────────
 
-const HELP = {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _HELP = {
   attach: `附件支持：
   --type image --path /path/to/img.jpg   上传图片
   --type url --url "https://..."         发送 URL 链接
@@ -123,7 +124,7 @@ export default function (xcli: XCLIAPI): void {
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
         return ok(conversations, tips);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['获取会话列表失败']);
       }
     },
@@ -179,7 +180,7 @@ export default function (xcli: XCLIAPI): void {
         const tips = buildTips(ctx);
         tips.push('已创建新对话');
         return ok({ created: true }, tips);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['创建新对话失败']);
       }
     },
@@ -224,7 +225,7 @@ export default function (xcli: XCLIAPI): void {
         const tips = buildTips(ctx);
         tips.push(`已打开会话：${clicked.title}`);
         return ok({ opened: clicked.title }, tips);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['打开会话失败']);
       }
     },
@@ -374,7 +375,8 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(500);
 
         // 发送：Enter 键（DeepSeek SSR 会刷新页面）
-        const currentUrl = page.url();
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const _currentUrl = page.url();
         await page.keyboard.press('Enter');
         tips.push('消息已发送，等待 AI 回复...');
 
@@ -448,7 +450,8 @@ export default function (xcli: XCLIAPI): void {
             try {
               await page.unroute('**/api/v0/chat/completion').catch(() => {});
               let allUrls: string[] = [];
-              let allDomains: string[] = [];
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              let _allDomains: string[] = [];
 
               if (capturedStream) {
                 // 从 SSE 流中提取 URL
@@ -517,7 +520,7 @@ export default function (xcli: XCLIAPI): void {
           tips.push('AI 回复超时或未检测到');
           return ok({ response: '' }, tips);
         }
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['发送消息失败']);
       }
     },
@@ -572,7 +575,7 @@ export default function (xcli: XCLIAPI): void {
         const tips = buildTips(ctx);
         tips.push(`${status} ${label}`);
         return ok({ mode: params.mode, action: clicked }, tips);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['切换模式失败']);
       }
     },
@@ -637,7 +640,7 @@ export default function (xcli: XCLIAPI): void {
         const tips = buildTips(ctx);
         tips.push(`深度思考：${status}`);
         return ok({ think: params.state, action: result }, tips);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['切换深度思考失败']);
       }
     },
@@ -674,7 +677,7 @@ export default function (xcli: XCLIAPI): void {
         const tips = buildTips(ctx);
         tips.push(`智能搜索：${status}`);
         return ok({ search: params.state, action: result }, tips);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['切换智能搜索失败']);
       }
     },
@@ -727,7 +730,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(1000);
         tips.push(`附件 "${path.basename(absPath)}" 已上传`);
         return ok({ type: params.type, file: absPath, uploaded: true }, tips);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['上传附件失败']);
       }
     },

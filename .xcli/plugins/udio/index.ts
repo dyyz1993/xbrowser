@@ -33,6 +33,7 @@ async function humanMouseMove(page: Page): Promise<void> {
  * CDP-safe click: find element bounding box via evaluate, then mouse.click.
  * Avoids Playwright's internal actionability checks which can trigger navigation/context-destroyed errors in CDP mode.
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function safeClick(page: Page, selector: string): Promise<{ success: boolean; info?: Record<string, unknown> }> {
   const result = await page.evaluate((sel: string) => {
     const el = document.querySelector(sel);
@@ -230,7 +231,7 @@ export default function (xcli: XCLIAPI): void {
           `月度: ${billingInfo.monthlyUsed}/${billingInfo.monthlyLimit} (剩余 ${billingInfo.remaining})`,
           `今日: ${billingInfo.dailyUsed}/${billingInfo.dailyThrottleLimit}`,
         ]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', ['查询 Credits 失败']);
       }
     },
@@ -275,7 +276,7 @@ export default function (xcli: XCLIAPI): void {
             ...mapped.slice(0, 5).map((s) => `🎵 ${s.title} — ${s.artist} (${s.createdAt.slice(0, 10)})`),
           ],
         );
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', ['获取歌曲库失败']);
       }
     },
@@ -701,7 +702,7 @@ export default function (xcli: XCLIAPI): void {
             '  xbrowser udio result --cdp 9221',
           ],
         );
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', ['生成失败']);
       }
     },
@@ -759,7 +760,7 @@ export default function (xcli: XCLIAPI): void {
             hasAudio ? `✅ 音频已就绪: ${topSong.audioUrl}` : '⏳ 音频处理中',
           ],
         );
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', ['检查状态失败']);
       }
     },
@@ -781,6 +782,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const page = getPage(ctx);
         const tips = buildTips(ctx);
 
@@ -828,7 +830,7 @@ export default function (xcli: XCLIAPI): void {
             [...tips, `下载失败: ${e instanceof Error ? e.message : '未知错误'}`],
           );
         }
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', ['下载命令失败']);
       }
     },
@@ -883,7 +885,7 @@ export default function (xcli: XCLIAPI): void {
             '💡 URL 有时效，建议尽快下载',
           ],
         );
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', ['获取结果失败']);
       }
     },
@@ -892,6 +894,7 @@ export default function (xcli: XCLIAPI): void {
   site.login(async (ctx) => {
     const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
     const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint;
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const sessionId = (ctx as unknown as Record<string, unknown>).sessionId as string | undefined;
 
     if (cdp && page) {

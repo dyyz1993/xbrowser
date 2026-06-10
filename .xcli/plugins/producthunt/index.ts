@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
-import { ok, fail } from '@dyyz1993/xcli-core';
+import { ok } from '@dyyz1993/xcli-core';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({

@@ -105,7 +105,7 @@ export default function (xcli: XCLIAPI): void {
             total: results.length,
             timestamp: Date.now(),
           });
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误');
       }
     },

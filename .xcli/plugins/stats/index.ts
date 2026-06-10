@@ -52,9 +52,9 @@ async function apiCall(page: import('../types').Page, path: string, body?: unkno
 }
 
 async function getTreeNodes(page: import('../types').Page, pid: string): Promise<TreeNode[]> {
-  var data = await apiCall(page, '/new/queryIndexTreeAsync?pid=' + pid + '&code=6') as any;
+  var data = await apiCall(page, '/new/queryIndexTreeAsync?pid=' + pid + '&code=6') as Record<string, unknown>;
   var raw = (data && data.data) || [];
-  return raw.map(function(n: any) { return { id: n._id || n.id, name: n._name || n.name, children: [] }; });
+  return (raw as Record<string, unknown>[]).map(function(n) { return { id: String(n._id || n.id || ''), name: String(n._name || n.name || ''), children: [] }; });
 }
 
 async function findIndicatorId(page: import('../types').Page, name: string): Promise<{cid: string; indicatorId: string} | null> {
@@ -63,7 +63,7 @@ async function findIndicatorId(page: import('../types').Page, name: string): Pro
     var childNodes = await getTreeNodes(page, rootNodes[i].id);
     for (var j = 0; j < childNodes.length; j++) {
       if (childNodes[j].name === name || childNodes[j].name.indexOf(name) >= 0) {
-        var indicators = await apiCall(page, '/new/queryIndicatorsByCid?cid=' + childNodes[j].id + '&dt=&name=') as any;
+        var indicators = await apiCall(page, '/new/queryIndicatorsByCid?cid=' + childNodes[j].id + '&dt=&name=') as Record<string, unknown>;
         var indList = (indicators && indicators.data && indicators.data.list) || [];
         if (indList.length > 0) {
           return { cid: childNodes[j].id, indicatorId: indList[0].ek_dp || indList[0]._id || indList[0].id };
@@ -72,7 +72,7 @@ async function findIndicatorId(page: import('../types').Page, name: string): Pro
       var grandChildren = await getTreeNodes(page, childNodes[j].id);
       for (var k = 0; k < grandChildren.length; k++) {
         if (grandChildren[k].name === name || grandChildren[k].name.indexOf(name) >= 0) {
-          var indicators2 = await apiCall(page, '/new/queryIndicatorsByCid?cid=' + grandChildren[k].id + '&dt=&name=') as any;
+          var indicators2 = await apiCall(page, '/new/queryIndicatorsByCid?cid=' + grandChildren[k].id + '&dt=&name=') as Record<string, unknown>;
           var indList2 = (indicators2 && indicators2.data && indicators2.data.list) || [];
           if (indList2.length > 0) {
             return { cid: grandChildren[k].id, indicatorId: indList2[0].ek_dp || indList2[0]._id || indList2[0].id };
@@ -105,7 +105,7 @@ async function fetchAllProvinces(page: import('../types').Page, indicatorName: s
     rootId: ROOT_CID,
   };
 
-  var result = await apiCall(page, '/getEsDataByCidAndDt', body) as any;
+  var result = await apiCall(page, '/getEsDataByCidAndDt', body) as Record<string, unknown>;
   if (!result || !result.data) return [];
 
   var rows: ProvinceRow[] = [];

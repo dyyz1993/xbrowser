@@ -61,6 +61,7 @@ export default function (xcli: XCLIAPI): void {
     timeout?: number;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function captureApiResponse<T>(opts: CaptureOptions): Promise<T | null> {
     const { page, urlPattern, dataExtractor, timeout = 15000 } = opts;
 
@@ -165,6 +166,7 @@ export default function (xcli: XCLIAPI): void {
               const result = (json?.data?.user?.result || json?.data?.user_result?.result || {}) as Record<string, unknown>;
             if (result?.legacy) {
               const legacy = result.legacy as Record<string, unknown>;
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
               const profile = result.profile as Record<string, unknown> | undefined;
               userData = {
                 id: result.rest_id as string,
@@ -430,7 +432,7 @@ export default function (xcli: XCLIAPI): void {
           return imgs;
         }, params.limit);
         return ok({ query: params.query, engine: 'twitter', results, total: results.length, timestamp: Date.now() }, [`Twitter "${params.query}"，共 ${results.length} 张`]);
-      } catch (error) { return fail(error instanceof Error ? error.message : '未知错误'); }
+      } catch { return fail(error instanceof Error ? error.message : '未知错误'); }
     },
   });
 

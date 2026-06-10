@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
-import { ok, fail } from '@dyyz1993/xcli-core';
+import { searchImageResultSchema, baseSearchParams, getPage, scrollPage, buildResult, buildFail } from '../shared/image-search.js';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -16,40 +16,21 @@ export default function (xcli: XCLIAPI): void {
     loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
-      query: z.string(), limit: z.number().optional().default(20),
-      color: z.string().optional(), timeout: z.number().optional().default(20000),
+      ...baseSearchParams,
+      color: z.string().optional(),
     }),
-    result: z.object({
-      query: z.string(),
-      engine: z.string(),
-      results: z.array(z.object({
-        title: z.string(),
-        thumbnailUrl: z.string(),
-        sourceUrl: z.string(),
-        originalUrl: z.string().optional(),
-        width: z.number(),
-        height: z.number(),
-        format: z.string().optional(),
-        sourceSite: z.string(),
-        fileSize: z.string().optional(),
-      }).passthrough()),
-      total: z.number().optional(),
-      timestamp: z.union([z.string(), z.number()]).optional(),
-    }).passthrough(),
+    result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = (params.page as import('../types').Page) || (ctx as Record<string, unknown>).page as import('../types').Page;
-      if (!page) throw new Error('需要浏览器页面');
+      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
       try {
         let url = `https://unsplash.com/s/photos/${encodeURIComponent(params.query)}`;
         if (params.color) url += `?color=${params.color}`;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout });
         await page.waitForTimeout(3000);
-        for (let i = 0; i < Math.ceil(params.limit / 10); i++) {
-          await page.evaluate(() => window.scrollBy(0, 1000));
-          await page.waitForTimeout(800);
-        }
+        await scrollPage(page, Math.ceil(params.limit / 10));
+
         const results = await page.evaluate((limit: number) => {
-          const images: any[] = [];
+          const images: Record<string, unknown>[] = [];
           const items = document.querySelectorAll('figure img, [data-testid="photo-grid-item"] img, .YEWhR img');
           items.forEach((item, idx) => {
             if (idx >= limit) return;
@@ -66,8 +47,11 @@ export default function (xcli: XCLIAPI): void {
           });
           return images.slice(0, limit);
         }, params.limit);
-        return ok({ query: params.query, engine: 'unsplash', results, total: results.length, timestamp: Date.now() }, [`Unsplash "${params.query}"，共 ${results.length} 张`]);
-      } catch (error) { return { data: null, message: error instanceof Error ? error.message : '未知错误' }; }
+
+        return buildResult(params.query, 'unsplash', results);
+      } catch (error) {
+        return buildFail(error, 'unsplash');
+      }
     },
   });
 }

@@ -6,7 +6,6 @@ import path from 'path';
 import { createHash } from 'crypto';
 
 type Page = import('../types').Page;
-type PlaywrightResponse = import('../types').Response;
 
 const DATA_BASE = './data/geo-analysis';
 const DEFAULT_TIMEOUT = 60000;
@@ -629,8 +628,7 @@ async function collectFromEngine(
     await saveResult(searchResult);
 
     return ok(searchResult, []);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
+  } catch {
     return ok(null, []);
   }
 }
@@ -882,7 +880,7 @@ export default function (xcli: XCLIAPI): void {
     return ok(output, [
       `引擎: ${params.engine}`,
     ]);
-  } catch (error) {
+  } catch {
     return fail(error instanceof Error ? error.message : '未知错误', ['采集失败']);
   }
     },
@@ -968,7 +966,7 @@ export default function (xcli: XCLIAPI): void {
     return ok(batchResult, [
       `引擎: ${engineList.length}`,
     ]);
-  } catch (error) {
+  } catch {
     return fail(error instanceof Error ? error.message : '未知错误', ['批量采集失败']);
   }
     },
@@ -1013,7 +1011,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
     return ok(rankings, [`数据点: ${history.length}`]);
-      } catch (error) {
+      } catch {
     return fail(error instanceof Error ? error.message : '未知错误', ['排名生成失败']);
       }
     },
@@ -1061,7 +1059,6 @@ export default function (xcli: XCLIAPI): void {
 
         const successful = results.filter(r => r.success);
         const failed = results.filter(r => !r.success);
-        const allData = successful.map(r => r.data!).filter(Boolean);
 
         const domainRanking = new Map<string, { count: number; urls: string[]; engines: Set<string> }>();
         successful.forEach(r => {
@@ -1190,7 +1187,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
     return ok(aggResult, [`引擎: ${aggResult.totalEngines}`]);
-      } catch (error) {
+      } catch {
     return fail(error instanceof Error ? error.message : '未知错误', ['聚合搜索失败']);
       }
     },
@@ -1235,7 +1232,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
     return ok(rankings, [`数据点: ${history.length}`]);
-      } catch (error) {
+      } catch {
     return fail(error instanceof Error ? error.message : '未知错误', ['企业排名生成失败']);
       }
     },
@@ -1281,7 +1278,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
     return ok(trends, [`数据点: ${history.length}`]);
-      } catch (error) {
+      } catch {
     return fail(error instanceof Error ? error.message : '未知错误', ['趋势分析失败']);
       }
     },
@@ -1341,7 +1338,7 @@ export default function (xcli: XCLIAPI): void {
         await fs.writeFile(filepath, JSON.stringify(reportData, null, 2), 'utf-8');
 
     return ok({ path: filepath }, []);
-      } catch (error) {
+      } catch {
     return fail(error instanceof Error ? error.message : '未知错误', ['报告生成失败']);
       }
     },
@@ -1381,7 +1378,7 @@ export default function (xcli: XCLIAPI): void {
         }));
 
     return ok(items, [`总数: ${history.length}`]);
-      } catch (error) {
+      } catch {
     return ok([], ['获取历史失败']);
       }
     },
@@ -1457,7 +1454,7 @@ export default function (xcli: XCLIAPI): void {
         };
 
     return ok(status, [`版本: v2.0.0`]);
-      } catch (error) {
+      } catch {
     return fail(error instanceof Error ? error.message : '未知错误', ['获取状态失败']);
       }
     },

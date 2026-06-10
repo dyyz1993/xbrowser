@@ -17,7 +17,17 @@ export default function(xcli: XCLIAPI): void {
     description: '抓取 Steam 游戏的全部评论（cursor 分页，100/页）',
     loginRequired: 'none',
     scope: 'browser',
-    result: z.record(z.any()),
+    result: z.object({
+      app_id: z.string(),
+      scraped_at: z.string(),
+      api_total: z.number(),
+      fetched: z.number(),
+      positive: z.number(),
+      negative: z.number(),
+      positive_ratio: z.string(),
+      language_breakdown: z.array(z.tuple([z.string(), z.number()])),
+      reviews: z.array(z.record(z.any())),
+    }).passthrough(),
     parameters: z.object({
       appId: z.string().describe('Steam app ID，如 3730100'),
       language: z.string().optional().default('all').describe('评论语言过滤，如 all/schinese/english'),
@@ -71,7 +81,7 @@ export default function(xcli: XCLIAPI): void {
             retries--;
             if (retries === 0) {
               const msg = err instanceof Error ? err.message : String(err);
-              return fail(`Page ${page} failed: ${msg}`);
+              return fail({ reason: `Page ${page} failed: ${msg}` }, `Page ${page} request failed`);
             }
             await sleep(3000);
           }

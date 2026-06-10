@@ -73,6 +73,7 @@ async function setReactInput(page: Page, selector: string, value: string): Promi
   }, { sel: selector, val: value });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function setContentEditable(page: Page, value: string): Promise<boolean> {
   return page.evaluate((val: string) => {
     const el = document.querySelector('div[role="textbox"][contenteditable="true"]') as HTMLDivElement | null;
@@ -271,6 +272,7 @@ async function waitForImages(page: Page, timeoutMs: number): Promise<string[]> {
 async function captureNetworkImages(page: Page, timeoutMs: number): Promise<string[]> {
   return new Promise<string[]>((resolve) => {
     const urls: string[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const timer = setTimeout(() => {
       page.off('response', handler);
       resolve(urls);
@@ -451,7 +453,7 @@ export default function (xcli: XCLIAPI): void {
             '  xbrowser qwen result --cdp 9221',
           ],
         );
-      } catch (error) {
+      } catch {
         const msg = error instanceof Error ? error.message : '未知错误';
         return fail(msg, ['图片生成失败', msg]);
       }
@@ -516,7 +518,7 @@ export default function (xcli: XCLIAPI): void {
             `✅ 获取到 ${limited.length} 张图片`,
           ],
         );
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', ['获取结果失败']);
       }
     },
@@ -686,7 +688,7 @@ export default function (xcli: XCLIAPI): void {
             `✅ 历史记录获取完成`,
           ].filter(Boolean),
         );
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', ['获取历史记录失败']);
       }
     },
@@ -726,7 +728,7 @@ export default function (xcli: XCLIAPI): void {
             pageInfo.hasImageMode ? '✅ AI 生图模式可用' : '⚠ 未检测到 AI 生图按钮',
           ],
         );
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', ['检查状态失败']);
       }
     },

@@ -11,34 +11,40 @@ const GEMINI_URL = 'https://gemini.google.com';
 type Page = import('../types').Page;
 
 async function getPage(ctx: CommandContext): Promise<Page> {
-  const anyCtx = ctx as any;
+  const anyCtx = ctx as unknown as Record<string, unknown>;
   let pg = anyCtx.page as Page | undefined;
   // If page from ctx is broken (daemon context issue), get from browserContext
-  if (pg && typeof (pg as any).evaluate !== 'function') {
+  if (pg && typeof (pg as unknown as Record<string, unknown>).evaluate !== 'function') {
     try {
-      if (anyCtx.browserContext?.newPage) {
-        pg = await anyCtx.browserContext.newPage();
+      if ((anyCtx as Record<string, unknown>).browserContext && typeof (anyCtx as Record<string, unknown>).browserContext === 'object') {
+        const bc = anyCtx.browserContext as Record<string, unknown> | undefined;
+        if (bc && typeof bc.newPage === 'function') {
+          pg = await (bc.newPage as () => Promise<Page>)();
+        }
       }
-    } catch {}
+    } catch { /* ignore */ }
     // Also try browser.newPage
-    if ((!pg || typeof (pg as any).evaluate !== 'function') && anyCtx.browser?.newContext) {
-      try {
-        const bc = await anyCtx.browser.newContext();
-        pg = await bc.newPage();
-      } catch {}
+    if ((!pg || typeof (pg as unknown as Record<string, unknown>).evaluate !== 'function') && (anyCtx as Record<string, unknown>).browser) {
+      const browser = anyCtx.browser as Record<string, unknown> | undefined;
+      if (browser && typeof browser.newContext === 'function') {
+        try {
+          const bc = await (browser.newContext as () => Promise<Record<string, unknown>>)();
+          pg = await (bc.newPage as () => Promise<Page>)();
+        } catch { /* ignore */ }
+      }
     }
-    if (!pg || typeof (pg as any).evaluate !== 'function') {
+    if (!pg || typeof (pg as unknown as Record<string, unknown>).evaluate !== 'function') {
       // Last resort: use the page from the session stored in memory
       const { findSession } = await import('../../src/browser.js');
       const sid = anyCtx.sessionId as string;
       if (sid) {
         const sess = findSession(sid);
-        if (sess?.page && typeof (sess.page as any).evaluate === 'function') {
+        if (sess?.page && typeof (sess.page as unknown as Record<string, unknown>).evaluate === 'function') {
           pg = sess.page;
         }
       }
     }
-    if (!pg || typeof (pg as any).evaluate !== 'function') {
+    if (!pg || typeof (pg as unknown as Record<string, unknown>).evaluate !== 'function') {
       throw new Error('页面不可用');
     }
   }
@@ -79,7 +85,7 @@ export default function (xcli: XCLIAPI): void {
       const page = await getPage(ctx);
       const tips = buildCdpTips(ctx);
       try {
-        const bodyText = await (page as any).evaluate(() => document.body?.innerText || '');
+        const bodyText = await page.evaluate(() => document.body?.innerText || '');
 
         const lines = bodyText.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 2);
         const recentIdx = lines.findIndex((l: string) => l.includes('最近'));
@@ -94,7 +100,7 @@ export default function (xcli: XCLIAPI): void {
         }).slice(0, 30);
 
         return ok(conversations.map((title: string, i: number) => ({ index: i, title })), tips);
-      } catch (error) {
+      } catch {
         return fail((error as Error).message || '未知错误', tips);
       }
     },
@@ -113,26 +119,26 @@ export default function (xcli: XCLIAPI): void {
       try {
         // Navigate to Gemini if needed
         try {
-          await (page as any).goto(GEMINI_URL + '/app', { waitUntil: 'domcontentloaded', timeout: 20000 });
+          await page.goto(GEMINI_URL + '/app', { waitUntil: 'domcontentloaded', timeout: 20000 });
         } catch {
-          await (page as any).evaluate((u: string) => { window.location.href = u; }, GEMINI_URL + '/app');
+          await page.evaluate((u: string) => { window.location.href = u; }, GEMINI_URL + '/app');
         }
         await new Promise(r => setTimeout(r, 5000));
 
         // Type and send message
         const inputSel = '[aria-label*="输入提示"], [contenteditable="true"]';
         try {
-          await (page as any).fill(inputSel, params.message);
+          await page.fill(inputSel, params.message);
         } catch {
-          await (page as any).evaluate((msg: string) => {
+          await page.evaluate((msg: string) => {
             const el = document.querySelector('[aria-label*="输入提示"], [contenteditable="true"]');
             if (el) (el as HTMLElement).textContent = msg;
           }, params.message);
         }
-        await (page as any).keyboard.press('Enter');
+        await page.keyboard.press('Enter');
 
         return ok({ conversationUrl: '' }, [...tips, '消息已发送']);
-      } catch (error) {
+      } catch {
         return fail((error as Error).message || '未知错误', tips);
       }
     },
@@ -152,18 +158,18 @@ export default function (xcli: XCLIAPI): void {
       const tips = buildCdpTips(ctx);
       try {
         // Navigate to Gemini
-        await (page as any).goto(GEMINI_URL + '/app', { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await page.goto(GEMINI_URL + '/app', { waitUntil: 'domcontentloaded', timeout: 20000 });
         await new Promise(r => setTimeout(r, 4000));
 
         // Click upload/tools button
-        await (page as any).evaluate(() => {
+        await page.evaluate(() => {
           const btn = document.querySelector('[aria-label*="上传和工具"]');
           if (btn) (btn as HTMLElement).click();
         });
         await new Promise(r => setTimeout(r, 1000));
 
         // Click "制作音乐"
-        await (page as any).evaluate(() => {
+        await page.evaluate(() => {
           const items = document.querySelectorAll('[class*="drawer-item"], div, button');
           for (const el of items) {
             if ((el.textContent || '').includes('制作音乐')) {
@@ -176,11 +182,11 @@ export default function (xcli: XCLIAPI): void {
 
         // Type prompt and send
         const inputSel = '[aria-label*="输入提示"], [contenteditable="true"]';
-        await (page as any).fill(inputSel, params.prompt);
-        await (page as any).keyboard.press('Enter');
+        await page.fill(inputSel, params.prompt);
+        await page.keyboard.press('Enter');
 
         return ok({ url: '' }, [...tips, `音乐生成请求已发送: "${params.prompt}"`]);
-      } catch (error) {
+      } catch {
         return fail((error as Error).message || '未知错误', tips);
       }
     },

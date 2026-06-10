@@ -257,7 +257,7 @@ export default function (xcli: XCLIAPI): void {
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
         return ok(conversations, tips);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['获取会话列表失败']);
       }
     },
@@ -307,7 +307,7 @@ export default function (xcli: XCLIAPI): void {
 
         await page.waitForTimeout(1500);
         return ok({ created: true }, buildTips(ctx));
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['创建新对话失败']);
       }
     },
@@ -348,7 +348,7 @@ export default function (xcli: XCLIAPI): void {
 
         await page.waitForTimeout(2000);
         return ok({ opened: clicked.title }, buildTips(ctx));
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['打开会话失败']);
       }
     },
@@ -638,7 +638,7 @@ export default function (xcli: XCLIAPI): void {
           tips.push('AI 回复超时或未检测到');
           return ok({ response: '' }, tips);
         }
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['发送消息失败']);
       }
     },
@@ -849,7 +849,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok({ prompt }, [...tips, '图片可能还在生成中，请到豆包页面查看']);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['文生图失败', `错误详情: ${error instanceof Error ? error.message : String(error)}`]);
       }
     },
@@ -942,7 +942,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(3000);
 
         return ok({ action: params.action, image: absPath, submitted: true }, tips);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['图片编辑失败']);
       }
     },
@@ -970,6 +970,7 @@ export default function (xcli: XCLIAPI): void {
         const absPath = path.resolve(params.image);
         if (!fs.existsSync(absPath)) throw new Error(`图片文件不存在: ${absPath}`);
 
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const uploaded = await uploadFileViaDataTransfer(page, absPath);
         await page.waitForTimeout(1000);
         tips.push(`已上传图片: ${path.basename(absPath)}`);
@@ -1008,7 +1009,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok({ resultUrl: resultUrl || 'processing', source: absPath }, tips);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['抠图失败']);
       }
     },
@@ -1038,6 +1039,7 @@ export default function (xcli: XCLIAPI): void {
         const absPath = path.resolve(params.image);
         if (!fs.existsSync(absPath)) throw new Error(`图片文件不存在: ${absPath}`);
 
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const uploaded = await uploadFileViaDataTransfer(page, absPath);
         await page.waitForTimeout(1000);
         tips.push(`已上传参考图: ${path.basename(absPath)}`);
@@ -1068,7 +1070,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok({ source: absPath, prompt: params.prompt, submitted: true }, tips);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['图片衍生失败']);
       }
     },
@@ -1127,7 +1129,7 @@ export default function (xcli: XCLIAPI): void {
         });
 
         return ok(creations, [...tips, `共 ${creations.length} 条创作记录`]);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['获取创作历史失败']);
       }
     },
@@ -1196,7 +1198,7 @@ export default function (xcli: XCLIAPI): void {
         return ok({ taskId: taskId || 'pending', prompt: params.prompt, status: 'submitted' }, taskId
             ? [...tips, `taskId: ${taskId}`]
             : [...tips, '无法提取 taskId，请使用 video-status 检查任务状态']);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['提交视频生成失败']);
       }
     },
@@ -1221,7 +1223,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(1000);
         const tips = buildTips(ctx);
 
-        const status = await page.evaluate((taskId: string) => {
+        const status = await page.evaluate((_taskId: string) => {
           const allText = document.body.textContent || '';
           const statusEl = document.querySelector(
             '[class*="status"], [class*="progress"], [class*="state"]'
@@ -1242,7 +1244,7 @@ export default function (xcli: XCLIAPI): void {
         }, params.task);
 
         return ok({ taskId: params.task, status }, tips);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['检查状态失败']);
       }
     },
@@ -1293,7 +1295,7 @@ export default function (xcli: XCLIAPI): void {
           tips.push(`📁 视频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`);
           return ok({ taskId: params.task, url: videoUrl, localPath: downloaded.localPath }, tips);
         }
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['获取视频结果失败']);
       }
     },
@@ -1793,7 +1795,7 @@ export default function (xcli: XCLIAPI): void {
           `恢复查看: 使用相同 --cdp 重新执行命令会自动回到此对话`,
           `或查看创作历史: xbrowser doubao my-creations --type all${cdpSuffix ? ' --cdp ' + cdpFlag : ''}`,
         ]);
-      } catch (error) {
+      } catch {
         const errMsg = error instanceof Error ? error.message : String(error);
         return fail('未知错误', ['提交音乐生成失败', `原因: ${errMsg}`]);
       }
@@ -1851,7 +1853,7 @@ export default function (xcli: XCLIAPI): void {
             `获取结果: xbrowser doubao music-result${sessionSuffixB}`,
             `查看创作: xbrowser doubao my-creations --type all${sessionSuffixB}`,
           ]);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['检查状态失败']);
       }
     },
@@ -1913,7 +1915,7 @@ export default function (xcli: XCLIAPI): void {
             `  确保: xbrowser doubao music --prompt "..."${sessionSuffixC}`,
             `  然后: xbrowser doubao music-result${sessionSuffixC}`,
           ]);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['获取音乐结果失败']);
       }
     },
@@ -1979,7 +1981,7 @@ export default function (xcli: XCLIAPI): void {
 
         await page.waitForTimeout(1500);
         return ok({ file: absPath, uploaded: true }, [...tips, `文件名: ${path.basename(absPath)}`]);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['文件上传失败']);
       }
     },
@@ -2032,7 +2034,7 @@ export default function (xcli: XCLIAPI): void {
         });
 
         return ok({ files, total: files.length }, [...tips, `云盘中共 ${files.length} 个文件`]);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['获取云盘文件失败']);
       }
     },
@@ -2093,7 +2095,7 @@ export default function (xcli: XCLIAPI): void {
 
         await page.waitForTimeout(1000);
         return ok({ model: modelName, switched: true }, tips);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['切换模型失败']);
       }
     },
@@ -2268,7 +2270,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return fail('未知错误', [...tips, `搜索来源：${domains.size} 个域名, ${uniqueUrls.length} 条链接`]);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['搜索失败']);
       }
     },
@@ -2340,7 +2342,7 @@ export default function (xcli: XCLIAPI): void {
 
         await page.waitForTimeout(1000);
         return ok({ type: params.type, file: absPath, uploaded: true }, [...tips, `附件: ${path.basename(absPath)}`]);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['上传附件失败']);
       }
     },

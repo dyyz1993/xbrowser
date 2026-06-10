@@ -358,7 +358,7 @@ export default function (xcli: XCLIAPI): void {
         await ctx.storage.set('csdn_login', { loggedIn, at: Date.now() });
 
         return ok({ loggedIn, url: page.url() }, [...tips, loggedIn ? 'CSDN 登录成功' : '登录可能未完成，请检查页面']);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
@@ -478,7 +478,7 @@ export default function (xcli: XCLIAPI): void {
             tags: params.tags,
             url: finalUrl,
           }, [...tips, `文章 "${params.title}" 已在 CSDN 发布`]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
@@ -541,7 +541,7 @@ export default function (xcli: XCLIAPI): void {
             saved: true,
             url: page.url(),
           }, [...tips, `草稿 "${params.title}" 已保存`]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
@@ -598,7 +598,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok({ url: params.url, updated: true }, [...tips, 'Profile 已更新，包含外链']);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
@@ -676,7 +676,7 @@ export default function (xcli: XCLIAPI): void {
             count: articles.length,
             articles,
           }, [...tips, `获取到 ${articles.length} 篇文章`]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },

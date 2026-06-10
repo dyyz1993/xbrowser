@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
-import { ok, fail } from '@dyyz1993/xcli-core';
+import { fail } from '@dyyz1993/xcli-core';
 import { detectAntiBot } from '../../../src/anti-bot-detection.js';
+import { searchImageResultSchema, baseSearchParams, getPage, scrollPage, buildResult } from '../shared/image-search.js';
 
 export default function (xcli: XCLIAPI): void {
   const shutterstock = xcli.createSite({
@@ -18,36 +19,12 @@ export default function (xcli: XCLIAPI): void {
     description: 'Shutterstock image search',
     loginRequired: 'none',
     scope: 'browser',
-    parameters: z.object({
-      query: z.string().describe('Search query'),
-      limit: z.number().optional().default(10),
-      timeout: z.number().optional().default(20000),
-    }),
-    result: z.object({
-      query: z.string(),
-      engine: z.string(),
-      results: z.array(z.object({
-        title: z.string(),
-        thumbnailUrl: z.string(),
-        sourceUrl: z.string(),
-        originalUrl: z.string().optional(),
-        width: z.number(),
-        height: z.number(),
-        format: z.string().optional(),
-        sourceSite: z.string(),
-        fileSize: z.string().optional(),
-      }).passthrough()),
-      total: z.number().optional(),
-      timestamp: z.union([z.string(), z.number()]).optional(),
-    }).passthrough(),
+    parameters: z.object(baseSearchParams),
+    result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = (params.page as import('../types').Page)
-        || (ctx as Record<string, unknown>).page as import('../types').Page;
-      if (!page) throw new Error('需要浏览器页面');
-
+      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
       try {
         const url = `https://www.shutterstock.com/search/${encodeURIComponent(params.query)}`;
-
         await page.goto(url, { waitUntil: 'networkidle', timeout: params.timeout });
         await page.waitForTimeout(6000);
 
@@ -56,10 +33,7 @@ export default function (xcli: XCLIAPI): void {
           return fail(`${antiBotResult.message}。请使用 --cdp http://localhost:9221 连接真实浏览器重试`);
         }
 
-        for (let i = 0; i < 6; i++) {
-          await page.evaluate(() => window.scrollBy(0, window.innerHeight));
-          await page.waitForTimeout(1500);
-        }
+        await scrollPage(page, 6, 1500);
 
         const results = await page.evaluate((limit: number) => {
           const images: Array<{
@@ -91,11 +65,7 @@ export default function (xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit);
 
-        return ok({
-            query: params.query,
-            engine: 'shutterstock',
-            results: results.map(r => ({ ...r, sourceSite: 'shutterstock' })),
-            }, [`Shutterstock "${params.query}"，共 ${results.length} 张`]);
+        return buildResult(params.query, 'shutterstock', results.map(r => ({ ...r, sourceSite: 'shutterstock' })));
       } catch (error) {
         const msg = error instanceof Error ? error.message : '未知错误';
         if (msg.includes('timeout') || msg.includes('Timeout') || msg.includes('net::')) {

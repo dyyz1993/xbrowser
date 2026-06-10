@@ -77,6 +77,7 @@ function interceptApi(
   };
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function interceptFirstMatch(
   page: Page,
   urlPattern: string,
@@ -664,6 +665,7 @@ export default function (xcli: XCLIAPI): void {
         if (apiData) {
           const detail = apiData as Record<string, unknown>;
           const skuBase = detail.skuBase as Record<string, unknown> | undefined;
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const skus = Array.isArray(skuBase?.skus)
             ? (skuBase!.skus as Record<string, unknown>[]).map((s) => ({
                 skuId: String(s.skuId || ''),
@@ -671,6 +673,7 @@ export default function (xcli: XCLIAPI): void {
                 price: String(s.price || ''),
               }))
             : [];
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const props = Array.isArray(detail.props)
             ? (detail.props as Record<string, unknown>[]).map((p) => ({
                 name: String(p.name || ''),
@@ -846,6 +849,7 @@ export default function (xcli: XCLIAPI): void {
           const d = apiRaw as Record<string, unknown>;
           const seller = (d.seller || {}) as Record<string, unknown>;
           const skuBase = (d.skuBase || {}) as Record<string, unknown>;
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
           const rateInfo = (d.rateInfo || {}) as Record<string, unknown>;
 
           const skuList = Array.isArray(skuBase.skus)
@@ -1703,7 +1707,7 @@ export default function (xcli: XCLIAPI): void {
           return imgs;
         }, params.limit);
         return ok({ query: params.query, engine: 'taobao', results, total: results.length, timestamp: Date.now() }, [`淘宝 "${params.query}"，共 ${results.length} 张`]);
-      } catch (error) { return fail(error instanceof Error ? error.message : '未知错误'); }
+      } catch { return fail(error instanceof Error ? error.message : '未知错误'); }
     },
   });
 

@@ -8,6 +8,7 @@ type Page = import('../types').Page;
 
 const SITE_URL = 'https://www.qianwen.com';
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const SEL = {
   input: 'div[role="textbox"][contenteditable="true"]',
   newChat: 'button',
@@ -154,7 +155,7 @@ export default function (xcli: XCLIAPI): void {
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
         return ok(conversations, tips);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['获取会话列表失败']);
       }
     },
@@ -203,7 +204,7 @@ export default function (xcli: XCLIAPI): void {
 
         await page.waitForTimeout(1500);
         return ok({ created: true }, buildTips(ctx));
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['创建新对话失败']);
       }
     },
@@ -243,7 +244,7 @@ export default function (xcli: XCLIAPI): void {
 
         await page.waitForTimeout(2000);
         return ok({ opened: clicked.title }, buildTips(ctx));
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['打开会话失败']);
       }
     },
@@ -422,7 +423,7 @@ export default function (xcli: XCLIAPI): void {
           tips.push('AI 回复超时或未检测到');
           return ok({ response: '' }, tips);
         }
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['发送消息失败']);
       }
     },
@@ -460,7 +461,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(1000);
         tips.push(`附件 "${path.basename(absPath)}" 已上传`);
         return ok({ file: absPath, uploaded: true }, tips);
-      } catch (error) {
+      } catch {
         return fail('未知错误', ['上传附件失败']);
       }
     },

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
-import { ok, fail } from '@dyyz1993/xcli-core';
+import { searchImageResultSchema, baseSearchParams, getPage, scrollPage, buildResult, buildFail } from '../shared/image-search.js';
 
 export default function (xcli: XCLIAPI): void {
   const p500px = xcli.createSite({
@@ -17,49 +17,18 @@ export default function (xcli: XCLIAPI): void {
     description: 'Search images on 500px',
     loginRequired: 'none',
     scope: 'browser',
-    parameters: z.object({
-      query: z.string().describe('Search query'),
-      limit: z.number().optional().default(10),
-      timeout: z.number().optional().default(20000),
-    }),
-    result: z.object({
-      query: z.string(),
-      engine: z.string(),
-      results: z.array(z.object({
-        title: z.string(),
-        thumbnailUrl: z.string(),
-        sourceUrl: z.string(),
-        originalUrl: z.string().optional(),
-        width: z.number(),
-        height: z.number(),
-        format: z.string().optional(),
-        sourceSite: z.string(),
-        fileSize: z.string().optional(),
-      }).passthrough()),
-      total: z.number().optional(),
-      timestamp: z.union([z.string(), z.number()]).optional(),
-    }).passthrough(),
+    parameters: z.object(baseSearchParams),
+    result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const browserPage = (params.page as import('../types').Page)
-        || (ctx as Record<string, unknown>).page as import('../types').Page;
-      if (!browserPage) throw new Error('需要浏览器页面');
-
+      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
       try {
         const url = `https://500px.com/search?q=${encodeURIComponent(params.query)}`;
-        await browserPage.goto(url, { waitUntil: 'networkidle', timeout: params.timeout });
-        await browserPage.waitForTimeout(8000);
+        await page.goto(url, { waitUntil: 'networkidle', timeout: params.timeout });
+        await page.waitForTimeout(8000);
+        await scrollPage(page, 6, 1500);
 
-        for (let i = 0; i < 6; i++) {
-          await browserPage.evaluate(() => window.scrollBy(0, window.innerHeight));
-          await browserPage.waitForTimeout(1500);
-        }
-
-        const results = await browserPage.evaluate((limit: number) => {
-          const images: Array<{
-            title: string; thumbnailUrl: string; sourceUrl: string;
-            originalUrl: string; width: number; height: number;
-            format: string; sourceSite: string;
-          }> = [];
+        const results = await page.evaluate((limit: number) => {
+          const images: Array<Record<string, unknown>> = [];
 
           let imgs = document.querySelectorAll(
             'img[src*="500px"], img[src*="pcdn"], img[src*="500px.org"], .photo-card img, .PhotoCard img'
@@ -92,15 +61,9 @@ export default function (xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit);
 
-        return ok({
-            query: params.query,
-            engine: '500px',
-            results,
-            total: results.length,
-            timestamp: Date.now(),
-          }, [`500px "${params.query}"，共 ${results.length} 张`]);
+        return buildResult(params.query, '500px', results);
       } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误');
+        return buildFail(error, '500px');
       }
     },
   });

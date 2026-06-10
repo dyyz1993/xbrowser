@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
-import { ok, fail } from '@dyyz1993/xcli-core';
+import { fail } from '@dyyz1993/xcli-core';
+import { searchImageResultSchema, baseSearchParams, getPage, scrollPage, buildResult, buildFail } from '../shared/image-search.js';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -15,30 +16,10 @@ export default function (xcli: XCLIAPI): void {
     description: '花瓣网图片搜索',
     loginRequired: 'none',
     scope: 'browser',
-    parameters: z.object({
-      query: z.string(), limit: z.number().optional().default(20),
-      timeout: z.number().optional().default(20000),
-    }),
-    result: z.object({
-      query: z.string(),
-      engine: z.string(),
-      results: z.array(z.object({
-        title: z.string(),
-        thumbnailUrl: z.string(),
-        sourceUrl: z.string(),
-        originalUrl: z.string().optional(),
-        width: z.number(),
-        height: z.number(),
-        format: z.string().optional(),
-        sourceSite: z.string(),
-        fileSize: z.string().optional(),
-      }).passthrough()),
-      total: z.number().optional(),
-      timestamp: z.union([z.string(), z.number()]).optional(),
-    }).passthrough(),
+    parameters: z.object(baseSearchParams),
+    result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = (params.page as import('../types').Page) || (ctx as Record<string, unknown>).page as import('../types').Page;
-      if (!page) throw new Error('需要浏览器页面');
+      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
       try {
         await page.goto(`https://huaban.com/search?q=${encodeURIComponent(params.query)}`, { waitUntil: 'domcontentloaded', timeout: params.timeout });
         await page.waitForTimeout(5000);
@@ -48,10 +29,8 @@ export default function (xcli: XCLIAPI): void {
           return fail('花瓣网触发了安全验证，请在浏览器中手动完成验证后重试', ['建议：使用 --cdp 9221 连接已登录的浏览器，手动访问 huaban.com 完成验证后再执行搜索']);
         }
 
-        for (let i = 0; i < 3; i++) {
-          await page.evaluate(() => window.scrollBy(0, 1000));
-          await page.waitForTimeout(1000);
-        }
+        await scrollPage(page, 3, 1000);
+
         const results = await page.evaluate((limit: number) => {
           const images: Array<Record<string, unknown>> = [];
           let items = document.querySelectorAll('img[data-src]');
@@ -76,8 +55,11 @@ export default function (xcli: XCLIAPI): void {
           });
           return images.slice(0, limit);
         }, params.limit);
-        return ok({ query: params.query, engine: 'huaban', results, total: results.length, timestamp: Date.now() }, [`花瓣网 "${params.query}"，共 ${results.length} 张`]);
-      } catch (error) { return { data: null, message: error instanceof Error ? error.message : '未知错误' }; }
+
+        return buildResult(params.query, 'huaban', results);
+      } catch (error) {
+        return buildFail(error, 'huaban');
+      }
     },
   });
 }

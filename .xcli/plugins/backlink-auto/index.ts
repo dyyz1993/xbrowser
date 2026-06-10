@@ -6,8 +6,8 @@
  */
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
-import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page, BrowserContext } from '../../src/browser-shim.js';
+import { ok } from '@dyyz1993/xcli-core';
+import type { Page } from '../../src/browser-shim.js';
 import { execSync } from 'child_process';
 
 const BACKLINK_EMAIL = process.env.BACKLINK_EMAIL || '';
@@ -118,6 +118,7 @@ function readLatestSMS(filter?: string): { code: string | null; text: string; ti
   } catch { return null; }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function waitForSMS(timeoutMs = 60000, filter?: string): Promise<string | null> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
@@ -153,7 +154,8 @@ async function read163EmailCode(page: Page, fromDomain: string, timeoutMs = 6000
         // Try to find verification code emails
         const code = await targetFrame.evaluate((domain) => {
           // Look for email subjects containing the domain
-          const subjects = document.querySelectorAll('.js-component-emailblock em, .nui-editor-body em, div[title*="' + domain + '"], .MailListSubject, .js-component-subject');
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const _subjects = document.querySelectorAll('.js-component-emailblock em, .nui-editor-body em, div[title*="' + domain + '"], .MailListSubject, .js-component-subject');
           const allText = document.body.innerText;
           const codeMatch = allText.match(/(?:验证码|code|Code|verification)[：:\s]*(\d{4,8})/);
           return codeMatch ? codeMatch[1] : null;
@@ -245,7 +247,7 @@ async function registerIssuu(page: Page): Promise<SiteResult> {
     } else {
       r.notes = 'Still on signup page after submit. URL: ' + finalUrl;
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
     r.notes = `Error: ${e.message?.substring(0, 80)}`;
   }
   addResult(r);
@@ -280,7 +282,7 @@ async function registerSubstack(page: Page): Promise<SiteResult> {
     } else {
       r.notes = 'Registration flow incomplete. URL: ' + currentUrl;
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
     r.notes = `Error: ${e.message?.substring(0, 80)}`;
   }
   addResult(r);
@@ -319,7 +321,7 @@ async function registerAboutMe(page: Page): Promise<SiteResult> {
 
     r.registered = true;
     r.submitted = true;
-  } catch (e: any) {
+  } catch (e: unknown) {
     r.notes = `Error: ${e.message?.substring(0, 80)}`;
   }
   addResult(r);
@@ -352,7 +354,7 @@ async function registerDisqus(page: Page): Promise<SiteResult> {
     } else {
       r.notes = 'Still on signup: ' + currentUrl;
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
     r.notes = `Error: ${e.message?.substring(0, 80)}`;
   }
   addResult(r);
@@ -388,7 +390,7 @@ async function registerCalCom(page: Page): Promise<SiteResult> {
     await safeClick(page, 'button[type="submit"]');
     r.registered = true;
     r.submitted = true;
-  } catch (e: any) {
+  } catch (e: unknown) {
     r.notes = `Error: ${e.message?.substring(0, 80)}`;
   }
   addResult(r);
@@ -411,7 +413,7 @@ async function registerHashnode(page: Page): Promise<SiteResult> {
     r.registered = true;
     r.submitted = true; // Backlink via publishing blog posts
     r.notes = 'Account created, backlink via blog posts';
-  } catch (e: any) {
+  } catch (e: unknown) {
     r.notes = `Error: ${e.message?.substring(0, 80)}`;
   }
   addResult(r);
@@ -445,7 +447,7 @@ async function registerGreasyFork(page: Page): Promise<SiteResult> {
     } else {
       r.notes = 'Still on signup: ' + currentUrl;
     }
-  } catch (e: any) {
+  } catch (e: unknown) {
     r.notes = `Error: ${e.message?.substring(0, 80)}`;
   }
   addResult(r);
@@ -477,7 +479,7 @@ async function registerSeaArt(page: Page): Promise<SiteResult> {
     r.registered = true;
     r.submitted = true;
     r.notes = 'Backlink via publishing articles on SeaArt';
-  } catch (e: any) {
+  } catch (e: unknown) {
     r.notes = `Error: ${e.message?.substring(0, 80)}`;
   }
   addResult(r);
@@ -500,7 +502,7 @@ async function registerLeetCode(page: Page): Promise<SiteResult> {
 
     r.registered = true;
     r.notes = 'Profile page with URL';
-  } catch (e: any) {
+  } catch (e: unknown) {
     r.notes = `Error: ${e.message?.substring(0, 80)}`;
   }
   addResult(r);
@@ -522,7 +524,7 @@ async function registerDevTo(page: Page): Promise<SiteResult> {
     r.registered = true;
     r.submitted = true;
     r.notes = 'Backlink via publishing articles';
-  } catch (e: any) {
+  } catch (e: unknown) {
     r.notes = `Error: ${e.message?.substring(0, 80)}`;
   }
   addResult(r);
@@ -589,7 +591,8 @@ export default function (xcli: XCLIAPI): void {
       for (const handler of handlers) {
         try {
           // Get fresh page for each site - reuse context's existing pages or create new
-          const browser = page.context().browser();
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const _browser = page.context().browser();
           let sitePage: Page;
           try {
             sitePage = await page.context().newPage();
@@ -606,7 +609,7 @@ export default function (xcli: XCLIAPI): void {
           // Close the site page to keep things clean
           // DON'T close - CDP mode shared context, closing kills the connection
           // try { await sitePage.close(); } catch { /* non-critical, skip */ }
-        } catch (e: any) {
+        } catch (e: unknown) {
           tips.push(`❌ Error: ${e.message?.substring(0, 60)}`);
         }
         if (params.delay > 0) await page.waitForTimeout(params.delay);

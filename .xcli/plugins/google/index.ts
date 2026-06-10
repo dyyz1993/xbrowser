@@ -93,6 +93,7 @@ export default function(xcli: XCLIAPI): void {
             for (const script of scripts) {
               const text = script.textContent || '';
               // Google embeds image data in AF_initDataCallback blocks
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
               const matches = text.matchAll(/\["(https?:[^"\]]+?)"[^\]]*?\](?:,\["(https?:[^"\]]+?)")?/g);
               // More reliable: look for the large image grid data pattern
             }
@@ -156,7 +157,7 @@ export default function(xcli: XCLIAPI): void {
             query: params.query, engine: 'google-images',
             results: results.map(r => ({ ...r, sourceSite: 'google', originalUrl: r.originalUrl || r.thumbnailUrl })),
         }, [`Google Images "${params.query}"，共 ${results.length} 张`]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误');
       }
     },
@@ -192,7 +193,7 @@ export default function(xcli: XCLIAPI): void {
       { cmd: 'xbrowser google push-url --sitemapUrl https://xbrowser.dev/sitemap.xml', description: 'Ping Google 抓取 sitemap' },
     ],
     result: z.object({ success: z.boolean(), method: z.string() }),
-    handler: async (params, ctx) => {
+    handler: async (params, _ctx) => {
       if (params.sitemapUrl) {
         // Method 1: Ping Google sitemap endpoint
         try {
@@ -209,7 +210,7 @@ export default function(xcli: XCLIAPI): void {
             '在中国大陆可能无法直接访问 google.com',
             '可通过浏览器打开 Google Search Console 手动提交',
           ]);
-        } catch (error) {
+        } catch {
           const msg = error instanceof Error ? error.message : '未知错误';
           return fail(`Sitemap ping 失败: ${msg}`, [
             '在中国大陆可能无法直接访问 google.com',

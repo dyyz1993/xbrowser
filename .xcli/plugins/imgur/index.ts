@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
-import { ok, fail } from '@dyyz1993/xcli-core';
+import { searchImageResultSchema, baseSearchParams, getPage, buildResult, buildFail } from '../shared/image-search.js';
 
 export default function (xcli: XCLIAPI): void {
   const imgur = xcli.createSite({
@@ -17,33 +17,10 @@ export default function (xcli: XCLIAPI): void {
     description: 'Imgur 图片搜索 - 搜索 Imgur 上的图片',
     loginRequired: 'none',
     scope: 'browser',
-    parameters: z.object({
-      query: z.string().describe('搜索关键词'),
-      limit: z.number().optional().default(10),
-      timeout: z.number().optional().default(20000),
-    }),
-    result: z.object({
-      query: z.string(),
-      engine: z.string(),
-      results: z.array(z.object({
-        title: z.string(),
-        thumbnailUrl: z.string(),
-        sourceUrl: z.string(),
-        originalUrl: z.string().optional(),
-        width: z.number(),
-        height: z.number(),
-        format: z.string().optional(),
-        sourceSite: z.string(),
-        fileSize: z.string().optional(),
-      }).passthrough()),
-      total: z.number().optional(),
-      timestamp: z.union([z.string(), z.number()]).optional(),
-    }).passthrough(),
+    parameters: z.object(baseSearchParams),
+    result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = (params.page as import('../types').Page)
-        || (ctx as Record<string, unknown>).page as import('../types').Page;
-      if (!page) throw new Error('需要浏览器页面');
-
+      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
       try {
         const url = `https://imgur.com/search?q=${encodeURIComponent(params.query)}`;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout });
@@ -73,15 +50,9 @@ export default function (xcli: XCLIAPI): void {
           return images;
         }, params.limit);
 
-        return ok({
-            query: params.query,
-            engine: 'imgur',
-            results: results.map(r => ({ ...r, sourceSite: 'imgur' })),
-            total: results.length,
-            timestamp: Date.now(),
-          });
+        return buildResult(params.query, 'imgur', results.map(r => ({ ...r, sourceSite: 'imgur' })));
       } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误');
+        return buildFail(error, 'imgur');
       }
     },
   });

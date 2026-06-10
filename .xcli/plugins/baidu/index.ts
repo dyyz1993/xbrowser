@@ -89,7 +89,7 @@ export default function (xcli: XCLIAPI): void {
           if (origReplace) window.location.replace = function() {};
           Object.defineProperty(window, 'location', {
             get() { return window.document.location; },
-            set(v) {},
+            set(_v) {},
           });
         });
 
@@ -183,7 +183,7 @@ export default function (xcli: XCLIAPI): void {
             `关键词: "${query}"`,
             `采集 ${pages} 页，共 ${allResults.length} 条结果${limit ? `，截取前 ${limit} 条` : ''}`,
           ]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
@@ -268,7 +268,7 @@ export default function (xcli: XCLIAPI): void {
         });
 
         return ok(items, [...cdpTips, `分类: ${params.category}`, `共获取 ${items.length} 条热搜`]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
@@ -305,7 +305,7 @@ export default function (xcli: XCLIAPI): void {
           : [];
 
         return ok(items, [...cdpTips, `关键词 "${params.query}" 的搜索建议共 ${items.length} 条`]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
@@ -384,7 +384,7 @@ export default function (xcli: XCLIAPI): void {
         }, params.limit);
 
         return ok(news, [...cdpTips, `关键词 "${params.query}" 获取 ${news.length} 条新闻`]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
@@ -480,7 +480,7 @@ export default function (xcli: XCLIAPI): void {
             `域名 ${domain} 在关键词 "${keyword}" 下${topRank ? `最高排名: 第${topRank.page}页第${topRank.position}位` : '未找到排名'}`,
             `共检查 ${pages} 页`,
           ]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
@@ -606,7 +606,7 @@ export default function (xcli: XCLIAPI): void {
 
             // 方法2: img 标签 src 含 baidu/bdimg/hiphotos
             if (items.length === 0) {
-              document.querySelectorAll('img').forEach((img, idx) => {
+              document.querySelectorAll('img').forEach((img, _idx) => {
                 if (items.length >= maxItems) return;
                 const el = img as HTMLImageElement;
                 const src = el.src || '';
@@ -638,7 +638,7 @@ export default function (xcli: XCLIAPI): void {
             total,
             timestamp: new Date().toISOString(),
           }, [...cdpTips, `关键词 "${query}" 搜索到 ${total} 张图片`]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
@@ -718,7 +718,7 @@ export default function (xcli: XCLIAPI): void {
           `成功推送 ${success} 条 URL`,
           `剩余可推送额度: ${remain}`,
         ]);
-      } catch (error) {
+      } catch {
         return fail(error instanceof Error ? error.message : '推送请求失败');
       }
     },

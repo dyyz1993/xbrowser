@@ -335,7 +335,7 @@ async function navigateToChat(page: Page, config: EngineConfig): Promise<void> {
   }
 }
 
-async function detectLoginStatus(page: Page, config: EngineConfig): Promise<'logged_in' | 'logged_out' | 'unknown'> {
+async function detectLoginStatus(page: Page, _config: EngineConfig): Promise<'logged_in' | 'logged_out' | 'unknown'> {
   const url = page.url();
   if (url.includes('/sign_in') || url.includes('/auth/login') || url.includes('/login')) return 'logged_out';
   const bodyText = await page.evaluate(() => document.body?.textContent || '');

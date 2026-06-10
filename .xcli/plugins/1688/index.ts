@@ -10,7 +10,7 @@ interface BrowserCtx extends CommandContext {
 }
 
 function encodeURIComponentGBK(str: string): string {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   const iconv = require('iconv-lite') as { encode: (s: string, enc: string) => Buffer };
   const gbkBuf = iconv.encode(str, 'gbk');
   return Array.from(gbkBuf)
@@ -36,6 +36,7 @@ function getPage(ctx: CommandContext): Page {
   return page;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function requireCdp(ctx: CommandContext): string | null {
   const browserCtx = ctx as BrowserCtx;
   return browserCtx.cdpEndpoint || null;
@@ -138,7 +139,7 @@ function interceptApi(
       if (process.env.DEBUG) {
         console.log('[1688] Collected items:', collected.length);
       }
-    } catch (error) {
+    } catch {
       if (process.env.DEBUG) {
         console.warn('[1688] Failed to parse API response:', error);
       }
@@ -285,7 +286,8 @@ export default function (xcli: XCLIAPI): void {
 
         const data = await page.evaluate(() => {
           const bodyText = document.body.innerText || '';
-          const bodyHtml = document.body.innerHTML || '';
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const _bodyHtml = document.body.innerHTML || '';
 
           let name = '';
           const nameFromDom = document.querySelector('#pcMainCompanyNameV2, [id*="CompanyName"], [class*="company-name"], [class*="shop-name"]')?.textContent?.trim() || '';
@@ -459,7 +461,7 @@ export default function (xcli: XCLIAPI): void {
             ...(loginState.isLoggedIn ? [`[登录] 用户: ${loginState.loginId}`] : ['[未登录] 部分数据需要登录获取']),
           ],
         );
-      } catch (error) {
+      } catch {
         return fail('参数错误', [
             ...ctxTips,
             `获取店铺信息失败: ${error instanceof Error ? error.message : '未知错误'}`,
@@ -894,7 +896,7 @@ export default function (xcli: XCLIAPI): void {
           'SKU: ' + data.specs.length + ' 个',
           ...(loginState.isLoggedIn ? ['[登录] 用户: ' + loginState.loginId] : ['[未登录] 部分数据需要登录获取']),
         ]);
-      } catch (error) {
+      } catch {
         return fail('参数错误', [
             ...ctxTips,
             `获取商品详情失败: ${error instanceof Error ? error.message : '未知错误'}`,
@@ -1206,7 +1208,7 @@ export default function (xcli: XCLIAPI): void {
           '[DOM] 分类: ' + categories.length + ' 个',
           categories.slice(0, 3).map((c) => '' + c.name + '(' + c.count + ')').join(', '),
         ]);
-      } catch (error) {
+      } catch {
         return fail('参数错误', [
             ...ctxTips,
             `获取分类失败: ${error instanceof Error ? error.message : '未知错误'}`,
