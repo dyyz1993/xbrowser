@@ -1,7 +1,17 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import type { Page } from '../types.js';
 import { detectAntiBot } from '../../../src/anti-bot-detection.js';
+
+type SearchResult = {
+  title: string;
+  url: string;
+  snippet: string;
+  source: string;
+  page: number;
+  position: number;
+};
 
 function buildCdpTips(ctx: CommandContext): string[] {
   const cdpEndpoint = ctx.cdpEndpoint;
@@ -14,7 +24,7 @@ function buildCdpTips(ctx: CommandContext): string[] {
   return tips;
 }
 
-async function dismissBaiduDialogs(page: import('../types').Page) {
+async function dismissBaiduDialogs(page: Page) {
   const dismissSelectors = [
     '.ec_wise_ad_popup_close',
     '#closeBtn',
@@ -69,14 +79,7 @@ export default function (xcli: XCLIAPI): void {
 
       try {
         const { query, pages, limit } = params;
-        const allResults: Array<{
-          title: string;
-          url: string;
-          snippet: string;
-          source: string;
-          page: number;
-          position: number;
-        }> = [];
+        const allResults: SearchResult[] = [];
 
         await page.addInitScript(`
           try {
@@ -84,7 +87,7 @@ export default function (xcli: XCLIAPI): void {
             const origReplace = window.location.replace;
             if (origAssign) window.location.assign = function() {};
             if (origReplace) window.location.replace = function() {};
-          } catch { /* suppress — runs in browser context */ }
+          } catch (_e) { /* suppress — runs in browser context */ }
         `);
 
         await page.goto(`https://www.baidu.com/s?wd=${encodeURIComponent(query)}`, {
@@ -102,14 +105,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         const pageResults = await page.evaluate((pNum: number) => {
-          const results: Array<{
-            title: string;
-            url: string;
-            snippet: string;
-            source: string;
-            page: number;
-            position: number;
-          }> = [];
+          const results: SearchResult[] = [];
 
           const h3s = document.querySelectorAll('h3');
           h3s.forEach((h3, idx) => {
@@ -138,7 +134,7 @@ export default function (xcli: XCLIAPI): void {
           });
 
           return results;
-        }, 1) as Array<{ title: string; url: string; snippet: string; source: string; page: number; position: number }>;
+        }, 1) as SearchResult[];
 
         allResults.push(...pageResults);
 
@@ -154,7 +150,7 @@ export default function (xcli: XCLIAPI): void {
             await page.waitForTimeout(1500);
 
             const extraResults = await page.evaluate((pNum: number) => {
-              const results: Array<{ title: string; url: string; snippet: string; source: string; page: number; position: number }> = [];
+              const results: SearchResult[] = [];
               document.querySelectorAll('h3').forEach((h3, idx) => {
                 const a = h3.querySelector('a');
                 if (!a) return;
@@ -167,7 +163,7 @@ export default function (xcli: XCLIAPI): void {
                 results.push({ title, url, snippet: snippetEl?.textContent?.trim().slice(0, 300) || '', source: sourceEl?.textContent?.trim() || '', page: pNum, position: idx + 1 });
               });
               return results;
-            }, pageNum) as Array<{ title: string; url: string; snippet: string; source: string; page: number; position: number }>;
+            }, pageNum) as SearchResult[];
             allResults.push(...extraResults);
           }
         }
@@ -469,7 +465,7 @@ export default function (xcli: XCLIAPI): void {
             ...cdpTips,
             `域名 ${domain} 在关键词 "${keyword}" 下${topRank ? `最高排名: 第${topRank.page}页第${topRank.position}位` : '未找到排名'}`,
             `共检查 ${pages} 页`,
-          ]);
+        ]);
       } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
@@ -595,7 +591,7 @@ export default function (xcli: XCLIAPI): void {
 
             // 方法2: img 标签 src 含 baidu/bdimg/hiphotos
             if (items.length === 0) {
-              document.querySelectorAll('img').forEach((img, _idx) => {
+              document.querySelectorAll('img').forEach((img) => {
                 if (items.length >= maxItems) return;
                 const el = img as HTMLImageElement;
                 const src = el.src || '';
@@ -621,12 +617,12 @@ export default function (xcli: XCLIAPI): void {
         const total = results.length;
 
         return ok({
-            query,
-            engine: 'baidu-images',
-            results,
-            total,
-            timestamp: new Date().toISOString(),
-          }, [...cdpTips, `关键词 "${query}" 搜索到 ${total} 张图片`]);
+          query,
+          engine: 'baidu-images',
+          results,
+          total,
+          timestamp: new Date().toISOString(),
+        }, [...cdpTips, `关键词 "${query}" 搜索到 ${total} 张图片`]);
       } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
