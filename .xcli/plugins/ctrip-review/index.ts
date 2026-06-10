@@ -41,7 +41,13 @@ export default function (api: XCLIAPI): void {
     name: 'ctrip-review',
     url: 'https://you.ctrip.com',
     description: '携程景点评论爬取',
-    requiresLogin: false,
+    requiresLogin: true,
+    loginConfig: {
+      requiresLogin: true,
+      loginUrls: ['/login', '/passport'],
+      loginKeywords: ['登录', '注册'],
+      loggedInSelectors: ['[class*="avatar"]', '[class*="user"]'],
+    },
   });
 
   site.command('reviews', {

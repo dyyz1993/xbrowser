@@ -24,8 +24,8 @@ const NO_LOGIN_PLUGINS = new Set([
   // Utility / tools (no auth needed)
   'assert', 'cmf-seats', 'diff', 'image', 'testsuite',
   'ai-search', 'web-automation', 'seo',
-  // Public APIs
-  'steam', 'tumblr', 'github', 'github',
+  // Public APIs / data
+  'steam', 'tumblr', 'github', 'stats',
 ]);
 
 const errors = [];
