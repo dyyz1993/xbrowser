@@ -139,7 +139,7 @@ function interceptApi(
       if (process.env.DEBUG) {
         console.log('[1688] Collected items:', collected.length);
       }
-    } catch {
+    } catch (error) {
       if (process.env.DEBUG) {
         console.warn('[1688] Failed to parse API response:', error);
       }
@@ -461,7 +461,7 @@ export default function (xcli: XCLIAPI): void {
             ...(loginState.isLoggedIn ? [`[登录] 用户: ${loginState.loginId}`] : ['[未登录] 部分数据需要登录获取']),
           ],
         );
-      } catch {
+      } catch (error) {
         return fail('参数错误', [
             ...ctxTips,
             `获取店铺信息失败: ${error instanceof Error ? error.message : '未知错误'}`,
@@ -896,7 +896,7 @@ export default function (xcli: XCLIAPI): void {
           'SKU: ' + data.specs.length + ' 个',
           ...(loginState.isLoggedIn ? ['[登录] 用户: ' + loginState.loginId] : ['[未登录] 部分数据需要登录获取']),
         ]);
-      } catch {
+      } catch (error) {
         return fail('参数错误', [
             ...ctxTips,
             `获取商品详情失败: ${error instanceof Error ? error.message : '未知错误'}`,
@@ -1208,7 +1208,7 @@ export default function (xcli: XCLIAPI): void {
           '[DOM] 分类: ' + categories.length + ' 个',
           categories.slice(0, 3).map((c) => '' + c.name + '(' + c.count + ')').join(', '),
         ]);
-      } catch {
+      } catch (error) {
         return fail('参数错误', [
             ...ctxTips,
             `获取分类失败: ${error instanceof Error ? error.message : '未知错误'}`,

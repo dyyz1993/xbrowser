@@ -132,7 +132,7 @@ export default function (xcli: XCLIAPI): void {
         tips.push(`📊 剩余创作次数: ${availableCount}`);
 
         return ok({ signed, bonus, availableCount }, tips);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['签到失败']);
       }
     },
@@ -261,7 +261,7 @@ export default function (xcli: XCLIAPI): void {
             `查询: xbrowser wanx result --taskId "${taskId}" --cdp 9221`,
           ],
         );
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['生成视频失败']);
       }
     },
@@ -305,7 +305,7 @@ export default function (xcli: XCLIAPI): void {
             ...(videoUrl ? [`📹 视频: ${videoUrl}`] : ['⚠ 视频尚未生成']),
           ],
         );
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['查询结果失败']);
       }
     },

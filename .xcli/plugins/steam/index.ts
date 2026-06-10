@@ -81,7 +81,7 @@ export default function(xcli: XCLIAPI): void {
             retries--;
             if (retries === 0) {
               const msg = err instanceof Error ? err.message : String(err);
-              return fail({ reason: `Page ${page} failed: ${msg}` }, `Page ${page} request failed`);
+              return fail(`Page ${page} request failed: ${msg}`);
             }
             await sleep(3000);
           }

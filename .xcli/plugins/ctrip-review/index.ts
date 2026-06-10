@@ -76,13 +76,13 @@ export default function (api: XCLIAPI): void {
     handler: async (params, ctx) => {
       const p = params as Record<string, unknown>;
       const page = (ctx as unknown as Record<string, unknown>).page as Page | null;
-      if (!page) return fail({ reason: 'no_session' }, '需要浏览器会话，请使用 --cdp 连接');
+      if (!page) return fail('需要浏览器会话，请使用 --cdp 连接');
 
       // ─── 确定目标 URL ───
       let targetUrl = String(p.url || '');
       if (!targetUrl) {
         const bizId = String(p.businessId || '');
-        if (!bizId) return fail({ reason: 'missing_param' }, '请提供 --url 或 --businessId');
+        if (!bizId) return fail('请提供 --url 或 --businessId');
         targetUrl = `https://you.ctrip.com/sight/${bizId}.html`;
       }
 
@@ -90,15 +90,14 @@ export default function (api: XCLIAPI): void {
       try {
         await page.goto(targetUrl, { waitUntil: 'load', timeout: 30000 });
       } catch (e) {
-        return fail({ reason: 'navigation_failed', url: targetUrl }, `页面加载失败: ${(e as Error).message}`);
+        return fail(`页面加载失败: ${(e as Error).message}`);
       }
       await sleep(5000);
 
       // ─── 确认评论区域已加载 ───
       const hasItems = await page.evaluate(() => document.querySelectorAll('.commentItem').length > 0);
       if (!hasItems) {
-        return fail({ reason: 'no_comments', url: page.url() },
-          `未在 ${page.url()} 找到评论区域，请提供正确的景点 URL 或检查 --cdp`);
+        return fail(`未在 ${page.url()} 找到评论区域，请提供正确的景点 URL 或检查 --cdp`);
       }
 
       // ─── 翻页爬取 ───

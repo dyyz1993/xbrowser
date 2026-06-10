@@ -432,7 +432,7 @@ export default function (xcli: XCLIAPI): void {
           return imgs;
         }, params.limit);
         return ok({ query: params.query, engine: 'twitter', results, total: results.length, timestamp: Date.now() }, [`Twitter "${params.query}"，共 ${results.length} 张`]);
-      } catch { return fail(error instanceof Error ? error.message : '未知错误'); }
+      } catch (error) { return fail(error instanceof Error ? error.message : '未知错误'); }
     },
   });
 

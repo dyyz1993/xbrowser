@@ -115,7 +115,7 @@ export default function (xcli: XCLIAPI): void {
             query: params.query, engine: 'bing-images',
             results: results.map(r => ({ ...r, sourceSite: 'bing', originalUrl: r.originalUrl || r.thumbnailUrl })),
         }, [`Bing Images "${params.query}"，共 ${results.length} 张`]);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误');
       }
     },
@@ -190,7 +190,7 @@ export default function (xcli: XCLIAPI): void {
         return fail(`IndexNow 推送失败: HTTP ${res.status} ${text}`, [
           '确保 key 文件已部署到 https://' + host + '/' + key + '.txt',
         ]);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '推送请求失败');
       }
     },

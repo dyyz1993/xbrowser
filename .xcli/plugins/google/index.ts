@@ -157,7 +157,7 @@ export default function(xcli: XCLIAPI): void {
             query: params.query, engine: 'google-images',
             results: results.map(r => ({ ...r, sourceSite: 'google', originalUrl: r.originalUrl || r.thumbnailUrl })),
         }, [`Google Images "${params.query}"，共 ${results.length} 张`]);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误');
       }
     },
@@ -210,7 +210,7 @@ export default function(xcli: XCLIAPI): void {
             '在中国大陆可能无法直接访问 google.com',
             '可通过浏览器打开 Google Search Console 手动提交',
           ]);
-        } catch {
+        } catch (error) {
           const msg = error instanceof Error ? error.message : '未知错误';
           return fail(`Sitemap ping 失败: ${msg}`, [
             '在中国大陆可能无法直接访问 google.com',

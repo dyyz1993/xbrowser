@@ -527,7 +527,7 @@ export default function (xcli: XCLIAPI): void {
         }, params.limit);
 
         return ok({ query: params.query, count: results.length, results }, [...tips, `找到 ${results.length} 条结果`]);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
@@ -576,7 +576,7 @@ export default function (xcli: XCLIAPI): void {
         }, params.limit);
 
         return ok({ count: items.length, items }, [...tips, `热榜 ${items.length} 条`]);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
@@ -629,7 +629,7 @@ export default function (xcli: XCLIAPI): void {
         }, params.limit);
 
         return ok(data, [...tips, `问题: ${data.title}`, `${data.answers.length} 条回答`]);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
@@ -686,7 +686,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok({ url: params.url, submitted: true, pageUrl: page.url() }, [...tips, '回答已提交']);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
@@ -933,7 +933,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok({ title: params.title, topic: params.topic, url: page.url() }, [...tips, `文章 "${params.title}" 已在知乎发布`]);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },

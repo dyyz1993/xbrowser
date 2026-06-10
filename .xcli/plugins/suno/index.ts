@@ -527,7 +527,7 @@ export default function (xcli: XCLIAPI): void {
             '等待 30-120 秒后检查:',
             '  xbrowser suno result --cdp 9221',
           ]);
-      } catch {
+      } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         console.error('[SUNO ERROR]', msg);
         return fail(`生成失败: ${msg}`, ['生成失败']);

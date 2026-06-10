@@ -231,7 +231,7 @@ export default function (xcli: XCLIAPI): void {
           `月度: ${billingInfo.monthlyUsed}/${billingInfo.monthlyLimit} (剩余 ${billingInfo.remaining})`,
           `今日: ${billingInfo.dailyUsed}/${billingInfo.dailyThrottleLimit}`,
         ]);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['查询 Credits 失败']);
       }
     },
@@ -276,7 +276,7 @@ export default function (xcli: XCLIAPI): void {
             ...mapped.slice(0, 5).map((s) => `🎵 ${s.title} — ${s.artist} (${s.createdAt.slice(0, 10)})`),
           ],
         );
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['获取歌曲库失败']);
       }
     },
@@ -702,7 +702,7 @@ export default function (xcli: XCLIAPI): void {
             '  xbrowser udio result --cdp 9221',
           ],
         );
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['生成失败']);
       }
     },
@@ -760,7 +760,7 @@ export default function (xcli: XCLIAPI): void {
             hasAudio ? `✅ 音频已就绪: ${topSong.audioUrl}` : '⏳ 音频处理中',
           ],
         );
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['检查状态失败']);
       }
     },
@@ -830,7 +830,7 @@ export default function (xcli: XCLIAPI): void {
             [...tips, `下载失败: ${e instanceof Error ? e.message : '未知错误'}`],
           );
         }
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['下载命令失败']);
       }
     },
@@ -885,7 +885,7 @@ export default function (xcli: XCLIAPI): void {
             '💡 URL 有时效，建议尽快下载',
           ],
         );
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['获取结果失败']);
       }
     },

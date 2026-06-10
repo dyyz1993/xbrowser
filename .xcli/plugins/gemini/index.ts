@@ -100,7 +100,7 @@ export default function (xcli: XCLIAPI): void {
         }).slice(0, 30);
 
         return ok(conversations.map((title: string, i: number) => ({ index: i, title })), tips);
-      } catch {
+      } catch (error) {
         return fail((error as Error).message || '未知错误', tips);
       }
     },
@@ -138,7 +138,7 @@ export default function (xcli: XCLIAPI): void {
         await page.keyboard.press('Enter');
 
         return ok({ conversationUrl: '' }, [...tips, '消息已发送']);
-      } catch {
+      } catch (error) {
         return fail((error as Error).message || '未知错误', tips);
       }
     },
@@ -186,7 +186,7 @@ export default function (xcli: XCLIAPI): void {
         await page.keyboard.press('Enter');
 
         return ok({ url: '' }, [...tips, `音乐生成请求已发送: "${params.prompt}"`]);
-      } catch {
+      } catch (error) {
         return fail((error as Error).message || '未知错误', tips);
       }
     },

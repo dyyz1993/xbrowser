@@ -358,7 +358,7 @@ export default function (xcli: XCLIAPI): void {
         await ctx.storage.set('juejin_login', { loggedIn, at: Date.now() });
 
         return ok({ loggedIn, url: page.url() }, [...cdpTips, loggedIn ? '掘金登录成功' : '登录可能未完成，请检查页面']);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
@@ -505,7 +505,7 @@ export default function (xcli: XCLIAPI): void {
             tags: params.tags,
             url: finalUrl,
           }, [...cdpTips, `文章 "${params.title}" 已在掘金发布`]);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
@@ -570,7 +570,7 @@ export default function (xcli: XCLIAPI): void {
             saved: true,
             url: page.url(),
           }, [...cdpTips, `草稿 "${params.title}" 已保存`]);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
@@ -629,7 +629,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok({ url: params.url, updated: true }, [...cdpTips, 'Profile 已更新，包含外链']);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },
@@ -711,7 +711,7 @@ export default function (xcli: XCLIAPI): void {
             ...cdpTips,
             `获取 ${articles.length} 篇文章`,
           ]);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }
     },

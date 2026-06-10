@@ -849,7 +849,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok({ prompt }, [...tips, '图片可能还在生成中，请到豆包页面查看']);
-      } catch {
+      } catch (error) {
         return fail('未知错误', ['文生图失败', `错误详情: ${error instanceof Error ? error.message : String(error)}`]);
       }
     },
@@ -1795,7 +1795,7 @@ export default function (xcli: XCLIAPI): void {
           `恢复查看: 使用相同 --cdp 重新执行命令会自动回到此对话`,
           `或查看创作历史: xbrowser doubao my-creations --type all${cdpSuffix ? ' --cdp ' + cdpFlag : ''}`,
         ]);
-      } catch {
+      } catch (error) {
         const errMsg = error instanceof Error ? error.message : String(error);
         return fail('未知错误', ['提交音乐生成失败', `原因: ${errMsg}`]);
       }

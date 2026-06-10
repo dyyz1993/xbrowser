@@ -595,7 +595,7 @@ export default function (xcli: XCLIAPI): void {
         tips.push(`获赞: ${result.totalFavorited}`);
 
         return ok(result, tips);
-      } catch {
+      } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         return fail(msg, [`获取用户资料失败: ${msg}`, ...tips]);
       }
@@ -766,7 +766,7 @@ export default function (xcli: XCLIAPI): void {
         tips.push(`${parsed.video.bitRates.length} 个画质可选`);
 
         return ok(result, tips);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['获取视频详情失败', ...tips]);
       }
     },
@@ -1275,7 +1275,7 @@ export default function (xcli: XCLIAPI): void {
           desc: videoInfo.desc,
           author: videoInfo.author,
         }, tips);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['下载视频失败', ...tips]);
       }
     },
@@ -1632,7 +1632,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok({ subtitle, prompt: usedSummary ? "视频总结" : aiPrompt, videoUrl, mode: "auto" }, [...tips, "字幕提取完成"]);
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },

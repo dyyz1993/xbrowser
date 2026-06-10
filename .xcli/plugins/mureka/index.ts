@@ -325,7 +325,7 @@ export default function (xcli: XCLIAPI): void {
       ...models.filter(m => m.trialsRemaining !== null && m.trialsRemaining! > 0)
         .map(m => `🎁 ${m.name}: 剩余 ${m.trialsRemaining} 次免费试用`),
     ]);
-      } catch {
+      } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['查询积分失败']);
       }
     },
@@ -384,7 +384,7 @@ export default function (xcli: XCLIAPI): void {
             `📚 找到 ${songs.length} 首歌曲`,
           ],
         );
-      } catch {
+      } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['获取歌曲列表失败']);
       }
     },
@@ -784,7 +784,7 @@ export default function (xcli: XCLIAPI): void {
             '  xbrowser mureka result --cdp 9221',
           ],
         );
-      } catch {
+      } catch (error) {
         const errMsg = error instanceof Error ? `${error.message}\n${error.stack?.slice(0, 300)}` : String(error);
         return fail(errMsg, ['创建音乐失败']);
       }
@@ -849,7 +849,7 @@ export default function (xcli: XCLIAPI): void {
           { songs },
           [...tips, `共 ${songs.length} 首`, `📊 ${statusSummary}`],
         );
-      } catch {
+      } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['检查状态失败']);
       }
     },
@@ -926,7 +926,7 @@ export default function (xcli: XCLIAPI): void {
         } catch (e) {
     return ok({ url: params.url }, [...tips, `下载失败: ${e instanceof Error ? e.message : '未知错误'}`, '❌ 下载失败']);
         }
-      } catch {
+      } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['下载命令失败']);
       }
     },
@@ -987,7 +987,7 @@ export default function (xcli: XCLIAPI): void {
             `✅ 获取到 ${withUrl.length} 首可播放音乐`,
           ],
         );
-      } catch {
+      } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['获取结果失败']);
       }
     },

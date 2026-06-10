@@ -453,7 +453,7 @@ export default function (xcli: XCLIAPI): void {
             '  xbrowser qwen result --cdp 9221',
           ],
         );
-      } catch {
+      } catch (error) {
         const msg = error instanceof Error ? error.message : '未知错误';
         return fail(msg, ['图片生成失败', msg]);
       }
@@ -518,7 +518,7 @@ export default function (xcli: XCLIAPI): void {
             `✅ 获取到 ${limited.length} 张图片`,
           ],
         );
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['获取结果失败']);
       }
     },
@@ -688,7 +688,7 @@ export default function (xcli: XCLIAPI): void {
             `✅ 历史记录获取完成`,
           ].filter(Boolean),
         );
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['获取历史记录失败']);
       }
     },
@@ -728,7 +728,7 @@ export default function (xcli: XCLIAPI): void {
             pageInfo.hasImageMode ? '✅ AI 生图模式可用' : '⚠ 未检测到 AI 生图按钮',
           ],
         );
-      } catch {
+      } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['检查状态失败']);
       }
     },
