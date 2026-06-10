@@ -6,7 +6,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
  */
 
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 // CMF相关关键词
 const CMF_KEYWORDS = [
@@ -112,7 +112,7 @@ export default function(api: XCLIAPI): void {
   // 查询车型的CMF评论
   site.command('query', {
     description: '查询指定车型的座椅CMF评论',
-    loginRequired: 'optional',
+    requiresLogin: false,
     scope: 'page',
     parameters: z.object({
       car: z.string().describe('车型名称（如：日产N7、奔驰S级、奥迪A8L）'),
@@ -120,32 +120,28 @@ export default function(api: XCLIAPI): void {
       limit: z.number().min(1).max(100).default(10).describe('返回结果数量限制')
     }),
     result: z.object({
-      success: z.boolean(),
-      data: z.object({
-        car: z.string(),
-        car_id: z.string(),
-        total: z.number(),
-        returned: z.number(),
-        keyword: z.string().nullable(),
-  reviews: z.array(z.object({
+      car: z.string(),
+      car_id: z.string(),
+      total: z.number(),
+      returned: z.number(),
+      keyword: z.string().nullable(),
+      reviews: z.array(z.object({
           car: z.string(),
           content: z.string(),
           keywords: z.array(z.string()),
           timestamp: z.string()
         }))
-      }),
-      tips: z.array(z.string())
-    }),
+    }).passthrough(),
     handler: async (params, ctx) => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const _page = (ctx as unknown as Record<string, unknown>).page;
+      const _page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page | undefined;
       
       // 查找车型ID
       const car = CARS.find(c => c.name === params.car);
       if (!car) {
         return fail(`未找到车型 "${params.car}"`, [
           `支持的车型：${CARS.slice(0, 10).map(c => c.name).join(', ')}等${CARS.length}个车型`,
-        ]);
+        ]) as any;
       }
 
       // 从已爬取的数据中查询
@@ -159,11 +155,11 @@ export default function(api: XCLIAPI): void {
         const dataFile = path.join(__dirname, '..', '..', 'output', 'cmf_seat_reviews_batch.json');
 
         if (!fs.existsSync(dataFile)) {
-          return fail('CMF评论数据文件不存在，请先运行批量爬取脚本');
+          return fail('CMF评论数据文件不存在，请先运行批量爬取脚本') as any;
         }
 
         const rawData = fs.readFileSync(dataFile, 'utf-8');
-        const data = JSON.parse(rawData);
+        const data = JSON.parse(rawData) as { reviews: Array<Record<string, unknown>> };
 
         // 过滤指定车型的评论
         let reviews = data.reviews.filter((r: Record<string, unknown>) => r.car === params.car);
@@ -171,34 +167,32 @@ export default function(api: XCLIAPI): void {
         // 按关键词过滤
         if (params.keyword) {
           reviews = reviews.filter((r: Record<string, unknown>) => 
-            r.content.toLowerCase().includes(params.keyword.toLowerCase()) ||
-            r.keywords?.some((k: string) => k.toLowerCase().includes(params.keyword.toLowerCase()))
+            (r.content as string || '').toLowerCase().includes(params.keyword.toLowerCase()) ||
+            ((r.keywords as string[]) || []).some((k: string) => k.toLowerCase().includes(params.keyword.toLowerCase()))
           );
         }
 
         // 限制返回数量
         const limitedReviews = reviews.slice(0, params.limit);
 
-        return ok({ data: {
-            car: params.car,
-            car_id: car.id,
-            total: reviews.length,
-            returned: limitedReviews.length,
-            keyword: params.keyword || null,
-            reviews: limitedReviews.map((r: Record<string, unknown>) => ({
-              car: r.car,
-              content: r.content,
-              keywords: r.keywords || [],
-              timestamp: r.timestamp
-            }))
-          } as unknown,
-          tips: [
-            `找到 ${reviews.length} 条${params.car}的CMF评论`,
-            limitedReviews.length < reviews.length ? `（返回前${limitedReviews.length}条）` : ''
-          ]
-        });
+        return ok({
+          car: params.car,
+          car_id: car.id,
+          total: reviews.length,
+          returned: limitedReviews.length,
+          keyword: params.keyword || null,
+          reviews: limitedReviews.map((r: Record<string, unknown>) => ({
+            car: r.car,
+            content: r.content,
+            keywords: r.keywords || [],
+            timestamp: r.timestamp
+          })),
+        }, [
+          `找到 ${reviews.length} 条${params.car}的CMF评论`,
+          limitedReviews.length < reviews.length ? `（返回前${limitedReviews.length}条）` : '',
+        ]) as any;
       } catch (error) {
-        return fail(`查询失败: ${error instanceof Error ? error.message : '未知错误'}`);
+        return fail(`查询失败: ${error instanceof Error ? error.message : '未知错误'}`) as any;
       }
     }
   });
@@ -206,60 +200,50 @@ export default function(api: XCLIAPI): void {
   // 列出所有支持的车型
   site.command('list', {
     description: '列出所有支持的车型',
-    loginRequired: 'optional',
+    requiresLogin: false,
     scope: 'any',
     parameters: z.object({}),
     result: z.object({
-      success: z.boolean(),
-      data: z.object({
-        total: z.number(),
-        cars: z.array(z.object({
-          id: z.string(),
-          name: z.string(),
-          autohome_url: z.string()
-        }))
-      }),
-      tips: z.array(z.string())
-    }),
+      total: z.number(),
+      cars: z.array(z.object({
+        id: z.string(),
+        name: z.string(),
+        autohome_url: z.string()
+      }))
+    }).passthrough(),
     handler: async (_params, _ctx) => {
-      return ok({ data: {
-  total: CARS.length,
+      return ok({
+          total: CARS.length,
           cars: CARS.map(c => ({
             id: c.id,
             name: c.name,
             autohome_url: `https://k.m.autohome.com.cn/${c.id}/`
-          }))
-        } as unknown,
-        tips: [
-          `共支持 ${CARS.length} 个车型`,
-          `使用 "cmf-seats query --car <车型名称>" 查询CMF评论`
-        ]
-      });
+          })),
+      }, [
+        `共支持 ${CARS.length} 个车型`,
+        `使用 "cmf-seats query --car <车型名称>" 查询CMF评论`,
+      ]) as any;
     }
   });
 
   // 统计CMF关键词频率
   site.command('stats', {
     description: '统计CMF关键词频率',
-    loginRequired: 'optional',
+    requiresLogin: false,
     scope: 'page',
     parameters: z.object({
       car: z.string().optional().describe('车型名称，不指定则统计所有车型'),
       top: z.number().min(5).max(50).default(20).describe('返回Top N关键词')
     }),
     result: z.object({
-      success: z.boolean(),
-      data: z.object({
-        car: z.string(),
-        total_reviews: z.number(),
-        total_keywords: z.number(),
-        top_keywords: z.array(z.object({
-          keyword: z.string(),
-          count: z.number()
-        }))
-      }),
-      tips: z.array(z.string())
-    }),
+      car: z.string(),
+      total_reviews: z.number(),
+      total_keywords: z.number(),
+      top_keywords: z.array(z.object({
+        keyword: z.string(),
+        count: z.number()
+      }))
+    }).passthrough(),
     handler: async (params, _ctx) => {
       try {
         const fs = await import('fs');
@@ -271,11 +255,11 @@ export default function(api: XCLIAPI): void {
         const dataFile = path.join(__dirname, '..', '..', 'output', 'cmf_seat_reviews_batch.json');
 
         if (!fs.existsSync(dataFile)) {
-          return fail('CMF评论数据文件不存在，请先运行批量爬取脚本');
+          return fail('CMF评论数据文件不存在，请先运行批量爬取脚本') as any;
         }
 
         const rawData = fs.readFileSync(dataFile, 'utf-8');
-        const data = JSON.parse(rawData);
+        const data = JSON.parse(rawData) as { reviews: Array<Record<string, unknown>> };
 
         // 过滤指定车型
         let reviews = data.reviews;
@@ -297,20 +281,18 @@ export default function(api: XCLIAPI): void {
           .sort((a, b) => b[1] - a[1])
           .slice(0, params.top);
 
-        return ok({ data: {
-            car: params.car || 'all',
-            total_reviews: reviews.length,
-            total_keywords: keywordCounts.size,
-            top_keywords: sortedKeywords.map(([kw, count]) => ({ keyword: kw, count }))
-          } as unknown,
-          tips: [
-            `${params.car ? params.car : '所有车型'} 共 ${reviews.length} 条评论`,
-            `包含 ${keywordCounts.size} 个不同的CMF关键词`,
-            `显示前 ${sortedKeywords.length} 个关键词`
-          ]
-        });
+        return ok({
+          car: params.car || 'all',
+          total_reviews: reviews.length,
+          total_keywords: keywordCounts.size,
+          top_keywords: sortedKeywords.map(([kw, count]) => ({ keyword: kw, count })),
+        }, [
+          `${params.car ? params.car : '所有车型'} 共 ${reviews.length} 条评论`,
+          `包含 ${keywordCounts.size} 个不同的CMF关键词`,
+          `显示前 ${sortedKeywords.length} 个关键词`,
+        ]) as any;
       } catch (error) {
-        return fail(`统计失败: ${error instanceof Error ? error.message : '未知错误'}`);
+        return fail(`统计失败: ${error instanceof Error ? error.message : '未知错误'}`) as any;
       }
     }
   });
