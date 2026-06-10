@@ -55,9 +55,9 @@ export default function (xcli: XCLIAPI): void {
         }, params.limit);
 
         // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
-        return buildResult(params.query, 'flickr', results) as unknown as z.infer<typeof searchImageResultSchema>;
+        return buildResult(params.query, 'flickr', results);
       } catch (error) {
-        return buildFail(error, 'flickr') as unknown as z.infer<typeof searchImageResultSchema>;
+        return buildFail(error, 'flickr');
       }
     },
   });

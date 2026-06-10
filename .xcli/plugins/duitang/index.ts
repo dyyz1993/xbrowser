@@ -27,7 +27,7 @@ export default function (xcli: XCLIAPI): void {
         try {
           const currentUrl = page.url();
           if (!currentUrl.includes('duitang.com')) {
-            return fail('堆糖页面被重定向，请检查网络或使用 --cdp 连接已登录浏览器', ['建议使用 CDP 9221 连接浏览器']) as unknown as z.infer<typeof searchImageResultSchema>;
+            return fail('堆糖页面被重定向，请检查网络或使用 --cdp 连接已登录浏览器', ['建议使用 CDP 9221 连接浏览器']);
           }
         } catch { /* page may have closed */ }
 
@@ -66,9 +66,9 @@ export default function (xcli: XCLIAPI): void {
         }, params.limit);
 
         // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
-        return buildResult(params.query, 'duitang', results.map(r => ({ ...r, sourceSite: 'duitang' }))) as unknown as z.infer<typeof searchImageResultSchema>;
+        return buildResult(params.query, 'duitang', results.map(r => ({ ...r, sourceSite: 'duitang' })));
       } catch (error) {
-        return buildFail(error, 'duitang') as unknown as z.infer<typeof searchImageResultSchema>;
+        return buildFail(error, 'duitang');
       }
     },
   });

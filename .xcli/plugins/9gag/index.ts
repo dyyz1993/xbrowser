@@ -49,9 +49,9 @@ export default function (xcli: XCLIAPI): void {
         }, params.limit) as Array<{ title: string; thumbnailUrl: string; sourceUrl: string; width: number; height: number }>;
 
         // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
-        return buildResult(params.query, '9gag', results.map(r => ({ ...r, sourceSite: '9gag' }))) as unknown as z.infer<typeof searchImageResultSchema>;
+        return buildResult(params.query, '9gag', results.map(r => ({ ...r, sourceSite: '9gag' })));
       } catch (error) {
-        return buildFail(error, '9gag') as unknown as z.infer<typeof searchImageResultSchema>;
+        return buildFail(error, '9gag');
       }
     },
   });

@@ -124,9 +124,9 @@ export default function (xcli: XCLIAPI): void {
 
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
-        return ok(conversations, tips) as unknown as z.infer<typeof listResultSchema>;
+        return ok(conversations, tips);
       } catch {
-        return fail('未知错误', ['获取会话列表失败']) as unknown as z.infer<typeof listResultSchema>;
+        return fail('未知错误', ['获取会话列表失败']);
       }
     },
   });
@@ -181,9 +181,9 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(1500);
         const tips = buildTips(ctx);
         tips.push('已创建新对话');
-        return ok({ created: true }, tips) as unknown as z.infer<typeof newResultSchema>;
+        return ok({ created: true }, tips);
       } catch {
-        return fail('未知错误', ['创建新对话失败']) as unknown as z.infer<typeof newResultSchema>;
+        return fail('未知错误', ['创建新对话失败']);
       }
     },
   });
@@ -227,9 +227,9 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(2000);
         const tips = buildTips(ctx);
         tips.push(`已打开会话：${clicked.title}`);
-        return ok({ opened: clicked.title }, tips) as unknown as z.infer<typeof openResultSchema>;
+        return ok({ opened: clicked.title }, tips)
       } catch {
-        return fail('未知错误', ['打开会话失败']) as unknown as z.infer<typeof openResultSchema>;
+        return fail('未知错误', ['打开会话失败'])
       }
     },
   });
@@ -520,13 +520,13 @@ export default function (xcli: XCLIAPI): void {
             }
           }
 
-          return ok(result, tips) as unknown as z.infer<typeof chatResultSchema>;
+          return ok(result, tips)
         } else {
           tips.push('AI 回复超时或未检测到');
-          return ok({ response: '' }, tips) as unknown as z.infer<typeof chatResultSchema>;
+          return ok({ response: '' }, tips)
         }
       } catch {
-        return fail('未知错误', ['发送消息失败']) as unknown as z.infer<typeof chatResultSchema>;
+        return fail('未知错误', ['发送消息失败'])
       }
     },
   });
@@ -574,15 +574,15 @@ export default function (xcli: XCLIAPI): void {
 
         if (clicked === 'not_found') {
           // 可能已经进了具体对话，模式选择器不在页面上
-          return ok({ mode: params.mode }, [...buildTips(ctx), '提示：模式切换仅在首页可用，已进入对话时无法切换']) as unknown as z.infer<typeof modeResultSchema>;
+          return ok({ mode: params.mode }, [...buildTips(ctx), '提示：模式切换仅在首页可用，已进入对话时无法切换']);
         }
 
         const status = clicked === 'already' ? '已经是' : '已切换为';
         const tips = buildTips(ctx);
         tips.push(`${status} ${label}`);
-        return ok({ mode: params.mode, action: clicked }, tips) as unknown as z.infer<typeof modeResultSchema>;
+        return ok({ mode: params.mode, action: clicked }, tips)
       } catch {
-        return fail('未知错误', ['切换模式失败']) as unknown as z.infer<typeof modeResultSchema>;
+        return fail('未知错误', ['切换模式失败'])
       }
     },
   });
@@ -641,14 +641,14 @@ export default function (xcli: XCLIAPI): void {
 
         const stateName = params.state === 'on' ? '开启' : '关闭';
         if (toggleResult === 'not_found') {
-          return ok({ think: params.state }, [...buildTips(ctx), '提示：未找到深度思考按钮，可能页面尚未完全加载']) as unknown as z.infer<typeof thinkResultSchema>;
+          return ok({ think: params.state }, [...buildTips(ctx), '提示：未找到深度思考按钮，可能页面尚未完全加载']);
         }
         const status = toggleResult === 'already' ? `已经是${stateName}状态` : `已${stateName}`;
         const tips = buildTips(ctx);
         tips.push(`深度思考：${status}`);
-        return ok({ think: params.state, action: toggleResult }, tips) as unknown as z.infer<typeof thinkResultSchema>;
+        return ok({ think: params.state, action: toggleResult }, tips);
       } catch {
-        return fail('未知错误', ['切换深度思考失败']) as unknown as z.infer<typeof thinkResultSchema>;
+        return fail('未知错误', ['切换深度思考失败']);
       }
     },
   });
@@ -679,14 +679,14 @@ export default function (xcli: XCLIAPI): void {
 
         const stateName = params.state === 'on' ? '开启' : '关闭';
         if (toggleResult === 'not_found') {
-          return ok({ search: params.state }, [...buildTips(ctx), '提示：未找到智能搜索按钮，可能页面尚未完全加载']) as unknown as z.infer<typeof searchResultSchema>;
+          return ok({ search: params.state }, [...buildTips(ctx), '提示：未找到智能搜索按钮，可能页面尚未完全加载'])
         }
         const status = toggleResult === 'already' ? `已经是${stateName}状态` : `已${stateName}`;
         const tips = buildTips(ctx);
         tips.push(`智能搜索：${status}`);
-        return ok({ search: params.state, action: toggleResult }, tips) as unknown as z.infer<typeof searchResultSchema>;
+        return ok({ search: params.state, action: toggleResult }, tips)
       } catch {
-        return fail('未知错误', ['切换智能搜索失败']) as unknown as z.infer<typeof searchResultSchema>;
+        return fail('未知错误', ['切换智能搜索失败'])
       }
     },
   });
@@ -724,7 +724,7 @@ export default function (xcli: XCLIAPI): void {
           await page.waitForTimeout(300);
           await page.press(inputSel, 'Enter');
           tips.push(`URL "${params.path}" 已作为消息发送`);
-          return ok({ type: 'url', sent: true }, tips) as unknown as z.infer<typeof attachResultSchema>;
+          return ok({ type: 'url', sent: true }, tips);
         }
 
         // 图片或文件上传（DataTransfer 方案，绕过 OS 文件选择器）
@@ -738,9 +738,9 @@ export default function (xcli: XCLIAPI): void {
         }
         await page.waitForTimeout(1000);
         tips.push(`附件 "${path.basename(absPath)}" 已上传`);
-        return ok({ type: params.type, file: absPath, uploaded: true }, tips) as unknown as z.infer<typeof attachResultSchema>;
+        return ok({ type: params.type, file: absPath, uploaded: true }, tips);
       } catch {
-        return fail('未知错误', ['上传附件失败']) as unknown as z.infer<typeof attachResultSchema>;
+        return fail('未知错误', ['上传附件失败']);
       }
     },
   });

@@ -54,9 +54,9 @@ export default function (xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit) as Array<{ title: string; thumbnailUrl: string; sourceUrl: string; width: number; height: number }>;
 
-        return buildResult(params.query, '58pic', results.map(r => ({ ...r, sourceSite: '58pic' }))) as unknown as z.infer<typeof searchImageResultSchema>;
+        return buildResult(params.query, '58pic', results.map(r => ({ ...r, sourceSite: '58pic' })));
       } catch (error) {
-        return buildFail(error, '58pic') as unknown as z.infer<typeof searchImageResultSchema>;
+        return buildFail(error, '58pic');
       }
     },
   });

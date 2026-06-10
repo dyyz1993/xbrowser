@@ -27,7 +27,7 @@ export default function (xcli: XCLIAPI): void {
 
         const antiBotResult = await detectAntiBot(page);
         if (antiBotResult.detected) {
-          return fail(`${antiBotResult.message}。请使用 --cdp http://localhost:9221 连接真实浏览器重试`) as unknown as z.infer<typeof searchImageResultSchema>;
+          return fail(`${antiBotResult.message}。请使用 --cdp http://localhost:9221 连接真实浏览器重试`);
         }
 
         await scrollPage(page, 5, 1200);
@@ -61,13 +61,13 @@ export default function (xcli: XCLIAPI): void {
         }, params.limit);
 
         // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
-        return buildResult(params.query, 'tumblr', results.map(r => ({ ...r, sourceSite: 'tumblr' }))) as unknown as z.infer<typeof searchImageResultSchema>;
+        return buildResult(params.query, 'tumblr', results.map(r => ({ ...r, sourceSite: 'tumblr' })));
       } catch (error) {
         const msg = error instanceof Error ? error.message : '未知错误';
         if (msg.includes('timeout') || msg.includes('Timeout') || msg.includes('net::')) {
-          return fail(`请求超时或网络错误: ${msg}。可尝试 --cdp http://localhost:9221 连接真实浏览器`) as unknown as z.infer<typeof searchImageResultSchema>;
+          return fail(`请求超时或网络错误: ${msg}。可尝试 --cdp http://localhost:9221 连接真实浏览器`);
         }
-        return fail(`搜索失败: ${msg}。可尝试 --cdp http://localhost:9221 连接真实浏览器`) as unknown as z.infer<typeof searchImageResultSchema>;
+        return fail(`搜索失败: ${msg}。可尝试 --cdp http://localhost:9221 连接真实浏览器`);
       }
     },
   });

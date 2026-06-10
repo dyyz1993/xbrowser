@@ -23,7 +23,7 @@ export default function (xcli: XCLIAPI): void {
 
         const pageContent = await page.evaluate(() => document.body?.innerText?.slice(0, 500) || '');
         if (pageContent.includes('安全验证') || pageContent.includes('请输入验证码') || pageContent.includes('验证')) {
-          return fail('花瓣网触发了安全验证，请在浏览器中手动完成验证后重试', ['建议：使用 --cdp 9221 连接已登录的浏览器，手动访问 huaban.com 完成验证后再执行搜索']) as unknown as z.infer<typeof searchImageResultSchema>;
+          return fail('花瓣网触发了安全验证，请在浏览器中手动完成验证后重试', ['建议：使用 --cdp 9221 连接已登录的浏览器，手动访问 huaban.com 完成验证后再执行搜索']);
         }
 
         await scrollPage(page, 3, 1000);
@@ -54,9 +54,9 @@ export default function (xcli: XCLIAPI): void {
         }, params.limit);
 
         // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
-        return buildResult(params.query, 'huaban', results) as unknown as z.infer<typeof searchImageResultSchema>;
+        return buildResult(params.query, 'huaban', results);
       } catch (error) {
-        return buildFail(error, 'huaban') as unknown as z.infer<typeof searchImageResultSchema>;
+        return buildFail(error, 'huaban');
       }
     },
   });
