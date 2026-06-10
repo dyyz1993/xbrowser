@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page, Locator } from '../../src/browser-shim.js';
+import type { Page, Locator } from '../types.js';
 
 type Point = { x: number; y: number };
 
@@ -67,7 +67,7 @@ async function humanMouseMove(
       x: w.__humanMouseX ?? Math.round(window.innerWidth / 2),
       y: w.__humanMouseY ?? Math.round(window.innerHeight / 2),
     };
-  });
+  }) as Point;
 
   const p0: Point = startPos;
   const p3: Point = { x: targetX, y: targetY };
@@ -282,13 +282,12 @@ export default function (xcli: XCLIAPI): void {
     description: 'Dev.to SEO 外链 - 开发者社区 (DA 51, UGC/nofollow, 高流量)',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const ctxAny = ctx as Record<string, unknown>;
-      const page = ctxAny.page as import('../types').Page;
+      const page = ctx.page;
       if (!page) return true;
       try {
         const url = page.url();
         if (url.includes('/enter') || url.includes('/login')) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
         if (!body) return false;
         if (body.includes('Sign in')) return false;
         return true;
@@ -306,7 +305,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [{ cmd: 'xbrowser devto login', description: '登录 Dev.to' }],
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://dev.to/enter', {
@@ -367,7 +366,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), tags: z.string().optional(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       let content = params.content;
@@ -457,7 +456,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), saved: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://dev.to/new', {
@@ -515,7 +514,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ url: z.string(), updated: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://dev.to/settings', {
@@ -556,7 +555,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+    const page = ctx.page;
     if (!page) return;
     await page.goto('https://dev.to/enter');
     await ctx.storage.set('devto_login', { at: Date.now() });

@@ -44,7 +44,7 @@ export default function (xcli: XCLIAPI): void {
       if (!page) throw new Error("需要浏览器页面");
       const tips = buildCdpTips(ctx);
       try {
-        const bodyText = await page.evaluate(() => document.body?.innerText || '');
+        const bodyText = await page.evaluate(() => document.body?.innerText || '') as string;
 
         const lines = bodyText.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 2);
         const recentIdx = lines.findIndex((l: string) => l.includes('最近'));

@@ -32,7 +32,7 @@ export async function detectSsr(page: import('../types').Page): Promise<SsrDetec
         }
       }
       return null;
-    }, SSR_VARIABLES);
+    }, SSR_VARIABLES) as { variable: string; keys: string[] } | null;
 
     if (!result) return undefined;
 

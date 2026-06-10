@@ -62,9 +62,9 @@ async function checkChatGPTLogin(page: Page): Promise<boolean> {
     if (hasProfileBtn) return true;
     const hasInput = await page.evaluate(() => {
       return !!document.querySelector('#prompt-textarea, [data-testid="chat-input"]');
-    });
+    }) as boolean;
     if (hasInput) return true;
-    const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '');
+    const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '') as string;
     if ((bodyText.includes('Log in') || bodyText.includes('登录')) && !bodyText.includes('ChatGPT')) return false;
     return false;
   } catch {
@@ -112,7 +112,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('list', {
     description: '列出所有历史会话',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'page',
     parameters: z.object({}),
     result: z.array(z.object({ index: z.number(), title: z.string(), url: z.string() }).passthrough()),
@@ -133,7 +133,7 @@ export default function (xcli: XCLIAPI): void {
             title: (a.textContent || '').trim(),
             url: (a as HTMLAnchorElement).href,
           })).filter(c => c.title.length > 0);
-        });
+        }) as Array<{ index: number; title: string; url: string }>;
 
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
@@ -146,7 +146,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('new', {
     description: '创建新的空白对话',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({}),
     result: z.object({ created: z.boolean() }).passthrough(),
@@ -202,7 +202,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('open', {
     description: '通过标题打开指定会话（模糊匹配）',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({
       title: z.string().describe('会话标题（支持模糊匹配）'),
@@ -228,7 +228,7 @@ export default function (xcli: XCLIAPI): void {
             }
           }
           return { found: false, title: '' };
-        }, params.title);
+        }, params.title) as { found: boolean; title: string };
 
         if (!clicked.found) throw new Error(`未找到包含"${params.title}"的会话`);
 
@@ -244,7 +244,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('chat', {
     description: '发送消息并等待 AI 回复',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({
       message: z.string().describe('消息内容'),
@@ -254,7 +254,7 @@ export default function (xcli: XCLIAPI): void {
       search: z.boolean().optional().describe('开启联网搜索'),
       showSources: z.boolean().optional().describe('显示联网搜索引用的来源 URL 和域名'),
     }),
-    result: z.object({ response: z.string(), duration: z.string().optional(), conversationId: z.string().optional(), sources: z.record(z.any()).optional() }).passthrough(),
+    result: z.object({ response: z.string(), duration: z.string().optional(), conversationId: z.string().optional(), sources: z.record(z.string(), z.any()).optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser chatgpt chat "你好"', description: '发送消息' },
       { cmd: 'xbrowser chatgpt chat "分析这张图" --attach /path/to/img.jpg', description: '发送消息+图片' },
@@ -273,8 +273,8 @@ export default function (xcli: XCLIAPI): void {
           const modelSwitched = await page.evaluate((_modelName) => {
             const modelBtns = document.querySelectorAll('[class*="model"], [class*="Model"], [data-testid*="model"]');
             for (const btn of modelBtns) {
-              if (btn.textContent?.trim() && btn.offsetParent !== null) {
-                btn.click();
+              if (btn.textContent?.trim() && (btn as HTMLElement).offsetParent !== null) {
+                (btn as HTMLElement).click();
                 return 'clicked_selector';
               }
             }
@@ -282,8 +282,8 @@ export default function (xcli: XCLIAPI): void {
             for (const el of allEls) {
               const text = el.textContent?.trim() || '';
               if ((text.includes('GPT') || text.includes('4o') || text.includes('o1') || text.includes('o3') || text.includes('mini')) 
-                  && el.children.length <= 3 && el.offsetParent !== null && text.length < 30) {
-                el.click();
+                  && el.children.length <= 3 && (el as HTMLElement).offsetParent !== null && text.length < 30) {
+                (el as HTMLElement).click();
                 return 'clicked_label';
               }
             }
@@ -296,7 +296,7 @@ export default function (xcli: XCLIAPI): void {
               const allEls = document.querySelectorAll('*');
               for (const el of allEls) {
                 const text = el.textContent?.trim() || '';
-                if (text.toLowerCase().includes(modelName.toLowerCase()) && el.children.length <= 2 && el.offsetParent !== null) {
+                if (text.toLowerCase().includes(modelName.toLowerCase()) && el.children.length <= 2 && (el as HTMLElement).offsetParent !== null) {
                   (el as HTMLElement).click();
                   return true;
                 }
@@ -321,7 +321,7 @@ export default function (xcli: XCLIAPI): void {
             const allEls = document.querySelectorAll('*');
             for (const el of allEls) {
               const text = el.textContent?.trim() || '';
-              if ((text === 'Search' || text === '搜索' || text.includes('联网')) && el.children.length <= 3 && el.offsetParent !== null) {
+              if ((text === 'Search' || text === '搜索' || text.includes('联网')) && el.children.length <= 3 && (el as HTMLElement).offsetParent !== null) {
                 const btn = el.closest('button, [role="switch"]') || el;
                 if (btn instanceof HTMLElement) {
                   btn.click();
@@ -367,7 +367,7 @@ export default function (xcli: XCLIAPI): void {
         let capturedStream = '';
         if (wantSources) {
           await page.route('**/backend-api/conversation', async (route) => {
-            const resp = await route.fetch();
+            const resp = await (route as unknown as import('../types.js').PluginRoute).fetch();
             const body = await resp.text();
             capturedStream += body;
             await route.fulfill({ body, headers: resp.headers(), status: resp.status() });
@@ -475,7 +475,7 @@ export default function (xcli: XCLIAPI): void {
                     seen.add(h);
                     return true;
                   }).map(a => a.getAttribute('href') || '');
-                });
+                }) as string[];
                 allUrls = domData;
               }
 
@@ -519,7 +519,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('attach', {
     description: '发送附件（图片/文件/URL）',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({
       type: z.enum(['image', 'file', 'url']).describe('附件类型'),
@@ -690,7 +690,7 @@ async function uploadFileViaDataTransfer(page: Page, absPath: string): Promise<b
   const mime = mimeMap[ext] || 'application/octet-stream';
 
   const result = await page.evaluate(({ b64data, filename, mimeType }) => {
-    const fi = document.querySelector('input[type="file"]');
+    const fi = document.querySelector('input[type="file"]') as HTMLInputElement | null;
     if (!fi) return false;
 
     const byteChars = atob(b64data);
@@ -705,7 +705,7 @@ async function uploadFileViaDataTransfer(page: Page, absPath: string): Promise<b
     Object.defineProperty(fi, 'files', { value: dt.files });
     fi.dispatchEvent(new Event('change', { bubbles: true }));
     return fi.files.length > 0;
-  }, { b64data: b64, filename: path.basename(absPath), mimeType: mime });
+  }, { b64data: b64, filename: path.basename(absPath), mimeType: mime }) as boolean;
 
   return result;
 }

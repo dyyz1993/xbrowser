@@ -4,12 +4,6 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 /// <reference path="../types.d.ts" />
 import type { Page, Response } from '../types.js';
 
-interface BrowserCtx extends CommandContext {
-  page?: Page;
-  cdpEndpoint?: string;
-  sessionId?: string;
-}
-
 function encodeURIComponentGBK(str: string): string {
    
   const iconv = require('iconv-lite') as { encode: (s: string, enc: string) => Buffer };
@@ -103,15 +97,13 @@ interface CategoryItem {
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function requireCdp(ctx: CommandContext): string | null {
-  const browserCtx = ctx as BrowserCtx;
-  return browserCtx.cdpEndpoint || null;
+  return ctx.cdpEndpoint || null;
 }
 
 function buildCtxTips(ctx: CommandContext): { tips: string[]; hasCdp: boolean } {
-  const browserCtx = ctx as BrowserCtx;
   const tips: string[] = [];
-  const hasCdp = !!browserCtx.cdpEndpoint;
-  tips.push(`Session: ${browserCtx.sessionId || 'default'}`);
+  const hasCdp = !!ctx.cdpEndpoint;
+  tips.push(`Session: ${ctx.sessionId || 'default'}`);
   return { tips, hasCdp };
 }
 

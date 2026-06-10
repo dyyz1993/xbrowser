@@ -1,6 +1,7 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
+import type { PluginPage, PluginElementHandle } from '../types.js';
 
 type Page = import('../types').Page;
 type Response = import('../types').Response;
@@ -10,6 +11,12 @@ const CREATE_URL = 'https://suno.com/create';
 const API_HOST = 'studio-api-prod.suno.com';
 
 /* ───────── helpers ───────── */
+
+function getPage(ctx: CommandContext): Page {
+  const page = ctx.page;
+  if (!page) throw new Error('需要浏览器页面，请使用 --cdp 参数连接');
+  return page;
+}
 
 function buildTips(ctx: CommandContext): string[] {
   const tips: string[] = [];
@@ -26,14 +33,14 @@ function buildTips(ctx: CommandContext): string[] {
 async function safeClickByText(page: Page, text: string, opts?: { preferLarge?: boolean; debug?: boolean }): Promise<boolean> {
   const preferLarge = opts?.preferLarge ?? false;
   const debug = opts?.debug ?? false;
-  const handle = await page.evaluateHandle(([t, preferLarge, debug]: [string, boolean, boolean]) => {
+  const handle = await (page as unknown as PluginPage).evaluateHandle(([t, preferLarge, debug]: [string, boolean, boolean]) => {
     const allEls = Array.from(document.querySelectorAll('button, span, a, div, [role="button"]'))
       .filter(el => {
         const txt = el.textContent?.trim();
         return txt === t || (txt && txt.startsWith(t) && txt.length < t.length + 20);
       });
     const visibleEls = allEls.filter(el => {
-      if (el.offsetParent === null) return false;
+      if ((el as HTMLElement).offsetParent === null) return false;
       const rect = el.getBoundingClientRect();
       return rect.width > 10 && rect.height > 10;
     });
@@ -59,7 +66,7 @@ async function safeClickByText(page: Page, text: string, opts?: { preferLarge?: 
   // Handle both direct object return and ElementHandle
   let coords: { x: number; y: number } | null = null;
   try {
-    if (handle.asElement()) {
+    if ((handle as unknown as PluginElementHandle).asElement()) {
       coords = await (handle as unknown as { jsonValue(): Promise<{ x: number; y: number } | null> }).jsonValue();
     } else {
       // Direct plain object from evaluateHandle
@@ -80,7 +87,7 @@ async function safeClickByText(page: Page, text: string, opts?: { preferLarge?: 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function waitForText(page: Page, text: string, timeout = 10000): Promise<void> {
   await page.waitForFunction(
-    (t: string) => document.body.innerText.includes(t), text, { timeout },
+    (t: string) => document.body.innerText.includes(t), { timeout }, text,
   );
 }
 
@@ -252,7 +259,7 @@ export default function (xcli: XCLIAPI): void {
         if (url.includes('/login') || url.includes('clerk')) return false;
         const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
         if (!body) return true;
-        return body.includes('Credits') || body.includes('credits') || body.includes('Studio') || body.includes('Library');
+        return (body as string).includes('Credits') || (body as string).includes('credits') || (body as string).includes('Studio') || (body as string).includes('Library');
       } catch {
         return true;
       }
@@ -321,7 +328,7 @@ export default function (xcli: XCLIAPI): void {
             await page.waitForTimeout(1000);
             try {
               const taCount = await page.evaluate(() => document.querySelectorAll('textarea').length);
-              if (taCount >= 3) break;
+              if ((taCount as number) >= 3) break;
             } catch { /* page still loading */ }
           }
         }
@@ -333,7 +340,7 @@ export default function (xcli: XCLIAPI): void {
           const match = allText.match(/(\d+)\s*Credits?/);
           if (match) return { credits: parseInt(match[1], 10), source: match[0] };
           return null;
-        });
+        }) as { credits: number; source: string } | null;
         const minCredits = params.minCredits ?? 1;
         if (creditInfo) {
           tips.push(`积分: ${creditInfo.credits} (最少需要 ${minCredits})`);
@@ -371,7 +378,7 @@ export default function (xcli: XCLIAPI): void {
           const result = await page.evaluate((text: string) => {
             const tas = document.querySelectorAll('textarea');
             // textarea[2] is the main prompt in Simple mode. Fall back to first visible.
-            const ta = tas[2] || Array.from(tas).find(t => t.offsetParent !== null) || tas[0];
+            const ta = tas[2] || Array.from(tas).find(t => (t as HTMLElement).offsetParent !== null) || tas[0];
             if (!ta) return { ok: false, reason: 'no textarea' };
             ta.focus();
             const ns = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set;
@@ -380,7 +387,7 @@ export default function (xcli: XCLIAPI): void {
             ta.dispatchEvent(new Event('input', { bubbles: true }));
             ta.dispatchEvent(new Event('change', { bubbles: true }));
             return { ok: true, value: ta.value };
-          }, textToType);
+          }, textToType) as { ok: boolean; value?: string; reason?: string } | null;
           if (result?.ok && result?.value) {
             tips.push(`已输入${params.lyric ? '歌词' : '描述'}: "${textToType.slice(0, 50)}..."`);
           } else {
@@ -394,12 +401,12 @@ export default function (xcli: XCLIAPI): void {
             const btns = Array.from(document.querySelectorAll('button, span, label'));
             const btn = btns.find(b =>
               (b.textContent?.trim().includes('Instrumental') || b.textContent?.trim().includes('instrumental'))
-              && b.offsetParent !== null
+              && (b as HTMLElement).offsetParent !== null
             );
             if (!btn) return null;
             const r = btn.getBoundingClientRect();
             return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-          });
+          }) as { x: number; y: number } | null;
           if (instrBox) {
             await page.mouse.click(instrBox.x, instrBox.y);
             await page.waitForTimeout(1000);
@@ -414,13 +421,13 @@ export default function (xcli: XCLIAPI): void {
             const box = await page.evaluate((t: string) => {
               const btns = Array.from(document.querySelectorAll('button, span'));
               const el = btns.find(e =>
-                e.textContent?.trim() === t && e.offsetParent !== null &&
+                e.textContent?.trim() === t && (e as HTMLElement).offsetParent !== null &&
                 e.getBoundingClientRect().width > 10
               );
               if (!el) return null;
               const r = el.getBoundingClientRect();
               return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-            }, tag);
+            }, tag) as { x: number; y: number } | null;
             if (box) {
               await page.mouse.click(box.x, box.y);
               await page.waitForTimeout(300);
@@ -439,10 +446,10 @@ export default function (xcli: XCLIAPI): void {
               document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null
             );
             const btn = result.singleNodeValue as HTMLButtonElement | null;
-            if (!btn || btn.offsetParent === null) return null;
+            if (!btn || (btn as HTMLElement).offsetParent === null) return null;
             const r = btn.getBoundingClientRect();
             return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-          }, params.model);
+          }, params.model) as { x: number; y: number } | null;
           if (box) {
             await page.mouse.click(box.x, box.y);
             await page.waitForTimeout(500);
@@ -461,7 +468,7 @@ export default function (xcli: XCLIAPI): void {
             const btn = r.singleNodeValue as HTMLButtonElement | null;
             if (!btn) return 'not_found';
             if (btn.disabled) return 'disabled';
-            if (btn.offsetParent === null) return 'hidden';
+            if ((btn as HTMLElement).offsetParent === null) return 'hidden';
             const rect = btn.getBoundingClientRect();
             return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
           });
@@ -592,7 +599,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('status', {
     description: '检查当前页面音乐生成状态（被动拦截 feed 数据）',
     scope: 'browser',
-    result: z.object({ status: z.string().optional(), clips: z.array(z.record(z.any())).optional(), total: z.number().optional() }).passthrough(),
+    result: z.object({ status: z.string().optional(), clips: z.array(z.record(z.string(), z.any())).optional(), total: z.number().optional() }).passthrough(),
     parameters: z.object({}),
     examples: [
       { cmd: 'xbrowser suno status --cdp 9221', description: '检查状态' },
@@ -635,7 +642,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('library', {
     description: '查看 Suno 创作历史/歌曲列表',
     scope: 'browser',
-    result: z.object({ songs: z.array(z.record(z.any())), total: z.number() }).passthrough(),
+    result: z.object({ songs: z.array(z.record(z.string(), z.any())), total: z.number() }).passthrough(),
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(20).describe('返回条数（默认 20）'),
     }),

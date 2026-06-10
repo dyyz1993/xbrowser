@@ -4,6 +4,18 @@
  * Import like:  import type { Page, Response } from '../types.js';
  */
 
+import type {
+  XBPage,
+  XBBrowser,
+  XBContext,
+  XBLocator,
+  XBElementHandle,
+  XBFrame,
+  XBResponse,
+  XBRequest,
+  XBCDPSession,
+} from '../../src/cdp-driver/types.js';
+
 export type {
   XBPage as Page,
   XBBrowser as Browser,
@@ -14,9 +26,39 @@ export type {
   XBResponse as Response,
   XBRequest as Request,
   XBCDPSession as CDPSession,
-} from '../../src/cdp-driver/types.js';
+};
 
-export type { XBLocator as FrameLocator } from '../../src/cdp-driver/types.js';
+export type { XBLocator as FrameLocator };
+
+/**
+ * Extended types for plugin use — adds methods that exist at runtime
+ * in XBPageImpl but aren't in the core XBPage interface yet.
+ * These are NOT module augmentations (which would affect src/ too);
+ * they are local interfaces only visible to plugin code.
+ */
+export interface PluginPage extends XBPage {
+  evaluateHandle<R = unknown>(pageFunction: (...args: unknown[]) => R, ...args: unknown[]): Promise<XBElementHandle>;
+  frameLocator(selector: string): XBFrame;
+  request(): XBRequest;
+  waitForNavigation(options?: { waitUntil?: string; timeout?: number }): Promise<XBResponse | null>;
+}
+
+export interface PluginRoute extends XBRoute {
+  fetch(): Promise<XBResponse>;
+}
+
+export interface PluginLocator extends XBLocator {
+  locator(selector: string): XBLocator;
+}
+
+export interface PluginElementHandle extends XBElementHandle {
+  asElement(): XBElementHandle | null;
+}
+
+export interface PluginFrame extends XBFrame {
+  click(selector: string, opts?: Record<string, unknown>): Promise<void>;
+  locator(selector: string): XBLocator;
+}
 
 /**
  * Extend xcli-core's CommandContext with browser automation fields.
@@ -64,9 +106,12 @@ declare module '@dyyz1993/xcli-core' {
       parameters?: P;
       result?: R;
       requiresLogin?: boolean;
+      loginRequired?: string;
       examples?: Array<{ cmd: string; description: string }>;
       tips?: string[];
       handler: (params: z.infer<P>, ctx: CommandContext) => Promise<z.infer<R> | CommandResult<z.infer<R>>>;
     }): SiteInstance;
+    /** Check if the user is logged in for this site. */
+    isLoggedIn(ctx?: CommandContext): Promise<boolean>;
   }
 }

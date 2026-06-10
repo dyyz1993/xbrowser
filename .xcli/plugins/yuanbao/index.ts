@@ -10,11 +10,9 @@ const SITE_URL = 'https://yuanbao.tencent.com';
 
 function buildTips(ctx: CommandContext): string[] {
   const tips: string[] = [];
-  const ctxAny = ctx as unknown as Record<string, unknown>;
-  const options = ctxAny.options as Record<string, unknown> | undefined;
-  const cdp = ctxAny.cdpEndpoint || options?.cdp;
+  const cdp = ctx.cdpEndpoint;
   if (!cdp) tips.push('建议使用 --cdp 9221 连接到已登录的浏览器');
-  tips.push(`Session: ${ctxAny.sessionId || 'default'}`);
+  tips.push(`Session: ${ctx.sessionId || 'default'}`);
   return tips;
 }
 
@@ -27,9 +25,9 @@ async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
     const isLogin = (ctx as unknown as Record<string, unknown>).__loginChecked as boolean;
     if (!isLogin) {
       (ctx as unknown as Record<string, unknown>).__loginChecked = true;
-      const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '');
+      const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '') as string;
       if (bodyText.includes('登录') && !bodyText.includes('元宝')) {
-        const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint;
+        const cdp = ctx.cdpEndpoint;
         throw new Error(
           '腾讯元宝 (Yuanbao) 未登录！\n' +
           (cdp
@@ -76,23 +74,28 @@ async function uploadFileViaDataTransfer(page: Page, absPath: string): Promise<b
     dt.items.add(file);
     Object.defineProperty(fi, 'files', { value: dt.files });
     fi.dispatchEvent(new Event('change', { bubbles: true }));
-    return fi.files.length > 0;
-  }, { b64data: b64, filename: path.basename(absPath), mimeType: mime });
+    return (fi as HTMLInputElement).files!.length > 0;
+  }, { b64data: b64, filename: path.basename(absPath), mimeType: mime }) as boolean;
 
   return result;
 }
 
 async function safeClickSelector(page: Page, selector: string): Promise<boolean> {
-  const handle = await page.evaluateHandle(
-    (sel: string) => document.querySelector(sel),
-    selector
-  );
-  const el = handle.asElement();
-  if (!el) return false;
-  const box = await el.boundingBox();
-  if (!box) return false;
-  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-  return true;
+  const clicked = await page.evaluate((sel: string) => {
+    const el = document.querySelector(sel);
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return false;
+    (el as HTMLElement).click();
+    return true;
+  }, selector) as boolean;
+  return clicked;
+}
+
+function getPage(ctx: CommandContext): Page {
+  const page = ctx.page;
+  if (!page) throw new Error('需要浏览器页面');
+  return page;
 }
 
 export default function (xcli: XCLIAPI): void {
@@ -103,7 +106,7 @@ export default function (xcli: XCLIAPI): void {
     requiresLogin: true,
     isLogin: async (ctx) => {
       try {
-        const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
+        const page = ctx.page;
         if (!page) return false;
         const url = page.url();
         if (url.includes('/login') || url.includes('/auth') || url.includes('/passport')) return false;
@@ -112,7 +115,7 @@ export default function (xcli: XCLIAPI): void {
           return !!editor;
         });
         if (hasInput) return true;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
         if (!body || (body.includes('登录') && body.includes('注册'))) return false;
         return true;
       } catch {
@@ -145,7 +148,7 @@ export default function (xcli: XCLIAPI): void {
             title: (a.textContent || '').trim(),
             url: (a as HTMLAnchorElement).href,
           })).filter(c => c.title.length > 0);
-        });
+        }) as Array<{ index: number; title: string; url: string }>;
 
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
@@ -240,7 +243,7 @@ export default function (xcli: XCLIAPI): void {
             }
           }
           return { found: false, title: '' };
-        }, params.title);
+        }, params.title) as { found: boolean; title: string };
 
         if (!clicked.found) throw new Error(`未找到包含"${params.title}"的会话`);
 
@@ -313,7 +316,7 @@ export default function (xcli: XCLIAPI): void {
                 return { found: true, text: candidate.text, count: candidates.length };
               }
               return { found: false, count: candidates.length };
-            });
+            }) as { found: boolean; text?: string; count: number };
 
             if (thinkResult.found) {
               tips.push(`已开启深度思考 (找到 ${thinkResult.count} 个候选元素)`);
@@ -362,7 +365,7 @@ export default function (xcli: XCLIAPI): void {
                 return { found: true, text: candidate.text, count: candidates.length };
               }
               return { found: false, count: candidates.length };
-            });
+            }) as { found: boolean; text?: string; count: number };
 
             if (searchResult.found) {
               tips.push(`已开启联网搜索 (找到 ${searchResult.count} 个候选元素)`);

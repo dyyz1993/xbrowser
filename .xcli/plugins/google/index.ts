@@ -12,7 +12,6 @@ export default function(xcli: XCLIAPI): void {
 
   google.command('search-image', {
     description: 'Google Images search - extract image URLs, sizes, and metadata',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('Search query'),
@@ -147,7 +146,7 @@ export default function(xcli: XCLIAPI): void {
             });
           });
           return images.slice(0, limit);
-        }, params.limit);
+        }, params.limit) as Array<{ title: string; thumbnailUrl: string; sourceUrl: string; originalUrl: string; width: number; height: number; format: string }>;
 
         return ok({
             query: params.query, engine: 'google-images',
@@ -161,7 +160,6 @@ export default function(xcli: XCLIAPI): void {
 
   google.command('webmaster-config', {
     description: '保存 Google Search Console 配置（站点域名）',
-    loginRequired: 'none',
     scope: 'cli',
     parameters: z.object({
       site: z.string().describe('站点域名（如 https://xbrowser.dev）'),
@@ -178,7 +176,6 @@ export default function(xcli: XCLIAPI): void {
 
   google.command('push-url', {
     description: '通过 Google ping 通知 Google 抓取 sitemap，或在浏览器中提交 URL',
-    loginRequired: 'none',
     scope: 'cli',
     parameters: z.object({
       sitemapUrl: z.string().optional().describe('Sitemap URL，用于 ping 通知 Google'),

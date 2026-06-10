@@ -3,6 +3,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
 import path from 'path';
 import fs from 'fs';
+import type { PluginPage, PluginElementHandle } from '../types.js';
 
 type Page = import('../types').Page;
 type Response = import('../types').Response;
@@ -11,6 +12,12 @@ const QWEN_URL = 'https://www.qianwen.com';
 
 const CDN_HOST = 'workspace-zb-cdn.qianwen.com';
 const WANX_HOST = 'wanx.alicdn.com';
+
+function getPage(ctx: CommandContext): Page {
+  const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
+  if (!page) throw new Error('需要浏览器页面，请使用 --cdp 参数连接');
+  return page;
+}
 
 function buildTips(ctx: CommandContext): string[] {
   const tips: string[] = [];
@@ -23,14 +30,14 @@ function buildTips(ctx: CommandContext): string[] {
 }
 
 async function safeClickText(page: Page, text: string): Promise<boolean> {
-  const handle = await page.evaluateHandle((t: string) => {
+  const handle = await (page as unknown as PluginPage).evaluateHandle((t: string) => {
     const els = Array.from(document.querySelectorAll('button, [role="button"], div[role="button"], [role="tab"], span[role="button"]'));
     return els.find(el => {
       const txt = (el.textContent || '').trim();
       return txt === t || txt.includes(t);
     }) || null;
   }, text);
-  const el = handle.asElement();
+  const el = (handle as unknown as PluginElementHandle).asElement();
   if (!el) return false;
   const box = await el.boundingBox();
   if (!box) return false;
@@ -39,11 +46,11 @@ async function safeClickText(page: Page, text: string): Promise<boolean> {
 }
 
 async function safeClickSelector(page: Page, selector: string): Promise<boolean> {
-  const handle = await page.evaluateHandle(
+  const handle = await (page as unknown as PluginPage).evaluateHandle(
     (sel: string) => document.querySelector(sel),
     selector,
   );
-  const el = handle.asElement();
+  const el = (handle as unknown as PluginElementHandle).asElement();
   if (!el) return false;
   const box = await el.boundingBox();
   if (!box) return false;
@@ -106,7 +113,7 @@ async function uploadFileViaDataTransfer(page: Page, absPath: string): Promise<b
     Object.defineProperty(fi, 'files', { value: dt.files });
     fi.dispatchEvent(new Event('change', { bubbles: true }));
     return fi.files.length > 0;
-  }, { b64data: b64, filename: path.basename(absPath), mimeType: mime });
+  }, { b64data: b64, filename: path.basename(absPath), mimeType: mime }) as boolean;
 
   return result;
 }
@@ -125,7 +132,7 @@ async function checkLogin(page: Page): Promise<boolean> {
     const bodyText = document.body?.textContent?.trim().slice(0, 300) || '';
     const hasLoginButton = bodyText.includes('登录') && !bodyText.includes('通义千问') && !bodyText.includes('AI');
     return hasInput && !hasLoginButton;
-  });
+  }) as Promise<boolean>;
 }
 
 async function enterImageMode(page: Page): Promise<boolean> {
@@ -248,7 +255,7 @@ async function waitForImages(page: Page, timeoutMs: number): Promise<string[]> {
         }
       }
       return result;
-    }, { cdn: CDN_HOST, wanx: WANX_HOST });
+    }, { cdn: CDN_HOST, wanx: WANX_HOST }) as string[];
 
     if (found.length > 0) {
       for (const u of found) {
@@ -413,7 +420,7 @@ export default function (xcli: XCLIAPI): void {
             ),
           ]);
 
-          const imageUrls = raceResult.urls;
+          const imageUrls = (raceResult as Record<string, unknown>).urls as string[];
 
           if (imageUrls.length > 0) {
             tips.push(`✅ 生成完成！共 ${imageUrls.length} 张图片`);
@@ -490,7 +497,7 @@ export default function (xcli: XCLIAPI): void {
             }
           }
           return result;
-        }, { cdn: CDN_HOST, wanx: WANX_HOST });
+        }, { cdn: CDN_HOST, wanx: WANX_HOST }) as Array<{ url: string; alt: string }>;
 
         if (images.length === 0) {
           return ok(
@@ -618,7 +625,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(10).describe('返回会话数量'),
     }),
-    result: z.object({ sessions: z.array(z.record(z.any())).optional(), totalImages: z.number().optional() }).passthrough(),
+    result: z.object({ sessions: z.array(z.record(z.string(), z.any())).optional(), totalImages: z.number().optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser qwen history --cdp 9221', description: '列出所有会话及图片' },
       { cmd: 'xbrowser qwen history --limit 5 --cdp 9221', description: '限制 5 个会话' },
@@ -709,7 +716,7 @@ export default function (xcli: XCLIAPI): void {
           const hasImageMode = !!Array.from(document.querySelectorAll('button, [role="button"]'))
             .find(el => (el.textContent || '').trim().includes('AI生图'));
           return { bodySnippet: bodyText.slice(0, 200), hasImageMode };
-        });
+        }) as { bodySnippet: string; hasImageMode: boolean };
 
         return ok(
           { loggedIn, hasImageMode: pageInfo.hasImageMode, url: page.url() },
@@ -733,7 +740,7 @@ export default function (xcli: XCLIAPI): void {
     if (cdp && page) {
       await page.goto(QWEN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
       await page.waitForTimeout(2000);
-      const loggedIn = await site.isLoggedIn(ctx).catch(() => false);
+      const loggedIn = await site.isLoggedIn().catch(() => false);
       if (loggedIn) {
         console.log('✅ CDP 浏览器已登录千问');
         return;

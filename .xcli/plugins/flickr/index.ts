@@ -52,7 +52,7 @@ export default function (xcli: XCLIAPI): void {
           });
 
           return images.slice(0, limit);
-        }, params.limit);
+        }, params.limit) as Array<Record<string, unknown>>;
 
         // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
         return buildResult(params.query, 'flickr', results);

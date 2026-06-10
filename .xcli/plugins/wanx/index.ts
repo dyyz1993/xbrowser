@@ -28,6 +28,12 @@ async function ensurePage(page: Page): Promise<void> {
   }
 }
 
+function getPage(ctx: CommandContext): Page {
+  const page = ctx.page;
+  if (!page) throw new Error('需要浏览器页面');
+  return page;
+}
+
 async function wanxApi(
   page: Page,
   apiPath: string,
@@ -137,7 +143,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('video', {
     description: '生成万相视频，支持文生视频和图生视频（首帧/尾帧）',
     scope: 'browser',
-    result: z.object({ taskId: z.string(), status: z.string(), videoUrl: z.string().optional(), results: z.array(z.record(z.any())).optional() }).passthrough(),
+    result: z.object({ taskId: z.string(), status: z.string(), videoUrl: z.string().optional(), results: z.array(z.record(z.string(), z.any())).optional() }).passthrough(),
     parameters: z.object({
       prompt: z.string().describe('视频描述'),
       firstFrame: z.string().optional().describe('首帧图片路径（本地文件）'),
@@ -265,7 +271,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('result', {
     description: '查询万相视频生成结果',
     scope: 'browser',
-    result: z.object({ taskId: z.string(), status: z.number(), statusText: z.string(), videoUrl: z.string(), results: z.array(z.record(z.any())) }).passthrough(),
+    result: z.object({ taskId: z.string(), status: z.number(), statusText: z.string(), videoUrl: z.string(), results: z.array(z.record(z.string(), z.any())) }).passthrough(),
     parameters: z.object({
       taskId: z.string().describe('任务 ID'),
     }),
@@ -313,7 +319,7 @@ export default function (xcli: XCLIAPI): void {
     if (cdp && page) {
       await page.goto(WANX_PAGE, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
       await page.waitForTimeout(2000);
-      const loggedIn = await site.isLoggedIn(ctx).catch(() => false);
+      const loggedIn = await site.isLoggedIn().catch(() => false);
       if (loggedIn) {
         console.log('✅ CDP 浏览器已登录万相');
         return;

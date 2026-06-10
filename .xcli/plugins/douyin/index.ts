@@ -30,7 +30,7 @@ async function detectSsr(page: Page) {
         }
       }
       return null;
-    }, SSR_VARIABLES);
+    }, SSR_VARIABLES) as { variable: string; keys: string[] } | null;
     if (!result) return undefined;
     const framework = SSR_VARIABLE_TO_FRAMEWORK[result.variable] ?? 'Unknown';
     return {
@@ -302,13 +302,13 @@ export default function (xcli: XCLIAPI): void {
     description: '抖音数据采集',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const ctxAny = ctx as Record<string, unknown>;
+      const ctxAny = ctx as unknown as Record<string, unknown>;
       const page = ctxAny.page as import('../types').Page;
       if (!page) return true;
       try {
         const url = page.url();
         if (url.includes('/passport')) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
         if (!body) return false;
         if (body.includes('登录')) return false;
         return true;
@@ -320,7 +320,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('videos', {
     description: '采集用户作品列表（网络拦截）',
-    loginRequired: 'optional',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('用户主页 URL'),
@@ -349,9 +349,9 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = (ctx as Record<string, unknown>).page as Page;
+        const page = (ctx as unknown as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
 
         const interceptor = interceptApi(page, API.AWEME_POST, 'aweme_list', 'aweme_id');
         try {
@@ -391,7 +391,7 @@ export default function (xcli: XCLIAPI): void {
 
     if (url.includes('v.douyin.com')) {
       tips.push('解析短链...');
-      const resp = await page.request.get(url, { maxRedirects: 5 });
+      const resp = await (page as unknown as import('../types').PluginPage).request().get(url, { maxRedirects: 5 });
       const finalUrl = resp.url();
       tips.push(`跳转到: ${finalUrl}`);
       url = finalUrl;
@@ -473,7 +473,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('profile', {
     description: '获取用户详细资料（XHR 拦截）',
-    loginRequired: 'optional',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('用户主页 URL 或 secUid'),
@@ -508,7 +508,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const tips: string[] = [];
       try {
-        const sessionPage = (ctx as Record<string, unknown>).page as Page;
+        const sessionPage = (ctx as unknown as Record<string, unknown>).page as Page;
         if (!sessionPage) throw new Error('需要浏览器页面');
 
         const targetUrl = await resolveTargetProfileUrl(params.url, sessionPage, tips);
@@ -537,7 +537,7 @@ export default function (xcli: XCLIAPI): void {
             waitUntil: 'domcontentloaded',
             timeout: 30000,
           });
-          const _waitForHuman = (ctx as Record<string, unknown>).waitForHuman as
+          const _waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as
             | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(sessionPage, tips, _waitForHuman);
@@ -596,7 +596,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('detail', {
     description: '获取视频详细信息（XHR 拦截，支持短链）',
-    loginRequired: 'optional',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('视频 URL / 短链 / 或纯 awemeId'),
@@ -657,7 +657,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const tips: string[] = [];
       try {
-        const page = (ctx as Record<string, unknown>).page as Page;
+        const page = (ctx as unknown as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
 
         let input = params.url;
@@ -667,7 +667,7 @@ export default function (xcli: XCLIAPI): void {
           awemeId = input;
         } else if (input.includes('v.douyin.com')) {
           tips.push('解析短链...');
-          const resp = await page.request.get(input, { maxRedirects: 5 });
+          const resp = await (page as unknown as import('../types').PluginPage).request().get(input, { maxRedirects: 5 });
           const finalUrl = resp.url();
           tips.push(`跳转到: ${finalUrl}`);
           const m = finalUrl.match(/video\/(\d+)/);
@@ -697,7 +697,7 @@ export default function (xcli: XCLIAPI): void {
             waitUntil: 'domcontentloaded',
             timeout: 30000,
           });
-          const _waitForHuman = (ctx as Record<string, unknown>).waitForHuman as
+          const _waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as
             | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
@@ -766,7 +766,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('comments', {
     description: '获取视频评论（网络拦截）',
-    loginRequired: 'optional',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({
       awemeId: z.string().describe('视频 ID'),
@@ -791,9 +791,9 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = (ctx as Record<string, unknown>).page as Page;
+        const page = (ctx as unknown as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
 
         const interceptor = interceptApi(page, API.COMMENT_LIST, 'comments', 'cid');
         try {
@@ -801,7 +801,7 @@ export default function (xcli: XCLIAPI): void {
             waitUntil: 'domcontentloaded',
             timeout: 30000,
           });
-          const _waitForHuman = (ctx as Record<string, unknown>).waitForHuman as
+          const _waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as
             | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
@@ -832,7 +832,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('user-comments', {
     description: '获取用户喜欢的视频列表（网络拦截）',
-    loginRequired: 'optional',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({
       uid: z.string().describe('用户 ID'),
@@ -861,9 +861,9 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = (ctx as Record<string, unknown>).page as Page;
+        const page = (ctx as unknown as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
 
         const interceptor = interceptApi(page, API.FAVORITES, 'aweme_list', 'aweme_id');
         try {
@@ -871,7 +871,7 @@ export default function (xcli: XCLIAPI): void {
             waitUntil: 'domcontentloaded',
             timeout: 30000,
           });
-          const _waitForHuman = (ctx as Record<string, unknown>).waitForHuman as
+          const _waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as
             | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
@@ -905,7 +905,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search', {
     description: '搜索抖音视频',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'browser',
     parameters: z.object({
       keyword: z.string().describe('搜索关键词'),
@@ -940,9 +940,9 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = (ctx as Record<string, unknown>).page as Page;
+        const page = (ctx as unknown as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
 
         const searchUrl = `${DOUYIN_BASE}/search/${encodeURIComponent(params.keyword)}`;
 
@@ -1000,7 +1000,7 @@ export default function (xcli: XCLIAPI): void {
         page.on('response', handler);
         try {
           await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-          const _waitForHuman = (ctx as Record<string, unknown>).waitForHuman as
+          const _waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as
             | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
@@ -1088,7 +1088,7 @@ export default function (xcli: XCLIAPI): void {
                 });
               }
               return items;
-            });
+            }) as Array<Record<string, unknown>>;
 
             for (const item of domVideos) {
               const id = s(item.awemeId);
@@ -1117,7 +1117,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('download', {
     description: '下载抖音视频（无需登录）',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('视频 URL 或短链（如 https://v.douyin.com/xxx）'),
@@ -1139,13 +1139,13 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const tips: string[] = [];
       try {
-        const page = (ctx as Record<string, unknown>).page as Page;
+        const page = (ctx as unknown as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
 
         let videoUrl = params.url;
         if (videoUrl.includes('v.douyin.com')) {
           tips.push('解析短链...');
-          const resp = await page.request.get(videoUrl, { maxRedirects: 5 });
+          const resp = await (page as unknown as import('../types').PluginPage).request().get(videoUrl, { maxRedirects: 5 });
           videoUrl = resp.url();
           tips.push(`跳转到: ${videoUrl}`);
         }
@@ -1209,7 +1209,7 @@ export default function (xcli: XCLIAPI): void {
             waitUntil: 'domcontentloaded',
             timeout: 30000,
           });
-          const _waitForHuman = (ctx as Record<string, unknown>).waitForHuman as
+          const _waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as
             | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
@@ -1275,7 +1275,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('ai-subtitle', {
     description: '通过抖音 AI 提取视频字幕',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({
       url: z.string().describe('视频详情页 URL 或用户主页 URL'),
@@ -1296,10 +1296,10 @@ export default function (xcli: XCLIAPI): void {
       mode: z.string(),
     }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as Page;
+      const page = (ctx as unknown as Record<string, unknown>).page as Page;
       if (!page) throw new Error('需要浏览器页面');
-      const tips = buildCtxTips(ctx as Record<string, unknown>);
-      const waitForHuman = (ctx as Record<string, unknown>).waitForHuman as
+      const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
+      const waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as
         | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
         | undefined;
 
@@ -1377,13 +1377,13 @@ export default function (xcli: XCLIAPI): void {
         return videoUrl;
       }
 
-      async function findIframe(timeout: number): Promise<import('../types').FrameLocator | null> {
+      async function findIframe(timeout: number): Promise<import('../types').Frame | null> {
         const startTime = Date.now();
         while (Date.now() - startTime < timeout) {
           for (const sel of IFRAME_SELECTORS) {
             try {
-              const iframeEl = page.frameLocator(sel);
-              const count = await iframeEl.locator('body').count();
+              const iframeEl = (page as unknown as import('../types.js').PluginPage).frameLocator(sel);
+              const count = await (iframeEl as unknown as import('../types.js').PluginFrame).locator('body').count();
               if (count > 0) {
                 tips.push(`已定位到 AI iframe`);
                 return iframeEl;
@@ -1404,7 +1404,7 @@ export default function (xcli: XCLIAPI): void {
                 const id = await iframe.getAttribute('id') ?? '';
                 const frameSelector = name ? `iframe[name="${name}"]` : id ? `iframe#${id}` : 'iframe';
                 tips.push(`已定位到 AI iframe (src: ${src.slice(0, 80)})`);
-                return page.frameLocator(frameSelector);
+                return (page as unknown as import('../types.js').PluginPage).frameLocator(frameSelector);
               }
             } catch {
               // iframe access may fail, continue searching
@@ -1417,8 +1417,8 @@ export default function (xcli: XCLIAPI): void {
         return null;
       }
 
-      function extractTextFromFrame(frame: import('../types').FrameLocator): Promise<string> {
-        return frame.locator([
+      function extractTextFromFrame(frame: import('../types').Frame): Promise<string> {
+        return (frame as unknown as import('../types.js').PluginFrame).locator([
           ...RESPONSE_SELECTORS,
           '[class*="markdown"]',
           '[class*="text"]',
@@ -1576,7 +1576,7 @@ export default function (xcli: XCLIAPI): void {
         tips.push("尝试点击\"视频总结\"按钮...");
         let usedSummary = false;
         try {
-          await aiFrame.click("text=视频总结", { timeout: 3000 });
+          await (aiFrame as unknown as import('../types.js').PluginFrame).click("text=视频总结", { timeout: 3000 });
           usedSummary = true;
           tips.push("已点击\"视频总结\"按钮");
         } catch {

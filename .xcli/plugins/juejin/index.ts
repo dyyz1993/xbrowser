@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page, Locator } from '../../src/browser-shim.js';
+import type { Page, Locator } from '../types.js';
 
 type Point = { x: number; y: number };
 
@@ -69,7 +69,7 @@ async function humanMouseMove(
     };
   });
 
-  const p0: Point = startPos;
+  const p0: Point = startPos as Point;
   const p3: Point = { x: targetX, y: targetY };
 
   const dx = p3.x - p0.x;
@@ -293,13 +293,13 @@ export default function (xcli: XCLIAPI): void {
     description: '掘金 SEO 外链 - 中文技术社区 (DA 70+, 百度收录好)',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const ctxAny = ctx as Record<string, unknown>;
+      const ctxAny = ctx as unknown as Record<string, unknown>;
       const page = ctxAny.page as import('../types').Page;
       if (!page) return true;
       try {
         const url = page.url();
         if (url.includes('/login')) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
         if (!body) return false;
         if (body.includes('登录') || body.includes('注册')) return false;
         return true;
@@ -317,9 +317,9 @@ export default function (xcli: XCLIAPI): void {
     examples: [{ cmd: 'xbrowser juejin login', description: '登录掘金' }],
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto('https://juejin.cn/login', {
@@ -384,9 +384,9 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), tags: z.string().optional(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
 
       try {
         let content = params.content;
@@ -519,9 +519,9 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), saved: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto('https://juejin.cn/editor/draft', {
@@ -584,9 +584,9 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ url: z.string(), updated: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto('https://juejin.cn/user/settings/profile', {
@@ -641,9 +641,9 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.array(z.object({ title: z.string(), url: z.string(), views: z.string(), likes: z.string(), comments: z.string(), date: z.string() })),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto('https://juejin.cn/user/center/articles', {
@@ -697,7 +697,7 @@ export default function (xcli: XCLIAPI): void {
           });
 
           return items;
-        }, params.limit);
+        }, params.limit) as Array<{ title: string; url: string; views: string; likes: string; comments: string; date: string }>;
 
         return ok(articles, [
             ...cdpTips,
@@ -710,7 +710,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+    const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page | undefined;
     if (!page) return;
     await page.goto('https://juejin.cn/login');
     await ctx.storage.set('juejin_login', { at: Date.now() });

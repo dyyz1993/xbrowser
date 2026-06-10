@@ -12,7 +12,6 @@ export default function(xcli: XCLIAPI): void {
 
   steam.command('reviews', {
     description: '抓取 Steam 游戏的全部评论（cursor 分页，100/页）',
-    loginRequired: 'none',
     scope: 'browser',
     result: z.object({
       app_id: z.string(),
@@ -23,7 +22,7 @@ export default function(xcli: XCLIAPI): void {
       negative: z.number(),
       positive_ratio: z.string(),
       language_breakdown: z.array(z.tuple([z.string(), z.number()])),
-      reviews: z.array(z.record(z.any())),
+      reviews: z.array(z.record(z.string(), z.any())),
     }).passthrough(),
     parameters: z.object({
       appId: z.string().describe('Steam app ID，如 3730100'),
@@ -34,7 +33,7 @@ export default function(xcli: XCLIAPI): void {
       maxReviews: z.number().optional().default(0).describe('最大抓取数量，0=全部'),
       delay: z.number().optional().default(1500).describe('每页间隔(ms)，避免触发限流'),
     }),
-    handler: async (params) => {
+    handler: async (params, _ctx) => {
       const BASE_URL = `https://store.steampowered.com/appreviews/${params.appId}`;
 
       const { language = 'all', filter = 'recent', reviewType = 'all', purchaseType = 'all', maxReviews = 0, delay = 1500 } = params;

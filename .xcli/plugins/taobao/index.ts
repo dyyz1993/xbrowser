@@ -1,13 +1,9 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page, Response } from '../../src/browser-shim.js';
+import type { Page, Response } from '../types.js';
 
-interface BrowserCtx extends CommandContext {
-  page?: Page;
-  cdpEndpoint?: string;
-  sessionId?: string;
-}
+interface BrowserCtx extends CommandContext {}
 
 interface Interceptor {
   items: () => Record<string, unknown>[];
@@ -185,13 +181,13 @@ export default function (xcli: XCLIAPI): void {
     description: '淘宝 - 商品搜索、详情、店铺、评价与优惠券采集（需登录态）',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const ctxAny = ctx as Record<string, unknown>;
+      const ctxAny = ctx as unknown as Record<string, unknown>;
       const page = ctxAny.page as import('../types').Page;
       if (!page) return true;
       try {
         const url = page.url();
         if (url.includes('/login')) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
         if (!body) return false;
         if (body.includes('登录')) return false;
         return true;
@@ -416,7 +412,7 @@ export default function (xcli: XCLIAPI): void {
             });
           });
           return items;
-        }, params.limit);
+        }, params.limit) as Array<Record<string, string>>;
 
         return ok({
             query: params.query,
@@ -565,7 +561,7 @@ export default function (xcli: XCLIAPI): void {
             });
           });
           return items;
-        }, params.limit);
+        }, params.limit) as Array<Record<string, string>>;
 
         return ok({
             keyword: params.keyword,
@@ -617,7 +613,7 @@ export default function (xcli: XCLIAPI): void {
       location: z.string().optional(),
       images: z.array(z.string()).optional(),
       skus: z.array(z.object({ name: z.string(), values: z.array(z.string()) })).optional(),
-      specs: z.record(z.string()).optional(),
+      specs: z.record(z.string(), z.string()).optional(),
       promotions: z.array(z.string()).optional(),
     }).passthrough(),
     handler: async (params, ctx) => {
@@ -772,7 +768,7 @@ export default function (xcli: XCLIAPI): void {
             specs,
             promotions,
           };
-        });
+        }) as Record<string, unknown>;
 
         return ok({ source: 'dom', ...data }, [...ctxTips, `[DOM] 商品: ${data.title}`, `价格: ${data.price}`]);
       } finally {
@@ -966,7 +962,7 @@ export default function (xcli: XCLIAPI): void {
             rateCount,
             coupons,
           };
-        });
+        }) as Record<string, unknown>;
 
         return ok({ source: 'dom', itemId: params.itemId, ...data }, [
             ...ctxTips,
@@ -1170,7 +1166,7 @@ export default function (xcli: XCLIAPI): void {
             });
           });
           return items;
-        }, params.limit);
+        }, params.limit) as Array<Record<string, unknown>>;
 
         return ok({
             url: targetUrl,
@@ -1297,7 +1293,7 @@ export default function (xcli: XCLIAPI): void {
             logo,
             categories,
           };
-        });
+        }) as Record<string, unknown>;
 
         return ok({ source: 'dom', ...data }, [
             ...ctxTips,
@@ -1417,7 +1413,7 @@ export default function (xcli: XCLIAPI): void {
             });
           });
           return items;
-        }, params.limit);
+        }, params.limit) as Array<Record<string, unknown>>;
 
         return ok({
             shopId: params.shopId,
@@ -1551,7 +1547,7 @@ export default function (xcli: XCLIAPI): void {
             });
 
           return { coupons, promotions };
-        });
+        }) as { coupons: string[]; promotions: string[] };
 
         return ok({ source: 'dom', itemId: params.itemId, ...data }, [
             ...ctxTips,
@@ -1669,7 +1665,7 @@ export default function (xcli: XCLIAPI): void {
       timestamp: z.number(),
     }),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       try {
         await page.goto('https://s.taobao.com/search?q=' + encodeURIComponent(params.query), { waitUntil: 'domcontentloaded', timeout: params.timeout });
@@ -1690,14 +1686,14 @@ export default function (xcli: XCLIAPI): void {
             });
           });
           return imgs;
-        }, params.limit);
+        }, params.limit) as Array<Record<string, unknown>>;
         return ok({ query: params.query, engine: 'taobao', results, total: results.length, timestamp: Date.now() }, [`淘宝 "${params.query}"，共 ${results.length} 张`]);
       } catch (error) { return fail(error instanceof Error ? error.message : '未知错误'); }
     },
   });
 
   site.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as
+    const page = (ctx as unknown as Record<string, unknown>).page as
       | import('../types').Page
       | undefined;
     if (!page) return;

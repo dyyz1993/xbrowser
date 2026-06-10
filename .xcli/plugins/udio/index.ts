@@ -40,10 +40,10 @@ async function safeClick(page: Page, selector: string): Promise<{ success: boole
     if (!el || !(el as HTMLElement).offsetParent) return null;
     const r = (el as HTMLElement).getBoundingClientRect();
     return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: Math.round(r.width), h: Math.round(r.height) };
-  }, selector);
+  }, selector) as { x: number; y: number; w: number; h: number } | null;
   if (!result) return { success: false };
   await page.mouse.click(result.x, result.y);
-  return { success: true, info: result };
+  return { success: true, info: result as Record<string, unknown> };
 }
 
 function buildTips(ctx: CommandContext): string[] {
@@ -54,6 +54,12 @@ function buildTips(ctx: CommandContext): string[] {
   if (!cdp) tips.push('建议使用 --cdp 9221 连接到已登录 Udio 的浏览器');
   tips.push(`Session: ${ctxAny.sessionId || 'default'}`);
   return tips;
+}
+
+function getPage(ctx: CommandContext): Page {
+  const page = ctx.page;
+  if (!page) throw new Error('需要浏览器页面，请使用 --cdp 参数连接');
+  return page;
 }
 
 interface CapturedApiData {
@@ -166,7 +172,7 @@ export default function (xcli: XCLIAPI): void {
         if (url.includes('/login') || url.includes('/signin') || url.includes('/auth')) return false;
         const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '');
         if (!body) return true;
-        return body.includes('Create') || body.includes('Library') || body.includes('udio');
+        return (body as string).includes('Create') || (body as string).includes('Library') || (body as string).includes('udio');
       } catch {
         return true;
       }
@@ -234,7 +240,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('library', {
     description: '查看 Udio 歌曲库/创作历史',
     scope: 'browser',
-    result: z.object({ songs: z.array(z.record(z.any())) }).passthrough(),
+    result: z.object({ songs: z.array(z.record(z.string(), z.any())) }).passthrough(),
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(20).describe('返回条数（默认 20）'),
     }),
@@ -350,7 +356,7 @@ export default function (xcli: XCLIAPI): void {
         tips.push('✅ 登录验证通过');
 
         // ── Check credits before creating ──
-        const minCredits = (params as Record<string, unknown>).minCredits ?? 1;
+        const minCredits = ((params as Record<string, unknown>).minCredits as number) ?? 1;
         const creditInfo = await page.evaluate(() => {
           const text = document.body?.textContent || '';
           // Udio shows "remaining" or "credits" info
@@ -358,7 +364,7 @@ export default function (xcli: XCLIAPI): void {
           const credMatch = text.match(/(\d+)\s*credits?\s*(left|remaining)?/i);
           const val = remMatch?.[1] || credMatch?.[1];
           return val ? { credits: parseInt(val, 10), source: (remMatch || credMatch)?.[0] || '' } : null;
-        });
+        }) as { credits: number; source: string } | null;
         if (creditInfo) {
           tips.push(`积分: ${creditInfo.credits} (最少需要 ${minCredits})`);
           if (creditInfo.credits < minCredits) {
@@ -379,7 +385,7 @@ export default function (xcli: XCLIAPI): void {
         // ── Phase 2: Switch to Describe mode ──
         const descTabClicked = await page.evaluate(() => {
           const btns = Array.from(document.querySelectorAll('button'));
-          const btn = btns.find((b) => b.textContent?.includes('Describe Your Song') && b.offsetParent !== null);
+          const btn = btns.find((b) => b.textContent?.includes('Describe Your Song') && (b as HTMLElement).offsetParent !== null);
           if (btn) {
             (btn as HTMLElement).click();
             return true;
@@ -398,15 +404,15 @@ export default function (xcli: XCLIAPI): void {
           // Find visible textarea (Describe mode)
           let el: HTMLInputElement | HTMLTextAreaElement | null = null;
           const tas = Array.from(document.querySelectorAll('textarea')) as HTMLTextAreaElement[];
-          el = tas.find(t => t.offsetParent !== null && t.getBoundingClientRect().height > 50 && t.name !== 'g-recaptcha-response' && t.name !== 'h-captcha-response') || null;
+          el = tas.find(t => (t as HTMLElement).offsetParent !== null && t.getBoundingClientRect().height > 50 && t.name !== 'g-recaptcha-response' && t.name !== 'h-captcha-response') || null;
           if (!el) {
             el = document.querySelector('input[name="prompt"]') as HTMLInputElement | null;
           }
           if (!el) {
             const inputs = Array.from(document.querySelectorAll('input')) as HTMLInputElement[];
-            el = inputs.find(i => i.offsetParent !== null && i.getBoundingClientRect().height > 50 && i.type !== 'hidden') as HTMLInputElement || null;
+            el = inputs.find(i => (i as HTMLElement).offsetParent !== null && i.getBoundingClientRect().height > 50 && i.type !== 'hidden') as HTMLInputElement || null;
           }
-          if (!el || el.offsetParent === null) return false;
+          if (!el || (el as HTMLElement).offsetParent === null) return false;
 
           // Focus the element first (human behavior)
           el.focus();
@@ -436,7 +442,7 @@ export default function (xcli: XCLIAPI): void {
             const btns = Array.from(document.querySelectorAll('button'));
             const btn = btns.find((b) => {
               const t = b.textContent || '';
-              return (t.includes('Write Your Lyrics') || t.includes('Write Your Lyrics(Auto)')) && b.offsetParent !== null;
+              return (t.includes('Write Your Lyrics') || t.includes('Write Your Lyrics(Auto)')) && (b as HTMLElement).offsetParent !== null;
             });
             if (btn) {
               (btn as HTMLElement).click();
@@ -450,7 +456,7 @@ export default function (xcli: XCLIAPI): void {
 
             const customClicked = await page.evaluate(() => {
               const radio = document.querySelector('button#user');
-              if (radio && radio.offsetParent !== null) {
+              if (radio && (radio as HTMLElement).offsetParent !== null) {
                 (radio as HTMLElement).click();
                 return true;
               }
@@ -465,7 +471,7 @@ export default function (xcli: XCLIAPI): void {
             await humanDelay(300, 800);
 
             const lyricsFilled = await page.evaluate((lyrics: string) => {
-              const tas = Array.from(document.querySelectorAll('textarea')).filter((t) => t.offsetParent !== null);
+              const tas = Array.from(document.querySelectorAll('textarea')).filter((t) => (t as HTMLElement).offsetParent !== null);
               const ta = tas[tas.length - 1];
               if (!ta) return false;
               ta.focus();
@@ -492,7 +498,7 @@ export default function (xcli: XCLIAPI): void {
                 const label = t.getAttribute('aria-label') || '';
                 return label.toLowerCase().includes(tagName.toLowerCase());
               });
-              if (match && match.offsetParent !== null) {
+              if (match && (match as HTMLElement).offsetParent !== null) {
                 (match as HTMLElement).click();
                 return true;
               }
@@ -507,12 +513,12 @@ export default function (xcli: XCLIAPI): void {
         if (params.instrumental) {
           const instrumentalClicked = await page.evaluate(() => {
             const btn = document.querySelector('button#instrumental');
-            if (btn && btn.offsetParent !== null) {
+            if (btn && (btn as HTMLElement).offsetParent !== null) {
               (btn as HTMLElement).click();
               return true;
             }
             const spans = Array.from(document.querySelectorAll('span'));
-            const span = spans.find((s) => s.textContent?.trim() === 'Instrumental' && s.offsetParent !== null);
+            const span = spans.find((s) => s.textContent?.trim() === 'Instrumental' && (s as HTMLElement).offsetParent !== null);
             if (span) {
               (span as HTMLElement).click();
               return true;
@@ -526,7 +532,7 @@ export default function (xcli: XCLIAPI): void {
         // Ensure #generate mode is selected (the "Auto" mode radio button)
         const genModeSelected = await page.evaluate(() => {
           const btn = document.querySelector('button#generate');
-          if (btn && btn.offsetParent !== null) {
+          if (btn && (btn as HTMLElement).offsetParent !== null) {
             // Check if it's already selected (has aria-pressed or active class)
             const isActive = btn.getAttribute('aria-pressed') === 'true' ||
               btn.classList.contains('active') ||
@@ -604,7 +610,7 @@ export default function (xcli: XCLIAPI): void {
           const btns = Array.from(document.querySelectorAll('button')).filter(
             (b) => {
               const text = b.textContent?.trim();
-              return text === 'Create' && b.offsetParent !== null && !(b as HTMLButtonElement).disabled;
+              return text === 'Create' && (b as HTMLElement).offsetParent !== null && !(b as HTMLButtonElement).disabled;
             },
           );
           if (btns.length > 0) {
@@ -614,7 +620,7 @@ export default function (xcli: XCLIAPI): void {
             return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, w: Math.round(rect.width), h: Math.round(rect.height) };
           }
           return null;
-        });
+        }) as { x: number; y: number; w: number; h: number } | null;
 
         if (!createResult) {
           return fail('无法找到 Create 按钮', [...tips]);
@@ -705,7 +711,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('status', {
     description: '检查 Udio 最新歌曲生成状态（被动拦截 API 数据）',
     scope: 'browser',
-    result: z.object({ status: z.string().optional(), songs: z.array(z.record(z.any())).optional() }).passthrough(),
+    result: z.object({ status: z.string().optional(), songs: z.array(z.record(z.string(), z.any())).optional() }).passthrough(),
     parameters: z.object({}),
     examples: [
       { cmd: 'xbrowser udio status --cdp 9221', description: '检查状态' },
@@ -831,7 +837,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('result', {
     description: '获取 Udio 最新生成的音乐音频 URL',
     scope: 'browser',
-    result: z.object({ songs: z.array(z.record(z.any())) }).passthrough(),
+    result: z.object({ songs: z.array(z.record(z.string(), z.any())) }).passthrough(),
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(5).describe('返回条数（默认 5）'),
     }),

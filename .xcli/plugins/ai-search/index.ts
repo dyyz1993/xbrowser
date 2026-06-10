@@ -253,7 +253,7 @@ async function fillContentEditable(page: Page, selector: string, text: string): 
   try {
     await page.keyboard.type(text, { delay: 10 });
     const currentText = await el.evaluate((node: HTMLElement) => node.textContent || '');
-    if (currentText.trim().length > 0) return true;
+    if ((currentText as string).trim().length > 0) return true;
   } catch { /* fallback */ }
   await el.evaluate((node: HTMLElement, t: string) => {
     node.textContent = t;
@@ -315,7 +315,7 @@ async function navigateToChat(page: Page, config: EngineConfig): Promise<void> {
         .filter(a => a.href.includes('/chat') || a.href.includes('/project'))
         .map(a => ({ href: a.href, text: a.textContent?.trim()?.slice(0, 30) || '' }));
     });
-    if (chatLinks.length > 0) {
+    if ((chatLinks as Array<Record<string, string>>).length > 0) {
       await page.goto(chatLinks[0].href, { waitUntil: 'domcontentloaded', timeout: 20000 });
       await page.waitForTimeout(3000);
     } else {
@@ -338,7 +338,7 @@ async function navigateToChat(page: Page, config: EngineConfig): Promise<void> {
 async function detectLoginStatus(page: Page, _config: EngineConfig): Promise<'logged_in' | 'logged_out' | 'unknown'> {
   const url = page.url();
   if (url.includes('/sign_in') || url.includes('/auth/login') || url.includes('/login')) return 'logged_out';
-  const bodyText = await page.evaluate(() => document.body?.textContent || '');
+  const bodyText = await page.evaluate(() => document.body?.textContent || '') as string;
   if (bodyText.includes('登录') && !bodyText.includes('已登录')) return 'logged_out';
   return 'unknown';
 }
@@ -358,7 +358,7 @@ async function waitForAIResponse(page: Page, timeoutMs: number): Promise<string>
         const hasLoading = !!document.querySelector('[class*="loading"], [class*="typing"], [class*="spinner"], [class*="skeleton"], [class*="thinking"], [class*="generating"], [class*="stop-button"], [aria-label*="Stop"], [class*="wait"], [class*="streaming"]');
         const isThinking = body.includes('正在搜索') || body.includes('Searching') || body.includes('Generating') || body.includes('停止生成') || body.includes('思考已完成');
         return { hasLoading, isThinking };
-      });
+      }) as Record<string, boolean>;
       if (state.hasLoading || state.isThinking) break;
       if (Date.now() - startTime > 5000) break;
     } catch { /* ignore */ }
@@ -395,11 +395,11 @@ async function waitForAIResponse(page: Page, timeoutMs: number): Promise<string>
         for (let i = 0; i < allContainers.length; i++) { const txt = allContainers[i].textContent?.trim() || ''; if (txt.length > 50 && !baseSet.has(txt.slice(0, 100)) && txt.length > bestFallbackText.length) bestFallbackText = txt; }
         if (bestFallbackText) return { status: 'ready', text: bestFallbackText.slice(0, 5000), isNew: true };
         return { status: 'waiting' };
-      }, baselineKeys);
+      }, baselineKeys) as Record<string, unknown>;
       if (result.status === 'processing') { stableCount = 0; lastResponse = ''; continue; }
       if (result.status === 'ready' && result.text) {
-        if (result.text === lastResponse) { stableCount++; if (stableCount >= 3) return result.text; } else { lastResponse = result.text; stableCount = 1; }
-        if (Date.now() - startTime > 20000 && stableCount >= 2) return result.text;
+        if (result.text === lastResponse) { stableCount++; if (stableCount >= 3) return result.text as string; } else { lastResponse = result.text as string; stableCount = 1; }
+        if (Date.now() - startTime > 20000 && stableCount >= 2) return result.text as string;
       }
     } catch { stableCount = 0; }
   }
@@ -445,7 +445,7 @@ async function extractSourcesFromDOM(page: Page, config: EngineConfig): Promise<
   }
   try { const sourceButtons = await page.$$('[class*="source"]'); for (const btn of sourceButtons) { const text = await btn.textContent(); if (text && /来源|source|reference/i.test(text)) { await btn.click().catch(() => {}); await page.waitForTimeout(1000); } } } catch { /* ignore */ }
   const engineHost = new URL(config.url).hostname;
-  const links = await page.evaluate((host: string) => { return Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]')).map(a => a.href).filter(href => { if (!href.startsWith('http')) return false; try { const u = new URL(href); return u.hostname !== host && !u.hostname.endsWith('.' + host); } catch { return false; } }); }, engineHost);
+  const links = (await page.evaluate((host: string) => { return Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]')).map(a => a.href).filter(href => { if (!href.startsWith('http')) return false; try { const u = new URL(href); return u.hostname !== host && !u.hostname.endsWith('.' + host); } catch { return false; } }); }, engineHost)) as string[];
   return [...new Set(links)];
 }
 
@@ -497,7 +497,7 @@ async function executeSingleEngineOnPage(page: Page, config: EngineConfig, param
   const inputFilled = await findAndFillInput(page, config, inputText);
   if (!inputFilled) throw new Error(`无法在 ${config.url} 找到输入框。请确认已登录且页面正常加载。`);
   await page.waitForTimeout(500);
-  if (config.sendMethod === 'button' && config.sendButtonSelector) { const btn = page.locator(config.sendButtonSelector).first(); if ((await btn.count()) > 0) { await btn.click(); } else { await page.keyboard.press('Enter'); } } else if (config.sendMethod === 'metaEnter') { await page.keyboard.press('Meta+Enter'); } else if (config.navigateOnSend) { await Promise.all([page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}), page.keyboard.press('Enter')]); await page.waitForTimeout(3000); } else { await page.keyboard.press('Enter'); }
+  if (config.sendMethod === 'button' && config.sendButtonSelector) { const btn = page.locator(config.sendButtonSelector).first(); if ((await btn.count()) > 0) { await btn.click(); } else { await page.keyboard.press('Enter'); } } else if (config.sendMethod === 'metaEnter') { await page.keyboard.press('Meta+Enter'); } else if (config.navigateOnSend) { await Promise.all([(page as unknown as import('../types.js').PluginPage).waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {}), page.keyboard.press('Enter')]); await page.waitForTimeout(3000); } else { await page.keyboard.press('Enter'); }
   const startTime = Date.now();
   let rawResponse = '';
   const timeoutMs = params.timeout ?? 60000;
@@ -587,12 +587,12 @@ export default function (xcli: XCLIAPI): void {
       format: z.enum(['markdown', 'json', 'text']).default('markdown'),
       timeout: z.number().default(60000).describe('AI 回复超时（毫秒）'),
     }),
-    result: z.object({ query: z.string(), engine: z.string(), results: z.array(z.object({ title: z.string(), url: z.string(), snippet: z.string(), position: z.number(), aiSummary: z.string().optional() })), total: z.number(), timestamp: z.number(), aiResponse: z.string().optional(), sources: z.object({ total: z.number(), domains: z.array(z.string()), urls: z.array(z.object({ url: z.string(), domain: z.string() })) }).optional(), domainExtraction: z.object({ query: z.string(), totalUrls: z.number(), totalDomains: z.number(), domains: z.array(z.any()) }).optional(), engineInfo: z.object({ name: z.string(), loginStatus: z.string(), internetSearch: z.object({ supported: z.boolean(), enabled: z.boolean(), details: z.string() }), uploadCapabilities: z.object({ image: z.boolean(), file: z.boolean() }) }).optional(), duration: z.string().optional(), content: z.string().optional(), totalEngines: z.number().optional(), successEngines: z.number().optional(), failedEngines: z.number().optional(), totalUrls: z.number().optional(), uniqueDomains: z.number().optional(), domainRanking: z.array(z.any()).optional(), platformRanking: z.array(z.any()).optional(), engineDetails: z.array(z.any()).optional(), perEngineResults: z.record(z.any()).optional() }).passthrough(),
+    result: z.object({ query: z.string(), engine: z.string(), results: z.array(z.object({ title: z.string(), url: z.string(), snippet: z.string(), position: z.number(), aiSummary: z.string().optional() })), total: z.number(), timestamp: z.number(), aiResponse: z.string().optional(), sources: z.object({ total: z.number(), domains: z.array(z.string()), urls: z.array(z.object({ url: z.string(), domain: z.string() })) }).optional(), domainExtraction: z.object({ query: z.string(), totalUrls: z.number(), totalDomains: z.number(), domains: z.array(z.any()) }).optional(), engineInfo: z.object({ name: z.string(), loginStatus: z.string(), internetSearch: z.object({ supported: z.boolean(), enabled: z.boolean(), details: z.string() }), uploadCapabilities: z.object({ image: z.boolean(), file: z.boolean() }) }).optional(), duration: z.string().optional(), content: z.string().optional(), totalEngines: z.number().optional(), successEngines: z.number().optional(), failedEngines: z.number().optional(), totalUrls: z.number().optional(), uniqueDomains: z.number().optional(), domainRanking: z.array(z.any()).optional(), platformRanking: z.array(z.any()).optional(), engineDetails: z.array(z.any()).optional(), perEngineResults: z.record(z.string(), z.any()).optional() }).passthrough(),
     handler: async (params, ctx) => {
       const query = params.prompt || params.query;
       if (!query) throw new Error('请提供搜索关键词（--query 或 --prompt）');
       if (params.all && params.engine) throw new Error('--all 与 --engine 互斥，不能同时指定');
-      const cdpEndpoint = (ctx as Record<string, unknown>).cdpEndpoint as string | undefined;
+      const cdpEndpoint = (ctx as unknown as Record<string, unknown>).cdpEndpoint as string | undefined;
       if (params.all) return await handleAllEngines({ ...params, query, all: true }, cdpEndpoint);
       return await handleSingleEngine({ ...params, query }, cdpEndpoint);
     },

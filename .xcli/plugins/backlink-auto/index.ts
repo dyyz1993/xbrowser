@@ -7,7 +7,7 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok } from '@dyyz1993/xcli-core';
-import type { Page } from '../../src/browser-shim.js';
+import type { Page } from '../types.js';
 import { execSync } from 'child_process';
 
 const BACKLINK_EMAIL = process.env.BACKLINK_EMAIL || '';
@@ -47,7 +47,7 @@ async function safeClick(page: Page, selector: string) {
     return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, w: rect.width, h: rect.height };
   }, selector);
   if (!box) return false;
-  await page.mouse.click(box.x, box.y);
+  await page.mouse.click((box as Record<string, number>).x, (box as Record<string, number>).y);
   await page.waitForTimeout(1000);
   return true;
 }
@@ -59,7 +59,7 @@ async function safeClickByText(page: Page, text: string) {
     if (!el) return null;
     const rect = (el as HTMLElement).getBoundingClientRect();
     return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-  }, text);
+  }, text) as Record<string, number> | null;
   if (!box) return false;
   await page.mouse.click(box.x, box.y);
   await page.waitForTimeout(1000);
@@ -159,7 +159,7 @@ async function read163EmailCode(page: Page, fromDomain: string, timeoutMs = 6000
           const allText = document.body.innerText;
           const codeMatch = allText.match(/(?:验证码|code|Code|verification)[：:\s]*(\d{4,8})/);
           return codeMatch ? codeMatch[1] : null;
-        }, fromDomain);
+        }, fromDomain) as string | null;
         if (code) return code;
       } catch { /* verification code not found yet */ }
       await mailPage.waitForTimeout(5000);
@@ -248,7 +248,7 @@ async function registerIssuu(page: Page): Promise<SiteResult> {
       r.notes = 'Still on signup page after submit. URL: ' + finalUrl;
     }
   } catch (e: unknown) {
-    r.notes = `Error: ${e.message?.substring(0, 80)}`;
+    r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
   addResult(r);
   return r;
@@ -283,7 +283,7 @@ async function registerSubstack(page: Page): Promise<SiteResult> {
       r.notes = 'Registration flow incomplete. URL: ' + currentUrl;
     }
   } catch (e: unknown) {
-    r.notes = `Error: ${e.message?.substring(0, 80)}`;
+    r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
   addResult(r);
   return r;
@@ -322,7 +322,7 @@ async function registerAboutMe(page: Page): Promise<SiteResult> {
     r.registered = true;
     r.submitted = true;
   } catch (e: unknown) {
-    r.notes = `Error: ${e.message?.substring(0, 80)}`;
+    r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
   addResult(r);
   return r;
@@ -355,7 +355,7 @@ async function registerDisqus(page: Page): Promise<SiteResult> {
       r.notes = 'Still on signup: ' + currentUrl;
     }
   } catch (e: unknown) {
-    r.notes = `Error: ${e.message?.substring(0, 80)}`;
+    r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
   addResult(r);
   return r;
@@ -391,7 +391,7 @@ async function registerCalCom(page: Page): Promise<SiteResult> {
     r.registered = true;
     r.submitted = true;
   } catch (e: unknown) {
-    r.notes = `Error: ${e.message?.substring(0, 80)}`;
+    r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
   addResult(r);
   return r;
@@ -414,7 +414,7 @@ async function registerHashnode(page: Page): Promise<SiteResult> {
     r.submitted = true; // Backlink via publishing blog posts
     r.notes = 'Account created, backlink via blog posts';
   } catch (e: unknown) {
-    r.notes = `Error: ${e.message?.substring(0, 80)}`;
+    r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
   addResult(r);
   return r;
@@ -448,7 +448,7 @@ async function registerGreasyFork(page: Page): Promise<SiteResult> {
       r.notes = 'Still on signup: ' + currentUrl;
     }
   } catch (e: unknown) {
-    r.notes = `Error: ${e.message?.substring(0, 80)}`;
+    r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
   addResult(r);
   return r;
@@ -480,7 +480,7 @@ async function registerSeaArt(page: Page): Promise<SiteResult> {
     r.submitted = true;
     r.notes = 'Backlink via publishing articles on SeaArt';
   } catch (e: unknown) {
-    r.notes = `Error: ${e.message?.substring(0, 80)}`;
+    r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
   addResult(r);
   return r;
@@ -503,7 +503,7 @@ async function registerLeetCode(page: Page): Promise<SiteResult> {
     r.registered = true;
     r.notes = 'Profile page with URL';
   } catch (e: unknown) {
-    r.notes = `Error: ${e.message?.substring(0, 80)}`;
+    r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
   addResult(r);
   return r;
@@ -525,7 +525,7 @@ async function registerDevTo(page: Page): Promise<SiteResult> {
     r.submitted = true;
     r.notes = 'Backlink via publishing articles';
   } catch (e: unknown) {
-    r.notes = `Error: ${e.message?.substring(0, 80)}`;
+    r.notes = `Error: ${(e as Error).message?.substring(0, 80)}`;
   }
   addResult(r);
   return r;
@@ -569,7 +569,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ total: z.number(), registered: z.number(), submitted: z.number() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as Page | undefined;
+      const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
       if (!page) return { data: null, tips: ['需要浏览器页面'], message: '缺少浏览器页面' };
 
       const start = params.startFrom || 0;
@@ -603,7 +603,7 @@ export default function (xcli: XCLIAPI): void {
           // DON'T close - CDP mode shared context, closing kills the connection
           // try { await sitePage.close(); } catch { /* non-critical, skip */ }
         } catch (e: unknown) {
-          tips.push(`❌ Error: ${e.message?.substring(0, 60)}`);
+          tips.push(`❌ Error: ${(e as Error).message?.substring(0, 60)}`);
         }
         if (params.delay > 0) await page.waitForTimeout(params.delay);
       }
@@ -644,7 +644,7 @@ export default function (xcli: XCLIAPI): void {
     }),
     result: z.object({ code: z.string().nullable() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as Page | undefined;
+      const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
       if (!page) return { data: null, tips: ['需要浏览器页面'] };
 
       const code = await read163EmailCode(page, params.from, params.timeout);

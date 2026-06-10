@@ -8,11 +8,12 @@ export default function (xcli: XCLIAPI) {
   });
 
   site.command('bad', {
+    description: 'Test rule validation command',
     parameters: z.object({}),
     result: z.object({ ok: z.boolean() }).passthrough(),
-    handler: async () => {
+    handler: async (_params, _ctx) => {
       // test-rule: intentionally minimal for ESLint rule validation
-      return { ok: true } as unknown as Record<string, unknown>;
+      return { ok: true };
     },
   });
 }

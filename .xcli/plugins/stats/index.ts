@@ -64,18 +64,18 @@ async function findIndicatorId(page: import('../types').Page, name: string): Pro
     for (var j = 0; j < childNodes.length; j++) {
       if (childNodes[j].name === name || childNodes[j].name.indexOf(name) >= 0) {
         var indicators = await apiCall(page, '/new/queryIndicatorsByCid?cid=' + childNodes[j].id + '&dt=&name=') as Record<string, unknown>;
-        var indList = (indicators && indicators.data && indicators.data.list) || [];
+        var indList = ((indicators && indicators.data && (indicators.data as Record<string, unknown>).list) || []) as Array<Record<string, unknown>>;
         if (indList.length > 0) {
-          return { cid: childNodes[j].id, indicatorId: indList[0].ek_dp || indList[0]._id || indList[0].id };
+          return { cid: childNodes[j].id, indicatorId: String(indList[0].ek_dp || indList[0]._id || indList[0].id) };
         }
       }
       var grandChildren = await getTreeNodes(page, childNodes[j].id);
       for (var k = 0; k < grandChildren.length; k++) {
         if (grandChildren[k].name === name || grandChildren[k].name.indexOf(name) >= 0) {
           var indicators2 = await apiCall(page, '/new/queryIndicatorsByCid?cid=' + grandChildren[k].id + '&dt=&name=') as Record<string, unknown>;
-          var indList2 = (indicators2 && indicators2.data && indicators2.data.list) || [];
+          var indList2 = ((indicators2 && indicators2.data && (indicators2.data as Record<string, unknown>).list) || []) as Array<Record<string, unknown>>;
           if (indList2.length > 0) {
-            return { cid: grandChildren[k].id, indicatorId: indList2[0].ek_dp || indList2[0]._id || indList2[0].id };
+            return { cid: grandChildren[k].id, indicatorId: String(indList2[0].ek_dp || indList2[0]._id || indList2[0].id) };
           }
         }
       }
@@ -161,7 +161,7 @@ export default function(xcli: XCLIAPI): void {
     examples: [{ cmd: 'xbrowser stats indicators', description: '列出所有经济指标' }],
     result: z.array(z.object({ name: z.string(), children: z.array(z.string()) })),
     handler: async function(_p, ctx) {
-      var page = gp(ctx as Record<string, unknown>);
+      var page = gp(ctx as unknown as Record<string, unknown>);
       var rootNodes = await getTreeNodes(page, '');
       var result: Array<{name: string; children: string[]}> = [];
       for (var i = 0; i < rootNodes.length; i++) {
@@ -185,12 +185,12 @@ export default function(xcli: XCLIAPI): void {
       { cmd: 'xbrowser stats gdp', description: '获取各省 GDP' },
       { cmd: 'xbrowser stats gdp --format csv', description: 'CSV 格式输出' },
     ],
-    result: z.array(z.object({ province: z.string(), years: z.record(z.number()) })),
+    result: z.array(z.object({ province: z.string(), years: z.record(z.string(), z.number()) })),
     handler: async function(params, ctx) {
-      var page = gp(ctx as Record<string, unknown>);
+      var page = gp(ctx as unknown as Record<string, unknown>);
       var p = params as { format: string };
       var prov = await fetchAllProvinces(page, '地区生产总值');
-      if (prov.length === 0) return fail('未提取到省份数据');
+      if (prov.length === 0) return fail('未提取到省份数据', ['请检查网络或指标名称']);
       if (p.format === 'csv') return ok(toCsv(prov) as unknown as ProvinceRow[], ['CSV，' + prov.length + ' 省份']);
       await ctx.storage.set('stats_gdp', prov);
       return ok(prov, ['共 ' + prov.length + ' 个省份']);
@@ -205,12 +205,12 @@ export default function(xcli: XCLIAPI): void {
       format: z.enum(['json', 'csv']).optional().default('json').describe('输出格式'),
     }),
     examples: [{ cmd: 'xbrowser stats retail', description: '获取各省社消零售总额' }],
-    result: z.array(z.object({ province: z.string(), years: z.record(z.number()) })),
+    result: z.array(z.object({ province: z.string(), years: z.record(z.string(), z.number()) })),
     handler: async function(params, ctx) {
-      var page = gp(ctx as Record<string, unknown>);
+      var page = gp(ctx as unknown as Record<string, unknown>);
       var p = params as { format: string };
       var prov = await fetchAllProvinces(page, '社会消费品零售总额');
-      if (prov.length === 0) return fail('未提取到省份数据');
+      if (prov.length === 0) return fail('未提取到省份数据', ['请检查网络或指标名称']);
       if (p.format === 'csv') return ok(toCsv(prov) as unknown as ProvinceRow[], ['CSV，' + prov.length + ' 省份']);
       await ctx.storage.set('stats_retail', prov);
       return ok(prov, ['共 ' + prov.length + ' 个省份']);
@@ -225,12 +225,12 @@ export default function(xcli: XCLIAPI): void {
       indicator: z.string().describe('指标名称'),
     }),
     examples: [{ cmd: 'xbrowser stats query --indicator "总人口"', description: '查询各省人口' }],
-    result: z.array(z.object({ province: z.string(), years: z.record(z.number()) })),
+    result: z.array(z.object({ province: z.string(), years: z.record(z.string(), z.number()) })),
     handler: async function(params, ctx) {
-      var page = gp(ctx as Record<string, unknown>);
+      var page = gp(ctx as unknown as Record<string, unknown>);
       var p = params as { indicator: string };
       var prov = await fetchAllProvinces(page, p.indicator);
-      if (prov.length === 0) return fail('未提取到省份数据');
+      if (prov.length === 0) return fail('未提取到省份数据', ['请检查网络或指标名称']);
       return ok(prov, [p.indicator + '，' + prov.length + ' 省份']);
     },
   });
@@ -251,7 +251,7 @@ export default function(xcli: XCLIAPI): void {
       var p = params as { output: string; title: string };
       var gdp = await ctx.storage.get('stats_gdp') as ProvinceRow[] | null;
       var ret = await ctx.storage.get('stats_retail') as ProvinceRow[] | null;
-      if (!gdp && !ret) return fail('无缓存数据，请先运行 stats gdp 或 stats retail');
+      if (!gdp && !ret) return fail('无缓存数据', ['请先运行 stats gdp 或 stats retail']);
       var html = genHTML(p.title, gdp, ret);
       var op = pm.resolve(p.output);
       var d = pm.dirname(op);
@@ -273,7 +273,7 @@ export default function(xcli: XCLIAPI): void {
     examples: [{ cmd: 'xbrowser stats export', description: '导出数据' }],
     result: z.union([
       z.object({ path: z.string() }),
-      z.record(z.unknown()),
+      z.record(z.string(), z.unknown()),
     ]),
     handler: async function(params, ctx) {
       var fs = await import('fs');
@@ -286,7 +286,7 @@ export default function(xcli: XCLIAPI): void {
         var d = ds[keys[i]]; if (!d || d.length === 0) continue;
         results[keys[i]] = p.format === 'csv' ? toCsv(d) : d;
       }
-      if (Object.keys(results).length === 0) return fail('无缓存数据');
+      if (Object.keys(results).length === 0) return fail('无缓存数据', ['请先运行 stats gdp 或 stats retail']);
       if (p.output) { var op = pm.resolve(p.output); fs.writeFileSync(op, JSON.stringify(results, null, 2), 'utf-8'); return ok({path: op}, ['导出: ' + op]); }
       return ok(results, [p.format.toUpperCase()]);
     },

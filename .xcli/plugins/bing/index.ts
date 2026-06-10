@@ -104,7 +104,7 @@ export default function (xcli: XCLIAPI): void {
           });
 
           return images.slice(0, limit);
-        }, params.limit);
+        }, params.limit) as Array<{ title: string; thumbnailUrl: string; sourceUrl: string; originalUrl: string; width: number; height: number; format: string; fileSize: string }>;
 
         return ok({
             query: params.query, engine: 'bing-images',

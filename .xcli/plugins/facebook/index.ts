@@ -9,15 +9,15 @@ export default function (xcli: XCLIAPI): void {
     description: 'Facebook 图片搜索',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const ctxAny = ctx as Record<string, unknown>;
+      const ctxAny = ctx as unknown as Record<string, unknown>;
       const page = ctxAny.page as import('../types').Page;
       if (!page) return true;
       try {
         const url = page.url();
         if (url.includes('/login/')) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
         if (!body) return false;
-        if (body.includes('Log in')) return false;
+        if ((body as string).includes('Log in')) return false;
         const hasLoginBtn = await page.locator('button:has-text("Log in"), a:has-text("Log in")').first().isVisible().catch(() => false);
         if (hasLoginBtn) return false;
         return true;
@@ -54,7 +54,7 @@ export default function (xcli: XCLIAPI): void {
       timestamp: z.union([z.string(), z.number()]).optional(),
     }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
 
       try {
@@ -97,7 +97,7 @@ export default function (xcli: XCLIAPI): void {
           });
 
           return images;
-        }, params.limit);
+        }, params.limit) as Array<Record<string, unknown>>;
 
         return ok({
             query: params.query,

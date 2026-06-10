@@ -1,8 +1,8 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page } from '../../src/browser-shim.js';
-import { backlinkPlatforms, categories } from './backlinks-data.js';
+import type { Page } from '../types.js';
+import { backlinkPlatforms, categories, type BacklinkPlatform } from './backlinks-data.js';
 import { fetchVerificationCode, setupEmailConfig } from './email-helper.js';
 
 function proxyFetch(url: string, init?: RequestInit): Promise<Response> {
@@ -22,7 +22,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('ping', {
     description: '通过 sitemap ping 通知搜索引擎抓取站点地图',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'project',
     result: z.object({ sitemap: z.string(), engines: z.array(z.object({ engine: z.string(), ok: z.boolean(), status: z.string() })) }).passthrough(),
     parameters: z.object({
@@ -77,7 +77,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('submit', {
     description: '通过 IndexNow 协议提交 URL 给搜索引擎（Bing/Yandex/Seznam 等）',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'project',
     result: z.object({ url: z.string(), host: z.string(), indexnow: z.object({ ok: z.boolean(), status: z.string() }) }).passthrough(),
     parameters: z.object({
@@ -125,7 +125,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('bulk-submit', {
     description: '批量提交多个 URL 到 IndexNow（最多 10000 条）',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'project',
     result: z.object({ host: z.string(), submitted: z.number(), ok: z.boolean(), status: z.string() }).passthrough().nullable(),
     parameters: z.object({
@@ -191,7 +191,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('setup-indexnow', {
     description: '生成 IndexNow key — 配置后 xbrowser seo submit 才能工作',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'project',
     result: z.object({ domain: z.string(), key: z.string(), keyUrl: z.string() }).passthrough(),
     parameters: z.object({
@@ -224,7 +224,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('check', {
     description: '检查域名的 IndexNow / robots.txt / sitemap 等 SEO 基础配置',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'project',
     result: z.object({ domain: z.string(), checks: z.array(z.object({ item: z.string(), status: z.string(), detail: z.string().optional() })), indexnowKeyFound: z.boolean() }).passthrough(),
     parameters: z.object({
@@ -325,7 +325,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('analyze', {
     description: '分析页面 SEO 因素，给出评分和优化建议',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'project',
     result: z.object({ url: z.string().optional(), title: z.string(), description: z.string(), robots: z.string(), canonical: z.string(), openGraph: z.object({ title: z.string(), description: z.string(), image: z.string(), url: z.string() }), twitter: z.object({ card: z.string(), title: z.string(), description: z.string(), image: z.string() }), headings: z.object({ h1Count: z.number(), h1s: z.array(z.string()), h2Count: z.number(), h2s: z.array(z.string()) }), images: z.object({ total: z.number(), withoutAlt: z.number() }), links: z.object({ internal: z.number(), external: z.number() }), structuredData: z.array(z.any()), score: z.object({ passed: z.number(), total: z.number(), percentage: z.number() }) }).passthrough().nullable(),
     parameters: z.object({
@@ -480,7 +480,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('setup-guide', {
     description: '输出完整的搜索引擎收录配置指南',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'project',
     result: z.object({ domain: z.string() }).passthrough(),
     parameters: z.object({
@@ -516,7 +516,7 @@ export default function (xcli: XCLIAPI): void {
   // ───── backlinks ───────────────────────────────
   seo.command('backlinks', {
     description: '列出外链提交平台及精确入口 URL（57 个平台，11 个类别）',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'project',
     result: z.object({ total: z.number(), filtered: z.boolean(), categories: z.array(z.string()), platforms: z.array(z.object({ name: z.string(), url: z.string(), entryUrl: z.string(), category: z.string(), steps: z.string() })) }).passthrough(),
     parameters: z.object({
@@ -573,7 +573,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('login', {
     description: '在浏览器中登录外链平台，保存登录状态',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     result: z.object({ platform: z.string(), loggedIn: z.boolean() }).passthrough().nullable(),
     parameters: z.object({
@@ -584,7 +584,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser seo login --platform linkedin', description: '登录 LinkedIn' },
     ],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as Page | undefined;
+      const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
       if (!page) {
         return ok(null, ['需要浏览器页面']);
       }
@@ -623,7 +623,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('logout', {
     description: '清除平台的登录状态',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'project',
     result: z.object({ cleared: z.number().optional(), keys: z.array(z.string()).optional(), platform: z.string().optional() }).passthrough().nullable(),
     parameters: z.object({
@@ -716,7 +716,7 @@ export default function (xcli: XCLIAPI): void {
       for (const sel of CONSENT_SELECTORS) {
         try {
           const btn = page.locator(sel).first();
-          if (await btn.isVisible({ timeout: 3000 }).catch(() => false)) {
+          if (await btn.isVisible().catch(() => false)) {
             await btn.click();
             await page.waitForTimeout(3000);
             return { loggedIn: true, method: 'oauth-consent' };
@@ -726,7 +726,7 @@ export default function (xcli: XCLIAPI): void {
 
       for (let i = 0; i < 10; i++) {
         const accountBtn = page.locator(`div[data-email], li[data-email], div[role="link"]`).nth(i);
-        if (await accountBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+        if (await accountBtn.isVisible().catch(() => false)) {
           const text = await accountBtn.textContent().catch(() => '');
           if (text && text.includes('@')) {
             await accountBtn.click();
@@ -740,7 +740,7 @@ export default function (xcli: XCLIAPI): void {
     for (const sel of GOOGLE_OAUTH_SELECTORS) {
       try {
         const btn = page.locator(sel).first();
-        if (await btn.isVisible({ timeout: 1500 }).catch(() => false)) {
+        if (await btn.isVisible().catch(() => false)) {
           await btn.click();
           await page.waitForTimeout(5000);
 
@@ -765,7 +765,7 @@ export default function (xcli: XCLIAPI): void {
       for (const sel of LOGIN_DETECT_SELECTORS) {
         try {
           const el = page.locator(sel).first();
-          if (await el.isVisible({ timeout: 1500 }).catch(() => false)) {
+          if (await el.isVisible().catch(() => false)) {
             return true;
           }
         } catch { /* non-critical, continue */ }
@@ -834,7 +834,7 @@ export default function (xcli: XCLIAPI): void {
     for (const selector of URL_SELECTORS) {
       try {
         const el = page.locator(selector).first();
-        const visible = await el.isVisible({ timeout: 1000 }).catch(() => false);
+        const visible = await el.isVisible().catch(() => false);
         if (visible) {
           await el.click();
           await el.fill('');
@@ -845,7 +845,7 @@ export default function (xcli: XCLIAPI): void {
           for (const saveSel of SAVE_SELECTORS) {
             try {
               const saveBtn = page.locator(saveSel).first();
-              const saveVisible = await saveBtn.isVisible({ timeout: 1000 }).catch(() => false);
+              const saveVisible = await saveBtn.isVisible().catch(() => false);
               if (saveVisible) {
                 await saveBtn.click();
                 saved = true;
@@ -864,7 +864,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('submit-backlink', {
     description: '在浏览器中打开外链平台的外链提交入口页面，可选自动填写 URL',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'browser',
     result: z.object({ platform: z.string(), entryUrl: z.string(), category: z.string(), steps: z.string(), autoFill: z.object({ filled: z.boolean(), saved: z.boolean() }).optional() }).passthrough().nullable(),
     parameters: z.object({
@@ -876,7 +876,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser seo submit-backlink --platform github --url "https://mysite.com"', description: '打开 GitHub 并自动填写 URL' },
     ],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as Page | undefined;
+      const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
       if (!page) {
         return ok(null, ['需要浏览器页面']);
       }
@@ -973,7 +973,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('submit-guest-post', {
     description: '在浏览器中提交客座文章到支持 Guest Post 的平台',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'browser',
     result: z.object({ platform: z.string(), formUrl: z.string(), submitted: z.boolean().optional(), type: z.string().optional() }).passthrough().nullable(),
     parameters: z.object({
@@ -988,7 +988,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser seo submit-guest-post --platform smashing-magazine --name "Jane Smith" --email "jane@example.com" --topic "CSS Grid techniques"', description: '向 Smashing Magazine 提交提案' },
     ],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as Page | undefined;
+      const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
       if (!page) {
         return ok(null, ['需要浏览器页面']);
       }
@@ -1042,7 +1042,7 @@ export default function (xcli: XCLIAPI): void {
 
           const purposeSelect = page.locator('select[name="input_4"], select').first();
           if (await purposeSelect.isVisible()) {
-            const options = purposeSelect.locator('option');
+            const options = (purposeSelect as unknown as import('../types.js').PluginLocator).locator('option');
             const count = await options.count();
             for (let i = 0; i < count; i++) {
               const text = await options.nth(i).textContent();
@@ -1177,7 +1177,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('setup-email', {
     description: '配置邮箱 IMAP 授权（用于自动获取验证码，支持 QQ 邮箱等）',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'project',
     result: z.object({ configured: z.boolean() }).passthrough(),
     parameters: z.object({
@@ -1214,7 +1214,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('verify-email', {
     description: '从 Gmail 获取最新的验证邮件，提取验证码或验证链接',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'project',
     result: z.object({ subject: z.string(), from: z.string(), code: z.string().optional(), link: z.string().optional() }).passthrough(),
     parameters: z.object({
@@ -1256,7 +1256,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('register', {
     description: '在浏览器中自动注册外链平台账号',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'browser',
     result: z.object({ platform: z.string(), email: z.string(), password: z.string(), signupUrl: z.string(), submitted: z.boolean() }).passthrough(),
     parameters: z.object({
@@ -1270,7 +1270,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser seo register --platform github --email "user@example.com" --password "MyPass123!" --name "John"', description: '注册 GitHub' },
     ],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as Page | undefined;
+      const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
       if (!page) {
         return ok(null, ['需要浏览器页面']);
       }
@@ -1319,18 +1319,18 @@ export default function (xcli: XCLIAPI): void {
         const nameSelectors = 'input[name*="name"], input[name*="user"], input[type="text"][name*="name"], input[autocomplete="name"], input[id*="name"]';
 
         const emailInput = page.locator(emailSelectors).first();
-        if (await emailInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+        if (await emailInput.isVisible().catch(() => false)) {
           await emailInput.fill(params.email);
         }
 
         const passwordInput = page.locator(passwordSelectors).first();
-        if (await passwordInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+        if (await passwordInput.isVisible().catch(() => false)) {
           await passwordInput.fill(password);
         }
 
         if (params.name) {
           const nameInput = page.locator(nameSelectors).first();
-          if (await nameInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+          if (await nameInput.isVisible().catch(() => false)) {
             await nameInput.fill(params.name);
           }
         }
@@ -1348,7 +1348,7 @@ export default function (xcli: XCLIAPI): void {
         let submitted = false;
         for (const sel of submitSelectors) {
           const btn = page.locator(sel).first();
-          if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+          if (await btn.isVisible().catch(() => false)) {
             await btn.click();
             submitted = true;
             break;
@@ -1358,7 +1358,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(5000);
 
         const verifyInput = page.locator('input[name*="code"], input[name*="otp"], input[name*="verify"], input[name*="token"], input[placeholder*="码"], input[placeholder*="code"]').first();
-        if (await verifyInput.isVisible({ timeout: 5000 }).catch(() => false)) {
+        if (await verifyInput.isVisible().catch(() => false)) {
           try {
             const fromDomain = new URL(match.url).hostname.replace('www.', '');
             const verifyResult = await fetchVerificationCode(fromDomain, 300);
@@ -1367,7 +1367,7 @@ export default function (xcli: XCLIAPI): void {
               await verifyInput.fill(verifyResult.code);
 
               const confirmBtn = page.locator('button[type="submit"], input[type="submit"], button:has-text("Verify"), button:has-text("确认"), button:has-text("Submit")').first();
-              if (await confirmBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
+              if (await confirmBtn.isVisible().catch(() => false)) {
                 await confirmBtn.click();
                 await page.waitForTimeout(3000);
               }
@@ -1411,7 +1411,7 @@ export default function (xcli: XCLIAPI): void {
 
   seo.command('batch-submit', {
     description: '批量提交网站 URL 到多个外链平台（自动填写并保存）',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'browser',
     result: z.object({ url: z.string(), total: z.number(), summary: z.object({ reachable: z.number(), logged: z.number(), filled: z.number(), saved: z.number() }) }).passthrough().nullable(),
     parameters: z.object({
@@ -1428,7 +1428,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser seo batch-submit --url "https://mysite.com" --delay 8000 --batchSize 3', description: '自定义延迟和批次' },
     ],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as Page | undefined;
+      const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
       if (!page) {
         return ok(null, ['需要浏览器页面']);
       }
@@ -1580,7 +1580,7 @@ export default function (xcli: XCLIAPI): void {
                   for (const sel of CONSENT_SELECTORS) {
                     try {
                       const btn = page.locator(sel).first();
-                      if (await btn.isVisible({ timeout: 2000 }).catch(() => false)) {
+                      if (await btn.isVisible().catch(() => false)) {
                         await btn.click();
                         await page.waitForTimeout(3000);
                         break;
@@ -1619,7 +1619,7 @@ export default function (xcli: XCLIAPI): void {
                   try {
                     const inputs = await page.locator(sel).all();
                     for (const input of inputs) {
-                      const visible = await input.isVisible({ timeout: 500 }).catch(() => false);
+                      const visible = await input.isVisible().catch(() => false);
                       if (!visible) continue;
                       const placeholder = await input.getAttribute('placeholder').catch(() => '') || '';
                       const inputName = await input.getAttribute('name').catch(() => '') || '';
@@ -1633,7 +1633,7 @@ export default function (xcli: XCLIAPI): void {
                         for (const saveSel of SAVE_SELECTORS) {
                           try {
                             const saveBtn = page.locator(saveSel).first();
-                            if (await saveBtn.isVisible({ timeout: 1000 }).catch(() => false)) {
+                            if (await saveBtn.isVisible().catch(() => false)) {
                               await saveBtn.click();
                               result.saved = true;
                               await page.waitForTimeout(2000);
@@ -1698,7 +1698,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   seo.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as Page | undefined;
+    const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
     if (!page) return;
     const url = page.url();
     if (url && url !== 'about:blank') {

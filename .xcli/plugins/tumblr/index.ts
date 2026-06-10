@@ -58,7 +58,7 @@ export default function (xcli: XCLIAPI): void {
           });
 
           return images;
-        }, params.limit);
+        }, params.limit) as Array<{ title: string; thumbnailUrl: string; sourceUrl: string; width: number; height: number }>;
 
         // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
         return buildResult(params.query, 'tumblr', results.map(r => ({ ...r, sourceSite: 'tumblr' })));

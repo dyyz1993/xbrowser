@@ -21,7 +21,7 @@ export default function (xcli: XCLIAPI): void {
         await page.goto(`https://huaban.com/search?q=${encodeURIComponent(params.query)}`, { waitUntil: 'domcontentloaded', timeout: params.timeout });
         await page.waitForTimeout(5000);
 
-        const pageContent = await page.evaluate(() => document.body?.innerText?.slice(0, 500) || '');
+        const pageContent = await page.evaluate(() => document.body?.innerText?.slice(0, 500) || '') as string;
         if (pageContent.includes('安全验证') || pageContent.includes('请输入验证码') || pageContent.includes('验证')) {
           return fail('花瓣网触发了安全验证，请在浏览器中手动完成验证后重试', ['建议：使用 --cdp 9221 连接已登录的浏览器，手动访问 huaban.com 完成验证后再执行搜索']);
         }
@@ -51,7 +51,7 @@ export default function (xcli: XCLIAPI): void {
             });
           });
           return images.slice(0, limit);
-        }, params.limit);
+        }, params.limit) as Array<Record<string, unknown>>;
 
         // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
         return buildResult(params.query, 'huaban', results);

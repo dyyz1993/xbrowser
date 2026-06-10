@@ -63,9 +63,9 @@ export default function (xcli: XCLIAPI): void {
       source: z.string(), page: z.number(), position: z.number(),
     })),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
 
       try {
         const { query, pages, limit } = params;
@@ -78,16 +78,14 @@ export default function (xcli: XCLIAPI): void {
           position: number;
         }> = [];
 
-        await page.addInitScript(() => {
-          const origAssign = window.location.assign;
-          const origReplace = window.location.replace;
-          if (origAssign) window.location.assign = function() {};
-          if (origReplace) window.location.replace = function() {};
-          Object.defineProperty(window, 'location', {
-            get() { return window.document.location; },
-            set(_v) {},
-          });
-        });
+        await page.addInitScript(`
+          try {
+            const origAssign = window.location.assign;
+            const origReplace = window.location.replace;
+            if (origAssign) window.location.assign = function() {};
+            if (origReplace) window.location.replace = function() {};
+          } catch {}
+        `);
 
         await page.goto(`https://www.baidu.com/s?wd=${encodeURIComponent(query)}`, {
           waitUntil: 'domcontentloaded',
@@ -140,7 +138,7 @@ export default function (xcli: XCLIAPI): void {
           });
 
           return results;
-        }, 1);
+        }, 1) as Array<{ title: string; url: string; snippet: string; source: string; page: number; position: number }>;
 
         allResults.push(...pageResults);
 
@@ -169,7 +167,7 @@ export default function (xcli: XCLIAPI): void {
                 results.push({ title, url, snippet: snippetEl?.textContent?.trim().slice(0, 300) || '', source: sourceEl?.textContent?.trim() || '', page: pNum, position: idx + 1 });
               });
               return results;
-            }, pageNum);
+            }, pageNum) as Array<{ title: string; url: string; snippet: string; source: string; page: number; position: number }>;
             allResults.push(...extraResults);
           }
         }
@@ -201,9 +199,9 @@ export default function (xcli: XCLIAPI): void {
       heat: z.string(), tag: z.string(),
     })),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
 
       try {
         const categoryMap: Record<string, string> = {
@@ -260,7 +258,7 @@ export default function (xcli: XCLIAPI): void {
           });
 
           return results;
-        });
+        }) as Array<{ rank: number; title: string; url: string; heat: string; tag: string }>;
 
         return ok(items, [...cdpTips, `分类: ${params.category}`, `共获取 ${items.length} 条热搜`]);
       } catch (error) {
@@ -280,15 +278,15 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.array(z.string()),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto(`https://suggestion.baidu.com/su?wd=${encodeURIComponent(params.query)}`);
         const text = await page.evaluate(
           () => document.body.innerText || document.body.textContent || ''
-        );
+        ) as string;
 
         const match = text.match(/s:\[([^\]]*)\]/);
         const items = match
@@ -318,9 +316,9 @@ export default function (xcli: XCLIAPI): void {
       time: z.string(), snippet: z.string(),
     })),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
 
       try {
         const url = `https://www.baidu.com/s?wd=${encodeURIComponent(params.query)}&tn=news`;
@@ -374,7 +372,7 @@ export default function (xcli: XCLIAPI): void {
           });
 
           return items.slice(0, maxItems);
-        }, params.limit);
+        }, params.limit) as Array<{ title: string; url: string; source: string; time: string; snippet: string }>;
 
         return ok(news, [...cdpTips, `关键词 "${params.query}" 获取 ${news.length} 条新闻`]);
       } catch (error) {
@@ -406,9 +404,9 @@ export default function (xcli: XCLIAPI): void {
       checked: z.boolean(),
     }),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
 
       try {
         const { domain, keyword, pages } = params;
@@ -456,7 +454,7 @@ export default function (xcli: XCLIAPI): void {
               }
             });
             return results;
-          }, pageNum);
+          }, pageNum) as Array<{ page: number; position: number; title: string; url: string }>;
 
           for (const r of pageResults) {
             if (r.url.includes(domain) || r.title.toLowerCase().includes(domain.toLowerCase())) {
@@ -513,7 +511,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面');
-      const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
+      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
 
       try {
         const { query, limit, color } = params;
@@ -544,7 +542,7 @@ export default function (xcli: XCLIAPI): void {
         }> = [];
 
         try {
-          const json = JSON.parse(jsonText);
+          const json = JSON.parse(jsonText as string) as Record<string, unknown>;
           const items = Array.isArray(json.data) ? json.data : [];
           results = items
             .filter((item: Record<string, unknown>) => item && item.thumbURL)
@@ -714,7 +712,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   baidu.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+    const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page | undefined;
     if (!page) return;
     await page.goto('https://www.baidu.com');
     await page.click('#s-top-loginbtn').catch((err) => {

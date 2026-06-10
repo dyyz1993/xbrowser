@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page } from '../../src/browser-shim.js';
+import type { Page, PluginPage, PluginElementHandle, PluginRoute } from '../types.js';
 
 const ZHIDA_URL = 'https://zhida.zhihu.com';
 
@@ -36,11 +36,11 @@ function resolvePage(ctx: Record<string, unknown>): { page: Page; tips: string[]
 /** 安全点击选择器（CDP 模式兼容） */
 async function safeClick(page: Page, selector: string): Promise<boolean> {
   try {
-    const handle = await page.evaluateHandle((sel: string) => {
+    const handle = await (page as unknown as PluginPage).evaluateHandle((sel: string) => {
       const el = document.querySelector(sel);
       return el;
     }, selector);
-    const element = handle.asElement();
+    const element = (handle as unknown as PluginElementHandle).asElement();
     if (!element) return false;
     const box = await element.boundingBox();
     if (!box) return false;
@@ -70,7 +70,7 @@ async function ensureZhidaPage(page: Page, ctx?: CommandContext): Promise<void> 
   }
 
   // 检查是否跳转到登录页
-  const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 1000) || '');
+  const bodyText = (await page.evaluate(() => document.body?.textContent?.trim().slice(0, 1000) || '')) as string;
   const isLoginPage = bodyText.includes('登录') && bodyText.includes('注册');
 
   // 如果有知乎相关的文字，说明不是纯登录页
@@ -136,7 +136,7 @@ async function selectThinkingMode(page: Page, mode: string): Promise<void> {
   const selected = await page.evaluate((label: string) => {
     const els = Array.from(document.querySelectorAll('*'));
     const target = els.find(el => el.textContent?.trim() === label && el.children.length <= 1);
-    if (target && target.offsetParent !== null) {
+    if (target && (target as HTMLElement).offsetParent !== null) {
       (target as HTMLElement).click();
       return true;
     }
@@ -206,7 +206,7 @@ async function selectKnowledgeSource(page: Page, source: string): Promise<void> 
   // 点击目标选项
   const selected = await page.evaluate((label: string) => {
     const els = Array.from(document.querySelectorAll('*'));
-    const targets = els.filter(el => el.textContent?.trim() === label && el.children.length <= 1 && el.offsetParent !== null);
+    const targets = els.filter(el => el.textContent?.trim() === label && el.children.length <= 1 && (el as HTMLElement).offsetParent !== null);
     if (targets.length > 0) {
       (targets[0] as HTMLElement).click();
       return true;
@@ -348,7 +348,7 @@ async function waitForResponse(page: Page, query: string, maxWaitMs: number = 60
             !txt.includes('隐私政策') &&
             !txt.includes('备案号') &&
             !txt.includes('输入你的问题，或使用') &&
-            div.offsetParent !== null
+            (div as HTMLElement).offsetParent !== null
           ) {
             const rect = div.getBoundingClientRect();
             // 过滤掉页面顶部和底部的内容（y 坐标）
@@ -382,7 +382,7 @@ async function waitForResponse(page: Page, query: string, maxWaitMs: number = 60
           candidateCount: meaningfulCandidates.length,
           candidates: meaningfulCandidates.map(c => c.text),
         };
-      }, query);
+      }, query) as { hasQuery: boolean; candidateCount: number; candidates: string[] };
 
       // 查询出现在页面中，说明输入成功
       if (result.hasQuery) {
@@ -432,7 +432,7 @@ async function extractSources(page: Page): Promise<{ total: number; domains: str
         if (item.href.includes('zhihu.com/question') || item.href.includes('zhida.zhihu.com')) return false;
         return true;
       });
-  });
+  }) as Array<{ href: string; text: string }>;
 
   const domains = new Set<string>();
   const urls = links.map(l => {
@@ -490,7 +490,7 @@ export default function (xcli: XCLIAPI): void {
       })),
     }),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
 
       try {
         const searchUrl = `https://www.zhihu.com/search?type=${params.type}&q=${encodeURIComponent(params.query)}`;
@@ -516,7 +516,7 @@ export default function (xcli: XCLIAPI): void {
             });
           });
           return items;
-        }, params.limit);
+        }, params.limit) as Array<{ title: string; excerpt: string; author: string; link: string; type: string }>;
 
         return ok({ query: params.query, count: results.length, results }, [...tips, `找到 ${results.length} 条结果`]);
       } catch (error) {
@@ -542,7 +542,7 @@ export default function (xcli: XCLIAPI): void {
       })),
     }),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto('https://www.zhihu.com/hot', { waitUntil: 'domcontentloaded' });
@@ -565,7 +565,7 @@ export default function (xcli: XCLIAPI): void {
             });
           });
           return results;
-        }, params.limit);
+        }, params.limit) as Array<{ rank: number; title: string; hotScore: string; link: string }>;
 
         return ok({ count: items.length, items }, [...tips, `热榜 ${items.length} 条`]);
       } catch (error) {
@@ -593,7 +593,7 @@ export default function (xcli: XCLIAPI): void {
       })),
     }),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto(params.url, { waitUntil: 'domcontentloaded' });
@@ -618,7 +618,7 @@ export default function (xcli: XCLIAPI): void {
           });
 
           return { title, detail, answers };
-        }, params.limit);
+        }, params.limit) as { title: string; detail: string; answers: Array<{ author: string; content: string; upvotes: string }> };
 
         return ok(data, [...tips, `问题: ${data.title}`, `${data.answers.length} 条回答`]);
       } catch (error) {
@@ -647,7 +647,7 @@ export default function (xcli: XCLIAPI): void {
       pageUrl: z.string(),
     }),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto(params.url, { waitUntil: 'domcontentloaded' });
@@ -717,7 +717,7 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const { page, tips } = resolvePage(ctx as Record<string, unknown>);
+        const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
 
         // 1. 导航到知乎知答页面
         await ensureZhidaPage(page, ctx);
@@ -777,10 +777,10 @@ export default function (xcli: XCLIAPI): void {
         if (params.showSources) {
           await page.route('**/zhida.zhihu.com/**', async (route) => {
             try {
-              const resp = await route.fetch();
+              const resp = await (route as unknown as PluginRoute).fetch();
               const body = await resp.text();
               capturedStream += body;
-              await route.fulfill({ body, headers: resp.headers(), status: resp.status });
+              await route.fulfill({ body, headers: resp.headers(), status: resp.status() });
             } catch {
               await route.continue();
             }
@@ -869,7 +869,7 @@ export default function (xcli: XCLIAPI): void {
       url: z.string(),
     }),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto('https://zhuanlan.zhihu.com/write', {

@@ -3,6 +3,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
 import path from 'path';
 import fs from 'fs';
+import type { PluginPage, PluginElementHandle, PluginRoute } from '../types.js';
 
 type Page = import('../types').Page;
 
@@ -93,7 +94,7 @@ async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
     const isLogin = (ctx as unknown as Record<string, unknown>).__loginChecked as boolean;
     if (!isLogin) {
       (ctx as unknown as Record<string, unknown>).__loginChecked = true;
-      const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '');
+      const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '') as string;
       if (bodyText.includes('登录') && bodyText.includes('注册') && !bodyText.includes('豆包')) {
         const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint;
         throw new Error(
@@ -129,7 +130,7 @@ async function uploadFileViaDataTransfer(page: Page, absPath: string): Promise<b
   const mime = mimeMap[ext] || 'application/octet-stream';
 
   const result = await page.evaluate(({ b64data, filename, mimeType }) => {
-    const fi = document.querySelector('input[type="file"]');
+    const fi = document.querySelector('input[type="file"]') as HTMLInputElement | null;
     if (!fi) return false;
 
     const byteChars = atob(b64data);
@@ -144,7 +145,7 @@ async function uploadFileViaDataTransfer(page: Page, absPath: string): Promise<b
     Object.defineProperty(fi, 'files', { value: dt.files });
     fi.dispatchEvent(new Event('change', { bubbles: true }));
     return fi.files.length > 0;
-  }, { b64data: b64, filename: path.basename(absPath), mimeType: mime });
+  }, { b64data: b64, filename: path.basename(absPath), mimeType: mime }) as boolean;
 
   return result;
 }
@@ -155,7 +156,7 @@ async function safeClickSelector(page: Page, selector: string): Promise<boolean>
     if (!el) return null;
     const rect = el.getBoundingClientRect();
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-  }, selector);
+  }, selector) as { x: number; y: number; width: number; height: number } | null;
   if (!box) return false;
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   return true;
@@ -165,10 +166,10 @@ async function waitForText(page: Page, text: string, timeout = 5000): Promise<vo
   await page.waitForFunction(
     (t: string) => {
       const all = document.querySelectorAll('div, button, span, textarea');
-      return Array.from(all).some(el => el.textContent?.trim() === t && el.offsetParent !== null);
+      return Array.from(all).some(el => el.textContent?.trim() === t && (el as HTMLElement).offsetParent !== null);
     },
-    text,
-    { timeout }
+    { timeout },
+    text
   );
 }
 
@@ -180,13 +181,13 @@ async function safeClickByText(page: Page, text: string): Promise<boolean> {
   const box = await page.evaluate((t: string) => {
     const all = document.querySelectorAll('div, button, span');
     for (const el of all) {
-      if (el.textContent?.trim() === t && el.offsetParent !== null) {
+      if (el.textContent?.trim() === t && (el as HTMLElement).offsetParent !== null) {
         const rect = el.getBoundingClientRect();
         return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
       }
     }
     return null;
-  }, text);
+  }, text) as { x: number; y: number; width: number; height: number } | null;
   if (!box) return false;
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
   return true;
@@ -210,7 +211,7 @@ export default function (xcli: XCLIAPI): void {
         if (url.includes('/chat')) return true;
         // Not on doubao domain — assume logged in
         if (!url.includes('doubao.com')) return true;
-        const body = await pg.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        const body = await pg.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
         if (!body || body.includes('登录') && body.includes('注册')) return false;
         return true;
       } catch {
@@ -246,7 +247,7 @@ export default function (xcli: XCLIAPI): void {
             title: (a.textContent || '').trim(),
             url: (a as HTMLAnchorElement).href,
           })).filter(c => c.title.length > 0);
-        });
+        }) as Array<{ index: number; title: string; url: string }>;
 
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
@@ -336,7 +337,7 @@ export default function (xcli: XCLIAPI): void {
             }
           }
           return { found: false, title: '' };
-        }, params.title);
+        }, params.title) as { found: boolean; title: string };
 
         if (!clicked.found) throw new Error(`未找到包含"${params.title}"的会话`);
 
@@ -366,7 +367,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao chat "2024年新闻" --search --showSources', description: '联网搜索+显示来源' },
       { cmd: 'xbrowser doubao chat "深度研究AI趋势" --think --search --showSources', description: '深度思考+联网搜索+来源' },
     ],
-    result: z.object({ response: z.string(), duration: z.string().optional(), sources: z.record(z.any()).optional() }).passthrough(),
+    result: z.object({ response: z.string(), duration: z.string().optional(), sources: z.record(z.string(), z.any()).optional() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = ctx.page;
@@ -494,7 +495,7 @@ export default function (xcli: XCLIAPI): void {
 
         if (wantSources) {
           await page.route('**/doubao.com/chat/completion', async (route) => {
-            const resp = await route.fetch();
+            const resp = await (route as unknown as PluginRoute).fetch();
             const body = await resp.text();
             capturedStream += body;
             await route.fulfill({ body, headers: resp.headers(), status: resp.status() });
@@ -599,7 +600,7 @@ export default function (xcli: XCLIAPI): void {
                   seen.add(h);
                   return true;
                 }).map(a => a.getAttribute('href') || '');
-              });
+              }) as string[];
               allUrls = domData;
             }
 
@@ -722,7 +723,7 @@ export default function (xcli: XCLIAPI): void {
             if (src && src.startsWith('http')) urls.add(src);
           });
           return [...urls];
-        });
+        }) as string[];
         tips.push(`📸 已记录 ${existingUrls.length} 张历史图片URL`);
 
         await page.waitForTimeout(500);
@@ -800,8 +801,7 @@ export default function (xcli: XCLIAPI): void {
               }
               if (!hdLoaded) { throw new Error('HD preview not loaded'); }
               // Fetch HD image inside browser (has cookies/referer, bypasses CORS)
-              const hdResult = await page.evaluate(async () => {
-                const imgs = document.querySelectorAll('img');
+              const hdResult = await page.evaluate(async () => {                const imgs = document.querySelectorAll('img');
                 let hdSrc = '';
                 for (const img of imgs) {
                   const src = (img as HTMLImageElement).src;
@@ -820,7 +820,7 @@ export default function (xcli: XCLIAPI): void {
                   reader.onerror = () => resolve({ ok: false });
                   reader.readAsDataURL(blob);
                 });
-              });
+              }) as { ok: boolean; data?: string; size?: number };
 
               if (hdResult.ok && hdResult.data) {
                 const downloadDir = path.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads');
@@ -915,7 +915,7 @@ export default function (xcli: XCLIAPI): void {
           }
         }
 
-        const submitHandle = await page.evaluateHandle(() => {
+        const submitHandle = await (page as unknown as PluginPage).evaluateHandle(() => {
           const selectors = ['button[class*="submit"]', 'button[class*="generate"]', '[class*="confirm"] button'];
           for (const sel of selectors) {
             const el = document.querySelector(sel);
@@ -926,7 +926,7 @@ export default function (xcli: XCLIAPI): void {
           }
           return null;
         });
-        const submitEl = submitHandle.asElement();
+        const submitEl = (submitHandle as unknown as PluginElementHandle).asElement();
         if (submitEl) {
           const submitBox = await submitEl.boundingBox();
           if (submitBox) await page.mouse.click(submitBox.x + submitBox.width / 2, submitBox.y + submitBox.height / 2);
@@ -1120,7 +1120,7 @@ export default function (xcli: XCLIAPI): void {
             alt: (el as HTMLImageElement).alt || '',
             text: el.textContent?.trim() || '',
           }));
-        });
+        }) as Array<{ index: number; src: string; alt: string; text: string }>;
 
         return ok(creations, [...tips, `共 ${creations.length} 条创作记录`]);
       } catch {
@@ -1275,10 +1275,10 @@ export default function (xcli: XCLIAPI): void {
             if (href && href.startsWith('http')) return href;
           }
           return '';
-        });
+        }) as string;
 
         if (!videoUrl) {
-          const allText = await page.evaluate(() => document.body.textContent?.slice(0, 500) || '');
+          const allText = await page.evaluate(() => document.body.textContent?.slice(0, 500) || '') as string;
           const statusMatch = allText.match(/(完成|失败|生成|error|failed|completed|success)/i);
           tips.push(`状态提示: ${statusMatch?.[0] || '任务可能还在处理'}`);
         }
@@ -1465,10 +1465,10 @@ export default function (xcli: XCLIAPI): void {
           } catch { /* may already exist */ }
 
           // Click textarea via evaluateHandle + boundingBox
-          const taHandle = await page.evaluateHandle(() =>
+          const taHandle = await (page as unknown as PluginPage).evaluateHandle(() =>
             document.querySelector('textarea[placeholder="自定义歌词"]')
           );
-          const taEl = taHandle.asElement();
+          const taEl = (taHandle as unknown as PluginElementHandle).asElement();
           if (taEl) {
             const taBox = await taEl.boundingBox();
             if (taBox) {
@@ -1503,14 +1503,14 @@ export default function (xcli: XCLIAPI): void {
 
         } else if (params.description) {
           // AI lyric mode — type description in editable span
-          const editHandle = await page.evaluateHandle(() => {
+          const editHandle = await (page as unknown as PluginPage).evaluateHandle(() => {
             const spans = document.querySelectorAll('span[contenteditable]');
             for (const s of spans) {
               if (s.textContent?.includes('描述歌词要表达的主题')) return s;
             }
             return null;
           });
-          const editEl = editHandle.asElement();
+          const editEl = (editHandle as unknown as PluginElementHandle).asElement();
           if (editEl) {
             const editBox = await editEl.boundingBox();
             if (editBox) await page.mouse.click(editBox.x + editBox.width / 2, editBox.y + editBox.height / 2);
@@ -1518,7 +1518,7 @@ export default function (xcli: XCLIAPI): void {
               const editableSpans = document.querySelectorAll('span[contenteditable]');
               for (const s of editableSpans) {
                 if (s.textContent?.includes('描述歌词要表达的主题')) {
-                  s.focus();
+                  (s as HTMLElement).focus();
                   document.execCommand('selectAll', false);
                   document.execCommand('insertText', false, desc);
                   return true;
@@ -1550,15 +1550,15 @@ export default function (xcli: XCLIAPI): void {
           const cat = categoryFor[target];
           if (!cat) return false;
           const candidates = genreMap[cat];
-          const current = await page.evaluateHandle((opts: string[]) => {
+          const current = await (page as unknown as PluginPage).evaluateHandle((opts: string[]) => {
             const all = document.querySelectorAll('span,div');
             for (const s of all) {
               const t = s.textContent.trim();
-              if (t.length > 0 && t.length < 10 && opts.includes(t) && s.offsetParent !== null && !s.isContentEditable) return s;
+              if (t.length > 0 && t.length < 10 && opts.includes(t) && (s as HTMLElement).offsetParent !== null && !(s as HTMLElement).isContentEditable) return s;
             }
             return null;
           }, candidates);
-          const curEl = current.asElement();
+          const curEl = (current as unknown as PluginElementHandle).asElement();
           if (!curEl) return false;
           const curBox = await curEl.boundingBox();
           if (!curBox) return false;
@@ -1568,26 +1568,26 @@ export default function (xcli: XCLIAPI): void {
             await page.waitForFunction((text: string) => {
               const all = document.querySelectorAll('span,div');
               for (const d of all) {
-                if (d.textContent.trim() === text && d.offsetParent !== null && d.getAttribute('role') !== 'tab') {
+                if (d.textContent.trim() === text && (d as HTMLElement).offsetParent !== null && d.getAttribute('role') !== 'tab') {
                   const rect = d.getBoundingClientRect();
                   if (rect.y > 0 && rect.height < 80 && rect.height > 10) return true;
                 }
               }
               return false;
-            }, target, { timeout: 3000 });
+            }, { timeout: 3000 }, target);
           } catch { /* dropdown may not appear */ }
 
-          const optHandle = await page.evaluateHandle((text: string) => {
+          const optHandle = await (page as unknown as PluginPage).evaluateHandle((text: string) => {
             const all = document.querySelectorAll('span,div');
             for (const d of all) {
-              if (d.textContent.trim() === text && d.offsetParent !== null && d.getAttribute('role') !== 'tab') {
+              if (d.textContent.trim() === text && (d as HTMLElement).offsetParent !== null && d.getAttribute('role') !== 'tab') {
                 const rect = d.getBoundingClientRect();
                 if (rect.y > 0 && rect.height < 80 && rect.height > 10) return d;
               }
             }
             return null;
           }, target);
-          const optEl = optHandle.asElement();
+          const optEl = (optHandle as unknown as PluginElementHandle).asElement();
           if (optEl) {
             const optBox = await optEl.boundingBox();
             if (optBox) {
@@ -1622,23 +1622,23 @@ export default function (xcli: XCLIAPI): void {
             const all = document.querySelectorAll('div');
             return Array.from(all).some(d => {
               const t = d.textContent?.trim() || '';
-              return t.startsWith('我想创作一首歌曲') && d.offsetParent !== null && t.length < 300;
+              return t.startsWith('我想创作一首歌曲') && (d as HTMLElement).offsetParent !== null && t.length < 300;
             });
           }, { timeout: 10000 });
         } catch { /* description text may not appear yet */ }
 
-        const descHandle = await page.evaluateHandle(() => {
+        const descHandle = await (page as unknown as PluginPage).evaluateHandle(() => {
           const all = document.querySelectorAll('div');
           for (const d of all) {
             const t = d.textContent?.trim() || '';
-            if (t.startsWith('我想创作一首歌曲') && d.offsetParent !== null && t.length < 300) {
+            if (t.startsWith('我想创作一首歌曲') && (d as HTMLElement).offsetParent !== null && t.length < 300) {
               const rect = d.getBoundingClientRect();
               if (rect.height > 10 && rect.height < 200) return d;
             }
           }
           return null;
         });
-        const descEl = descHandle.asElement();
+        const descEl = (descHandle as unknown as PluginElementHandle).asElement();
         if (descEl) {
           const descBox = await descEl.boundingBox();
           if (descBox) {
@@ -1650,10 +1650,10 @@ export default function (xcli: XCLIAPI): void {
             }
           }
         } else if (params.duration) {
-          const editorHandle = await page.evaluateHandle(() =>
+          const editorHandle = await (page as unknown as PluginPage).evaluateHandle(() =>
             document.querySelector('div[aria-label="doc_editor"]') || document.querySelector('[contenteditable="true"]')
           );
-          const editorEl = editorHandle.asElement();
+          const editorEl = (editorHandle as unknown as PluginElementHandle).asElement();
           if (editorEl) {
             const editorBox = await editorEl.boundingBox();
             if (editorBox) {
@@ -1665,8 +1665,8 @@ export default function (xcli: XCLIAPI): void {
         }
 
         // Click send button
-        const sendHandle = await page.evaluateHandle(() => document.querySelector('#flow-end-msg-send'));
-        const sendEl = sendHandle.asElement();
+        const sendHandle = await (page as unknown as PluginPage).evaluateHandle(() => document.querySelector('#flow-end-msg-send'));
+        const sendEl = (sendHandle as unknown as PluginElementHandle).asElement();
         if (sendEl) {
           const sendBox = await sendEl.boundingBox();
           if (sendBox) await page.mouse.click(sendBox.x + sendBox.width / 2, sendBox.y + sendBox.height / 2);
@@ -1739,7 +1739,7 @@ export default function (xcli: XCLIAPI): void {
             ];
             for (const sel of errorSelectors) {
               const el = document.querySelector(sel);
-              if (el && el.offsetParent !== null) {
+              if (el && (el as HTMLElement).offsetParent !== null) {
                 const t = (el.textContent || '').trim();
                 if (t.length > 0 && t.length < 200) return true;
               }
@@ -1957,10 +1957,10 @@ export default function (xcli: XCLIAPI): void {
             }
           }
           if (!btnClicked) {
-            const textHandle = await page.evaluateHandle(() => {
+            const textHandle = await (page as unknown as PluginPage).evaluateHandle(() => {
               return Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('上传')) || null;
             });
-            const textEl = textHandle.asElement();
+            const textEl = (textHandle as unknown as PluginElementHandle).asElement();
             if (textEl) {
               const textBox = await textEl.boundingBox();
               if (textBox) await page.mouse.click(textBox.x + textBox.width / 2, textBox.y + textBox.height / 2);
@@ -1991,7 +1991,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao cloud-drive --list', description: '列出云盘文件' },
     ],
-    result: z.object({ files: z.array(z.record(z.any())), total: z.number() }).passthrough(),
+    result: z.object({ files: z.array(z.record(z.string(), z.any())), total: z.number() }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = ctx.page;
@@ -2025,7 +2025,7 @@ export default function (xcli: XCLIAPI): void {
             name: el.textContent?.trim() || '',
             type: el.getAttribute('data-type') || el.getAttribute('data-ext') || '',
           }));
-        });
+        }) as Array<{ index: number; name: string; type: string }>;
 
         return ok({ files, total: files.length }, [...tips, `云盘中共 ${files.length} 个文件`]);
       } catch {
@@ -2158,11 +2158,11 @@ export default function (xcli: XCLIAPI): void {
 
         await safeClickSelector(page, searchInputSel);
         await page.evaluate(({ sel, msg }: { sel: string; msg: string }) => {
-          const el = document.querySelector(sel) as HTMLTextAreaElement;
+          const el = document.querySelector(sel) as HTMLElement;
           if (!el) return;
           el.focus();
           if ('value' in el) {
-            el.value = msg;
+            (el as HTMLTextAreaElement).value = msg;
           } else {
             el.textContent = msg;
           }
@@ -2172,7 +2172,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(500);
         let capturedStream = '';
         await page.route('**/doubao.com/chat/completion', async (route) => {
-          const resp = await route.fetch();
+          const resp = await (route as unknown as PluginRoute).fetch();
           const body = await resp.text();
           capturedStream += body;
           await route.fulfill({ body, headers: resp.headers(), status: resp.status() });
@@ -2246,7 +2246,7 @@ export default function (xcli: XCLIAPI): void {
               seen.add(h);
               return true;
             }).map(a => a.getAttribute('href') || '');
-          });
+          }) as string[];
           allUrls = domData;
         }
 
@@ -2316,12 +2316,12 @@ export default function (xcli: XCLIAPI): void {
             }
           }
           if (!clicked) {
-            const textHandle = await page.evaluateHandle(() => {
+            const textHandle = await (page as unknown as PluginPage).evaluateHandle(() => {
               return Array.from(document.querySelectorAll('button')).find(
                 b => b.textContent?.includes('上传') || b.textContent?.includes('附件')
               ) || null;
             });
-            const textEl = textHandle.asElement();
+            const textEl = (textHandle as unknown as PluginElementHandle).asElement();
             if (textEl) {
               const textBox = await textEl.boundingBox();
               if (textBox) await page.mouse.click(textBox.x + textBox.width / 2, textBox.y + textBox.height / 2);

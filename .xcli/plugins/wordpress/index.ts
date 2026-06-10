@@ -9,13 +9,12 @@ export default function (xcli: XCLIAPI): void {
     description: 'WordPress.com SEO 外链 - 博客平台 (DA 93, dofollow)',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const ctxAny = ctx as Record<string, unknown>;
-      const page = ctxAny.page as import('../types').Page;
+      const page = ctx.page;
       if (!page) return true;
       try {
         const url = page.url();
         if (url.includes('/log-in') || url.includes('/login')) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
         if (!body) return false;
         if (body.includes('Log In')) return false;
         return true;
@@ -37,7 +36,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://wordpress.com/log-in', {
@@ -98,7 +97,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), tags: z.string().optional(), categories: z.string().optional(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://wordpress.com/post/', {
@@ -210,7 +209,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), saved: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://wordpress.com/post/', {
@@ -269,7 +268,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ url: z.string(), updated: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://wordpress.com/me', {
@@ -323,7 +322,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://wordpress.com/page/', {
@@ -378,7 +377,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+    const page = ctx.page;
     if (!page) return;
     await page.goto('https://wordpress.com/log-in');
     await ctx.storage.set('wordpress_login', { at: Date.now() });

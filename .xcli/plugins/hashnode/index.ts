@@ -9,13 +9,12 @@ export default function (xcli: XCLIAPI): void {
     description: 'Hashnode SEO 外链 - 开发者博客平台 (DA 80+, 自定义域名 dofollow)',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const ctxAny = ctx as Record<string, unknown>;
-      const page = ctxAny.page as import('../types').Page;
+      const page = ctx.page;
       if (!page) return true;
       try {
         const url = page.url();
         if (url.includes('/login')) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
         if (!body) return false;
         if (body.includes('Sign in')) return false;
         return true;
@@ -33,7 +32,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [{ cmd: 'xbrowser hashnode login', description: '登录 Hashnode' }],
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://hashnode.com/signin', {
@@ -89,7 +88,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), tags: z.string().optional(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://hashnode.com/draft', {
@@ -177,7 +176,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), saved: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://hashnode.com/draft', {
@@ -235,7 +234,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ url: z.string(), updated: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://hashnode.com/settings', {
@@ -274,7 +273,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+    const page = ctx.page;
     if (!page) return;
     await page.goto('https://hashnode.com/signin');
     await ctx.storage.set('hashnode_login', { at: Date.now() });

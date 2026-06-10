@@ -1,4 +1,4 @@
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
 
@@ -124,7 +124,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('image', {
     description: 'Search images across multiple sites with unified result format',
-    loginRequired: 'optional',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('Search query'),
@@ -145,12 +144,12 @@ export default function (xcli: XCLIAPI): void {
 
       const getSite = (name: string) => xcli.createSite({ name, url: '' });
 
-      const isCDP = !!(ctx as Record<string, unknown>).cdpEndpoint;
+      const isCDP = !!ctx.cdpEndpoint;
       let browser: import('../types').Browser;
       let context: import('../types').BrowserContext;
 
       if (isCDP) {
-        const result = await launch({ cdpEndpoint: (ctx as Record<string, unknown>).cdpEndpoint as string });
+        const result = await launch({ cdpEndpoint: ctx.cdpEndpoint as string });
         browser = result.browser;
         context = result.browser.contexts()[0] || await result.browser.newContext();
       } else {
@@ -219,7 +218,7 @@ export default function (xcli: XCLIAPI): void {
                   page,
                   timeout: params.timeout,
                 },
-                pluginCtx as unknown
+                pluginCtx as unknown as CommandContext
               ) as { data: ImageSearchResult; tips?: string[] };
 
               if (result?.data) {

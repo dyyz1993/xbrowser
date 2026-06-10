@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page, Locator } from '../../src/browser-shim.js';
+import type { Page, Locator } from '../types.js';
 
 type Point = { x: number; y: number };
 
@@ -69,7 +69,7 @@ async function humanMouseMove(
     };
   });
 
-  const p0: Point = startPos;
+  const p0: Point = startPos as Point;
   const p3: Point = { x: targetX, y: targetY };
 
   const dx = p3.x - p0.x;
@@ -295,13 +295,13 @@ export default function (xcli: XCLIAPI): void {
     description: 'CSDN SEO 外链 - 中文技术平台 (DA 80+, 百度排名 #1)',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const ctxAny = ctx as Record<string, unknown>;
+      const ctxAny = ctx as unknown as Record<string, unknown>;
       const page = ctxAny.page as import('../types').Page;
       if (!page) return true;
       try {
         const url = page.url();
         if (url.includes('/passport')) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
         if (!body) return false;
         if (body.includes('登录')) return false;
         return true;
@@ -319,7 +319,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [{ cmd: 'xbrowser csdn login', description: '登录 CSDN' }],
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (_params, ctx) => {
-      const { page, tips } = resolvePage(ctx as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto('https://passport.csdn.net/login', {
@@ -383,7 +383,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), tags: z.string().optional(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
 
       try {
         let content = params.content;
@@ -492,7 +492,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ title: z.string(), saved: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto('https://mp.csdn.net/mp_blog/creation/editor', {
@@ -555,7 +555,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ url: z.string(), updated: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto('https://mp.csdn.net/mp/profile/profile', {
@@ -615,7 +615,7 @@ export default function (xcli: XCLIAPI): void {
       articles: z.array(z.object({ title: z.string(), link: z.string(), views: z.string(), date: z.string() })),
     }).passthrough(),
     handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx as Record<string, unknown>);
+      const { page, tips } = resolvePage(ctx as unknown as Record<string, unknown>);
 
       try {
         let targetUrl: string;
@@ -661,7 +661,7 @@ export default function (xcli: XCLIAPI): void {
             });
           }
           return items;
-        }, params.limit);
+        }, params.limit) as Array<{ title: string; link: string; views: string; date: string }>;
 
         return ok({
             source: params.keyword ? 'search' : params.username ? 'user-blog' : 'manage',
@@ -675,7 +675,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as Page | undefined;
+    const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
     if (!page) return;
     await page.goto('https://passport.csdn.net/login');
     await ctx.storage.set('csdn_login', { at: Date.now() });

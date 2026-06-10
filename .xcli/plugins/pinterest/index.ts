@@ -8,15 +8,15 @@ export default function (xcli: XCLIAPI): void {
     name: 'pinterest', url: 'https://www.pinterest.com',
     description: 'Pinterest - Image sharing platform', requiresLogin: true,
     isLogin: async (ctx) => {
-      const ctxAny = ctx as Record<string, unknown>;
+      const ctxAny = ctx as unknown as Record<string, unknown>;
       const page = ctxAny.page as import('../types').Page;
       if (!page) return true;
       try {
         const url = page.url();
         if (url.includes('/login')) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
         if (!body) return false;
-        if (body.includes('Log in')) return false;
+        if ((body as string).includes('Log in')) return false;
         return true;
       } catch {
         return true;
@@ -50,7 +50,7 @@ export default function (xcli: XCLIAPI): void {
       timestamp: z.union([z.string(), z.number()]).optional(),
     }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       try {
         await page.goto(`https://www.pinterest.com/search/pins/?q=${encodeURIComponent(params.query)}`, { waitUntil: 'networkidle', timeout: params.timeout });
@@ -82,13 +82,13 @@ export default function (xcli: XCLIAPI): void {
             const linkEl = el.querySelector('a[href*="/pin/"]') || el.closest('a');
             images.push({
               title: img.alt || '', thumbnailUrl: img.src,
-              sourceUrl: linkEl?.href || '', originalUrl: img.src,
+              sourceUrl: (linkEl as HTMLAnchorElement | null)?.href || '', originalUrl: img.src,
               width: img.naturalWidth || 0, height: img.naturalHeight || 0,
               format: 'jpg', sourceSite: 'pinterest',
             });
           });
           return images.slice(0, limit);
-        }, params.limit);
+        }, params.limit) as Array<Record<string, unknown>>;
 
         return ok({ query: params.query, engine: 'pinterest', results, total: results.length, timestamp: Date.now() }, [`Pinterest "${params.query}"，共 ${results.length} 张`]);
       } catch (error) {

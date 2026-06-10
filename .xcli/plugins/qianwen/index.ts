@@ -47,9 +47,9 @@ async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
       const hasInput = await page.evaluate(() => {
         const input = document.querySelector('div[role="textbox"][contenteditable="true"]');
         return !!input;
-      });
+      }) as boolean;
       if (!hasInput) {
-        const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '');
+        const bodyText = (await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '')) as string;
         if (bodyText.includes('登录') && !bodyText.includes('通义千问')) {
           const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint;
           throw new Error(
@@ -85,7 +85,7 @@ async function uploadFileViaDataTransfer(page: Page, absPath: string): Promise<b
   const mime = mimeMap[ext] || 'application/octet-stream';
 
   const result = await page.evaluate(({ b64data, filename, mimeType }) => {
-    const fi = document.querySelector('input[type="file"]');
+    const fi = document.querySelector('input[type="file"]') as HTMLInputElement | null;
     if (!fi) return false;
 
     const byteChars = atob(b64data);
@@ -100,7 +100,7 @@ async function uploadFileViaDataTransfer(page: Page, absPath: string): Promise<b
     Object.defineProperty(fi, 'files', { value: dt.files });
     fi.dispatchEvent(new Event('change', { bubbles: true }));
     return fi.files.length > 0;
-  }, { b64data: b64, filename: path.basename(absPath), mimeType: mime });
+  }, { b64data: b64, filename: path.basename(absPath), mimeType: mime }) as boolean;
 
   return result;
 }
@@ -119,7 +119,7 @@ export default function (xcli: XCLIAPI): void {
         if (url.includes('/login') || url.includes('/auth') || url.includes('/passport')) return false;
         const input = await page.evaluate(() => {
           return !!document.querySelector('div[role="textbox"][contenteditable="true"]');
-        });
+        }) as boolean;
         return input;
       } catch {
         return false;
@@ -150,7 +150,7 @@ export default function (xcli: XCLIAPI): void {
             title: (a.textContent || '').trim(),
             url: (a as HTMLAnchorElement).href,
           })).filter(c => c.title.length > 0);
-        });
+        }) as Array<{ index: number; title: string; url: string }>;
 
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
@@ -238,7 +238,7 @@ export default function (xcli: XCLIAPI): void {
             }
           }
           return { found: false, title: '' };
-        }, params.title);
+        }, params.title) as { found: boolean; title: string };
 
         if (!clicked.found) throw new Error(`未找到包含"${params.title}"的会话`);
 
@@ -282,7 +282,7 @@ export default function (xcli: XCLIAPI): void {
             for (const el of allEls) {
               const text = el.textContent?.trim() || '';
               if ((text === '深度思考' || text === '思考' || text.includes('Think'))
-                  && el.children.length <= 3 && el.offsetParent !== null) {
+                  && el.children.length <= 3 && (el as HTMLElement).offsetParent !== null) {
                 const btn = el.closest('button, [role="switch"]') || el.parentElement;
                 if (btn instanceof HTMLElement) {
                   btn.click();
@@ -306,7 +306,7 @@ export default function (xcli: XCLIAPI): void {
             for (const el of allEls) {
               const text = el.textContent?.trim() || '';
               if ((text === '联网搜索' || text === '搜索' || text.includes('Search'))
-                  && el.children.length <= 3 && el.offsetParent !== null) {
+                  && el.children.length <= 3 && (el as HTMLElement).offsetParent !== null) {
                 const btn = el.closest('button, [role="switch"]') || el.parentElement;
                 if (btn instanceof HTMLElement) {
                   btn.click();
@@ -475,7 +475,7 @@ export default function (xcli: XCLIAPI): void {
     if (cdp && page) {
       await page.goto(SITE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
       await page.waitForTimeout(2000);
-      const loggedIn = await site.isLoggedIn(ctx).catch(() => false);
+      const loggedIn = await site.isLoggedIn().catch(() => false);
       if (loggedIn) {
         console.log('✅ CDP 浏览器已登录通义千问');
         return;

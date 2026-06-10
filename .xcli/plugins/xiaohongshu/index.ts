@@ -30,7 +30,7 @@ async function detectSsr(page: Page) {
         }
       }
       return null;
-    }, SSR_VARIABLES);
+    }, SSR_VARIABLES) as { variable: string; keys: string[] } | null;
     if (!result) return undefined;
     const framework = SSR_VARIABLE_TO_FRAMEWORK[result.variable] ?? 'Unknown';
     return {
@@ -239,13 +239,13 @@ export default function (xcli: XCLIAPI): void {
     description: '小红书数据采集',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const ctxAny = ctx as Record<string, unknown>;
+      const ctxAny = ctx as unknown as Record<string, unknown>;
       const page = ctxAny.page as import('../types').Page;
       if (!page) return true;
       try {
         const url = page.url();
         if (url.includes('/login')) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
         if (!body) return false;
         if (body.includes('登录')) return false;
         return true;
@@ -257,7 +257,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('detail', {
     description: '获取笔记详情（API 拦截）',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({ noteId: z.string().describe('笔记 ID') }),
     examples: [{ cmd: 'xbrowser xiaohongshu detail --noteId "67xxxxxxxxxxxxxx"', description: '获取笔记详情' }],
@@ -273,10 +273,10 @@ export default function (xcli: XCLIAPI): void {
     }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = (ctx as Record<string, unknown>).page as Page;
+        const page = (ctx as unknown as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as Record<string, unknown>);
-        const waitForHuman = (ctx as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
+        const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
+        const waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
         const interceptor = interceptFirst<Record<string, unknown>>(page, API.FEED, (json) => {
           const data = (json as Record<string, unknown>)?.data;
           if (!data || typeof data !== 'object') return null;
@@ -310,7 +310,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('notes', {
     description: '采集用户笔记列表（API 拦截）',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({ userId: z.string().describe('用户 ID'), maxPages: z.number().default(5).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu notes --userId "5xxxxxxxxxxxx"', description: '采集用户笔记' }],
@@ -329,10 +329,10 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = (ctx as Record<string, unknown>).page as Page;
+        const page = (ctx as unknown as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as Record<string, unknown>);
-        const waitForHuman = (ctx as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
+        const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
+        const waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
         const interceptor = interceptApi(page, API.USER_POSTED, 'notes', 'note_id');
         try {
           await page.goto(`${XHS_BASE}/user/profile/${params.userId}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -355,7 +355,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('profile', {
     description: '获取用户资料（API 拦截 + DOM 兜底）',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({ userId: z.string().describe('用户 ID') }),
     examples: [{ cmd: 'xbrowser xiaohongshu profile --userId "5xxxxxxxxxxxx"', description: '获取用户资料' }],
@@ -371,14 +371,14 @@ export default function (xcli: XCLIAPI): void {
       statistics: z.object({
         notes: z.number(), fans: z.number(), following: z.number(), interaction: z.number(),
       }).passthrough().optional(),
-      stats: z.record(z.string()).optional(),
+      stats: z.record(z.string(), z.string()).optional(),
     }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = (ctx as Record<string, unknown>).page as Page;
+        const page = (ctx as unknown as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as Record<string, unknown>);
-        const waitForHuman = (ctx as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
+        const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
+        const waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
         const interceptor = interceptFirst<Record<string, unknown>>(page, API.USER_INFO, (json) => {
           const data = (json as Record<string, unknown>)?.data;
           return data && typeof data === 'object' ? data as Record<string, unknown> : null;
@@ -413,7 +413,7 @@ export default function (xcli: XCLIAPI): void {
               if (label) stats[label] = el.textContent?.trim() || '';
             });
             return { nickname, desc, avatar, stats };
-          });
+          }) as { nickname: string; desc: string; avatar: string; stats: Record<string, string> };
           tips.push(`用户(DOM): ${domInfo.nickname}`);
           return ok({ userId: params.userId, ...domInfo }, tips);
         } finally { interceptor.dispose(); }
@@ -423,7 +423,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search', {
     description: '搜索笔记（API 拦截）',
-    loginRequired: 'optional',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({ keyword: z.string().describe('搜索关键词'), maxPages: z.number().default(3).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu search --keyword "美食推荐"', description: '搜索笔记' }],
@@ -438,10 +438,10 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = (ctx as Record<string, unknown>).page as Page;
+        const page = (ctx as unknown as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as Record<string, unknown>);
-        const waitForHuman = (ctx as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
+        const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
+        const waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
         const interceptor = interceptApi(page, API.SEARCH_NOTES, 'items', 'id');
         try {
           await page.goto(`${XHS_BASE}/search_result?keyword=${encodeURIComponent(params.keyword)}&source=web_search_result_notes`, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -464,7 +464,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('comments', {
     description: '获取笔记评论（API 拦截）',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({ noteId: z.string().describe('笔记 ID'), maxPages: z.number().default(8).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu comments --noteId "67xxxxxxxxxxxxxx"', description: '获取笔记评论' }],
@@ -479,10 +479,10 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = (ctx as Record<string, unknown>).page as Page;
+        const page = (ctx as unknown as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as Record<string, unknown>);
-        const waitForHuman = (ctx as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
+        const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
+        const waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
         const interceptor = interceptApi(page, API.COMMENT_PAGE, 'comments', 'id');
         try {
           await page.goto(`${XHS_BASE}/explore/${params.noteId}`, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -509,7 +509,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('feed', {
     description: '获取首页推荐（API 拦截）',
-    loginRequired: 'required',
+    requiresLogin: true,
     scope: 'browser',
     parameters: z.object({ maxPages: z.number().default(3).describe('最大滚动次数') }),
     examples: [{ cmd: 'xbrowser xiaohongshu feed', description: '获取首页推荐' }],
@@ -523,10 +523,10 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = (ctx as Record<string, unknown>).page as Page;
+        const page = (ctx as unknown as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as Record<string, unknown>);
-        const waitForHuman = (ctx as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
+        const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
+        const waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as WaitForHumanFn | undefined;
         const interceptor = interceptApi(page, API.HOME_FEED, 'items', 'id');
         try {
           await page.goto(`${XHS_BASE}/explore`, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -549,7 +549,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('resolve-url', {
     description: '解析小红书短链',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'browser',
     parameters: z.object({ url: z.string().describe('短链 URL') }),
     examples: [{ cmd: 'xbrowser xiaohongshu resolve-url --url "https://xhslink.com/xxx"', description: '解析短链' }],
@@ -561,9 +561,9 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = (ctx as Record<string, unknown>).page as Page;
+        const page = (ctx as unknown as Record<string, unknown>).page as Page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildCtxTips(ctx as Record<string, unknown>);
+        const tips = buildCtxTips(ctx as unknown as Record<string, unknown>);
         await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 15000 });
         await page.waitForTimeout(3000);
 
@@ -588,7 +588,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search-image', {
     description: '小红书图片搜索',
-    loginRequired: 'none',
+    requiresLogin: false,
     scope: 'browser',
     parameters: z.object({
       query: z.string(),
@@ -607,7 +607,7 @@ export default function (xcli: XCLIAPI): void {
       timestamp: z.number(),
     }),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       try {
         await page.goto('https://www.xiaohongshu.com/search_result?keyword=' + encodeURIComponent(params.query) + '&source=web_search_result_notes', { waitUntil: 'networkidle', timeout: params.timeout });
@@ -634,7 +634,7 @@ export default function (xcli: XCLIAPI): void {
             });
           });
           return imgs;
-        }, params.limit);
+        }, params.limit) as Array<Record<string, unknown>>;
         return ok({ query: params.query, engine: 'xiaohongshu', results, total: results.length, timestamp: Date.now() }, [`小红书 "${params.query}"，共 ${results.length} 张`]);
       } catch (error) { return fail(error instanceof Error ? error.message : '未知错误'); }
     },

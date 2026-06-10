@@ -10,6 +10,12 @@ const CREATE_URL = 'https://www.mureka.cn/create';
 
 /* ───────── helpers ───────── */
 
+function getPage(ctx: CommandContext): Page {
+  const page = ctx.page;
+  if (!page) throw new Error('需要浏览器页面');
+  return page;
+}
+
 function buildTips(ctx: CommandContext): string[] {
   const tips: string[] = [];
   const ctxAny = ctx as unknown as Record<string, unknown>;
@@ -21,7 +27,7 @@ function buildTips(ctx: CommandContext): string[] {
 }
 
 async function safeClickSelector(page: Page, selector: string): Promise<boolean> {
-  const handle = await page.evaluateHandle(
+  const handle = await (page as unknown as { evaluateHandle: (...args: unknown[]) => Promise<{ asElement: () => { boundingBox: () => Promise<{ x: number; y: number; width: number; height: number } | null> | null } }> }).evaluateHandle(
     (sel: string) => document.querySelector(sel),
     selector,
   );
@@ -34,7 +40,7 @@ async function safeClickSelector(page: Page, selector: string): Promise<boolean>
 }
 
 async function safeClickText(page: Page, text: string): Promise<boolean> {
-  const handle = await page.evaluateHandle((t: string) => {
+  const handle = await (page as unknown as { evaluateHandle: (...args: unknown[]) => Promise<{ asElement: () => { boundingBox: () => Promise<{ x: number; y: number; width: number; height: number } | null> | null } }> }).evaluateHandle((t: string) => {
     const btns = Array.from(document.querySelectorAll('button, [role="tab"], a, [role="button"]'));
     const match = btns.find(b => {
       const txt = (b.textContent || '').trim();
@@ -238,7 +244,7 @@ async function waitForChatAction(
 
       return null;
     });
-    if (result) return result;
+    if (result) return result as { type: 'option' | 'create'; text: string; count: number } | null;
     await page.waitForTimeout(1000);
   }
   return null;
@@ -254,13 +260,13 @@ export default function (xcli: XCLIAPI): void {
     requiresLogin: true,
     isLogin: async (ctx) => {
       try {
-        const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
+        const page = ctx.page;
         if (!page) return true;
         const url = page.url();
         if (url === 'about:blank' || url === '') return true;
         if (!url.includes('mureka.cn')) return true;
         if (url.includes('/login') || url.includes('/auth')) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '');
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '') as string;
         if (!body) return false;
         return body.includes('金币') || body.includes('创作') || body.includes('Mureka') || body.includes('credits');
       } catch {
@@ -275,7 +281,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('billing', {
     description: '查询 Mureka 积分余额、免费试用次数、可用模型',
     scope: 'browser',
-    result: z.object({ credits: z.number(), freeTtsDuration: z.number(), userStatus: z.string(), models: z.array(z.object({ name: z.string(), model: z.string(), credits: z.number(), freeToUse: z.number(), trialsRemaining: z.number().nullable(), description: z.string() }).passthrough()) }).passthrough(),
+    result: z.object({ credits: z.number(), freeTtsDuration: z.number(), userStatus: z.string(), models: z.array(z.object({ name: z.string(), model: z.string(), credits: z.number(), freeToUse: z.number(), trialsRemaining: z.number().nullable(), description: z.string() })) }),
     parameters: z.object({}),
     examples: [
       { cmd: 'xbrowser mureka billing --cdp 9221', description: '查询积分和模型' },
@@ -331,7 +337,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('library', {
     description: '查看已创作的歌曲列表',
     scope: 'browser',
-    result: z.object({ songs: z.array(z.record(z.any())) }).passthrough(),
+    result: z.object({ songs: z.array(z.record(z.string(), z.any())) }),
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(20).describe('返回条数（默认 20）'),
     }),
@@ -389,7 +395,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('create', {
     description: '在 Mureka 上创建音乐。支持简易/自定义/配乐模式，--wait 同步等待结果',
     scope: 'browser',
-    result: z.object({ songs: z.array(z.record(z.any())).optional(), songId: z.string().optional(), status: z.string().optional() }).passthrough(),
+    result: z.object({ songs: z.array(z.record(z.string(), z.any())).optional(), songId: z.string().optional(), status: z.string().optional() }),
     parameters: z.object({
       prompt: z.string().describe('音乐描述（如"轻快的钢琴曲"、"悲伤的小提琴"）'),
       mode: z.enum(['简易', '自定义', '配乐']).optional().describe('创作模式（默认 自定义）'),
@@ -458,10 +464,10 @@ export default function (xcli: XCLIAPI): void {
             const json = await resp.json() as Record<string, unknown>;
             const data = json.data as Record<string, unknown> || json;
             return { credits: data.credits as number || 0 };
-          });
+          }) as { credits: number } | null;
           if (creditProfile) {
             tips.push(`积分: ${creditProfile.credits} (最少需要 ${minCredits})`);
-            if (creditProfile.credits < minCredits) {
+            if (creditProfile.credits < (minCredits as number)) {
               return fail('❌ 积分不足', [
                 ...tips,
                 `当前积分 ${creditProfile.credits}，需要至少 ${minCredits}`,
@@ -579,7 +585,7 @@ export default function (xcli: XCLIAPI): void {
               settled = true;
               clearTimeout(timer);
               page.off('response', handler);
-              resolve(json.data || json);
+              resolve((json.data || json) as Record<string, unknown>);
             } catch { /* ignore */ }
           };
           page.on('response', handler);
@@ -602,7 +608,7 @@ export default function (xcli: XCLIAPI): void {
             tips.push('✅ 已点击「优化歌词并生成」');
             // Wait for SSE lyrics optimization stream to finish (typically 10-20s)
             // The "使用这些歌词" button is inside a dialog-container.dialog-show
-            let useLyricClicked = false;
+            let useLyricClicked: boolean | Record<string, number> = false;
 
             // First check if the optimization dialog exists and wait for content
             const dialogReady = await page.evaluate(() => {
@@ -611,7 +617,7 @@ export default function (xcli: XCLIAPI): void {
               const text = container.textContent || '';
               const hasUseBtn = text.includes('使用这些歌词');
               return { found: true, hasUseBtn, snippet: text.slice(0, 200) };
-            });
+            }) as { found: boolean; hasUseBtn: boolean; snippet: string };
 
             if (dialogReady.found) {
               tips.push('✅ 歌词优化弹窗已出现');
@@ -635,7 +641,7 @@ export default function (xcli: XCLIAPI): void {
                     || btn.getAttribute('aria-disabled') === 'true'
                     || (btn as HTMLElement).style.pointerEvents === 'none';
                   return { found: true, disabled: isDisabled };
-                });
+                }) as { found: boolean; disabled: boolean };
                 if (btnState.found && !btnState.disabled) { enabled = true; break; }
               }
 
@@ -652,7 +658,7 @@ export default function (xcli: XCLIAPI): void {
                 const btns = Array.from(container.querySelectorAll('div, button, span'));
                 const btn = btns.find(b => {
                   const t = b.textContent?.trim() || '';
-                  return t === '使用这些歌词' && b.getBoundingClientRect().width > 50;
+                  return (t === '使用这些歌词' || t.startsWith('使用这些歌词')) && b.getBoundingClientRect().width > 50;
                 });
                 if (!btn) return false;
                 const r = btn.getBoundingClientRect();
@@ -660,7 +666,7 @@ export default function (xcli: XCLIAPI): void {
                 return { x: r.x + r.width/2, y: r.y + r.height/2 };
               }) as boolean | Record<string, number>;
 
-              if (typeof useLyricClicked === 'object' && useLyricClicked.x) {
+              if (typeof useLyricClicked === 'object' && useLyricClicked !== null && useLyricClicked.x) {
                 await page.mouse.click(useLyricClicked.x, useLyricClicked.y);
                 useLyricClicked = true;
                 tips.push('✅ 已点击「使用这些歌词」');
@@ -789,7 +795,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('status', {
     description: '检查当前音乐生成状态',
     scope: 'browser',
-    result: z.object({ status: z.string().optional(), songs: z.array(z.record(z.any())).optional() }).passthrough(),
+    result: z.object({ status: z.string().optional(), songs: z.array(z.record(z.string(), z.any())).optional() }),
     parameters: z.object({}),
     examples: [
       { cmd: 'xbrowser mureka status --cdp 9221', description: '检查状态' },
@@ -852,7 +858,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('download', {
     description: '下载音乐到本地（返回 curl 命令或直接下载）',
     scope: 'browser',
-    result: z.object({ url: z.string(), size: z.number().optional() }).passthrough(),
+    result: z.object({ url: z.string(), size: z.number().optional() }),
     parameters: z.object({
       url: z.string().describe('音频 URL'),
       output: z.string().optional().describe('输出路径（默认 ./downloads/）'),
@@ -928,7 +934,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('result', {
     description: '获取最新生成的音乐音频 URL（被动拦截页面数据）',
     scope: 'browser',
-    result: z.object({ songs: z.array(z.record(z.any())) }).passthrough(),
+    result: z.object({ songs: z.array(z.record(z.string(), z.any())) }),
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(10).describe('返回条数（默认 10）'),
     }),
@@ -993,7 +999,7 @@ export default function (xcli: XCLIAPI): void {
     if (cdp && page) {
       await page.goto(MUREKA_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
       await page.waitForTimeout(2000);
-      const loggedIn = await site.isLoggedIn(ctx).catch(() => false);
+      const loggedIn = await site.isLoggedIn().catch(() => false);
       if (loggedIn) {
         console.log('✅ CDP 浏览器已登录 Mureka');
         return;

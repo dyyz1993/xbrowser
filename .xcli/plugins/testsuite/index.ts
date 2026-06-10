@@ -2,8 +2,6 @@ import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
 
-type Page = import('../types').Page;
-
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'testsuite',
@@ -13,7 +11,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('testsuite', {
     description: 'Run a sequence of test steps (navigate + interact + assert) and report results',
-    loginRequired: 'optional',
     scope: 'page',
     parameters: z.object({
       steps: z.array(z.object({
@@ -34,7 +31,8 @@ export default function (xcli: XCLIAPI): void {
       summary: z.string(),
     }),
     handler: async (p, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as Page;
+      const page = ctx.page;
+      if (!page) throw new Error('需要浏览器页面');
       const results: Array<{ step: number; action: string; passed: boolean; message: string; duration: number }> = [];
       let allPassed = true;
       for (let i = 0; i < p.steps.length; i++) {
@@ -46,7 +44,7 @@ export default function (xcli: XCLIAPI): void {
             case 'fill': await page.fill(step.selector!, step.value || ''); message = `Filled ${step.selector} with "${step.value}"`; break;
             case 'wait': if (step.selector) { await page.waitForSelector(step.selector, { timeout: step.timeout || 30000 }); message = `Element ${step.selector} appeared`; } else { await page.waitForTimeout(Number(step.value) || 1000); message = `Waited ${step.value}ms`; } break;
             case 'assert': { const assertionType = step.value || ''; if (assertionType === 'title') { const title = await page.title(); passed = title.includes(step.selector || ''); message = `Title "${title}" ${passed ? 'contains' : 'missing'} "${step.selector}"`; } else if (assertionType === 'url') { const url = page.url(); passed = url.includes(step.selector || ''); message = `URL "${url}" ${passed ? 'contains' : 'missing'} "${step.selector}"`; } else if (assertionType === 'visible') { passed = await page.locator(step.selector!).isVisible(); message = `Element "${step.selector}" is ${passed ? 'visible' : 'hidden'}`; } break; }
-            case 'screenshot': { const path = step.value || `test-step-${i}.png`; await page.screenshot({ path }); message = `Screenshot saved to ${path}`; break; }
+            case 'screenshot': { const sp = step.value || `test-step-${i}.png`; const buf = await page.screenshot({}); const { writeFile } = await import('fs/promises'); await writeFile(sp, Buffer.from(buf)); message = `Screenshot saved to ${sp}`; break; }
             case 'eval': { const result = await page.evaluate(step.value || ''); message = `Eval result: ${JSON.stringify(result)}`; break; }
           }
         } catch (error) { passed = false; message = `Error: ${(error as Error).message}`; }

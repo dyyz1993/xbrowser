@@ -10,7 +10,6 @@ export default function(xcli: XCLIAPI): void {
 
   site.command('search-image', {
     description: 'Search Pexels photos with metadata',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string(), limit: z.number().optional().default(20),
@@ -102,7 +101,7 @@ export default function(xcli: XCLIAPI): void {
             });
           }
           return images.slice(0, limit);
-        }, params.limit);
+        }, params.limit) as Record<string, unknown>[];
         return ok({ query: params.query, engine: 'pexels', results, total: results.length, timestamp: Date.now() }, [`Pexels "${params.query}"，共 ${results.length} 张`]);
       } catch (error) { return { data: null, message: error instanceof Error ? error.message : '未知错误' }; }
     },

@@ -9,13 +9,12 @@ export default function (xcli: XCLIAPI): void {
     description: 'Product Hunt SEO 外链 - 产品发布平台 (DA 91, dofollow, 高权重)',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const ctxAny = ctx as Record<string, unknown>;
-      const page = ctxAny.page as import('../types').Page;
+      const page = ctx.page;
       if (!page) return true;
       try {
         const url = page.url();
         if (url.includes('/signin') || url.includes('/login')) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
         if (!body) return false;
         if (body.includes('Sign in')) return false;
         return true;
@@ -33,7 +32,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser producthunt login', description: '登录 Product Hunt' }],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://www.producthunt.com/login', {
@@ -86,7 +85,7 @@ export default function (xcli: XCLIAPI): void {
       },
     ],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://www.producthunt.com/posts/new', {
@@ -179,7 +178,7 @@ export default function (xcli: XCLIAPI): void {
       },
     ],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto(params.productUrl, {
@@ -235,7 +234,7 @@ export default function (xcli: XCLIAPI): void {
       },
     ],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
       await page.goto('https://www.producthunt.com/settings', {
@@ -274,7 +273,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+    const page = ctx.page;
     if (!page) return;
     await page.goto('https://www.producthunt.com/login');
     await ctx.storage.set('producthunt_login', { at: Date.now() });

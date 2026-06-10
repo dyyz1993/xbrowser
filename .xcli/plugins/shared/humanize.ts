@@ -1,4 +1,4 @@
-import type { Page, Locator } from '../../src/browser-shim.js';
+import type { Page, Locator } from '../types.js';
 
 function gaussianRandom(mean: number, stdDev: number): number {
   const u1 = Math.random();
@@ -64,7 +64,7 @@ export async function humanMouseMove(
       x: w.__humanMouseX ?? Math.round(window.innerWidth / 2),
       y: w.__humanMouseY ?? Math.round(window.innerHeight / 2),
     };
-  });
+  }) as Point;
 
   const p0: Point = startPos;
   const p3: Point = { x: targetX, y: targetY };

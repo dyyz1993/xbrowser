@@ -9,7 +9,7 @@ export default function (xcli: XCLIAPI): void {
     description: 'X (Twitter) - 社交媒体内容采集（XHR 拦截模式，数据更丰富）',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const ctxAny = ctx as Record<string, unknown>;
+      const ctxAny = ctx as unknown as Record<string, unknown>;
       const page = ctxAny.page as import('../types').Page;
       if (!page) return true;
       try {
@@ -17,7 +17,7 @@ export default function (xcli: XCLIAPI): void {
         if (url.includes('/login') || url.includes('/i/flow/login')) return false;
         const hasLoginBtn = await page.locator('a[href*="/login"], [data-testid="loginButton"]').first().isVisible().catch(() => false);
         if (hasLoginBtn) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
         if (!body) return false;
         if (body.includes('Sign in')) return false;
         return true;
@@ -87,7 +87,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
-      const tips = buildTips(ctx as Record<string, unknown>);
+      const tips = buildTips(ctx as unknown as Record<string, unknown>);
 
       // 搜素 API 的 pattern 是 SearchTimeline
       // 直接用 DOM 方式，因为搜索页的 GraphQL 端点名复杂
@@ -117,7 +117,7 @@ export default function (xcli: XCLIAPI): void {
           });
         });
         return tweets;
-      }, params.limit);
+      }, params.limit) as Array<Record<string, unknown>>;
 
       return ok({ query: params.query, count: results.length, tweets: results }, tips);
     },
@@ -138,7 +138,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
-      const tips = buildTips(ctx as Record<string, unknown>);
+      const tips = buildTips(ctx as unknown as Record<string, unknown>);
 
       // 拦截 UserByScreenName（用户信息）+ 其他端点
       let userData: Record<string, unknown> | null = null;
@@ -213,11 +213,11 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser twitter timeline --username "elonmusk"', description: '获取 Elon Musk 最新推文' },
     ],
-    result: z.object({ username: z.string(), count: z.number(), tweets: z.array(z.record(z.any())), source: z.string() }).passthrough(),
+    result: z.object({ username: z.string(), count: z.number(), tweets: z.array(z.record(z.string(), z.any())), source: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
-      const tips = buildTips(ctx as Record<string, unknown>);
+      const tips = buildTips(ctx as unknown as Record<string, unknown>);
       const capturedTweets: Array<Record<string, unknown>> = [];
 
       // 用 waitForResponse 等 UserTweets API 返回（可能在 SSR 后通过滚动触发）
@@ -237,14 +237,18 @@ export default function (xcli: XCLIAPI): void {
         const text = await apiResp.text();
         try {
           const json = JSON.parse(text);
-          const instructions = json?.data?.user?.result?.timeline_v2?.timeline?.instructions || [];
+          const instructions = (json?.data?.user?.result?.timeline_v2?.timeline?.instructions || []) as Array<Record<string, unknown>>;
           for (const inst of instructions) {
-            const entries = inst?.entries || [];
+            const entries = (inst?.entries || []) as Array<Record<string, unknown>>;
             for (const entry of entries) {
-              const result = entry?.content?.itemContent?.tweet_results?.result as Record<string, unknown> | undefined;
+              const content = entry?.content as Record<string, unknown> | undefined;
+              const itemContent = content?.itemContent as Record<string, unknown> | undefined;
+              const tweetResults = itemContent?.tweet_results as Record<string, unknown> | undefined;
+              const result = (tweetResults?.result || {}) as Record<string, unknown>;
               if (!result?.legacy || capturedTweets.length >= params.limit) continue;
               const legacy = result.legacy as Record<string, unknown>;
-              const extMedia = ((legacy as Record<string, unknown>).extended_entities?.media || []) as Array<Record<string, unknown>>;
+              const extEntities = legacy.extended_entities as Record<string, unknown> | undefined;
+              const extMedia = (extEntities?.media || []) as Array<Record<string, unknown>>;
               capturedTweets.push({
                 id: result.rest_id,
                 text: (legacy.full_text as string || ''),
@@ -275,7 +279,7 @@ export default function (xcli: XCLIAPI): void {
             });
           });
           return items;
-        }, params.limit);
+        }, params.limit) as Array<Record<string, string>>;
         return ok({ username: params.username, count: domTweets.length, tweets: domTweets, source: 'dom(api fallback)' }, tips);
       }
 
@@ -295,11 +299,11 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser twitter replies --id "123456789"', description: '获取推文回复' },
     ],
-    result: z.object({ tweetId: z.string(), count: z.number(), replies: z.array(z.record(z.any())) }).passthrough(),
+    result: z.object({ tweetId: z.string(), count: z.number(), replies: z.array(z.record(z.string(), z.any())) }).passthrough(),
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
-      const tips = buildTips(ctx as Record<string, unknown>);
+      const tips = buildTips(ctx as unknown as Record<string, unknown>);
       const captured: Array<Record<string, unknown>> = [];
 
       page.on('response', async (resp) => {
@@ -309,7 +313,10 @@ export default function (xcli: XCLIAPI): void {
           const json = JSON.parse(await resp.text());
           const entries = (json?.data?.threaded_conversation_with_injections_v2?.instructions?.[0]?.entries || []) as Array<Record<string, unknown>>;
           for (const entry of entries) {
-            const result = (entry?.content as Record<string, unknown>)?.itemContent?.tweet_results?.result as Record<string, unknown> | undefined;
+            const content = (entry?.content as Record<string, unknown>) ?? {};
+            const itemContent = content.itemContent as Record<string, unknown> | undefined;
+            const tweetResults = itemContent?.tweet_results as Record<string, unknown> | undefined;
+            const result = (tweetResults?.result) as Record<string, unknown> | undefined;
             if (!result?.legacy || captured.length >= params.limit) continue;
             const legacy = result.legacy as Record<string, unknown>;
             captured.push({
@@ -354,7 +361,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
-      const tips = buildTips(ctx as Record<string, unknown>);
+      const tips = buildTips(ctx as unknown as Record<string, unknown>);
 
       await page.goto(`${BASE}/${params.username}/likes`, { waitUntil: 'domcontentloaded' });
       await page.waitForTimeout(5000);
@@ -377,7 +384,7 @@ export default function (xcli: XCLIAPI): void {
           });
         });
         return items;
-      }, params.limit);
+      }, params.limit) as Array<Record<string, string>>;
 
       return ok({ username: params.username, count: tweets.length, tweets }, tips);
     },
@@ -395,7 +402,7 @@ export default function (xcli: XCLIAPI): void {
     }),
     result: z.object({ query: z.string(), engine: z.string(), results: z.array(z.object({ title: z.string(), thumbnailUrl: z.string(), sourceUrl: z.string(), originalUrl: z.string(), width: z.number(), height: z.number(), format: z.string(), sourceSite: z.string() })), total: z.number(), timestamp: z.number() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
       try {
         await page.goto(`https://x.com/search?q=${encodeURIComponent(params.query)}%20filter%3Aimages&f=live`, { waitUntil: 'domcontentloaded', timeout: params.timeout });
@@ -415,7 +422,7 @@ export default function (xcli: XCLIAPI): void {
             });
           });
           return imgs;
-        }, params.limit);
+        }, params.limit) as Array<Record<string, unknown>>;
         return ok({ query: params.query, engine: 'twitter', results, total: results.length, timestamp: Date.now() }, [`Twitter "${params.query}"，共 ${results.length} 张`]);
       } catch (error) { return fail(error instanceof Error ? error.message : '未知错误'); }
     },
@@ -424,7 +431,7 @@ export default function (xcli: XCLIAPI): void {
   // ─── login/logout ──────────────────────────────
 
   site.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+    const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page | undefined;
     console.log('⚠️  请使用 --cdp 参数连接到已登录 X.com 的浏览器');
     console.log('     xbrowser twitter timeline --username elonmusk --cdp http://localhost:9221');
     if (page) {

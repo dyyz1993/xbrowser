@@ -1,22 +1,14 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok } from '@dyyz1993/xcli-core';
-import type { Page } from '../../src/browser-shim.js';
-
-interface BrowserCtx extends CommandContext {
-  page?: Page;
-  cdpEndpoint?: string;
-  sessionId?: string;
-}
 
 function buildCtxTips(ctx: CommandContext): { tips: string[]; hasCdp: boolean } {
-  const browserCtx = ctx as BrowserCtx;
   const tips: string[] = [];
-  const hasCdp = !!browserCtx.cdpEndpoint;
+  const hasCdp = !!ctx.cdpEndpoint;
   if (!hasCdp) {
     tips.push('建议使用 --cdp 9221 参数连接到 Chrome 浏览器');
   }
-  tips.push(`Session: ${browserCtx.sessionId || 'default'}`);
+  tips.push(`Session: ${ctx.sessionId || 'default'}`);
   return { tips, hasCdp };
 }
 
@@ -27,13 +19,13 @@ export default function (xcli: XCLIAPI): void {
     description: 'GitHub SEO 外链 - Profile / README / Gist',
     requiresLogin: false,
     isLogin: async (ctx) => {
-      const ctxAny = ctx as Record<string, unknown>;
-      const page = ctxAny.page as import('../types').Page;
+      
+      const page = ctx.page;
       if (!page) return true;
       try {
         const url = page.url();
         if (url.includes('/login')) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '');
+        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
         if (!body) return false;
         if (body.includes('Sign in')) return false;
         return true;
@@ -91,7 +83,7 @@ export default function (xcli: XCLIAPI): void {
         const checkbox = page.locator(
           '#user_profile_hireable, input[name="user[hireable]"], input[type="checkbox"][name*="hireable"]'
         ).first();
-        const isChecked = await checkbox.isChecked().catch(() => false);
+        const isChecked = await checkbox.evaluate(el => (el as HTMLInputElement).checked).catch(() => false);
         if (params.hireable !== isChecked) {
           await checkbox.click();
         }
@@ -142,7 +134,7 @@ export default function (xcli: XCLIAPI): void {
       let filled = false;
       for (let i = 0; i < count; i++) {
         const input = socialInputs.nth(i);
-        const value = await input.inputValue().catch(() => '');
+        const value = await input.evaluate(el => (el as HTMLInputElement).value).catch(() => '');
         if (!value) {
           await input.fill(params.url);
           filled = true;
@@ -327,7 +319,7 @@ export default function (xcli: XCLIAPI): void {
           document.querySelector('.js-user-profile-avatar')?.getAttribute('src') || '';
 
         return { bio, name, username, location, company, website, socialLinks, avatar };
-      });
+      }) as { bio: string; name: string; username: string; location: string; company: string; website: string; socialLinks: string[]; avatar: string };
 
       return ok(profile, [...ctxTips, `Profile: ${profile.name} (@${profile.username})`]);
     },
@@ -384,7 +376,7 @@ export default function (xcli: XCLIAPI): void {
         const readmeCheckbox = page.locator(
           '#repository_auto_init, input[name="repository[auto_init]"], label:has-text("README") input[type="checkbox"]'
         ).first();
-        const isChecked = await readmeCheckbox.isChecked().catch(() => false);
+        const isChecked = await readmeCheckbox.evaluate(el => (el as HTMLInputElement).checked).catch(() => false);
         if (!isChecked) {
           await readmeCheckbox.click();
         }
@@ -489,7 +481,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as import('../types').Page | undefined;
+    const page = ctx.page;
     if (!page) return;
     await page.goto('https://github.com/login');
     await ctx.storage.set('github_login', { at: Date.now() });
