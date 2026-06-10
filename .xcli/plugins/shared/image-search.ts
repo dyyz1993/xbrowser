@@ -54,8 +54,9 @@ export const extendedSearchParams = {
 type Page = import('../types').Page;
 
 /** Extract the Page object from params or context */
-export function getPage(params: Record<string, unknown>, ctx: Record<string, unknown>): Page {
-  const page = (params.page as Page) || (ctx as Record<string, unknown>).page as Page;
+export function getPage(params: Record<string, unknown>, ctx: unknown): Page {
+  const ctxRecord = ctx as Record<string, unknown>;
+  const page = (params.page as Page) || ctxRecord.page as Page;
   if (!page) throw new Error('需要浏览器页面');
   return page;
 }
@@ -73,16 +74,15 @@ export function buildResult(
   query: string,
   engine: string,
   results: Array<Record<string, unknown>>,
-  tip?: string,
 ) {
   return ok(
     { query, engine, results, total: results.length, timestamp: Date.now() },
-    tip ?? `${engine} "${query}"，共 ${results.length} 张`,
+    [`${engine} "${query}"，共 ${results.length} 张`],
   );
 }
 
 /** Build a standard fail() result for search-image commands */
 export function buildFail(error: unknown, engine: string) {
   const msg = error instanceof Error ? error.message : '未知错误';
-  return fail({ reason: msg }, `${engine} 搜索失败: ${msg}`);
+  return fail(`${engine} 搜索失败: ${msg}`);
 }

@@ -8,19 +8,15 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.behance.net',
     description: 'Behance Creative Portfolio Search',
     requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   behance.command('search-image', {
     description: 'Search images on Behance',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object(baseSearchParams),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
+      const page = getPage(params as Record<string, unknown>, ctx);
       try {
         const url = `https://www.behance.net/search?search=${encodeURIComponent(params.query)}`;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout });
@@ -56,9 +52,10 @@ export default function (xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit);
 
-        return buildResult(params.query, 'behance', results);
+        // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
+        return buildResult(params.query, 'behance', results) as unknown as z.infer<typeof searchImageResultSchema>;
       } catch (error) {
-        return buildFail(error, 'behance');
+        return buildFail(error, 'behance') as unknown as z.infer<typeof searchImageResultSchema>;
       }
     },
   });

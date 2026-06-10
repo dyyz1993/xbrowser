@@ -8,19 +8,15 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.reddit.com',
     description: 'Reddit 图片搜索',
     requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   reddit.command('search-image', {
     description: 'Reddit 图片搜索 - 搜索 Reddit 中的图片帖子',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object(baseSearchParams),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
+      const page = getPage(params as Record<string, unknown>, ctx);
       try {
         const url = `https://www.reddit.com/search/?q=${encodeURIComponent(params.query)}&type=image`;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout });
@@ -51,9 +47,10 @@ export default function (xcli: XCLIAPI): void {
           return images;
         }, params.limit);
 
-        return buildResult(params.query, 'reddit', results.map(r => ({ ...r, sourceSite: 'reddit' })));
+        // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
+        return buildResult(params.query, 'reddit', results.map(r => ({ ...r, sourceSite: 'reddit' }))) as unknown as z.infer<typeof searchImageResultSchema>;
       } catch (error) {
-        return buildFail(error, 'reddit');
+        return buildFail(error, 'reddit') as unknown as z.infer<typeof searchImageResultSchema>;
       }
     },
   });

@@ -7,26 +7,22 @@ export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'huaban', url: 'https://huaban.com',
     description: '花瓣网 - 设计灵感采集', requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   site.command('search-image', {
     description: '花瓣网图片搜索',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object(baseSearchParams),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
+      const page = getPage(params as Record<string, unknown>, ctx);
       try {
         await page.goto(`https://huaban.com/search?q=${encodeURIComponent(params.query)}`, { waitUntil: 'domcontentloaded', timeout: params.timeout });
         await page.waitForTimeout(5000);
 
         const pageContent = await page.evaluate(() => document.body?.innerText?.slice(0, 500) || '');
         if (pageContent.includes('安全验证') || pageContent.includes('请输入验证码') || pageContent.includes('验证')) {
-          return fail('花瓣网触发了安全验证，请在浏览器中手动完成验证后重试', ['建议：使用 --cdp 9221 连接已登录的浏览器，手动访问 huaban.com 完成验证后再执行搜索']);
+          return fail('花瓣网触发了安全验证，请在浏览器中手动完成验证后重试', ['建议：使用 --cdp 9221 连接已登录的浏览器，手动访问 huaban.com 完成验证后再执行搜索']) as unknown as z.infer<typeof searchImageResultSchema>;
         }
 
         await scrollPage(page, 3, 1000);
@@ -56,9 +52,10 @@ export default function (xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit);
 
-        return buildResult(params.query, 'huaban', results);
+        // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
+        return buildResult(params.query, 'huaban', results) as unknown as z.infer<typeof searchImageResultSchema>;
       } catch (error) {
-        return buildFail(error, 'huaban');
+        return buildFail(error, 'huaban') as unknown as z.infer<typeof searchImageResultSchema>;
       }
     },
   });

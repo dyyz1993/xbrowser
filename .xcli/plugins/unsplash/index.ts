@@ -6,14 +6,10 @@ export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'unsplash', url: 'https://unsplash.com',
     description: 'Unsplash - Free high-resolution photos', requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   site.command('search-image', {
     description: 'Search Unsplash photos with metadata',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       ...baseSearchParams,
@@ -21,7 +17,7 @@ export default function (xcli: XCLIAPI): void {
     }),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
+      const page = getPage(params as Record<string, unknown>, ctx);
       try {
         let url = `https://unsplash.com/s/photos/${encodeURIComponent(params.query)}`;
         if (params.color) url += `?color=${params.color}`;
@@ -48,9 +44,10 @@ export default function (xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit);
 
-        return buildResult(params.query, 'unsplash', results);
+        // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
+        return buildResult(params.query, 'unsplash', results) as unknown as z.infer<typeof searchImageResultSchema>;
       } catch (error) {
-        return buildFail(error, 'unsplash');
+        return buildFail(error, 'unsplash') as unknown as z.infer<typeof searchImageResultSchema>;
       }
     },
   });

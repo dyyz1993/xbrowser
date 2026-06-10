@@ -8,19 +8,15 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.quanjing.com',
     description: '全景创意图片搜索',
     requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   quanjing.command('search-image', {
     description: '全景网图片搜索 - 搜索创意素材图片',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object(baseSearchParams),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
+      const page = getPage(params as Record<string, unknown>, ctx);
       try {
         const url = `https://www.quanjing.com/search?kw=${encodeURIComponent(params.query)}`;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout });
@@ -50,9 +46,10 @@ export default function (xcli: XCLIAPI): void {
           return images;
         }, params.limit);
 
-        return buildResult(params.query, 'quanjing', results.map(r => ({ ...r, sourceSite: 'quanjing' })));
+        // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
+        return buildResult(params.query, 'quanjing', results.map(r => ({ ...r, sourceSite: 'quanjing' }))) as unknown as z.infer<typeof searchImageResultSchema>;
       } catch (error) {
-        return buildFail(error, 'quanjing');
+        return buildFail(error, 'quanjing') as unknown as z.infer<typeof searchImageResultSchema>;
       }
     },
   });

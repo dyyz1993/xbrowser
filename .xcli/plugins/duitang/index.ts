@@ -9,19 +9,15 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.duitang.com',
     description: '堆糖 - 美好生活研究所',
     requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   duitang.command('search-image', {
     description: '堆糖图片搜索',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object(baseSearchParams),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
+      const page = getPage(params as Record<string, unknown>, ctx);
       try {
         const url = `https://www.duitang.com/search/?kw=${encodeURIComponent(params.query)}`;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout }).catch(() => {});
@@ -30,7 +26,7 @@ export default function (xcli: XCLIAPI): void {
         try {
           const currentUrl = page.url();
           if (!currentUrl.includes('duitang.com')) {
-            return fail('堆糖页面被重定向，请检查网络或使用 --cdp 连接已登录浏览器', ['建议使用 CDP 9221 连接浏览器']);
+            return fail('堆糖页面被重定向，请检查网络或使用 --cdp 连接已登录浏览器', ['建议使用 CDP 9221 连接浏览器']) as unknown as z.infer<typeof searchImageResultSchema>;
           }
         } catch { /* page may have closed */ }
 
@@ -68,9 +64,10 @@ export default function (xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit);
 
-        return buildResult(params.query, 'duitang', results.map(r => ({ ...r, sourceSite: 'duitang' })));
+        // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
+        return buildResult(params.query, 'duitang', results.map(r => ({ ...r, sourceSite: 'duitang' }))) as unknown as z.infer<typeof searchImageResultSchema>;
       } catch (error) {
-        return buildFail(error, 'duitang');
+        return buildFail(error, 'duitang') as unknown as z.infer<typeof searchImageResultSchema>;
       }
     },
   });

@@ -8,19 +8,15 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://9gag.com',
     description: '9GAG 图片搜索',
     requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   gag.command('search-image', {
     description: '9GAG 图片搜索 - 搜索 9GAG 上的搞笑图片和梗图',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object(baseSearchParams),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
+      const page = getPage(params as Record<string, unknown>, ctx);
       try {
         const url = `https://9gag.com/search?q=${encodeURIComponent(params.query)}`;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout });
@@ -49,11 +45,12 @@ export default function (xcli: XCLIAPI): void {
           });
 
           return images;
-        }, params.limit);
+        }, params.limit) as Array<{ title: string; thumbnailUrl: string; sourceUrl: string; width: number; height: number }>;
 
-        return buildResult(params.query, '9gag', results.map(r => ({ ...r, sourceSite: '9gag' })));
+        // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
+        return buildResult(params.query, '9gag', results.map(r => ({ ...r, sourceSite: '9gag' }))) as unknown as z.infer<typeof searchImageResultSchema>;
       } catch (error) {
-        return buildFail(error, '9gag');
+        return buildFail(error, '9gag') as unknown as z.infer<typeof searchImageResultSchema>;
       }
     },
   });

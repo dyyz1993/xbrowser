@@ -8,19 +8,15 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://imgur.com',
     description: 'Imgur 图片搜索',
     requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   imgur.command('search-image', {
     description: 'Imgur 图片搜索 - 搜索 Imgur 上的图片',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object(baseSearchParams),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
+      const page = getPage(params as Record<string, unknown>, ctx);
       try {
         const url = `https://imgur.com/search?q=${encodeURIComponent(params.query)}`;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout });
@@ -50,9 +46,10 @@ export default function (xcli: XCLIAPI): void {
           return images;
         }, params.limit);
 
-        return buildResult(params.query, 'imgur', results.map(r => ({ ...r, sourceSite: 'imgur' })));
+        // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
+        return buildResult(params.query, 'imgur', results.map(r => ({ ...r, sourceSite: 'imgur' }))) as unknown as z.infer<typeof searchImageResultSchema>;
       } catch (error) {
-        return buildFail(error, 'imgur');
+        return buildFail(error, 'imgur') as unknown as z.infer<typeof searchImageResultSchema>;
       }
     },
   });

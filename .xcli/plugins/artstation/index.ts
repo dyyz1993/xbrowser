@@ -8,19 +8,15 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.artstation.com',
     description: 'Artstation Artwork Search',
     requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   artstation.command('search-image', {
     description: 'Search images on ArtStation',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object(baseSearchParams),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
+      const page = getPage(params as Record<string, unknown>, ctx);
       try {
         const url = `https://www.artstation.com/search?sort_by=relevance&q=${encodeURIComponent(params.query)}`;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout });
@@ -57,9 +53,10 @@ export default function (xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit);
 
-        return buildResult(params.query, 'artstation', results);
+        // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
+        return buildResult(params.query, 'artstation', results) as unknown as z.infer<typeof searchImageResultSchema>;
       } catch (error) {
-        return buildFail(error, 'artstation');
+        return buildFail(error, 'artstation') as unknown as z.infer<typeof searchImageResultSchema>;
       }
     },
   });

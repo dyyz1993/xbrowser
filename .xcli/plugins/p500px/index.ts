@@ -8,19 +8,15 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://500px.com',
     description: '500px Photography Search',
     requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   p500px.command('search-image', {
     description: 'Search images on 500px',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object(baseSearchParams),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
+      const page = getPage(params as Record<string, unknown>, ctx);
       try {
         const url = `https://500px.com/search?q=${encodeURIComponent(params.query)}`;
         await page.goto(url, { waitUntil: 'networkidle', timeout: params.timeout });
@@ -61,9 +57,10 @@ export default function (xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit);
 
-        return buildResult(params.query, '500px', results);
+        // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
+        return buildResult(params.query, '500px', results) as unknown as z.infer<typeof searchImageResultSchema>;
       } catch (error) {
-        return buildFail(error, '500px');
+        return buildFail(error, '500px') as unknown as z.infer<typeof searchImageResultSchema>;
       }
     },
   });

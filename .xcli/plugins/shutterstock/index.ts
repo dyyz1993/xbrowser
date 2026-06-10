@@ -10,19 +10,15 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.shutterstock.com',
     description: 'Shutterstock - Stock Photos, Images & Vectors',
     requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   shutterstock.command('search-image', {
     description: 'Shutterstock image search',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object(baseSearchParams),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
+      const page = getPage(params as Record<string, unknown>, ctx);
       try {
         const url = `https://www.shutterstock.com/search/${encodeURIComponent(params.query)}`;
         await page.goto(url, { waitUntil: 'networkidle', timeout: params.timeout });
@@ -30,7 +26,7 @@ export default function (xcli: XCLIAPI): void {
 
         const antiBotResult = await detectAntiBot(page);
         if (antiBotResult.detected) {
-          return fail(`${antiBotResult.message}。请使用 --cdp http://localhost:9221 连接真实浏览器重试`);
+          return fail(`${antiBotResult.message}。请使用 --cdp http://localhost:9221 连接真实浏览器重试`) as unknown as z.infer<typeof searchImageResultSchema>;
         }
 
         await scrollPage(page, 6, 1500);
@@ -65,13 +61,14 @@ export default function (xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit);
 
-        return buildResult(params.query, 'shutterstock', results.map(r => ({ ...r, sourceSite: 'shutterstock' })));
+        // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
+        return buildResult(params.query, 'shutterstock', results.map(r => ({ ...r, sourceSite: 'shutterstock' }))) as unknown as z.infer<typeof searchImageResultSchema>;
       } catch (error) {
         const msg = error instanceof Error ? error.message : '未知错误';
         if (msg.includes('timeout') || msg.includes('Timeout') || msg.includes('net::')) {
-          return fail(`请求超时或网络错误: ${msg}。可尝试 --cdp http://localhost:9221 连接真实浏览器`);
+          return fail(`请求超时或网络错误: ${msg}。可尝试 --cdp http://localhost:9221 连接真实浏览器`) as unknown as z.infer<typeof searchImageResultSchema>;
         }
-        return fail(`搜索失败: ${msg}。可尝试 --cdp http://localhost:9221 连接真实浏览器`);
+        return fail(`搜索失败: ${msg}。可尝试 --cdp http://localhost:9221 连接真实浏览器`) as unknown as z.infer<typeof searchImageResultSchema>;
       }
     },
   });

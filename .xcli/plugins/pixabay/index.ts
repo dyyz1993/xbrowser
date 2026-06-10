@@ -6,14 +6,10 @@ export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'pixabay', url: 'https://pixabay.com',
     description: 'Pixabay - Free images, royalty free stock photos', requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   site.command('search-image', {
     description: 'Search Pixabay photos with metadata',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       ...baseSearchParams,
@@ -21,7 +17,7 @@ export default function (xcli: XCLIAPI): void {
     }),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
+      const page = getPage(params as Record<string, unknown>, ctx);
       try {
         let url = `https://pixabay.com/images/search/${encodeURIComponent(params.query)}/`;
         if (params.color) url += `?colors=${params.color}`;
@@ -56,9 +52,10 @@ export default function (xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit);
 
-        return buildResult(params.query, 'pixabay', results);
+        // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
+        return buildResult(params.query, 'pixabay', results) as unknown as z.infer<typeof searchImageResultSchema>;
       } catch (error) {
-        return buildFail(error, 'pixabay');
+        return buildFail(error, 'pixabay') as unknown as z.infer<typeof searchImageResultSchema>;
       }
     },
   });

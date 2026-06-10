@@ -8,23 +8,15 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://s.weibo.com',
     description: '微博图片搜索',
     requiresLogin: true,
-    loginConfig: {
-      requiresLogin: true,
-      loginKeywords: ['登录', 'login', 'sign in'],
-      loginSelectors: ['a[href*="login"]', 'a[href*="passport"]', 'a[href*="signin"]', '.W_login_form'],
-      loggedInSelectors: ['[class*="avatar"]', '[class*="W_face"]', '[class*="user"]'],
-      loginUrls: ['/login', '/passport'],
-    },
   });
 
   weibo.command('search-image', {
     description: '微博图片搜索 - 搜索微博中的图片内容',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object(baseSearchParams),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
+      const page = getPage(params as Record<string, unknown>, ctx);
       try {
         const url = `https://s.weibo.com/weibo?q=${encodeURIComponent(params.query)}&type=image`;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout });
@@ -54,9 +46,10 @@ export default function (xcli: XCLIAPI): void {
           return images;
         }, params.limit);
 
-        return buildResult(params.query, 'weibo', results.map(r => ({ ...r, sourceSite: 'weibo' })));
+        // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
+        return buildResult(params.query, 'weibo', results.map(r => ({ ...r, sourceSite: 'weibo' }))) as unknown as z.infer<typeof searchImageResultSchema>;
       } catch (error) {
-        return buildFail(error, 'weibo');
+        return buildFail(error, 'weibo') as unknown as z.infer<typeof searchImageResultSchema>;
       }
     },
   });

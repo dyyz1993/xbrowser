@@ -8,19 +8,15 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.jd.com',
     description: '京东商品图片搜索',
     requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   jd.command('search-image', {
     description: '京东商品图片搜索 - 搜索京东商品图片',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object(baseSearchParams),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
+      const page = getPage(params as Record<string, unknown>, ctx);
       try {
         const url = `https://search.jd.com/Search?keyword=${encodeURIComponent(params.query)}&enc=utf-8`;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout });
@@ -51,9 +47,10 @@ export default function (xcli: XCLIAPI): void {
           return images;
         }, params.limit);
 
-        return buildResult(params.query, 'jd', results.map(r => ({ ...r, sourceSite: 'jd' })));
+        // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
+        return buildResult(params.query, 'jd', results.map(r => ({ ...r, sourceSite: 'jd' }))) as unknown as z.infer<typeof searchImageResultSchema>;
       } catch (error) {
-        return buildFail(error, 'jd');
+        return buildFail(error, 'jd') as unknown as z.infer<typeof searchImageResultSchema>;
       }
     },
   });

@@ -8,19 +8,15 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.gettyimages.com',
     description: 'Getty Images - Stock Photos & Pictures',
     requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   gettyimages.command('search-image', {
     description: 'Getty Images image search',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object(baseSearchParams),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx as Record<string, unknown>);
+      const page = getPage(params as Record<string, unknown>, ctx);
       try {
         const url = `https://www.gettyimages.com/search/2/image?phrase=${encodeURIComponent(params.query)}`;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout });
@@ -57,9 +53,10 @@ export default function (xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit);
 
-        return buildResult(params.query, 'gettyimages', results.map(r => ({ ...r, sourceSite: 'gettyimages' })));
+        // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
+        return buildResult(params.query, 'gettyimages', results.map(r => ({ ...r, sourceSite: 'gettyimages' }))) as unknown as z.infer<typeof searchImageResultSchema>;
       } catch (error) {
-        return buildFail(error, 'gettyimages');
+        return buildFail(error, 'gettyimages') as unknown as z.infer<typeof searchImageResultSchema>;
       }
     },
   });
