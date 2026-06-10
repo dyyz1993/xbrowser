@@ -8,34 +8,6 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
 
-// CMF相关关键词
-const CMF_KEYWORDS = [
-  '座椅', '真皮', 'Nappa', 'Alcantara', '材质', '面料',
-  '颜色', '配色', '棕色', '黑色', '白色', '米色', '红色',
-  '触感', '手感', '柔软', '硬', '舒适', '包裹性',
-  '缝线', '皮', '布', '织物', '透气', '质感',
-  '头枕', '腰托', '腿托', '加热', '通风', '按摩',
-  '座椅材质', '座椅颜色', '座椅触感', '座椅舒适性',
-  '巴赫座椅', '云毯座椅', 'Sofaro座椅', '航空座椅',
-  '零压座椅', '美姿座椅', '按摩', '通风', '加热',
-  '腰靠', '头等舱', '包裹', '支撑', '柔软', '硬', '弹',
-  '坐感', '靠背', '坐垫', '承托', '贴合', '悬浮',
-  '大沙发', '零压云毯', 'AI零压', '气囊', '支撑感',
-  '腰部支撑', '腿部支撑', '背部支撑', '坐姿', '乘坐',
-  '乘坐体验', '乘坐感受', '乘坐舒适', '座椅配置',
-  '座椅功能', '座椅调节', '座椅材质', '座椅皮质',
-  '座椅面料', '座椅设计', '座椅包裹', '座椅支撑',
-  '皮革', '合成皮', '仿皮', '布艺', '织物座椅',
-  '真皮座椅', 'Nappa真皮', '半苯胺', 'Dinamica',
-  'Microsuede', 'Ultrasuede', '麂皮', '翻毛皮',
-  '内饰', '内饰材质', '内饰配色', '内饰颜色',
-  '内饰质感', '内饰用料', '豪华感', '高级感',
-  '触手可及', '摸起来', '手感好', '触感细腻',
-  '手感细腻', '触感冰凉', '触感温润', '质感很好',
-  '做工精细', '做工精致', '缝线整齐', '缝线工整',
-  '工艺精湛', '做工考究', '用料扎实', '用料厚道'
-];
-
 // 车型配置
 const CARS = [
   { id: '7935', name: '日产N7' },
@@ -82,26 +54,6 @@ const CARS = [
   { id: '4219', name: '魏牌高山' }
 ];
 
-// 检查是否包含CMF关键词（预留）
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function _hasCMFKeyword(text: string): boolean {
-  const lowerText = text.toLowerCase();
-  return CMF_KEYWORDS.some(kw => lowerText.includes(kw.toLowerCase()));
-}
-
-// 提取CMF关键词（预留）
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function _extractKeywords(text: string): string[] {
-  const keywords: string[] = [];
-  const lowerText = text.toLowerCase();
-  for (const kw of CMF_KEYWORDS) {
-    if (lowerText.includes(kw.toLowerCase()) && !keywords.includes(kw)) {
-      keywords.push(kw);
-    }
-  }
-  return keywords;
-}
-
 export default function(api: XCLIAPI): void {
   const site = api.createSite({
     name: 'cmf-seats',
@@ -132,10 +84,7 @@ export default function(api: XCLIAPI): void {
           timestamp: z.string()
         }))
     }).passthrough(),
-    handler: async (params, ctx) => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const _page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page | undefined;
-      
+    handler: async (params, _ctx) => {
       // 查找车型ID
       const car = CARS.find(c => c.name === params.car);
       if (!car) {

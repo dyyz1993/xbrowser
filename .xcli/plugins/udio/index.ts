@@ -29,23 +29,6 @@ async function humanMouseMove(page: Page): Promise<void> {
   await page.mouse.move(x, y, { steps: 5 + Math.floor(Math.random() * 10) });
 }
 
-/**
- * CDP-safe click: find element bounding box via evaluate, then mouse.click.
- * Avoids Playwright's internal actionability checks which can trigger navigation/context-destroyed errors in CDP mode.
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function safeClick(page: Page, selector: string): Promise<{ success: boolean; info?: Record<string, unknown> }> {
-  const result = await page.evaluate((sel: string) => {
-    const el = document.querySelector(sel);
-    if (!el || !(el as HTMLElement).offsetParent) return null;
-    const r = (el as HTMLElement).getBoundingClientRect();
-    return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: Math.round(r.width), h: Math.round(r.height) };
-  }, selector) as { x: number; y: number; w: number; h: number } | null;
-  if (!result) return { success: false };
-  await page.mouse.click(result.x, result.y);
-  return { success: true, info: result as Record<string, unknown> };
-}
-
 function buildTips(ctx: CommandContext): string[] {
   const tips: string[] = [];
   const ctxAny = ctx as unknown as Record<string, unknown>;
@@ -887,8 +870,6 @@ export default function (xcli: XCLIAPI): void {
   site.login(async (ctx) => {
     const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
     const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const sessionId = (ctx as unknown as Record<string, unknown>).sessionId as string | undefined;
 
     if (cdp && page) {
       await page.goto(UDIO_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});

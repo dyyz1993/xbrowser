@@ -66,26 +66,6 @@ async function checkChatGPTLogin(page: Page): Promise<boolean> {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _SEL = {
-  input: '#prompt-textarea',
-  inputFallback: '[data-testid="chat-input"], [contenteditable="true"][role="textbox"]',
-  newChat: '[data-testid="create-new-chat-button"], button[aria-label="New chat"], nav a:first-child',
-  conversationLinks: 'nav a[href*="/c/"], aside a[href*="/c/"]',
-  sendButton: '[data-testid="send-button"]',
-  fileInput: 'input[type="file"]',
-  messageContainer: 'section[data-testid^="conversation-turn-"]',
-  stopButton: '[data-testid="stop-button"]',
-} as const;
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _HELP = {
-  attach: `附件支持：
-   --type image --path /path/to/img.jpg   上传图片
-   --type url --url "https://..."         发送 URL 链接
-   --type file --path /path/to/doc.pdf    上传文件`,
-};
-
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'chatgpt',
@@ -449,8 +429,6 @@ export default function (xcli: XCLIAPI): void {
             try {
               await page.unroute('**/backend-api/conversation').catch(() => {});
               let allUrls: string[] = [];
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              let _allDomains: string[] = [];
 
               if (capturedStream) {
                 const urlMatches = capturedStream.match(/https?:\/\/[^"'\s,<>\\\]\)]+/g) || [];

@@ -1041,8 +1041,6 @@ export default function (xcli: XCLIAPI): void {
                 const expandIdx = fullText.indexOf('...展开');
                 if (expandIdx >= 0) {
                   const afterExpand = fullText.slice(expandIdx + 5);
-                  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-                  const statPattern = /\d+[\.\d]*[万]?$/;
                   const lines = afterExpand.split(/\n/).map(l => l.trim()).filter(Boolean);
                   const descParts: string[] = [];
                   for (const line of lines) {

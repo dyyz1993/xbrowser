@@ -756,20 +756,17 @@ export default function (xcli: XCLIAPI): void {
 
         // 5. 拦截 AI 响应
         let aiResponse = '';
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const responsePromise = new Promise<void>(_resolve => {
-          page.on('response', async (response) => {
-            const url = response.url();
-            if (url.includes('ai_ingress/stream/completion')) {
-              try {
-                const body = await response.text();
-                aiResponse += body;
-                console.log('  [api] 捕获 AI 响应:', body.slice(0, 200));
-              } catch {
-                // ignore AI response read errors
-              }
+        page.on('response', async (response) => {
+          const url = response.url();
+          if (url.includes('ai_ingress/stream/completion')) {
+            try {
+              const body = await response.text();
+              aiResponse += body;
+              console.log('  [api] 捕获 AI 响应:', body.slice(0, 200));
+            } catch {
+              // ignore AI response read errors
             }
-          });
+          }
         });
 
         // 6. 拦截 API 调用（可选，用于提取来源）
@@ -825,8 +822,6 @@ export default function (xcli: XCLIAPI): void {
             // 去重并提取域名
             const seen = new Set<string>();
             const uniqueUrls = allUrls.filter(u => { const k = u.toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const domains = new Set<string>();
             sources = {
               total: uniqueUrls.length,
               domains: Array.from(uniqueUrls.map(u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } })).filter((d, i, arr) => arr.indexOf(d) === i).sort(),

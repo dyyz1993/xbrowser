@@ -1,7 +1,6 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
-import type { PluginPage, PluginElementHandle } from '../types.js';
 
 type Page = import('../types').Page;
 type Response = import('../types').Response;
@@ -20,69 +19,6 @@ function buildTips(ctx: CommandContext): string[] {
   if (!cdp) tips.push('建议使用 --cdp 9221 连接到已登录 Suno 的浏览器');
   tips.push(`Session: ${ctxAny.sessionId || 'default'}`);
   return tips;
-}
-
-/** Safe click by visible text — finds element with exact text match, uses mouse.click */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function safeClickByText(page: Page, text: string, opts?: { preferLarge?: boolean; debug?: boolean }): Promise<boolean> {
-  const preferLarge = opts?.preferLarge ?? false;
-  const debug = opts?.debug ?? false;
-  const handle = await (page as unknown as PluginPage).evaluateHandle(([t, preferLarge, debug]: [string, boolean, boolean]) => {
-    const allEls = Array.from(document.querySelectorAll('button, span, a, div, [role="button"]'))
-      .filter(el => {
-        const txt = el.textContent?.trim();
-        return txt === t || (txt && txt.startsWith(t) && txt.length < t.length + 20);
-      });
-    const visibleEls = allEls.filter(el => {
-      if ((el as HTMLElement).offsetParent === null) return false;
-      const rect = el.getBoundingClientRect();
-      return rect.width > 10 && rect.height > 10;
-    });
-    if (debug && allEls.length > 0) {
-      console.log(`[safeClickByText] text="${t}" total=${allEls.length} visible=${visibleEls.length}`);
-    }
-    const els = visibleEls;
-    if (els.length === 0) return null;
-    if (preferLarge) {
-      els.sort((a, b) => {
-        const aA = a.getBoundingClientRect().width * a.getBoundingClientRect().height;
-        const bA = b.getBoundingClientRect().width * b.getBoundingClientRect().height;
-        return bA - aA;
-      });
-    } else {
-      els.sort((a, b) => a.innerHTML.length - b.innerHTML.length);
-    }
-    const el = els[0];
-    const box = el.getBoundingClientRect();
-    return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-  }, [text, preferLarge, debug] as [string, boolean, boolean]);
-  
-  // Handle both direct object return and ElementHandle
-  let coords: { x: number; y: number } | null = null;
-  try {
-    if ((handle as unknown as PluginElementHandle).asElement()) {
-      coords = await (handle as unknown as { jsonValue(): Promise<{ x: number; y: number } | null> }).jsonValue();
-    } else {
-      // Direct plain object from evaluateHandle
-      coords = await (handle as unknown as { jsonValue(): Promise<{ x: number; y: number } | null> }).jsonValue();
-    }
-  } catch {
-    coords = null;
-  }
-  
-  if (coords && coords.x > 0 && coords.y > 0) {
-    await page.mouse.click(coords.x, coords.y);
-    return true;
-  }
-  return false;
-}
-
-/** Wait for specific text to appear on page */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function waitForText(page: Page, text: string, timeout = 10000): Promise<void> {
-  await page.waitForFunction(
-    (t: string) => document.body.innerText.includes(t), { timeout }, text,
-  );
 }
 
 /** Extract audio URL from a clip object */
@@ -673,8 +609,6 @@ export default function (xcli: XCLIAPI): void {
   site.login(async (ctx) => {
     const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
     const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint;
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const sessionId = (ctx as unknown as Record<string, unknown>).sessionId as string | undefined;
 
     if (cdp && page) {
       await page.goto(SUNO_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});

@@ -83,16 +83,7 @@ export default function(xcli: XCLIAPI): void {
           };
 
           // Strategy 1: Extract from script tags containing image metadata (AF_initDataCallback)
-          try {
-            const scripts = document.querySelectorAll('script');
-            for (const script of scripts) {
-              const text = script.textContent || '';
-              // Google embeds image data in AF_initDataCallback blocks
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              const matches = text.matchAll(/\["(https?:[^"\]]+?)"[^\]]*?\](?:,\["(https?:[^"\]]+?)")?/g);
-              // More reliable: look for the large image grid data pattern
-            }
-          } catch { /* ignore, fall through */ }
+          // (currently no-op: relies on Strategy 2 below)
 
           // Strategy 2: Extract from DOM elements with data attributes
           const items = document.querySelectorAll('[data-src], .isv-r, div.ivg-i, .rg_i, .YQ4gaf');

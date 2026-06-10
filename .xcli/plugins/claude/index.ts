@@ -70,14 +70,6 @@ const SEL = {
   stopButton: 'button[aria-label*="Stop"], button:has-text("Stop")',
 } as const;
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _HELP = {
-  attach: `附件支持：
-   --type image --path /path/to/img.jpg   上传图片
-   --type url --url "https://..."         发送 URL 链接
-   --type file --path /path/to/doc.pdf    上传文件`,
-};
-
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'claude',

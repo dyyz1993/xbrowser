@@ -8,16 +8,6 @@ type Page = import('../types').Page;
 
 const SITE_URL = 'https://www.qianwen.com';
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const SEL = {
-  input: 'div[role="textbox"][contenteditable="true"]',
-  newChat: 'button',
-  sendButton: 'button[aria-label="发送消息"]',
-  conversationLinks: 'a[href*="/chat/"], [class*="conversation"] a, [class*="session"] a',
-  replyContainer: '[class*="markdown"]',
-  fileInput: 'input[type="file"]',
-} as const;
-
 function buildTips(ctx: CommandContext): string[] {
   const tips: string[] = [];
   const ctxAny = ctx as unknown as Record<string, unknown>;

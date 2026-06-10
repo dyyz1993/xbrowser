@@ -301,14 +301,11 @@ export default function (xcli: XCLIAPI): void {
       }
 
       let keyFound = false;
-      let keyValue = '';
       try {
         const resp = await proxyFetch(`https://${params.domain}/indexnow-key.txt`, { method: 'GET', signal: AbortSignal.timeout(5000) });
         const text = await resp.text();
         if (resp.ok && /^[a-z0-9-]{8,128}$/i.test(text.trim())) {
           keyFound = true;
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          keyValue = text.trim();
           checks.push({ item: 'IndexNow key', status: '✅ 已配置' });
         }
       } catch { /* non-critical, continue */ }
@@ -1523,8 +1520,7 @@ export default function (xcli: XCLIAPI): void {
       if (!params.skipProbe) {
         for (const p of targets) {
           try {
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const resp = await proxyFetch(p.entryUrl, {
+            await proxyFetch(p.entryUrl, {
               method: 'HEAD',
               signal: AbortSignal.timeout(5000),
               redirect: 'follow',

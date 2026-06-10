@@ -94,11 +94,6 @@ interface CategoryItem {
   catId: string;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-function requireCdp(ctx: CommandContext): string | null {
-  return ctx.cdpEndpoint || null;
-}
-
 function buildCtxTips(ctx: CommandContext): { tips: string[]; hasCdp: boolean } {
   const tips: string[] = [];
   const hasCdp = !!ctx.cdpEndpoint;
@@ -334,8 +329,6 @@ export default function (xcli: XCLIAPI): void {
 
         const data = await page.evaluate(() => {
           const bodyText = document.body.innerText || '';
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const _bodyHtml = document.body.innerHTML || '';
 
           let name = '';
           const nameFromDom = document.querySelector('#pcMainCompanyNameV2, [id*="CompanyName"], [class*="company-name"], [class*="shop-name"]')?.textContent?.trim() || '';

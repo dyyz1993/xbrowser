@@ -53,16 +53,6 @@ const SEL = {
   fileInput: 'input[type="file"]',
 } as const;
 
-// ─── 帮助常量 ────────────────────────────────────────
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _HELP = {
-  attach: `附件支持：
-  --type image --path /path/to/img.jpg   上传图片
-  --type url --url "https://..."         发送 URL 链接
-  --type file --path /path/to/doc.pdf    上传文件`,
-};
-
 // ─── 插件入口 ────────────────────────────────────────
 
 export default function (xcli: XCLIAPI): void {
@@ -377,8 +367,6 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(500);
 
         // 发送：Enter 键（DeepSeek SSR 会刷新页面）
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const _currentUrl = page.url();
         await page.keyboard.press('Enter');
         tips.push('消息已发送，等待 AI 回复...');
 
@@ -453,8 +441,6 @@ export default function (xcli: XCLIAPI): void {
             try {
               await page.unroute('**/api/v0/chat/completion').catch(() => {});
               let allUrls: string[] = [];
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              let _allDomains: string[] = [];
 
               if (capturedStream) {
                 // 从 SSE 流中提取 URL

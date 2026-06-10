@@ -964,8 +964,7 @@ export default function (xcli: XCLIAPI): void {
         const absPath = path.resolve(params.image);
         if (!fs.existsSync(absPath)) throw new Error(`图片文件不存在: ${absPath}`);
 
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const uploaded = await uploadFileViaDataTransfer(page, absPath);
+        await uploadFileViaDataTransfer(page, absPath);
         await page.waitForTimeout(1000);
         tips.push(`已上传图片: ${path.basename(absPath)}`);
 
@@ -1033,8 +1032,7 @@ export default function (xcli: XCLIAPI): void {
         const absPath = path.resolve(params.image);
         if (!fs.existsSync(absPath)) throw new Error(`图片文件不存在: ${absPath}`);
 
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const uploaded = await uploadFileViaDataTransfer(page, absPath);
+        await uploadFileViaDataTransfer(page, absPath);
         await page.waitForTimeout(1000);
         tips.push(`已上传参考图: ${path.basename(absPath)}`);
 

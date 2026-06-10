@@ -118,20 +118,9 @@ function readLatestSMS(filter?: string): { code: string | null; text: string; ti
   } catch { return null; }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function waitForSMS(timeoutMs = 60000, filter?: string): Promise<string | null> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const sms = readLatestSMS(filter);
-    if (sms?.code) return sms.code;
-    await new Promise(r => setTimeout(r, 3000));
-  }
-  return null;
-}
-
 // ─── 163 Webmail verification code reader ───
 
-async function read163EmailCode(page: Page, fromDomain: string, timeoutMs = 60000): Promise<string | null> {
+async function read163EmailCode(page: Page, _fromDomain: string, timeoutMs = 60000): Promise<string | null> {
   // Open 163 webmail in a new tab
   const context = page.context();
   const mailPage = await context.newPage();
@@ -152,14 +141,12 @@ async function read163EmailCode(page: Page, fromDomain: string, timeoutMs = 6000
     while (Date.now() - start < timeoutMs) {
       try {
         // Try to find verification code emails
-        const code = await targetFrame.evaluate((domain) => {
+        const code = await targetFrame.evaluate(() => {
           // Look for email subjects containing the domain
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const _subjects = document.querySelectorAll('.js-component-emailblock em, .nui-editor-body em, div[title*="' + domain + '"], .MailListSubject, .js-component-subject');
           const allText = document.body.innerText;
           const codeMatch = allText.match(/(?:验证码|code|Code|verification)[：:\s]*(\d{4,8})/);
           return codeMatch ? codeMatch[1] : null;
-        }, fromDomain) as string | null;
+        }) as string | null;
         if (code) return code;
       } catch { /* verification code not found yet */ }
       await mailPage.waitForTimeout(5000);
@@ -584,8 +571,6 @@ export default function (xcli: XCLIAPI): void {
       for (const handler of handlers) {
         try {
           // Get fresh page for each site - reuse context's existing pages or create new
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const _browser = page.context().browser();
           let sitePage: Page;
           try {
             sitePage = await page.context().newPage();

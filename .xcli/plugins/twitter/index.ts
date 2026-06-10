@@ -38,39 +38,6 @@ export default function (xcli: XCLIAPI): void {
     return tips;
   }
 
-  // ─── 通用：拦截 GraphQL API ────────────────────
-
-  interface CaptureOptions {
-    page: import('../types').Page;
-    urlPattern: string;
-    dataExtractor: (json: Record<string, unknown>) => Record<string, unknown> | null;
-    timeout?: number;
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  async function captureApiResponse<T>(opts: CaptureOptions): Promise<T | null> {
-    const { page, urlPattern, dataExtractor, timeout = 15000 } = opts;
-
-    return new Promise((resolve) => {
-      const handler = async (resp: import('../types').Response) => {
-        if (!resp.url().includes(urlPattern)) return;
-        try {
-          const json = await resp.json() as Record<string, unknown>;
-          const data = dataExtractor(json);
-          if (data) {
-            resolve(data as T);
-          }
-        } catch { /* ignore parse errors */ }
-      };
-
-      page.on('response', handler);
-      setTimeout(() => {
-        page.off('response', handler);
-        resolve(null);
-      }, timeout);
-    });
-  }
-
   // ─── 1. search ─────────────────────────────────
 
   site.command('search', {
@@ -152,8 +119,6 @@ export default function (xcli: XCLIAPI): void {
               const result = (json?.data?.user?.result || json?.data?.user_result?.result || {}) as Record<string, unknown>;
             if (result?.legacy) {
               const legacy = result.legacy as Record<string, unknown>;
-              // eslint-disable-next-line @typescript-eslint/no-unused-vars
-              const profile = result.profile as Record<string, unknown> | undefined;
               userData = {
                 id: result.rest_id as string,
                 name: legacy.name as string,

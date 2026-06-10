@@ -193,63 +193,6 @@ async function captureApis(
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function ensureCreatePage(page: Page): Promise<void> {
-  if (!page.url().includes('mureka.cn/create')) {
-    await page.goto(CREATE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-    await page.waitForTimeout(3000);
-  }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function waitForChatAction(
-  page: Page,
-  timeoutMs: number,
-): Promise<{ type: 'option' | 'create'; text: string; count: number } | null> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const result = await page.evaluate(() => {
-      const optionSelectors = [
-        '.suggestion-chips__item',
-        '.chat-option-item',
-        '[class*="suggestion-chips"] .suggestion-chips__item',
-        '[class*="chat-option"]',
-        '[class*="reply-item"]',
-        '[class*="quick-reply"]',
-        '[class*="option-card"]',
-      ];
-      for (const sel of optionSelectors) {
-        const options = Array.from(document.querySelectorAll<HTMLElement>(sel))
-          .filter(el => el.offsetParent !== null);
-        if (options.length > 0) {
-          const first = options[0];
-          const text = (first.textContent || '').trim().slice(0, 80);
-          first.click();
-          return { type: 'option' as const, text, count: options.length };
-        }
-      }
-
-      const createBtns = Array.from(document.querySelectorAll<HTMLElement>('button, [role="button"]'))
-        .filter(el => {
-          const text = (el.textContent || '').trim();
-          return (text === '创作' || text === '生成' || text === 'Create' || text === 'Generate')
-            && el.offsetParent !== null;
-        });
-      if (createBtns.length > 0) {
-        const first = createBtns[0];
-        const text = (first.textContent || '').trim();
-        first.click();
-        return { type: 'create' as const, text, count: createBtns.length };
-      }
-
-      return null;
-    });
-    if (result) return result as { type: 'option' | 'create'; text: string; count: number } | null;
-    await page.waitForTimeout(1000);
-  }
-  return null;
-}
-
 /* ───────── plugin entry ───────── */
 
 export default function (xcli: XCLIAPI): void {
@@ -870,8 +813,6 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const page = getPage(ctx);
         const tips = buildTips(ctx);
 
         if (params.url && params.url.includes('static-web.mureka.cn')) {

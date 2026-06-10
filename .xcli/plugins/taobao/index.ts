@@ -67,34 +67,6 @@ function interceptApi(
   };
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function interceptFirstMatch(
-  page: Page,
-  urlPattern: string,
-  timeout = 10000,
-): Promise<Record<string, unknown> | null> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      page.off('response', handler);
-      resolve(null);
-    }, timeout);
-
-    const handler = async (response: Response) => {
-      if (!response.url().includes(urlPattern)) return;
-      try {
-        const json = await response.json();
-        clearTimeout(timer);
-        page.off('response', handler);
-        resolve(json as Record<string, unknown>);
-      } catch {
-        // non-JSON response for non-target URLs, skip
-      }
-    };
-
-    page.on('response', handler);
-  });
-}
-
 async function checkLoginState(page: Page): Promise<boolean> {
   try {
     const cookies = await page.context().cookies(['.taobao.com']);
@@ -646,22 +618,6 @@ export default function (xcli: XCLIAPI): void {
         const apiData = interceptor.items()[0];
         if (apiData) {
           const detail = apiData as Record<string, unknown>;
-          const skuBase = detail.skuBase as Record<string, unknown> | undefined;
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const skus = Array.isArray(skuBase?.skus)
-            ? (skuBase!.skus as Record<string, unknown>[]).map((s) => ({
-                skuId: String(s.skuId || ''),
-                text: String(s.name || s.text || ''),
-                price: String(s.price || ''),
-              }))
-            : [];
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const props = Array.isArray(detail.props)
-            ? (detail.props as Record<string, unknown>[]).map((p) => ({
-                name: String(p.name || ''),
-                value: String(p.value || ''),
-              }))
-            : [];
 
           return ok({
               source: 'api',
@@ -831,8 +787,6 @@ export default function (xcli: XCLIAPI): void {
           const d = apiRaw as Record<string, unknown>;
           const seller = (d.seller || {}) as Record<string, unknown>;
           const skuBase = (d.skuBase || {}) as Record<string, unknown>;
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          const rateInfo = (d.rateInfo || {}) as Record<string, unknown>;
 
           const skuList = Array.isArray(skuBase.skus)
             ? (skuBase.skus as Record<string, unknown>[]).map((s) => ({

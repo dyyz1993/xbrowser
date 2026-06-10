@@ -68,18 +68,6 @@ async function setReactInput(page: Page, selector: string, value: string): Promi
   }, { sel: selector, val: value });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function setContentEditable(page: Page, value: string): Promise<boolean> {
-  return page.evaluate((val: string) => {
-    const el = document.querySelector('div[role="textbox"][contenteditable="true"]') as HTMLDivElement | null;
-    if (!el) return false;
-    el.textContent = val;
-    el.dispatchEvent(new Event('input', { bubbles: true }));
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    return true;
-  }, value);
-}
-
 async function uploadFileViaDataTransfer(page: Page, absPath: string): Promise<boolean> {
   const data = fs.readFileSync(absPath);
   const b64 = data.toString('base64');
@@ -267,8 +255,7 @@ async function waitForImages(page: Page, timeoutMs: number): Promise<string[]> {
 async function captureNetworkImages(page: Page, timeoutMs: number): Promise<string[]> {
   return new Promise<string[]>((resolve) => {
     const urls: string[] = [];
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const timer = setTimeout(() => {
+    setTimeout(() => {
       page.off('response', handler);
       resolve(urls);
     }, timeoutMs);

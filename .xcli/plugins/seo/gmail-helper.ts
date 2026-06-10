@@ -258,12 +258,7 @@ function extractVerificationData(body: string, subject: string): { code: string;
   let code = '';
   let link = '';
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const contextWindow = 200;
   const keywords = ['code', 'verification', 'verify', '验证码', '验证', 'pin', 'otp', 'confirm'];
-
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const lowerBody = body.toLowerCase();
   const lowerSubject = subject.toLowerCase();
 
   const codePatterns = [
