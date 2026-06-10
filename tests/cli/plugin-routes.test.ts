@@ -339,7 +339,7 @@ describe('plugin-routes', () => {
       handleDaemon(['unknown'], {}, 'text');
 
         expect(consoleSpy).toHaveBeenCalledWith(
-          'Usage: xbrowser daemon <start|stop|status> [--port <port>]'
+          'Daemon starts automatically. No manual action needed.'
         );
       consoleSpy.mockRestore();
     });

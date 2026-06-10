@@ -2,7 +2,18 @@
 
 > xbrowser 项目的 AI Agent 工作手册。所有在本仓库工作的 Agent **必须**先读完本文。
 
-## 0. 项目原则
+## 0. First Things First
+
+```bash
+npm install && npm run build && npm link        # 安装 & 链接
+npm run validate                                 # 全部验证：typecheck + lint + build + test
+npm run lint:plugin-contract                     # 插件契约快速检查（30 秒）
+npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
+```
+
+**关键路径** — 每次改代码后至少跑：`npm run typecheck && npm run lint`
+
+## 1. 项目原则
 
 - **第一原则：所有自动化脚本 → 插件**。任何 `*.ts`/`*.mjs`/`*.cjs` 调研脚本、爬虫、数据采集、发布工具，都应放在 `.xcli/plugins/<name>/` 下，作为站点插件或扩展命令插件存在，**不要**散落在仓库根目录或 `scripts/` 中。
 - **skill / 知识 / 模板** 全部放 `.opencode/skills/<name>/`，与全局 skills 解耦。
@@ -11,7 +22,7 @@
 
 ---
 
-## 1. 仓库速览
+## 2. 仓库速览
 
 | 路径 | 作用 |
 |------|------|
@@ -34,9 +45,9 @@
 
 ---
 
-## 2. 快速启动
+## 3. 快速启动
 
-### 2.1 安装
+### 3.1 安装
 
 ```bash
 npm install
@@ -44,7 +55,7 @@ npm run build
 npm link            # 让 xbrowser 命令全局可用
 ```
 
-### 2.2 启动浏览器并跑第一个命令
+### 3.2 启动浏览器并跑第一个命令
 
 ```bash
 # 方式 1: 让 xbrowser 自己启动浏览器
@@ -59,7 +70,7 @@ xbrowser --cdp 9222 title
 xbrowser --cdp auto title
 ```
 
-### 2.3 Daemon 模式（响应更快，自动启停）
+### 3.3 Daemon 模式（响应更快，自动启停）
 
 ```bash
 # 直接跑任何 xbrowser 命令，daemon 会自动起来并在退出后停掉
@@ -70,7 +81,7 @@ xbrowser "goto https://example.com && title"
 
 ---
 
-## 3. 命令链（核心用法）
+## 4. 命令链（核心用法）
 
 把多个操作串成一条命令：
 
@@ -102,7 +113,7 @@ EOF
 
 ---
 
-## 4. 录制与回放（快速产 YAML）
+## 5. 录制与回放（快速产 YAML）
 
 ```bash
 # 1. 打开会话
@@ -127,11 +138,11 @@ xbrowser replay recordings/my-flow.yaml --stop-on-error
 
 ---
 
-## 5. Viewer / Preview（人类接管）
+## 6. Viewer / Preview（人类接管）
 
 遇到**验证码、登录、动态挑战**时，Agent 必须让出控制权：
 
-### 5.1 启动 viewer
+### 6.1 启动 viewer
 
 viewer 会在需要时**自动启动 daemon 并打开浏览器**（无需手动启 daemon）：
 
@@ -146,7 +157,7 @@ xbrowser preview --session my-sess
 viewer 启动后会在终端打印 WebSocket URL（如 `ws://localhost:9224`），
 浏览器中可访问 `http://localhost:9224/preview/<sessionId>` 看实时画面并接管鼠标键盘。
 
-### 5.2 插件中主动让出
+### 6.2 插件中主动让出
 
 ```typescript
 handler: async (params, ctx) => {
@@ -163,7 +174,7 @@ handler: async (params, ctx) => {
 }
 ```
 
-### 5.3 配置
+### 6.3 配置
 
 ```bash
 # ~/.xbrowser/config.json
@@ -193,9 +204,9 @@ XBROWSER_PREVIEW_PORT=9224
 
 ---
 
-## 6. 登录处理
+## 7. 登录处理
 
-### 6.1 一次性登录（推荐用于站点插件）
+### 7.1 一次性登录（推荐用于站点插件）
 
 ```typescript
 site.login(async (ctx) => {
@@ -217,7 +228,7 @@ site.logout(async (ctx) => {
 });
 ```
 
-### 6.2 Cookie 注入
+### 7.2 Cookie 注入
 
 ```typescript
 await page.context().addCookies([{
@@ -225,7 +236,7 @@ await page.context().addCookies([{
 }]);
 ```
 
-### 6.3 在 viewer 里手动登录
+### 7.3 在 viewer 里手动登录
 
 如果登录流程太复杂（短信验证、扫码、二次认证），用 `ctx.waitForHuman()`：
 
@@ -238,7 +249,7 @@ handler: async (params, ctx) => {
 }
 ```
 
-### 6.4 复用已有登录态（连接到已开浏览器）
+### 7.4 复用已有登录态（连接到已开浏览器）
 
 ```bash
 # 用户已经在 Chrome 上登录了 X 站
@@ -250,15 +261,15 @@ xbrowser --cdp 9222 chatgpt list
 
 ---
 
-## 7. 验证码处理
+## 8. 验证码处理
 
-### 7.1 检测（自动）
+### 8.1 检测（自动）
 
 xbrowser 自动识别 reCAPTCHA v2/v3、hCaptcha、Cloudflare Turnstile、Generic Captcha。
 
-匹配到时自动 pause，**触发 5.2 的 `ctx.waitForHuman` 流程**。
+匹配到时自动 pause，**触发 6.2 的 `ctx.waitForHuman` 流程**。
 
-### 7.2 处理策略
+### 8.2 处理策略
 
 | 策略 | 行为 |
 |------|------|
@@ -268,7 +279,7 @@ xbrowser 自动识别 reCAPTCHA v2/v3、hCaptcha、Cloudflare Turnstile、Generi
 
 配置：`~/.xbrowser/config.json` 的 `captcha.strategy`。
 
-### 7.3 在插件里手动触发
+### 8.3 在插件里手动触发
 
 ```typescript
 // 让框架重新检测一次当前页面
@@ -280,7 +291,7 @@ if (detected) {
 
 ---
 
-## 8. 临时文件 / 临时数据写哪里
+## 9. 临时文件 / 临时数据写哪里
 
 | 内容类型 | 路径 | 备注 |
 |---------|------|------|
@@ -297,11 +308,11 @@ if (detected) {
 
 ---
 
-## 9. 插件开发
+## 10. 插件开发
 
 完整规范见 `docs/plugin-guide.md`（1456 行）。下面是 Agent 最常用的速查。
 
-### 9.1 插件结构
+### 10.1 插件结构
 
 ```
 .xcli/plugins/<name>/
@@ -314,7 +325,7 @@ if (detected) {
 └── helpers.ts          # 可选
 ```
 
-### 9.2 最小插件
+### 10.2 最小插件
 
 ```typescript
 // .xcli/plugins/my-plugin/index.ts
@@ -341,7 +352,7 @@ export default function (xcli: XCLIAPI): void {
 }
 ```
 
-### 9.3 Scope 选择
+### 10.3 Scope 选择
 
 | Scope | 含义 | 适用 |
 |-------|------|------|
@@ -350,14 +361,14 @@ export default function (xcli: XCLIAPI): void {
 | `page` | 需要活跃页面 | 导航、查询、截图、JS |
 | `element` | 需要具体元素 | click / fill / hover |
 
-### 9.4 访问 Playwright Page
+### 10.4 访问 Playwright Page
 
 ```typescript
 const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
 if (!page) throw new Error('需要浏览器页面');
 ```
 
-### 9.5 加载顺序
+### 10.5 加载顺序
 
 1. `./.xcli/plugins/`
 2. `../.xcli/plugins/`
@@ -366,7 +377,7 @@ if (!page) throw new Error('需要浏览器页面');
 
 本地优先于全局。**开发时直接编辑 `.xcli/plugins/<name>/` 即可生效，无需 npm link。**
 
-### 9.6 查看插件能力
+### 10.6 查看插件能力
 
 ```bash
 xbrowser plugin list
@@ -375,7 +386,7 @@ xbrowser plugin schema <plugin> <command>
 xbrowser plugin schema <plugin> <command> --json
 ```
 
-### 9.7 需要登录的插件
+### 10.7 需要登录的插件
 
 ```typescript
 const site = xcli.createSite({
@@ -397,7 +408,7 @@ const site = xcli.createSite({
 
 ---
 
-## 10. 内置命令速查
+## 11. 内置命令速查
 
 | 分类 | 命令 |
 |------|------|
@@ -420,7 +431,7 @@ const site = xcli.createSite({
 
 ---
 
-## 11. ESLint 与代码规范
+## 12. ESLint 与代码规范
 
 ```bash
 # 跑 lint
@@ -433,7 +444,7 @@ npm run typecheck
 npm run lint:plugin-contract
 
 # 跑全部校验
-npm run validate   # = typecheck + lint + build + test
+npm run validate   # = typecheck + lint + build + test（含 plugin contract 检查）
 ```
 
 ### ESLint 规则要点
@@ -456,7 +467,7 @@ const page = (ctx as any).page;  // 会被 lint 拒绝
 
 ---
 
-## 12. 发布到 marketplace
+## 13. 发布到 marketplace
 
 ```bash
 # 1. 设置代理（marketplace 在 Cloudflare Workers）
@@ -503,7 +514,7 @@ xbrowser marketplace publish <plugin-name> --registry https://your-registry.com
 
 ---
 
-## 13. CDP 模式踩坑速查
+## 14. CDP 模式踩坑速查
 
 完整内容见 `.opencode/ui-automator/troubleshooting/`。
 
@@ -538,7 +549,61 @@ xbrowser marketplace publish <plugin-name> --registry https://your-registry.com
 
 ---
 
-## 14. 测试
+## 15. 测试踩坑备忘录（实测经验）
+
+> 以下是在本仓库实际修复过的问题，**改代码前先看**。
+
+### 源文件 vs 测试文件——谁是对的？
+
+```
+源文件（source of truth）       测试文件（可能过期）
+─────────────────────────     ─────────────────────────
+src/cli/session-routes.ts  →  tests/cli/session-routes.test.ts
+.xcli/plugins/github/       →  tests/plugins/github.test.ts
+```
+
+**常见问题：测试断言了源文件不存在的东西（如 `loginConfig`）。**
+修复原则：**以源文件为准**，修正测试。
+
+### 选项 key 命名
+
+| 用法 | 对应 options key |
+|------|-----------------|
+| `xbrowser session open --name my-sess` | `options.name` |
+| `xbrowser doubao list --session my-sess` | `options.session`（全局 flag） |
+
+`session open/close` 的子命令用 `options.name`，不要混淆。
+
+### 插件 createSite 不需要 loginConfig
+
+```typescript
+// ✅ 正确
+xcli.createSite({ name, url, requiresLogin, isLogin });  // loginConfig 可选
+```
+
+### safeClickByText 依赖 page.evaluate
+
+写测试 mock 时：`page.evaluate` 返回 `null` → 按钮找不到；返回 `{ x, y, width, height }` → 按钮可点击。
+
+### 更新 help 文本要同步测试
+
+`src/cli/help.ts` → 同步改 `tests/cli/help.test.ts`。
+
+### daemon start/stop/status 已移除
+
+不要再写这些命令，也不要在文档/测试中引用。
+
+### 测试常见失败原因
+
+| 症状 | 可能原因 | 修复 |
+|------|---------|------|
+| `expect(spy).toHaveBeenCalledWith(...)` 收到 `"default"` | 源文件读 `options.session` 但测试传了 `name` | 统一 key 名 |
+| `expect(spy).toHaveBeenCalledWith(objectContaining({loginConfig}))` | 源文件没传 `loginConfig` | 移除该断言 |
+| handler 始终返回 `{success: false}` | Mock 让 `safeClickByText` 返回 null | 正确 mock `page.evaluate` |
+
+---
+
+## 16. 测试
 
 ```bash
 # 全部测试
@@ -555,6 +620,15 @@ npm run test:watch
 
 - 单元：`tests/cdp-driver/` / `tests/plugins/` / `tests/cli/` / `tests/commands/`
 - E2E：`tests/e2e/plugins/`
+
+### 测试最佳实践
+
+- **Mock 原则**：外部模块用 `vi.mock()`，page 对象用工厂函数创建
+- **测试常见失败**：
+  - 测试断言了源文件没传的参数（如 `loginConfig`）→ 移除该断言
+  - `--name` 与 `--session` 混淆 → 确认 options key 与 CLI flag 一致
+  - `page.evaluate` mock 返回值不对 → `safeClickByText` 依赖 `page.evaluate` 返回 bounding box
+- **参考**：`tests/plugins/doubao-music.test.ts` 的 createMockPage 工厂模式
 
 ### 手动验证新插件
 
@@ -573,7 +647,7 @@ echo "EXIT=$?"
 
 ---
 
-## 15. Worktree / 分支管理
+## 17. Worktree / 分支管理
 
 ```bash
 # 查看所有 worktree
@@ -591,7 +665,7 @@ git branch -D feat/x
 
 ---
 
-## 16. 速查表（最高频 8 条命令）
+## 18. 速查表（最高频 8 条命令）
 
 ```bash
 xbrowser session open <url>                 # 开浏览器
@@ -606,7 +680,7 @@ xbrowser marketplace publish <name>         # 发插件
 
 ---
 
-## 17. 关键文档索引
+## 19. 关键文档索引
 
 | 主题 | 文档 |
 |------|------|

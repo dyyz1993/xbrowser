@@ -472,6 +472,6 @@ export function handleDaemon(
       break;
     }
     default:
-      console.log('Usage: xbrowser daemon <start|stop|status> [--port <port>]');
+      console.log('Daemon starts automatically. No manual action needed.');
   }
 }

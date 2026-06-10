@@ -47,7 +47,7 @@ const previewBuiltin: BuiltinCommand = {
       if (options.json) {
         outputResult({ running: false }, 'json');
       } else {
-        console.log('Daemon is not running. Start with: xbrowser daemon start');
+        console.log('Daemon is not running. It will start automatically when needed.');
         console.log('');
         console.log('Preview is automatically available when the daemon is running.');
       }

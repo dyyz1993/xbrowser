@@ -5,7 +5,11 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     testTimeout: 30000,
     pool: 'forks',
-    maxWorkers: 2,
+    poolOptions: {
+      forks: {
+        maxForks: 2,
+      },
+    },
     exclude: [
       'tests/e2e/**',
       'tests/cli/daemon-session.test.ts',
