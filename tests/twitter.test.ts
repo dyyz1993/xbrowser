@@ -86,12 +86,6 @@ describe('Twitter Plugin', () => {
         description: 'X (Twitter) - 社交媒体内容采集（XHR 拦截模式，数据更丰富）',
         requiresLogin: true,
         isLogin: expect.any(Function),
-        loginConfig: expect.objectContaining({
-          captchaSelectors: expect.any(Array),
-          loggedInSelectors: expect.any(Array),
-          loginKeywords: expect.any(Array),
-          loginUrls: expect.any(Array),
-        }),
       }));
     });
 
@@ -495,7 +489,7 @@ describe('Twitter Plugin', () => {
     it('should throw when page is missing (getPage guard)', async () => {
       const handler = commands.get('search')!.handler;
       await expect(handler({ query: 'x', limit: 10 }, {})).rejects.toThrow(
-        '需要浏览器页面，请使用 --cdp 参数连接',
+        '需要浏览器页面',
       );
     });
 

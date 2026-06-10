@@ -1013,12 +1013,13 @@ export class XBPageImpl implements XBPage {
       }, timeout);
 
       const handler = (params: unknown): void => {
-        const p = params as { requestId: string; response: { status: number; url: string; headers: Record<string, string> } };
+        const p = params as { requestId?: string; response?: { status?: number; url?: string; headers?: Record<string, string> } };
+        if (!p.response) return;
         const data = {
-          requestId: p.requestId,
-          status: p.response.status,
-          url: p.response.url,
-          headers: p.response.headers,
+          requestId: p.requestId || '',
+          status: p.response.status || 0,
+          url: p.response.url || '',
+          headers: p.response.headers || {},
         };
         const response = createXBResponse(data, this.conn, this.sessionId);
         if (predicate(response)) {
@@ -1055,14 +1056,15 @@ export class XBPageImpl implements XBPage {
       }, timeout);
 
       const handler = (params: unknown): void => {
-        const p = params as { requestId: string; request: { url: string; method: string; headers: Record<string, string>; postData?: string }; type: string };
+        const p = params as { requestId?: string; request?: { url?: string; method?: string; headers?: Record<string, string>; postData?: string }; type?: string };
+        if (!p.request) return;
         const data = {
-          requestId: p.requestId,
-          url: p.request.url,
-          method: p.request.method,
-          headers: p.request.headers,
+          requestId: p.requestId || '',
+          url: p.request.url || '',
+          method: p.request.method || '',
+          headers: p.request.headers || {},
           postData: p.request.postData ?? null,
-          resourceType: p.type,
+          resourceType: p.type || '',
         };
         const request = createXBRequest(this, data);
         if (predicate(request)) {

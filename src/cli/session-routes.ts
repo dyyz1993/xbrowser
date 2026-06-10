@@ -34,16 +34,16 @@ export async function handleSession(
   switch (sub) {
     case 'open': {
       const url = args[1];
-      const name = (options.session as string) || process.env.XBROWSER_SESSION || 'default';
+      const name = (options.name as string) || process.env.XBROWSER_SESSION || 'default';
       if (!url)
-        outputError('Usage: xbrowser session open <url> [--session <name>] [--cdp <endpoint>]');
+        outputError('Usage: xbrowser session open <url> [--name <name>] [--cdp <endpoint>]');
 
       const info = await forwardSessionCreate(name, url, cdpEndpoint);
       outputResult({ ok: true, ...info }, mode);
       break;
     }
     case 'close': {
-      const name = (options.session as string) || process.env.XBROWSER_SESSION || 'default';
+      const name = (options.name as string) || process.env.XBROWSER_SESSION || 'default';
       try { await forwardSessionClose(name); } catch { /* daemon may be down */ }
       await closeSession(name);
       outputResult({ ok: true, name }, mode);

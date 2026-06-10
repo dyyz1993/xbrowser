@@ -71,9 +71,8 @@ describe('help', () => {
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('plugin install'));
   });
 
-  it('should include daemon commands', () => {
+  it('should no longer include daemon commands (removed per AGENTS.md)', () => {
     showMainHelp();
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('daemon start'));
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('daemon stop'));
+    expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('daemon start'));
   });
 });

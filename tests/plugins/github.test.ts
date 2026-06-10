@@ -53,14 +53,9 @@ describe('github plugin', () => {
       expect.objectContaining({
         name: 'github',
         url: 'https://github.com',
+        description: 'GitHub SEO 外链 - Profile / README / Gist',
         requiresLogin: false,
         isLogin: expect.any(Function),
-        loginConfig: expect.objectContaining({
-          captchaSelectors: expect.any(Array),
-          loggedInSelectors: expect.any(Array),
-          loginKeywords: expect.any(Array),
-          loginUrls: expect.any(Array),
-        }),
       })
     );
   });

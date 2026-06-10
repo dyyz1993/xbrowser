@@ -5,12 +5,14 @@ const {
   mockOutputError,
   mockGetDaemonConfig,
   mockGetDaemonProcessStatus,
+  mockStartDaemonProcess,
   mockForwardViewerCheckSelector,
 } = vi.hoisted(() => ({
   mockOutputResult: vi.fn(),
   mockOutputError: vi.fn(),
   mockGetDaemonConfig: vi.fn().mockReturnValue({ configDir: '/tmp/.xbrowser', workerEntryPath: '', basePort: 9224 }),
   mockGetDaemonProcessStatus: vi.fn().mockReturnValue({ running: true, pid: 123, port: 9224, info: null }),
+  mockStartDaemonProcess: vi.fn().mockResolvedValue(undefined),
   mockForwardViewerCheckSelector: vi.fn().mockResolvedValue({ found: false }),
 }));
 
@@ -22,6 +24,7 @@ vi.mock('../../src/cli/output.js', () => ({
 vi.mock('../../src/daemon/daemon.js', () => ({
   getDaemonConfig: mockGetDaemonConfig,
   getDaemonProcessStatus: mockGetDaemonProcessStatus,
+  startDaemonProcess: mockStartDaemonProcess,
 }));
 
 vi.mock('../../src/client/daemon-client.js', () => ({
@@ -75,10 +78,14 @@ describe('viewer-routes', () => {
     delete process.env.XBROWSER_SESSION;
   });
 
-  it('should output error when daemon is not running', async () => {
+  it('should fallback to config port when daemon is not running', async () => {
     mockGetDaemonProcessStatus.mockReturnValue({ running: false, pid: 0, port: 0, info: null });
-    await expect(handleViewer([], {}, 'json')).rejects.toThrow('EXIT');
-    expect(mockOutputError).toHaveBeenCalledWith(expect.stringContaining('Daemon is not running'));
+    await handleViewer([], {}, 'json');
+    expect(mockStartDaemonProcess).toHaveBeenCalled();
+    expect(mockOutputResult).toHaveBeenCalledWith(
+      expect.objectContaining({ url: 'http://localhost:9224/preview/default' }),
+      'json'
+    );
   });
 
   it('should append #focus= selector when element exists via RPC', async () => {
