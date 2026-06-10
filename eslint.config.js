@@ -4,7 +4,7 @@ import noRawOutputRule from './lint-scripts/eslint-no-raw-output.mjs';
 
 export default [
   {
-    files: ['src/**/*.ts', 'bin/**/*.ts'],
+    files: ['src/**/*.ts', 'bin/**/*.ts', '.xcli/plugins/**/*.ts'],
     languageOptions: {
       parser: tsparser,
     },
@@ -35,6 +35,6 @@ export default [
     },
   },
   {
-    ignores: ['dist/**', 'node_modules/**'],
+    ignores: ['dist/**', 'node_modules/**', '.xcli/plugins/node_modules/**'],
   },
 ];

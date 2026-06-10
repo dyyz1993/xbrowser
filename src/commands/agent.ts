@@ -14,6 +14,11 @@ export const observeCommand = registerCommand({
     compact: z.boolean().optional().default(false).describe('Include compact agent-browser style snapshot text'),
     selectors: z.boolean().optional().default(false).describe('Include ref to stable CSS selector map'),
   }),
+  result: z.object({
+    targets: z.array(z.record(z.unknown())),
+    selectors: z.record(z.unknown()).optional(),
+    compact: z.string().optional(),
+  }).passthrough(),
   handler: async (p, ctx: BrowserCommandContext) => {
     const observation = await observePage(ctx.page, ctx.sessionId, {
       includeHidden: p.includeHidden,

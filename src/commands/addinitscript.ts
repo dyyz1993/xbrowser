@@ -56,6 +56,15 @@ export const addInitScriptCommand = registerCommand({
   description: 'Add an initialization script that runs on every page load',
   scope: 'page',
   parameters: InitScriptParams,
+  result: z.object({
+    scripts: z.array(z.object({ name: z.string(), size: z.number(), preview: z.string() })).optional(),
+    removed: z.string().optional(),
+    existed: z.boolean().optional(),
+    error: z.string().optional(),
+    registered: z.string().optional(),
+    hint: z.string().optional(),
+    executedImmediately: z.boolean().optional(),
+  }).passthrough(),
   handler: async (params: InitScriptParamType, ctx: BrowserCommandContext): Promise<unknown> => {
     if (params.list) {
       const scripts = Array.from(registeredScripts.entries()).map(([n, content]) => ({
