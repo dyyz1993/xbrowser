@@ -38,7 +38,7 @@ function readIndexSource(pluginPath) {
     const p = resolve(pluginPath, file);
     if (existsSync(p)) {
       try { return readFileSync(p, 'utf-8'); }
-      catch { return null; }
+      catch (e) { console.warn(`[requires-login] 无法读取 ${p}:`, e); return null; }
     }
   }
   return null;
@@ -53,10 +53,16 @@ function checkPlugin(dirName, pluginPath) {
   checked++;
 
   // Extract requiresLogin value from createSite() call
-  const siteMatch = src.match(/createSite\(\{([\s\S]*?)\}\);/);
-  if (!siteMatch) return;
-
-  const siteConfig = siteMatch[1];
+  const siteStart = src.indexOf('createSite({');
+  if (siteStart === -1) return;
+  let depth = 1;
+  let i = siteStart + 'createSite({'.length;
+  while (i < src.length && depth > 0) {
+    if (src[i] === '{') depth++;
+    else if (src[i] === '}') depth--;
+    i++;
+  }
+  const siteConfig = src.slice(siteStart + 'createSite({'.length, i - 1);
   const declMatch = siteConfig.match(/requiresLogin:\s*(true|false)/);
   const declared = declMatch ? declMatch[1] === 'true' : null;
 

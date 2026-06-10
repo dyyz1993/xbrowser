@@ -90,7 +90,7 @@ export default function (xcli: XCLIAPI): void {
                   fileSize: data.s || '',
                 });
                 return;
-              } catch { /* fallback */ }
+              } catch (e) { if (process.env.DEBUG) console.warn('[bing] JSON parse failed:', (e as Error)?.message); }
             }
 
             const img = el.querySelector('img') as HTMLImageElement;

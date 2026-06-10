@@ -47,11 +47,10 @@ function formatFileSize(bytes: number): string {
 
 function buildTips(ctx: CommandContext): string[] {
   const tips: string[] = [];
-  const ctxAny = ctx as unknown as Record<string, unknown>;
-  const options = ctxAny.options as Record<string, unknown> | undefined;
-  const cdp = ctxAny.cdpEndpoint || options?.cdp;
+  const options = (ctx as Record<string, unknown>).options as Record<string, unknown> | undefined;
+  const cdp = ctx.cdpEndpoint || options?.cdp;
   if (!cdp) tips.push('建议使用 --cdp 9221 连接到已登录的浏览器');
-  tips.push(`Session: ${ctxAny.sessionId || 'default'}`);
+  tips.push(`Session: ${ctx.sessionId || 'default'}`);
   return tips;
 }
 
