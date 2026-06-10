@@ -56,7 +56,6 @@ declare module '@dyyz1993/xcli-core' {
    * (it checks `isCommandResult()` and unwraps). This merge makes the types
    * match reality so plugins don't need `as unknown as z.infer<...>` casts.
    */
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   interface SiteInstance {
     command<P extends ZodSchema = ZodSchema, R extends ZodSchema = ZodSchema>(name: string, config: {
       description: string;
