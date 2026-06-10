@@ -8,9 +8,6 @@ export default function(xcli: XCLIAPI): void {
     url: 'https://www.google.com',
     description: 'Google Search & Images',
     requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   google.command('search-image', {

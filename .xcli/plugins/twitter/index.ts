@@ -8,14 +8,6 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://x.com',
     description: 'X (Twitter) - 社交媒体内容采集（XHR 拦截模式，数据更丰富）',
     requiresLogin: true,
-    loginConfig: {
-      loginUrls: ['/login', '/signin', '/auth'],
-      loginSelectors: ['[class*="login"]', '[class*="signin"]'],
-      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]'],
-      loginKeywords: ['Sign in', 'Log in'],
-      loggedInSelectors: ['[class*="avatar"]', '[data-testid*="avatar"]'],
-      loginPrompt: 'This site requires login. Use --cdp to connect a logged-in browser.',
-    },
     isLogin: async (ctx) => {
       const ctxAny = ctx as Record<string, unknown>;
       const page = ctxAny.page as import('../types').Page;

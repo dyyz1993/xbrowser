@@ -8,9 +8,6 @@ export default function(xcli: XCLIAPI): void {
     url: 'https://store.steampowered.com',
     description: 'Steam 游戏评论抓取 — 通过 Review API 批量获取所有语言评论',
     requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   steam.command('reviews', {

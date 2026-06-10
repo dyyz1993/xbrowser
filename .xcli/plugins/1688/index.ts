@@ -223,14 +223,6 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.1688.com',
     description: '1688阿里巴巴 - 店铺信息、商品列表、商品详情、搜索采集',
     requiresLogin: true,
-    loginConfig: {
-      loginUrls: ['/login', '/passport'],
-      loginSelectors: ['[class*="login"]', '[class*="modal"]'],
-      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]', '[class*="slider"]'],
-      loginKeywords: ['登录', '注册'],
-      loggedInSelectors: ['[class*="avatar"]', '[class*="user-info"]'],
-      loginPrompt: '请使用 --cdp 连接已登录的浏览器（CDP 9221）',
-    },
   });
 
   site.command('shop', {

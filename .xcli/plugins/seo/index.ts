@@ -18,13 +18,6 @@ export default function (xcli: XCLIAPI): void {
     name: 'seo',
     description: '搜索引擎提交工具 — 通知搜索引擎收录你的 URL',
     requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-      loginKeywords: ['登录', 'login', 'sign in'],
-      loginSelectors: ['a[href*="login"]', 'a[href*="passport"]', 'a[href*="signin"]', 'a[href*="auth"]'],
-      loggedInSelectors: ['[class*="avatar"]', '[class*="user"]', '[class*="profile"]'],
-      loginPrompt: 'Some commands require login. Use --cdp to connect a logged-in browser.',
-    },
   });
 
   seo.command('ping', {

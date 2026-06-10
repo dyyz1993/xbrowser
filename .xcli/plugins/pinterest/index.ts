@@ -7,14 +7,6 @@ export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'pinterest', url: 'https://www.pinterest.com',
     description: 'Pinterest - Image sharing platform', requiresLogin: true,
-    loginConfig: {
-      loginUrls: ['/login', '/signin', '/auth'],
-      loginSelectors: ['[class*="login"]', '[class*="signin"]'],
-      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]'],
-      loginKeywords: ['Sign in', 'Log in'],
-      loggedInSelectors: ['[class*="avatar"]', '[data-testid*="avatar"]'],
-      loginPrompt: 'This site requires login. Use --cdp to connect a logged-in browser.',
-    },
     isLogin: async (ctx) => {
       const ctxAny = ctx as Record<string, unknown>;
       const page = ctxAny.page as import('../types').Page;
@@ -99,7 +91,7 @@ export default function (xcli: XCLIAPI): void {
         }, params.limit);
 
         return ok({ query: params.query, engine: 'pinterest', results, total: results.length, timestamp: Date.now() }, [`Pinterest "${params.query}"，共 ${results.length} 张`]);
-      } catch {
+      } catch (error) {
         const msg = error instanceof Error ? error.message : '未知错误';
         if (msg.includes('timeout') || msg.includes('Timeout') || msg.includes('net::')) {
           return fail(`请求超时或网络错误: ${msg}。可尝试 --cdp http://localhost:9221 连接真实浏览器`);

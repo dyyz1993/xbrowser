@@ -301,14 +301,6 @@ export default function (xcli: XCLIAPI): void {
     url: DOUYIN_BASE,
     description: '抖音数据采集',
     requiresLogin: true,
-    loginConfig: {
-      loginUrls: ['/login', '/passport'],
-      loginSelectors: ['[class*="login"]', '[class*="modal"]'],
-      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]', '[class*="slider"]'],
-      loginKeywords: ['登录', '注册'],
-      loggedInSelectors: ['[class*="avatar"]', '[class*="user-info"]'],
-      loginPrompt: '请使用 --cdp 连接已登录的浏览器（CDP 9221）',
-    },
     isLogin: async (ctx) => {
       const ctxAny = ctx as Record<string, unknown>;
       const page = ctxAny.page as import('../types').Page;

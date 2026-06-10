@@ -8,14 +8,6 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://wordpress.com',
     description: 'WordPress.com SEO 外链 - 博客平台 (DA 93, dofollow)',
     requiresLogin: true,
-    loginConfig: {
-      loginUrls: ['/login', '/signin', '/auth'],
-      loginSelectors: ['[class*="login"]', '[class*="signin"]'],
-      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]'],
-      loginKeywords: ['Sign in', 'Log in'],
-      loggedInSelectors: ['[class*="avatar"]', '[data-testid*="avatar"]'],
-      loginPrompt: 'This site requires login. Use --cdp to connect a logged-in browser.',
-    },
     isLogin: async (ctx) => {
       const ctxAny = ctx as Record<string, unknown>;
       const page = ctxAny.page as import('../types').Page;

@@ -44,9 +44,6 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.baidu.com',
     description: '百度搜索 - 真实浏览器操作',
     requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   baidu.command('search', {

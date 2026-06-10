@@ -107,13 +107,6 @@ export default function (xcli: XCLIAPI): void {
     url: SITE_URL,
     description: '腾讯元宝 (Yuanbao) — 会话管理、消息发送、附件上传',
     requiresLogin: true,
-    loginConfig: {
-      requiresLogin: true,
-      loginKeywords: ['登录', 'login', 'sign in', '注册'],
-      loginSelectors: ['a[href*="login"]', 'a[href*="passport"]', 'a[href*="auth"]', '[class*="login"]'],
-      loggedInSelectors: ['.ql-editor', '#searchbar-editor', '[contenteditable="true"]'],
-      loginUrls: ['/login', '/auth', '/passport'],
-    },
     isLogin: async (ctx) => {
       try {
         const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;

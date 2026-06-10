@@ -49,7 +49,7 @@ export default function (xcli: XCLIAPI): void {
             case 'screenshot': { const path = step.value || `test-step-${i}.png`; await page.screenshot({ path }); message = `Screenshot saved to ${path}`; break; }
             case 'eval': { const result = await page.evaluate(step.value || ''); message = `Eval result: ${JSON.stringify(result)}`; break; }
           }
-        } catch { passed = false; message = `Error: ${(error as Error).message}`; }
+        } catch (error) { passed = false; message = `Error: ${(error as Error).message}`; }
         const duration = Date.now() - start;
         results.push({ step: i + 1, action: step.action, passed, message, duration });
         if (!passed) { allPassed = false; if (p.stopOnFailure) break; }

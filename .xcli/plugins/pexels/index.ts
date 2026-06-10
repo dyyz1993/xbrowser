@@ -6,9 +6,6 @@ export default function(xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'pexels', url: 'https://www.pexels.com',
     description: 'Pexels - Free stock photos and videos', requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   site.command('search-image', {
@@ -107,7 +104,7 @@ export default function(xcli: XCLIAPI): void {
           return images.slice(0, limit);
         }, params.limit);
         return ok({ query: params.query, engine: 'pexels', results, total: results.length, timestamp: Date.now() }, [`Pexels "${params.query}"，共 ${results.length} 张`]);
-      } catch { return { data: null, message: error instanceof Error ? error.message : '未知错误' }; }
+      } catch (error) { return { data: null, message: error instanceof Error ? error.message : '未知错误' }; }
     },
   });
 }

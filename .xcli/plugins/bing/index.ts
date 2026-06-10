@@ -8,9 +8,6 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.bing.com',
     description: 'Bing Search & Images',
     requiresLogin: false,
-    loginConfig: {
-      requiresLogin: false,
-    },
   });
 
   bing.command('search-image', {

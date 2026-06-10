@@ -821,13 +821,6 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://multi-engine',
     description: 'GEO 外链排名分析 - 多引擎数据采集、域名排名、企业排名、趋势分析 (v2.0 SSE+DOM)',
     requiresLogin: true,
-    loginConfig: {
-      requiresLogin: true,
-      loginKeywords: ['登录', 'login', 'sign in'],
-      loginSelectors: ['a[href*="login"]', 'a[href*="passport"]', 'a[href*="signin"]'],
-      loggedInSelectors: ['[contenteditable="true"]', 'textarea', '[role="textbox"]'],
-      loginUrls: ['/login', '/auth', '/passport'],
-    },
     isLogin: async () => true,
   });
 
@@ -966,7 +959,7 @@ export default function (xcli: XCLIAPI): void {
     return ok(batchResult, [
       `引擎: ${engineList.length}`,
     ]);
-  } catch {
+  } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['批量采集失败']);
   }
     },
@@ -1278,7 +1271,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
     return ok(trends, [`数据点: ${history.length}`]);
-      } catch {
+      } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['趋势分析失败']);
       }
     },
@@ -1454,7 +1447,7 @@ export default function (xcli: XCLIAPI): void {
         };
 
     return ok(status, [`版本: v2.0.0`]);
-      } catch {
+      } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['获取状态失败']);
       }
     },

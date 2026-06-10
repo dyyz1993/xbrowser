@@ -467,14 +467,6 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.zhihu.com',
     description: '知乎 - 知识问答与内容采集 (DA 93)',
     requiresLogin: true,
-    loginConfig: {
-      loginUrls: ['/login', '/passport'],
-      loginSelectors: ['[class*="login"]', '[class*="modal"]'],
-      captchaSelectors: ['[class*="captcha"]', '[class*="verify"]', '[class*="slider"]'],
-      loginKeywords: ['登录', '注册'],
-      loggedInSelectors: ['[class*="avatar"]', '[class*="user-info"]'],
-      loginPrompt: '请使用 --cdp 连接已登录的浏览器（CDP 9221）',
-    },
   });
 
   site.command('search', {
