@@ -1,6 +1,6 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
-import { searchImageResultSchema, baseSearchParams, getPage, scrollPage, buildResult, buildFail } from '../shared/image-search.js';
+import { searchImageResultSchema, baseSearchParams, scrollPage, buildResult, buildFail } from '../shared/image-search.js';
 
 export default function (xcli: XCLIAPI): void {
   const pic58 = xcli.createSite({
@@ -16,7 +16,8 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object(baseSearchParams),
     result: searchImageResultSchema,
     handler: async (params, ctx) => {
-      const page = getPage(params as Record<string, unknown>, ctx);
+      const page = ctx.page;
+      if (!page) throw new Error('需要浏览器页面');
       try {
         const url = `https://www.58pic.com/search/0/${encodeURIComponent(params.query)}.html`;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout });
@@ -51,9 +52,8 @@ export default function (xcli: XCLIAPI): void {
           });
 
           return images.slice(0, limit);
-        }, params.limit);
+        }, params.limit) as Array<{ title: string; thumbnailUrl: string; sourceUrl: string; width: number; height: number }>;
 
-        // ok() returns CommandResult<T> but handler type expects raw T — framework design mismatch
         return buildResult(params.query, '58pic', results.map(r => ({ ...r, sourceSite: '58pic' }))) as unknown as z.infer<typeof searchImageResultSchema>;
       } catch (error) {
         return buildFail(error, '58pic') as unknown as z.infer<typeof searchImageResultSchema>;
