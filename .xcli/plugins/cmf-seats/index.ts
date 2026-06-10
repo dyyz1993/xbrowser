@@ -143,9 +143,9 @@ export default function(api: XCLIAPI): void {
       // 查找车型ID
       const car = CARS.find(c => c.name === params.car);
       if (!car) {
-        return fail({ data: null as unknown,
-          tips: [`未找到车型 "${params.car}"，支持的车型：${CARS.slice(0, 10).map(c => c.name).join(', ')}等${CARS.length}个车型`]
-        });
+        return fail(`未找到车型 "${params.car}"`, [
+          `支持的车型：${CARS.slice(0, 10).map(c => c.name).join(', ')}等${CARS.length}个车型`,
+        ]);
       }
 
       // 从已爬取的数据中查询
@@ -159,9 +159,7 @@ export default function(api: XCLIAPI): void {
         const dataFile = path.join(__dirname, '..', '..', 'output', 'cmf_seat_reviews_batch.json');
 
         if (!fs.existsSync(dataFile)) {
-          return fail({ data: null as unknown,
-            tips: [`CMF评论数据文件不存在，请先运行批量爬取脚本`]
-          });
+          return fail('CMF评论数据文件不存在，请先运行批量爬取脚本');
         }
 
         const rawData = fs.readFileSync(dataFile, 'utf-8');
@@ -199,10 +197,8 @@ export default function(api: XCLIAPI): void {
             limitedReviews.length < reviews.length ? `（返回前${limitedReviews.length}条）` : ''
           ]
         });
-      } catch {
-        return fail({ data: null as unknown,
-          tips: [`查询失败: ${(_error as Error).message}`]
-        });
+      } catch (error) {
+        return fail(`查询失败: ${error instanceof Error ? error.message : '未知错误'}`);
       }
     }
   });
@@ -275,9 +271,7 @@ export default function(api: XCLIAPI): void {
         const dataFile = path.join(__dirname, '..', '..', 'output', 'cmf_seat_reviews_batch.json');
 
         if (!fs.existsSync(dataFile)) {
-          return fail({ data: null as unknown,
-            tips: [`CMF评论数据文件不存在，请先运行批量爬取脚本`]
-          });
+          return fail('CMF评论数据文件不存在，请先运行批量爬取脚本');
         }
 
         const rawData = fs.readFileSync(dataFile, 'utf-8');
@@ -315,10 +309,8 @@ export default function(api: XCLIAPI): void {
             `显示前 ${sortedKeywords.length} 个关键词`
           ]
         });
-      } catch {
-        return fail({ data: null as unknown,
-          tips: [`统计失败: ${(_error as Error).message}`]
-        });
+      } catch (error) {
+        return fail(`统计失败: ${error instanceof Error ? error.message : '未知错误'}`);
       }
     }
   });

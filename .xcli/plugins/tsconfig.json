@@ -9,8 +9,12 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noImplicitAny": false,
-    "strictNullChecks": false
+    "strictNullChecks": false,
+    "baseUrl": "../../",
+    "paths": {
+      "zod": ["node_modules/zod/v4/index.d.cts"]
+    }
   },
-  "include": ["./*.ts", "../types/**/*"],
+  "include": ["./**/*.ts", "../types/**/*"],
   "exclude": ["node_modules"]
 }
