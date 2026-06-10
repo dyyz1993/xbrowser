@@ -1,14 +1,18 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-export default function (xcli: any) {
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import { z } from 'zod/v4';
+
+export default function (xcli: XCLIAPI) {
   const site = xcli.createSite({
     name: 'test',
     url: 'https://example.com',
   });
 
   site.command('bad', {
-    handler: async (params: any, ctx: any) => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const _page = (ctx as unknown as Record<string, unknown>).page;
+    parameters: z.object({}),
+    result: z.object({ ok: z.boolean() }).passthrough(),
+    handler: async () => {
+      // test-rule: intentionally minimal for ESLint rule validation
+      return { ok: true } as unknown as Record<string, unknown>;
     },
   });
 }

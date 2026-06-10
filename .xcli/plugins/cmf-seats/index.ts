@@ -141,7 +141,7 @@ export default function(api: XCLIAPI): void {
       if (!car) {
         return fail(`未找到车型 "${params.car}"`, [
           `支持的车型：${CARS.slice(0, 10).map(c => c.name).join(', ')}等${CARS.length}个车型`,
-        ]) as any;
+        ]) as unknown as Record<string, unknown>;
       }
 
       // 从已爬取的数据中查询
@@ -155,7 +155,7 @@ export default function(api: XCLIAPI): void {
         const dataFile = path.join(__dirname, '..', '..', 'output', 'cmf_seat_reviews_batch.json');
 
         if (!fs.existsSync(dataFile)) {
-          return fail('CMF评论数据文件不存在，请先运行批量爬取脚本') as any;
+          return fail('CMF评论数据文件不存在，请先运行批量爬取脚本') as unknown as Record<string, unknown>;
         }
 
         const rawData = fs.readFileSync(dataFile, 'utf-8');
@@ -190,9 +190,9 @@ export default function(api: XCLIAPI): void {
         }, [
           `找到 ${reviews.length} 条${params.car}的CMF评论`,
           limitedReviews.length < reviews.length ? `（返回前${limitedReviews.length}条）` : '',
-        ]) as any;
+        ]) as unknown as Record<string, unknown>;
       } catch (error) {
-        return fail(`查询失败: ${error instanceof Error ? error.message : '未知错误'}`) as any;
+        return fail(`查询失败: ${error instanceof Error ? error.message : '未知错误'}`) as unknown as Record<string, unknown>;
       }
     }
   });
@@ -222,7 +222,7 @@ export default function(api: XCLIAPI): void {
       }, [
         `共支持 ${CARS.length} 个车型`,
         `使用 "cmf-seats query --car <车型名称>" 查询CMF评论`,
-      ]) as any;
+      ]) as unknown as Record<string, unknown>;
     }
   });
 
@@ -255,7 +255,7 @@ export default function(api: XCLIAPI): void {
         const dataFile = path.join(__dirname, '..', '..', 'output', 'cmf_seat_reviews_batch.json');
 
         if (!fs.existsSync(dataFile)) {
-          return fail('CMF评论数据文件不存在，请先运行批量爬取脚本') as any;
+          return fail('CMF评论数据文件不存在，请先运行批量爬取脚本') as unknown as Record<string, unknown>;
         }
 
         const rawData = fs.readFileSync(dataFile, 'utf-8');
@@ -290,9 +290,9 @@ export default function(api: XCLIAPI): void {
           `${params.car ? params.car : '所有车型'} 共 ${reviews.length} 条评论`,
           `包含 ${keywordCounts.size} 个不同的CMF关键词`,
           `显示前 ${sortedKeywords.length} 个关键词`,
-        ]) as any;
+        ]) as unknown as Record<string, unknown>;
       } catch (error) {
-        return fail(`统计失败: ${error instanceof Error ? error.message : '未知错误'}`) as any;
+        return fail(`统计失败: ${error instanceof Error ? error.message : '未知错误'}`) as unknown as Record<string, unknown>;
       }
     }
   });

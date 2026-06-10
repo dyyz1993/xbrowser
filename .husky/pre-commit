@@ -16,6 +16,14 @@ if [ $? -ne 0 ]; then
 fi
 echo "✅ ESLint passed (0 warnings)"
 
+echo "🔍 [pre-commit] Running plugin ESLint..."
+npx eslint .xcli/plugins/ --ext .ts --max-warnings 100
+if [ $? -ne 0 ]; then
+  echo "❌ Plugin ESLint check failed. Fix errors in .xcli/plugins/ before committing."
+  exit 1
+fi
+echo "✅ Plugin ESLint passed"
+
 ANY_COUNT=$(grep -r '\bany\b' src/ --include='*.ts' -c 2>/dev/null | awk -F: '{sum+=$NF} END {print sum+0}')
 if [ "$ANY_COUNT" -gt 100 ]; then
   echo "❌ Commit rejected: Found $ANY_COUNT 'any' type usages in src/ (max allowed: 100)"
