@@ -1,4 +1,4 @@
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
 import fs from 'fs/promises';
@@ -397,12 +397,6 @@ interface TrendData {
   counts: number[];
   growthRate: number;
   trend: 'up' | 'down' | 'stable';
-}
-
-function getPage(ctx: CommandContext): Page {
-  const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-  if (!page) throw new Error('需要浏览器页面，请使用 --cdp 参数连接到已打开的浏览器');
-  return page;
 }
 
 function matchPlatform(domain: string): string | undefined {
@@ -841,7 +835,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ id: z.string(), query: z.string(), engine: z.string(), results: z.array(z.any()), total: z.number(), timestamp: z.number(), duration: z.string(), rawResponse: z.string().optional(), domainExtraction: z.object({ query: z.string(), totalUrls: z.number(), totalDomains: z.number(), domains: z.array(z.any()) }).optional(), markdown: z.string().optional() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         await ensureDir(DATA_BASE);
         await ensureDir(path.join(DATA_BASE, 'engines'));
 
@@ -1025,7 +1020,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ query: z.string(), totalEngines: z.number(), successEngines: z.number(), failedEngines: z.number(), totalUrls: z.number(), uniqueDomains: z.number(), domainRanking: z.array(z.any()), platformRanking: z.array(z.any()), engineDetails: z.array(z.any()), markdown: z.string().optional() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         await ensureDir(DATA_BASE);
 
         const startTime = Date.now();

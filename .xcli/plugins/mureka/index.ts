@@ -10,12 +10,6 @@ const CREATE_URL = 'https://www.mureka.cn/create';
 
 /* ───────── helpers ───────── */
 
-function getPage(ctx: CommandContext): Page {
-  const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-  if (!page) throw new Error('需要浏览器页面，请使用 --cdp 参数连接到已登录 Mureka 的浏览器');
-  return page;
-}
-
 function buildTips(ctx: CommandContext): string[] {
   const tips: string[] = [];
   const ctxAny = ctx as unknown as Record<string, unknown>;
@@ -289,7 +283,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (_params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         const tips = buildTips(ctx);
 
         const data = await captureApis(page, {
@@ -949,7 +944,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         const tips = buildTips(ctx);
 
         if (!page.url().includes('mureka.cn')) {

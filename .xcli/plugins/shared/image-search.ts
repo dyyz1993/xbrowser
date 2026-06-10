@@ -53,14 +53,6 @@ export const extendedSearchParams = {
 
 type Page = import('../types').Page;
 
-/** Extract the Page object from params or context */
-export function getPage(params: Record<string, unknown>, ctx: unknown): Page {
-  const ctxRecord = ctx as Record<string, unknown>;
-  const page = (params.page as Page) || ctxRecord.page as Page;
-  if (!page) throw new Error('需要浏览器页面');
-  return page;
-}
-
 /** Scroll the page to load more content */
 export async function scrollPage(page: Page, times: number, delay = 800): Promise<void> {
   for (let i = 0; i < times; i++) {

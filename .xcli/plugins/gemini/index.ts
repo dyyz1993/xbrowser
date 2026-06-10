@@ -10,47 +10,6 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 const GEMINI_URL = 'https://gemini.google.com';
 type Page = import('../types').Page;
 
-async function getPage(ctx: CommandContext): Promise<Page> {
-  const anyCtx = ctx as unknown as Record<string, unknown>;
-  let pg = anyCtx.page as Page | undefined;
-  // If page from ctx is broken (daemon context issue), get from browserContext
-  if (pg && typeof (pg as unknown as Record<string, unknown>).evaluate !== 'function') {
-    try {
-      if ((anyCtx as Record<string, unknown>).browserContext && typeof (anyCtx as Record<string, unknown>).browserContext === 'object') {
-        const bc = anyCtx.browserContext as Record<string, unknown> | undefined;
-        if (bc && typeof bc.newPage === 'function') {
-          pg = await (bc.newPage as () => Promise<Page>)();
-        }
-      }
-    } catch { /* ignore */ }
-    // Also try browser.newPage
-    if ((!pg || typeof (pg as unknown as Record<string, unknown>).evaluate !== 'function') && (anyCtx as Record<string, unknown>).browser) {
-      const browser = anyCtx.browser as Record<string, unknown> | undefined;
-      if (browser && typeof browser.newContext === 'function') {
-        try {
-          const bc = await (browser.newContext as () => Promise<Record<string, unknown>>)();
-          pg = await (bc.newPage as () => Promise<Page>)();
-        } catch { /* ignore */ }
-      }
-    }
-    if (!pg || typeof (pg as unknown as Record<string, unknown>).evaluate !== 'function') {
-      // Last resort: use the page from the session stored in memory
-      const { findSession } = await import('../../src/browser.js');
-      const sid = anyCtx.sessionId as string;
-      if (sid) {
-        const sess = findSession(sid);
-        if (sess?.page && typeof (sess.page as unknown as Record<string, unknown>).evaluate === 'function') {
-          pg = sess.page;
-        }
-      }
-    }
-    if (!pg || typeof (pg as unknown as Record<string, unknown>).evaluate !== 'function') {
-      throw new Error('页面不可用');
-    }
-  }
-  return pg!;
-}
-
 function buildCdpTips(ctx: CommandContext): string[] {
   const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint as string | undefined;
   return cdp ? [] : ['建议使用 --cdp 9221 连接已登录浏览器'];
@@ -82,7 +41,8 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({}),
     result: z.array(z.object({ index: z.number(), title: z.string() })),
     handler: async (_params, ctx) => {
-      const page = await getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const tips = buildCdpTips(ctx);
       try {
         const bodyText = await page.evaluate(() => document.body?.innerText || '');
@@ -114,7 +74,8 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({ message: z.string() }),
     result: z.object({ conversationUrl: z.string() }),
     handler: async (params, ctx) => {
-      const page = await getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const tips = buildCdpTips(ctx);
       try {
         // Navigate to Gemini if needed
@@ -154,7 +115,8 @@ export default function (xcli: XCLIAPI): void {
     }),
     result: z.object({ url: z.string() }),
     handler: async (params, ctx) => {
-      const page = await getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const tips = buildCdpTips(ctx);
       try {
         // Navigate to Gemini

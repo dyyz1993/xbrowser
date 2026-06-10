@@ -12,12 +12,6 @@ const API_BASE = 'https://wanx.biz.aliyun.com';
 
 /* ───────── helpers ───────── */
 
-function getPage(ctx: CommandContext): Page {
-  const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-  if (!page) throw new Error('需要浏览器页面，请使用 --cdp 参数连接');
-  return page;
-}
-
 function buildTips(ctx: CommandContext): string[] {
   const tips: string[] = [];
   const ctxAny = ctx as unknown as Record<string, unknown>;
@@ -283,7 +277,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         const tips = buildTips(ctx);
         await ensurePage(page);
 

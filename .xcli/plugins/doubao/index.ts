@@ -44,12 +44,6 @@ function formatFileSize(bytes: number): string {
   return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)}MB` : `${(bytes / 1024).toFixed(0)}KB`;
 }
 
-function getPage(ctx: CommandContext): Page {
-  const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-  if (!page) throw new Error('需要浏览器页面，请使用 --cdp 参数连接');
-  return page;
-}
-
 function buildTips(ctx: CommandContext): string[] {
   const tips: string[] = [];
   const ctxAny = ctx as unknown as Record<string, unknown>;
@@ -241,7 +235,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.array(z.object({ index: z.number(), title: z.string(), url: z.string() }).passthrough()),
     handler: async (_params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(1500);
 
@@ -275,7 +270,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ created: z.boolean() }).passthrough(),
     handler: async (_params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
 
         const result = await page.evaluate(() => {
@@ -328,7 +324,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ opened: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(1000);
 
@@ -376,7 +373,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ response: z.string(), duration: z.string().optional(), sources: z.record(z.any()).optional() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(3000);
         const tips = buildTips(ctx);
@@ -668,7 +666,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ url: z.string().optional(), localPath: z.string().optional(), prompt: z.string().optional(), duration: z.string().optional() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         // Always create a fresh conversation to avoid picking up history images
         await page.goto('https://www.doubao.com/chat/create-image', { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
@@ -873,7 +872,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ action: z.string(), image: z.string(), submitted: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(2000);
         const tips = buildTips(ctx);
@@ -962,7 +962,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ resultUrl: z.string(), source: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(2000);
         const tips = buildTips(ctx);
@@ -1031,7 +1032,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ source: z.string(), prompt: z.string().optional(), submitted: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(2000);
         const tips = buildTips(ctx);
@@ -1091,7 +1093,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.array(z.object({ index: z.number(), src: z.string(), alt: z.string(), text: z.string() }).passthrough()),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(2000);
         const tips = buildTips(ctx);
@@ -1155,7 +1158,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ taskId: z.string(), prompt: z.string(), status: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(2000);
         const tips = buildTips(ctx);
@@ -1218,7 +1222,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ taskId: z.string(), status: z.string() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(1000);
         const tips = buildTips(ctx);
@@ -1264,7 +1269,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ taskId: z.string(), url: z.string().optional(), localPath: z.string().optional() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(1000);
         const tips = buildTips(ctx);
@@ -1346,7 +1352,8 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         const tips = buildTips(ctx);
         const waitSeconds = typeof params.timeout === 'number' ? params.timeout : 0;
 
@@ -1816,7 +1823,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ status: z.string(), taskId: z.string().nullable(), url: z.string().nullable() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         const tips = buildTips(ctx);
 
@@ -1874,7 +1882,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ url: z.string().nullable(), localPath: z.string().optional(), taskId: z.string().nullable() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         const tips = buildTips(ctx);
 
@@ -1940,7 +1949,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ file: z.string(), uploaded: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(1000);
         const tips = buildTips(ctx);
@@ -2001,7 +2011,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ files: z.array(z.record(z.any())), total: z.number() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(2000);
         const tips = buildTips(ctx);
@@ -2059,7 +2070,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ model: z.string(), switched: z.boolean().optional() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(2000);
         const tips = buildTips(ctx);
@@ -2115,7 +2127,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({}).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(2000);
         const tips = buildTips(ctx);
@@ -2293,7 +2306,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ type: z.string(), file: z.string(), uploaded: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(500);
         const tips = buildTips(ctx);

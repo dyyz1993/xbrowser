@@ -46,12 +46,6 @@ async function safeClick(page: Page, selector: string): Promise<{ success: boole
   return { success: true, info: result };
 }
 
-function getPage(ctx: CommandContext): Page {
-  const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-  if (!page) throw new Error('需要浏览器页面，请使用 --cdp 参数连接到已登录 Udio 的浏览器');
-  return page;
-}
-
 function buildTips(ctx: CommandContext): string[] {
   const tips: string[] = [];
   const ctxAny = ctx as unknown as Record<string, unknown>;
@@ -190,7 +184,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (_params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         const tips = buildTips(ctx);
 
         const apiDataPromise = captureApiResponses(
@@ -251,7 +246,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         const tips = buildTips(ctx);
 
         if (!page.url().includes('udio.com')) {
@@ -304,7 +300,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         const tips = buildTips(ctx);
         const waitSeconds = typeof params.wait === 'number' ? params.wait : 0;
 
@@ -783,7 +780,8 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       try {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error('需要浏览器页面');
         const tips = buildTips(ctx);
 
         if (!params.url) {

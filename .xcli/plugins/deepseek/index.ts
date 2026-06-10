@@ -10,12 +10,6 @@ const DS_URL = 'https://chat.deepseek.com';
 
 // ─── 工具函数 ────────────────────────────────────────
 
-function getPage(ctx: CommandContext): Page {
-  const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-  if (!page) throw new Error('需要浏览器页面，请使用 --cdp 参数连接');
-  return page;
-}
-
 function buildTips(ctx: CommandContext): string[] {
   const tips: string[] = [];
   const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint;
@@ -109,7 +103,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (_params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(1500);
 
@@ -146,7 +141,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (_params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
 
         const result = await page.evaluate(() => {
@@ -206,7 +202,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(1000);
 
@@ -262,7 +259,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(3000); // 等 React 渲染
         const tips = buildTips(ctx);
@@ -549,7 +547,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(500);
 
@@ -633,7 +632,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         const targetPressed = params.state === 'on';
         const toggleResult = await toggleButton(page, '深度思考', targetPressed);
@@ -671,7 +671,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         const targetPressed = params.state === 'on';
         const toggleResult = await toggleButton(page, '智能搜索', targetPressed);
@@ -711,7 +712,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = getPage(ctx);
+        const page = ctx.page;
+        if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(500);
         const tips = buildTips(ctx);

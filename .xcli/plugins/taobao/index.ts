@@ -14,12 +14,6 @@ interface Interceptor {
   dispose: () => void;
 }
 
-function getPage(ctx: CommandContext): Page {
-  const page = (ctx as BrowserCtx).page;
-  if (!page) throw new Error('需要浏览器页面');
-  return page;
-}
-
 function requireCdp(ctx: CommandContext): string | null {
   const browserCtx = ctx as BrowserCtx;
   return browserCtx.cdpEndpoint || null;
@@ -224,7 +218,8 @@ export default function (xcli: XCLIAPI): void {
       url: z.string().optional(),
     }).passthrough(),
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips } = buildCtxTips(ctx);
       const cdp = requireCdp(ctx);
 
@@ -322,7 +317,8 @@ export default function (xcli: XCLIAPI): void {
       }).passthrough()),
     }),
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
 
       if (!hasCdp) {
@@ -470,7 +466,8 @@ export default function (xcli: XCLIAPI): void {
       }).passthrough()),
     }),
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
 
       if (!hasCdp) {
@@ -628,7 +625,8 @@ export default function (xcli: XCLIAPI): void {
       promotions: z.array(z.string()).optional(),
     }).passthrough(),
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
 
       if (!hasCdp) {
@@ -818,7 +816,8 @@ export default function (xcli: XCLIAPI): void {
       coupons: z.array(z.string()).optional(),
     }).passthrough(),
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
 
       if (!hasCdp) {
@@ -1026,7 +1025,8 @@ export default function (xcli: XCLIAPI): void {
       }).passthrough()),
     }),
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
 
       if (!hasCdp) {
@@ -1219,7 +1219,8 @@ export default function (xcli: XCLIAPI): void {
       categories: z.array(z.string()).optional(),
     }).passthrough(),
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
 
       if (!hasCdp) {
@@ -1342,7 +1343,8 @@ export default function (xcli: XCLIAPI): void {
       }).passthrough()),
     }),
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
 
       if (!hasCdp) {
@@ -1464,7 +1466,8 @@ export default function (xcli: XCLIAPI): void {
       ])),
     }),
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
 
       if (!hasCdp) {
@@ -1590,7 +1593,8 @@ export default function (xcli: XCLIAPI): void {
       url: z.string(),
     }),
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
 
       if (!hasCdp) {

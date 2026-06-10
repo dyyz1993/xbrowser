@@ -517,7 +517,7 @@ export default function (xcli: XCLIAPI): void {
       timestamp: z.string().optional(),
     }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (params.page || (ctx as Record<string, unknown>).page as import('../types').Page | undefined);
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面');
       const cdpTips = buildCdpTips(ctx as Record<string, unknown>);
 

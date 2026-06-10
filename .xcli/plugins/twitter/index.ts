@@ -31,12 +31,6 @@ export default function (xcli: XCLIAPI): void {
 
   // ─── 工具 ──────────────────────────────────────
 
-  function getPage(ctx: Record<string, unknown>) {
-    const page = ctx.page as import('../types').Page;
-    if (!page) throw new Error('需要浏览器页面，请使用 --cdp 参数连接');
-    return page;
-  }
-
   function buildTips(ctx: Record<string, unknown>): string[] {
     const tips: string[] = [];
     if (!ctx.cdpEndpoint) tips.push('建议使用 --cdp 9221 连接到已登录的浏览器');
@@ -92,7 +86,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ query: z.string(), count: z.number(), tweets: z.array(z.object({ author: z.string(), text: z.string(), time: z.string(), likes: z.string(), retweets: z.string(), replies: z.string(), link: z.string() })) }).passthrough(),
     handler: async (params, ctx) => {
-      const page = getPage(ctx as Record<string, unknown>);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const tips = buildTips(ctx as Record<string, unknown>);
 
       // 搜素 API 的 pattern 是 SearchTimeline
@@ -143,7 +138,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ name: z.string().optional(), screenName: z.string().optional(), description: z.string().optional(), bio: z.string().optional(), location: z.string().optional(), url: z.string().optional(), followersCount: z.number().optional(), followingCount: z.number().optional(), tweetCount: z.number().optional(), avatar: z.string().optional(), source: z.string().optional() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = getPage(ctx as Record<string, unknown>);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const tips = buildTips(ctx as Record<string, unknown>);
 
       // 拦截 UserByScreenName（用户信息）+ 其他端点
@@ -222,7 +218,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ username: z.string(), count: z.number(), tweets: z.array(z.record(z.any())), source: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = getPage(ctx as Record<string, unknown>);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const tips = buildTips(ctx as Record<string, unknown>);
       const capturedTweets: Array<Record<string, unknown>> = [];
 
@@ -304,7 +301,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ tweetId: z.string(), count: z.number(), replies: z.array(z.record(z.any())) }).passthrough(),
     handler: async (params, ctx) => {
-      const page = getPage(ctx as Record<string, unknown>);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const tips = buildTips(ctx as Record<string, unknown>);
       const captured: Array<Record<string, unknown>> = [];
 
@@ -359,7 +357,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: z.object({ username: z.string(), count: z.number(), tweets: z.array(z.object({ author: z.string(), text: z.string(), time: z.string(), likes: z.string() })) }).passthrough(),
     handler: async (params, ctx) => {
-      const page = getPage(ctx as Record<string, unknown>);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const tips = buildTips(ctx as Record<string, unknown>);
 
       await page.goto(`${BASE}/${params.username}/likes`, { waitUntil: 'domcontentloaded' });

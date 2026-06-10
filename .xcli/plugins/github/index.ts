@@ -9,13 +9,6 @@ interface BrowserCtx extends CommandContext {
   sessionId?: string;
 }
 
-function getPage(ctx: CommandContext): Page {
-  const browserCtx = ctx as BrowserCtx;
-  const page = browserCtx.page;
-  if (!page) throw new Error('需要浏览器页面');
-  return page;
-}
-
 function buildCtxTips(ctx: CommandContext): { tips: string[]; hasCdp: boolean } {
   const browserCtx = ctx as BrowserCtx;
   const tips: string[] = [];
@@ -64,7 +57,8 @@ export default function (xcli: XCLIAPI): void {
     }),
     result: z.object({ url: z.string(), saved: z.boolean(), updatedFields: z.array(z.string()) }).passthrough(),
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips } = buildCtxTips(ctx);
 
       await page.goto('https://github.com/settings/profile', {
@@ -132,7 +126,8 @@ export default function (xcli: XCLIAPI): void {
     }),
     result: z.object({ url: z.string(), filled: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips } = buildCtxTips(ctx);
 
       await page.goto('https://github.com/settings/profile', {
@@ -201,7 +196,8 @@ export default function (xcli: XCLIAPI): void {
     }),
     result: z.object({ gistUrl: z.string(), filename: z.string(), public: z.boolean(), created: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips } = buildCtxTips(ctx);
 
       await page.goto('https://gist.github.com/', {
@@ -278,7 +274,8 @@ export default function (xcli: XCLIAPI): void {
     examples: [{ cmd: 'xbrowser github get-profile', description: '获取 Profile 信息' }],
     result: z.object({ bio: z.string(), name: z.string(), username: z.string(), location: z.string(), company: z.string(), website: z.string(), socialLinks: z.array(z.string()), avatar: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips } = buildCtxTips(ctx);
 
       let profileUrl: string;
@@ -352,7 +349,8 @@ export default function (xcli: XCLIAPI): void {
     }),
     result: z.object({ repoUrl: z.string(), name: z.string(), private: z.boolean(), created: z.boolean() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips } = buildCtxTips(ctx);
 
       await page.goto('https://github.com/new', {
@@ -430,7 +428,8 @@ export default function (xcli: XCLIAPI): void {
     }),
     result: z.object({ repo: z.string(), saved: z.boolean(), url: z.string() }).passthrough(),
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips } = buildCtxTips(ctx);
 
       await page.goto(`https://github.com/${params.repo}/edit/main/README.md`, {

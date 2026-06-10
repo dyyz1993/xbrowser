@@ -30,12 +30,6 @@ interface LoginState {
   hasCdp: boolean;
 }
 
-function getPage(ctx: CommandContext): Page {
-  const page = (ctx as BrowserCtx).page;
-  if (!page) throw new Error('需要浏览器页面');
-  return page;
-}
-
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function requireCdp(ctx: CommandContext): string | null {
   const browserCtx = ctx as BrowserCtx;
@@ -258,7 +252,8 @@ export default function (xcli: XCLIAPI): void {
       },
     ],
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
 
       const memberId = params.memberId || (params.url ? extractMemberId(params.url) : null);
@@ -495,7 +490,8 @@ export default function (xcli: XCLIAPI): void {
       },
     ],
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips } = buildCtxTips(ctx);
 
       const memberId = params.memberId || (params.url ? extractMemberId(params.url) : null);
@@ -659,7 +655,8 @@ export default function (xcli: XCLIAPI): void {
       },
     ],
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips, hasCdp } = buildCtxTips(ctx);
 
       const targetUrl =
@@ -929,7 +926,8 @@ export default function (xcli: XCLIAPI): void {
       },
     ],
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips } = buildCtxTips(ctx);
 
       const sortParam = SORT_MAP[params.sort] || '';
@@ -1081,7 +1079,8 @@ export default function (xcli: XCLIAPI): void {
       },
     ],
     handler: async (params, ctx) => {
-      const page = getPage(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
       const { tips: ctxTips } = buildCtxTips(ctx);
 
       const memberId = params.memberId || (params.url ? extractMemberId(params.url) : null);

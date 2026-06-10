@@ -34,7 +34,7 @@ export default function(xcli: XCLIAPI): void {
       timestamp: z.union([z.string(), z.number()]).optional(),
     }).passthrough(),
     handler: async (params, ctx) => {
-      const page = (params.page as import('../types').Page) || (ctx as Record<string, unknown>).page as import('../types').Page;
+      const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面');
       try {
         let url = `https://www.pexels.com/search/${encodeURIComponent(params.query)}/`;
