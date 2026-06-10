@@ -264,7 +264,6 @@ export default function (xcli: XCLIAPI): void {
      ════════════════════════════════════════════ */
   site.command('create', {
     description: '在 Suno 上生成音乐。传 --prompt/--lyric 填入描述，--style 点击风格标签，--instrumental 切换纯音乐。--wait 同步等待结果',
-    loginRequired: 'required',
     scope: 'browser',
     result: z.object({
       status: z.enum(['submitted', 'completed', 'timeout', 'error']).optional(),
@@ -535,7 +534,6 @@ export default function (xcli: XCLIAPI): void {
      ════════════════════════════════════════════ */
   site.command('result', {
     description: '获取最新生成的音乐音频 URL（被动拦截页面 feed 数据）',
-    loginRequired: 'required',
     scope: 'browser',
     result: z.object({
       songs: z.array(z.object({
@@ -593,7 +591,6 @@ export default function (xcli: XCLIAPI): void {
      ════════════════════════════════════════════ */
   site.command('status', {
     description: '检查当前页面音乐生成状态（被动拦截 feed 数据）',
-    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ status: z.string().optional(), clips: z.array(z.record(z.any())).optional(), total: z.number().optional() }).passthrough(),
     parameters: z.object({}),
@@ -637,7 +634,6 @@ export default function (xcli: XCLIAPI): void {
      ════════════════════════════════════════════ */
   site.command('library', {
     description: '查看 Suno 创作历史/歌曲列表',
-    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ songs: z.array(z.record(z.any())), total: z.number() }).passthrough(),
     parameters: z.object({

@@ -175,7 +175,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('billing', {
     description: '查询 Udio Credits 使用情况和订阅状态',
-    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ email: z.string(), userId: z.string(), tier: z.string(), dailyUsed: z.number(), monthlyUsed: z.number(), monthlyDiscretionary: z.number(), monthlyLimit: z.number(), dailyThrottleLimit: z.number(), plan: z.string(), isActive: z.boolean(), remaining: z.number() }).passthrough(),
     parameters: z.object({}),
@@ -234,7 +233,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('library', {
     description: '查看 Udio 歌曲库/创作历史',
-    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ songs: z.array(z.record(z.any())) }).passthrough(),
     parameters: z.object({
@@ -280,7 +278,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('create', {
     description: '在 Udio 上生成音乐。支持自定义 prompt、歌词、风格、纯音乐模式。含 hCaptcha 自动检测',
-    loginRequired: 'required',
     scope: 'browser',
     result: z.object({}).passthrough(),
     parameters: z.object({
@@ -707,7 +704,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('status', {
     description: '检查 Udio 最新歌曲生成状态（被动拦截 API 数据）',
-    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ status: z.string().optional(), songs: z.array(z.record(z.any())).optional() }).passthrough(),
     parameters: z.object({}),
@@ -765,7 +761,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('download', {
     description: '下载音乐到本地（返回 curl 命令或直接下载）',
-    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ url: z.string(), size: z.number().optional() }).passthrough(),
     parameters: z.object({
@@ -779,7 +774,6 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const page = ctx.page;
         if (!page) throw new Error('需要浏览器页面');
         const tips = buildTips(ctx);
@@ -836,7 +830,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('result', {
     description: '获取 Udio 最新生成的音乐音频 URL',
-    loginRequired: 'required',
     scope: 'browser',
     result: z.object({ songs: z.array(z.record(z.any())) }).passthrough(),
     parameters: z.object({

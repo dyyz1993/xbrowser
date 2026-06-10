@@ -36,7 +36,6 @@ export default function (xcli: XCLIAPI): void {
   // ── list — 从页面文本提取会话 ──
   site.command('list', {
     description: '列出历史会话',
-    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({}),
     result: z.array(z.object({ index: z.number(), title: z.string() })),
@@ -69,7 +68,6 @@ export default function (xcli: XCLIAPI): void {
   // ── chat — 发送消息 ──
   site.command('chat', {
     description: '发送消息',
-    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({ message: z.string() }),
     result: z.object({ conversationUrl: z.string() }),
@@ -108,7 +106,6 @@ export default function (xcli: XCLIAPI): void {
   // ── music — 生成音乐 ──
   site.command('music', {
     description: '生成音乐（打开制作音乐工具并发送提示）',
-    loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       prompt: z.string().describe('音乐描述，如"一首轻快的钢琴曲"'),

@@ -2,8 +2,6 @@ import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
 
-type Page = import('../types').Page;
-
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'assert',
@@ -13,7 +11,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('assert', {
     description: 'Assert page state — check text, visibility, URL, title, element count',
-    loginRequired: 'optional',
     scope: 'page',
     parameters: z.object({
       type: z.enum(['text', 'visible', 'hidden', 'url', 'title', 'count', 'attribute', 'css', 'enabled', 'checked']).describe('Assertion type'),
@@ -30,7 +27,8 @@ export default function (xcli: XCLIAPI): void {
       expected: z.string().optional(),
     }),
     handler: async (p, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as Page;
+      const page = ctx.page;
+      if (!page) throw new Error('需要浏览器页面');
       let passed = false;
       let actual: string | number | boolean | null = null;
       let message = '';
@@ -45,7 +43,7 @@ export default function (xcli: XCLIAPI): void {
           case 'attribute': { const element = page.locator(p.selector!).first(); const attrValue = await element.getAttribute(p.value || ''); actual = attrValue || ''; passed = actual === String(p.expected || ''); message = `Attribute "${p.value}": "${actual}" ${passed ? '==' : '!='} "${p.expected}"`; break; }
           case 'css': { const element = page.locator(p.selector!).first(); actual = await element.evaluate((el, prop) => getComputedStyle(el).getPropertyValue(prop), p.value || ''); passed = actual === String(p.expected || ''); message = `CSS "${p.value}": "${actual}" ${passed ? '==' : '!='} "${p.expected}"`; break; }
           case 'enabled': { const element = page.locator(p.selector!).first(); passed = await element.isEnabled(); actual = passed; message = `Element "${p.selector}" is ${passed ? 'enabled' : 'disabled'}`; break; }
-          case 'checked': { const element = page.locator(p.selector!).first(); passed = await element.isChecked(); actual = passed; message = `Element "${p.selector}" is ${passed ? 'checked' : 'unchecked'}`; break; }
+          case 'checked': { const element = page.locator(p.selector!).first(); passed = await element.evaluate((el: Element) => (el as HTMLInputElement).checked); actual = passed; message = `Element "${p.selector}" is ${passed ? 'checked' : 'unchecked'}`; break; }
         }
       } catch (error) { passed = false; message = `Assertion failed: ${(error as Error).message}`; }
       if (!passed) return ok({ passed: false, type: p.type, actual: String(actual), expected: p.value ?? String(p.expected ?? ''), message });

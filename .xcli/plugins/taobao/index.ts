@@ -203,7 +203,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('login', {
     description: '登录淘宝（扫码 / 账号密码），支持登录态检测与状态保存',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       method: z
@@ -284,7 +283,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search', {
     description: '搜索淘宝商品（DOM + 网络拦截双模式）',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),
@@ -435,7 +433,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search-advanced', {
     description: '淘宝高级搜索（支持价格区间、发货地等筛选）',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       keyword: z.string().describe('搜索关键词'),
@@ -593,7 +590,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('detail', {
     description: '获取淘宝商品详情（支持 URL 或商品 ID）',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       url: z.string().optional().describe('商品 URL'),
@@ -787,7 +783,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('item-detail', {
     description: '获取商品完整详情（包含 SKU、评价统计、优惠信息）',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       itemId: z.string().describe('商品 ID'),
@@ -985,7 +980,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('reviews', {
     description: '获取淘宝商品评价（支持类型筛选、追评、媒体筛选）',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       url: z.string().optional().describe('商品 URL'),
@@ -1194,7 +1188,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('shop', {
     description: '获取淘宝店铺信息（支持店铺 URL 或 ID）',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       shopUrl: z.string().optional().describe('店铺 URL'),
@@ -1318,7 +1311,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('seller-items', {
     description: '获取店铺商品列表',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       shopId: z.string().describe('店铺 ID'),
@@ -1442,7 +1434,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('coupons', {
     description: '获取商品优惠券信息',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       itemId: z.string().describe('商品 ID'),
@@ -1574,7 +1565,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('update-profile', {
     description: '更新淘宝店铺信息（卖家功能）',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       shopName: z.string().optional().describe('店铺名称'),
@@ -1661,7 +1651,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search-image', {
     description: '淘宝图片搜索',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),

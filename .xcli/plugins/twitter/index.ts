@@ -75,7 +75,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search', {
     description: '搜索 X/Twitter 推文（API 拦截模式）',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),
@@ -128,7 +127,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('profile', {
     description: '获取 X/Twitter 用户资料（API 拦截模式，含丰富指标）',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       username: z.string().describe('用户名（不含 @）'),
@@ -207,7 +205,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('timeline', {
     description: '获取 X/Twitter 用户最新推文（API 拦截模式，含 views/bookmarks 等）',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       username: z.string().describe('用户名（不含 @）'),
@@ -290,7 +287,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('replies', {
     description: '获取推文的回复（API 拦截模式）',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       id: z.string().describe('推文 ID'),
@@ -346,7 +342,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('liked', {
     description: '获取用户点赞的推文',
-    loginRequired: 'required',
     scope: 'browser',
     parameters: z.object({
       username: z.string().describe('用户名（不含 @）'),
@@ -392,7 +387,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search-image', {
     description: 'Twitter/X 图片搜索',
-    loginRequired: 'none',
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),
