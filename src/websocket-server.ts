@@ -304,9 +304,8 @@ export class WSServer extends EventEmitter {
         document.addEventListener('focusin', (e) => {
           const el = e.target as HTMLElement;
           if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.contentEditable === 'true') {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const w = window as any;
-            w.__xb_focus_seq = (w.__xb_focus_seq || 0) + 1;
+            const w = window as unknown as Record<string, unknown>;
+            w.__xb_focus_seq = ((w.__xb_focus_seq as number) || 0) + 1;
             const info: { selector: string; tag: string; value: string; placeholder: string; isFileInput?: boolean; seq: number } = {
               selector: '',
               tag: el.tagName,
@@ -324,8 +323,7 @@ export class WSServer extends EventEmitter {
           }
         }, true);
        document.addEventListener('focusout', () => {
-         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-         (window as any).__xb_last_focused = null;
+         (window as unknown as Record<string, unknown>).__xb_last_focused = null;
        }, true);
      };
      page.evaluate(injectFocusListeners).catch(() => {});
@@ -342,8 +340,7 @@ export class WSServer extends EventEmitter {
             type FocusInfo = { focused: boolean; selector?: string; value?: string; tag?: string; placeholder?: string; isFileInput?: boolean; seq?: number };
             const info: FocusInfo = await page.evaluate(() => {
               // Check __xb_last_focused first, then fallback to activeElement
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              const f = (window as any).__xb_last_focused;
+              const f = (window as unknown as Record<string, unknown>).__xb_last_focused;
               if (f) return { focused: true, ...f };
              // Fallback: check document.activeElement directly
              const active = document.activeElement as HTMLElement | null;

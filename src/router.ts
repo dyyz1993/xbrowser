@@ -44,7 +44,7 @@ import { showMainHelp } from './cli/help.js';
 import { printChainResult, printChainResultBrief } from './cli/chain-output.js';
 import { getPluginLoader } from './utils/plugin-singleton.js';
 import { checkPluginLoginRequired } from './plugin/login-guard.js';
-import { findOrRestoreSession, createSession, saveSessionDiskMeta } from './browser.js';
+import { findOrRestoreSession, createSession, saveSessionDiskMeta, type ManagedSession } from './browser.js';
 import { HTTPServer } from './server/http-server.js';
 import { getCommand } from './commands/command-registry.js';
 
@@ -585,8 +585,7 @@ export async function routeCommand(
             }
           }
 
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          let session: any = undefined;
+          let session: ManagedSession | undefined = undefined;
           if (needsBrowser) {
             session = await findOrRestoreSession(sessionName, cdpEndpoint);
             if (!session) {
@@ -602,7 +601,7 @@ export async function routeCommand(
             browser: needsBrowser ? session!.context.browser()! : null,
             browserContext: needsBrowser ? session!.context : null,
             sessionId: needsBrowser ? session!.id : '',
-            cdpEndpoint: cdpEndpoint || (needsBrowser ? (session as Record<string, unknown>)?.cdpEndpoint as string : undefined),
+            cdpEndpoint: cdpEndpoint || (needsBrowser ? session?.cdpEndpoint : undefined),
             storage: getPluginStorage(command),
             output: { mode: mode as 'text' | 'json' | 'yaml', showTips: true, color: true, emoji: true },
             error: (msg: string) => { outputError(msg); },

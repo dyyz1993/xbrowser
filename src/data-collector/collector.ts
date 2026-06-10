@@ -462,8 +462,7 @@ export class DataCollector {
       viewport: { width: 1920, height: 1080 },
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (context as any)._browser = browser;
+    (context as unknown as Record<string, unknown>)._browser = browser;
     return context;
   }
 

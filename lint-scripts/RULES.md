@@ -14,7 +14,10 @@ lint-scripts/
 ├── check-plugin-code.mjs          # 检查插件源码质量（ok/fail、z.any、空 catch 等）
 ├── check-plugin-contract.mjs      # 检查插件能加载且参数能提取成表单 contract
 ├── check-plugin-requires-login.js # 检查插件 requiresLogin 声明一致性
-└── eslint-no-raw-output.mjs       # ESLint 规则：禁止直接 console.log(JSON.stringify)
+├── eslint-no-raw-output.mjs       # ESLint 规则：禁止直接 console.log(JSON.stringify)
+├── eslint-no-ctx-page-cast.mjs    # ESLint 规则：禁止未带 Page 类型的 ctx.page 访问
+├── eslint-no-as-any.mjs           # ESLint 规则：禁止 `as any` 类型断言
+└── eslint-no-suppress-explicit-any.mjs  # ESLint 规则：禁止禁用 no-explicit-any 校验
 ```
 
 ## 规则列表
@@ -572,3 +575,83 @@ result: z.object({
 - 这样开发者可以在不中断功能的前提下，逐步收紧 schema
 
 这就是"渐进式优化"的核心思想：**先有安全垫运行，再逐步精确，每次都有 lint 提示和运行时反馈**。
+
+### 10. ctx.page 访问规范（ctx-page-cast）
+
+**执行方式**：
+- ESLint 实时检查：`eslint-no-ctx-page-cast.mjs`
+
+**规则**：
+- `.xcli/plugins/` 下禁止通过 `(ctx as Record<string, unknown>).page` 访问页面对象而不带 `as Page` 类型转换
+- 正确做法：`(ctx as Record<string, unknown>).page as Page | undefined`
+
+**原因**：
+直接通过 `Record<string, unknown>` 转换访问 `.page` 得到的值是 `unknown` 类型，丢失了类型信息。必须通过 `as Page` 或 `as Page | undefined` 明确类型，让 TypeScript 能进行类型检查。
+
+**正确示例**：
+```typescript
+// ✅ 正确：有 as Page 类型
+const page = (ctx as Record<string, unknown>).page as Page | undefined;
+if (!page) throw new Error('需要浏览器页面');
+
+const page = (ctx as Record<string, unknown>).page as Page;
+```
+
+**错误示例**：
+```typescript
+// ❌ 错误：没有 as Page 类型
+const _page = (ctx as unknown as Record<string, unknown>).page;
+const page = (ctx as Record<string, unknown>).page;  // 类型为 unknown
+```
+
+### 11. `as any` 类型断言（no-as-any）
+
+**执行方式**：
+- ESLint 实时检查：`eslint-no-as-any.mjs`
+
+**规则**：
+- 所有 TypeScript 文件禁止使用 `as any` 类型断言
+
+**原因**：
+`as any` 会完全绕过类型检查，让下游代码失去所有类型安全保障。应使用 `as unknown` 再逐步收窄，或使用具体的类型。
+
+**正确示例**：
+```typescript
+// ✅ 正确：使用具体类型或 unknown
+const x = value as unknown;
+const y = value as string;
+```
+
+**错误示例**：
+```typescript
+// ❌ 错误：as any
+const x = value as any;
+const y = (foo as any).bar;
+```
+
+> `@typescript-eslint/no-explicit-any`（warn 级别）补充捕获 `: any` 类型标注场景。
+
+### 12. 禁止禁用 no-explicit-any 校验（no-suppress-explicit-any）
+
+**执行方式**：
+- ESLint 实时检查：`eslint-no-suppress-explicit-any.mjs`
+
+**规则**：
+- 禁止使用 `// eslint-disable-next-line @typescript-eslint/no-explicit-any` 或 `/* eslint-disable @typescript-eslint/no-explicit-any */` 绕过 no-explicit-any 检查
+
+**原因**：
+`any` 类型会绕过 TypeScript 的类型检查。如果代码中存在 `any`，应该通过重构来使用具体的类型或 `unknown`，而不是简单地用 eslint-disable 注释压制警告。
+
+**正确示例**：
+```typescript
+// ✅ 正确：修复代码避免使用 any
+const value: unknown = someFunction();
+const typed = value as string;
+```
+
+**错误示例**：
+```typescript
+// ❌ 错误：用注释禁用 no-explicit-any
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const groups: Record<string, any[]> = { high: [], medium: [], low: [], unknown: [] };
+```

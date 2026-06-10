@@ -242,16 +242,11 @@ async function detectWebdriverExposure(page: Page): Promise<DetectionResult> {
   try {
     const webdriver = await page.evaluate<{ webdriver: boolean; webdriverScriptFn: boolean; webdriverEvaluate: boolean; chrome: boolean; permissions: unknown } | null>(() => {
       return {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        webdriver: (window as any).navigator?.webdriver,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        webdriverScriptFn: !!(window as any).__webdriver_script_fn,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        webdriverEvaluate: !!(window as any).__webdriver_evaluate,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        chrome: !!(window as any).chrome,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        permissions: (window as any).navigator?.permissions,
+        webdriver: (window as unknown as Record<string, unknown>).navigator && (window as unknown as Record<string, unknown>).navigator instanceof Object ? ((window as unknown as Record<string, unknown>).navigator as Record<string, unknown>).webdriver : undefined,
+        webdriverScriptFn: !!((window as unknown as Record<string, unknown>)).__webdriver_script_fn,
+        webdriverEvaluate: !!((window as unknown as Record<string, unknown>)).__webdriver_evaluate,
+        chrome: !!((window as unknown as Record<string, unknown>)).chrome,
+        permissions: (window as unknown as Record<string, unknown>).navigator && (window as unknown as Record<string, unknown>).navigator instanceof Object ? ((window as unknown as Record<string, unknown>).navigator as Record<string, unknown>).permissions : undefined,
       };
     }).catch(() => null);
 

@@ -145,16 +145,18 @@ export async function handleNetCommand(args: string[], options: Record<string, u
         break;
       }
       case 'analyze': {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = await forwardNetworkAnalyze(netSession) as any;
+        type AnalyzedEntry = {
+          method: string; status: number; path: string;
+          reusability: { level: string; score: number; reasons: string[] };
+        };
+        const result = await forwardNetworkAnalyze(netSession) as { total: number; analyzed: AnalyzedEntry[] };
         if (mode === 'json') {
           outputResult(result, mode);
         } else {
           console.log(`\n  API Reusability Analysis (session: ${netSession})`);
           console.log(`  Total: ${result.total}, Analyzed: ${result.analyzed.length}\n`);
 
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const groups: Record<string, any[]> = { high: [], medium: [], low: [], unknown: [] };
+          const groups: Record<string, AnalyzedEntry[]> = { high: [], medium: [], low: [], unknown: [] };
           for (const e of result.analyzed) {
             groups[e.reusability.level]?.push(e);
           }
@@ -241,8 +243,15 @@ export async function handleNetCommand(args: string[], options: Record<string, u
           outputError('Usage: xbrowser net inspect <id> [--session default]');
           break;
         }
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = await forwardNetworkInspect(netSession, id) as any;
+        type CaptureDetail = {
+          id: number; method: string; url: string; status: number;
+          size: number; contentType: string; resourceType: string;
+          requestHeaders?: Record<string, unknown>;
+          requestBody?: unknown;
+          headers: Record<string, unknown>;
+          body?: unknown;
+        };
+        const result = await forwardNetworkInspect(netSession, id) as { capture: CaptureDetail };
         if (!result.capture) {
           outputError(`Entry #${id} not found`);
           break;
@@ -301,8 +310,7 @@ export async function handleNetCommand(args: string[], options: Record<string, u
         const id = parseInt(args[1] || '0', 10);
         if (!id) { outputError('Usage: xbrowser net export <id> [--lang ts|python|curl]'); break; }
         const lang = (options.lang as string) || 'ts';
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = await forwardNetworkExport(netSession, id, lang) as any;
+        const result = await forwardNetworkExport(netSession, id, lang) as { error?: string; code: string };
         if (result.error) { outputError(result.error); break; }
         console.log(result.code);
         break;
