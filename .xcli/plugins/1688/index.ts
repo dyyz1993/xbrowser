@@ -1,7 +1,8 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page, Response } from '../../src/browser-shim.js';
+/// <reference path="../types.d.ts" />
+import type { Page, Response } from '../types.js';
 
 interface BrowserCtx extends CommandContext {
   page?: Page;
@@ -30,6 +31,76 @@ interface LoginState {
   hasCdp: boolean;
 }
 
+interface ShopData {
+  name: string;
+  description: string;
+  fansCount: string;
+  founded: string;
+  years: string;
+  location: string;
+  ratings: Array<{ label: string; score: string }>;
+  mainProducts: string[];
+  categories: Array<{ name: string; count: string; url: string }>;
+  logo: string;
+  returnRate: string;
+  serviceScore: string;
+  onTimeRate: string;
+  goodRate: string;
+  isFollowed: boolean;
+  followBtnText: string;
+  hasChat: boolean;
+}
+
+interface ProductDetailData {
+  title: string;
+  price: string;
+  priceRange: string;
+  minOrder: string;
+  sales: string;
+  specs: Array<{ name: string; values: string[] }>;
+  images: string[];
+  seller: string;
+  sellerUrl: string;
+  tags: string[];
+  location: string;
+  newPrice: string;
+  estimatedPrice: string;
+  wholesaleTiers: Array<{ range: string; price: string }>;
+  skuInventory: Array<{ sku: string; price: string; stock: string }>;
+  discountInfo: string[];
+  deliveryPromise: string;
+  shippingFee: string;
+  returnPolicies: string[];
+  repurchaseRate: string;
+  aiScore: string;
+  properties: Array<{ name: string; value: string }>;
+  hasBuyBtn: boolean;
+  hasCartBtn: boolean;
+  hasCollectBtn: boolean;
+  hasSampleBtn: boolean;
+}
+
+interface ProductItem {
+  offerId: string;
+  title: string;
+  price: string;
+  sales: string;
+  imageUrl: string;
+  detailUrl: string;
+}
+
+interface SearchProductItem extends ProductItem {
+  seller: string;
+}
+
+interface CategoryItem {
+  name: string;
+  count: string;
+  url: string;
+  parentId: string;
+  catId: string;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 function requireCdp(ctx: CommandContext): string | null {
   const browserCtx = ctx as BrowserCtx;
@@ -52,7 +123,7 @@ async function detectLoginState(page: Page, hasCdp: boolean): Promise<LoginState
       const loginId = (cookies.match(/__cn_logon_id__=([^;]+)/) || ['', ''])[1];
       const userId = (cookies.match(/unb=([^;]+)/) || ['', ''])[1];
       return { isLoggedIn, loginId, userId };
-    });
+    }) as { isLoggedIn: boolean; loginId: string; userId: string };
     return { ...loginInfo, hasCdp };
   } catch {
     return { isLoggedIn: false, loginId: '', userId: '', hasCdp };
@@ -221,7 +292,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('shop', {
     description: '获取1688店铺信息',
-    loginRequired: 'required',
     scope: 'browser',
     result: z.object({
       source: z.string(), memberId: z.string(),
@@ -235,7 +305,7 @@ export default function (xcli: XCLIAPI): void {
       onTimeRate: z.string(), goodRate: z.string(),
       isFollowed: z.boolean(), followBtnText: z.string(), hasChat: z.boolean(),
       loginState: z.object({ isLoggedIn: z.boolean(), loginId: z.string(), userId: z.string(), hasCdp: z.boolean() }).optional(),
-      loginRequired: z.record(z.boolean()).optional(),
+      loginRequired: z.record(z.string(), z.boolean()).optional(),
     }).passthrough(),
     parameters: z.object({
       url: z.string().optional().describe('店铺 URL，如 https://ouyimei.1688.com/'),
@@ -425,7 +495,7 @@ export default function (xcli: XCLIAPI): void {
             followBtnText,
             hasChat,
           };
-        });
+        }) as ShopData;
 
         const loginState = await detectLoginState(page, hasCdp);
 
@@ -459,7 +529,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('products', {
     description: '获取1688店铺商品列表',
-    loginRequired: 'required',
     scope: 'browser',
     result: z.object({
       memberId: z.string(), sort: z.string(), count: z.number(), source: z.string(),
@@ -552,7 +621,7 @@ export default function (xcli: XCLIAPI): void {
           }, [...ctxTips, `[API] 店铺商品 ${apiItems.length} 个`]);
         }
 
-        const results = await page.evaluate((limit) => {
+        const results = await page.evaluate((limit: number) => {
           const items: Array<{
             offerId: string;
             title: string;
@@ -604,7 +673,7 @@ export default function (xcli: XCLIAPI): void {
             }
           });
           return items;
-        }, params.limit);
+        }, params.limit) as ProductItem[];
 
         return ok({
           memberId,
@@ -621,7 +690,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('product-detail', {
     description: '获取1688商品详情',
-    loginRequired: 'required',
     scope: 'browser',
     result: z.object({
       source: z.string(), offerId: z.string(),
@@ -638,7 +706,7 @@ export default function (xcli: XCLIAPI): void {
       properties: z.array(z.object({ name: z.string(), value: z.string() })),
       hasBuyBtn: z.boolean(), hasCartBtn: z.boolean(), hasCollectBtn: z.boolean(), hasSampleBtn: z.boolean(),
       loginState: z.object({ isLoggedIn: z.boolean(), loginId: z.string(), userId: z.string(), hasCdp: z.boolean() }).optional(),
-      loginRequired: z.record(z.boolean()).optional(),
+      loginRequired: z.record(z.string(), z.boolean()).optional(),
     }).passthrough(),
     parameters: z.object({
       url: z.string().optional().describe('商品 URL'),
@@ -857,7 +925,7 @@ export default function (xcli: XCLIAPI): void {
             hasCollectBtn,
             hasSampleBtn,
           };
-        });
+        }) as ProductDetailData;
 
         const loginState = await detectLoginState(page, hasCdp);
 
@@ -897,7 +965,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search', {
     description: '搜索1688商品',
-    loginRequired: 'none',
     scope: 'browser',
     result: z.object({
       query: z.string(), sort: z.string(), count: z.number(), source: z.string(),
@@ -971,7 +1038,7 @@ export default function (xcli: XCLIAPI): void {
           }, [...ctxTips, '[API] 找到 ' + apiItems.length + ' 个商品']);
         }
 
-        const results = await page.evaluate((limit) => {
+        const results = await page.evaluate((limit: number) => {
           const items: Array<{
             offerId: string;
             title: string;
@@ -1038,7 +1105,7 @@ export default function (xcli: XCLIAPI): void {
             }
           });
           return items;
-        }, params.limit);
+        }, params.limit) as SearchProductItem[];
 
         return ok({
           query: params.query,
@@ -1055,7 +1122,6 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('categories', {
     description: '获取1688店铺分类列表',
-    loginRequired: 'required',
     scope: 'browser',
     result: z.object({
       memberId: z.string(), count: z.number(),
@@ -1188,7 +1254,7 @@ export default function (xcli: XCLIAPI): void {
           }
 
           return items;
-        });
+        }) as CategoryItem[];
 
         return ok({
           memberId,
@@ -1197,7 +1263,7 @@ export default function (xcli: XCLIAPI): void {
         }, [
           ...ctxTips,
           '[DOM] 分类: ' + categories.length + ' 个',
-          categories.slice(0, 3).map((c) => '' + c.name + '(' + c.count + ')').join(', '),
+          categories.slice(0, 3).map((c: CategoryItem) => '' + c.name + '(' + c.count + ')').join(', '),
         ]);
       } catch (error) {
         return fail('参数错误', [
