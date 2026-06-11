@@ -43,7 +43,7 @@ describe('CDP Driver Advanced Features', { timeout: TEST_TIMEOUT, hookTimeout: 6
       });
 
       await page.goto('about:blank');
-      page.evaluate(`fetch("https://test-api.local/data")`);
+      await page.evaluate(`fetch("https://test-api.local/data")`);
 
       const response = await page.waitForResponse('**/test-api.local/**', { timeout: 5000 });
       expect(response).toBeDefined();
@@ -84,7 +84,7 @@ describe('CDP Driver Advanced Features', { timeout: TEST_TIMEOUT, hookTimeout: 6
       });
 
       await page.goto('about:blank');
-      page.evaluate(`setTimeout(()=>fetch("https://req-api.local/get"),100)`);
+      await page.evaluate(`setTimeout(()=>fetch("https://req-api.local/get"),100)`);
 
       const request = await page.waitForRequest('**/req-api.local/**', { timeout: 5000 });
       expect(request).toBeDefined();
