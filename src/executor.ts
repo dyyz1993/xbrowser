@@ -9,6 +9,7 @@ import {
   checkGuard,
   PluginStorage,
   type StorageContext,
+  unquote,
 } from '@dyyz1993/xcli-core';
 import { parsePluginParams } from './utils/plugin-params.js';
 import { getCommand, getAllCommands } from './commands/index.js';
@@ -658,7 +659,7 @@ export async function executeChain(
           continue;
         }
 
-        const { params } = parseCommandArgs(cmdName, cmdArgs);
+        const { params } = parseCommandArgs(cmdName, cmdArgs, unquote);
 
         if (cmdName === 'goto' && params.url) {
           const existing2 = await findOrRestoreSession(sessionName, options?.cdpEndpoint);
