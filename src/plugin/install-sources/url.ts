@@ -2,7 +2,13 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, cpSync } fr
 import { resolve, join, basename } from 'path';
 import { tmpdir } from 'os';
 import type { InstalledPlugin } from '../installer-types.js';
-import { downloadToFile, extractTarGz, flattenPackageRoot, verifyPlugin, safeCleanup } from '../install-utils.js';
+import {
+  downloadToFile,
+  extractTarGz,
+  flattenPackageRoot,
+  verifyPlugin,
+  safeCleanup,
+} from '../install-utils.js';
 
 export async function installFromUrl(
   url: string,

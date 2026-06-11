@@ -16,8 +16,8 @@ import {
   flattenPackageRoot,
   verifyPlugin,
   safeCleanup,
-  getMarketplaceUrl,
 } from '../install-utils.js';
+import { getMarketplaceUrl } from '../../config.js';
 import { ensureProxyFetch } from '../../utils/proxy-fetch.js';
 
 export async function installFromMarketplace(

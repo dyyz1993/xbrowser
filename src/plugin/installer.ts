@@ -16,8 +16,7 @@ import { installFromGit } from './install-sources/git.js';
 import { installFromUrl } from './install-sources/url.js';
 import { installFromMarketplace } from './install-sources/marketplace.js';
 import { ensureProxyFetch } from '../utils/proxy-fetch.js';
-import { getMarketplaceUrl } from './install-utils.js';
-import { resolveNpmPackageWithFallback } from '../config.js';
+import { getMarketplaceUrl, resolveNpmPackageWithFallback } from '../config.js';
 import { ensurePluginDependencies } from './ensure-deps.js';
 
 export type { InstalledPlugin, InstallOptions } from './installer-types.js';

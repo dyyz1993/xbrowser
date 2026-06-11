@@ -1,23 +1,17 @@
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
-import { join } from 'path';
 import { homedir, tmpdir } from 'os';
-import { readJsonFile } from './utils/json-file.js';
+import { join } from 'path';
+import { loadConfig as coreLoadConfig, saveConfig as coreSaveConfig } from '@dyyz1993/xcli-core';
 
-function getConfigFile(): string {
-  return join(homedir() || tmpdir(), '.xbrowser', 'config.json');
-}
+const XBROWSER_CONFIG_DIR = join(homedir() || tmpdir(), '.xbrowser');
+
+const configSource = { configDir: XBROWSER_CONFIG_DIR };
 
 export function loadConfig(): Record<string, unknown> {
-  const configFile = getConfigFile();
-  if (!existsSync(configFile)) return {};
-  return readJsonFile(configFile, {});
+  return coreLoadConfig(configSource) as Record<string, unknown>;
 }
 
 export function saveConfig(config: Record<string, unknown>): void {
-  const dir = join(homedir() || tmpdir(), '.xbrowser');
-  const configFile = getConfigFile();
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-  writeFileSync(configFile, JSON.stringify(config, null, 2), 'utf-8');
+  coreSaveConfig(configSource, config as Record<string, unknown>);
 }
 
 export function getConfigValue(key: string): unknown {

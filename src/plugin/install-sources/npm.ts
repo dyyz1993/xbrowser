@@ -2,7 +2,13 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, cpSync } fr
 import { resolve, join } from 'path';
 import { tmpdir } from 'os';
 import type { InstalledPlugin } from '../installer-types.js';
-import { downloadToFile, extractTarGz, flattenPackageRoot, verifyPlugin, safeCleanup } from '../install-utils.js';
+import {
+  downloadToFile,
+  extractTarGz,
+  flattenPackageRoot,
+  verifyPlugin,
+  safeCleanup,
+} from '../install-utils.js';
 import { ensureProxyFetch } from '../../utils/proxy-fetch.js';
 
 export async function installFromNpm(

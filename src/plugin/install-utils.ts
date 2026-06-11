@@ -1,64 +1,34 @@
-import {
-  existsSync,
-  readdirSync,
-  cpSync,
-  rmSync,
-  mkdirSync,
-  readFileSync,
-  createWriteStream,
-} from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { resolve } from 'path';
-import { execSync } from 'child_process';
-import { pipeline } from 'stream/promises';
-import { Readable } from 'stream';
-import { getMarketplaceUrl } from '../config.js';
+
+// Re-export shared utilities from @dyyz1993/xcli-core
+export {
+  extractTarGz,
+  flattenPackageRoot,
+  safeCleanup,
+} from '@dyyz1993/xcli-core';
+
+import type { PluginVerifyResult } from '@dyyz1993/xcli-core';
+import { downloadToFile as coreDownload } from '@dyyz1993/xcli-core';
 import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 
-export interface PluginVerifyResult {
-  valid: boolean;
-  error?: string;
-  warnings?: string[];
-}
-
+/**
+ * Download a URL to a local file, with xbrowser's proxy support.
+ *
+ * Wraps core's downloadToFile with ensureProxyFetch so marketplace,
+ * npm registry and other requests go through the configured proxy.
+ */
 export async function downloadToFile(url: string, destPath: string): Promise<void> {
   await ensureProxyFetch();
-  if (url.startsWith('file://')) {
-    const filePath = decodeURIComponent(new URL(url).pathname);
-    cpSync(filePath, destPath, { force: true });
-    return;
-  }
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`Download failed: HTTP ${res.status} from ${url}`);
-  }
-  if (!res.body) {
-    throw new Error(`No response body from ${url}`);
-  }
-  const nodeStream = Readable.fromWeb(res.body as import('stream/web').ReadableStream);
-  await pipeline(nodeStream, createWriteStream(destPath));
+  return coreDownload(url, destPath);
 }
 
-export function extractTarGz(tarballPath: string, targetDir: string): void {
-  mkdirSync(targetDir, { recursive: true });
-  execSync(`tar -xzf "${tarballPath}" -C "${targetDir}"`, { stdio: 'pipe' });
-}
-
-export function flattenPackageRoot(targetDir: string): void {
-  const entries = readdirSync(targetDir, { withFileTypes: true });
-  const dirs = entries.filter((e) => e.isDirectory());
-  const files = entries.filter((e) => !e.isDirectory());
-  if (dirs.length === 1 && files.length === 0) {
-    const pkgDir = resolve(targetDir, dirs[0].name);
-    const items = readdirSync(pkgDir);
-    for (const item of items) {
-      const src = resolve(pkgDir, item);
-      const dst = resolve(targetDir, item);
-      cpSync(src, dst, { recursive: true, force: true });
-    }
-    rmSync(pkgDir, { recursive: true, force: true });
-  }
-}
-
+/**
+ * Verify that a directory looks like a valid xbrowser plugin.
+ *
+ * Unlike core's verifyPlugin (which checks for generic `xcli` metadata),
+ * this checks for `xbrowser` metadata — specific to the xbrowser ecosystem.
+ */
 export async function verifyPlugin(dir: string): Promise<PluginVerifyResult> {
   const warnings: string[] = [];
 
@@ -85,15 +55,4 @@ export async function verifyPlugin(dir: string): Promise<PluginVerifyResult> {
   }
 
   return { valid: true, warnings };
-}
-
-
-export { getMarketplaceUrl };
-
-export function safeCleanup(dir: string): void {
-  try {
-    rmSync(dir, { recursive: true, force: true });
-  } catch {
-    /* ignore */
-  }
 }
