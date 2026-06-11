@@ -314,15 +314,6 @@ xbrowser --cdp auto "goto https://example.com , title"
 | `setViewport <width> <height>` | 设置视口大小 | `xbrowser setViewport 1920 1080` |
 | `setViewport 375 812 --isMobile true` | 移动设备模式 | `xbrowser setViewport 375 812 --isMobile true` |
 
-### Daemon 进程
-
-| 命令 | 说明 | 示例 |
-|------|------|------|
-| `daemon start` | 启动 daemon | `xbrowser daemon start` |
-| `daemon start --port 9223` | 指定端口启动 | `xbrowser daemon start --port 9223` |
-| `daemon stop` | 停止 daemon | `xbrowser daemon stop` |
-| `daemon status` | 查看 daemon 状态 | `xbrowser daemon status` |
-
 ### 配置管理
 
 | 命令 | 说明 | 示例 |

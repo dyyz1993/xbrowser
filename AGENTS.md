@@ -41,7 +41,6 @@ npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 | `.opencode/ui-automator/` | 内部技巧库（patterns / selectors / specs / troubleshooting） |
 | `output/` | 临时输出（截图、JSON、HTML） |
 | `recordings/` | 录制文件 |
-| `analytics/` | 老的占位目录（**已清空**，建议删除） |
 
 ---
 

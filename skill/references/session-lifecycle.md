@@ -170,7 +170,6 @@ User Browser (viewer)          xbrowser Daemon (9224)           Chromium (9221)
 | Command | Scope | When to Use |
 |---------|-------|-------------|
 | `session close --name <n>` | Closes one session | Normal cleanup after task |
-| `daemon stop` | Stops daemon only | Explicit daemon shutdown |
 | `xbrowser kill` | Kills daemon + ALL sessions | Nuclear cleanup, state unknown |
 
 ```bash
@@ -221,11 +220,6 @@ npx xbrowser session close [--name <n>]
 
 # Kill everything (daemon + all sessions)
 npx xbrowser kill
-
-# Daemon control
-npx xbrowser daemon start     # Usually auto-started
-npx xbrowser daemon status    # Check running state
-npx xbrowser daemon stop      # Stop daemon
 ```
 
 ---
