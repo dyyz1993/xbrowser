@@ -462,7 +462,78 @@ xbrowser create my-plugin --template api
 3. 添加实际业务逻辑
 4. 补充 `package.json` 的 `xbrowser` 元数据
 
-#### 10.0.7 常见反例
+#### 10.0.7 插件测试规范
+
+每个插件**必须**有对应的测试文件 `tests/plugins/<name>.test.ts`。
+
+测试模式（参考 `tests/plugins/devto.test.ts` 和 `tests/plugins/quora.test.ts`）：
+
+```typescript
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import plugin from '../../.xcli/plugins/<name>/index.ts';
+
+// 1. Mock XCLIAPI
+const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
+const mockXCLI = { createSite: vi.fn(() => mockSite) };
+
+// 2. 辅助函数：获取注册的命令 handler
+function getHandler(name: string): Function {
+  const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === name);
+  return call![1].handler;
+}
+
+// 3. 辅助函数：创建 mock 页面上下文
+function createMockPage() {
+  return {
+    goto: vi.fn(),
+    waitForTimeout: vi.fn(),
+    waitForLoadState: vi.fn(),
+    evaluate: vi.fn(),
+    locator: vi.fn(() => ({ first: vi.fn(), isVisible: vi.fn(), click: vi.fn(), fill: vi.fn() })),
+    fill: vi.fn(), click: vi.fn(), url: vi.fn(() => 'https://...'),
+    keyboard: { insertText: vi.fn(), press: vi.fn() },
+    mouse: { wheel: vi.fn(), move: vi.fn() },
+    close: vi.fn(),
+  };
+}
+
+describe('<name> plugin', () => {
+  beforeEach(() => { vi.clearAllMocks(); plugin(mockXCLI as any); });
+
+  // ——— 注册测试 ———
+  it('should create site with name', () => { /* 检查 createSite 参数 */ });
+  it('should register N commands', () => { /* 检查 command 调用次数 */ });
+  it('should register expected command names', () => { /* 检查命令名列表 */ });
+  it('each command should have description, scope, parameters, handler', () => { /* 遍历检查 */ });
+  it('should register login/logout hooks', () => { /* 检查 site.login/site.logout 被调用 */ });
+
+  // ——— 功能测试（每个命令一个 describe） ———
+  describe('login command', () => {
+    it('should throw when no page', async () => { /* handler({}, ctx_sem_page) → reject */ });
+    it('should navigate to login page', async () => { /* 检查 page.goto */ });
+    it('should call waitForHuman', async () => { /* 检查 ctx.waitForHuman */ });
+    it('should save login state to storage', async () => { /* 检查 ctx.storage.set */ });
+  });
+
+  describe('publish command', () => {
+    it('should throw when no page', async () => { /* ... */ });
+    it('should navigate to editor', async () => { /* 检查 page.goto */ });
+    // ...
+  });
+
+  // ... 其他命令
+});
+```
+
+**必须覆盖的测试点**：
+- 每个命令的注册元数据（name、description、scope、parameters、handler）
+- 无 page 时的错误处理（throw 或 fail）
+- 关键导航路径（page.goto 的 URL）
+- 返回值结构（data 字段）
+- 提示信息（tips 或 error）
+- login/logout hook 的 storage 操作
+
+#### 10.0.8 常见反例
 
 | 反例 | 问题 | 正确做法 |
 |------|------|---------|
