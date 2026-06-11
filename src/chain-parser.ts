@@ -1,5 +1,8 @@
 // Re-export from core — no need to duplicate
-export { splitCommand, parseCommandArgs, registerCommandDefinition } from '@dyyz1993/xcli-core';
+export { splitCommand, parseCommandArgs } from '@dyyz1993/xcli-core';
+
+import { registerCommandDefinition } from '@dyyz1993/xcli-core';
+export { registerCommandDefinition };
 
 /**
  * A parsed pipeline of commands with its chain type.
@@ -131,3 +134,46 @@ function isSpaceAround(input: string, pos: number, tokenLen: number): boolean {
   const after = pos + tokenLen < input.length && input[pos + tokenLen] === ' ';
   return before && after;
 }
+
+// Register xbrowser command positional parameter definitions
+// so parseCommandArgs can map positional args to named params.
+registerCommandDefinition('goto', ['url']);
+registerCommandDefinition('click', ['selector']);
+registerCommandDefinition('fill', ['selector', 'value']);
+registerCommandDefinition('type', ['selector', 'text']);
+registerCommandDefinition('press', ['selector', 'key']);
+registerCommandDefinition('select', ['selector', 'value']);
+registerCommandDefinition('check', ['selector']);
+registerCommandDefinition('uncheck', ['selector']);
+registerCommandDefinition('hover', ['selector']);
+registerCommandDefinition('dblclick', ['selector']);
+registerCommandDefinition('wait', ['selector']);
+registerCommandDefinition('screenshot', []);
+registerCommandDefinition('eval', ['expression']);
+registerCommandDefinition('scroll', ['direction']);
+registerCommandDefinition('title', []);
+registerCommandDefinition('url', []);
+registerCommandDefinition('html', []);
+registerCommandDefinition('text', []);
+registerCommandDefinition('back', []);
+registerCommandDefinition('forward', []);
+registerCommandDefinition('refresh', []);
+registerCommandDefinition('console', []);
+registerCommandDefinition('network', []);
+registerCommandDefinition('perf', []);
+registerCommandDefinition('health', []);
+registerCommandDefinition('scrape', ['url']);
+registerCommandDefinition('structure', []);
+registerCommandDefinition('get-cookies', []);
+registerCommandDefinition('set-cookie', []);
+registerCommandDefinition('clear-cookies', []);
+registerCommandDefinition('get-local-storage', []);
+registerCommandDefinition('set-local-storage', []);
+registerCommandDefinition('clear-local-storage', []);
+registerCommandDefinition('set-viewport', []);
+registerCommandDefinition('frames', []);
+registerCommandDefinition('frame', ['selector']);
+registerCommandDefinition('actions', ['url']);
+registerCommandDefinition('find', ['strategy', 'value', 'operation']);
+registerCommandDefinition('addinitscript', ['script']);
+registerCommandDefinition('tab', ['subcommand']);
