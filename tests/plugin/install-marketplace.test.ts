@@ -12,24 +12,23 @@ vi.stubGlobal('fetch', mockFetch);
 // Track temp dirs so downloadToFile mock can write to the correct path
 let capturedTmpDir = '';
 
-vi.mock('../../src/plugin/install-utils.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../../src/plugin/install-utils.js')>();
-  return {
-    ...original,
-    downloadToFile: vi.fn().mockImplementation(async (_url: string, filePath: string) => {
-      // Write a fake tarball so readFileSync in marketplace.ts can read it
-      // Use a gzipped manifest format that tryParseAsGzippedManifest will recognize
-      const manifest = JSON.stringify([{ path: 'index.ts', content: Buffer.from('export default {}').toString('base64') }]);
-      const gzipped = gzipSync(Buffer.from(manifest));
-      writeFileSync(filePath, gzipped);
-    }),
-    extractTarGz: vi.fn(),
-    flattenPackageRoot: vi.fn(),
-    verifyPlugin: vi.fn(),
-    safeCleanup: vi.fn(),
-    getMarketplaceUrl: vi.fn().mockReturnValue('https://xbrowser-marketplace.test'),
-  };
-});
+vi.mock('@dyyz1993/xcli-core', () => ({
+  downloadToFile: vi.fn().mockImplementation(async (_url: string, filePath: string) => {
+    // Write a fake tarball so readFileSync in marketplace.ts can read it
+    // Use a gzipped manifest format that tryParseAsGzippedManifest will recognize
+    const manifest = JSON.stringify([{ path: 'index.ts', content: Buffer.from('export default {}').toString('base64') }]);
+    const gzipped = gzipSync(Buffer.from(manifest));
+    writeFileSync(filePath, gzipped);
+  }),
+  extractTarGz: vi.fn(),
+  flattenPackageRoot: vi.fn(),
+  verifyPlugin: vi.fn(),
+  safeCleanup: vi.fn(),
+}));
+
+vi.mock('../../src/config.js', () => ({
+  getMarketplaceUrl: vi.fn().mockReturnValue('https://xbrowser-marketplace.test'),
+}));
 
 import { installFromMarketplace } from '../../src/plugin/install-sources/marketplace.js';
 import {
@@ -37,8 +36,8 @@ import {
   extractTarGz,
   flattenPackageRoot,
   verifyPlugin,
-  getMarketplaceUrl,
-} from '../../src/plugin/install-utils.js';
+} from '@dyyz1993/xcli-core';
+import { getMarketplaceUrl } from '../../src/config.js';
 
 /**
  * Create a gzipped manifest buffer that tryParseAsGzippedManifest will recognize.
@@ -128,7 +127,7 @@ describe('install-sources/marketplace', () => {
     setupManifestDownloadWithFiles([
       { path: 'index.ts', content: Buffer.from('export default {}').toString('base64') },
     ]);
-    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     const result = await installFromMarketplace(pluginsDir, 'my-plugin');
 
@@ -169,7 +168,7 @@ describe('install-sources/marketplace', () => {
       })
       .mockResolvedValueOnce({ ok: true }); // track install
 
-    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     const result = await installFromMarketplace(pluginsDir, 'inline-plugin');
 
@@ -247,7 +246,7 @@ describe('install-sources/marketplace', () => {
     setupManifestDownloadWithFiles([
       { path: 'index.ts', content: Buffer.from('export default {}').toString('base64') },
     ]);
-    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     const result = await installFromMarketplace(pluginsDir, 'forced', { force: true });
 
@@ -272,7 +271,7 @@ describe('install-sources/marketplace', () => {
     setupManifestDownloadWithFiles([
       { path: 'index.ts', content: Buffer.from('export default {}').toString('base64') },
     ]);
-    vi.mocked(verifyPlugin).mockResolvedValue({
+    vi.mocked(verifyPlugin).mockReturnValue({
       valid: false,
       error: 'No entry point',
       warnings: [],
@@ -302,7 +301,7 @@ describe('install-sources/marketplace', () => {
     setupManifestDownloadWithFiles([
       { path: 'index.ts', content: Buffer.from('export default {}').toString('base64') },
     ]);
-    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     const result = await installFromMarketplace(pluginsDir, 'original', { name: 'custom-name' });
 
@@ -348,7 +347,7 @@ describe('install-sources/marketplace', () => {
     setupManifestDownloadWithFiles([
       { path: 'index.ts', content: Buffer.from('export default {}').toString('base64') },
     ]);
-    vi.mocked(verifyPlugin).mockResolvedValue({
+    vi.mocked(verifyPlugin).mockReturnValue({
       valid: true,
       warnings: ['No package.json found'],
     });
@@ -387,7 +386,7 @@ describe('install-sources/marketplace', () => {
     setupManifestDownloadWithFiles([
       { path: 'index.ts', content: Buffer.from('export default {}').toString('base64') },
     ]);
-    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     await installFromMarketplace(pluginsDir, 'meta-plugin');
 
@@ -417,7 +416,7 @@ describe('install-sources/marketplace', () => {
       })
       .mockResolvedValueOnce({ ok: true });
 
-    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     const result = await installFromMarketplace(pluginsDir, 'json-plugin');
 
@@ -469,7 +468,7 @@ describe('install-sources/marketplace', () => {
     setupManifestDownloadWithFiles([
       { path: 'index.ts', content: Buffer.from('export default {}').toString('base64') },
     ]);
-    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     const result = await installFromMarketplace(pluginsDir, 'input-slug');
 
@@ -497,7 +496,7 @@ describe('install-sources/marketplace', () => {
     setupManifestDownloadWithFiles([
       { path: 'readme.md', content: Buffer.from('# NoCmd plugin').toString('base64') },
     ]);
-    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     const result = await installFromMarketplace(pluginsDir, 'no-cmd');
     expect(result.id).toBe('no-cmd');

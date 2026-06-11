@@ -5,17 +5,13 @@ import { tmpdir } from 'os';
 
 const TEST_DIR = resolve(tmpdir(), 'xbrowser-test-url');
 
-vi.mock('../../src/plugin/install-utils.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../../src/plugin/install-utils.js')>();
-  return {
-    ...original,
-    downloadToFile: vi.fn().mockResolvedValue(undefined),
-    extractTarGz: vi.fn(),
-    flattenPackageRoot: vi.fn(),
-    verifyPlugin: vi.fn(),
-    safeCleanup: vi.fn(),
-  };
-});
+vi.mock('@dyyz1993/xcli-core', () => ({
+  downloadToFile: vi.fn().mockResolvedValue(undefined),
+  extractTarGz: vi.fn(),
+  flattenPackageRoot: vi.fn(),
+  verifyPlugin: vi.fn(),
+  safeCleanup: vi.fn(),
+}));
 
 import { installFromUrl } from '../../src/plugin/install-sources/url.js';
 import {
@@ -23,7 +19,7 @@ import {
   extractTarGz,
   flattenPackageRoot,
   verifyPlugin,
-} from '../../src/plugin/install-utils.js';
+} from '@dyyz1993/xcli-core';
 
 function setupExtractMockWithFiles(): void {
   vi.mocked(extractTarGz).mockImplementation((_tarball: string, extractDir: string) => {
@@ -57,7 +53,7 @@ describe('install-sources/url', () => {
   it('should install plugin from URL', async () => {
     vi.mocked(downloadToFile).mockResolvedValueOnce(undefined);
     setupExtractMockWithFiles();
-    vi.mocked(verifyPlugin).mockResolvedValueOnce({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValueOnce({ valid: true, warnings: [] });
 
     const result = await installFromUrl(
       'https://example.com/plugin.tar.gz',
@@ -78,7 +74,7 @@ describe('install-sources/url', () => {
   it('should call extractTarGz and flattenPackageRoot', async () => {
     vi.mocked(downloadToFile).mockResolvedValueOnce(undefined);
     setupExtractMockWithFiles();
-    vi.mocked(verifyPlugin).mockResolvedValueOnce({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValueOnce({ valid: true, warnings: [] });
 
     await installFromUrl('https://example.com/pkg.tar.gz', 'p', targetDir);
 
@@ -92,7 +88,7 @@ describe('install-sources/url', () => {
   it('should throw when plugin verification fails', async () => {
     vi.mocked(downloadToFile).mockResolvedValueOnce(undefined);
     setupExtractMockWithFiles();
-    vi.mocked(verifyPlugin).mockResolvedValueOnce({
+    vi.mocked(verifyPlugin).mockReturnValueOnce({
       valid: false,
       error: 'No index.ts found',
       warnings: [],
@@ -109,7 +105,7 @@ describe('install-sources/url', () => {
 
     vi.mocked(downloadToFile).mockResolvedValueOnce(undefined);
     setupExtractMockWithFiles();
-    vi.mocked(verifyPlugin).mockResolvedValueOnce({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValueOnce({ valid: true, warnings: [] });
 
     const result = await installFromUrl(
       'https://example.com/plugin.tar.gz',
@@ -130,7 +126,7 @@ describe('install-sources/url', () => {
         JSON.stringify({ name: 'url-pkg', version: '1.0.0' })
       );
     });
-    vi.mocked(verifyPlugin).mockResolvedValueOnce({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValueOnce({ valid: true, warnings: [] });
 
     const url = 'https://example.com/my-plugin.tar.gz';
     await installFromUrl(url, 'url-plugin', targetDir);
@@ -149,7 +145,7 @@ describe('install-sources/url', () => {
         JSON.stringify({ name: 'url-pkg', _urlSource: { url: 'original-url' } })
       );
     });
-    vi.mocked(verifyPlugin).mockResolvedValueOnce({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValueOnce({ valid: true, warnings: [] });
 
     await installFromUrl('https://example.com/new.tar.gz', 'url-plugin', targetDir);
 
@@ -160,7 +156,7 @@ describe('install-sources/url', () => {
   it('should include warnings from verifyPlugin', async () => {
     vi.mocked(downloadToFile).mockResolvedValueOnce(undefined);
     setupExtractMockWithFiles();
-    vi.mocked(verifyPlugin).mockResolvedValueOnce({
+    vi.mocked(verifyPlugin).mockReturnValueOnce({
       valid: true,
       warnings: ['No package.json found', 'No xbrowser metadata'],
     });
@@ -177,7 +173,7 @@ describe('install-sources/url', () => {
   it('should clean up temp directory in finally block', async () => {
     vi.mocked(downloadToFile).mockResolvedValueOnce(undefined);
     setupExtractMockWithFiles();
-    vi.mocked(verifyPlugin).mockResolvedValueOnce({
+    vi.mocked(verifyPlugin).mockReturnValueOnce({
       valid: false,
       error: 'bad',
       warnings: [],
@@ -196,7 +192,7 @@ describe('install-sources/url', () => {
   it('should handle URL with no filename in path', async () => {
     vi.mocked(downloadToFile).mockResolvedValueOnce(undefined);
     setupExtractMockWithFiles();
-    vi.mocked(verifyPlugin).mockResolvedValueOnce({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValueOnce({ valid: true, warnings: [] });
 
     const result = await installFromUrl(
       'https://example.com/',
@@ -214,7 +210,7 @@ describe('install-sources/url', () => {
   it('should set installedAt as ISO string', async () => {
     vi.mocked(downloadToFile).mockResolvedValueOnce(undefined);
     setupExtractMockWithFiles();
-    vi.mocked(verifyPlugin).mockResolvedValueOnce({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValueOnce({ valid: true, warnings: [] });
 
     const before = new Date().toISOString();
     const result = await installFromUrl(

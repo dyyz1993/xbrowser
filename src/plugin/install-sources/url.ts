@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, cpSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync, cpSync } from 'fs';
 import { resolve, join, basename } from 'path';
 import { tmpdir } from 'os';
 import type { InstalledPlugin } from '../installer-types.js';
@@ -8,7 +8,7 @@ import {
   flattenPackageRoot,
   verifyPlugin,
   safeCleanup,
-} from '../install-utils.js';
+} from '@dyyz1993/xcli-core';
 
 export async function installFromUrl(
   url: string,
@@ -28,7 +28,7 @@ export async function installFromUrl(
     extractTarGz(tarballPath, extractDir);
     flattenPackageRoot(extractDir);
 
-    const verify = await verifyPlugin(extractDir);
+    const verify = verifyPlugin(extractDir, { metadataField: 'xbrowser' });
     warnings = verify.warnings ?? [];
     if (!verify.valid) {
       throw new Error(`Invalid plugin from URL: ${verify.error}`);

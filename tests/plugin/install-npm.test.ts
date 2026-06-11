@@ -8,17 +8,13 @@ const TEST_DIR = resolve(tmpdir(), 'xbrowser-test-install-npm');
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
-vi.mock('../../src/plugin/install-utils.js', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../../src/plugin/install-utils.js')>();
-  return {
-    ...original,
-    downloadToFile: vi.fn().mockResolvedValue(undefined),
-    extractTarGz: vi.fn(),
-    flattenPackageRoot: vi.fn(),
-    verifyPlugin: vi.fn(),
-    safeCleanup: vi.fn(),
-  };
-});
+vi.mock('@dyyz1993/xcli-core', () => ({
+  downloadToFile: vi.fn().mockResolvedValue(undefined),
+  extractTarGz: vi.fn(),
+  flattenPackageRoot: vi.fn(),
+  verifyPlugin: vi.fn(),
+  safeCleanup: vi.fn(),
+}));
 
 import { installFromNpm } from '../../src/plugin/install-sources/npm.js';
 import {
@@ -26,7 +22,7 @@ import {
   extractTarGz,
   flattenPackageRoot,
   verifyPlugin,
-} from '../../src/plugin/install-utils.js';
+} from '@dyyz1993/xcli-core';
 
 function setupExtractMockWithFiles(): void {
   vi.mocked(extractTarGz).mockImplementation((_tarball: string, extractDir: string) => {
@@ -74,7 +70,7 @@ describe('install-sources/npm', () => {
       vi.mocked(downloadToFile).mockResolvedValueOnce(undefined);
       setupExtractMockWithFiles();
 
-      vi.mocked(verifyPlugin).mockResolvedValueOnce({
+      vi.mocked(verifyPlugin).mockReturnValueOnce({
         valid: true,
         warnings: [],
       });
@@ -145,7 +141,7 @@ describe('install-sources/npm', () => {
 
       vi.mocked(downloadToFile).mockResolvedValueOnce(undefined);
       setupExtractMockWithFiles();
-      vi.mocked(verifyPlugin).mockResolvedValueOnce({
+      vi.mocked(verifyPlugin).mockReturnValueOnce({
         valid: false,
         error: 'No entry point',
         warnings: [],
@@ -180,7 +176,7 @@ describe('install-sources/npm', () => {
         );
       });
 
-      vi.mocked(verifyPlugin).mockResolvedValueOnce({
+      vi.mocked(verifyPlugin).mockReturnValueOnce({
         valid: true,
         warnings: [],
       });

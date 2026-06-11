@@ -18,7 +18,7 @@ vi.mock('node:fs', () => ({
   mkdirSync: vi.fn(),
 }));
 
-vi.mock('../../src/plugin/install-utils.js', () => ({
+vi.mock('@dyyz1993/xcli-core', () => ({
   verifyPlugin: vi.fn(),
   safeCleanup: vi.fn(),
 }));
@@ -26,7 +26,7 @@ vi.mock('../../src/plugin/install-utils.js', () => ({
 import { installFromGit } from '../../src/plugin/install-sources/git.js';
 import { execSync } from 'node:child_process';
 import * as fs from 'node:fs';
-import { verifyPlugin } from '../../src/plugin/install-utils.js';
+import { verifyPlugin } from '@dyyz1993/xcli-core';
 
 describe('install-sources/git', () => {
   beforeEach(() => {
@@ -45,7 +45,7 @@ describe('install-sources/git', () => {
 
   it('should install plugin from git URL', async () => {
     vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
-    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     const result = await installFromGit(
       'https://github.com/user/plugin.git',
@@ -66,7 +66,7 @@ describe('install-sources/git', () => {
 
   it('should throw when plugin verification fails', async () => {
     vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
-    vi.mocked(verifyPlugin).mockResolvedValue({
+    vi.mocked(verifyPlugin).mockReturnValue({
       valid: false,
       error: 'No index.ts or index.js entry point found',
       warnings: [],
@@ -89,7 +89,7 @@ describe('install-sources/git', () => {
 
   it('should remove .git directory after cloning', async () => {
     vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
-    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     await installFromGit('https://github.com/user/g.git', 'g', '/tmp/g');
 
@@ -109,7 +109,7 @@ describe('install-sources/git', () => {
     vi.mocked(fs.readFileSync).mockReturnValue(
       JSON.stringify({ name: 'meta-plugin', version: '1.0.0' })
     );
-    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     await installFromGit(gitUrl, 'meta-plugin', '/tmp/meta');
 
@@ -128,7 +128,7 @@ describe('install-sources/git', () => {
     vi.mocked(fs.readFileSync).mockReturnValue(
       JSON.stringify({ name: 'g', _gitSource: { url: 'original-url' } })
     );
-    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     await installFromGit('https://github.com/user/new.git', 'g', '/tmp/g');
 
@@ -140,7 +140,7 @@ describe('install-sources/git', () => {
 
   it('should include warnings from verifyPlugin', async () => {
     vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
-    vi.mocked(verifyPlugin).mockResolvedValue({
+    vi.mocked(verifyPlugin).mockReturnValue({
       valid: true,
       warnings: ['No package.json found'],
     });
@@ -157,7 +157,7 @@ describe('install-sources/git', () => {
   it('should overwrite existing target directory', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
     vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
-    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     const result = await installFromGit(
       'https://github.com/user/ow.git',
@@ -171,7 +171,7 @@ describe('install-sources/git', () => {
 
   it('should set installedAt as valid ISO string', async () => {
     vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
-    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     const before = new Date().toISOString();
     const result = await installFromGit(
@@ -188,7 +188,7 @@ describe('install-sources/git', () => {
 
   it('should use --depth 1 for shallow clone', async () => {
     vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
-    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     await installFromGit('https://github.com/user/shallow.git', 'shallow', '/tmp/shallow');
 
@@ -201,7 +201,7 @@ describe('install-sources/git', () => {
   it('should skip package.json update when no package.json exists', async () => {
     vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
     vi.mocked(fs.existsSync).mockReturnValue(false);
-    vi.mocked(verifyPlugin).mockResolvedValue({ valid: true, warnings: [] });
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     const result = await installFromGit('https://github.com/user/nopkg.git', 'nopkg', '/tmp/nopkg');
 

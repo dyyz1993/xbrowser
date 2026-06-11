@@ -16,7 +16,7 @@ import {
   flattenPackageRoot,
   verifyPlugin,
   safeCleanup,
-} from '../install-utils.js';
+} from '@dyyz1993/xcli-core';
 import { getMarketplaceUrl } from '../../config.js';
 import { ensureProxyFetch } from '../../utils/proxy-fetch.js';
 
@@ -69,7 +69,7 @@ export async function installFromMarketplace(
 
   ensureIndexFile(plugin, name, targetDir);
 
-  const verify = await verifyPlugin(targetDir);
+  const verify = verifyPlugin(targetDir, { metadataField: 'xbrowser' });
   if (!verify.valid) {
     safeCleanup(targetDir);
     throw new Error(`Invalid marketplace plugin: ${verify.error}`);

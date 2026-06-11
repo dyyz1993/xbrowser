@@ -3,7 +3,7 @@ import { resolve, join } from 'path';
 import { tmpdir } from 'os';
 import { execSync } from 'child_process';
 import type { InstalledPlugin } from '../installer-types.js';
-import { verifyPlugin, safeCleanup } from '../install-utils.js';
+import { verifyPlugin, safeCleanup } from '@dyyz1993/xcli-core';
 
 export async function installFromGit(
   gitUrl: string,
@@ -16,7 +16,7 @@ export async function installFromGit(
   try {
     execSync(`git clone --depth 1 "${gitUrl}" "${tmpDir}"`, { stdio: 'pipe' });
 
-    const verify = await verifyPlugin(tmpDir);
+    const verify = verifyPlugin(tmpDir, { metadataField: 'xbrowser' });
     warnings = verify.warnings ?? [];
     if (!verify.valid) {
       throw new Error(`Invalid git plugin: ${verify.error}`);

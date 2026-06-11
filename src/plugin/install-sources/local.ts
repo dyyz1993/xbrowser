@@ -1,7 +1,7 @@
 import { existsSync, cpSync, rmSync } from 'fs';
 import { resolve } from 'path';
 import type { InstalledPlugin } from '../installer-types.js';
-import { verifyPlugin, safeCleanup } from '../install-utils.js';
+import { verifyPlugin, safeCleanup } from '@dyyz1993/xcli-core';
 
 export async function installFromLocal(
   source: string,
@@ -18,7 +18,7 @@ export async function installFromLocal(
   try {
     cpSync(srcPath, tmpTarget, { recursive: true });
 
-    const verify = await verifyPlugin(tmpTarget);
+    const verify = verifyPlugin(tmpTarget, { metadataField: 'xbrowser' });
     warnings = verify.warnings ?? [];
     if (!verify.valid) {
       safeCleanup(tmpTarget);

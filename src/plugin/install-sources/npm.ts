@@ -8,7 +8,7 @@ import {
   flattenPackageRoot,
   verifyPlugin,
   safeCleanup,
-} from '../install-utils.js';
+} from '@dyyz1993/xcli-core';
 import { ensureProxyFetch } from '../../utils/proxy-fetch.js';
 
 export async function installFromNpm(
@@ -51,7 +51,7 @@ export async function installFromNpm(
     extractTarGz(tarballPath, extractDir);
     flattenPackageRoot(extractDir);
 
-    const verify = await verifyPlugin(extractDir);
+    const verify = verifyPlugin(extractDir, { metadataField: 'xbrowser' });
     warnings = verify.warnings ?? [];
     if (!verify.valid) {
       throw new Error(`Invalid npm plugin: ${verify.error}`);
