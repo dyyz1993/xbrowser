@@ -12,8 +12,8 @@ const promoParams = z.object({
   tags: z.string().optional().describe('Comma-separated tags'),
   title: z.string().optional().describe('Custom title (default: extracted from file first heading)'),
   search: z.string().optional().describe('Quora: search query to find questions'),
-  cdpEndpoint: z.string().optional().describe('CDP endpoint for agent-browser'),
-  session: z.string().optional().describe('agent-browser session name'),
+  cdpEndpoint: z.string().optional().describe('CDP endpoint for xbrowser'),
+  session: z.string().optional().describe('xbrowser session name'),
 }).refine(
   (data) => data.platform !== 'quora' || !!data.search,
   { message: 'Quora platform requires --search parameter' },

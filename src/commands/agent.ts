@@ -11,7 +11,7 @@ export const observeCommand = registerCommand({
   parameters: z.object({
     includeHidden: z.boolean().optional().default(false).describe('Include hidden elements in the target list'),
     limit: z.number().int().positive().max(300).optional().default(80).describe('Maximum number of targets to return'),
-    compact: z.boolean().optional().default(false).describe('Include compact agent-browser style snapshot text'),
+    compact: z.boolean().optional().default(false).describe('Include compact xbrowser style snapshot text'),
     selectors: z.boolean().optional().default(false).describe('Include ref to stable CSS selector map'),
   }),
   result: z.object({

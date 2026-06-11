@@ -6,7 +6,7 @@ import type { PromoConfig, PromoResult } from './types.js';
 const MEDIUM_NEW_URL = 'https://medium.com/new-story';
 
 function ab(config: PromoConfig): string {
-  const parts = ['agent-browser'];
+  const parts = ['xbrowser'];
   if (config.cdpEndpoint) parts.push('--cdp', config.cdpEndpoint);
   if (config.session) parts.push('--session', config.session);
   return parts.join(' ');

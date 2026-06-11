@@ -6,7 +6,7 @@ import type { PromoConfig, PromoResult } from './types.js';
 const JUEJIN_EDITOR_URL = 'https://juejin.cn/editor/draft/new';
 
 function ab(config: PromoConfig): string {
-  const parts = ['agent-browser'];
+  const parts = ['xbrowser'];
   if (config.cdpEndpoint) parts.push('--cdp', config.cdpEndpoint);
   if (config.session) parts.push('--session', config.session);
   return parts.join(' ');

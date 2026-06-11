@@ -13,6 +13,6 @@
     "noUnusedParameters": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*", "types/**/*"],
+  "include": ["src/**/*", "bin/**/*", "types/**/*"],
   "exclude": ["node_modules", "dist", ".xcli"]
 }

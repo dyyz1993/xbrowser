@@ -19,7 +19,7 @@ export const snapshotCommand = registerCommand({
     interactive: z.boolean().optional().default(false).describe('Return interactive agent refs only'),
     interactiveOnly: z.boolean().optional().default(false).describe('Alias for interactive'),
     i: z.boolean().optional().default(false).describe('Short alias for interactive'),
-    compact: z.boolean().optional().default(false).describe('Include compact agent-browser style snapshot text'),
+    compact: z.boolean().optional().default(false).describe('Include compact xbrowser style snapshot text'),
     c: z.boolean().optional().default(false).describe('Short alias for compact'),
     selectors: z.boolean().optional().default(false).describe('Include ref to CSS selector map'),
     all: z.boolean().optional().default(false).describe('Include hidden interactive targets when using interactive snapshot'),

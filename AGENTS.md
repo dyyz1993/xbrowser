@@ -28,11 +28,11 @@ npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 |------|------|
 | `bin/cli.ts` | CLI 入口（`xbrowser` 命令） |
 | `src/` | 核心代码（`browser.ts` / `commands/` / `cli/` / `daemon/` / `cdp-driver/`） |
-| `src/commands/` | 35 个内置命令（goto / click / fill / wait / scroll / record / replay / preview…） |
+| `src/commands/` | 49 个内置命令（goto / click / fill / wait / scroll / record / replay / preview…） |
 | `src/cdp-driver/` | 自研 CDP 驱动（Playwright 替代） |
 | `src/cli/` | 子命令路由（session / plugin / record / preview / viewer） |
 | `src/daemon/` | 后台 daemon + WebSocket preview 服务器 |
-| `.xcli/plugins/` | **插件主目录**（138+ 站点插件） |
+| `.xcli/plugins/` | **插件主目录**（69 个站点插件） |
 | `.xcli/storage/` | 插件持久化数据（cookie、登录态、运行缓存） |
 | `tests/` | 单元/E2E 测试 |
 | `lint-scripts/` | lint 规则（Plugin Contract 校验、参数检查） |
@@ -413,19 +413,21 @@ const site = xcli.createSite({
 | 分类 | 命令 |
 |------|------|
 | 导航 | `goto` / `back` / `forward` / `refresh` / `url` / `title` |
-| 交互 | `click` / `fill` / `type` / `press` / `hover` / `select` / `check` / `attach` |
-| 查询 | `text` / `html` / `getProperty` / `eval` |
-| 等待 | `wait` / `waitFor` |
-| 截图 | `screenshot`（含 `--full-page` / `--type jpeg`） |
+| 交互 | `click` / `dblclick` / `fill` / `type` / `press` / `hover` / `select` / `check` / `uncheck` |
+| 查询 | `text` / `html` / `eval` |
+| 等待 | `wait` / `waitFor` / `observe` / `act` |
+| 截图 | `screenshot`（含 `--full-page` / `--base64`） |
 | 录制 | `record start` / `record status` / `record stop` |
 | 回放 | `replay`（含 `--slow-mo` / `--stop-on-error`） |
 | 转换 | `convert`（yaml → js / py / sh） |
 | 分析 | `extract` / `filter` |
-| 视口 | `viewport` / `frame` / `mouse` |
-| 存储 | `storage` / `cookies` |
-| 快照 | `snapshot` / `structure` |
+| 采集 | `scrape` / `crawl` / `search` / `map` / `network` |
+| 视口 | `set-viewport` / `frame` / `mouse` / `tab` |
+| 存储 | `get-cookies` / `set-cookie` / `clear-cookies` / `get-local-storage` / `set-local-storage` / `clear-local-storage` |
+| 快照 | `snapshot` / `structure` / `find` |
 | 视图 | `viewer` / `preview` |
-| 子命令 | `session` / `plugin` / `create` / `replay` / `config` |
+| 调试 | `console` / `net-debug` / `perf` / `health` |
+| 子命令 | `session` / `plugin` / `create` / `replay` / `config` / `record` / `run` / `serve` / `remote` |
 
 完整文档：`docs/commands.md`。
 
@@ -672,10 +674,10 @@ xbrowser session open <url>                 # 开浏览器
 xbrowser "<a> && <b> && <c>"                # 链式
 xbrowser <plugin> <command>                 # 跑插件
 xbrowser viewer                             # 打开 viewer（人类接管）
-xbrowser record start ... && stop --output  # 录制
+xbrowser record start --url <url> --name <n> # 开始录制
+xbrowser record stop --output <file>.yaml   # 停止录制
 xbrowser replay <file> --slow-mo 200        # 慢速回放
 xbrowser plugin schema <plugin> <cmd>       # 看插件 schema
-xbrowser marketplace publish <name>         # 发插件
 ```
 
 ---

@@ -296,10 +296,7 @@ xbrowser "goto https://example.com && click '#button' && screenshot"
 ### Use Daemon for Frequent Commands
 
 ```bash
-# Start daemon
-xbrowser daemon start
-
-# Commands are faster with daemon
+# Daemon starts automatically when you run commands
 xbrowser "goto https://example.com && title && screenshot"
 ```
 

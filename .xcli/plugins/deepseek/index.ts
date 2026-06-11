@@ -755,7 +755,7 @@ export default function (xcli: XCLIAPI): void {
       console.log('');
       console.log('🔑 请使用 Viewer 在浏览器中登录 DeepSeek:');
       console.log('   1. 打开 Viewer（实时查看浏览器画面）:');
-      console.log(`      agent-browser viewer --session ${sessionId || 'default'}`);
+      console.log(`      xbrowser viewer --session ${sessionId || 'default'}`);
       console.log('   2. 在 Viewer 页面中登录 DeepSeek');
       console.log('   3. 登录后回到此终端，按 Enter 继续');
       console.log('');
@@ -771,7 +771,7 @@ export default function (xcli: XCLIAPI): void {
       console.log('   1. 启动浏览器会话:');
       console.log('      xbrowser session open ' + DS_URL + ' --name ds-login');
       console.log('   2. 启动 Viewer:');
-      console.log('      agent-browser viewer --session ds-login');
+      console.log('      xbrowser viewer --session ds-login');
       console.log('   3. 在 Viewer 中登录后:');
       console.log('      xbrowser deepseek list --session ds-login');
       console.log('');

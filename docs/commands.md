@@ -262,21 +262,6 @@ xbrowser text
 xbrowser text --selector ".content"
 ```
 
-### getProperty
-
-Get element property or attribute.
-
-```bash
-xbrowser getProperty <selector> <property>
-```
-
-**Examples:**
-```bash
-xbrowser getProperty "#link" href
-xbrowser getProperty "#image" src
-xbrowser getProperty "#input" value
-```
-
 ## Wait Commands
 
 ### wait
@@ -296,20 +281,6 @@ xbrowser wait <selector> [options]
 xbrowser wait "#content"
 xbrowser wait "#loading" --state hidden
 xbrowser wait "#modal" --state visible --timeout 60000
-```
-
-### waitForTimeout
-
-Wait for specified duration.
-
-```bash
-xbrowser waitForTimeout <ms>
-```
-
-**Examples:**
-```bash
-xbrowser waitForTimeout 2000
-xbrowser waitForTimeout 5000
 ```
 
 ## Scroll Commands
@@ -383,20 +354,6 @@ xbrowser eval <expression>
 xbrowser eval "document.title"
 xbrowser eval "document.querySelectorAll('a').length"
 xbrowser eval "window.scrollY"
-```
-
-### evaluateFn
-
-Evaluate async JavaScript function.
-
-```bash
-xbrowser evaluateFn <script> --args <values...>
-```
-
-**Examples:**
-```bash
-xbrowser evaluateFn "return args[0] + args[1]" --args 1 2
-xbrowser evaluateFn "return await fetch(args[0]).then(r=>r.json())" --args https://api.example.com/data
 ```
 
 ## Storage Commands
@@ -476,33 +433,6 @@ Clear all localStorage.
 
 ```bash
 xbrowser clearLocalStorage
-```
-
-### getSessionStorage
-
-Get sessionStorage data.
-
-```bash
-xbrowser getSessionStorage [options]
-```
-
-**Options:**
-- `--key <key>` - Get specific key
-
-### setSessionStorage
-
-Set sessionStorage value.
-
-```bash
-xbrowser setSessionStorage <key> <value>
-```
-
-### clearSessionStorage
-
-Clear all sessionStorage.
-
-```bash
-xbrowser clearSessionStorage
 ```
 
 ## Screenshot Commands
@@ -670,7 +600,7 @@ Commands require specific execution contexts:
 
 | Scope | Description | Required For |
 |-------|-------------|--------------|
-| project | No browser needed | config, plugin, daemon |
+| project | No browser needed | config, plugin |
 | browser | Browser instance | setViewport, session |
 | page | Active page | goto, wait, query |
 | element | Element selected | click, fill, type |
@@ -763,38 +693,13 @@ xbrowser remote http://192.168.1.100:9224 "goto https://example.com && title && 
 xbrowser remote http://192.168.1.100:9224 "title" --token my-secret
 ```
 
-## Daemon Commands
+## Daemon
 
-### daemon
-
-Manage the xbrowser daemon background process.
+Daemon starts automatically when you run commands — no manual start/stop/status operations needed.
 
 ```bash
-xbrowser daemon <subcommand> [options]
-```
-
-**Subcommands:**
-- `start` - Start the daemon
-- `stop` - Stop the daemon
-- `status` - Check daemon status
-
-**Options:**
-- `--port <port>` - Browser CDP port (default: 9222)
-- `--http-port <port>` - HTTP API port (default: off)
-
-**Examples:**
-```bash
-# Start daemon with HTTP API
-xbrowser daemon start --http-port 9224
-
-# Start daemon with custom ports
-xbrowser daemon start --port 9222 --http-port 9224
-
-# Check status
-xbrowser daemon status
-
-# Stop daemon
-xbrowser daemon stop
+# Just run commands — daemon starts automatically
+xbrowser "goto https://example.com && title && screenshot"
 ```
 
 ## See Also

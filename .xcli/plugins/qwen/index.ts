@@ -735,7 +735,7 @@ export default function (xcli: XCLIAPI): void {
       console.log('');
       console.log('🔑 请使用 Viewer 在浏览器中登录千问:');
       console.log('   1. 打开 Viewer:');
-      console.log(`      agent-browser viewer --session ${sessionId || 'default'}`);
+      console.log(`      xbrowser viewer --session ${sessionId || 'default'}`);
       console.log('   2. 在 Viewer 页面中登录千问');
       console.log('   3. 登录后回到此终端，按 Enter 继续');
       console.log('');

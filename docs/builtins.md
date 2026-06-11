@@ -235,50 +235,13 @@ xbrowser config unset <key>
 xbrowser config unset browser.executablePath
 ```
 
-## Daemon Management
+## Daemon
 
-### daemon start
-
-Start the daemon process.
+Daemon starts automatically when you run commands — no manual start/stop/status operations needed.
 
 ```bash
-xbrowser daemon start [options]
-```
-
-**Options:**
-- `--port <port>` - Daemon port (default: 9222)
-
-**Examples:**
-```bash
-xbrowser daemon start
-xbrowser daemon start --port 9223
-```
-
-### daemon stop
-
-Stop the daemon process.
-
-```bash
-xbrowser daemon stop
-```
-
-### daemon status
-
-Get daemon status.
-
-```bash
-xbrowser daemon status
-```
-
-**Output:**
-```json
-{
-  "running": true,
-  "pid": 12345,
-  "port": 9222,
-  "startedAt": "2025-01-01T00:00:00.000Z",
-  "uptime": 3600
-}
+# Just run commands — daemon starts automatically
+xbrowser "goto https://example.com && title"
 ```
 
 ## Template Creation

@@ -4,7 +4,7 @@ import { execSync } from 'node:child_process';
 import type { PromoConfig, PromoResult } from './types.js';
 
 function ab(config: PromoConfig): string {
-  const parts = ['agent-browser'];
+  const parts = ['xbrowser'];
   if (config.cdpEndpoint) parts.push('--cdp', config.cdpEndpoint);
   if (config.session) parts.push('--session', config.session);
   return parts.join(' ');

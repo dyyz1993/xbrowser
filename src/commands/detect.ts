@@ -26,7 +26,7 @@ export async function handleDetectCommand(
     console.log('  1. Use a different CDP port (e.g., start a new browser session)');
     console.log('  2. Add delay between actions (--delay 2000)');
     console.log('  3. Use human-like mouse movement (--human random)');
-    console.log('  4. Switch to viewer mode: agent-browser viewer');
+    console.log('  4. Switch to viewer mode: xbrowser viewer');
   }
 
   return result;

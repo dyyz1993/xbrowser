@@ -58,7 +58,7 @@ xbrowser 的核心设计原则：
 │  │frame.ts│viewport│convert │extract │filter.ts  │  │
 │  │        │ .ts    │ .ts    │ .ts    │           │  │
 │  └────────┴────────┴────────┴────────┴───────────┘  │
-│                   (35 个命令)                         │
+│                   (49 个命令)                         │
 └─────────────────────┬───────────────────────────────┘
                       │
                       ▼
@@ -259,8 +259,8 @@ const BROWSER_SCOPE = {
 |------|------|-------|
 | `navigation.ts` | goto, back, forward, refresh, title, url | page |
 | `interaction.ts` | click, fill, type, press, select, check, hover, dblclick | element |
-| `query.ts` | html, text, getProperty | page/element |
-| `wait.ts` | waitForSelector, waitForTimeout | page |
+| `query.ts` | html, text | page/element |
+| `wait.ts` | waitForSelector, wait | page |
 | `scroll.ts` | scroll | page |
 | `mouse.ts` | mouse | page |
 | `evaluate.ts` | eval, evaluateFn | page |

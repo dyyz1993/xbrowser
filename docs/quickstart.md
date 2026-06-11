@@ -94,7 +94,7 @@ xbrowser hover "#menu"
 ```bash
 xbrowser html --selector "#main"
 xbrowser text --selector "#content"
-xbrowser getProperty "#link" href
+xbrowser eval "document.querySelector('#link').href"
 ```
 
 ### Screenshot
@@ -152,17 +152,11 @@ xbrowser config set browser.executablePath /usr/bin/chromium
 
 ## Daemon Mode
 
-Run daemon for faster responses:
+Daemon starts automatically when needed — no manual start/stop required:
 
 ```bash
-# Start daemon
-xbrowser daemon start
-
-# Use daemon (commands are faster)
+# Daemon starts automatically when you run commands
 xbrowser "goto https://example.com && title"
-
-# Stop daemon
-xbrowser daemon stop
 ```
 
 ## Next Steps
@@ -221,11 +215,8 @@ chmod +x /path/to/chromium
 ### Connection Refused
 
 ```bash
-# Check if daemon is running
-xbrowser daemon status
-
-# Start daemon
-xbrowser daemon start
+# Reconnect to browser
+xbrowser --cdp auto "goto https://example.com"
 ```
 
 ## Help

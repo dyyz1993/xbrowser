@@ -107,4 +107,13 @@ if [ $? -ne 0 ]; then
 fi
 echo "✅ Plugin requiresLogin check passed"
 
+echo "🔍 [pre-commit] Checking documentation consistency..."
+node lint-scripts/check-docs-consistency.mjs
+if [ $? -ne 0 ]; then
+  echo "❌ Docs consistency check failed. Fix documentation before committing."
+  echo "   → Run 'npm run lint:docs' to see all issues."
+  exit 1
+fi
+echo "✅ Docs consistency check passed"
+
 echo "✅ [pre-commit] All checks passed!"
