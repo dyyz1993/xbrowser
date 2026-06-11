@@ -231,6 +231,47 @@ describe('browser-routes', () => {
     });
   });
 
+  describe('open (alias for goto)', () => {
+    it('should route open with url (same as goto)', async () => {
+      await handleBrowserCommand('open', ['https://example.com'], {}, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'goto',
+        { url: 'https://example.com', waitUntil: undefined },
+        'sess'
+      );
+    });
+
+    it('should output error when no url for open', async () => {
+      await expect(
+        handleBrowserCommand('open', [], {}, 'sess', 'text')
+      ).rejects.toThrow('EXIT');
+    });
+
+    it('should pass waitUntil option for open', async () => {
+      await handleBrowserCommand(
+        'open',
+        ['https://example.com'],
+        { waitUntil: 'networkidle' },
+        'sess',
+        'text'
+      );
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'goto',
+        { url: 'https://example.com', waitUntil: 'networkidle' },
+        'sess'
+      );
+    });
+
+    it('should auto-prefix https:// for open', async () => {
+      await handleBrowserCommand('open', ['example.com'], {}, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'goto',
+        { url: 'https://example.com', waitUntil: undefined },
+        'sess'
+      );
+    });
+  });
+
   describe('screenshot', () => {
     it('should route screenshot with options', async () => {
       await handleBrowserCommand(

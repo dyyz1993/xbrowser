@@ -13,13 +13,14 @@ xbrowser session open <url> [options]
 ```
 
 **Options:**
-- `--name <name>` - Session name (default: `default`)
+- `--session <name>` - Session name (default: `default`)
+- `--name <name>` - Alias for `--session` (backward compatible)
 - `--headless` - Run headless (default: false)
 
 **Examples:**
 ```bash
 xbrowser session open https://example.com
-xbrowser session open https://example.com --name work
+xbrowser session open https://example.com --session work
 xbrowser session open https://example.com --headless
 ```
 
@@ -32,13 +33,14 @@ xbrowser session close [options]
 ```
 
 **Options:**
-- `--name <name>` - Close specific session
+- `--session <name>` - Close specific session
+- `--name <name>` - Alias for `--session` (backward compatible)
 - `--all` - Close all sessions
 
 **Examples:**
 ```bash
 xbrowser session close
-xbrowser session close --name work
+xbrowser session close --session work
 xbrowser session close --all
 ```
 
@@ -74,12 +76,13 @@ xbrowser session kill [options]
 ```
 
 **Options:**
-- `--name <name>` - Kill specific session
+- `--session <name>` - Kill specific session
+- `--name <name>` - Alias for `--session` (backward compatible)
 
 **Examples:**
 ```bash
 xbrowser session kill
-xbrowser session kill --name work
+xbrowser session kill --session work
 ```
 
 ## Plugin Management
@@ -389,6 +392,8 @@ Configuration is stored at: `~/.xbrowser/config.json`
 | `XBROWSER_CHROMIUM_PATH` | Chromium executable path | Auto-detected |
 | `XBROWSER_DAEMON_PORT` | Daemon port | 9222 |
 | `XBROWSER_LOG_LEVEL` | Log level | info |
+| `XBROWSER_SESSION` | Default session name (overridden by `--session` flag) | — |
+| `XBROWSER_CDP` | Default CDP endpoint (overridden by `--cdp` flag) | — |
 
 ## See Also
 

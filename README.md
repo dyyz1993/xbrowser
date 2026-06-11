@@ -1,6 +1,6 @@
 # xbrowser
 
-> **Browser automation CLI** for web scraping, headless browsing, SEO analysis, and AI agent workflows. 35+ commands, 67+ plugins. A command-line alternative to Playwright, Puppeteer, and Selenium — **no code required**.
+> **Browser automation CLI** for web scraping, headless browsing, SEO analysis, and AI agent workflows. 49 commands, 69 plugins. A command-line alternative to Playwright, Puppeteer, and Selenium — **no code required**.
 
 [![CI Status](https://github.com/dyyz1993/xbrowser/workflows/CI/badge.svg)](https://github.com/dyyz1993/xbrowser/actions)
 [![codecov](https://codecov.io/gh/dyyz1993/xbrowser/branch/master/graph/badge.svg)](https://codecov.io/gh/dyyz1993/xbrowser)
@@ -9,7 +9,7 @@
 
 ## 特性
 
-- **35+ 浏览器命令** — 导航、交互、查询、存储、截图，覆盖常见自动化场景
+- **49 浏览器命令** — 导航、交互、查询、存储、截图，覆盖常见自动化场景
 - **命令链** — 用 `&&`、`,`、`+`、`->`、`;` 串联多个命令，一行搞定复杂流程
 - **管道 & Heredoc** — 支持 stdin 管道和 heredoc 批量执行
 - **录制 / 回放** — 录制浏览器操作为 YAML，随时回放，可转换为 JS/Python/Bash 脚本
@@ -179,18 +179,18 @@ xbrowser --cdp auto "goto https://example.com , title"
 | 命令 | 说明 | 示例 |
 |------|------|------|
 | `session open <url>` | 打开浏览器并创建会话 | `xbrowser session open https://example.com` |
-| `session open <url> --name work` | 以指定名称创建会话 | `xbrowser session open https://example.com --name work` |
+| `session open <url> --session work` | 以指定名称创建会话 | `xbrowser session open https://example.com --session work` |
 | `session close` | 关闭当前会话 | `xbrowser session close` |
-| `session close --name work` | 关闭指定会话 | `xbrowser session close --name work` |
+| `session close --session work` | 关闭指定会话 | `xbrowser session close --session work` |
 | `session close --all` | 关闭所有会话 | `xbrowser session close --all` |
 | `session list` | 列出所有活跃会话 | `xbrowser session list` |
-| `session kill [--name <n>]` | 强制终止会话 | `xbrowser session kill --name work` |
+| `session kill [--session <n>]` | 强制终止会话 | `xbrowser session kill --session work` |
 
 ### 页面导航
 
 | 命令 | 说明 | 示例 |
 |------|------|------|
-| `goto <url>` | 导航到指定 URL | `xbrowser goto https://example.com` |
+| `goto <url>` / `open <url>` | 导航到指定 URL | `xbrowser goto https://example.com` |
 | `goto <url> --waitUntil networkidle` | 指定等待条件 | `xbrowser goto https://example.com --waitUntil networkidle` |
 | `back` | 浏览器后退 | `xbrowser back` |
 | `forward` | 浏览器前进 | `xbrowser forward` |
@@ -677,6 +677,8 @@ xbrowser filter raw.yaml clean.yaml --exclude hover_enter,hover_leave
 |------|------|--------|
 | `XBROWSER_CHROMIUM_PATH` | Chromium 可执行文件路径 | `/Applications/Chromium.app/Contents/MacOS/Chromium` |
 | `XBROWSER_DAEMON_PORT` | Daemon 端口 | `9222` |
+| `XBROWSER_CDP` | 默认 CDP 连接地址（可被 `--cdp` 覆盖） | — |
+| `XBROWSER_SESSION` | 默认会话名称（可被 `--session` 覆盖） | `default` |
 
 ### 命令行配置
 
@@ -847,7 +849,7 @@ npm run validate
 ```
 xbrowser/
 ├── src/
-│   ├── commands/        # 35 个浏览器命令定义
+│   ├── commands/        # 49 个浏览器命令定义
 │   ├── builtins/        # CLI 内置命令（config, plugin, session, create）
 │   ├── recorder/        # 录制引擎（录制器 + 回放器）
 │   ├── session/         # 会话管理
@@ -876,7 +878,7 @@ xbrowser/
 | **Setup** | `npm i -g` — 0 config | Install + browser download | Install + browser download | Install + WebDriver + drivers |
 | **Web Scraping** | Built-in (`scrape`, `crawl`, `map`) | Write custom scripts | Write custom scripts | Write custom scripts |
 | **Search** | Built-in multi-engine (`search`) | No | No | No |
-| **Plugin Ecosystem** | 67+ plugins | Limited | Limited | No |
+| **Plugin Ecosystem** | 69 plugins | Limited | Limited | No |
 | **No Code Required** | ✅ CLI commands | ❌ Must write JS/TS | ❌ Must write JS/TS | ❌ Must write code |
 | **Headless Mode** | ✅ Default | ✅ | ✅ | ✅ |
 | **Record/Replay** | ✅ Built-in (`record`/`replay`) | ✅ Codegen | ❌ | ❌ |

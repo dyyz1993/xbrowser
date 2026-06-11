@@ -80,6 +80,10 @@ vi.mock('@dyyz1993/xcli-core', () => ({
     }
     return { positional, options };
   },
+  registerCommandDefinition: vi.fn(),
+  outputFormatter: vi.fn(),
+  isCommandResult: vi.fn(),
+  helpGenerator: vi.fn(() => ({ generate: vi.fn() })),
 }));
 
 vi.mock('../../src/executor.js', () => ({

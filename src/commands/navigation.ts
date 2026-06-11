@@ -87,3 +87,13 @@ export const urlCommand = registerCommand({
     return ok({ url: ctx.page.url() });
   },
 });
+
+// `open` is an alias for `goto`
+registerCommand({
+  name: 'open',
+  description: 'Navigate to URL (alias for goto)',
+  scope: 'page',
+  parameters: gotoCommand.parameters,
+  result: gotoCommand.result,
+  handler: gotoCommand.handler as (...args: unknown[]) => Promise<unknown>,
+});

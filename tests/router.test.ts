@@ -25,6 +25,10 @@ vi.mock('@dyyz1993/xcli-core', () => ({
     }
     return { positional, options };
   },
+  registerCommandDefinition: vi.fn(),
+  outputFormatter: vi.fn(),
+  isCommandResult: vi.fn(),
+  helpGenerator: vi.fn(() => ({ generate: vi.fn() })),
 }));
 
 vi.mock('../src/executor.js', () => ({
@@ -854,5 +858,67 @@ describe('router', () => {
       'text',
       undefined
     );
+  });
+
+  it('should use XBROWSER_CDP env var as default cdp endpoint when --cdp not provided', async () => {
+    vi.resetModules();
+    vi.doMock('../src/plugin/loader.js', () => {
+      const mockLoader = {
+        getCore: () => ({
+          loader: { getSite: vi.fn(() => null) },
+        }),
+        scanAndLoad: vi.fn(),
+      };
+      return { XBrowserPluginLoader: vi.fn(() => mockLoader) };
+    });
+    const mod = await import('../src/router.js');
+    const { handleBrowserCommand } = await import('../src/cli/index.js');
+    const { isChainInput } = await import('../src/executor.js');
+    vi.mocked(isChainInput).mockReturnValue(false);
+    process.env.XBROWSER_CDP = 'http://localhost:9221';
+    try {
+      await mod.routeCommand(['screenshot']);
+      expect(handleBrowserCommand).toHaveBeenCalledWith(
+        'screenshot',
+        [],
+        expect.any(Object),
+        'default',
+        'text',
+        'http://localhost:9221'
+      );
+    } finally {
+      delete process.env.XBROWSER_CDP;
+    }
+  });
+
+  it('should prefer --cdp flag over XBROWSER_CDP env var', async () => {
+    vi.resetModules();
+    vi.doMock('../src/plugin/loader.js', () => {
+      const mockLoader = {
+        getCore: () => ({
+          loader: { getSite: vi.fn(() => null) },
+        }),
+        scanAndLoad: vi.fn(),
+      };
+      return { XBrowserPluginLoader: vi.fn(() => mockLoader) };
+    });
+    const mod = await import('../src/router.js');
+    const { handleBrowserCommand } = await import('../src/cli/index.js');
+    const { isChainInput } = await import('../src/executor.js');
+    vi.mocked(isChainInput).mockReturnValue(false);
+    process.env.XBROWSER_CDP = 'http://localhost:9221';
+    try {
+      await mod.routeCommand(['--cdp', 'ws://localhost:9222', 'screenshot']);
+      expect(handleBrowserCommand).toHaveBeenCalledWith(
+        'screenshot',
+        [],
+        expect.any(Object),
+        'default',
+        'text',
+        'ws://localhost:9222'
+      );
+    } finally {
+      delete process.env.XBROWSER_CDP;
+    }
   });
 });

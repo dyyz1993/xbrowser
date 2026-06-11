@@ -194,7 +194,7 @@ function extractCdpFromArgv(argv: string[]): string | undefined {
     if (argv[i] === '--cdp' && argv[i + 1]) return argv[i + 1];
     if (typeof argv[i] === 'string' && argv[i].startsWith('--cdp=')) return argv[i].slice(6);
   }
-  return undefined;
+  return process.env.XBROWSER_CDP;
 }
 
 async function handleStdinMode(stdinCommands: string[], argv?: string[]): Promise<void> {
@@ -280,7 +280,7 @@ export async function routeCommand(
   // Typo detection is handled at the command level.
   const mode = options.json ? 'json' : options.yaml ? 'yaml' : 'text';
   const sessionName = (options.session as string) || process.env.XBROWSER_SESSION || 'default';
-  const cdpEndpoint = options.cdp as string | undefined;
+  const cdpEndpoint = (options.cdp as string) || process.env.XBROWSER_CDP;
 
   if (options.version || options.v) {
     console.log(`xbrowser v${version}`);

@@ -358,4 +358,4 @@ npm run validate    # typecheck + lint + build + test
    - ESLint rules → `eslint.config.js`
    - Pre-commit checks → `.husky/pre-commit`
 3. Document in `lint-scripts/RULES.md`
-4. Test: `node lint-scripts/check-xxx.mjs` should pass on all 70 plugins
+4. Test: `node lint-scripts/check-xxx.mjs` should pass on all 69 plugins

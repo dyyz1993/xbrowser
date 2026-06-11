@@ -153,7 +153,8 @@ export async function handleBrowserCommand(
   } else {
     switch (command) {
       case 'goto':
-        if (!args[0]) outputError(`Usage: xbrowser goto <url>`);
+      case 'open':
+        if (!args[0]) outputError(`Usage: xbrowser ${command} <url>`);
         cmdName = 'goto';
         params = {
           url: /^https?:\/\//i.test(args[0]) || /^wss?:\/\//i.test(args[0]) ? args[0] : 'https://' + args[0],

@@ -2,15 +2,16 @@
 
 Session management patterns for xbrowser — create, use, and close browser sessions.
 
-**Related**: [../SKILL.md](../SKILL.md) for project overview, [cdp-pitfalls.md](../../../.config/opencode/skills/xbrowser/references/cdp-pitfalls.md) for CDP issues.
+**Related**: [../SKILL.md](../SKILL.md) for overview, [architecture.md](architecture.md) for system design, [cdp-pitfalls.md](cdp-pitfalls.md) for CDP issues.
 
 ## Contents
 
 - [Session Lifecycle](#session-lifecycle)
 - [Daemon Auto-Start](#daemon-auto-start)
 - [CDP Connection Modes](#cdp-connection-modes)
+- [Environment Variables](#environment-variables)
 - [Human-in-the-Loop Viewer](#human-in-the-loop-viewer)
-- [kill vs close vs stop](#kill-vs-close-vs-stop)
+- [kill vs close](#kill-vs-close)
 - [Code Changes Require Rebuild](#code-changes-require-rebuild)
 - [Session Commands Reference](#session-commands-reference)
 - [Common Patterns](#common-patterns)
@@ -27,15 +28,15 @@ session open → commands → session close
 
 ```bash
 # 1. Create session (auto-starts daemon if needed)
-npx xbrowser session open https://example.com --name mytask
+xbrowser session open https://example.com --name mytask
 
 # 2. Execute commands
-npx xbrowser click --selector '.btn' --session mytask
-npx xbrowser scrape https://example.com --json --session mytask
-npx xbrowser fill --selector '#input' --value 'hello' --session mytask
+xbrowser click --selector '.btn' --session mytask
+xbrowser scrape https://example.com --json --session mytask
+xbrowser fill --selector '#input' --value 'hello' --session mytask
 
 # 3. Close session when done (mandatory!)
-npx xbrowser session close --name mytask
+xbrowser session close --name mytask
 ```
 
 ### Mandatory Rules
@@ -47,38 +48,34 @@ npx xbrowser session close --name mytask
 
 ```bash
 # ✅ Correct pattern
-npx xbrowser session open https://example.com --name task1
-npx xbrowser click --selector '.btn' --session task1
-npx xbrowser session close --name task1
+xbrowser session open https://example.com --name task1
+xbrowser click --selector '.btn' --session task1
+xbrowser session close --name task1
 
 # ❌ Wrong — reusing stale session, no cleanup
-npx xbrowser click --selector '.btn'
-npx xbrowser scrape https://example.com --json
+xbrowser click --selector '.btn'
+xbrowser scrape https://example.com --json
 ```
 
 ---
 
 ## Daemon Auto-Start
 
-The xbrowser daemon runs on port 9224 and manages browser sessions. It auto-starts when you run `session open`:
+The xbrowser daemon runs on port 9224 and manages browser sessions. It auto-starts when you run commands:
 
 ```bash
-# Daemon auto-starts on first session open
-npx xbrowser session open https://example.com --name task1
+# Daemon auto-starts when needed
+xbrowser session open https://example.com --name task1
 # → Daemon started on port 9224
 
-# Check daemon status
-npx xbrowser daemon status
-
-# Manual daemon control
-npx xbrowser daemon start    # Usually unnecessary — auto-started
-npx xbrowser daemon stop     # Stop daemon only (sessions may linger)
+# Or use any command directly (daemon auto-managed)
+xbrowser "goto https://example.com && title"
 ```
 
 **Daemon lifecycle**:
-- Auto-started by `session open` if not running
+- Auto-started when needed if not running
 - Persists across commands within the same task
-- Stopped by `xbrowser kill` or `daemon stop`
+- Stopped by `xbrowser kill`
 - Viewer URL: `http://localhost:9224/preview/<session-name>`
 
 ---
@@ -99,27 +96,49 @@ Three modes for connecting to browsers:
 # Launch Chromium with CDP on port 9221 (user browser with login state)
 /Applications/Chromium.app/Contents/MacOS/Chromium --remote-debugging-port=9221
 
-# Or use cdp-tunnel for an already-running browser
-npx cdp-tunnel start
-
 # Connect to headless Chromium on 9222
-npx xbrowser session open https://example.com --cdp http://localhost:9222
+xbrowser --cdp http://localhost:9222 title
 ```
 
 ### Persistent Configuration
 
 ```bash
 # Set default CDP port (persists in ~/.xbrowser/config.json)
-npx xbrowser config set cdp_port 9221
+xbrowser config set cdp_port 9221
 
 # Set custom Chromium path
-npx xbrowser config set chromium_path /path/to/chromium
+xbrowser config set chromium_path /path/to/chromium
 
 # View current config
-npx xbrowser config list
+xbrowser config list
 ```
 
-**Priority**: CLI flag > env var > config file > default.
+**Priority**: `--cdp` flag > `XBROWSER_CDP` env > config file > default.
+
+---
+
+## Environment Variables
+
+| Variable | Purpose | Overridden by |
+|----------|---------|---------------|
+| `XBROWSER_SESSION` | Default session name | `--session <name>` flag |
+| `XBROWSER_CDP` | Default CDP endpoint | `--cdp <endpoint>` flag |
+
+```bash
+# Set default session and CDP for all commands
+export XBROWSER_SESSION=my-task
+export XBROWSER_CDP=http://localhost:9221
+
+# Now all commands use these defaults
+xbrowser title                    # uses my-task session + CDP 9221
+xbrowser screenshot --full-page   # same session + CDP
+
+# Override with flags when needed
+xbrowser --cdp http://localhost:9222 title  # uses different CDP
+
+# Unset when done
+unset XBROWSER_SESSION XBROWSER_CDP
+```
 
 ---
 
@@ -138,17 +157,11 @@ Agent continues execution
 ```
 
 ```bash
-# Example: login flow with human intervention
-npx xbrowser session open https://login-site.com --name task1 --cdp http://localhost:9221
-npx xbrowser fill --selector '#username' --value 'user' --session task1
-npx xbrowser fill --selector '#password' --value 'pass' --session task1
-npx xbrowser click --selector '#login-btn' --session task1
-# → Captcha appeared, blocked
-# Agent tells user: "Open http://localhost:9224/preview/task1 to complete verification"
-# User manually completes captcha
-# Agent continues:
-npx xbrowser scrape https://login-site.com/dashboard --json --session task1
-npx xbrowser session close --name task1
+# Open viewer for human takeover
+xbrowser viewer
+
+# Or specify session
+xbrowser preview --session task1
 ```
 
 ### Viewer Architecture
@@ -165,7 +178,7 @@ User Browser (viewer)          xbrowser Daemon (9224)           Chromium (9221)
 
 ---
 
-## kill vs close vs stop
+## kill vs close
 
 | Command | Scope | When to Use |
 |---------|-------|-------------|
@@ -174,13 +187,13 @@ User Browser (viewer)          xbrowser Daemon (9224)           Chromium (9221)
 
 ```bash
 # Normal cleanup
-npx xbrowser session close --name mytask
+xbrowser session close --name mytask
 
 # Something went wrong
-npx xbrowser kill
+xbrowser kill
 
 # After code changes
-npx xbrowser kill && npm run build
+xbrowser kill && npm run build
 ```
 
 ---
@@ -191,14 +204,14 @@ When developing xbrowser code or modifying plugins, the running daemon uses stal
 
 ```bash
 # Required after ANY code change
-npx xbrowser kill && npm run build
+xbrowser kill && npm run build
 
 # Then create fresh session (daemon auto-starts with new code)
-npx xbrowser session open https://example.com --name test
+xbrowser session open https://example.com --name test
 
 # ❌ Wrong — old daemon running modified code = unpredictable bugs
 npm run build
-npx xbrowser session open ...  # May use cached daemon with old code
+xbrowser session open ...  # May use cached daemon with old code
 ```
 
 **Why**: The daemon process loads code at startup. `npm run build` only updates files on disk.
@@ -210,16 +223,16 @@ Without `kill`, the daemon continues running old code.
 
 ```bash
 # Create session
-npx xbrowser session open <url> [--name <n>] [--cdp <endpoint>]
+xbrowser session open <url> [--name <n>] [--cdp <endpoint>]
 
 # List active sessions
-npx xbrowser session list
+xbrowser session list
 
 # Close specific session
-npx xbrowser session close [--name <n>]
+xbrowser session close [--name <n>]
 
 # Kill everything (daemon + all sessions)
-npx xbrowser kill
+xbrowser kill
 ```
 
 ---
@@ -229,15 +242,15 @@ npx xbrowser kill
 ### Parallel Tasks with Named Sessions
 
 ```bash
-npx xbrowser session open https://site-a.com --name task1 &
-npx xbrowser session open https://site-b.com --name task2 &
+xbrowser session open https://site-a.com --name task1 &
+xbrowser session open https://site-b.com --name task2 &
 wait
 
-npx xbrowser scrape https://site-a.com --json --session task1 > a.json
-npx xbrowser scrape https://site-b.com --json --session task2 > b.json
+xbrowser scrape https://site-a.com --json --session task1 > a.json
+xbrowser scrape https://site-b.com --json --session task2 > b.json
 
-npx xbrowser session close --name task1
-npx xbrowser session close --name task2
+xbrowser session close --name task1
+xbrowser session close --name task2
 ```
 
 ### CDP Login State Reuse
@@ -246,26 +259,26 @@ npx xbrowser session close --name task2
 # 1. Start CDP with user's logged-in browser
 /Applications/Chromium.app/Contents/MacOS/Chromium --remote-debugging-port=9221
 
-# 2. Session using CDP (preserves login cookies)
-npx xbrowser session open https://douyin.com --name douyin --cdp http://localhost:9221
-npx xbrowser douyin search --keyword "cats" --session douyin --json
-npx xbrowser session close --name douyin
+# 2. Use with env var for convenience
+export XBROWSER_CDP=http://localhost:9221
+xbrowser douyin search --keyword "cats" --json
+unset XBROWSER_CDP
 ```
 
 ### Full Development Cycle
 
 ```bash
 # Clean state → build → test
-npx xbrowser kill
+xbrowser kill
 npm run build
 
 # Create session for testing
-npx xbrowser session open https://example.com --name dev-test
+xbrowser session open https://example.com --name dev-test
 
 # ... test commands ...
 
 # Cleanup
-npx xbrowser session close --name dev-test
+xbrowser session close --name dev-test
 
 # Run tests
 npm run test

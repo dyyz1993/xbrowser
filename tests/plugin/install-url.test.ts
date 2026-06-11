@@ -11,6 +11,10 @@ vi.mock('@dyyz1993/xcli-core', () => ({
   flattenPackageRoot: vi.fn(),
   verifyPlugin: vi.fn(),
   safeCleanup: vi.fn(),
+  registerCommandDefinition: vi.fn(),
+  outputFormatter: vi.fn(),
+  isCommandResult: vi.fn(),
+  helpGenerator: vi.fn(() => ({ generate: vi.fn() })),
 }));
 
 import { installFromUrl } from '../../src/plugin/install-sources/url.js';

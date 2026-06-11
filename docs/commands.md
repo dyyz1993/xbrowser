@@ -18,12 +18,13 @@ These options apply to all commands:
 
 ## Navigation Commands
 
-### goto
+### goto / open
 
-Navigate to a URL.
+Navigate to a URL. `open` is an alias for `goto` — they are identical.
 
 ```bash
 xbrowser goto <url> [options]
+xbrowser open <url> [options]
 ```
 
 **Options:**
@@ -33,6 +34,7 @@ xbrowser goto <url> [options]
 **Examples:**
 ```bash
 xbrowser goto https://example.com
+xbrowser open https://example.com
 xbrowser goto https://example.com --waitUntil networkidle
 xbrowser goto https://example.com --timeout 60000
 ```

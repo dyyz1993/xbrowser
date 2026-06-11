@@ -75,6 +75,7 @@ xbrowser --cdp auto "title"
 
 ```bash
 xbrowser goto https://example.com
+xbrowser open https://example.com   # open is an alias for goto
 xbrowser back
 xbrowser forward
 xbrowser refresh

@@ -1,278 +1,223 @@
 ---
-name: xbrowser-dev
+name: xbrowser
 description: >
-  xbrowser — browser automation CLI for web scraping, headless browsing, SEO analysis,
-  and AI agent workflows. A Playwright/Puppeteer alternative with built-in plugin system,
-  recording/replay, viewer/captcha interaction, and marketplace publishing.
-  Use when: developing xbrowser plugins, writing/modifying .xcli/plugins/, running
-  marketplace publish, building/testing the xbrowser core, debugging CDP connections,
-  recording/replaying browser flows, implementing login/captcha handling, adding new
-  lint rules or validators, working on plugin contract v2, understanding project architecture.
+  xbrowser — browser automation CLI with plugin system, CDP driver, recording/replay,
+  viewer/captcha interaction, and marketplace publishing.
+  Use when: developing xbrowser plugins, writing/modifying .xcli/plugins/,
+  publishing plugins to marketplace, building/testing xbrowser core, debugging CDP connections,
+  recording/replaying browser flows, implementing login/captcha handling, adding new commands,
+  understanding project architecture, writing plugin tests.
   Triggers: "xbrowser plugin", "plugin convention", "marketplace publish",
   "xbrowser dev", "xbrowser development", "xbrowser build/test", "plugin contract",
   "result schema", "loginConfig", "requiresLogin", "CDP driver",
-  "xbrowser viewer", "preview", "captcha", "recording", "replay".
+  "xbrowser viewer", "preview", "captcha", "recording", "replay", "plugin test",
+  "open url", "XBROWSER_CDP", "XBROWSER_SESSION".
 ---
 
 # xbrowser Development Guide
 
-> **Project**: `@xbrowser/cli` — Browser automation CLI
-> **Repo**: `https://github.com/dyyz1993/xbrowser`
-> **Stack**: TypeScript, Playwright → CDP driver, xcli-core plugin framework, zod, vitest, tsup
+> **Stack**: TypeScript, CDP driver (Playwright alternative), xcli-core plugin framework, zod, vitest, tsup
 
 ---
 
-## 1. Architecture
+## Architecture Overview
 
 ```
 CLI (bin/cli.ts)
-  └─ router.ts — 单命令 / 链 (&& , ->) / heredoc / stdin
-       ├─ commands/  — 35 内置命令 (goto, click, fill, wait, record, replay, preview…)
-       ├─ cli/       — 子命令路由 (session, plugin, record, run)
-       └─ daemon/    — 后台 daemon + WebSocket preview 服务器
+  └─ router.ts — single command / chain (&& , ->) / heredoc / stdin
+       ├─ commands/  — 49 built-in commands (49 registered via registerCommand)
+       ├─ cli/       — subcommand routing (session, plugin, record, run, viewer)
+       ├─ daemon/    — background daemon + WebSocket preview server (port 9224)
+       └─ plugin/    — plugin loader (.xcli/plugins/ → 69 site plugins)
 ```
 
-- **Plugin System**: `.xcli/plugins/` (138+ plugins), loaded by `xcli-core` framework
-- **Browser Driver**: `src/cdp-driver/` — 自研 CDP 驱动（Playwright 替代）
-- **Viewer**: 人类接管 → daemon 自动启停 → `ws://localhost:9224`
+### Key Paths
 
-### 关键路径速查
+| What you change | Where |
+|----------------|-------|
+| Built-in commands | `src/commands/` (49 commands in 24 files) |
+| CLI subcommands | `src/cli/` |
+| CDP driver | `src/cdp-driver/` |
+| New plugin | `.xcli/plugins/<name>/index.ts` |
+| Plugin lint | `lint-scripts/` |
+| Recording/replay | `src/commands/record.ts`, `replay.ts` |
+| Viewer/preview | `src/cli/viewer-routes.ts`, `src/daemon/` |
 
-| 你要改什么 | 文件位置 |
-|-----------|---------|
-| 内置命令 | `src/commands/` (35 个) |
-| CLI 子命令 | `src/cli/` |
-| CDP 驱动 | `src/cdp-driver/page.ts`, `browser.ts` |
-| 新插件 | `.xcli/plugins/<name>/index.ts` |
-| 插件 lint | `lint-scripts/` |
-| 录制/回放 | `src/commands/record.ts`, `replay.ts` |
-| viewer/preview | `src/cli/viewer-routes.ts`, `src/daemon/` |
-| daemon | `src/daemon/` |
-| 文档 | `docs/*.md` |
+See [references/architecture.md](references/architecture.md) for startup flow, request lifecycle, and module dependencies.
 
 ---
 
-## 2. Build & Test
+## Build & Test
 
 ```bash
-npm run build            # tsup → dist/
-npm run dev              # watch mode
-npm run lint             # ESLint
-npm run typecheck        # tsc --noEmit
-npm run test             # vitest (~1959 tests)
-npm run test:e2e         # E2E (needs browser)
-npm run lint:plugin-contract   # Plugin Contract 校验
-npm run validate         # = typecheck + lint + build + test + plugin checks
-
-# Debug specific test
-npx vitest run tests/cdp-driver/page.test.ts
-npx vitest run -t "should navigate"
-```
-
-### Pre-commit 顺序
-
-```
-typecheck → ESLint → any-count → command-params → help-auto-gen →
-result-schema → output-convention → plugin-metadata → plugin-code → requiresLogin
+npm install && npm run build && npm link   # Setup
+npm run typecheck && npm run lint          # Pre-commit minimum
+npm run test                               # vitest (~2200 tests)
+npm run validate                           # typecheck + lint + build + test
+npm run lint:plugin-contract               # Plugin contract check (~30s)
 ```
 
 ---
 
-## 3. 插件开发
+## Plugin Development (Quick Start)
 
-### 最小插件
+### Minimal Plugin
 
 ```typescript
-// .xcli/plugins/my-plugin/index.ts
+// .xcli/plugins/my-site/index.ts
 import { z } from 'zod';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
-    name: 'my-plugin',        // kebab-case
+    name: 'my-site',
     url: 'https://example.com',
-    description: '示例',
+    description: 'Example site plugin',
+    requiresLogin: false,
   });
 
-  site.command('hello', {
-    description: 'Hello World',
-    scope: 'project',          // project | browser | page | element
-    parameters: z.object({     // zod schema（可选）
-      name: z.string().default('World'),
+  site.command('search', {
+    description: 'Search on site',
+    scope: 'page',
+    parameters: z.object({
+      keyword: z.string().describe('Search keyword'),
     }),
-    handler: async (params) => {
-      return { ok: true, message: `Hello, ${params.name}!` };
+    result: z.object({ items: z.array(z.object({ title: z.string() })), total: z.number() }).passthrough(),
+    handler: async (params, ctx) => {
+      const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
+      if (!page) return fail({ reason: 'no page' }, '需要浏览器页面');
+      await page.goto(`https://example.com/search?q=${params.keyword}`);
+      return ok({ items: [], total: 0 }, '搜索完成');
     },
   });
 }
 ```
 
-### 插件结构要求
+### Scope Selection
 
-```
-.xcli/plugins/<name>/
-├── index.ts            # export default function(api: XCLIAPI): void
-└── package.json        # name, version, type:"module" 必需
-```
+| Scope | Browser? | Page? | Use for |
+|-------|----------|-------|---------|
+| `project` | No | No | API, files, data |
+| `browser` | Yes | No | Multi-tab, viewport, cookies |
+| `page` | Yes | Yes | Navigate, DOM, screenshot, JS |
+| `element` | Yes | Yes | click, fill, hover |
 
-发布时需补：`README.md` / `CHANGELOG.md` / `MARKET_DESCRIPTION.md` / `LICENSE`。
+### Naming Convention
 
-### Scope 选择速查
+- **One site = one plugin** — directory name = domain/brand (e.g. `devto`, `juejin`, `medium`)
+- **Command = action** — no site prefix (e.g. `xbrowser devto publish`, not `xbrowser devto devto-publish`)
+- Use `xbrowser create <name> --template <type>` to scaffold
 
-| Scope | 有浏览器? | 有 Page? | 适用场景 |
-|-------|----------|---------|---------|
-| `project` | ❌ | ❌ | API 调用、文件、数据转换 |
-| `browser` | ✅ | ❌ | 多 tab、视口、cookies |
-| `page` | ✅ | ✅ | 导航、DOM、截图、JS |
-| `element` | ✅ | ✅ | click / fill / hover |
-
-### 访问 Page 对象
-
-```typescript
-const page = (ctx as Record<string, unknown>).page as import('playwright').Page;
-if (!page) throw new Error('需要浏览器页面');
-```
-
-### 登录插件
-
-```typescript
-site.login(async (ctx) => { /* page.fill, page.click, ctx.storage.set */ });
-site.logout(async (ctx) => { /* ctx.storage.delete */ });
-```
-
-声明 `requiresLogin: true` + `loginConfig`（详见 `references/plugin-convention.md`）。
+See [references/plugin-development.md](references/plugin-development.md) for full guide (loginConfig, isLogin patterns, result schema migration, helpers).
 
 ---
 
-## 4. 插件发布到 Marketplace
+## CLI Usage
+
+### Browser Sessions
 
 ```bash
-# 1. 代理（必需）
-export https_proxy=http://127.0.0.1:7890
-export http_proxy=http://127.0.0.1:7890
-export all_proxy=socks5://127.0.0.1:7890
-
-# 2. 登录
-xbrowser marketplace login --token <key>
-
-# 3. 验证插件
-node lint-scripts/check-plugin-code.mjs
-node lint-scripts/check-plugin-metadata.mjs
-
-# 4. 发布
-npx xbrowser marketplace publish --dir .xcli/plugins/<name>
-
-# dry-run 批量
-bash scripts/batch-marketplace-publish.sh --dry-run
+xbrowser session open https://example.com              # Auto-start
+xbrowser --cdp 9222 title                               # Connect existing browser
+xbrowser --cdp auto title                               # Auto-discover
 ```
 
-Registry 优先级：`--registry` > `XBROWSER_REGISTRY` > `~/.xbrowser/auth.json` > `https://xbrowser.dev`。
+### Environment Variables
 
----
+| Variable | Purpose | Example |
+|----------|---------|---------|
+| `XBROWSER_SESSION` | Default session name (overridden by `--session`) | `export XBROWSER_SESSION=my-task` |
+| `XBROWSER_CDP` | Default CDP endpoint (overridden by `--cdp`) | `export XBROWSER_CDP=http://localhost:9221` |
 
-## 5. 命令行使用（Agent 常用）
-
-### 启动浏览器
+### Command Chains
 
 ```bash
-# 自启动
-xbrowser session open https://example.com
-
-# 连接已开浏览器（推荐，复用登录态）
-xbrowser --cdp 9222 title
-
-# 自动发现
-xbrowser --cdp auto title
+xbrowser "goto https://example.com && title && screenshot"
+xbrowser "open https://example.com , title , screenshot"     # open = goto alias
+xbrowser "goto https://example.com -> title -> click btn"
 ```
 
-### 命令链（核心交互模式）
-
-```bash
-xbrowser "goto <url> && click <sel> && fill <sel> <val> && screenshot"
-xbrowser "goto <url> , title , screenshot"
-```
-
-### 录制 & 回放
+### Recording & Replay
 
 ```bash
 xbrowser record start --url https://example.com --name flow
-# … 手动操作 …
+# ... manual operations ...
 xbrowser record stop --output recordings/flow.yaml
 xbrowser replay recordings/flow.yaml --slow-mo 200
 ```
 
-### viewer 人类接管
+### Viewer (Human Takeover)
 
 ```bash
-xbrowser viewer                # 自动启 daemon，打开 viewer
-xbrowser preview --session s1  # 指定 session
+xbrowser viewer                # Open viewer for captcha/login/2FA
+xbrowser preview --session s1  # Preview specific session
 ```
 
-遇到验证码时 xbrowser 会自动 pause 并提示打开 viewer。
+---
+
+## Built-in Commands (49 total)
+
+| Category | Commands |
+|----------|----------|
+| Navigate | `goto`/`open`, `back`, `forward`, `refresh`, `title`, `url` |
+| Interact | `click`, `fill`, `type`, `press`, `select`, `check`, `hover`, `dblclick` |
+| Query | `text`, `html`, `eval` |
+| Wait | `wait`, `waitFor`, `observe`, `act` |
+| Screenshot | `screenshot` |
+| Scrape | `scrape`, `crawl`, `search`, `map`, `network` |
+| Snapshot | `snapshot`, `structure`, `find` |
+| Storage | `get-cookies`, `set-cookie`, `clear-cookies`, `get-local-storage`, `set-local-storage`, `clear-local-storage` |
+| Viewport | `set-viewport`, `frame`, `frames`, `mouse`, `tab` |
+| Debug | `console`, `net-debug`, `perf`, `health` |
+| Agent | `observe`, `act`, `waitFor` |
+| Script | `actions`, `add-init-script` |
+| Subcommands | `session`, `plugin`, `create`, `config`, `record`, `replay`, `convert`, `run`, `serve`, `remote`, `viewer`, `preview` |
+
+See [references/command-reference.md](references/command-reference.md) for full parameters and options.
 
 ---
 
-## 6. 内置命令速查
+## CDP Pitfalls (Critical)
 
-| 分类 | 命令 | 常见选项 |
-|------|------|---------|
-| 导航 | `goto`, `back`, `forward`, `refresh` | `--waitUntil`, `--timeout` |
-| 交互 | `click`, `fill`, `type`, `press`, `hover`, `select`, `check`, `attach` | `--timeout` |
-| 查询 | `text`, `html`, `getProperty`, `eval` | `--selector` |
-| 等待 | `wait`, `waitFor` | `--timeout`, `--state` |
-| 截图 | `screenshot` | `--full-page`, `--type` |
-| 录制 | `record start/status/stop` | `--url`, `--name`, `--output` |
-| 回放 | `replay`, `convert`, `extract`, `filter` | `--slow-mo`, `--stop-on-error` |
-| 视口 | `viewport`, `frame`, `mouse` | — |
-| 视图 | `viewer`, `preview` | `--session` |
-| 子命令 | `session`, `plugin`, `create`, `config` | — |
+| Scenario | Wrong | Right |
+|----------|-------|-------|
+| contenteditable input | `page.fill()` | `page.keyboard.type({ delay: 30 })` |
+| Clicking elements | `locator().click()` | `evaluateHandle` + `mouse.click(x,y)` |
+| Closing browser | `browser.close()` | Handler auto-disconnects |
+| Selectors | `:has-text("xxx")` | class / id / data-testid |
+
+See [references/cdp-pitfalls.md](references/cdp-pitfalls.md) for detailed explanations.
 
 ---
 
-## 7. Lint & 代码规范
+## Lint Rules
 
-### Lint 快跑
+```bash
+npm run lint                                 # ESLint
+node lint-scripts/check-plugin-code.mjs      # Plugin code quality
+node lint-scripts/check-plugin-metadata.mjs  # Plugin metadata
+node lint-scripts/check-result-schema.mjs    # Result schema
+npm run lint:plugin-contract                 # Full contract check
+```
 
-| 脚本 | 作用 | 什么情况跑 |
-|------|------|-----------|
-| `node lint-scripts/check-plugin-code.mjs` | 插件代码质量 | 修改插件后 |
-| `node lint-scripts/check-plugin-metadata.mjs` | 插件元数据 | 新增/改 package.json |
-| `node lint-scripts/check-result-schema.mjs` | 命令结果 schema | 新增命令时 |
-| `node lint-scripts/check-plugin-contract.mjs` | Plugin Contract | 改命令参数时 |
+Key rules: no `any` (use `unknown`), no `console.log` in production, mandatory type annotations, `ok()`/`fail()` return pattern.
 
-### ESLint 铁律
-
-- **禁止 `any`** → 用 `unknown` 收窄
-- **禁止 `console.log`**（生产代码）
-- **强制类型注解** — 参数、返回值必须有类型
-- 优先 `interface` > `type`
-
-### Plugin Code 检查要点
-
-- 空 `catch` 块必须有至少 `console.error` 级别的日志
-- 命令 `result` schema 不能是 `z.record(z.any())`（逐步迁移到精确 schema）
-- `requiresLogin` 要与实际预期一致
+See [references/lint-rules.md](references/lint-rules.md) for all 10 rules.
 
 ---
 
-## 8. CDP 驱动踩坑（关键）
+## Reference Files
 
-| 场景 | ❌ 不要 | ✅ 要 |
-|------|--------|------|
-| contenteditable 输入 | `page.fill()` | `page.keyboard.type({ delay: 30 })` |
-| 点击元素 | `locator().click()` | `evaluateHandle` + `mouse.click(x,y)` |
-| 关闭浏览器 | 绝不要 `browser.close()` | handler 执行完自动断开 |
-| 选择器 | `:has-text("xxx")` | class / id / data-testid |
-| 通用选择器 | `[class*="message"]` | 自定义精确选择器 |
-
----
-
-## 9. 参考文件
-
-| 文件 | 内容 | 何时读 |
-|------|------|-------|
-| `references/plugin-convention.md` | 完整插件规范、package.json 字段、结果 schema 迁移、loginConfig | 创建或修改插件时 |
-| `references/lint-rules.md` | Lint 规则详细说明、RULES.md | 新增 lint 规则时 |
-| `references/session-lifecycle.md` | 会话生命周期、daemon 模式 | 调试 session 问题时 |
-| `references/testing-patterns.md` | 测试策略、Mock 模式、E2E 写法 | 写测试时 |
-| `AGENTS.md`（仓库根目录，工作区规则） | 完整项目手册 | 新手上路、理解全部功能 |
+| File | Content | When to read |
+|------|---------|-------------|
+| [architecture.md](references/architecture.md) | Startup flow, request lifecycle, module deps, plugin loading | Understanding system design, debugging deep issues |
+| [plugin-development.md](references/plugin-development.md) | Full plugin guide: loginConfig, isLogin, result schema, helpers | Creating or modifying plugins |
+| [plugin-testing.md](references/plugin-testing.md) | Plugin test patterns, mock factories, coverage checklist | Writing plugin tests |
+| [plugin-publishing.md](references/plugin-publishing.md) | Marketplace publishing flow, versioning, registry | Publishing plugins |
+| [command-reference.md](references/command-reference.md) | All 49 commands with parameters, scope, options | Looking up command usage |
+| [session-lifecycle.md](references/session-lifecycle.md) | Session management, CDP modes, viewer | Debugging session issues |
+| [cdp-pitfalls.md](references/cdp-pitfalls.md) | CDP driver pitfalls and solutions | CDP-related bugs |
+| [lint-rules.md](references/lint-rules.md) | All 10 lint rules in detail | Lint errors |
+| [testing-patterns.md](references/testing-patterns.md) | Core test patterns, mock strategies | Testing core modules |
+| `AGENTS.md` (repo root) | Complete project manual (workspace rules) | Onboarding, full feature reference |

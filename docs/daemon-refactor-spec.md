@@ -407,24 +407,24 @@ process.on('message', (msg) => { ... }); // IPC 握手
 npm run build
 
 # 2. Daemon 自动启动
-npx xbrowser session open https://baidu.com --cdp http://127.0.0.1:9222
+xbrowser session open https://baidu.com --cdp http://127.0.0.1:9222
 
 # 3. 跨进程 session 存活
 # 另一个终端：
-npx xbrowser url --session default
+xbrowser url --session default
 
 # 4. 命令链执行
-npx xbrowser "goto https://baidu.com && title"
+xbrowser "goto https://baidu.com && title"
 
 # 5. Session 关闭 + daemon 停止
-npx xbrowser session kill
+xbrowser session kill
 
 # 6. 网络分析
-npx xbrowser network https://baidu.com --json
+xbrowser network https://baidu.com --json
 
 # 7. 录制
-npx xbrowser record start --session default
-npx xbrowser record save --session default
+xbrowser record start --session default
+xbrowser record save --session default
 ```
 
 ---

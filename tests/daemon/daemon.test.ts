@@ -13,6 +13,10 @@ const mockXcliCore = {
   getDaemonStatus: vi.fn(),
   stopDaemon: vi.fn().mockResolvedValue(undefined),
   killAllDaemon: vi.fn().mockResolvedValue(undefined),
+  registerCommandDefinition: vi.fn(),
+  outputFormatter: vi.fn(),
+  isCommandResult: vi.fn(),
+  helpGenerator: vi.fn(() => ({ generate: vi.fn() })),
 };
 
 vi.mock('@dyyz1993/xcli-core', () => mockXcliCore);

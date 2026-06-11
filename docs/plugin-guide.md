@@ -1272,7 +1272,7 @@ npm run build && npm link
 npx xbrowser <site> list --cdp http://localhost:9222 --json
 
 # 3. 测试需要登录态的命令
-npx xbrowser <site> list --cdp http://localhost:9221 --json
+xbrowser <site> list --cdp http://localhost:9221 --json
 
 # 4. 验证进程正常退出
 echo "EXIT_CODE=$?"

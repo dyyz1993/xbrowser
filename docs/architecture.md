@@ -58,7 +58,7 @@ xbrowser 的核心设计原则：
 │  │frame.ts│viewport│convert │extract │filter.ts  │  │
 │  │        │ .ts    │ .ts    │ .ts    │           │  │
 │  └────────┴────────┴────────┴────────┴───────────┘  │
-│                   (48 个命令)                         │
+│                   (49 个命令)                         │
 └─────────────────────┬───────────────────────────────┘
                       │
                       ▼
@@ -102,7 +102,7 @@ xbrowser 的核心设计原则：
 1. **stdin 模式** — 管道输入的命令，以 `&&` 连接后交给 executor
 2. **eval 模式** — `-e` / `--eval` 参数的命令
 3. **命令链模式** — 包含 `&&`、`,`、`+`、`->`、`;` 的单参数输入
-4. **子命令路由** — `session`、`plugin`、`create`、`daemon`、`record`、`replay`、`config`、`convert`、`extract`、`filter`、`run`、`help`
+4. **子命令路由** — `session`、`plugin`、`create`、`daemon`（内部使用，用户不应直接调用 `xbrowser daemon start/stop/status`）、`record`、`replay`、`config`、`convert`、`extract`、`filter`、`run`、`help`
 5. **浏览器命令** — 所有其他输入尝试匹配已注册的浏览器命令
 
 ```
@@ -253,11 +253,11 @@ const BROWSER_SCOPE = {
 
 ### src/commands/ — 浏览器命令
 
-35 个浏览器命令，按功能分为 12 个文件：
+49 个浏览器命令，按功能分为 12 个文件：
 
 | 文件 | 命令 | Scope |
 |------|------|-------|
-| `navigation.ts` | goto, back, forward, refresh, title, url | page |
+| `navigation.ts` | goto (alias: open), back, forward, refresh, title, url | page |
 | `interaction.ts` | click, fill, type, press, select, check, hover, dblclick | element |
 | `query.ts` | html, text | page/element |
 | `wait.ts` | waitForSelector, wait | page |
@@ -526,7 +526,7 @@ executeChain('goto https://a.com && title && screenshot')
 ┌─────────────────────────────────────────┐
 │            xbrowser                     │
 │  浏览器自动化 CLI：                      │
-│  ├── 35 个浏览器命令                    │
+│  ├── 49 个浏览器命令                    │
 │  ├── 命令链执行器                       │
 │  ├── 会话管理                           │
 │  ├── 录制/回放                          │

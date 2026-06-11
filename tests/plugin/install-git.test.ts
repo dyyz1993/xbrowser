@@ -21,6 +21,10 @@ vi.mock('node:fs', () => ({
 vi.mock('@dyyz1993/xcli-core', () => ({
   verifyPlugin: vi.fn(),
   safeCleanup: vi.fn(),
+  registerCommandDefinition: vi.fn(),
+  outputFormatter: vi.fn(),
+  isCommandResult: vi.fn(),
+  helpGenerator: vi.fn(() => ({ generate: vi.fn() })),
 }));
 
 import { installFromGit } from '../../src/plugin/install-sources/git.js';

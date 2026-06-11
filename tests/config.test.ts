@@ -32,6 +32,10 @@ vi.mock('../src/utils/json-file.js', () => ({
 vi.mock('@dyyz1993/xcli-core', () => ({
   loadConfig: mockCoreLoadConfig,
   saveConfig: mockCoreSaveConfig,
+  registerCommandDefinition: vi.fn(),
+  outputFormatter: vi.fn(),
+  isCommandResult: vi.fn(),
+  helpGenerator: vi.fn(() => ({ generate: vi.fn() })),
 }));
 
 describe('config', () => {
