@@ -9,6 +9,7 @@ import { CDPInterceptorProxy } from './cdp-interceptor/proxy.js';
 import type { CDPInterceptorConfig } from './cdp-interceptor/types.js';
 import type { BrowserCommandContext } from './context.js';
 import { resolveCDPEndpoint } from './utils/cdp.js';
+import { SessionStore } from '@dyyz1993/xcli-core';
 
 /**
  * Log a session lifecycle event for traceability.
@@ -68,7 +69,7 @@ export interface BrowserLaunchOptions {
   intercept?: boolean | CDPInterceptorConfig;
 }
 
-const sessions = new Map<string, ManagedSession>();
+const sessions = new SessionStore<ManagedSession>();
 
 let _sharedBrowser: Browser | null = null;
 let _sharedCdpProxy: CDPInterceptorProxy | null = null;
@@ -82,7 +83,7 @@ function resetIdleTimer(): void {
     const now = Date.now();
     let allIdle = true;
     const idleSessions: string[] = [];
-    for (const [, s] of sessions) {
+    for (const s of sessions) {
       if (now - s.lastActivityAt < IDLE_TIMEOUT_MS) {
         allIdle = false;
       } else {
@@ -108,7 +109,7 @@ export function touchSession(id: string): void {
 }
 
 process.on('exit', () => {
-  for (const session of sessions.values()) {
+  for (const session of sessions.list()) {
     if (session.isCDP) {
       logSessionEvent('process_exit', `Session "${session.name}": CDP connection (not closing external browser).`);
     } else {
@@ -261,10 +262,7 @@ export async function getBrowser(options?: BrowserLaunchOptions): Promise<Browse
  * @returns The matching session, or `undefined` if not found.
  */
 export function findSession(name: string): ManagedSession | undefined {
-  for (const [, session] of sessions) {
-    if (session.name === name) return session;
-  }
-  return undefined;
+  return sessions.find(name);
 }
 
 export function getSessionById(id: string): ManagedSession | undefined {
@@ -424,14 +422,14 @@ export function deleteSessionDiskMeta(name: string): void {
     // Safety: remove any stale session with the same name before inserting.
     // This should never happen (findSession returned undefined above) but
     // guards against race conditions in daemon mode.
-    for (const [existingId, existingSession] of sessions) {
+    for (const existingSession of sessions.list()) {
       if (existingSession.name === name) {
-        logSessionEvent('remove_stale', `Removing stale session name="${name}" id="${existingId}" during restore`);
-        sessions.delete(existingId);
+        logSessionEvent('remove_stale', `Removing stale session name="${name}" id="${existingSession.id}" during restore`);
+        sessions.removeById(existingSession.id);
       }
     }
 
-    sessions.set(session.id, session);
+    sessions.set(session);
     resetIdleTimer();
     await installNetworkCapture(page, name);
     return session;
@@ -521,7 +519,7 @@ export async function closeEphemeralContext(context: BrowserContext): Promise<vo
  * @returns Array of all active sessions.
  */
 export function getAllSessions(): ManagedSession[] {
-  return Array.from(sessions.values());
+  return sessions.list();
 }
 
 async function installNetworkCapture(page: Page, sessionName: string): Promise<void> {
@@ -783,7 +781,7 @@ export async function createSession(
     isCDP,
     cdpEndpoint: options?.cdpEndpoint,
   };
-  sessions.set(session.id, session);
+  sessions.set(session);
   logSessionEvent('create_session', `name="${name}" id="${session.id}" url="${url || '(no url)'}" isCDP=${isCDP} cdpEndpoint=${options?.cdpEndpoint || '(none)'}`);
   resetIdleTimer();
   await installNetworkCapture(page, name);
@@ -797,7 +795,7 @@ export async function createSession(
  * @returns `true` if a session was found and closed, `false` otherwise.
  */
 export async function closeSessionByName(name: string): Promise<boolean> {
-  for (const [id, session] of sessions) {
+  for (const session of sessions) {
     if (session.name === name || session.id === name) {
       logSessionEvent('close_session', `name="${session.name}" id="${session.id}" url="${session.page.url()}"`);
       if (session.isCDP) {
@@ -815,7 +813,7 @@ export async function closeSessionByName(name: string): Promise<boolean> {
           await session.browser.close().catch(() => {});
         }
       }
-      sessions.delete(id);
+      sessions.removeById(session.id);
 
       // Always clean up disk metadata
       const file = sessionFile(session.name);
@@ -852,9 +850,9 @@ export async function closeSessionByName(name: string): Promise<boolean> {
  * ignoring individual close errors.
  */
 export async function closeAllSessions(): Promise<void> {
-  const names = [...sessions.values()].map(s => `${s.name}(${s.page.url()})`).join(', ');
+  const names = sessions.list().map(s => `${s.name}(${s.page.url()})`).join(', ');
   if (names) logSessionEvent('close_all_sessions', `Closing ${sessions.size} sessions: ${names}`);
-  for (const [id, session] of sessions) {
+  for (const session of sessions.list()) {
     try {
       if (!session.isCDP) {
         await session.context.close();
@@ -862,9 +860,9 @@ export async function closeAllSessions(): Promise<void> {
       if (session.browser) {
         await session.browser.close().catch(() => {});
       }
-      sessions.delete(id);
+      sessions.removeById(session.id);
     } catch {
-      sessions.delete(id);
+      sessions.removeById(session.id);
     }
   }
 }
@@ -923,7 +921,7 @@ export async function ensureProcessCanExit(): Promise<void> {
   // For CDP sessions: browser.close() only disconnects the WebSocket,
   // it does NOT close the remote browser or its pages.
   // The next CLI invocation will reconnect via findOrRestoreSession().
-  for (const session of sessions.values()) {
+  for (const session of sessions.list()) {
     if (session.browser) {
       if (session.isCDP) {
         // CDP: just disconnect, remote browser keeps running
