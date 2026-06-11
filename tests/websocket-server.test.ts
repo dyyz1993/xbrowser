@@ -31,6 +31,16 @@ function createMockElement(box: { x: number; y: number; width: number; height: n
   };
 }
 
+/** Helper to access internal sessionManager from WSServer */
+function getSM(server: WSServer) {
+  return (server as unknown as Record<string, unknown>).sessionManager as import('../src/ws/session-manager.js').SessionManager;
+}
+
+/** Helper to access internal streamCoordinator from WSServer */
+function getSC(server: WSServer) {
+  return (server as unknown as Record<string, unknown>).streamCoordinator as import('../src/ws/stream-coordinator.js').StreamCoordinator;
+}
+
 describe('WSServer', () => {
   let server: WSServer;
 
@@ -66,10 +76,11 @@ describe('WSServer', () => {
       const page = createMockPage();
       server.registerSession(sessionId, page);
 
-      (server as any).clients.set(clientId, {
+      const sm = getSM(server);
+      sm.addClient({
         id: clientId,
         sessionId,
-        ws: { send: vi.fn(), close: vi.fn(), on: vi.fn() },
+        ws: { send: vi.fn(), close: vi.fn(), on: vi.fn() } as unknown as import('../src/ws/session-manager.js').WSLike,
       });
     });
 
@@ -92,7 +103,7 @@ describe('WSServer', () => {
     });
 
     it('should forward click to page', async () => {
-      const page = (server as any).screencasts.get(sessionId).page as Page;
+      const page = getSM(server).getPageForSession(sessionId) as Page;
 
       await server['handleInboundMessage'](clientId, {
         type: 'click',
@@ -105,7 +116,7 @@ describe('WSServer', () => {
     });
 
     it('should forward click with default button', async () => {
-      const page = (server as any).screencasts.get(sessionId).page as Page;
+      const page = getSM(server).getPageForSession(sessionId) as Page;
 
       await server['handleInboundMessage'](clientId, {
         type: 'click',
@@ -117,7 +128,7 @@ describe('WSServer', () => {
     });
 
     it('should forward type to page keyboard', async () => {
-      const page = (server as any).screencasts.get(sessionId).page as Page;
+      const page = getSM(server).getPageForSession(sessionId) as Page;
 
       await server['handleInboundMessage'](clientId, {
         type: 'type',
@@ -128,7 +139,7 @@ describe('WSServer', () => {
     });
 
     it('should forward keypress to page keyboard', async () => {
-      const page = (server as any).screencasts.get(sessionId).page as Page;
+      const page = getSM(server).getPageForSession(sessionId) as Page;
 
       await server['handleInboundMessage'](clientId, {
         type: 'keypress',
@@ -139,7 +150,7 @@ describe('WSServer', () => {
     });
 
     it('should forward scroll to page mouse wheel', async () => {
-      const page = (server as any).screencasts.get(sessionId).page as Page;
+      const page = getSM(server).getPageForSession(sessionId) as Page;
 
       await server['handleInboundMessage'](clientId, {
         type: 'scroll',
@@ -152,9 +163,10 @@ describe('WSServer', () => {
 
     it('should not crash when page is null', async () => {
       const noPageClientId = 'no-page-client';
-      (server as any).clients.set(noPageClientId, {
+      const sm = getSM(server);
+      sm.addClient({
         id: noPageClientId,
-        ws: { send: vi.fn(), close: vi.fn(), on: vi.fn() },
+        ws: { send: vi.fn(), close: vi.fn(), on: vi.fn() } as unknown as import('../src/ws/session-manager.js').WSLike,
       });
 
       await expect(
@@ -167,22 +179,20 @@ describe('WSServer', () => {
     });
 
     it('should handle focus_element message and set crop box', async () => {
-      const page = (server as any).screencasts.get(sessionId).page as Page;
+      const page = getSM(server).getPageForSession(sessionId) as Page;
       const mockElement = createMockElement({ x: 100, y: 200, width: 300, height: 150 });
       (page as any).$ = vi.fn().mockResolvedValue(mockElement);
 
       const sendSpy = vi.fn();
-      (server as any).clients.set(clientId, {
+      const sm = getSM(server);
+      // Replace the client with one that has a spy
+      sm.addClient({
         id: clientId,
         sessionId,
-        ws: { send: sendSpy, close: vi.fn(), on: vi.fn() },
+        ws: { send: sendSpy, close: vi.fn(), on: vi.fn() } as unknown as import('../src/ws/session-manager.js').WSLike,
       });
-      let sessionClients = (server as any).sessionClients.get(sessionId);
-      if (!sessionClients) {
-        sessionClients = new Set();
-        (server as any).sessionClients.set(sessionId, sessionClients);
-      }
-      sessionClients.add(clientId);
+      // Set up sessionClients for broadcast
+      sm.bindClientToSession(clientId, sessionId);
 
       await server['handleInboundMessage'](clientId, {
         type: 'focus_element',
@@ -190,7 +200,7 @@ describe('WSServer', () => {
       });
 
       expect(page.$).toHaveBeenCalledWith('#my-element');
-      expect((server as any).sessionCrops.get(sessionId)).toEqual({
+      expect(getSC(server).getCrop(sessionId)).toEqual({
         selector: '#my-element',
         box: { x: 100, y: 200, width: 300, height: 150 },
       });
@@ -207,7 +217,7 @@ describe('WSServer', () => {
     });
 
     it('should handle focus_element when element not found', async () => {
-      const page = (server as any).screencasts.get(sessionId).page as Page;
+      const page = getSM(server).getPageForSession(sessionId) as Page;
       (page as any).$ = vi.fn().mockResolvedValue(null);
 
       await server['handleInboundMessage'](clientId, {
@@ -215,36 +225,33 @@ describe('WSServer', () => {
         selector: '#nonexistent',
       });
 
-      expect((server as any).sessionCrops.has(sessionId)).toBe(false);
+      expect(getSC(server).getCrop(sessionId)).toBeUndefined();
     });
 
     it('should handle focus_clear message and reset crop', async () => {
-      const sid = sessionId;
-      (server as any).sessionCrops.set(sid, {
+      const sc = getSC(server);
+      sc.setCrop(sessionId, {
         selector: '#my-element',
         box: { x: 100, y: 200, width: 300, height: 150 },
       });
-      (server as any).lastFrameViewport = { width: 1920, height: 1080 };
-      (server as any).lastFrameData = null;
+      // Simulate having a last frame viewport
+      (sc as unknown as Record<string, unknown>).lastFrameViewport = { width: 1920, height: 1080 };
+      (sc as unknown as Record<string, unknown>).lastFrameData = null;
 
       const sendSpy = vi.fn();
-      (server as any).clients.set(clientId, {
+      const sm = getSM(server);
+      sm.addClient({
         id: clientId,
-        sessionId: sid,
-        ws: { send: sendSpy, close: vi.fn(), on: vi.fn() },
+        sessionId,
+        ws: { send: sendSpy, close: vi.fn(), on: vi.fn() } as unknown as import('../src/ws/session-manager.js').WSLike,
       });
-      let sessionClients = (server as any).sessionClients.get(sid);
-      if (!sessionClients) {
-        sessionClients = new Set();
-        (server as any).sessionClients.set(sid, sessionClients);
-      }
-      sessionClients.add(clientId);
+      sm.bindClientToSession(clientId, sessionId);
 
       await server['handleInboundMessage'](clientId, {
         type: 'focus_clear',
       });
 
-      expect((server as any).sessionCrops.has(sid)).toBe(false);
+      expect(sc.getCrop(sessionId)).toBeUndefined();
 
       const statusCall = sendSpy.mock.calls.find((call: any[]) => {
         try {
@@ -258,19 +265,19 @@ describe('WSServer', () => {
     });
 
     it('should apply crop to frames when crop is set', async () => {
-      const sid = sessionId;
-      (server as any).sessionCrops.set(sid, {
+      const sc = getSC(server);
+      sc.setCrop(sessionId, {
         selector: '#my-element',
         box: { x: 50, y: 50, width: 400, height: 300 },
       });
 
-      const processSpy = vi.spyOn((server as any).frameProcessor, 'process').mockResolvedValue(Buffer.from('fake'));
+      const processSpy = vi.spyOn((sc as unknown as Record<string, unknown>).frameProcessor as import('../src/stream/frame-processor.js').FrameProcessor, 'process').mockResolvedValue(Buffer.from('fake'));
 
-      await (server as any).processAndBroadcast(
+      await sc.processAndBroadcast(
         'base64data',
         { width: 1920, height: 1080 },
-        sid,
-        sid,
+        sessionId,
+        sessionId,
         'frame-id',
         Date.now(),
         '',

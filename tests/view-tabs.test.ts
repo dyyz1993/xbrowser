@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Page } from '../src/browser-shim.js';
 import { WSServer } from '../src/websocket-server.js';
+import type { SessionManager } from '../src/ws/session-manager.js';
+import type { StreamCoordinator } from '../src/ws/stream-coordinator.js';
+import type { WSLike } from '../src/ws/session-manager.js';
 
 function createMockPage(): Page {
   return {
@@ -25,24 +28,32 @@ function createMockPage(): Page {
   } as unknown as Page;
 }
 
+function getSM(server: WSServer): SessionManager {
+  return (server as unknown as Record<string, unknown>).sessionManager as SessionManager;
+}
+
+function getSC(server: WSServer): StreamCoordinator {
+  return (server as unknown as Record<string, unknown>).streamCoordinator as StreamCoordinator;
+}
+
+function makeWS(sendSpy?: ReturnType<typeof vi.fn>): WSLike {
+  return { send: sendSpy ?? vi.fn(), close: vi.fn(), on: vi.fn() } as unknown as WSLike;
+}
+
 function bindClient(
   server: WSServer,
   clientId: string,
   sessionId: string,
   sendSpy?: ReturnType<typeof vi.fn>,
 ): void {
-  (server as unknown as Record<string, unknown>).clients.set(clientId, {
+  const sm = getSM(server);
+  sm.addClient({
     id: clientId,
     sessionId,
-    ws: { send: sendSpy ?? vi.fn(), close: vi.fn(), on: vi.fn() },
+    ws: makeWS(sendSpy),
   });
-  const sessionClientsMap = (server as unknown as Record<string, Map<string, Set<string>>>).sessionClients;
-  let set = sessionClientsMap.get(sessionId);
-  if (!set) {
-    set = new Set();
-    sessionClientsMap.set(sessionId, set);
-  }
-  set.add(clientId);
+  // Ensure sessionClients mapping exists
+  sm.bindClientToSession(clientId, sessionId);
 }
 
 interface MockDomElement {
@@ -111,29 +122,30 @@ describe('WSServer view tabs', () => {
     beforeEach(() => {
       bindClient(server, clientId, sessionId);
       // Avoid triggering processAndBroadcast in the handler
-      (server as unknown as Record<string, unknown>).lastFrameData = null;
-      (server as unknown as Record<string, unknown>).lastFrameViewport = null;
+      const sc = getSC(server);
+      (sc as unknown as Record<string, unknown>).lastFrameData = null;
+      (sc as unknown as Record<string, unknown>).lastFrameViewport = null;
     });
 
     it('should clear sessionCrops when select_view with rect:null is received', async () => {
-      const crops = (server as unknown as Record<string, Map<string, unknown>>).sessionCrops;
-      crops.set(sessionId, {
+      const sc = getSC(server);
+      sc.setCrop(sessionId, {
         selector: 'old',
         box: { x: 1, y: 2, width: 3, height: 4 },
       });
 
       await server['handleInboundMessage'](clientId, { type: 'select_view', rect: null });
 
-      expect(crops.has(sessionId)).toBe(false);
+      expect(sc.getCrop(sessionId)).toBeUndefined();
     });
 
     it('should set sessionCrops when select_view with a rect is received', async () => {
-      const crops = (server as unknown as Record<string, Map<string, unknown>>).sessionCrops;
+      const sc = getSC(server);
       const rect = { x: 10, y: 20, width: 800, height: 600 };
 
       await server['handleInboundMessage'](clientId, { type: 'select_view', rect });
 
-      expect(crops.get(sessionId)).toEqual({
+      expect(sc.getCrop(sessionId)).toEqual({
         selector: 'view',
         box: rect,
       });
@@ -160,12 +172,12 @@ describe('WSServer view tabs', () => {
     it('should broadcast lastFrameViewport dimensions when clearing crop', async () => {
       const sendSpy = vi.fn();
       bindClient(server, clientId, sessionId, sendSpy);
-      const crops = (server as unknown as Record<string, Map<string, unknown>>).sessionCrops;
-      crops.set(sessionId, {
+      const sc = getSC(server);
+      sc.setCrop(sessionId, {
         selector: 'view',
         box: { x: 1, y: 2, width: 3, height: 4 },
       });
-      (server as unknown as Record<string, unknown>).lastFrameViewport = { width: 1920, height: 1080 };
+      (sc as unknown as Record<string, unknown>).lastFrameViewport = { width: 1920, height: 1080 };
 
       await server['handleInboundMessage'](clientId, { type: 'select_view', rect: null });
 
@@ -187,9 +199,8 @@ describe('WSServer view tabs', () => {
     });
 
     it('should add crop offset to click coordinates', async () => {
-      const page = (server as unknown as Record<string, Map<string, { page: Page }>>).screencasts.get(sessionId)!.page;
-      const crops = (server as unknown as Record<string, Map<string, unknown>>).sessionCrops;
-      crops.set(sessionId, {
+      const page = getSM(server).getPageForSession(sessionId)!;
+      getSC(server).setCrop(sessionId, {
         selector: 'view',
         box: { x: 100, y: 200, width: 400, height: 300 },
       });
@@ -200,7 +211,7 @@ describe('WSServer view tabs', () => {
     });
 
     it('should pass click coordinates through unchanged when no crop is active', async () => {
-      const page = (server as unknown as Record<string, Map<string, { page: Page }>>).screencasts.get(sessionId)!.page;
+      const page = getSM(server).getPageForSession(sessionId)!;
 
       await server['handleInboundMessage'](clientId, { type: 'click', x: 50, y: 50 });
 
@@ -208,9 +219,8 @@ describe('WSServer view tabs', () => {
     });
 
     it('should add crop offset to input_mouse move coordinates', async () => {
-      const page = (server as unknown as Record<string, Map<string, { page: Page }>>).screencasts.get(sessionId)!.page;
-      const crops = (server as unknown as Record<string, Map<string, unknown>>).sessionCrops;
-      crops.set(sessionId, {
+      const page = getSM(server).getPageForSession(sessionId)!;
+      getSC(server).setCrop(sessionId, {
         selector: 'view',
         box: { x: 100, y: 200, width: 400, height: 300 },
       });
@@ -226,9 +236,8 @@ describe('WSServer view tabs', () => {
     });
 
     it('should add crop offset to input_mouse click coordinates', async () => {
-      const pageMock = (server as unknown as Record<string, Map<string, { page: Page }>>).screencasts.get(sessionId)!.page;
-      const crops = (server as unknown as Record<string, Map<string, unknown>>).sessionCrops;
-      crops.set(sessionId, {
+      const pageMock = getSM(server).getPageForSession(sessionId)!;
+      getSC(server).setCrop(sessionId, {
         selector: 'view',
         box: { x: 100, y: 200, width: 400, height: 300 },
       });
@@ -247,7 +256,7 @@ describe('WSServer view tabs', () => {
     });
 
     it('should pass input_mouse coordinates through unchanged when no crop', async () => {
-      const page = (server as unknown as Record<string, Map<string, { page: Page }>>).screencasts.get(sessionId)!.page;
+      const page = getSM(server).getPageForSession(sessionId)!;
 
       await server['handleInboundMessage'](clientId, {
         type: 'input_mouse',

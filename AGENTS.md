@@ -28,7 +28,7 @@ npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 |------|------|
 | `bin/cli.ts` | CLI 入口（`xbrowser` 命令） |
 | `src/` | 核心代码（`browser.ts` / `commands/` / `cli/` / `daemon/` / `cdp-driver/`） |
-| `src/commands/` | 49 个内置命令（goto / click / fill / wait / scroll / record / replay / preview…） |
+| `src/commands/` | 48 个内置命令（goto / click / fill / wait / scroll / record / replay / preview…） |
 | `src/cdp-driver/` | 自研 CDP 驱动（Playwright 替代） |
 | `src/cli/` | 子命令路由（session / plugin / record / preview / viewer） |
 | `src/daemon/` | 后台 daemon + WebSocket preview 服务器 |
@@ -310,9 +310,170 @@ if (detected) {
 
 ## 10. 插件开发
 
-完整规范见 `docs/plugin-guide.md`（1456 行）。下面是 Agent 最常用的速查。
+完整规范见 `docs/plugin-guide.md`（1456 行）。
 
-### 10.1 插件结构
+### 10.0 插件规范（必须遵守）
+
+#### 10.0.1 命名规范：一个插件 = 一个站点
+
+插件目录名直接使用**站点域名/品牌名**，不加前缀：
+
+```
+✅ .xcli/plugins/github/         → 命令: xbrowser github publish
+✅ .xcli/plugins/devto/          → 命令: xbrowser devto publish
+✅ .xcli/plugins/juejin/         → 命令: xbrowser juejin publish
+✅ .xcli/plugins/medium/         → 命令: xbrowser medium publish
+✅ .xcli/plugins/doubao/         → 命令: xbrowser doubao chat
+
+❌ .xcli/plugins/promo-devto/    # 不要加功能性前缀，冗余
+❌ src/promo/                    # 不要放在 src/ 下，违反第一原则
+```
+
+**原因**：
+- 插件本身就是站点维度的隔离，`promo-devto publish` 等效于 `devto publish`，`promo-` 是冗余
+- 一个站点可以注册多个命令（publish / list / search / stats），不局限于单一功能
+- 与现有 69 个插件的命名风格一致
+
+#### 10.0.2 结构要求
+
+```
+.xcli/plugins/<name>/
+├── index.ts            # 入口（必须）
+├── package.json        # 必须（含 xbrowser 元数据）
+├── README.md           # 推荐（说明用法）
+├── CHANGELOG.md        # 发布 marketplace 时必须
+├── MARKET_DESCRIPTION.md  # 发布 marketplace 时必须
+├── LICENSE             # 发布时必须（推荐 MIT）
+└── helpers.ts          # 可选（辅助函数）
+```
+
+`package.json` 必须包含 `xbrowser` 元数据字段：
+
+```json
+{
+  "name": "xbrowser-plugin-<name>",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": { "zod": "^3.24.0" },
+  "peerDependencies": { "@dyyz1993/xcli-core": ">=1.0.0" },
+  "xbrowser": {
+    "name": "<name>",
+    "slug": "<slug>",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "...",
+    "site": "https://...",
+    "requiresLogin": true,
+    "commands": ["cmd1", "cmd2"]
+  }
+}
+```
+
+#### 10.0.3 命令命名规范
+
+命令以**动作**命名，不加站点前缀（站点名由插件名提供）：
+
+```
+✅ xbrowser devto publish          # publish 是动作
+✅ xbrowser devto draft            # draft 是动作
+✅ xbrowser juejin fetch-articles  # fetch-articles 是动作
+✅ xbrowser github list-issues     # list-issues 是动作
+
+❌ xbrowser devto publish-article  # 重复，publish 就够了
+❌ xbrowser devto devto-publish    # 加了站点前缀，冗余
+```
+
+#### 10.0.4 使用 Playwright API，不要 `execSync` 调 xbrowser
+
+```typescript
+// ✅ 正确：使用 Playwright Page API
+const page = ctx.page;
+if (!page) throw new Error('需要浏览器页面');
+await page.goto('https://dev.to/new');
+await page.locator('input[placeholder*="title"]').fill(title);
+await page.locator('button:has-text("Publish")').click();
+
+// ❌ 错误：execSync 调 xbrowser CLI（来自 src/promo/ 的反面教材）
+execSync(`${cli} fill @e_title ${JSON.stringify(title)}`);
+execSync(`${cli} find text "Publish" click`);
+```
+
+使用直接 API 的好处：类型安全、错误处理完整、可调试、不依赖 CLI 解析。
+
+#### 10.0.5 注册模式
+
+统一使用 `createSite()` + `site.command()` + `ok()`/`fail()` 模式：
+
+```typescript
+import { z } from 'zod/v4';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
+import type { Page, Locator } from '../types.js';
+
+export default function (xcli: XCLIAPI): void {
+  const site = xcli.createSite({
+    name: 'my-plugin',        // 与目录名一致
+    url: 'https://example.com',
+    description: '插件说明',
+    requiresLogin: true,      // 需要登录时设为 true
+    isLogin: async (ctx) => { /* 检查登录态 */ },
+  });
+
+  site.command('my-command', {
+    description: '命令说明',
+    scope: 'page',            // project | browser | page | element
+    loginRequired: 'none',    // 'none' | 'optional' | 'required'
+    parameters: z.object({
+      param1: z.string().describe('参数说明'),
+    }),
+    examples: [               // 提供示例方便测试
+      { cmd: 'xbrowser my-plugin my-command --param1 val', description: '示例' },
+    ],
+    handler: async (params, ctx) => {
+      return ok({ data: 'value' }, ['提示信息']);
+    },
+  });
+
+  site.login(async (ctx) => { /* 登录逻辑 */ });
+  site.logout(async (ctx) => { /* 登出逻辑 */ });
+}
+```
+
+#### 10.0.6 善用脚手架快速创建
+
+```bash
+# 创建基础插件（只有 index.ts + package.json）
+xbrowser create my-plugin --template static
+
+# 创建带浏览器交互的插件（navigate + interact 命令）
+xbrowser create my-plugin --template dynamic
+
+# 创建设置了登录/登出的插件
+xbrowser create my-plugin --template login
+
+# 创建 API 集成插件
+xbrowser create my-plugin --template api
+```
+
+生成后：
+1. 把目录移到 `.xcli/plugins/<name>/`
+2. 修改 `name`、`url` 等字段
+3. 添加实际业务逻辑
+4. 补充 `package.json` 的 `xbrowser` 元数据
+
+#### 10.0.7 常见反例
+
+| 反例 | 问题 | 正确做法 |
+|------|------|---------|
+| `src/promo/devto.ts` | 发布脚本放 `src/` 下 | 移到 `.xcli/plugins/devto/` 作为独立插件 |
+| `xbrowser promo --platform devto` | 一个命令调度多站点 | 每个站点独立插件：`xbrowser devto publish` |
+| `execSync(\`xbrowser fill ...\`)` | shell out 调 CLI | 用 `ctx.page.locator().fill()` 等 API |
+| `promo-devto` 目录名 | 冗余前缀 | 直接用 `devto` |
+
+---
+
+### 10.1 插件结构（参考）
 
 ```
 .xcli/plugins/<name>/
