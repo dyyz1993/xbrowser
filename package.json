@@ -84,7 +84,7 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@dyyz1993/xcli-core": "file:../../../../../tmp/dyyz1993-xcli-core-0.13.1.tgz",
+    "@dyyz1993/xcli-core": "file:../mpage/packages/core",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/turndown": "^5.0.6",
     "cheerio": "^1.2.0",

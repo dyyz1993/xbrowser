@@ -1,3 +1,8 @@
+import {
+  unwrapZod,
+  fieldsFromZodObjectReflected,
+  zodTypeToContractType,
+} from '@dyyz1993/xcli-core';
 import type {
   PluginCapability,
   PluginCommandContract,
@@ -92,26 +97,21 @@ export function buildCommandContract(command: CommandLike, options: { siteRequir
 }
 
 export function fieldsFromZodObject(schema: unknown): PluginFormField[] {
-  const shape = getShape(schema);
-  if (!shape) return [];
-  return Object.entries(shape).map(([name, field]) => fieldFromZod(name, field));
-}
-
-function fieldFromZod(name: string, schema: unknown): PluginFormField {
-  const unwrapped = unwrapZod(schema);
-  const type = zodTypeToContractType(unwrapped.typeName);
-  const enumValues = extractEnumValues(unwrapped.schema);
-  return {
-    name,
-    label: toLabel(name),
-    type,
-    widget: widgetFor(type, enumValues, unwrapped.schema),
-    required: !unwrapped.optional,
-    ...(unwrapped.description ? { description: unwrapped.description } : {}),
-    ...(unwrapped.defaultValue !== undefined ? { default: unwrapped.defaultValue } : {}),
-    ...(enumValues ? { enum: enumValues } : {}),
-    ...(type === 'array' ? { multiple: true } : {}),
-  };
+  const reflected = fieldsFromZodObjectReflected(schema);
+  return reflected.map(field => {
+    const widget = widgetFor(field.type, field.enum);
+    return {
+      name: field.name,
+      label: toLabel(field.name),
+      type: field.type,
+      widget,
+      required: field.required,
+      ...(field.description ? { description: field.description } : {}),
+      ...(field.default !== undefined ? { default: field.default } : {}),
+      ...(field.enum ? { enum: field.enum } : {}),
+      ...(field.type === 'array' ? { multiple: true } : {}),
+    };
+  });
 }
 
 function mergeFields(inferred: PluginFormField[], overrides: Partial<PluginFormField>[]): PluginFormField[] {
@@ -148,87 +148,13 @@ function inferCapabilities(scope: string, requiresLogin?: boolean): PluginCapabi
   return caps;
 }
 
-function getShape(schema: unknown): Record<string, unknown> | undefined {
-  const zod = schema as ZodLike | undefined;
-  const shapeOrFn = zod?.shape ?? zod?._def?.shape;
-  if (!shapeOrFn) return undefined;
-  return typeof shapeOrFn === 'function' ? shapeOrFn() : shapeOrFn;
-}
-
-function unwrapZod(schema: unknown): {
-  schema: unknown;
-  typeName: string;
-  optional: boolean;
-  description?: string;
-  defaultValue?: unknown;
-} {
-  let current = schema as ZodLike;
-  let optional = typeof current?.isOptional === 'function' ? current.isOptional() : false;
-  let description = current?._def?.description;
-  let defaultValue: unknown;
-
-  for (let i = 0; i < 8; i++) {
-    const def = current?._def;
-    const typeName = def?.typeName || 'unknown';
-    if (def?.description) description = def.description;
-    if (!def) return { schema: current, typeName, optional, description, defaultValue };
-
-    if (typeName === 'ZodDefault') {
-      optional = true;
-      defaultValue = typeof def.defaultValue === 'function' ? def.defaultValue() : def.defaultValue;
-      current = (def.innerType || def.type) as ZodLike;
-      continue;
-    }
-
-    if (typeName === 'ZodOptional' || typeName === 'ZodNullable') {
-      optional = true;
-      current = (def.innerType || def.type) as ZodLike;
-      continue;
-    }
-
-    return { schema: current, typeName, optional, description, defaultValue };
-  }
-
-  return { schema: current, typeName: current?._def?.typeName || 'unknown', optional, description, defaultValue };
-}
-
-function zodTypeToContractType(typeName: string): string {
-  switch (typeName) {
-    case 'ZodString':
-      return 'string';
-    case 'ZodNumber':
-      return 'number';
-    case 'ZodBoolean':
-      return 'boolean';
-    case 'ZodEnum':
-    case 'ZodNativeEnum':
-      return 'enum';
-    case 'ZodArray':
-      return 'array';
-    case 'ZodObject':
-      return 'object';
-    default:
-      return typeName.replace(/^Zod/, '').toLowerCase() || 'unknown';
-  }
-}
-
-function widgetFor(type: string, enumValues: string[] | undefined, schema: unknown): PluginFormWidget {
+function widgetFor(type: string, enumValues: string[] | undefined): PluginFormWidget {
   if (enumValues) return 'select';
   if (type === 'boolean') return 'checkbox';
   if (type === 'number') return 'number';
   if (type === 'array') return 'multi-select';
   if (type === 'object') return 'json';
-
-  const checks = ((schema as ZodLike)?._def as Record<string, unknown> | undefined)?.checks as Array<Record<string, unknown>> | undefined;
-  if (checks?.some(check => check.kind === 'url')) return 'url';
   return 'text';
-}
-
-function extractEnumValues(schema: unknown): string[] | undefined {
-  const def = (schema as ZodLike | undefined)?._def;
-  const values = def?.values;
-  if (Array.isArray(values)) return values.map(String);
-  return undefined;
 }
 
 function summarizeZod(schema: unknown): unknown {
@@ -241,7 +167,7 @@ function summarizeZod(schema: unknown): unknown {
     };
   }
 
-  const shape = getShape(schema);
+  const shape = getObjectShape(schema);
   if (!shape) {
     return {
       type: zodTypeToContractType(unwrapped.typeName),
@@ -251,14 +177,21 @@ function summarizeZod(schema: unknown): unknown {
   }
   return Object.fromEntries(
     Object.entries(shape).map(([name, field]) => {
-      const unwrapped = unwrapZod(field);
+      const inner = unwrapZod(field);
       return [name, {
-        type: zodTypeToContractType(unwrapped.typeName),
-        required: !unwrapped.optional,
-        ...(unwrapped.description ? { description: unwrapped.description } : {}),
+        type: zodTypeToContractType(inner.typeName),
+        required: !inner.optional,
+        ...(inner.description ? { description: inner.description } : {}),
       }];
     }),
   );
+}
+
+function getObjectShape(schema: unknown): Record<string, unknown> | undefined {
+  const zod = schema as ZodLike | undefined;
+  const shapeOrFn = zod?.shape ?? zod?._def?.shape;
+  if (!shapeOrFn) return undefined;
+  return typeof shapeOrFn === 'function' ? shapeOrFn() : shapeOrFn;
 }
 
 function toLabel(name: string): string {
