@@ -2,16 +2,16 @@ import { homedir, tmpdir } from 'os';
 import { join } from 'path';
 import { loadConfig as coreLoadConfig, saveConfig as coreSaveConfig } from '@dyyz1993/xcli-core';
 
-const XBROWSER_CONFIG_DIR = join(homedir() || tmpdir(), '.xbrowser');
-
-const configSource = { configDir: XBROWSER_CONFIG_DIR };
+function getConfigSource(): { configDir: string } {
+  return { configDir: join(homedir() || tmpdir(), '.xbrowser') };
+}
 
 export function loadConfig(): Record<string, unknown> {
-  return coreLoadConfig(configSource) as Record<string, unknown>;
+  return coreLoadConfig(getConfigSource()) as Record<string, unknown>;
 }
 
 export function saveConfig(config: Record<string, unknown>): void {
-  coreSaveConfig(configSource, config as Record<string, unknown>);
+  coreSaveConfig(getConfigSource(), config as Record<string, unknown>);
 }
 
 export function getConfigValue(key: string): unknown {
