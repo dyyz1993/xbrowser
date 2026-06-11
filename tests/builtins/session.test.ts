@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../src/session/session-client.js', () => ({
-  openSession: vi.fn().mockResolvedValue({ id: 'test-id', name: 'default', url: 'https://example.com' }),
   closeSession: vi.fn().mockResolvedValue(undefined),
   closeAllSessions: vi.fn().mockResolvedValue(undefined),
   listSessions: vi.fn().mockResolvedValue([]),
@@ -10,24 +9,6 @@ vi.mock('../../src/session/session-client.js', () => ({
 describe('session builtins', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  describe('session open', () => {
-    it('opens a session and prints info', async () => {
-      const { sessionOpenBuiltin } = await import('../../src/builtins/session.js');
-      const logs: string[] = [];
-      const origLog = console.log;
-      console.log = (...args: unknown[]) => logs.push(args.join(' '));
-
-      await sessionOpenBuiltin.execute(
-        ['https://example.com'],
-        { name: 'default' },
-        { cwd: process.cwd() }
-      );
-      console.log = origLog;
-
-      expect(logs.some((l) => l.includes('test-id'))).toBe(true);
-    });
   });
 
   describe('session close', () => {
@@ -104,48 +85,6 @@ describe('session builtins', () => {
     });
   });
 
-  describe('session open - error cases', () => {
-    it('should exit when no URL provided', async () => {
-      const { sessionOpenBuiltin } = await import('../../src/builtins/session.js');
-      const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit'); }) as never);
-      const logs: string[] = [];
-      const origLog = console.log;
-      console.log = (...args: unknown[]) => logs.push(args.join(' '));
-      await expect(sessionOpenBuiltin.execute([], {}, { cwd: process.cwd() })).rejects.toThrow('exit');
-      console.log = origLog;
-      exitSpy.mockRestore();
-      expect(logs.some(l => l.includes('Usage'))).toBe(true);
-    });
-
-    it('should exit when openSession throws', async () => {
-      const { sessionOpenBuiltin } = await import('../../src/builtins/session.js');
-      const sessClient = await import('../../src/session/session-client.js');
-      vi.mocked(sessClient.openSession).mockRejectedValueOnce(new Error('Connection refused'));
-      const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit'); }) as never);
-      const errors: string[] = [];
-      const origErr = console.error;
-      console.error = (...args: unknown[]) => errors.push(args.join(' '));
-      await expect(sessionOpenBuiltin.execute(['https://example.com'], {}, { cwd: process.cwd() })).rejects.toThrow('exit');
-      console.error = origErr;
-      exitSpy.mockRestore();
-      expect(errors.some(e => e.includes('Connection refused'))).toBe(true);
-    });
-
-    it('should handle non-Error thrown from openSession', async () => {
-      const { sessionOpenBuiltin } = await import('../../src/builtins/session.js');
-      const sessClient = await import('../../src/session/session-client.js');
-      vi.mocked(sessClient.openSession).mockRejectedValueOnce('string error');
-      const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit'); }) as never);
-      const errors: string[] = [];
-      const origErr = console.error;
-      console.error = (...args: unknown[]) => errors.push(args.join(' '));
-      await expect(sessionOpenBuiltin.execute(['https://example.com'], {}, { cwd: process.cwd() })).rejects.toThrow('exit');
-      console.error = origErr;
-      exitSpy.mockRestore();
-      expect(errors.some(e => e.includes('string error'))).toBe(true);
-    });
-  });
-
   describe('session close - error cases', () => {
     it('should exit when closeSession throws', async () => {
       const { sessionCloseBuiltin } = await import('../../src/builtins/session.js');
@@ -200,9 +139,9 @@ describe('session builtins', () => {
       const help = handleSessionHelp();
       expect(help).toContain('Usage:');
       expect(help).toContain('session');
-      expect(help).toContain('open');
       expect(help).toContain('close');
       expect(help).toContain('list');
+      expect(help).toContain('--session');
     });
   });
 });

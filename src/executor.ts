@@ -236,18 +236,12 @@ export async function executeCommand(
         await session.page.goto(targetPageOverride.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
       }
     }
-  } else if ((command.scope === 'page' || command.scope === 'project') && params.url) {
-    session = await createSession(sessionName, params.url as string, {
-      cdpEndpoint: extraOpts?.cdpEndpoint,
-    });
-  } else if (command.scope === 'browser') {
-    session = await createSession(sessionName, undefined, {
-      cdpEndpoint: extraOpts?.cdpEndpoint,
-    });
   } else if (command.scope !== 'project') {
-    return errorResult(
-      `Session '${sessionName}' not found. Run "xbrowser session open <url>" first.`
-    );
+    // Auto-create session for all browser/page/element scope commands
+    // No need for explicit session creation — sessions are auto-created via --session
+    session = await createSession(sessionName, params.url as string | undefined, {
+      cdpEndpoint: extraOpts?.cdpEndpoint,
+    });
   }
 
   const ctx: BrowserCommandContext = {

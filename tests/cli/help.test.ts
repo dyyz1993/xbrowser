@@ -29,14 +29,15 @@ describe('help', () => {
 
   it('should include session commands', () => {
     showMainHelp();
-    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('session open'));
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('session close'));
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('session list'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('--session'));
   });
 
   it('should include navigation commands', () => {
     showMainHelp();
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('goto <url>'));
+    expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('open <url>'));
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('click <selector>'));
   });
 

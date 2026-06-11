@@ -12,11 +12,11 @@ Usage:
   xbrowser -e cmd1 -e cmd2             Execute multiple -e commands
 
 Commands:
-  session open <url> [--name <n>]   Open browser session
-  session close [--name <n>]        Close session
+  session close [--session <name>]  Close session
   session list                      List sessions
-  session kill [--name <n>]         Kill session
+  session kill [--session <name>]   Kill session
   goto <url>                        Navigate to URL
+  open <url>                        Navigate to URL (alias for goto)
   click <selector>                  Click element (-s <sel>)
   fill <selector> <value>           Fill input (-s <sel> -v <val>)
   type <selector> <text>            Type text (-s <sel> -v <text>)

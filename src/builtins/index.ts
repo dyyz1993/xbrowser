@@ -1,6 +1,5 @@
 import type { BuiltinCommand } from './session.js';
 import {
-  sessionOpenBuiltin,
   sessionCloseBuiltin,
   sessionListBuiltin,
   sessionKillBuiltin,
@@ -25,7 +24,6 @@ export { createBuiltin, listTemplates } from './create.js';
  * All built-in CLI commands (session, config, plugin, create, preview).
  */
 export const allBuiltins: BuiltinCommand[] = [
-  sessionOpenBuiltin,
   sessionCloseBuiltin,
   sessionListBuiltin,
   sessionKillBuiltin,

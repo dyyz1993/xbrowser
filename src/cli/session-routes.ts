@@ -3,8 +3,8 @@ import {
   listSessions,
 } from '../session/session-client.js';
 import { handleSessionHelp } from '../builtins/index.js';
-import { outputResult, outputError } from './output.js';
-import { forwardSessionCreate, forwardSessionClose, forwardSessionList } from '../client/daemon-client.js';
+import { outputResult } from './output.js';
+import { forwardSessionClose, forwardSessionList } from '../client/daemon-client.js';
 import { stopDaemonProcess, killAllDaemonProcesses } from '../daemon/daemon.js';
 import { homedir } from 'os';
 import { join } from 'path';
@@ -27,23 +27,13 @@ export async function handleSession(
   args: string[],
   options: Record<string, unknown>,
   mode: string,
-  cdpEndpoint?: string
+  _cdpEndpoint?: string
 ): Promise<void> {
   const sub = args[0];
 
   switch (sub) {
-    case 'open': {
-      const url = args[1];
-      const name = (options.name as string) || process.env.XBROWSER_SESSION || 'default';
-      if (!url)
-        outputError('Usage: xbrowser session open <url> [--name <name>] [--cdp <endpoint>]');
-
-      const info = await forwardSessionCreate(name, url, cdpEndpoint);
-      outputResult({ ok: true, ...info }, mode);
-      break;
-    }
     case 'close': {
-      const name = (options.name as string) || process.env.XBROWSER_SESSION || 'default';
+      const name = (options.session as string) || (options.name as string) || process.env.XBROWSER_SESSION || 'default';
       try { await forwardSessionClose(name); } catch { /* daemon may be down */ }
       await closeSession(name);
       outputResult({ ok: true, name }, mode);
@@ -61,7 +51,7 @@ export async function handleSession(
       break;
     }
     case 'kill': {
-      const name = (options.name as string) || process.env.XBROWSER_SESSION || 'default';
+      const name = (options.session as string) || (options.name as string) || process.env.XBROWSER_SESSION || 'default';
       try { await forwardSessionClose(name); } catch { /* ignore */ }
       await closeSession(name);
       try { await stopDaemonProcess(); } catch { /* ignore */ }

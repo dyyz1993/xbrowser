@@ -128,10 +128,9 @@ describeE2E('Daemon Session E2E', () => {
 
   it('should start daemon and open a session via daemon', () => {
     const result = runJson(
-      `${NPX} xbrowser session open ${TEST_URL} --name ${SESSION_NAME} --cdp ${CDP_ENDPOINT} --json`,
+      `${NPX} xbrowser goto ${TEST_URL} --session ${SESSION_NAME} --cdp ${CDP_ENDPOINT} --json`,
     );
-    expect(result.ok).toBe(true);
-    expect(result.name).toBe(SESSION_NAME);
+    expect(result.success).toBe(true);
   });
 
   it('should prove session exists in daemon via session list', () => {
@@ -143,7 +142,7 @@ describeE2E('Daemon Session E2E', () => {
     expect(found).toBe(true);
   });
 
-  it('should confirm daemon health is ok after session open', () => {
+  it('should confirm daemon health is ok after session creation', () => {
     const health = runJson(
       `${NPX} xbrowser daemon status --json`,
     );

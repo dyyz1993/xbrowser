@@ -117,12 +117,12 @@ describe('Executor', () => {
     expect(result.message).toContain('Session');
   });
 
-  it('should mention session open hint when session not found', async () => {
+  it('should mention --session hint when session not found', async () => {
     const { resetForTesting } = await import('../src/browser.js');
     resetForTesting();
     const { executeCommand } = await import('../src/executor.js');
     const result = await executeCommand('title', {});
-    expect(result.message).toContain('session open');
+    expect(result.message).toContain('--session');
   });
 
   it('should report invalid parameters', async () => {

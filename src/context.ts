@@ -33,11 +33,11 @@ export function checkBrowserScope(
     case 'project':
       return null;
     case 'browser':
-      return ctx.browser ? null : '需要浏览器实例，请先执行 xbrowser session open <url>';
+      return ctx.browser ? null : '需要浏览器实例，请使用 --session 选项';
     case 'page':
-      return ctx.page ? null : '需要活跃的页面，请先执行 xbrowser session open <url>';
+      return ctx.page ? null : '需要活跃的页面，请使用 --session 选项';
     case 'element':
-      return ctx.page ? null : '需要活跃的页面，请先执行 xbrowser session open <url>';
+      return ctx.page ? null : '需要活跃的页面，请使用 --session 选项';
     default:
       return null;
   }
@@ -51,7 +51,7 @@ export function checkBrowserScope(
  */
 export function assertPageScope(ctx: BrowserCommandContext): asserts ctx is BrowserCommandContext & { page: Page } {
   if (!ctx.page) {
-    throw new Error('需要活跃的页面，请先执行 xbrowser session open <url>');
+    throw new Error('需要活跃的页面，请使用 --session 选项');
   }
 }
 

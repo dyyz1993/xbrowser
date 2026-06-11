@@ -35,7 +35,7 @@ describe('context', () => {
 
     it('should return error for browser scope when browser is null', () => {
       const result = checkBrowserScope('browser', makeCtx());
-      expect(result).toContain('session open');
+      expect(result).toContain('--session');
     });
 
     it('should return null for page scope when page exists', () => {
@@ -44,7 +44,7 @@ describe('context', () => {
 
     it('should return error for page scope when page is null', () => {
       const result = checkBrowserScope('page', makeCtx());
-      expect(result).toContain('session open');
+      expect(result).toContain('--session');
     });
 
     it('should return null for element scope when page exists', () => {
@@ -53,7 +53,7 @@ describe('context', () => {
 
     it('should return error for element scope when page is null', () => {
       const result = checkBrowserScope('element', makeCtx());
-      expect(result).toContain('session open');
+      expect(result).toContain('--session');
     });
 
     it('should return null for unknown scope', () => {
@@ -69,7 +69,7 @@ describe('context', () => {
 
     it('should throw when page is null', () => {
       const ctx = makeCtx();
-      expect(() => assertPageScope(ctx as any)).toThrow('session open');
+      expect(() => assertPageScope(ctx as any)).toThrow('--session');
     });
   });
 
