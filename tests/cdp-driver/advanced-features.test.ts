@@ -56,7 +56,7 @@ describe('CDP Driver Advanced Features', { timeout: TEST_TIMEOUT, hookTimeout: 6
       });
 
       await page.goto('about:blank');
-      page.evaluate(`fetch("https://predicate-api.local/test")`);
+      await page.evaluate(`fetch("https://predicate-api.local/test")`);
 
       const response = await page.waitForResponse(
         (resp: { url: () => string; status: () => number }) => resp.url().includes('predicate-api'),
