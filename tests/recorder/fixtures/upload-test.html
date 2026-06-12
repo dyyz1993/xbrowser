@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head><title>File Upload Test</title></head>
+<body>
+  <h1>File Upload Test</h1>
+  
+  <div>
+    <label>Single file upload:</label>
+    <input type="file" id="single-file" accept="image/*">
+  </div>
+  
+  <div>
+    <label>Multiple files upload:</label>
+    <input type="file" id="multi-file" multiple>
+  </div>
+  
+  <div>
+    <label>Drag & drop zone:</label>
+    <div id="drop-zone" style="width:300px;height:150px;border:2px dashed #ccc;display:flex;align-items:center;justify-content:center;">
+      Drop files here
+    </div>
+  </div>
+  
+  <div id="result"></div>
+  
+  <script>
+    document.getElementById('single-file').addEventListener('change', (e) => {
+      document.getElementById('result').textContent = 'Single: ' + [...e.target.files].map(f=>f.name).join(', ');
+    });
+    document.getElementById('multi-file').addEventListener('change', (e) => {
+      document.getElementById('result').textContent = 'Multi: ' + [...e.target.files].map(f=>f.name).join(', ');
+    });
+    document.getElementById('drop-zone').addEventListener('click', () => {
+      document.getElementById('single-file').click();
+    });
+  </script>
+</body>
+</html>

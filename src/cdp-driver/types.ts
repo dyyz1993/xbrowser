@@ -361,6 +361,15 @@ export interface XBFilePayload {
   buffer: Buffer;
 }
 
+export interface XBFileChooser {
+  /** Set files for this file input */
+  setFiles(files: XBFilePayload | XBFilePayload[]): Promise<void>;
+  /** Element selector of the file input */
+  selector: string;
+  /** Whether multiple files are accepted */
+  isMultiple: boolean;
+}
+
 export interface XBRequest {
   url(): string;
   method(): string;

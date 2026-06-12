@@ -53,7 +53,7 @@ export interface ClickContext {
 
 export interface UserAction {
   id: number;
-  type: 'click' | 'input' | 'change' | 'keydown' | 'submit' | 'scroll' | 'navigation' | 'goto' | 'cdp-fill' | 'cdp-click' | 'cdp-eval';
+  type: 'click' | 'input' | 'change' | 'keydown' | 'submit' | 'scroll' | 'navigation' | 'goto' | 'cdp-fill' | 'cdp-click' | 'cdp-eval' | 'filechooser';
   timestamp: number;
   url: string;
   pageTitle: string;
@@ -90,6 +90,11 @@ export interface UserAction {
   scrollY?: number;
   /** Click context: popover/dropdown/menu items captured 200ms after click */
   clickContext?: ClickContext;
+  /** File upload info (type=filechooser only) */
+  files?: {
+    selector: string;
+    isMultiple: boolean;
+  };
 }
 
 export interface NetworkEntry {
@@ -607,6 +612,21 @@ const ACTION_SIGNAL_SCRIPT = `
     var tag = target.tagName && target.tagName.toLowerCase();
     if (tag === 'select') {
       pushAction('change', { element: describe(target), value: (target.value || '').substring(0, 100) });
+    } else if (tag === 'input' && target.type === 'file') {
+      var files = target.files;
+      var fileNames = [];
+      for (var i = 0; i < files.length; i++) {
+        fileNames.push(files[i].name);
+      }
+      pushAction('filechooser', {
+        element: describe(target),
+        value: fileNames.join(', '),
+        files: {
+          names: fileNames,
+          count: files.length,
+          isMultiple: target.multiple,
+        },
+      });
     }
   }, true);
 
@@ -1085,6 +1105,9 @@ export class SessionRecorder {
     // 5. Detect dialog/alert/confirm/prompt as checkpoints
     this.page.on('dialog', this.handleDialog);
 
+    // 6. Detect file upload
+    this.page.on('filechooser', this.handleFileChooser);
+
     // 6. Poll for frontend action signals
     this.pollTimer = setInterval(() => void this.pollActions(), 200);
 
@@ -1403,6 +1426,7 @@ export class SessionRecorder {
     page.on('framenavigated', this.handleFrameNavigated);
     page.on('request', this.handleRequest);
     page.on('response', this.handleResponse);
+    page.on('filechooser', this.handleFileChooser);
     page.on('close', () => { this.activePages.delete(page); });
   };
 
@@ -1454,6 +1478,42 @@ export class SessionRecorder {
       context: { dialogType: dialog.type, message: dialog.message() },
     });
     await dialog.dismiss().catch(() => {});
+  };
+
+  private handleFileChooser = async (fileChooser: { selector: string; isMultiple: boolean }): Promise<void> => {
+    const url = this.page.url();
+
+    // Generate element metadata
+    const sel = fileChooser.selector || 'input[type="file"]';
+    let element: UserAction['element'] | undefined;
+    try {
+      element = (await this.page.evaluate(new Function('selector', `
+        const el = document.querySelector(selector);
+        if (!el) return null;
+        return window.__xb_describe(el);
+      `), sel)) as UserAction['element'] | null ?? undefined;
+    } catch { /* ignore */ }
+
+    this.actionCounter++;
+    this.actions.push({
+      id: this.actionCounter,
+      type: 'filechooser',
+      timestamp: Date.now(),
+      url,
+      pageTitle: '',
+      element: element || {
+        selector: sel,
+        strategy: 'css',
+        confidence: 'high',
+        tag: 'input',
+        text: '',
+      },
+      value: undefined,
+      files: {
+        selector: sel,
+        isMultiple: fileChooser.isMultiple,
+      },
+    });
   };
 
   // ─── Action polling ─────────────────────────────────────────────

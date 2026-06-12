@@ -850,6 +850,44 @@ export class XBPageImpl implements XBPage {
         this._emit('dialog', dialog);
       }),
     );
+
+    // Enable file chooser interception (optional - don't block if not needed)
+    // this.conn.send('Page.setInterceptFileChooserDialog', { enabled: true }, this.sessionId).catch(() => {});
+
+    this._subscriptions.push(
+      this.conn.subscribe('Page.fileChooserOpened', this.sessionId, async (params: unknown) => {
+        const p = params as { mode: string; backendNodeId: number };
+        // Resolve backendNodeId to a selector
+        let selector = '';
+        try {
+          const result = await this.conn.send('DOM.describeNode', { backendNodeId: p.backendNodeId }, this.sessionId) as { node: { attributes?: string[] } };
+          const attrs = result.node?.attributes || [];
+          const idIdx = attrs.indexOf('id');
+          if (idIdx >= 0) selector = '#' + attrs[idIdx + 1];
+        } catch { /* ignore */ }
+        if (!selector) {
+          try {
+            const result = await this.conn.send('DOM.resolveNode', { backendNodeId: p.backendNodeId }, this.sessionId) as { objectId: string };
+            const evalResult = await this.conn.send('Runtime.callFunctionOn', {
+              objectId: result.objectId,
+              functionDeclaration: 'function() { return this.id || this.name || "" }',
+              returnByValue: true,
+            }, this.sessionId) as { result: { value: string } };
+            if (evalResult.result?.value) selector = '#' + evalResult.result.value;
+          } catch { /* ignore */ }
+        }
+
+        const fileChooser: import('./types.js').XBFileChooser = {
+          selector,
+          isMultiple: p.mode === 'selectMultiple',
+          setFiles: async (files: import('./types.js').XBFilePayload | import('./types.js').XBFilePayload[]) => {
+            const fileArray = Array.isArray(files) ? files : [files];
+            await this.setInputFiles(selector || 'input[type="file"]', fileArray);
+          },
+        };
+        this._emit('filechooser', fileChooser);
+      }),
+    );
   }
 
   private setupNetworkEvents(): void {
