@@ -173,7 +173,7 @@ These are handled by the router, not the command registry:
 
 | Subcommand | Handler | Description |
 |-----------|---------|-------------|
-| `session open/close/list/kill` | handleSession | Browser session management |
+| `session close/list/kill` | handleSession | Browser session management |
 | `plugin list/schema/install/uninstall/reload` | handlePlugin | Plugin management |
 | `create <name> --template <type>` | handleCreate | Scaffold new plugin |
 | `config get/set/list` | handleConfig | Configuration management |

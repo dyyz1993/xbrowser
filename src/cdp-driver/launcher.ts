@@ -155,6 +155,7 @@ export async function launchChrome(options: ChromeLaunchOptions = {}): Promise<L
     '--disable-backgrounding-occluded-windows',
     '--disable-renderer-backgrounding',
     '--disable-features=Translate',
+    '--disable-popup-blocking',
   ];
 
   if (headless) {

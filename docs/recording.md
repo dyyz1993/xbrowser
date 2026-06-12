@@ -378,7 +378,7 @@ xbrowser filter raw.yaml clean.yaml
 ### Recording with Custom Timeout
 
 ```bash
-xbrowser session open https://example.com
+xbrowser goto https://example.com
 xbrowser record start
 # ... perform actions ...
 xbrowser record stop --output custom.yaml

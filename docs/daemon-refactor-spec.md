@@ -407,7 +407,7 @@ process.on('message', (msg) => { ... }); // IPC 握手
 npm run build
 
 # 2. Daemon 自动启动
-xbrowser session open https://baidu.com --cdp http://127.0.0.1:9222
+xbrowser goto https://baidu.com --cdp http://127.0.0.1:9222
 
 # 3. 跨进程 session 存活
 # 另一个终端：

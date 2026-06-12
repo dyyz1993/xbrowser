@@ -4,26 +4,6 @@ Commands that manage the xbrowser CLI itself (not browser operations).
 
 ## Session Management
 
-### session open
-
-Open a browser session.
-
-```bash
-xbrowser session open <url> [options]
-```
-
-**Options:**
-- `--session <name>` - Session name (default: `default`)
-- `--name <name>` - Alias for `--session` (backward compatible)
-- `--headless` - Run headless (default: false)
-
-**Examples:**
-```bash
-xbrowser session open https://example.com
-xbrowser session open https://example.com --session work
-xbrowser session open https://example.com --headless
-```
-
 ### session close
 
 Close a browser session.

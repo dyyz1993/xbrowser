@@ -118,7 +118,7 @@ See [references/plugin-development.md](references/plugin-development.md) for ful
 ### Browser Sessions
 
 ```bash
-xbrowser session open https://example.com              # Auto-start
+xbrowser goto https://example.com                       # Auto-start
 xbrowser --cdp 9222 title                               # Connect existing browser
 xbrowser --cdp auto title                               # Auto-discover
 ```

@@ -761,6 +761,9 @@ export async function createSession(
     }
 
     page = targetPage;
+
+    // Note: auto-attach for new tab detection is only enabled for self-launched Chromium
+    // (via newContext -> _enableAutoAttach). CDP tunnels may not support it reliably.
   } else {
     context = await b.newContext({ viewport: { width: 1920, height: 1080 } });
     page = await context.newPage();

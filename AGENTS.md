@@ -58,7 +58,7 @@ npm link            # 让 xbrowser 命令全局可用
 
 ```bash
 # 方式 1: 让 xbrowser 自己启动浏览器
-xbrowser session open https://example.com
+xbrowser goto https://example.com
 xbrowser title
 xbrowser screenshot --output output/example.png
 
@@ -116,7 +116,7 @@ EOF
 
 ```bash
 # 1. 打开会话
-xbrowser session open https://example.com
+xbrowser goto https://example.com
 
 # 2. 开始录制
 xbrowser record start --url https://example.com --name my-flow
@@ -802,10 +802,9 @@ src/cli/session-routes.ts  →  tests/cli/session-routes.test.ts
 
 | 用法 | 对应 options key |
 |------|-----------------|
-| `xbrowser session open --name my-sess` | `options.name` |
 | `xbrowser doubao list --session my-sess` | `options.session`（全局 flag） |
 
-`session open/close` 的子命令用 `options.name`，不要混淆。
+`--session` 是会话路由的主选项，会话已改为自动创建（无需显式 `session open`）。
 
 ### 插件 createSite 不需要 loginConfig
 
@@ -901,7 +900,7 @@ git branch -D feat/x
 ## 18. 速查表（最高频 8 条命令）
 
 ```bash
-xbrowser session open <url>                 # 开浏览器
+xbrowser goto <url>                          # 打开页面（自动创建会话）
 xbrowser "<a> && <b> && <c>"                # 链式
 xbrowser <plugin> <command>                 # 跑插件
 xbrowser viewer                             # 打开 viewer（人类接管）
@@ -932,3 +931,201 @@ xbrowser plugin schema <plugin> <cmd>       # 看插件 schema
 | xbrowser skill | `skill/SKILL.md` |
 | UI 自动化技巧 | `.opencode/ui-automator/README.md` |
 | 平台推广模式 | `.opencode/ui-automator/plugins/platform-promotion-guide.md` |
+
+---
+
+## 20. 录制器自测（Agent 自动化验证）
+
+> 录制器功能可以通过 CDP 命令全自动测试，**不需要人工在浏览器里操作**。
+
+### 20.1 前置条件
+
+- Chrome 已以 `--remote-debugging-port=9221` 启动，且已登录目标站点（如掘金）
+- daemon 在端口 9224 上运行
+
+### 20.2 完整自测流程
+
+```bash
+# 1. 构建 & 启动 daemon
+cd /Users/xuyingzhou/Project/study-node-ts/xbrowser
+npm run build
+pkill -f "node dist/daemon-main" 2>/dev/null; sleep 1
+node dist/daemon-main.js &
+sleep 2
+
+# 2. 启动录制（连接到已开浏览器）
+node dist/cli.js record start \
+  --url https://juejin.cn/creator/home \
+  --cdp http://localhost:9221 \
+  --session auto-test
+
+# 3. 模拟用户操作（CDP 命令）
+sleep 5  # 等页面加载
+
+# 点击"写文章"
+node dist/cli.js click '.send-button' \
+  --cdp http://localhost:9221 --session auto-test
+
+# 如果"写文章"打开了新 tab，当前 tab 不会跳转，需要手动导航
+node dist/cli.js goto https://juejin.cn/editor/drafts/new \
+  --cdp http://localhost:9221 --session auto-test
+
+# 填标题
+sleep 3
+node dist/cli.js fill '.title-input' 'auto-test-title' \
+  --cdp http://localhost:9221 --session auto-test
+
+# 保存草稿（等待自动保存）
+sleep 3
+
+# 跳转到草稿列表
+node dist/cli.js goto https://juejin.cn/editor/drafts \
+  --cdp http://localhost:9221 --session auto-test
+
+# 点"删除"（通过 eval 找文字匹配，因为弹窗元素没有稳定 selector）
+sleep 3
+node dist/cli.js eval \
+  "[...document.querySelectorAll('*')].filter(el=>el.textContent.trim()==='删除'&&el.children.length===0)[0]?.click();'done'" \
+  --cdp http://localhost:9221 --session auto-test
+
+# 点"确定"
+sleep 1
+node dist/cli.js eval \
+  "[...document.querySelectorAll('button')].filter(el=>el.textContent.trim()==='确定')[0]?.click();'done'" \
+  --cdp http://localhost:9221 --session auto-test
+
+# 4. 停止录制
+node dist/cli.js record stop --session auto-test
+```
+
+### 20.3 检查录制结果
+
+```bash
+# 查看录制摘要
+node dist/cli.js record stop --session auto-test 2>&1 | head -20
+
+# 查看 recording.json 中的 element 字段（strategy / confidence / textFallback / popup）
+node -e "
+const d = JSON.parse(require('fs').readFileSync(
+  require('os').homedir() + '/.xbrowser/sessions/auto-test/recordings/recording.json', 'utf8'
+));
+d.actions.forEach(a => {
+  const e = a.element;
+  if (!e) { console.log('[' + a.id + '] ' + a.type + ' (no element)'); return; }
+  const tf = e.textFallback ? ' textFallback=\"' + e.textFallback.value + '\" (' + e.textFallback.type + ')' : '';
+  const popup = e.popup ? ' [popup: ' + e.popup.containerSelector + ']' : '';
+  console.log('[' + a.id + '] ' + a.type.padEnd(10) +
+    ' sel=' + (e.selector || '').padEnd(55) +
+    ' strat=' + (e.strategy || '-').padEnd(18) +
+    ' conf=' + (e.confidence || '-').padEnd(7) +
+    ' text=\"' + (e.text || '').substring(0,15) + '\"' +
+    tf + popup);
+});
+"
+```
+
+### 20.4 预期输出示例
+
+```
+[1] cdp-click  sel=.send-button                                            strat=-                  conf=-       text=""
+[3] cdp-fill   sel=.title-input                                            strat=-                  conf=-       text=""
+[8] click      sel=li:nth-of-type(2)                                       strat=nth-of-type        conf=low     text="删除" textFallback="删除" (popup-text) [popup: .menu-list]
+[9] click      sel=.confirm-btn                                            strat=class              conf=medium  text="确定"
+```
+
+### 20.5 录制数据字段说明
+
+每个 action 的 `element` 包含以下字段：
+
+| 字段 | 说明 | 示例 |
+|------|------|------|
+| `selector` | CSS 选择器（13 段策略生成） | `.send-button` / `input[placeholder="输入文章标题..."]` |
+| `strategy` | 生成策略 | `class` / `placeholder` / `nth-of-type` / `attribute` |
+| `confidence` | 可靠性评级 | `high`（id/testid/aria） / `medium`（class） / `low`（nth-of-type） |
+| `textFallback` | 文字兜底定位（弹窗内唯一） | `{ type: "popup-text", value: "删除", selector: "popup-text=删除" }` |
+| `popup` | 弹窗容器信息 | `{ containerSelector: ".menu-list", containerText: "编辑 删除" }` |
+| `tag` / `text` / `role` | 元素基础信息 | `button` / `写文章` / `button` |
+
+### 20.6 回放策略（基于 confidence 分级）
+
+回放器应按 confidence 从高到低尝试定位：
+
+1. **high** → 直接用 `selector`（`#id` / `[data-testid]` / `[aria-label]` / `[name]`）
+2. **medium** → 用 `selector`，失败时用 `text` 兜底
+3. **low** → 优先用 `textFallback`（如 `popup-text=删除`），再用 `selector`，最后用 `x/y` 坐标
+4. **任何级别** → 都有 `x` / `y` 坐标作为最终兜底
+
+### 20.7 注意事项
+
+- **CDP 命令会被记录为 `cdp-click` / `cdp-fill` / `goto` 类型**，和用户真实操作（`click` / `input`）区分
+- **去重窗口 1.5 秒**：CDP 命令触发 DOM 事件后，1.5 秒内同一类型的 action signal 会被过滤
+- **新 tab 不会自动跟踪**：CDP 模式下 `click` 打开新 tab 后，CDP 命令仍在旧 tab 执行，需要 `goto` 手动导航
+- **录制文件位置**：`~/.xbrowser/sessions/<session-name>/recordings/recording.json`
+
+### 20.8 录制器架构（相关文件）
+
+| 文件 | 作用 |
+|------|------|
+| `src/recorder/session-recorder.ts` | 录制器核心（action signal 脚本、network 捕获、popup context、flush 逻辑） |
+| `src/recorder/selector-utils.ts` | 13 段策略 CSS selector 生成器（`generateUniqueSelector`） |
+| `src/daemon/rpc-handlers.ts` | daemon RPC 处理（record start/stop、CDP 命令注入 recorder） |
+| `src/cdp-driver/context.ts` | BrowserContext（page 事件转发、新 tab 检测） |
+| `src/cdp-driver/page.ts` | Page（CDP 连接、evaluate、addInitScript、network 监听） |
+| `tests/recorder/session-recorder.test.ts` | SessionRecorder 单元测试（15 用例） |
+
+## 21. 录制器生产级修复记录（v2）
+
+### 21.1 修复清单
+
+| # | 问题 | 根因 | 修复 | 文件 |
+|---|------|------|------|------|
+| 1 | 假 navigation action（第一次 flush） | actions 为空导致 URL 变化误判 | `lastKnownUrl` 字段跟踪，start() 时初始化 | `session-recorder.ts` |
+| 2 | cdp-click url=about:blank | click 后页面导航，page.url() 返回中间状态 | `urlBeforeCommand`（executeCommand 前获取）+ `lastKnownUrl` fallback | `rpc-handlers.ts`, `session-recorder.ts` |
+| 3 | 重复 action（cdp-fill + input） | 双向时序问题（action signal 先到或后到） | 双向去重：reverse dedup + `lastActionTs` 更新 | `session-recorder.ts` |
+| 4 | navigation 重复（尾斜杠差异） | `example.com/` vs `example.com` | URL normalize 去尾斜杠 | `session-recorder.ts` |
+| 5 | cdp-fill 缺 element 元数据 | `recordCommandAction` 只存 selector | `injectCommandToRecorder` 改 async，`page.evaluate` 调用 `__xb_describe()` | `rpc-handlers.ts`, `session-recorder.ts` |
+| 6 | network 为 0 | CDP 模式下 context 事件转发遗漏 | page 级别 request/response 监听 + context 级别双重保障 | `session-recorder.ts` |
+| 7 | popup 检测不全 | `el.closest()` 选择器不够 | 加 `[id*=menu]` / `[id*=dropdown]` 等 | `session-recorder.ts` |
+
+### 21.2 单元测试
+
+```
+tests/recorder/session-recorder.test.ts — 15 用例，覆盖：
+  - recordCommandAction 元数据（strategy/confidence/textFallback）
+  - 去重（正向 + 反向 + 窗口过期）
+  - lastKnownUrl 跟踪（about:blank fallback、goto 后更新）
+  - stop() 输出结构（data/summary/steps/elements）
+  - 边界情况（空录制、无 element、cdp-eval、about:blank）
+```
+
+运行：`npx vitest run tests/recorder/session-recorder.test.ts`
+
+### 21.3 已知限制
+
+| 限制 | 说明 |
+|------|------|
+| iframe 内 input 事件 | action signal 脚本只注入到主页面，iframe 内的 input/change 事件不被监听。CDP eval 操作可通过 cdp-eval action 记录 |
+| framenavigated（CDP 模式） | CDP 连接下 framenavigated 可能不触发，已通过 flush 中 URL 变化检测兜底 |
+| 多 tab 录制 | 新 tab 会注入 action signal 脚本，但 CDP 模式下可能遗漏部分事件 |
+
+### 21.4 回归测试命令
+
+```bash
+# 构建 + 启动 daemon
+npm run build && node dist/daemon-main.js &
+
+# 全场景回归
+node dist/cli.js record start --url "file:///tmp/recorder-test.html" --cdp http://localhost:9221 --session regression
+sleep 3
+node dist/cli.js fill '#username' 'test' --cdp http://localhost:9221 --session regression
+sleep 1
+node dist/cli.js click '#dropdown-btn' --cdp http://localhost:9221 --session regression
+sleep 1
+node dist/cli.js goto https://example.com --cdp http://localhost:9221 --session regression
+sleep 2
+node dist/cli.js click 'a' --cdp http://localhost:9221 --session regression
+sleep 3
+node dist/cli.js record stop --session regression
+```
+
+预期：6 actions，无 about:blank，无重复，有 navigation，有 network。

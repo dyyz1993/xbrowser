@@ -112,7 +112,7 @@ xbrowser screenshot --type jpeg
 
 ```bash
 # 1. Open session
-xbrowser session open https://example.com
+xbrowser goto https://example.com
 
 # 2. Start recording
 xbrowser record start --url https://example.com

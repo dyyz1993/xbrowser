@@ -48,6 +48,9 @@ export class XBContextImpl implements XBContext {
 
     this._pages.push(page);
 
+    // Forward page events (request, response, etc.) to context listeners
+    this.forwardPageEvents(page);
+
     // Apply context options
     if (this.options.viewport) {
       await page.setViewportSize(this.options.viewport).catch(() => {});
@@ -155,6 +158,19 @@ export class XBContextImpl implements XBContext {
 
   // ── Private ─────────────────────────────────────────────────
 
+  /** Forward page-level events (request, response, etc.) to context listeners */
+  private forwardPageEvents(page: XBPageImpl): void {
+    const forward = (event: string) => {
+      page.on(event, (...args: unknown[]) => {
+        this._emitter.emit(event, ...args);
+      });
+    };
+    forward('request');
+    forward('response');
+    forward('requestfailed');
+    forward('requestfinished');
+  }
+
   private setupAutoAttach(): void {
     this.targetAttachedHandler = (paramsRaw: unknown) => {
       const params = paramsRaw as {
@@ -195,6 +211,8 @@ export class XBContextImpl implements XBContext {
           await page.addInitScript(script).catch(() => {});
         }
         this._pages.push(page);
+        // Forward page events (request, response, etc.) to context listeners
+        this.forwardPageEvents(page);
         this._emitter.emit('page', page);
       });
     };

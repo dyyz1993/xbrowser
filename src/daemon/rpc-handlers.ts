@@ -33,7 +33,7 @@ import { exportEntry } from './code-export.js';
 import type { ExportLang } from './code-export.js';
 import { WSServer } from '../websocket-server.js';
 import { SessionRecorder } from '../recorder/session-recorder.js';
-import type { RecordingSummary, CheckpointEntry } from '../recorder/session-recorder.js';
+import type { RecordingSummary, CheckpointEntry, UserAction } from '../recorder/session-recorder.js';
 import { PlaybackEngine } from '../recorder/player.js';
 import type { PlaybackResult } from '../recorder/player.js';
 import { resolveCDPEndpoint } from '../utils/cdp.js';
@@ -233,9 +233,21 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       const endpoint = await resolveCDPEndpoint(cdp);
       session = await createSession(name, url, { cdpEndpoint: endpoint });
     } else {
+      // Try auto-discovered CDP first, fallback to self-launched Chromium
+      let autoEndpoint: string | undefined;
       try {
-        const endpoint = await resolveCDPEndpoint('auto');
-        session = await createSession(name, url, { cdpEndpoint: endpoint });
+        autoEndpoint = await resolveCDPEndpoint('auto');
+        session = await createSession(name, url, { cdpEndpoint: autoEndpoint });
+        // Verify the connection works by navigating to the URL
+        if (url) {
+          try {
+            await session.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 8000 });
+          } catch {
+            // Navigation failed on CDP tunnel — fallback
+            try { await closeSessionByName(name); } catch { /* ignore */ }
+            session = await createSession(name, url);
+          }
+        }
       } catch {
         session = await createSession(name, url);
       }
@@ -298,9 +310,19 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     });
     const needsPause = INTERACTION_COMMANDS.has(command) && !!previewWS;
     if (needsPause) await previewWS!.pauseScreencast(sessionName);
+
+    // Capture URL BEFORE executing command (page may navigate during click)
+    let urlBeforeCommand: string | undefined;
+    try {
+      const session = findSession(sessionName);
+      urlBeforeCommand = session?.page?.url();
+    } catch { /* ignore */ }
+
     try {
       const result = await executeCommand(command, cmdParams, sessionName, { cdpEndpoint: endpoint });
       registerSessionIfNew(sessionName);
+      // Inject CDP command into active recorder if recording
+      await injectCommandToRecorder(sessionName, command, cmdParams, urlBeforeCommand);
       return result;
     } finally {
       if (needsPause) await previewWS!.resumeScreencast(sessionName).catch(() => { });
@@ -516,11 +538,62 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     return { session: sessionName, commands: commandLogStore.list(sessionName, { limit }) };
   }
 
+  /** Inject CDP command execution into active recorder as a synthetic action */
+  async function injectCommandToRecorder(sessionName: string, command: string, params: Record<string, unknown>, urlBeforeCommand?: string): Promise<void> {
+    const recorder = activeRecorders.get(sessionName);
+    if (!recorder) return;
+
+    const COMMAND_ACTION_MAP: Record<string, string> = {
+      goto: 'goto',
+      fill: 'cdp-fill',
+      click: 'cdp-click',
+      type: 'input',
+      select: 'change',
+    };
+    const actionType = COMMAND_ACTION_MAP[command];
+    if (!actionType) return;
+
+    const selector = (params.selector as string) || (params.css as string);
+    const value = (params.value as string) || (params.expression as string);
+
+    // Capture currentUrl: for goto use params.url (target), for others use page URL before command
+    let currentUrl = (params.url as string | undefined) || urlBeforeCommand;
+    // For click/fill/type commands, prefer the page URL at the time of the action
+    if (command !== 'goto' && urlBeforeCommand && urlBeforeCommand !== 'about:blank') {
+      currentUrl = urlBeforeCommand;
+    }
+
+    // Try to get element metadata from the page via describe()
+    let element: Record<string, unknown> | undefined;
+    if (selector) {
+      try {
+        const session = findSession(sessionName);
+        if (session?.page) {
+          element = await session.page.evaluate((sel: string) => {
+            const el = document.querySelector(sel);
+            const w = window as unknown as Record<string, unknown>;
+            if (!el || typeof w.__xb_describe !== 'function') return null;
+            return (w.__xb_describe as (el: Element) => Record<string, unknown>)(el);
+          }, selector);
+        }
+      } catch { /* page may have navigated or closed */ }
+    }
+
+    recorder.recordCommandAction({
+      type: actionType,
+      selector,
+      value,
+      url: currentUrl,
+      element: element as UserAction['element'],
+    });
+  }
+
   // ─── Session recording handlers (daemon-managed) ─────────────────
 
   async function handleRecordStart(params: Record<string, unknown>) {
     const sessionName = (params.session as string) || 'default';
     const url = params.url as string | undefined;
+    const cdpEndpoint = params.cdpEndpoint as string | undefined;
 
     if (activeRecorders.has(sessionName)) {
       return { ok: false, error: 'Recording already in progress for session: ' + sessionName };
@@ -532,14 +605,9 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
         return { ok: false, error: 'Session not found: ' + sessionName + '. Provide --url to auto-create.' };
       }
       try {
-        let session2;
-        try {
-          const endpoint = await resolveCDPEndpoint('auto');
-          session2 = await createSession(sessionName, url, { cdpEndpoint: endpoint });
-        } catch {
-          session2 = await createSession(sessionName, url);
-        }
-        session = session2;
+        // Use CDP endpoint if provided, otherwise self-launch Chromium
+        const sessionOpts = cdpEndpoint ? { cdpEndpoint } : undefined;
+        session = await createSession(sessionName, url, sessionOpts);
         await injectRecording(session.page);
         if (previewWS) previewWS.registerSession(session.name, session.page);
         saveSessionDiskMeta(sessionName, {

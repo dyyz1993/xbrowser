@@ -23,34 +23,36 @@ Session management patterns for xbrowser — create, use, and close browser sess
 Every browser interaction follows this pattern:
 
 ```
-session open → commands → session close
+auto-create → commands → auto-cleanup
 ```
 
-```bash
-# 1. Create session (auto-starts daemon if needed)
-xbrowser session open https://example.com --name mytask
+Sessions are **auto-created** when you run `goto` or any page-scoped command. There is no need to manually open a session.
 
-# 2. Execute commands
+```bash
+# 1. Navigate — session auto-created (daemon auto-starts if needed)
+xbrowser goto https://example.com --session mytask --cdp http://localhost:9222
+
+# 2. Execute commands (session is already active)
 xbrowser click --selector '.btn' --session mytask
 xbrowser scrape https://example.com --json --session mytask
 xbrowser fill --selector '#input' --value 'hello' --session mytask
 
-# 3. Close session when done (mandatory!)
-xbrowser session close --name mytask
+# 3. Close session when done (optional — daemon cleans up on exit)
+xbrowser session close --session mytask
 ```
 
 ### Mandatory Rules
 
-1. **Always create a new session** — Never reuse stale sessions from previous tasks
+1. **Use `goto` to start** — Sessions auto-create on first `goto` or page-scoped command
 2. **Always close when done** — Unclosed sessions leak CDP connections and memory
 3. **Use `xbrowser kill` for cleanup** — Nuclear option when state is uncertain
 4. **Kill before testing code changes** — Old daemon + new code = unpredictable bugs
 
 ```bash
-# ✅ Correct pattern
-xbrowser session open https://example.com --name task1
+# ✅ Correct pattern — auto-create via goto
+xbrowser goto https://example.com --session task1 --cdp http://localhost:9222
 xbrowser click --selector '.btn' --session task1
-xbrowser session close --name task1
+xbrowser session close --session task1
 
 # ❌ Wrong — reusing stale session, no cleanup
 xbrowser click --selector '.btn'
@@ -64,9 +66,9 @@ xbrowser scrape https://example.com --json
 The xbrowser daemon runs on port 9224 and manages browser sessions. It auto-starts when you run commands:
 
 ```bash
-# Daemon auto-starts when needed
-xbrowser session open https://example.com --name task1
-# → Daemon started on port 9224
+# Daemon auto-starts when needed — sessions auto-create on goto
+xbrowser goto https://example.com --session task1 --cdp http://localhost:9222
+# → Daemon started on port 9224, session "task1" auto-created
 
 # Or use any command directly (daemon auto-managed)
 xbrowser "goto https://example.com && title"
@@ -182,12 +184,12 @@ User Browser (viewer)          xbrowser Daemon (9224)           Chromium (9221)
 
 | Command | Scope | When to Use |
 |---------|-------|-------------|
-| `session close --name <n>` | Closes one session | Normal cleanup after task |
+| `session close --session <n>` | Closes one session | Normal cleanup after task |
 | `xbrowser kill` | Kills daemon + ALL sessions | Nuclear cleanup, state unknown |
 
 ```bash
 # Normal cleanup
-xbrowser session close --name mytask
+xbrowser session close --session mytask
 
 # Something went wrong
 xbrowser kill
@@ -206,12 +208,12 @@ When developing xbrowser code or modifying plugins, the running daemon uses stal
 # Required after ANY code change
 xbrowser kill && npm run build
 
-# Then create fresh session (daemon auto-starts with new code)
-xbrowser session open https://example.com --name test
+# Then navigate — session auto-creates (daemon auto-starts with new code)
+xbrowser goto https://example.com --session test --cdp http://localhost:9222
 
 # ❌ Wrong — old daemon running modified code = unpredictable bugs
 npm run build
-xbrowser session open ...  # May use cached daemon with old code
+xbrowser goto ...  # May use cached daemon with old code
 ```
 
 **Why**: The daemon process loads code at startup. `npm run build` only updates files on disk.
@@ -222,14 +224,14 @@ Without `kill`, the daemon continues running old code.
 ## Session Commands Reference
 
 ```bash
-# Create session
-xbrowser session open <url> [--name <n>] [--cdp <endpoint>]
-
 # List active sessions
 xbrowser session list
 
 # Close specific session
-xbrowser session close [--name <n>]
+xbrowser session close --session <name>
+
+# Close all sessions
+xbrowser session kill-all
 
 # Kill everything (daemon + all sessions)
 xbrowser kill
@@ -242,15 +244,15 @@ xbrowser kill
 ### Parallel Tasks with Named Sessions
 
 ```bash
-xbrowser session open https://site-a.com --name task1 &
-xbrowser session open https://site-b.com --name task2 &
+xbrowser goto https://site-a.com --session task1 --cdp http://localhost:9222 &
+xbrowser goto https://site-b.com --session task2 --cdp http://localhost:9222 &
 wait
 
 xbrowser scrape https://site-a.com --json --session task1 > a.json
 xbrowser scrape https://site-b.com --json --session task2 > b.json
 
-xbrowser session close --name task1
-xbrowser session close --name task2
+xbrowser session close --session task1
+xbrowser session close --session task2
 ```
 
 ### CDP Login State Reuse
@@ -272,13 +274,13 @@ unset XBROWSER_CDP
 xbrowser kill
 npm run build
 
-# Create session for testing
-xbrowser session open https://example.com --name dev-test
+# Navigate — session auto-creates
+xbrowser goto https://example.com --session dev-test --cdp http://localhost:9222
 
 # ... test commands ...
 
 # Cleanup
-xbrowser session close --name dev-test
+xbrowser session close --session dev-test
 
 # Run tests
 npm run test

@@ -237,7 +237,7 @@ CLI Process                          Daemon Process (port 9224)
 
 ### When Daemon Starts
 
-- Auto-started by `session open` if not running
+- Auto-started when needed
 - Spawned as detached child process
 - Writes PID + port to `~/.xbrowser/daemon.json`
 - Viewer URL: `http://localhost:9224/preview/<session-name>`

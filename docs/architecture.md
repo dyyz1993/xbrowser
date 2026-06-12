@@ -304,7 +304,7 @@ const BROWSER_SCOPE = {
 | `config.ts` | config get/set/list | 配置管理（`~/.xbrowser/config.json`） |
 | `create.ts` | create | 从模板创建插件（static/dynamic/login/api） |
 | `plugin.ts` | plugin install/uninstall/list/reload | 插件管理 |
-| `session.ts` | session open/close/list/kill | 会话管理 |
+| `session.ts` | session close/list/kill | 会话管理 |
 
 ### src/plugin/ — 插件系统
 

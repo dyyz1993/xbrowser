@@ -14,6 +14,7 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { BrowserContext, Frame, Page, Request, Response, Dialog } from '../browser-shim.js';
+import { getSelectorGeneratorScript } from './selector-utils.js';
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -52,7 +53,7 @@ export interface ClickContext {
 
 export interface UserAction {
   id: number;
-  type: 'click' | 'input' | 'change' | 'keydown' | 'submit' | 'scroll';
+  type: 'click' | 'input' | 'change' | 'keydown' | 'submit' | 'scroll' | 'navigation' | 'goto' | 'cdp-fill' | 'cdp-click' | 'cdp-eval';
   timestamp: number;
   url: string;
   pageTitle: string;
@@ -60,6 +61,21 @@ export interface UserAction {
     tag: string;
     selector?: string;  // unique short CSS selector for replay
     text: string;
+    /** Which strategy from generateUniqueSelector produced this selector */
+    strategy?: string;
+    /** Reliability rating from generateUniqueSelector: high / medium / low */
+    confidence?: 'high' | 'medium' | 'low';
+    /** Text-based fallback for low-confidence selectors (e.g. menu items) */
+    textFallback?: {
+      type: 'text';
+      value: string;
+      selector: string;  // e.g. "text=删除"
+    };
+    /** Popup/menu context when element is inside a dropdown */
+    popup?: {
+      containerSelector: string;
+      containerText: string;
+    };
     role?: string;
     type?: string;
     placeholder?: string;
@@ -175,13 +191,21 @@ const ACTION_SIGNAL_SCRIPT = `
   window.__xb_action_signal = true;
   window.__xb_pending_actions = [];
 
-  // --- Unique short selector generator ---
+  // --- Unique short selector generator (delegates to 13-strategy selector-utils) ---
   function uniqueSelector(el) {
     if (!el || !el.tagName) return null;
     var doc = el.ownerDocument || document;
 
     function isUnique(sel) {
       try { return doc.querySelectorAll(sel).length === 1; } catch(e) { return false; }
+    }
+
+    // Prefer window.__xb_generateSelector from selector-utils (13 strategies)
+    if (typeof window.__xb_generateSelector === 'function') {
+      try {
+        var result = window.__xb_generateSelector(el, doc);
+        if (result && result.selector) return result.selector;
+      } catch(e) { /* fallback to local logic */ }
     }
 
     // 1. #id (shortest, globally unique)
@@ -270,10 +294,92 @@ const ACTION_SIGNAL_SCRIPT = `
       ? (el.value || el.getAttribute('placeholder') || '').trim().substring(0, 40)
       : (el.textContent || '').trim().substring(0, 40);
     if (tag === 'a' && el.getAttribute('href')) displayText = el.textContent.trim().substring(0, 40);
+
+    // Prefer window.__xb_generateSelector (13 strategies) — also extracts strategy + confidence
+    var selector, strategy, confidence;
+    if (typeof window.__xb_generateSelector === 'function') {
+      try {
+        var result = window.__xb_generateSelector(el, el.ownerDocument || document);
+        if (result && result.selector) {
+          selector = result.selector;
+          strategy = result.strategy;
+          confidence = result.confidence;
+        }
+      } catch(e) { /* fall through to local */ }
+    }
+    if (!selector) {
+      selector = uniqueSelector(el);
+    }
+
+    // For low-confidence selectors (nth-of-type), generate a text-based fallback
+    // when the element has short, unique text (e.g. menu items "删除", "确认")
+    var textFallback;
+    var popupContext;
+
+    // Check if element is inside a popup/menu first (needed for scoped text uniqueness)
+    var popupEl;
+    try {
+      popupEl = el.closest('[role="menu"], [role="listbox"], [role="dialog"], [role="tooltip"], [role="list"], [class*="popover"], [class*="popup"], [class*="dropdown"], [class*="menu"], [class*="modal"], [id*="menu"], [id*="dropdown"], [id*="popup"], [id*="modal"]');
+    } catch(e) {}
+
+    if (confidence === 'low') {
+      var rawText = (el.textContent || '').trim();
+      if (rawText && rawText.length >= 1 && rawText.length <= 30 && el.children.length === 0) {
+        try {
+          var doc = el.ownerDocument || document;
+          var escapedText = rawText.replace(/'/g, "\\'");
+
+          // If inside popup, check uniqueness WITHIN popup only
+          var count;
+          if (popupEl && popupEl !== el) {
+            var popupCount = doc.evaluate(
+              "count(.//*[normalize-space(text())='" + escapedText + "'])",
+              popupEl, null, XPathResult.NUMBER_TYPE, null
+            );
+            count = popupCount.numberValue;
+          } else {
+            // Check global uniqueness
+            var globalCount = doc.evaluate(
+              "count(//*[normalize-space(text())='" + escapedText + "'])",
+              doc, null, XPathResult.NUMBER_TYPE, null
+            );
+            count = globalCount.numberValue;
+          }
+
+          if (count === 1) {
+            textFallback = {
+              type: popupEl && popupEl !== el ? 'popup-text' : 'text',
+              value: rawText,
+              selector: popupEl && popupEl !== el ? 'popup-text=' + rawText : 'text=' + rawText,
+            };
+          }
+        } catch(e) { /* xpath not available or error */ }
+      }
+    }
+
+    // Generate popup context info
+    if (popupEl && popupEl !== el) {
+      try {
+        var popupResult = window.__xb_generateSelector
+          ? window.__xb_generateSelector(popupEl, el.ownerDocument || document)
+          : null;
+        if (popupResult && popupResult.selector) {
+          popupContext = {
+            containerSelector: popupResult.selector,
+            containerText: (popupEl.textContent || '').trim().substring(0, 50),
+          };
+        }
+      } catch(e) { /* skip */ }
+    }
+
     return {
       tag: tag,
-      selector: uniqueSelector(el),
+      selector: selector,
       text: displayText,
+      strategy: strategy,
+      confidence: confidence,
+      textFallback: textFallback,
+      popup: popupContext,
       role: el.getAttribute('role') || undefined,
       type: el.getAttribute('type') || undefined,
       placeholder: el.getAttribute('placeholder') || undefined,
@@ -281,6 +387,9 @@ const ACTION_SIGNAL_SCRIPT = `
       href: el.getAttribute('href') ? el.getAttribute('href').substring(0, 80) : undefined,
     };
   }
+
+  // Expose describe() for CDP command element metadata extraction
+  window.__xb_describe = describe;
 
   function isMeaningful(el) {
     if (!el || !el.tagName) return false;
@@ -791,6 +900,14 @@ export class SessionRecorder {
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private lastActionTs = 0;
   private activePages = new Set<Page>();
+  private lastKnownUrl = '';  // Track URL to detect real navigation changes
+
+  /** Dedup window: after a CDP command action, ignore matching action signals within this window */
+  private cdpActionDedup: { type: string; value?: string; selector?: string; until: number } | null = null;
+
+  /** Network dedup: last request key for short-window dedup */
+  private _lastRequestKey = '';
+  private _lastRequestTs = 0;
 
   private _isRecording = false;
 
@@ -806,6 +923,58 @@ export class SessionRecorder {
 
   get actionCount(): number {
     return this.actions.length;
+  }
+
+  /** Record an action triggered by a CDP command (e.g. xbrowser fill/click/goto) */
+  recordCommandAction(action: { type: string; selector?: string; value?: string; url?: string; element?: UserAction['element'] }): void {
+    // Reverse dedup: if a matching action signal was recently recorded, skip this CDP command
+    const normalizedType = action.type === 'cdp-fill' ? 'input' : action.type === 'cdp-click' ? 'click' : action.type;
+    const recent = this.actions[this.actions.length - 1];
+    if (recent && Date.now() - recent.timestamp < 1500) {
+      // Match against either the raw type (cdp-fill/cdp-click) or normalized type (input/click)
+      const typeMatch = recent.type === action.type || recent.type === normalizedType;
+      const valueMatch = !action.value || recent.value === action.value;
+      const selectorMatch = !action.selector || (recent.element?.selector &&
+        (recent.element.selector === action.selector ||
+         recent.element.selector.endsWith(' ' + action.selector) ||
+         action.selector.endsWith(' ' + recent.element.selector)));
+      if (typeMatch && valueMatch && selectorMatch) {
+        // Skip duplicate CDP command — action signal already captured it
+        return;
+      }
+    }
+
+    this.actionCounter++;
+    const ts = Date.now();
+    // Use lastKnownUrl if action url is about:blank or empty (page may have navigated)
+    const actionUrl = action.url && action.url !== 'about:blank'
+      ? action.url
+      : (this.lastKnownUrl || this.page.url());
+    this.actions.push({
+      id: this.actionCounter,
+      type: action.type as UserAction['type'],
+      timestamp: ts,
+      url: actionUrl,
+      pageTitle: '',
+      element: action.element || (action.selector ? { tag: '', selector: action.selector, text: '' } : undefined),
+      value: action.value,
+    });
+    // Update lastActionTs so flush will skip stale action signals
+    this.lastActionTs = ts;
+    // Set dedup window: ignore matching action signals for 1.5s
+    this.cdpActionDedup = {
+      type: normalizedType,
+      value: action.value,
+      selector: action.selector,
+      until: Date.now() + 1500,
+    };
+
+    // Update URL tracking for goto/navigation commands
+    if (action.url && action.url !== 'about:blank') {
+      this.lastKnownUrl = action.url;
+    } else if (action.type === 'goto' && action.value && action.value !== 'about:blank') {
+      this.lastKnownUrl = action.value;
+    }
   }
 
   get networkCount(): number {
@@ -863,6 +1032,13 @@ export class SessionRecorder {
     this.contextChanges = [];
     this.checkpoints = [];
     this.checkpointCounter = 0;
+    this.lastKnownUrl = this.page.url();  // Initialize URL tracking
+
+    // Register init scripts BEFORE goto so they execute on the freshly loaded page.
+    // order matters: selector-utils first, then action signal script (which uses it).
+    await this.page.addInitScript(getSelectorGeneratorScript());
+    await this.page.addInitScript(ACTION_SIGNAL_SCRIPT);
+    await this.page.addInitScript(CHECKPOINT_OVERLAY_SCRIPT);
 
     // Navigate if URL provided
     if (url) {
@@ -884,14 +1060,18 @@ export class SessionRecorder {
     };
     writeFileSync(this.controlFilePath, JSON.stringify(control, null, 2), 'utf-8');
 
-    // 1. Inject action signal script (minimal frontend footprint)
+    // 1. Inject action signal script (minimal frontend footprint) — also handles already-loaded page
     await this.injectActionScript(this.page);
-    await this.page.addInitScript(ACTION_SIGNAL_SCRIPT);
-    await this.page.addInitScript(CHECKPOINT_OVERLAY_SCRIPT);
 
     // 2. Network capture at context level (covers all pages/tabs)
     this.context.on('request', this.handleRequest);
     this.context.on('response', this.handleResponse);
+
+    // Also listen on each existing page directly (CDP mode: context forwarding may miss pre-existing pages)
+    for (const p of this.context.pages()) {
+      p.on('request', this.handleRequest);
+      p.on('response', this.handleResponse);
+    }
 
     // 3. Track new pages (tabs/popups)
     this.context.on('page', this.handleNewPage);
@@ -1039,7 +1219,11 @@ export class SessionRecorder {
 
   private async injectActionScript(page: Page): Promise<void> {
     try {
+      // Inject the 13-strategy unique selector generator FIRST so action script can use it
+      await page.evaluate(getSelectorGeneratorScript());
       await page.evaluate(ACTION_SIGNAL_SCRIPT);
+      // Store script source so pollActions can inject into dynamic iframes
+      await page.evaluate(`window.__xb_action_script_src = ${JSON.stringify(ACTION_SIGNAL_SCRIPT)};`);
     } catch {
       // page may not be ready — action script already injected is OK
     }
@@ -1047,6 +1231,52 @@ export class SessionRecorder {
       await page.evaluate(CHECKPOINT_OVERLAY_SCRIPT);
     } catch {
       // page may not be ready
+    }
+
+    // Inject into same-origin iframes — both existing and dynamically created ones
+    try {
+      await page.evaluate(`
+        (function() {
+          var _scriptSrc = ${JSON.stringify(ACTION_SIGNAL_SCRIPT)};
+          function injectIframe(iframe) {
+            try {
+              var w = iframe.contentWindow;
+              if (!w || w.__xb_action_signal) return;
+              w.eval(_scriptSrc);
+            } catch(e) {}
+          }
+          function watchIframe(iframe) {
+            if (iframe.__xb_watched) return;
+            iframe.__xb_watched = true;
+            injectIframe(iframe);
+            iframe.addEventListener('load', function() { injectIframe(iframe); });
+          }
+          // Inject into existing iframes
+          try {
+            var iframes = document.querySelectorAll('iframe');
+            for (var i = 0; i < iframes.length; i++) watchIframe(iframes[i]);
+          } catch(e) {}
+          // Watch for dynamically inserted iframes
+          if (!window.__xb_iframe_observer) {
+            window.__xb_iframe_observer = new MutationObserver(function(mutations) {
+              for (var m = 0; m < mutations.length; m++) {
+                for (var n = 0; n < mutations[m].addedNodes.length; n++) {
+                  var node = mutations[m].addedNodes[n];
+                  if (node.tagName === 'IFRAME') {
+                    watchIframe(node);
+                  } else if (node.querySelectorAll) {
+                    var sub = node.querySelectorAll('iframe');
+                    for (var k = 0; k < sub.length; k++) watchIframe(sub[k]);
+                  }
+                }
+              }
+            });
+            window.__xb_iframe_observer.observe(document.documentElement, { childList: true, subtree: true });
+          }
+        })();
+      `);
+    } catch {
+      // ignore
     }
   }
 
@@ -1058,6 +1288,13 @@ export class SessionRecorder {
 
     const url = request.url();
     if (url.startsWith('data:') || url.startsWith('chrome-extension://') || url.startsWith('blob:')) return;
+
+    // Dedup: skip if same URL+method was seen in last 100ms (forwarded event duplication)
+    const dedupKey = request.method() + ' ' + url;
+    const now = Date.now();
+    if (this._lastRequestKey === dedupKey && now - this._lastRequestTs < 100) return;
+    this._lastRequestKey = dedupKey;
+    this._lastRequestTs = now;
 
     this.networkCounter++;
     const entry: NetworkEntry = {
@@ -1144,18 +1381,37 @@ export class SessionRecorder {
     await this.injectActionScript(page).catch(() => {});
 
     page.on('framenavigated', this.handleFrameNavigated);
+    page.on('request', this.handleRequest);
+    page.on('response', this.handleResponse);
     page.on('close', () => { this.activePages.delete(page); });
   };
 
   private handleFrameNavigated = (frame: Frame): void => {
     if (frame !== frame.page().mainFrame()) return;
+    const newUrl = frame.url();
     this.contextCounter++;
     this.contextChanges.push({
       id: this.contextCounter,
       timestamp: Date.now(),
       type: 'navigate',
-      url: frame.url(),
+      url: newUrl,
     });
+
+    // Also record a navigation action so replay knows the URL changed
+    // Skip if the last action already captured this URL (e.g. cdp-click on a link)
+    const lastAction = this.actions[this.actions.length - 1];
+    const lastActionUrl = lastAction?.url;
+    if (newUrl && newUrl !== 'about:blank' && newUrl !== lastActionUrl) {
+      this.actionCounter++;
+      this.actions.push({
+        id: this.actionCounter,
+        type: 'navigation',
+        timestamp: Date.now(),
+        url: newUrl,
+        pageTitle: '',
+        element: undefined,
+      });
+    }
   };
 
   private handleDialog = async (dialog: Dialog): Promise<void> => {
@@ -1204,18 +1460,85 @@ export class SessionRecorder {
 
     let pending: PendingAction[] = [];
     try {
-      pending = await page.evaluate(() => {
-        const w = window as unknown as Record<string, unknown>;
-        const actions = (w.__xb_pending_actions as PendingAction[]) || [];
+      pending = await page.evaluate(`(function() {
+        var w = window;
+        var actions = w.__xb_pending_actions || [];
         w.__xb_pending_actions = [];
+
+        // Recursively flush pending actions from same-origin iframes (including nested)
+        function flushIframes(doc) {
+          try {
+            var iframes = doc.querySelectorAll('iframe');
+            for (var i = 0; i < iframes.length; i++) {
+              try {
+                var iframeWin = iframes[i].contentWindow;
+                if (!iframeWin) continue;
+                // Ensure action script is injected into iframe
+                if (!iframeWin.__xb_action_script_injected) {
+                  iframeWin.__xb_action_script_injected = true;
+                  try { delete iframeWin.__xb_action_signal; } catch(e) {}
+                  try { iframeWin.eval(w.__xb_action_script_src); } catch(e) {}
+                }
+                var iframeActions = iframeWin.__xb_pending_actions;
+                if (Array.isArray(iframeActions) && iframeActions.length > 0) {
+                  for (var j = 0; j < iframeActions.length; j++) actions.push(iframeActions[j]);
+                  iframeWin.__xb_pending_actions = [];
+                }
+                // Recurse into nested iframes
+                try { flushIframes(iframeWin.document); } catch(e) {}
+              } catch(e) {}
+            }
+          } catch(e) {}
+        }
+
+        flushIframes(document);
         return actions;
-      });
+      })()`) as unknown as PendingAction[];
     } catch {
       return;
     }
 
+    // Detect URL changes (fallback for CDP mode where framenavigated may not fire)
+    try {
+      const currentUrl = page.url();
+      // Normalize: strip trailing slash for comparison
+      const normalize = (u: string) => u.replace(/\/+$/, '');
+      if (currentUrl && currentUrl !== 'about:blank' && normalize(currentUrl) !== normalize(this.lastKnownUrl)) {
+        // Check if we already have a recent navigation/goto to this URL
+        const hasNav = this.actions.slice(-3).some(a =>
+          (a.type === 'navigation' || a.type === 'goto') && normalize(a.url || '') === normalize(currentUrl)
+        );
+        if (!hasNav) {
+          this.actionCounter++;
+          this.actions.push({
+            id: this.actionCounter,
+            type: 'navigation',
+            timestamp: Date.now(),
+            url: currentUrl,
+            pageTitle: '',
+            element: undefined,
+          });
+        }
+        this.lastKnownUrl = currentUrl;
+      }
+    } catch { /* page may have closed */ }
+
     for (const raw of pending) {
       if (raw.ts <= this.lastActionTs) continue;
+
+      // Dedup: skip action signals that match a recent CDP command action
+      if (this.cdpActionDedup && Date.now() < this.cdpActionDedup.until) {
+        const dedup = this.cdpActionDedup;
+        const typeMatch = raw.type === dedup.type;
+        const valueMatch = !dedup.value || raw.value === dedup.value;
+        const selectorMatch = !dedup.selector || (raw.element?.selector &&
+          (raw.element.selector === dedup.selector ||
+           raw.element.selector.endsWith(' ' + dedup.selector) ||
+           dedup.selector.endsWith(' ' + raw.element.selector)));
+        if (typeMatch && valueMatch && selectorMatch) {
+          continue; // Skip duplicate action signal
+        }
+      }
 
       this.actionCounter++;
 
@@ -1262,93 +1585,87 @@ export class SessionRecorder {
     await new Promise(r => setTimeout(r, 300));
 
     try {
-      const ctx = await page.evaluate(([cx, cy]: [number, number]) => {
-        const POPOVER_SELECTORS = [
-          '[role="menu"]','[role="listbox"]','[role="dialog"]','[role="tooltip"]','[role="popover"]',
-          '[role="combobox"]','[role="tree"]','[role="grid"]',
-          '.popover','.popup','.dropdown','.menu','.modal','.tooltip','.panel',
-          '[class*="popover"]','[class*="popup"]','[class*="dropdown"]','[class*="menu"]',
-          '[class*="tooltip"]','[class*="modal"]','[class*="panel"]','[class*="overlay"]','[class*="sheet"]',
-          '[data-popup]','[data-dropdown]','[data-menu]','[data-popover"]',
-          '.semi-dropdown','.semi-popover','.semi-modal',
-          '.ant-dropdown','.ant-popover','.ant-modal',
-          '.el-dropdown','.el-popover','.el-dialog',
-          '.t-dropdown','.t-popup','.t-dialog',
-        ];
+      const ctx = await page.evaluate<ClickContext>(`
+        (function() {
+          var cx = ${cx}, cy = ${cy};
+          var POPOVER_SELECTORS = [
+            '[role="menu"]','[role="listbox"]','[role="dialog"]','[role="tooltip"]','[role="popover"]',
+            '[role="combobox"]','[role="tree"]','[role="grid"]',
+            '.popover','.popup','.dropdown','.menu','.modal','.tooltip','.panel',
+            '[class*="popover"]','[class*="popup"]','[class*="dropdown"]','[class*="menu"]',
+            '[class*="tooltip"]','[class*="modal"]','[class*="panel"]','[class*="overlay"]','[class*="sheet"]',
+            '[data-popup]','[data-dropdown]','[data-menu]','[data-popover"]',
+            '.semi-dropdown','.semi-popover','.semi-modal',
+            '.ant-dropdown','.ant-popover','.ant-modal',
+            '.el-dropdown','.el-popover','.el-dialog',
+            '.t-dropdown','.t-popup','.t-dialog'
+          ];
 
-        function isNear(el: Element, x: number, y: number, range: number) {
-          try {
-            const r = el.getBoundingClientRect();
-            if (!r || r.width === 0 || r.height === 0) return false;
-            return !(r.left > x + range || r.right < x - range || r.top > y + range || r.bottom < y - range);
-          } catch { return false; }
-        }
+          function isNear(el, x, y, range) {
+            try {
+              var r = el.getBoundingClientRect();
+              if (!r || r.width === 0 || r.height === 0) return false;
+              return !(r.left > x + range || r.right < x - range || r.top > y + range || r.bottom < y - range);
+            } catch(e) { return false; }
+          }
 
-        const result: { appeared: unknown[]; disappeared: unknown[]; stateChanges: unknown[] } = {
-          appeared: [],
-          disappeared: [],
-          stateChanges: [],
-        };
-        const seenSelectors = new Set<string>();
+          var result = { appeared: [], disappeared: [], stateChanges: [] };
+          var seenElements = new Set();
 
-        for (const sel of POPOVER_SELECTORS) {
-          try {
-            const els = document.querySelectorAll(sel);
-            for (let j = 0; j < els.length; j++) {
-              const el = els[j];
-              if (!isNear(el, cx, cy, 500)) continue;
-              const rect = el.getBoundingClientRect();
-              if (rect.width === 0 || rect.height === 0) continue;
+          for (var si = 0; si < POPOVER_SELECTORS.length; si++) {
+            try {
+              var els = document.querySelectorAll(POPOVER_SELECTORS[si]);
+              for (var j = 0; j < els.length; j++) {
+                var el = els[j];
+                if (seenElements.has(el)) continue;
+                if (!isNear(el, cx, cy, 300)) continue;
+                var rect = el.getBoundingClientRect();
+                if (rect.width === 0 || rect.height === 0) continue;
+                seenElements.add(el);
 
-              // Deduplicate
-              const elSel = el.id ? '#' + el.id : sel;
-              if (seenSelectors.has(elSel + rect.x + rect.y)) continue;
-              seenSelectors.add(elSel + rect.x + rect.y);
+                var items = [];
+                var children = el.querySelectorAll('a,button,[role="menuitem"],[role="option"],[role="treeitem"],li,div[class*="item"]');
+                var seenItemTexts = new Set();
+                for (var k = 0; k < Math.min(children.length, 30); k++) {
+                  var child = children[k];
+                  var childText = (child.textContent || '').trim().substring(0, 60);
+                  if (!childText || seenItemTexts.has(childText)) continue;
+                  seenItemTexts.add(childText);
+                  var ci = { text: childText };
+                  try { if (child.disabled || child.getAttribute('aria-disabled') === 'true') ci.disabled = true; } catch(e) {}
+                  try { if (child.tagName) ci.tag = child.tagName.toLowerCase(); } catch(e) {}
+                  try { if (child.href) ci.href = child.href.substring(0, 80); } catch(e) {}
+                  items.push(ci);
+                }
 
-              const items: { text: string; tag?: string; disabled?: boolean; href?: string }[] = [];
-              const children = el.querySelectorAll('a,button,[role="menuitem"],[role="option"],[role="treeitem"],li,div[class*="item"]');
-              for (let k = 0; k < Math.min(children.length, 20); k++) {
-                const child = children[k];
-                const childText = (child.textContent || '').trim().substring(0, 60);
-                if (!childText) continue;
-                const ci: { text: string; tag?: string; disabled?: boolean; href?: string } = { text: childText };
-                if ((child as HTMLInputElement).disabled || child.getAttribute('aria-disabled') === 'true') ci.disabled = true;
-                if (child.tagName) ci.tag = child.tagName.toLowerCase();
-                if ((child as HTMLAnchorElement).href) ci.href = (child as HTMLAnchorElement).href.substring(0, 80);
-                items.push(ci);
+                result.appeared.push({
+                  tag: el.tagName.toLowerCase(),
+                  selector: el.id ? '#' + el.id : undefined,
+                  role: el.getAttribute('role'),
+                  text: (el.textContent || '').trim().substring(0, 100),
+                  rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
+                  items: items
+                });
               }
+            } catch(e) { /* skip invalid selectors */ }
+          }
 
-              result.appeared.push({
-                tag: el.tagName.toLowerCase(),
-                selector: el.id ? '#' + el.id : undefined,
-                role: el.getAttribute('role'),
-                text: (el.textContent || '').trim().substring(0, 100),
-                rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
-                items,
-              });
-            }
-          } catch { /* skip invalid selectors */ }
-        }
+          var allInteractive = document.querySelectorAll('[aria-expanded],[disabled],[aria-disabled],[aria-selected],[data-state]');
+          for (var i = 0; i < allInteractive.length; i++) {
+            var el2 = allInteractive[i];
+            if (!isNear(el2, cx, cy, 200)) continue;
+            var info = { tag: el2.tagName.toLowerCase(), text: (el2.textContent || '').trim().substring(0, 60) };
+            try { if (el2.id) info.id = el2.id; } catch(e) {}
+            try { if (el2.getAttribute('aria-expanded')) info.ariaExpanded = el2.getAttribute('aria-expanded'); } catch(e) {}
+            try { if (el2.disabled || el2.getAttribute('aria-disabled') === 'true') info.disabled = true; } catch(e) {}
+            try { if (el2.getAttribute('aria-selected')) info.ariaSelected = el2.getAttribute('aria-selected'); } catch(e) {}
+            try { if (el2.getAttribute('data-state')) info.dataState = el2.getAttribute('data-state'); } catch(e) {}
+            result.stateChanges.push(info);
+          }
 
-        // Check aria-expanded / disabled state changes near click
-        const allInteractive = document.querySelectorAll('[aria-expanded],[disabled],[aria-disabled],[aria-selected],[data-state]');
-        for (let i = 0; i < allInteractive.length; i++) {
-          const el = allInteractive[i];
-          if (!isNear(el, cx, cy, 400)) continue;
-          const info: Record<string, unknown> = {
-            tag: el.tagName.toLowerCase(),
-            text: (el.textContent || '').trim().substring(0, 60),
-          };
-          if (el.id) info.id = el.id;
-          if (el.getAttribute('aria-expanded')) info.ariaExpanded = el.getAttribute('aria-expanded');
-          if ((el as HTMLInputElement).disabled || el.getAttribute('aria-disabled') === 'true') info.disabled = true;
-          if (el.getAttribute('aria-selected')) info.ariaSelected = el.getAttribute('aria-selected');
-          if (el.getAttribute('data-state')) info.dataState = el.getAttribute('data-state');
-          result.stateChanges.push(info);
-        }
-
-        return result;
-      }, [cx, cy] as const) as ClickContext;
+          return result;
+        })()
+      `) as ClickContext;
 
       if (ctx.appeared.length > 0 || ctx.stateChanges.length > 0) {
         return ctx;

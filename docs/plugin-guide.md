@@ -982,7 +982,7 @@ console.log(structure);
 
 ```bash
 # 临时修改（需要代码支持 headless 选项）
-XBROWSER_HEADLESS=false xbrowser session open https://example.com
+XBROWSER_HEADLESS=false xbrowser goto https://example.com
 ```
 
 ### 7. 使用 slow-mo 回放

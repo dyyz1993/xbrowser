@@ -129,6 +129,14 @@ export class XBBrowserImpl implements XBBrowser {
       context,
     });
 
+    // Enable auto-attach so new tabs (window.open, target="_blank") are detected
+    // via Target.attachedToTarget events. Must be called AFTER context setup so
+    // the event listener in XBContextImpl.setupAutoAttach() is ready.
+    // Only for self-launched browsers (not CDP tunnels which may not support it).
+    if (this.childProcess) {
+      this._enableAutoAttach().catch(() => {});
+    }
+
     return context;
   }
 
@@ -183,7 +191,7 @@ export class XBBrowserImpl implements XBBrowser {
   async _enableAutoAttach(): Promise<void> {
     await this.conn.send('Target.setAutoAttach', {
       autoAttach: true,
-      waitForDebuggerOnStart: true,
+      waitForDebuggerOnStart: false,
       flatten: true,
     });
   }

@@ -236,8 +236,8 @@ export async function forwardNetworkInspect(sessionName: string, id: number): Pr
 
 // ─── Recording management (via daemon) ────────────────────────────
 
-export async function forwardRecordStart(session: string, url?: string): Promise<unknown> {
-  return rpcCall('record:start', { session, url }, 15000);
+export async function forwardRecordStart(session: string, url?: string, cdpEndpoint?: string): Promise<unknown> {
+  return rpcCall('record:start', { session, url, cdpEndpoint }, 15000);
 }
 
 export async function forwardRecordStop(session: string): Promise<unknown> {

@@ -71,7 +71,7 @@ npm install -g @xbrowser/cli
 
 ```bash
 # 打开浏览器，导航到页面
-xbrowser session open https://example.com
+xbrowser goto https://example.com
 
 # 获取页面标题
 xbrowser title
@@ -89,7 +89,7 @@ xbrowser session close
 
 ### 单行命令链
 
-不需要先 `session open`，命令链会自动启动浏览器并在执行完毕后关闭：
+会话会自动创建，命令链会自动启动浏览器并在执行完毕后关闭：
 
 ```bash
 # 用逗号分隔
@@ -178,8 +178,6 @@ xbrowser --cdp auto "goto https://example.com , title"
 
 | 命令 | 说明 | 示例 |
 |------|------|------|
-| `session open <url>` | 打开浏览器并创建会话 | `xbrowser session open https://example.com` |
-| `session open <url> --session work` | 以指定名称创建会话 | `xbrowser session open https://example.com --session work` |
 | `session close` | 关闭当前会话 | `xbrowser session close` |
 | `session close --session work` | 关闭指定会话 | `xbrowser session close --session work` |
 | `session close --all` | 关闭所有会话 | `xbrowser session close --all` |
@@ -449,7 +447,7 @@ project > browser > page > element
 命令执行前会自动检查 Scope 是否满足。不满足时会提示：
 
 ```
-Error: 需要活跃的页面，请先执行 xbrowser session open <url>
+Error: 需要活跃的页面，请先执行 xbrowser goto <url>
 ```
 
 ## 插件系统
@@ -545,14 +543,14 @@ xbrowser 自带以下插件：
 
 ```bash
 # 百度搜索
-xbrowser session open https://www.baidu.com
+xbrowser goto https://www.baidu.com
 xbrowser baidu search --query "AI 编程"
 
 # 百度热搜
 xbrowser baidu hotsearch
 
 # GitHub 资料获取
-xbrowser session open https://github.com
+xbrowser goto https://github.com
 xbrowser github get-profile
 ```
 
@@ -561,8 +559,8 @@ xbrowser github get-profile
 ### 录制
 
 ```bash
-# 1. 打开会话
-xbrowser session open https://example.com
+# 1. 打开会话（自动创建）
+xbrowser goto https://example.com
 
 # 2. 开始录制
 xbrowser record start --url https://example.com
@@ -805,7 +803,7 @@ done
 ### 示例 6：使用插件采集百度热搜
 
 ```bash
-xbrowser session open https://www.baidu.com
+xbrowser goto https://www.baidu.com
 xbrowser baidu hotsearch --category tech
 xbrowser session close
 ```
