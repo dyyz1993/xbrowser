@@ -92,8 +92,15 @@ export interface UserAction {
   clickContext?: ClickContext;
   /** File upload info (type=filechooser only) */
   files?: {
-    selector: string;
+    names: string[];
+    count: number;
     isMultiple: boolean;
+    fileData?: Array<{
+      name: string;
+      type: string;
+      size: number;
+      dataUrl: string | null;
+    }>;
   };
 }
 
@@ -618,14 +625,36 @@ const ACTION_SIGNAL_SCRIPT = `
       for (var i = 0; i < files.length; i++) {
         fileNames.push(files[i].name);
       }
-      pushAction('filechooser', {
-        element: describe(target),
-        value: fileNames.join(', '),
-        files: {
-          names: fileNames,
-          count: files.length,
-          isMultiple: target.multiple,
-        },
+      // Read file contents asynchronously, then push action
+      var readers = [];
+      for (var i = 0; i < files.length; i++) {
+        readers.push(new Promise(function(resolve) {
+          var reader = new FileReader();
+          reader.onload = function() { resolve(reader.result); };
+          reader.onerror = function() { resolve(null); };
+          reader.readAsDataURL(files[i]);
+        }));
+      }
+      Promise.all(readers).then(function(contents) {
+        var fileData = [];
+        for (var i = 0; i < files.length; i++) {
+          fileData.push({
+            name: files[i].name,
+            type: files[i].type,
+            size: files[i].size,
+            dataUrl: contents[i],
+          });
+        }
+        pushAction('filechooser', {
+          element: describe(target),
+          value: fileNames.join(', '),
+          files: {
+            names: fileNames,
+            count: files.length,
+            isMultiple: target.multiple,
+            fileData: fileData,
+          },
+        });
       });
     }
   }, true);
@@ -1494,6 +1523,29 @@ export class SessionRecorder {
       `), sel)) as UserAction['element'] | null ?? undefined;
     } catch { /* ignore */ }
 
+    // Read file data from the input element (async FileReader)
+    let fileData: Array<{ name: string; type: string; size: number; dataUrl: string | null }> = [];
+    try {
+      fileData = (await this.page.evaluate(new Function('selector', `
+        return new Promise(resolve => {
+          const input = document.querySelector(selector);
+          if (!input || !input.files || input.files.length === 0) { resolve([]); return; }
+          const readers = [];
+          for (let i = 0; i < input.files.length; i++) {
+            readers.push(new Promise(r => {
+              const reader = new FileReader();
+              reader.onload = () => r({ name: input.files[i].name, type: input.files[i].type, size: input.files[i].size, dataUrl: reader.result });
+              reader.onerror = () => r({ name: input.files[i].name, type: input.files[i].type, size: input.files[i].size, dataUrl: null });
+              reader.readAsDataURL(input.files[i]);
+            }));
+          }
+          Promise.all(readers).then(resolve);
+        });
+      `), sel)) as typeof fileData;
+    } catch { /* ignore */ }
+
+    const names = fileData.map(f => f.name);
+
     this.actionCounter++;
     this.actions.push({
       id: this.actionCounter,
@@ -1508,10 +1560,12 @@ export class SessionRecorder {
         tag: 'input',
         text: '',
       },
-      value: undefined,
+      value: names.join(', ') || undefined,
       files: {
-        selector: sel,
+        names,
+        count: fileData.length,
         isMultiple: fileChooser.isMultiple,
+        fileData: fileData.length > 0 ? fileData : undefined,
       },
     });
   };
@@ -1543,6 +1597,7 @@ export class SessionRecorder {
       y?: number;
       scrollX?: number;
       scrollY?: number;
+      files?: UserAction['files'];
     }
 
     let pending: PendingAction[] = [];
@@ -1649,6 +1704,7 @@ export class SessionRecorder {
         scrollX: raw.scrollX,
         scrollY: raw.scrollY,
         clickContext,
+        files: raw.files,
       });
       this.lastActionTs = raw.ts;
 

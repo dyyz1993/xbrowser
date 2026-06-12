@@ -5,7 +5,7 @@
  * This replaces the giant switch/case in the old daemon-worker.ts.
  */
 import type { Page } from '../browser-shim.js';
-import { writeFileSync, mkdirSync } from 'fs';
+import { writeFileSync, mkdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
@@ -758,7 +758,55 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     if (!session) {
       return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, event: {} as never, error: 'Session not found: ' + sessionName }] };
     }
+    if (!session.page) {
+      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, event: {} as never, error: 'Session has no page: ' + sessionName }] };
+    }
 
+    // Detect new session-recorder format (has 'actions' array) vs old format (has 'events' array)
+    let rawContent: string;
+    let parsed: Record<string, unknown>;
+    try {
+      rawContent = readFileSync(file, 'utf8');
+      parsed = JSON.parse(rawContent);
+    } catch (e) {
+      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, event: {} as never, error: 'Failed to read/parse file: ' + String(e) }] };
+    }
+    const isNewFormat = Array.isArray(parsed.actions);
+
+    if (isNewFormat) {
+      // Use SessionReplayer for new format
+      try {
+        const { SessionReplayer } = await import('../recorder/session-replayer.js');
+        const replayer = new SessionReplayer({
+          page: session.page,
+          stepDelay: slowMo * 500,
+          onStep: (action, index, total) => {
+            console.log(`[replay] Step ${index + 1}/${total}: ${action.type} ${action.element?.selector || action.url || ''}`);
+          },
+          onError: (action, error) => {
+            console.error(`[replay] Error at step ${action.type}: ${error.message}`);
+          },
+        });
+        await replayer.load(parsed as unknown as import('../recorder/session-recorder.js').RecordingData);
+        const startTime = Date.now();
+        const result = await replayer.run();
+        const duration = Date.now() - startTime;
+        return {
+          ok: result.failed === 0,
+          success: result.failed === 0,
+          duration,
+          eventsPlayed: result.success,
+          totalEvents: result.success + result.failed + result.skipped,
+          errors: [],
+        };
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error('[replay] SessionReplayer error:', msg);
+        return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, event: {} as never, error: 'Replay failed: ' + msg }] };
+      }
+    }
+
+    // Legacy format — use PlaybackEngine
     const engine = PlaybackEngine.fromFile(session.page, file);
     const result = await engine.play({
       slowMo,
