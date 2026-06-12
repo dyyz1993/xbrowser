@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Chain A→B→C: Page A</title></head>
+<body>
+  <h1>Chain A - Start</h1>
+  <button id="btn-a">Button A</button>
+  <script>
+    // Auto-click button A after 2s
+    setTimeout(function() {
+      var btn = document.getElementById('btn-a');
+      var rect = btn.getBoundingClientRect();
+      btn.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true,
+        clientX: rect.x + rect.width / 2,
+        clientY: rect.y + rect.height / 2
+      }));
+    }, 2000);
+    // Navigate to Page B after 4s
+    setTimeout(function() {
+      window.location.href = '/chain-b.html';
+    }, 4000);
+  </script>
+</body>
+</html>

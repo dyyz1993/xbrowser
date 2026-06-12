@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Page B with IFrame</title></head>
+<body>
+  <h1>Page B with IFrame</h1>
+  <button id="btn-b">Button B</button>
+  <iframe id="nested-iframe" src="/iframe-content.html" width="400" height="200"></iframe>
+  <script>
+    setTimeout(function() {
+      var btn = document.getElementById('btn-b');
+      var rect = btn.getBoundingClientRect();
+      btn.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true,
+        clientX: rect.x + rect.width / 2,
+        clientY: rect.y + rect.height / 2
+      }));
+    }, 2000);
+  </script>
+</body>
+</html>

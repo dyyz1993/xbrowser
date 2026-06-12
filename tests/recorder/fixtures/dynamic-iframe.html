@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Dynamic IFrame Page</title></head>
+<body>
+  <h1>Dynamic IFrame Page</h1>
+  <button id="btn-main">Main Button</button>
+  <div id="iframe-container"></div>
+  <script>
+    setTimeout(function() {
+      var btn = document.getElementById('btn-main');
+      var rect = btn.getBoundingClientRect();
+      btn.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true,
+        clientX: rect.x + rect.width / 2,
+        clientY: rect.y + rect.height / 2
+      }));
+    }, 2000);
+    setTimeout(function() {
+      var container = document.getElementById('iframe-container');
+      var iframe = document.createElement('iframe');
+      iframe.src = '/iframe-content.html';
+      iframe.width = '400';
+      iframe.height = '200';
+      container.appendChild(iframe);
+    }, 3000);
+  </script>
+</body>
+</html>

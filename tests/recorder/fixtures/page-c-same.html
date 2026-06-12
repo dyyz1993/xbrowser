@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Page C</title></head>
+<body>
+  <h1>Page C</h1>
+  <button id="btn-c">Button C</button>
+  <script>
+    setTimeout(function() {
+      var btn = document.getElementById('btn-c');
+      var rect = btn.getBoundingClientRect();
+      btn.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true,
+        clientX: rect.x + rect.width / 2,
+        clientY: rect.y + rect.height / 2
+      }));
+    }, 2000);
+  </script>
+</body>
+</html>

@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>New Tab Cross Origin</title></head>
+<body>
+  <h1>New Tab Cross Origin Test</h1>
+  <button id="btn-main">Main Button</button>
+  <script>
+    // Auto-click main button after 2s
+    setTimeout(function() {
+      var btn = document.getElementById('btn-main');
+      var rect = btn.getBoundingClientRect();
+      btn.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true,
+        clientX: rect.x + rect.width / 2,
+        clientY: rect.y + rect.height / 2
+      }));
+    }, 2000);
+    // Open cross-origin page in new tab after 3s
+    setTimeout(function() {
+      window.open('http://localhost:3848/page-c.html', '_blank');
+    }, 3000);
+  </script>
+</body>
+</html>

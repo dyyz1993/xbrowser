@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>IFrame Page</title></head>
+<body>
+  <h1>IFrame Page</h1>
+  <button id="btn-main">Main Button</button>
+  <iframe id="test-iframe" src="/iframe-content.html" width="400" height="200"></iframe>
+  <script>
+    // Auto-trigger click on main button after 2s
+    setTimeout(function() {
+      var btn = document.getElementById('btn-main');
+      var rect = btn.getBoundingClientRect();
+      btn.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true,
+        clientX: rect.x + rect.width / 2,
+        clientY: rect.y + rect.height / 2
+      }));
+    }, 2000);
+  </script>
+</body>
+</html>

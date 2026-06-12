@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Nested IFrame - Middle</title></head>
+<body>
+  <h2>Middle IFrame</h2>
+  <button id="btn-middle">Middle Button</button>
+  <iframe id="inner-iframe" src="/iframe-content.html" width="400" height="150"></iframe>
+  <script>
+    // Auto-click middle button after 2s
+    setTimeout(function() {
+      var btn = document.getElementById('btn-middle');
+      var rect = btn.getBoundingClientRect();
+      btn.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true,
+        clientX: rect.x + rect.width / 2,
+        clientY: rect.y + rect.height / 2
+      }));
+    }, 2000);
+  </script>
+</body>
+</html>

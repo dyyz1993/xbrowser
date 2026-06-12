@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Tab Close Test</title></head>
+<body>
+  <h1>Tab Close Test</h1>
+  <button id="btn-before">Click Before Tab</button>
+  <button id="btn-after">Click After Tab</button>
+  <script>
+    var newTab = null;
+    // Click before button after 2s
+    setTimeout(function() {
+      var btn = document.getElementById('btn-before');
+      var rect = btn.getBoundingClientRect();
+      btn.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true,
+        clientX: rect.x + rect.width / 2,
+        clientY: rect.y + rect.height / 2
+      }));
+    }, 2000);
+    // Open new tab after 3s
+    setTimeout(function() {
+      newTab = window.open('/page-c.html', '_blank');
+    }, 3000);
+    // Close new tab and click after button after 7s
+    setTimeout(function() {
+      if (newTab) newTab.close();
+      var btn = document.getElementById('btn-after');
+      var rect = btn.getBoundingClientRect();
+      btn.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true,
+        clientX: rect.x + rect.width / 2,
+        clientY: rect.y + rect.height / 2
+      }));
+    }, 7000);
+  </script>
+</body>
+</html>

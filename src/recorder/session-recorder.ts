@@ -1067,6 +1067,9 @@ export class SessionRecorder {
     this.context.on('request', this.handleRequest);
     this.context.on('response', this.handleResponse);
 
+    // 3. Track new tabs/popups
+    this.context.on('page', this.handleNewPage);
+
     // Also listen on each existing page directly (CDP mode: context forwarding may miss pre-existing pages)
     for (const p of this.context.pages()) {
       p.on('request', this.handleRequest);
@@ -1375,10 +1378,27 @@ export class SessionRecorder {
       detail: 'New tab/popup opened',
     });
 
-    // Inject signal script into new page
+    // Inject signal script into new page (addInitScript for future navigations)
     await page.addInitScript(ACTION_SIGNAL_SCRIPT);
     await page.addInitScript(CHECKPOINT_OVERLAY_SCRIPT);
-    await this.injectActionScript(page).catch(() => {});
+    await page.addInitScript(getSelectorGeneratorScript());
+
+    // Also inject selector generator via addInitScript so it's available on every navigation
+    // Inject immediately on current page state, and re-inject after any navigation
+    const injectAndRetry = async () => {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          const url = page.url();
+          if (url && url !== 'about:blank' && !url.startsWith('chrome')) {
+            await this.injectActionScript(page);
+            return;
+          }
+        } catch { /* page not ready */ }
+        await new Promise(r => setTimeout(r, 1000));
+      }
+    };
+    // Fire-and-forget: inject when page is ready
+    injectAndRetry();
 
     page.on('framenavigated', this.handleFrameNavigated);
     page.on('request', this.handleRequest);
@@ -1411,6 +1431,13 @@ export class SessionRecorder {
         pageTitle: '',
         element: undefined,
       });
+    }
+
+    // Re-inject action signal script after navigation (page.evaluate scripts are lost on navigation)
+    const page = frame.page();
+    if (newUrl && newUrl !== 'about:blank') {
+      // Fire-and-forget: don't block the event handler
+      this.injectActionScript(page).catch(() => {});
     }
   };
 

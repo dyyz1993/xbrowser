@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Chain A→B→C: Page B</title></head>
+<body>
+  <h1>Chain B - Middle</h1>
+  <input id="input-b" type="text" placeholder="Type here">
+  <script>
+    // Auto-input after 2s
+    setTimeout(function() {
+      var input = document.getElementById('input-b');
+      input.value = 'Hello from B';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }, 2000);
+    // Navigate to Page C after 4s
+    setTimeout(function() {
+      window.location.href = '/chain-c.html';
+    }, 4000);
+  </script>
+</body>
+</html>

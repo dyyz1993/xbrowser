@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Multi IFrame Page</title></head>
+<body>
+  <h1>Multi IFrame Page</h1>
+  <button id="btn-main">Main Button</button>
+  <iframe id="iframe-1" src="/iframe-content.html" width="400" height="150"></iframe>
+  <iframe id="iframe-2" src="/iframe-content.html" width="400" height="150"></iframe>
+  <script>
+    // Auto-click main button after 2s
+    setTimeout(function() {
+      var btn = document.getElementById('btn-main');
+      var rect = btn.getBoundingClientRect();
+      btn.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true,
+        clientX: rect.x + rect.width / 2,
+        clientY: rect.y + rect.height / 2
+      }));
+    }, 2000);
+  </script>
+</body>
+</html>

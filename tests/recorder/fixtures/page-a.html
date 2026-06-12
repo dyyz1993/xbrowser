@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Page A</title></head>
+<body>
+  <h1>Page A</h1>
+  <button id="btn-a">Button A</button>
+  <a id="link-to-b" href="/page-b.html">Go to Page B</a>
+  <a id="link-to-b-iframe" href="/page-b-iframe.html">Go to Page B (with iframe)</a>
+  <a id="link-to-c" href="/page-c-same.html">Go to Page C (for A->B->C test)</a>
+  <button id="open-tab-b" onclick="window.open('/page-b.html')">Open Page B in new tab</button>
+  <button id="open-cross-origin" onclick="window.open('http://localhost:3848/page-c.html')">Open Cross Origin</button>
+  <script>
+    setTimeout(function() {
+      var btn = document.getElementById('btn-a');
+      var rect = btn.getBoundingClientRect();
+      btn.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true,
+        clientX: rect.x + rect.width / 2,
+        clientY: rect.y + rect.height / 2
+      }));
+    }, 2000);
+  </script>
+</body>
+</html>

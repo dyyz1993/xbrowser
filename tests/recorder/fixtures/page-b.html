@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Page B</title></head>
+<body>
+  <h1>Page B</h1>
+  <input id="input-b" type="text" placeholder="Type here">
+  <button id="btn-b">Button B</button>
+  <a id="link-to-c" href="/page-c-same.html">Go to Page C</a>
+  <script>
+    setTimeout(function() {
+      var input = document.getElementById('input-b');
+      input.value = 'Hello from B';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }, 2000);
+    setTimeout(function() {
+      var btn = document.getElementById('btn-b');
+      var rect = btn.getBoundingClientRect();
+      btn.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true,
+        clientX: rect.x + rect.width / 2,
+        clientY: rect.y + rect.height / 2
+      }));
+    }, 3000);
+  </script>
+</body>
+</html>

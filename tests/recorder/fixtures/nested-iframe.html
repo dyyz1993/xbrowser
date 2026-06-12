@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><title>Nested IFrame Page</title></head>
+<body>
+  <h1>Nested IFrame Page</h1>
+  <button id="btn-main">Main Button</button>
+  <iframe id="outer-iframe" src="/nested-iframe-middle.html" width="600" height="400"></iframe>
+  <script>
+    // Auto-click main button after 2s
+    setTimeout(function() {
+      var btn = document.getElementById('btn-main');
+      var rect = btn.getBoundingClientRect();
+      btn.dispatchEvent(new MouseEvent('click', {
+        bubbles: true, cancelable: true,
+        clientX: rect.x + rect.width / 2,
+        clientY: rect.y + rect.height / 2
+      }));
+    }, 2000);
+  </script>
+</body>
+</html>
