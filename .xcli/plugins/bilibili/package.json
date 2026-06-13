@@ -1,0 +1,51 @@
+{
+  "_marketplace": {
+    "slug": "bilibili",
+    "url": "https://marketplace.xbrowser.dev"
+  },
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "description": "B站 - 视频搜索、动态发布、评论、点赞与图片搜索",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "bilibili",
+    "b站",
+    "video",
+    "social-media"
+  ],
+  "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-bilibili",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "1.0.0",
+  "xbrowser": {
+    "author": "dyyz1993",
+    "commands": [
+      "search",
+      "post",
+      "comment",
+      "like",
+      "search-image"
+    ],
+    "description": "B站 - 视频搜索、动态发布、评论、点赞与图片搜索",
+    "name": "bilibili",
+    "requiresLogin": true,
+    "site": "https://www.bilibili.com",
+    "sites": [
+      "bilibili.com"
+    ],
+    "slug": "bilibili",
+    "tags": [
+      "bilibili",
+      "video",
+      "social-media"
+    ],
+    "version": "1.0.0"
+  }
+}

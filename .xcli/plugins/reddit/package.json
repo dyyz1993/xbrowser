@@ -7,7 +7,7 @@
   "dependencies": {
     "zod": "^3.24.0"
   },
-  "description": "Reddit 图片搜索",
+  "description": "Reddit 图片搜索 & 社交互动（发帖/评论/投票/订阅）",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
@@ -24,11 +24,15 @@
   "xbrowser": {
     "author": "dyyz1993",
     "commands": [
-      "search-image"
+      "search-image",
+      "post",
+      "comment",
+      "vote",
+      "subscribe"
     ],
-    "description": "Reddit 图片搜索",
+    "description": "Reddit 图片搜索 & 社交互动（发帖/评论/投票/订阅）",
     "name": "reddit",
-    "requiresLogin": false,
+    "requiresLogin": true,
     "site": "https://www.reddit.com",
     "sites": [],
     "slug": "reddit",

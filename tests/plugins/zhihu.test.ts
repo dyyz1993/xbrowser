@@ -27,7 +27,7 @@ vi.mock('../../.xcli/plugins/zhihu/index.js', () => {
         requiresLogin: false,
       });
 
-      const commands = ['search', 'trending', 'question', 'answer', 'article', 'chat'];
+      const commands = ['search', 'trending', 'question', 'answer', 'publish', 'article', 'chat'];
       for (const name of commands) {
         site.command(name, {
           handler: async (args: Record<string, unknown>, ctx: Record<string, unknown>) => {
@@ -63,7 +63,7 @@ describe('zhihu plugin', () => {
   });
 
   it('should register 6 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(6);
+    expect(mockSite.command).toHaveBeenCalledTimes(7);
   });
 
   it('should register expected command names', () => {

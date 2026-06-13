@@ -393,6 +393,186 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  // ─── 7. post (发推) ───────────────────────────
+
+  site.command('post', {
+    description: '在 X/Twitter 发布推文',
+    scope: 'browser',
+    parameters: z.object({
+      text: z.string().min(1).max(280).describe('推文内容（最多280字符）'),
+    }),
+    examples: [
+      { cmd: 'xbrowser twitter post --text "Hello World!"', description: '发布一条推文' },
+    ],
+    result: z.object({ posted: z.boolean(), text: z.string() }).passthrough(),
+    handler: async (params, ctx) => {
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
+      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+
+      try {
+        await page.goto(`${BASE}/home`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(3000);
+
+        // Click the compose box
+        const editor = page.locator('[data-testid="tweetTextarea_0"]');
+        await editor.waitFor({ state: 'visible', timeout: 10000 });
+        await editor.click();
+        await page.waitForTimeout(500);
+
+        // Type the text
+        await page.keyboard.type(params.text, { delay: 30 });
+        await page.waitForTimeout(500);
+
+        // Click tweet button
+        const tweetBtn = page.locator('[data-testid="tweetButton"]');
+        await tweetBtn.waitFor({ state: 'visible', timeout: 5000 });
+        await tweetBtn.click();
+        await page.waitForTimeout(3000);
+
+        return ok({ posted: true, text: params.text }, ['推文已发布', ...tips]);
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : '发布失败');
+      }
+    },
+  });
+
+  // ─── 8. reply (回复推文) ───────────────────────
+
+  site.command('reply', {
+    description: '回复指定推文',
+    scope: 'browser',
+    parameters: z.object({
+      tweetUrl: z.string().describe('推文 URL（如 https://x.com/user/status/123）'),
+      text: z.string().min(1).max(280).describe('回复内容'),
+    }),
+    examples: [
+      { cmd: 'xbrowser twitter reply --tweetUrl "https://x.com/user/status/123" --text "Great!"', description: '回复推文' },
+    ],
+    result: z.object({ replied: z.boolean(), text: z.string() }).passthrough(),
+    handler: async (params, ctx) => {
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
+      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+
+      try {
+        await page.goto(params.tweetUrl, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(3000);
+
+        // Click the reply box
+        const editor = page.locator('[data-testid="tweetTextarea_0"]');
+        await editor.waitFor({ state: 'visible', timeout: 10000 });
+        await editor.click();
+        await page.waitForTimeout(500);
+
+        await page.keyboard.type(params.text, { delay: 30 });
+        await page.waitForTimeout(500);
+
+        const replyBtn = page.locator('[data-testid="tweetButton"]');
+        await replyBtn.waitFor({ state: 'visible', timeout: 5000 });
+        await replyBtn.click();
+        await page.waitForTimeout(3000);
+
+        return ok({ replied: true, text: params.text }, ['回复已发布', ...tips]);
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : '回复失败');
+      }
+    },
+  });
+
+  // ─── 9. retweet (转发) ─────────────────────────
+
+  site.command('retweet', {
+    description: '转发指定推文',
+    scope: 'browser',
+    parameters: z.object({
+      tweetUrl: z.string().describe('推文 URL'),
+      quote: z.boolean().optional().default(false).describe('是否引用转发（默认普通转发）'),
+      quoteText: z.string().max(280).optional().describe('引用转发时的文字'),
+    }),
+    examples: [
+      { cmd: 'xbrowser twitter retweet --tweetUrl "https://x.com/user/status/123"', description: '转发推文' },
+      { cmd: 'xbrowser twitter retweet --tweetUrl "..." --quote --quoteText "My comment"', description: '引用转发' },
+    ],
+    result: z.object({ retweeted: z.boolean() }).passthrough(),
+    handler: async (params, ctx) => {
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
+      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+
+      try {
+        await page.goto(params.tweetUrl, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(3000);
+
+        // Click retweet button
+        const retweetBtn = page.locator('[data-testid="retweet"]');
+        await retweetBtn.waitFor({ state: 'visible', timeout: 10000 });
+        await retweetBtn.click();
+        await page.waitForTimeout(1000);
+
+        if (params.quote) {
+          // Click "Quote" option
+          const quoteBtn = page.locator('a[href*="/compose/post"], [role="menuitem"]').filter({ hasText: /Quote/i });
+          await quoteBtn.first().click();
+          await page.waitForTimeout(2000);
+
+          if (params.quoteText) {
+            const editor = page.locator('[data-testid="tweetTextarea_0"]');
+            await editor.click();
+            await page.keyboard.type(params.quoteText, { delay: 30 });
+            await page.waitForTimeout(500);
+          }
+
+          const postBtn = page.locator('[data-testid="tweetButton"]');
+          await postBtn.click();
+        } else {
+          // Click "Repost" confirmation
+          const confirmBtn = page.locator('[data-testid="retweetConfirm"]');
+          await confirmBtn.waitFor({ state: 'visible', timeout: 5000 });
+          await confirmBtn.click();
+        }
+
+        await page.waitForTimeout(3000);
+        return ok({ retweeted: true }, ['转发成功', ...tips]);
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : '转发失败');
+      }
+    },
+  });
+
+  // ─── 10. like (点赞) ───────────────────────────
+
+  site.command('like', {
+    description: '点赞指定推文',
+    scope: 'browser',
+    parameters: z.object({
+      tweetUrl: z.string().describe('推文 URL'),
+    }),
+    examples: [
+      { cmd: 'xbrowser twitter like --tweetUrl "https://x.com/user/status/123"', description: '点赞推文' },
+    ],
+    result: z.object({ liked: z.boolean() }).passthrough(),
+    handler: async (params, ctx) => {
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
+      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+
+      try {
+        await page.goto(params.tweetUrl, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(3000);
+
+        const likeBtn = page.locator('[data-testid="like"]').first();
+        await likeBtn.waitFor({ state: 'visible', timeout: 10000 });
+        await likeBtn.click();
+        await page.waitForTimeout(2000);
+
+        return ok({ liked: true }, ['点赞成功', ...tips]);
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : '点赞失败');
+      }
+    },
+  });
+
   // ─── login/logout ──────────────────────────────
 
   site.login(async (ctx) => {

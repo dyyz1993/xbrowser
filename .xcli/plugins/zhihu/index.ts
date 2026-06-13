@@ -654,27 +654,45 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(2000);
         await dismissModals(page);
 
+        // 点击"写回答"按钮以展开编辑器
+        const writeAnswerBtn = page.locator(
+          'button:has-text("写回答"), a:has-text("写回答"), [class*="AnswerForm"] button'
+        ).first();
+        if (await writeAnswerBtn.isVisible().catch(() => false)) {
+          await writeAnswerBtn.click();
+          await page.waitForTimeout(2000);
+          tips.push('已点击"写回答"按钮');
+        }
+
+        // 在编辑器中输入回答内容
         const editor = page.locator(
-          '.AnswerForm-editor, textarea[placeholder*="写回答"], div[contenteditable="true"][class*="editor"], .ProseMirror, div[contenteditable="true"]'
+          '.AnswerForm-editor, textarea[placeholder*="写回答"], div[contenteditable="true"][class*="editor"], .ProseMirror, .public-DraftEditor-content, div[contenteditable="true"]'
         ).first();
         if (await editor.isVisible().catch(() => false)) {
           await editor.click();
           await page.waitForTimeout(500);
-          await page.keyboard.insertText(params.content);
+          await page.keyboard.type(params.content, { delay: 20 });
+          tips.push('回答内容已输入');
+        } else {
+          return fail('未找到回答编辑器，可能需要手动展开', tips);
         }
 
         await ctx.waitForHuman?.({
-          reason: '检查回答内容后点击提交',
+          reason: '检查回答内容后点击"发布回答"',
           timeout: 120,
           autoDetect: true,
         });
 
+        // 点击"发布回答"按钮
         const submitBtn = page.locator(
-          'button:has-text("提交回答"), button:has-text("发布"), button[class*="submit"]'
+          'button:has-text("发布回答"), button:has-text("提交回答"), button:has-text("发布"), button[class*="submit"]'
         ).first();
         if (await submitBtn.isVisible().catch(() => false)) {
           await submitBtn.click();
           await page.waitForTimeout(3000);
+          tips.push('✓ 已点击发布按钮');
+        } else {
+          return fail('未找到发布按钮，请手动发布', tips);
         }
 
         return ok({ url: params.url, submitted: true, pageUrl: page.url() }, [...tips, '回答已提交']);
@@ -839,6 +857,114 @@ export default function (xcli: XCLIAPI): void {
         return ok(result, [...tips, responseText ? '✅ AI 回复完成' : '⏱ 查询已发送']);
       } catch {
         return fail('未知错误', ['chat 失败']);
+      }
+    },
+  });
+
+  site.command('publish', {
+    description: '发布知乎专栏文章 — 导航到写文章页，填标题/正文并点击发布',
+    loginRequired: 'required',
+    scope: 'browser',
+    parameters: z.object({
+      title: z.string().describe('文章标题'),
+      content: z.string().describe('文章内容（Markdown 或纯文本）'),
+      topic: z.string().optional().describe('所属话题'),
+    }),
+    examples: [
+      { cmd: 'xbrowser zhihu publish --title "AI 编程实践" --content "内容详情"', description: '发布知乎专栏文章' },
+      {
+        cmd: 'xbrowser zhihu publish --title "前端指南" --content "详见 [官网](https://example.com)" --topic "前端开发"',
+        description: '发布带话题的文章',
+      },
+    ],
+    result: z.object({
+      title: z.string(),
+      topic: z.string().optional(),
+      url: z.string(),
+      submitted: z.boolean(),
+    }).passthrough(),
+    handler: async (params, ctx) => {
+      const { page, tips } = resolvePage(ctx);
+
+      try {
+        await page.goto('https://zhuanlan.zhihu.com/write', {
+          waitUntil: 'domcontentloaded',
+          timeout: 30000,
+        });
+        await page.waitForTimeout(3000);
+        await dismissModals(page);
+
+        // 填写标题
+        const titleInput = page.locator(
+          'textarea.WriteIndex-titleInput, input.WriteIndex-titleInput, textarea[placeholder*="标题"], input[placeholder*="标题"]'
+        ).first();
+        if (await titleInput.isVisible().catch(() => false)) {
+          await titleInput.click();
+          await page.waitForTimeout(200);
+          await page.keyboard.type(params.title, { delay: 30 });
+        } else {
+          return fail('未找到标题输入框，请确认已登录知乎专栏', tips);
+        }
+
+        await page.waitForTimeout(500);
+
+        // 填写正文（富文本编辑器）
+        const editor = page.locator(
+          '.public-DraftEditor-content, div[contenteditable="true"], .ProseMirror'
+        ).first();
+        if (await editor.isVisible().catch(() => false)) {
+          await editor.click();
+          await page.waitForTimeout(300);
+          await page.keyboard.type(params.content, { delay: 20 });
+        } else {
+          return fail('未找到正文编辑器，请确认页面已加载完成', tips);
+        }
+
+        // 选择话题（可选）
+        if (params.topic) {
+          const topicInput = page.locator(
+            'input[placeholder*="话题"], input[placeholder*="topic"], input[class*="topic"]'
+          ).first();
+          if (await topicInput.isVisible().catch(() => false)) {
+            await topicInput.fill(params.topic);
+            await page.waitForTimeout(1000);
+            const topicOption = page.locator('[class*="topic-item"], [role="option"]').first();
+            if (await topicOption.isVisible().catch(() => false)) {
+              await topicOption.click();
+            }
+          }
+        }
+
+        tips.push(`标题已填写: ${params.title}`);
+        tips.push(`正文长度: ${params.content.length} 字符`);
+
+        // 等待用户检查后发布
+        await ctx.waitForHuman?.({
+          reason: '请在 viewer 中检查文章内容后点击"发布"按钮（或继续等待自动发布）',
+          timeout: 120,
+          autoDetect: true,
+        });
+
+        // 点击发布按钮
+        const publishBtn = page.locator(
+          'button:has-text("发布"), button[class*="publish"], button:has-text("发表")'
+        ).first();
+        if (await publishBtn.isVisible().catch(() => false)) {
+          await publishBtn.click();
+          await page.waitForTimeout(3000);
+          tips.push('✓ 已点击发布按钮');
+        } else {
+          return fail('未找到发布按钮，请手动发布', tips);
+        }
+
+        return ok({
+          title: params.title,
+          topic: params.topic,
+          url: page.url(),
+          submitted: true,
+        }, [...tips, `文章 "${params.title}" 已发布`]);
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
     },
   });

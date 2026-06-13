@@ -7,7 +7,7 @@
   "dependencies": {
     "zod": "^3.24.0"
   },
-  "description": "微博图片搜索",
+  "description": "微博 - 社交媒体发布与图片搜索",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
@@ -20,21 +20,23 @@
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
   "type": "module",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "xbrowser": {
     "author": "dyyz1993",
     "commands": [
+      "post",
+      "repost",
       "search-image"
     ],
-    "description": "微博图片搜索",
+    "description": "微博 - 社交媒体发布与图片搜索",
     "name": "weibo",
-    "requiresLogin": false,
-    "site": "https://s.weibo.com",
+    "requiresLogin": true,
+    "site": "https://weibo.com",
     "sites": [],
     "slug": "weibo",
     "tags": [
       "weibo"
     ],
-    "version": "3.0.0"
+    "version": "3.1.0"
   }
 }

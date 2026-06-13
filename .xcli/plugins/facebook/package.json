@@ -7,7 +7,7 @@
   "dependencies": {
     "zod": "^3.24.0"
   },
-  "description": "Facebook 图片搜索",
+  "description": "Facebook 图片搜索 & 社交互动（发帖/点赞/评论/分享）",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
@@ -24,9 +24,13 @@
   "xbrowser": {
     "author": "dyyz1993",
     "commands": [
-      "search-image"
+      "search-image",
+      "post",
+      "like",
+      "comment",
+      "share"
     ],
-    "description": "Facebook 图片搜索",
+    "description": "Facebook 图片搜索 & 社交互动（发帖/点赞/评论/分享）",
     "name": "facebook",
     "requiresLogin": true,
     "site": "https://www.facebook.com",

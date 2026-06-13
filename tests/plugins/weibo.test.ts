@@ -41,7 +41,7 @@ describe('weibo plugin', () => {
 
   it('should create site with correct url', () => {
     expect(mockXCLI.createSite).toHaveBeenCalledWith(
-      expect.objectContaining({ url: 'https://s.weibo.com' })
+      expect.objectContaining({ url: 'https://weibo.com' })
     );
   });
 
@@ -51,17 +51,20 @@ describe('weibo plugin', () => {
     );
   });
 
-  it('should register 1 command', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(1);
+  it('should register 3 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(3);
   });
 
-  it('should register search-image command', () => {
+  it('should register search-image, post, and repost commands', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
-    expect(names).toEqual(['search-image']);
+    expect(names).toContain('search-image');
+    expect(names).toContain('post');
+    expect(names).toContain('repost');
   });
 
   it('search-image should have description, scope, parameters, and handler', () => {
-    const config = mockSite.command.mock.calls[0][1] as Record<string, unknown>;
+    const searchImageCall = mockSite.command.mock.calls.find(c => c[0] === 'search-image');
+    const config = searchImageCall![1] as Record<string, unknown>;
     expect(config).toHaveProperty('description');
     expect(config).toHaveProperty('scope');
     expect(config).toHaveProperty('parameters');
