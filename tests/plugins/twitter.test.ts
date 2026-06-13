@@ -11,13 +11,13 @@ describe('twitter plugin', () => {
     expect(mockXCLI.createSite).toHaveBeenCalledWith(expect.objectContaining({ name: 'twitter', url: 'https://x.com' }));
   });
 
-  it('should register 10 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(10);
+  it('should register 13 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(13);
   });
 
   it('should register expected commands', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
-    expect(names).toEqual(['search', 'profile', 'timeline', 'replies', 'liked', 'search-image', 'post', 'reply', 'retweet', 'like']);
+    expect(names).toEqual(['search', 'profile', 'timeline', 'replies', 'liked', 'search-image', 'post', 'reply', 'retweet', 'like', 'draft', 'drafts', 'load-draft']);
   });
 
   it.each([

@@ -293,6 +293,49 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  // ─── draft (本地草稿) ──────────────────────────
+  reddit.command('draft', {
+    description: '保存草稿到本地（不发布）',
+    scope: 'project',
+    parameters: z.object({
+      text: z.string().min(1).describe('草稿内容'),
+      title: z.string().optional().describe('标题（可选）'),
+    }),
+    result: z.object({ saved: z.boolean(), id: z.string() }).passthrough(),
+    handler: async (params) => {
+      const { saveDraft } = await import('../shared/draft-storage.js');
+      const result = saveDraft('reddit', params.text, params.title);
+      return ok({ saved: true, id: result.id, path: result.path }, [`草稿已保存: ${result.id}`]);
+    },
+  });
+
+  reddit.command('drafts', {
+    description: '列出本地保存的草稿',
+    scope: 'project',
+    parameters: z.object({}),
+    result: z.object({ drafts: z.array(z.object({ id: z.string(), title: z.string(), textPreview: z.string(), savedAt: z.string() })) }).passthrough(),
+    handler: async () => {
+      const { listDrafts } = await import('../shared/draft-storage.js');
+      const drafts = listDrafts('reddit');
+      return ok({ drafts }, [`${drafts.length} 条草稿`]);
+    },
+  });
+
+  reddit.command('load-draft', {
+    description: '读取指定草稿内容',
+    scope: 'project',
+    parameters: z.object({
+      id: z.string().describe('草稿 ID（时间戳）'),
+    }),
+    result: z.object({ id: z.string(), title: z.string().optional(), text: z.string(), savedAt: z.string() }).passthrough(),
+    handler: async (params) => {
+      const { loadDraft } = await import('../shared/draft-storage.js');
+      const draft = loadDraft('reddit', params.id);
+      if (!draft) return fail('草稿不存在');
+      return ok(draft);
+    },
+  });
+
   // ─── login/logout ──────────────────────────────
 
   reddit.login(async (ctx) => {

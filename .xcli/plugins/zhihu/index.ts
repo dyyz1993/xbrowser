@@ -1052,6 +1052,43 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  site.command('draft', {
+    description: '保存文章草稿到知乎专栏',
+    scope: 'browser',
+    parameters: z.object({
+      title: z.string().describe('文章标题'),
+      content: z.string().describe('文章内容（Markdown）'),
+    }),
+    result: z.object({ saved: z.boolean() }).passthrough(),
+    handler: async (params, ctx) => {
+      const page = ctx.page;
+      if (!page) throw new Error('需要浏览器页面');
+      try {
+        await page.goto('https://zhuanlan.zhihu.com/write', { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(3000);
+        // Fill title
+        const titleInput = page.locator('textarea.WriteIndex-titleInput, input[placeholder*="标题"]');
+        await titleInput.fill(params.title);
+        // Fill content
+        const editor = page.locator('.public-DraftEditor-content, [contenteditable="true"]');
+        await editor.click();
+        await page.keyboard.type(params.content, { delay: 10 });
+        // Click save draft button
+        await page.waitForTimeout(1000);
+        const saveBtn = page.locator('button').filter({ hasText: /保存草稿|存草稿/i });
+        if (await saveBtn.isVisible().catch(() => false)) {
+          await saveBtn.click();
+        } else {
+          // Some versions auto-save, just wait
+          await page.waitForTimeout(2000);
+        }
+        return ok({ saved: true }, ['知乎草稿已保存']);
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : '保存草稿失败');
+      }
+    },
+  });
+
   site.login(async (ctx) => {
     const page = ctx.page;
     if (!page) return;
