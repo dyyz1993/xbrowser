@@ -14,6 +14,7 @@ import {
 import { pluginSearchBuiltin } from './plugin-search.js';
 import { createBuiltin } from './create.js';
 import { previewBuiltin } from './preview.js';
+import { knowledgeBuiltin } from './knowledge.js';
 
 export { type BuiltinCommand, type BuiltinContext, handleSessionHelp } from './session.js';
 export { handlePluginHelp } from './plugin.js';
@@ -35,6 +36,7 @@ export const allBuiltins: BuiltinCommand[] = [
   pluginReloadBuiltin,
   createBuiltin,
   previewBuiltin,
+  knowledgeBuiltin,
 ];
 
 /**

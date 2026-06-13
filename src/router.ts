@@ -419,6 +419,12 @@ export async function routeCommand(
         if (builtin) await builtin.execute(cmdArgs, options, { cwd: process.cwd() });
         break;
       }
+      case 'knowledge':
+      case 'know': {
+        const builtin = allBuiltins.find((b) => b.name === 'knowledge');
+        if (builtin) await builtin.execute(cmdArgs, options, { cwd: process.cwd() });
+        break;
+      }
       case 'viewer':
         await handleViewer(cmdArgs, options, mode, cdpEndpoint);
         break;

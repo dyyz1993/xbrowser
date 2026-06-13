@@ -150,4 +150,15 @@ export default function (xcli: XCLIAPI): void {
       }
     },
   });
+
+  site.login(async (ctx) => {
+    const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
+    if (!page) return;
+    await page.goto(GEMINI_URL);
+    await ctx.storage.set('gemini_login', { at: Date.now() });
+  });
+
+  site.logout(async (ctx) => {
+    await ctx.storage.delete('gemini_login');
+  });
 }

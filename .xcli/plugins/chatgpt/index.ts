@@ -1,20 +1,13 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
+import { buildTips, uploadFileViaDataTransfer, handleAttachment } from '../shared/ai-chat-base.js';
 import path from 'path';
 import fs from 'fs';
 
 type Page = import('../types').Page;
 
 const CG_URL = 'https://chatgpt.com';
-
-function buildTips(ctx: CommandContext): string[] {
-  const tips: string[] = [];
-  const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint;
-  if (!cdp) tips.push('建议使用 --cdp 9221 连接到已登录的浏览器');
-  tips.push(`Session: ${(ctx as unknown as Record<string, unknown>).sessionId || 'default'}`);
-  return tips;
-}
 
 async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
   const url = page.url();
@@ -625,64 +618,4 @@ async function sendMessage(page: Page): Promise<void> {
   await page.keyboard.press('Enter');
 }
 
-async function handleAttachment(
-  page: Page,
-  filePath: string,
-  attachType: string,
-  tips: string[]
-): Promise<void> {
-  if (attachType === 'url') {
-    tips.push(`URL 将通过消息发送: ${filePath}`);
-    return;
-  }
 
-  const absPath = path.resolve(filePath);
-  if (!fs.existsSync(absPath)) {
-    tips.push(`⚠ 附件文件不存在: ${filePath}，跳过附件`);
-    return;
-  }
-
-  await page.waitForTimeout(500);
-  const success = await uploadFileViaDataTransfer(page, absPath);
-  if (success) {
-    tips.push(`已上传附件: ${path.basename(absPath)}`);
-    await page.waitForTimeout(1000);
-  } else {
-    tips.push('⚠ 上传失败，找不到 file input');
-  }
-}
-
-async function uploadFileViaDataTransfer(page: Page, absPath: string): Promise<boolean> {
-  const data = fs.readFileSync(absPath);
-  const b64 = data.toString('base64');
-  const mimeMap: Record<string, string> = {
-    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
-    '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown',
-    '.json': 'application/json', '.csv': 'text/csv', '.html': 'text/html',
-    '.ts': 'text/typescript', '.tsx': 'text/typescript', '.js': 'text/javascript',
-    '.py': 'text/x-python', '.yaml': 'text/yaml', '.yml': 'text/yaml',
-  };
-  const ext = path.extname(absPath).toLowerCase();
-  const mime = mimeMap[ext] || 'application/octet-stream';
-
-  const result = await page.evaluate(({ b64data, filename, mimeType }) => {
-    const fi = document.querySelector('input[type="file"]') as HTMLInputElement | null;
-    if (!fi) return false;
-
-    const byteChars = atob(b64data);
-    const byteNums = new Uint8Array(byteChars.length);
-    for (let i = 0; i < byteChars.length; i++) {
-      byteNums[i] = byteChars.charCodeAt(i);
-    }
-    const file = new File([byteNums], filename, { type: mimeType });
-
-    const dt = new DataTransfer();
-    dt.items.add(file);
-    Object.defineProperty(fi, 'files', { value: dt.files });
-    fi.dispatchEvent(new Event('change', { bubbles: true }));
-    return fi.files.length > 0;
-  }, { b64data: b64, filename: path.basename(absPath), mimeType: mime }) as boolean;
-
-  return result;
-}

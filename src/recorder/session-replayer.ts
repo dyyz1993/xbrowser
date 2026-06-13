@@ -95,6 +95,10 @@ export class SessionReplayer {
       this.opts.onStep?.(action, i, actions.length);
 
       try {
+        // Replay mouse trajectory before the action (if present)
+        if (action.trajectory) {
+          await this.replayTrajectory(action.trajectory);
+        }
         await this.replayAction(action);
         success++;
       } catch (e) {
@@ -174,13 +178,110 @@ export class SessionReplayer {
       }
 
       case 'keydown': {
-        if (action.key === 'Enter') {
-          await page.keyboard.press('Enter');
-        } else if (action.key === 'Tab') {
-          await page.keyboard.press('Tab');
-        } else if (action.key === 'Escape') {
-          await page.keyboard.press('Escape');
+        const key = action.key ?? '';
+        // Special keys
+        if (key === 'Enter' || key === 'Tab' || key === 'Escape') {
+          await page.keyboard.press(key);
+        } else if (key === 'Backspace') {
+          await page.keyboard.press('Backspace');
+        } else if (key === 'Delete') {
+          await page.keyboard.press('Delete');
+        } else if (key.startsWith('Arrow')) {
+          await page.keyboard.press(key);
+        } else if (key.includes('+')) {
+          // Modifier combination like Ctrl+C, Meta+Shift+Z
+          await page.keyboard.press(key.replace('Meta', 'Meta').replace('Ctrl', 'Control'));
         }
+        break;
+      }
+
+      case 'dblclick': {
+        const selector = this.resolveSelector(action);
+        if (selector) {
+          await page.waitForSelector(selector, { state: 'visible', timeout });
+          await page.dblclick(selector, { timeout });
+        } else if (action.x !== undefined && action.y !== undefined) {
+          await page.mouse.dblclick(action.x, action.y);
+        }
+        break;
+      }
+
+      case 'contextmenu': {
+        const selector = this.resolveSelector(action);
+        if (selector) {
+          await page.waitForSelector(selector, { state: 'visible', timeout });
+          await page.click(selector, { button: 'right', timeout });
+        } else if (action.x !== undefined && action.y !== undefined) {
+          await page.mouse.click(action.x, action.y, { button: 'right' });
+        }
+        break;
+      }
+
+      case 'hover': {
+        const selector = this.resolveSelector(action);
+        if (selector) {
+          await page.waitForSelector(selector, { state: 'visible', timeout });
+          await page.hover(selector);
+        }
+        break;
+      }
+
+      case 'drag': {
+        if (action.drag) {
+          const { fromX, fromY, toX, toY } = action.drag;
+          await page.mouse.move(fromX, fromY);
+          await page.mouse.down();
+          // Move in steps for realistic drag
+          const steps = 5;
+          for (let i = 1; i <= steps; i++) {
+            await page.mouse.move(
+              fromX + (toX - fromX) * i / steps,
+              fromY + (toY - fromY) * i / steps,
+            );
+            await new Promise(r => setTimeout(r, 30));
+          }
+          await page.mouse.up();
+        }
+        break;
+      }
+
+      case 'resize': {
+        // Resize is informational — no replay needed (viewport is controlled externally)
+        break;
+      }
+
+      case 'clipboard': {
+        // Clipboard operations are informational — the actual content change
+        // is captured by input events
+        break;
+      }
+
+      case 'touch': {
+        if (action.touch) {
+          const { touchType, touches } = action.touch;
+          if (touchType === 'start' && touches.length > 0) {
+            await page.mouse.move(touches[0].x, touches[0].y);
+            await page.mouse.down();
+          } else if (touchType === 'end' && touches.length > 0) {
+            await page.mouse.move(touches[0].x, touches[0].y);
+            await page.mouse.up();
+          }
+        }
+        break;
+      }
+
+      case 'focus': {
+        const selector = this.resolveSelector(action);
+        if (selector && action.focus?.focusType === 'focus') {
+          await page.waitForSelector(selector, { state: 'visible', timeout });
+          // Use click to focus (XBPage doesn't have focus method)
+          await page.click(selector, { timeout });
+        }
+        break;
+      }
+
+      case 'visibility': {
+        // Tab visibility change is informational — no replay
         break;
       }
 
@@ -202,6 +303,26 @@ export class SessionReplayer {
       default:
         // Unknown action type — skip
         break;
+    }
+  }
+
+  /** Replay a mouse trajectory (smooth movement between actions) */
+  private async replayTrajectory(trajectory: NonNullable<UserAction['trajectory']>): Promise<void> {
+    const page = this.page!;
+    const { points } = trajectory;
+
+    if (!points || points.length < 2) return;
+
+    // Move mouse along the simplified waypoints with original timing
+    for (let i = 0; i < points.length; i++) {
+      const { x, y, dt } = points[i];
+
+      // Wait the recorded delta time (clamped to 0-200ms per segment for safety)
+      if (dt > 0) {
+        await new Promise(r => setTimeout(r, Math.min(dt, 200)));
+      }
+
+      await page.mouse.move(x, y);
     }
   }
 

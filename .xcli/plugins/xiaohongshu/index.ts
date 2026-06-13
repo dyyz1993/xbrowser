@@ -639,4 +639,15 @@ export default function (xcli: XCLIAPI): void {
       } catch (error) { return fail(error instanceof Error ? error.message : '未知错误'); }
     },
   });
+
+  site.login(async (ctx) => {
+    const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
+    if (!page) return;
+    await page.goto(XHS_BASE);
+    await ctx.storage.set('xiaohongshu_login', { at: Date.now() });
+  });
+
+  site.logout(async (ctx) => {
+    await ctx.storage.delete('xiaohongshu_login');
+  });
 }

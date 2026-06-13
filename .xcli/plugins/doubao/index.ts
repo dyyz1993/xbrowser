@@ -1,6 +1,7 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
+import { buildTips, uploadFileViaDataTransfer } from '../shared/ai-chat-base.js';
 import path from 'path';
 import fs from 'fs';
 import type { PluginPage, PluginElementHandle, PluginRoute } from '../types.js';
@@ -43,15 +44,6 @@ async function downloadMedia(url: string, prefix: string, maxRetries = 3): Promi
 
 function formatFileSize(bytes: number): string {
   return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)}MB` : `${(bytes / 1024).toFixed(0)}KB`;
-}
-
-function buildTips(ctx: CommandContext): string[] {
-  const tips: string[] = [];
-  const options = (ctx as Record<string, unknown>).options as Record<string, unknown> | undefined;
-  const cdp = ctx.cdpEndpoint || options?.cdp;
-  if (!cdp) tips.push('建议使用 --cdp 9221 连接到已登录的浏览器');
-  tips.push(`Session: ${ctx.sessionId || 'default'}`);
-  return tips;
 }
 
 /** Extract audio URL from audio/download elements on the current page. */
@@ -105,48 +97,6 @@ async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
       }
     }
   }
-}
-
-async function uploadFileViaDataTransfer(page: Page, absPath: string): Promise<boolean> {
-  const data = fs.readFileSync(absPath);
-  const b64 = data.toString('base64');
-  const mimeMap: Record<string, string> = {
-    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
-    '.bmp': 'image/bmp', '.ico': 'image/x-icon',
-    '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown',
-    '.json': 'application/json', '.csv': 'text/csv', '.html': 'text/html',
-    '.ts': 'text/typescript', '.tsx': 'text/typescript', '.js': 'text/javascript',
-    '.py': 'text/x-python', '.yaml': 'text/yaml', '.yml': 'text/yaml',
-    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    '.mobi': 'application/x-mobipocket-ebook', '.epub': 'application/epub+zip',
-    '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.flac': 'audio/flac',
-    '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.avi': 'video/x-msvideo',
-  };
-  const ext = path.extname(absPath).toLowerCase();
-  const mime = mimeMap[ext] || 'application/octet-stream';
-
-  const result = await page.evaluate(({ b64data, filename, mimeType }) => {
-    const fi = document.querySelector('input[type="file"]') as HTMLInputElement | null;
-    if (!fi) return false;
-
-    const byteChars = atob(b64data);
-    const byteNums = new Uint8Array(byteChars.length);
-    for (let i = 0; i < byteChars.length; i++) {
-      byteNums[i] = byteChars.charCodeAt(i);
-    }
-    const file = new File([byteNums], filename, { type: mimeType });
-
-    const dt = new DataTransfer();
-    dt.items.add(file);
-    Object.defineProperty(fi, 'files', { value: dt.files });
-    fi.dispatchEvent(new Event('change', { bubbles: true }));
-    return fi.files.length > 0;
-  }, { b64data: b64, filename: path.basename(absPath), mimeType: mime }) as boolean;
-
-  return result;
 }
 
 async function safeClickSelector(page: Page, selector: string): Promise<boolean> {
@@ -2260,7 +2210,7 @@ export default function (xcli: XCLIAPI): void {
           try { domains.add(new URL(u).hostname.replace(/^www\./, '')); } catch { /* ignore */ }
         }
 
-        return fail('未知错误', [...tips, `搜索来源：${domains.size} 个域名, ${uniqueUrls.length} 条链接`]);
+        return ok({ results: uniqueUrls, tips, domains: Array.from(domains), total: uniqueUrls.length });
       } catch {
         return fail('未知错误', ['搜索失败']);
       }

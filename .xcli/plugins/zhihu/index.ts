@@ -925,4 +925,15 @@ export default function (xcli: XCLIAPI): void {
       }
     },
   });
+
+  site.login(async (ctx) => {
+    const page = ctx.page;
+    if (!page) return;
+    await page.goto('https://www.zhihu.com/signin');
+    await ctx.storage.set('zhihu_login', { at: Date.now() });
+  });
+
+  site.logout(async (ctx) => {
+    await ctx.storage.delete('zhihu_login');
+  });
 }

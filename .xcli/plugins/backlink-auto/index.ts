@@ -8,7 +8,6 @@ import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
-import { execSync } from 'child_process';
 
 const BACKLINK_EMAIL = process.env.BACKLINK_EMAIL || '';
 const BACKLINK_PHONE = process.env.BACKLINK_PHONE || '';
@@ -102,12 +101,17 @@ async function detectCaptcha(page: Page): Promise<string | null> {
 
 function readLatestSMS(filter?: string): { code: string | null; text: string; time: string } | null {
   try {
-    execSync('cp /Users/xuyingzhou/Library/Messages/chat.db /tmp/chat_copy.db', { stdio: 'pipe' });
+    const os = require('os') as typeof import('os');
+    const path = require('path') as typeof import('path');
+    const chatDbPath = path.join(os.homedir(), 'Library', 'Messages', 'chat.db');
+    const tmpDbPath = path.join(os.tmpdir(), 'xbrowser_chat_copy.db');
+    require('fs').copyFileSync(chatDbPath, tmpDbPath);
     const where = filter
       ? `text LIKE '%${filter}%' AND (text LIKE '%验证%' OR text LIKE '%code%')`
       : `(text LIKE '%验证%' OR text LIKE '%验证码%' OR text LIKE '%code%')`;
     const query = `SELECT text, datetime(date/1000000000+978307200,'unixepoch','localtime') FROM message WHERE ${where} ORDER BY date DESC LIMIT 5`;
-    const result = execSync(`sqlite3 /tmp/chat_copy.db "${query}"`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
+    const { execSync } = require('child_process') as typeof import('child_process');
+    const result = execSync(`sqlite3 ${tmpDbPath} "${query}"`, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] });
     const lines = result.trim().split('\n').filter(Boolean);
     for (const line of lines) {
       const [text, time] = line.split('|');
@@ -174,7 +178,8 @@ async function addResult(r: SiteResult) {
   // Also write to file
   const fs = await import('fs');
   const path = await import('path');
-  const outPath = path.join('/Users/xuyingzhou/Downloads', 'backlink-results.json');
+  const os = await import('os');
+  const outPath = path.join(os.homedir(), 'Downloads', 'backlink-results.json');
   fs.writeFileSync(outPath, JSON.stringify(RESULTS, null, 2));
 }
 

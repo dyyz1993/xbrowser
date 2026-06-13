@@ -286,6 +286,50 @@ function buildCdpTips(ctx: Record<string, unknown>): string[] {
   return tips;
 }
 
+/**
+ * Upload an image to Juejin CDN via the Vue component's uploadImages method.
+ * Must be called while on a juejin.cn/editor page (has ByteMD editor loaded).
+ */
+async function uploadImageToJuejin(page: Page, imagePath: string): Promise<string> {
+  const fs = await import('fs');
+  const path = await import('path');
+  const resolvedPath = path.resolve(imagePath);
+  const imageBuffer = fs.readFileSync(resolvedPath);
+  const base64 = imageBuffer.toString('base64');
+
+  const cdnUrl: string = await page.evaluate(async (b64: string): Promise<string> => {
+    try {
+      const byteString = atob(b64);
+      const ab = new ArrayBuffer(byteString.length);
+      const ia = new Uint8Array(ab);
+      for (let i = 0; i < byteString.length; i++) ia[i] = byteString.charCodeAt(i);
+      const file = new File([ab], 'image.png', { type: 'image/png' });
+
+      // Find Vue component with uploadImages method
+      let comp: Record<string, unknown> | null = null;
+      function walk(v: Record<string, unknown>, depth: number): void {
+        if (!v || depth > 15 || comp) return;
+        if (typeof v.uploadImages === 'function') { comp = v; return; }
+        if (Array.isArray(v.$children)) v.$children.forEach((c: Record<string, unknown>) => { if (!comp) walk(c, depth + 1); });
+      }
+      const all = document.querySelectorAll('*');
+      for (let i = 0; i < all.length; i++) {
+        const vue = (all[i] as unknown as Record<string, unknown>).__vue__;
+        if (vue) { walk(vue as Record<string, unknown>, 0); break; }
+      }
+      if (!comp) throw new Error('uploadImages component not found');
+
+      const result = await (comp.uploadImages as (files: File[]) => Promise<Array<{ url?: string }>>)([file]);
+      return result?.[0]?.url || '';
+    } catch (e: unknown) {
+      throw new Error('Image upload failed: ' + (e instanceof Error ? e.message : String(e)));
+    }
+  }, base64);
+
+  if (!cdnUrl) throw new Error('Image upload returned empty URL');
+  return cdnUrl;
+}
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'juejin',
@@ -504,20 +548,168 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.command('draft', {
-    description: '在掘金保存草稿',
+    description: '在掘金保存草稿（自动上传 Markdown 中的本地图片到掘金 CDN）',
     loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
       title: z.string().describe('文章标题'),
-      content: z.string().describe('文章内容（Markdown）'),
+      content: z.string().optional().describe('文章内容（Markdown，与 file 二选一）'),
+      file: z.string().optional().describe('Markdown 文件路径（与 content 二选一）'),
     }),
     examples: [
       {
-        cmd: 'xbrowser juejin draft --title "草稿" --content "# 草稿内容"',
-        description: '保存为草稿',
+        cmd: 'xbrowser juejin draft --title "草稿" --content "# Hello World"',
+        description: '保存纯文本草稿',
+      },
+      {
+        cmd: 'xbrowser juejin draft --title "带图文章" --file ./article.md',
+        description: '自动扫描 Markdown 中的本地图片路径，上传到掘金 CDN 并替换',
       },
     ],
-    result: z.object({ title: z.string(), saved: z.boolean(), url: z.string() }).passthrough(),
+    result: z.object({
+      title: z.string(),
+      saved: z.boolean(),
+      url: z.string(),
+      uploadedImages: z.array(z.object({ localPath: z.string(), cdnUrl: z.string() })).optional(),
+    }).passthrough(),
+    handler: async (params, ctx) => {
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
+      if (!page) throw new Error('需要浏览器页面');
+      const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
+      const nodePath = await import('path');
+      const nodeFs = await import('fs');
+
+      try {
+        // Read content
+        let content = params.content;
+        let baseDir = process.cwd();
+        if (!content && params.file) {
+          const resolved = nodePath.resolve(params.file);
+          baseDir = nodePath.dirname(resolved);
+          content = await nodeFs.promises.readFile(resolved, 'utf-8');
+        }
+        if (!content) {
+          return fail('必须提供 --content 或 --file 参数');
+        }
+
+        // Scan for local image paths in Markdown:
+        // 1. ![alt](./local/path.png) or ![alt](local/path.png)
+        // 2. <img src="./local.png">
+        // 3. {{img1}}, {{img2}} ... placeholders (with optional --images)
+        const localImagePattern = /(!\[[^\]]*\]\(|<img[^>]+src=["'])(\.{0,2}\/[^\s"')\]]+\.(png|jpe?g|gif|webp|svg|bmp|ico))(\)|["'])/gi;
+        const localImagePaths: string[] = [];
+        let match: RegExpExecArray | null;
+
+        while ((match = localImagePattern.exec(content)) !== null) {
+          const imagePath = match[2];
+          const resolvedPath = nodePath.resolve(baseDir, imagePath);
+          // Check if file exists locally (not a URL)
+          if (!imagePath.startsWith('http') && !imagePath.startsWith('//')) {
+            try {
+              nodeFs.accessSync(resolvedPath);
+              if (!localImagePaths.includes(resolvedPath)) {
+                localImagePaths.push(resolvedPath);
+              }
+            } catch {
+              // File doesn't exist, skip
+            }
+          }
+        }
+
+        // Also handle {{imgN}} placeholders (legacy mode with --images)
+        // Already handled above via localImagePaths
+
+        // Navigate to editor
+        await page.goto('https://juejin.cn/editor/drafts/new', {
+          waitUntil: 'domcontentloaded',
+          timeout: 20000,
+        });
+        await page.waitForLoadState('domcontentloaded');
+        await randomPause(2800, 5200);
+
+        // Upload all local images to Juejin CDN and replace in content
+        const uploadedImages: Array<{ localPath: string; cdnUrl: string }> = [];
+        for (const localPath of localImagePaths) {
+          try {
+            const cdnUrl = await uploadImageToJuejin(page, localPath);
+            uploadedImages.push({ localPath, cdnUrl });
+
+            // Replace all occurrences of this local path with CDN URL
+            const relativePath = nodePath.relative(baseDir, localPath);
+            // Replace both ./path and path forms, and handle the markdown syntax
+            const escapedRel = relativePath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const patterns = [
+              escapedRel,
+              '\\.\\/' + escapedRel,
+              localPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+            ];
+            for (const pat of patterns) {
+              // Replace in ![alt](path) format
+              content = content.replace(
+                new RegExp(`(\\!\\[[^\\]]*\\]\\()${pat}(\\))`, 'g'),
+                `$1${cdnUrl}$2`,
+              );
+              // Replace in <img src="path"> format
+              content = content.replace(
+                new RegExp(`(<img[^>]+src=["'])${pat}(["'])`, 'g'),
+                `$1${cdnUrl}$2`,
+              );
+            }
+            await randomPause(500, 1000);
+          } catch (e) {
+            return fail(`图片上传失败 (${localPath}): ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+
+        // Set title
+        const titleInput = page.locator(
+          'input[placeholder*="输入文章标题"], input[class*="title-input"], input[name*="title"], input[placeholder*="标题"]'
+        ).first();
+        if (await titleInput.isVisible().catch(() => false)) {
+          await humanFill(page, titleInput, params.title);
+        }
+
+        await randomPause(350, 650);
+
+        // Set content via CodeMirror
+        await page.evaluate((md: string) => {
+          const cm = document.querySelector('.CodeMirror') as unknown as { CodeMirror?: { setValue(v: string): void } };
+          if (cm?.CodeMirror) {
+            cm.CodeMirror.setValue(md);
+            return 'OK';
+          }
+          return 'NO_CM';
+        }, content as unknown as string);
+
+        // Wait for auto-save
+        await randomPause(2000, 3500);
+
+        return ok({
+          title: params.title,
+          saved: true,
+          url: page.url(),
+          uploadedImages: uploadedImages.length > 0 ? uploadedImages : undefined,
+        }, [...cdpTips, `草稿 "${params.title}" 已保存`, uploadedImages.length > 0 ? `已上传 ${uploadedImages.length} 张图片到掘金 CDN` : ''].filter(Boolean));
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
+      }
+    },
+  });
+
+  site.command('upload-image', {
+    description: '上传图片到掘金 CDN（返回 CDN URL）',
+    loginRequired: 'required',
+    scope: 'page',
+    parameters: z.object({
+      image: z.string().describe('图片文件路径'),
+    }),
+    examples: [
+      {
+        cmd: 'xbrowser juejin upload-image --image ./screenshot.png',
+        description: '上传图片并获取 CDN URL',
+      },
+    ],
+    result: z.object({ file: z.string(), cdnUrl: z.string() }),
     handler: async (params, ctx) => {
       const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
@@ -530,38 +722,16 @@ export default function (xcli: XCLIAPI): void {
         });
         await page.waitForLoadState('domcontentloaded');
         await randomPause(2800, 5200);
-        await humanBrowse(page, 3000);
 
-        const titleInput = page.locator(
-          'input[placeholder*="输入文章标题"], input[class*="title-input"], input[name*="title"], input[placeholder*="标题"]'
-        ).first();
-        if (await titleInput.isVisible().catch(() => false)) {
-          await humanFill(page, titleInput, params.title);
+        const cdnUrl = await uploadImageToJuejin(page, params.image);
+
+        try {
+          await page.close();
+        } catch {
+          // page.close() failure is non-fatal
         }
 
-        await randomPause(350, 650);
-
-        const editor = page.locator(
-          'div[contenteditable="true"][class*="editor"], textarea[class*="editor"], div[class*="CodeMirror"], div[contenteditable="true"][data-placeholder], textarea[id*="editor"]'
-        ).first();
-        if (await editor.isVisible().catch(() => false)) {
-          await editor.click();
-          await page.keyboard.insertText(params.content);
-        }
-
-        const saveBtn = page.locator(
-          'button:has-text("保存草稿"), button:has-text("保存"), button[class*="draft"]'
-        ).first();
-        if (await saveBtn.isVisible().catch(() => false)) {
-          await humanClick(page, saveBtn);
-          await randomPause(1400, 2600);
-        }
-
-        return ok({
-            title: params.title,
-            saved: true,
-            url: page.url(),
-          }, [...cdpTips, `草稿 "${params.title}" 已保存`]);
+        return ok({ file: params.image, cdnUrl }, [...cdpTips, `图片已上传到掘金 CDN: ${cdnUrl}`]);
       } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }

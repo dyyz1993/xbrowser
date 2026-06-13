@@ -126,6 +126,14 @@ export async function handleRecord(
       break;
     }
 
+    case 'generate-plugin': {
+      const sessionName = (options.session as string) || args[1] || 'default';
+      const pluginName = (options.name as string) || '';
+      const outputDir = (options.output as string) || '';
+      await handleGeneratePlugin(sessionName, pluginName, outputDir);
+      break;
+    }
+
     default:
       console.log('Usage:');
       console.log('  xbrowser record start [--url <url>] [--session <name>]');
@@ -133,6 +141,7 @@ export async function handleRecord(
       console.log('  xbrowser record status [--session <name>]');
       console.log('  xbrowser record summary [--session <name>] [--json]');
       console.log('  xbrowser record checkpoint --type <type> --hint "description" [--selector <sel>] [--session <name>]');
+      console.log('  xbrowser record generate-plugin [--session <name>] [--name <plugin>] [--output <dir>]');
       console.log('');
       console.log('Checkpoint types: dialog, captcha, login, iframe, slider, custom');
   }
@@ -414,4 +423,231 @@ export async function handleFilter(args: string[], _mode: string): Promise<void>
 
   console.log(`Filtered ${filePath} -> ${outputPath}`);
   console.log(`  Original: ${result.originalCount}, After: ${result.filteredCount}, Removed: ${result.removed} (${result.percentage}%)`);
+}
+
+// ─── generate-plugin: create a plugin from recording + knowledge ───
+
+async function handleGeneratePlugin(
+  sessionName: string,
+  pluginName: string,
+  outputDir: string,
+): Promise<void> {
+  const { SessionRecorder } = await import('../recorder/session-recorder.js');
+  const { readSiteKnowledge, toMarkdown } = await import('../recorder/site-knowledge.js');
+  const { mkdirSync, writeFileSync } = await import('fs');
+  const { join } = await import('path');
+
+  // Read recording data
+  const data = SessionRecorder.readData(sessionName);
+  if (!data) {
+    outputError(`No recording found for session "${sessionName}". Run \`xbrowser record stop --session ${sessionName}\` first.`);
+    return;
+  }
+
+  // Extract domain
+  let domain = 'unknown';
+  try {
+    domain = new URL(data.startUrl).hostname.replace(/^www\./, '');
+  } catch { /* keep unknown */ }
+
+  const finalPluginName = pluginName || domain.split('.')[0] || 'my-site';
+  const finalOutputDir = outputDir || join(process.cwd(), '.xcli', 'plugins', finalPluginName);
+
+  // Read site knowledge if available
+  const knowledge = readSiteKnowledge(domain);
+  const knowledgeMd = knowledge ? toMarkdown(knowledge) : '';
+
+  // Generate plugin code
+  const pluginCode = generatePluginCode(finalPluginName, domain, data, knowledgeMd);
+
+  // Write files
+  mkdirSync(join(finalOutputDir), { recursive: true });
+  writeFileSync(join(finalOutputDir, 'index.ts'), pluginCode, 'utf-8');
+
+  // Also write knowledge.md alongside the plugin for reference
+  if (knowledgeMd) {
+    writeFileSync(join(finalOutputDir, 'SITE_KNOWLEDGE.md'), knowledgeMd, 'utf-8');
+  }
+
+  // Summary
+  console.log('');
+  console.log('=== Plugin Generated ===');
+  console.log(`  Plugin:     ${finalPluginName}`);
+  console.log(`  Domain:     ${domain}`);
+  console.log(`  Output:     ${finalOutputDir}/index.ts`);
+  if (knowledgeMd) {
+    console.log(`  Knowledge:  ${finalOutputDir}/SITE_KNOWLEDGE.md`);
+  }
+  console.log(`  Actions:    ${data.actions.length}`);
+  console.log(`  APIs:       ${data.network.filter(n => n.contentType.includes('json') || n.url.includes('/api/')).length}`);
+  console.log('');
+  console.log('Next steps:');
+  console.log(`  1. Review and edit:  ${finalOutputDir}/index.ts`);
+  console.log(`  2. Test:             xbrowser ${finalPluginName} <command>`);
+  console.log(`  3. Reference:        ${finalOutputDir}/SITE_KNOWLEDGE.md (for LLM)`);
+}
+
+function generatePluginCode(
+  pluginName: string,
+  domain: string,
+  data: { startUrl: string; actions: { type: string; url?: string; element?: { selector?: string; placeholder?: string } }[]; network: { contentType?: string; url: string }[] },
+  _knowledgeMd: string,
+): string {
+  // Extract unique pages (informational — used for reference)
+  const pagePaths = new Set<string>();
+  for (const action of data.actions) {
+    if (action.url) {
+      try {
+        pagePaths.add(new URL(action.url).pathname);
+      } catch { /* skip */ }
+    }
+  }
+
+  // Extract selectors grouped by action type
+  const clickSelectors: string[] = [];
+  const inputSelectors: Array<{ selector: string; placeholder?: string }> = [];
+
+  for (const action of data.actions) {
+    const el = action.element;
+    if (!el) continue;
+    const sel = el.selector;
+    if (!sel) continue;
+
+    if (action.type === 'click' && !clickSelectors.includes(sel)) {
+      clickSelectors.push(sel);
+    }
+    if (action.type === 'input' && !inputSelectors.some(s => s.selector === sel)) {
+      inputSelectors.push({ selector: sel, placeholder: el.placeholder });
+    }
+  }
+
+  // Extract API endpoints
+  const apis = data.network.filter(n =>
+    (n.contentType || '').includes('json') || n.url.includes('/api/'),
+  );
+
+  // Build commands based on recorded actions
+  const commands: string[] = [];
+
+  // Command 1: goto main page
+  commands.push(`  site.command({
+    name: 'open',
+    description: 'Open ${domain}',
+    scope: 'browser',
+    handler: async (_p: Record<string, unknown>, ctx: CommandContext) => {
+      const page = ensurePage(ctx);
+      await page.goto('${data.startUrl}', { waitUntil: 'domcontentloaded' });
+      return ok({ url: page.url() });
+    },
+  });`);
+
+  // Command 2: fill form (if inputs were recorded)
+  if (inputSelectors.length > 0) {
+    const params = inputSelectors.slice(0, 5).map((s, i) =>
+      `    ${s.selector.replace(/[^a-zA-Z0-9]/g, '_').replace(/^_+/, '').toLowerCase() || `field${i}`}: z.string().describe('${s.placeholder || s.selector}'),`,
+    ).join('\n');
+
+    const fills = inputSelectors.slice(0, 5).map((s) =>
+      `    await page.fill('${s.selector}', p.${s.selector.replace(/[^a-zA-Z0-9]/g, '_').replace(/^_+/, '').toLowerCase() || 'field0'}');`,
+    ).join('\n');
+
+    commands.push(`  site.command({
+    name: 'fill',
+    description: 'Fill form on ${domain}',
+    scope: 'page',
+    parameters: z.object({
+${params}
+    }),
+    handler: async (p: Record<string, unknown>, ctx: CommandContext) => {
+      const page = ensurePage(ctx);
+${fills}
+      return ok({ filled: true });
+    },
+  });`);
+  }
+
+  // Command 3: click action (if clicks were recorded)
+  if (clickSelectors.length > 0) {
+    commands.push(`  site.command({
+    name: 'click',
+    description: 'Click element on ${domain}',
+    scope: 'page',
+    parameters: z.object({
+      selector: z.string().describe('CSS selector of element to click'),
+    }),
+    handler: async (p: Record<string, unknown>, ctx: CommandContext) => {
+      const page = ensurePage(ctx);
+      await page.click(p.selector as string);
+      return ok({ clicked: p.selector });
+    },
+  });`);
+  }
+
+  // Command 4: scrape data (if API endpoints found)
+  if (apis.length > 0) {
+    commands.push(`  site.command({
+    name: 'scrape',
+    description: 'Scrape data from ${domain}',
+    scope: 'page',
+    handler: async (_p: Record<string, unknown>, ctx: CommandContext) => {
+      const page = ensurePage(ctx);
+      const data = await page.evaluate(() => {
+        return {
+          title: document.title,
+          url: location.href,
+          content: document.body?.innerText?.substring(0, 5000) || '',
+        };
+      });
+      return ok(data);
+    },
+  });`);
+  }
+
+  // Build the full plugin file
+  return `/**
+ * ${pluginName} — Auto-generated plugin for ${domain}
+ *
+ * Generated from xbrowser recording session.
+ * Review and customize before using in production.
+ *
+ * Site Knowledge: See SITE_KNOWLEDGE.md for LLM-readable selector/API reference.
+ */
+
+import { z } from 'zod';
+import { ok } from '@dyyz1993/xcli-core';
+import { createSite, type CommandContext } from '@dyyz1993/xcli-core';
+
+interface XBPage {
+  url(): string;
+  goto(url: string, opts?: Record<string, unknown>): Promise<unknown>;
+  click(selector: string, opts?: Record<string, unknown>): Promise<unknown>;
+  fill(selector: string, value: string, opts?: Record<string, unknown>): Promise<unknown>;
+  evaluate<T>(fn: string | (() => T)): Promise<T>;
+}
+
+function ensurePage(ctx: CommandContext): XBPage {
+  const page = (ctx as Record<string, unknown>).page;
+  if (!page) throw new Error('No active page. Start a session first.');
+  return page as unknown as XBPage;
+}
+
+export default createSite({
+  name: '${pluginName}',
+  domain: '${domain}',
+  description: 'Auto-generated plugin for ${domain} from recording',
+
+  login: {
+    url: '${data.startUrl}',
+    detect: async (ctx: CommandContext) => {
+      const page = ensurePage(ctx);
+      // TODO: Add login detection logic
+      return false;
+    },
+  },
+
+  setup(site) {
+${commands.join('\n\n')}
+  },
+});
+`;
 }

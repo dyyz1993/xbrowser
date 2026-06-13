@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { BrowserContext, Frame, Page, Request, Response, Dialog } from '../browser-shim.js';
 import { getSelectorGeneratorScript } from './selector-utils.js';
+import { updateSiteKnowledge } from './site-knowledge.js';
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -53,7 +54,10 @@ export interface ClickContext {
 
 export interface UserAction {
   id: number;
-  type: 'click' | 'input' | 'change' | 'keydown' | 'submit' | 'scroll' | 'navigation' | 'goto' | 'cdp-fill' | 'cdp-click' | 'cdp-eval' | 'filechooser';
+  type: 'click' | 'input' | 'change' | 'keydown' | 'submit' | 'scroll'
+    | 'navigation' | 'goto' | 'cdp-fill' | 'cdp-click' | 'cdp-eval' | 'filechooser'
+    | 'dblclick' | 'contextmenu' | 'hover' | 'drag' | 'resize' | 'clipboard'
+    | 'touch' | 'focus' | 'visibility';
   timestamp: number;
   url: string;
   pageTitle: string;
@@ -101,6 +105,50 @@ export interface UserAction {
       size: number;
       dataUrl: string | null;
     }>;
+  };
+  /** Drag & drop info (type=drag only) */
+  drag?: {
+    fromX: number;
+    fromY: number;
+    toX: number;
+    toY: number;
+    /** Source element description */
+    source?: { tag: string; selector?: string; text: string };
+    /** Target (drop zone) element description */
+    target?: { tag: string; selector?: string; text: string };
+  };
+  /** Resize info (type=resize only) */
+  resize?: {
+    width: number;
+    height: number;
+  };
+  /** Clipboard info (type=clipboard only) */
+  clipboard?: {
+    operation: 'copy' | 'paste' | 'cut';
+    textPreview?: string;  // first 100 chars of clipboard text (if available)
+  };
+  /** Touch info (type=touch only) */
+  touch?: {
+    touchType: 'start' | 'move' | 'end';
+    touches: Array<{ x: number; y: number }>;
+  };
+  /** Focus info (type=focus only) */
+  focus?: {
+    focusType: 'focus' | 'blur';
+  };
+  /** Visibility info (type=visibility only) */
+  visibility?: {
+    state: 'visible' | 'hidden';
+  };
+  /** Mouse trajectory from previous action's position to this action's position.
+   *  Captured as simplified waypoints with relative timestamps for realistic replay. */
+  trajectory?: {
+    /** Waypoints: [x, y, deltaMs from previous point] */
+    points: Array<{ x: number; y: number; dt: number }>;
+    /** Total distance in pixels (approximate) */
+    distance: number;
+    /** Total duration in ms */
+    duration: number;
   };
 }
 
@@ -400,6 +448,104 @@ const ACTION_SIGNAL_SCRIPT = `
     };
   }
 
+  // ── Mouse trajectory capture ──────────────────────────────────────
+  // Continuously samples mousemove (every ~60ms).
+  // When a meaningful action fires, we snapshot the buffer,
+  // simplify it (Douglas-Peucker), and attach as trajectory.
+  var __xb_traj_buffer = [];        // raw samples: {x, y, t}
+  var __xb_traj_last_action = null; // {x, y, t} of previous action
+
+  document.addEventListener('mousemove', function(e) {
+    var now = Date.now();
+    // Sample at ~60ms intervals
+    if (__xb_traj_buffer.length > 0) {
+      var last = __xb_traj_buffer[__xb_traj_buffer.length - 1];
+      if (now - last.t < 60) return;
+    }
+    __xb_traj_buffer.push({ x: e.clientX, y: e.clientY, t: now });
+    // Cap buffer at 200 points (~12 seconds at 60ms)
+    if (__xb_traj_buffer.length > 200) {
+      __xb_traj_buffer = __xb_traj_buffer.slice(-150);
+    }
+  }, true);
+
+  // Douglas-Peucker simplification: keep only points that define the path shape
+  function dpSimplify(pts, epsilon) {
+    if (pts.length <= 2) return pts;
+    var maxDist = 0, maxIdx = 0;
+    var first = pts[0], last = pts[pts.length - 1];
+    for (var i = 1; i < pts.length - 1; i++) {
+      var d = pointLineDistance(pts[i], first, last);
+      if (d > maxDist) { maxDist = d; maxIdx = i; }
+    }
+    if (maxDist > epsilon) {
+      var left = dpSimplify(pts.slice(0, maxIdx + 1), epsilon);
+      var right = dpSimplify(pts.slice(maxIdx), epsilon);
+      return left.slice(0, -1).concat(right);
+    }
+    return [first, last];
+  }
+
+  function pointLineDistance(p, a, b) {
+    var dx = b.x - a.x, dy = b.y - a.y;
+    var lenSq = dx * dx + dy * dy;
+    if (lenSq === 0) return Math.sqrt((p.x - a.x) * (p.x - a.x) + (p.y - a.y) * (p.y - a.y));
+    var t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq));
+    var projX = a.x + t * dx, projY = a.y + t * dy;
+    return Math.sqrt((p.x - projX) * (p.x - projX) + (p.y - projY) * (p.y - projY));
+  }
+
+  // Extract trajectory from buffer ending at (toX, toY, toT).
+  // Returns null if no meaningful path.
+  function extractTrajectory(toX, toY) {
+    var now = Date.now();
+    // Add current position as final point
+    var raw = __xb_traj_buffer.slice();
+    raw.push({ x: toX, y: toY, t: now });
+
+    // Trim to last 5 seconds
+    var cutoff = now - 5000;
+    while (raw.length > 0 && raw[0].t < cutoff) raw.shift();
+    if (raw.length < 2) { __xb_traj_buffer = []; return null; }
+
+    // If we know the previous action position, prepend it as start
+    if (__xb_traj_last_action) {
+      // Trim raw points before the last action
+      while (raw.length > 1 && raw[0].t < __xb_traj_last_action.t) raw.shift();
+      raw.unshift({ x: __xb_traj_last_action.x, y: __xb_traj_last_action.y, t: __xb_traj_last_action.t });
+    }
+
+    // Simplify (epsilon=3px keeps shape but removes jitter)
+    var simplified = dpSimplify(raw, 3);
+    if (simplified.length < 2) { __xb_traj_buffer = []; return null; }
+
+    // Build result with delta times
+    var totalDist = 0;
+    var points = [];
+    for (var i = 0; i < simplified.length; i++) {
+      var dt = i === 0 ? 0 : simplified[i].t - simplified[i - 1].t;
+      if (i > 0) {
+        var ddx = simplified[i].x - simplified[i - 1].x;
+        var ddy = simplified[i].y - simplified[i - 1].y;
+        totalDist += Math.sqrt(ddx * ddx + ddy * ddy);
+      }
+      points.push({ x: simplified[i].x, y: simplified[i].y, dt: dt });
+    }
+
+    var duration = simplified[simplified.length - 1].t - simplified[0].t;
+
+    // Only return if meaningful movement (>5px total distance)
+    if (totalDist < 5) { __xb_traj_buffer = []; return null; }
+
+    // Reset buffer
+    __xb_traj_buffer = [];
+    __xb_traj_last_action = { x: toX, y: toY, t: now };
+
+    return { points: points, distance: Math.round(totalDist), duration: duration };
+  }
+
+  // ── End trajectory capture ────────────────────────────────────────
+
   // Expose describe() for CDP command element metadata extraction
   window.__xb_describe = describe;
 
@@ -441,6 +587,12 @@ const ACTION_SIGNAL_SCRIPT = `
   }
 
   function pushAction(type, detail) {
+    // Attach mouse trajectory for actions with coordinates
+    if (detail && detail.x != null && detail.y != null) {
+      var traj = extractTrajectory(detail.x, detail.y);
+      if (traj) detail.trajectory = traj;
+    }
+
     if (type === 'input') {
       if (__xb_input_timer) clearTimeout(__xb_input_timer);
       __xb_input_pending = {
@@ -660,8 +812,25 @@ const ACTION_SIGNAL_SCRIPT = `
   }, true);
 
   document.addEventListener('keydown', function(e) {
+    // Special keys always recorded
     if (e.key === 'Enter' || e.key === 'Tab' || e.key === 'Escape' || e.key.startsWith('Arrow')) {
       pushAction('keydown', { key: e.key, element: describe(actualTarget(e)) });
+      return;
+    }
+    // Editing keys
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      pushAction('keydown', { key: e.key, element: describe(actualTarget(e)) });
+      return;
+    }
+    // Modifier combinations (Ctrl/Cmd/Alt + key)
+    if (e.ctrlKey || e.metaKey || e.altKey) {
+      var combo = '';
+      if (e.ctrlKey) combo += 'Ctrl+';
+      if (e.metaKey) combo += 'Meta+';
+      if (e.altKey) combo += 'Alt+';
+      if (e.shiftKey) combo += 'Shift+';
+      combo += e.key;
+      pushAction('keydown', { key: combo, element: describe(actualTarget(e)) });
     }
   }, true);
 
@@ -674,6 +843,155 @@ const ACTION_SIGNAL_SCRIPT = `
       window.__xb_last_scroll = Date.now();
       pushAction('scroll', { scrollX: window.scrollX, scrollY: window.scrollY });
     }
+  }, true);
+
+  // ── Double click ──
+  document.addEventListener('dblclick', function(e) {
+    pushAction('dblclick', {
+      element: describe(resolveMeaningful(e)),
+      x: e.clientX,
+      y: e.clientY,
+    });
+  }, true);
+
+  // ── Right click (context menu) ──
+  document.addEventListener('contextmenu', function(e) {
+    pushAction('contextmenu', {
+      element: describe(resolveMeaningful(e)),
+      x: e.clientX,
+      y: e.clientY,
+    });
+  }, true);
+
+  // ── Hover (throttled to 800ms) ──
+  var __xb_last_hover = 0;
+  document.addEventListener('mouseover', function(e) {
+    if (Date.now() - __xb_last_hover < 800) return;
+    __xb_last_hover = Date.now();
+    var target = resolveMeaningful(e);
+    // Only record hover on interactive elements
+    var tag = target.tagName && target.tagName.toLowerCase();
+    var isInteractive = tag === 'a' || tag === 'button' || tag === 'input'
+      || tag === 'select' || tag === 'textarea' || tag === 'summary'
+      || target.getAttribute('role') === 'button'
+      || target.getAttribute('role') === 'link'
+      || target.getAttribute('role') === 'menuitem'
+      || target.getAttribute('role') === 'tab'
+      || target.getAttribute('role') === 'option'
+      || !!target.closest('[role="menu"], [role="menubar"], [role="tablist"], [role="listbox"], [role="tree"], nav, menu');
+    if (isInteractive) {
+      pushAction('hover', {
+        element: describe(target),
+        x: e.clientX,
+        y: e.clientY,
+      });
+    }
+  }, true);
+
+  // ── Drag & drop ──
+  var __xb_drag_source = null;
+  var __xb_drag_start_pos = null;
+  document.addEventListener('dragstart', function(e) {
+    __xb_drag_source = e.target;
+    __xb_drag_start_pos = { x: e.clientX, y: e.clientY };
+  }, true);
+  document.addEventListener('drop', function(e) {
+    if (__xb_drag_source && __xb_drag_start_pos) {
+      pushAction('drag', {
+        x: e.clientX,
+        y: e.clientY,
+        drag: {
+          fromX: __xb_drag_start_pos.x,
+          fromY: __xb_drag_start_pos.y,
+          toX: e.clientX,
+          toY: e.clientY,
+          source: describe(__xb_drag_source),
+          target: describe(resolveMeaningful(e)),
+        },
+      });
+    }
+    __xb_drag_source = null;
+    __xb_drag_start_pos = null;
+  }, true);
+  document.addEventListener('dragend', function() {
+    __xb_drag_source = null;
+    __xb_drag_start_pos = null;
+  }, true);
+
+  // ── Window resize ──
+  var __xb_last_resize = 0;
+  window.addEventListener('resize', function() {
+    if (Date.now() - __xb_last_resize < 1000) return;
+    __xb_last_resize = Date.now();
+    pushAction('resize', {
+      resize: { width: window.innerWidth, height: window.innerHeight },
+    });
+  }, true);
+
+  // ── Clipboard (copy/paste/cut) ──
+  document.addEventListener('copy', function(e) {
+    pushAction('clipboard', { clipboard: { operation: 'copy' } });
+  }, true);
+  document.addEventListener('paste', function(e) {
+    var preview = '';
+    try {
+      preview = (e.clipboardData || window.clipboardData).getData('text').substring(0, 100);
+    } catch(ex) {}
+    pushAction('clipboard', { clipboard: { operation: 'paste', textPreview: preview } });
+  }, true);
+  document.addEventListener('cut', function(e) {
+    pushAction('clipboard', { clipboard: { operation: 'cut' } });
+  }, true);
+
+  // ── Touch events ──
+  document.addEventListener('touchstart', function(e) {
+    var touches = [];
+    for (var i = 0; i < e.touches.length; i++) {
+      touches.push({ x: e.touches[i].clientX, y: e.touches[i].clientY });
+    }
+    pushAction('touch', {
+      element: describe(resolveMeaningful(e)),
+      touch: { touchType: 'start', touches: touches },
+    });
+  }, true);
+  document.addEventListener('touchend', function(e) {
+    var touches = [];
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      touches.push({ x: e.changedTouches[i].clientX, y: e.changedTouches[i].clientY });
+    }
+    pushAction('touch', {
+      element: describe(resolveMeaningful(e)),
+      touch: { touchType: 'end', touches: touches },
+    });
+  }, true);
+
+  // ── Focus / Blur ──
+  document.addEventListener('focusin', function(e) {
+    var target = actualTarget(e);
+    var tag = target.tagName && target.tagName.toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable) {
+      pushAction('focus', {
+        element: describe(target),
+        focus: { focusType: 'focus' },
+      });
+    }
+  }, true);
+  document.addEventListener('focusout', function(e) {
+    var target = actualTarget(e);
+    var tag = target.tagName && target.tagName.toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable) {
+      pushAction('focus', {
+        element: describe(target),
+        focus: { focusType: 'blur' },
+      });
+    }
+  }, true);
+
+  // ── Visibility change (tab switch) ──
+  document.addEventListener('visibilitychange', function() {
+    pushAction('visibility', {
+      visibility: { state: document.hidden ? 'hidden' : 'visible' },
+    });
   }, true);
 })();
 `;
@@ -1178,6 +1496,23 @@ export class SessionRecorder {
     // Write final files
     this.writeFinalOutput(data, summary);
 
+    // Generate/update site knowledge base (LLM-readable documentation)
+    try {
+      const knowledge = updateSiteKnowledge(data);
+      const knowledgeDir = join(this.recordingsDir, 'site-knowledge.md');
+      const knowledgeJson = join(this.recordingsDir, 'site-knowledge.json');
+      const { readFileSync: rf } = require('fs');
+      const { getKnowledgePath } = require('./site-knowledge.js');
+      const mdPath = getKnowledgePath(knowledge.domain, 'md');
+      try {
+        const md = rf(mdPath, 'utf-8');
+        writeFileSync(knowledgeDir, md, 'utf-8');
+      } catch { /* ok */ }
+      writeFileSync(knowledgeJson, JSON.stringify(knowledge, null, 2), 'utf-8');
+    } catch {
+      // non-critical: recording still succeeds
+    }
+
     // Clean up control & signal files
     try { rmSync(this.controlFilePath); } catch { /* ok */ }
     try { rmSync(this.stopSignalPath); } catch { /* ok */ }
@@ -1296,8 +1631,12 @@ export class SessionRecorder {
           function injectIframe(iframe) {
             try {
               var w = iframe.contentWindow;
-              if (!w || w.__xb_action_signal) return;
+              if (!w) return;
+              // Force re-injection: clear old flag
+              try { delete w.__xb_action_signal; } catch(e) {}
               w.eval(_scriptSrc);
+              // Tag iframe so flushIframes knows it's injected
+              iframe.__xb_injected = true;
             } catch(e) {}
           }
           function watchIframe(iframe) {
@@ -1327,6 +1666,19 @@ export class SessionRecorder {
               }
             });
             window.__xb_iframe_observer.observe(document.documentElement, { childList: true, subtree: true });
+          }
+          // Periodic re-injection for iframes that load late or navigate internally
+          if (!window.__xb_iframe_timer) {
+            window.__xb_iframe_timer = setInterval(function() {
+              try {
+                var iframes = document.querySelectorAll('iframe');
+                for (var i = 0; i < iframes.length; i++) {
+                  if (!iframes[i].__xb_injected) {
+                    watchIframe(iframes[i]);
+                  }
+                }
+              } catch(e) {}
+            }, 3000);
           }
         })();
       `);
@@ -1456,7 +1808,18 @@ export class SessionRecorder {
     page.on('request', this.handleRequest);
     page.on('response', this.handleResponse);
     page.on('filechooser', this.handleFileChooser);
+    page.on('dialog', this.handleDialog);
     page.on('close', () => { this.activePages.delete(page); });
+
+    // Wait for page to have a real URL before considering it ready
+    // (handles the case where new tab opens with about:blank then navigates)
+    page.on('framenavigated', async (frame: Frame) => {
+      if (frame !== frame.page().mainFrame()) return;
+      const url = frame.url();
+      if (url && url !== 'about:blank' && !url.startsWith('chrome')) {
+        try { await this.injectActionScript(page); } catch { /* ignore */ }
+      }
+    });
   };
 
   private handleFrameNavigated = (frame: Frame): void => {
@@ -1623,7 +1986,17 @@ export class SessionRecorder {
                 }
                 var iframeActions = iframeWin.__xb_pending_actions;
                 if (Array.isArray(iframeActions) && iframeActions.length > 0) {
-                  for (var j = 0; j < iframeActions.length; j++) actions.push(iframeActions[j]);
+                  // Get iframe position to offset coordinates
+                  var rect = iframes[i].getBoundingClientRect();
+                  for (var j = 0; j < iframeActions.length; j++) {
+                    var act = iframeActions[j];
+                    // Offset coordinates from iframe-relative to page-relative
+                    if (act.x != null) act.x = act.x + rect.left;
+                    if (act.y != null) act.y = act.y + rect.top;
+                    // Tag the action as originating from an iframe
+                    act.iframeSrc = iframes[i].src || '';
+                    actions.push(act);
+                  }
                   iframeWin.__xb_pending_actions = [];
                 }
                 // Recurse into nested iframes

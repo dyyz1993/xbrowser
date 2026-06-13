@@ -1,20 +1,13 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
+import { buildTips, uploadFileViaDataTransfer } from '../shared/ai-chat-base.js';
 import path from 'path';
 import fs from 'fs';
 
 type Page = import('../types').Page;
 
 const SITE_URL = 'https://yuanbao.tencent.com';
-
-function buildTips(ctx: CommandContext): string[] {
-  const tips: string[] = [];
-  const cdp = ctx.cdpEndpoint;
-  if (!cdp) tips.push('建议使用 --cdp 9221 连接到已登录的浏览器');
-  tips.push(`Session: ${ctx.sessionId || 'default'}`);
-  return tips;
-}
 
 async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
   if (!page.url().startsWith(SITE_URL)) {
@@ -37,47 +30,6 @@ async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
       }
     }
   }
-}
-
-async function uploadFileViaDataTransfer(page: Page, absPath: string): Promise<boolean> {
-  const data = fs.readFileSync(absPath);
-  const b64 = data.toString('base64');
-  const mimeMap: Record<string, string> = {
-    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
-    '.gif': 'image/gif', '.webp': 'image/webp', '.svg': 'image/svg+xml',
-    '.bmp': 'image/bmp', '.ico': 'image/x-icon',
-    '.pdf': 'application/pdf', '.txt': 'text/plain', '.md': 'text/markdown',
-    '.json': 'application/json', '.csv': 'text/csv', '.html': 'text/html',
-    '.ts': 'text/typescript', '.tsx': 'text/typescript', '.js': 'text/javascript',
-    '.py': 'text/x-python', '.yaml': 'text/yaml', '.yml': 'text/yaml',
-    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.flac': 'audio/flac',
-    '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.avi': 'video/x-msvideo',
-  };
-  const ext = path.extname(absPath).toLowerCase();
-  const mime = mimeMap[ext] || 'application/octet-stream';
-
-  const result = await page.evaluate(({ b64data, filename, mimeType }) => {
-    const fi = document.querySelector('input[type="file"]');
-    if (!fi) return false;
-
-    const byteChars = atob(b64data);
-    const byteNums = new Uint8Array(byteChars.length);
-    for (let i = 0; i < byteChars.length; i++) {
-      byteNums[i] = byteChars.charCodeAt(i);
-    }
-    const file = new File([byteNums], filename, { type: mimeType });
-
-    const dt = new DataTransfer();
-    dt.items.add(file);
-    Object.defineProperty(fi, 'files', { value: dt.files });
-    fi.dispatchEvent(new Event('change', { bubbles: true }));
-    return (fi as HTMLInputElement).files!.length > 0;
-  }, { b64data: b64, filename: path.basename(absPath), mimeType: mime }) as boolean;
-
-  return result;
 }
 
 async function safeClickSelector(page: Page, selector: string): Promise<boolean> {

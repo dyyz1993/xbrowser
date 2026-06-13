@@ -518,12 +518,14 @@ async function executeSingleEngineOnPage(page: Page, config: EngineConfig, param
 }
 
 async function handleSingleEngine(params: SingleEngineParams, cdpEndpoint?: string): Promise<ReturnType<typeof ok>> {
-  const { browser, context } = await createBrowserContext(cdpEndpoint);
+  const { context } = await createBrowserContext(cdpEndpoint);
   const page = await context.newPage();
   const engineKey = params.engine || 'deepseek';
   const config = getEngineConfig(engineKey);
-  if (!config) { await browser.close(); throw new Error(`Unknown AI engine: ${params.engine}. Available: ${ALL_ENGINE_KEYS.join(', ')}`); }
-  try { return await executeSingleEngineOnPage(page, config, params); } finally { await browser.close(); }
+  if (!config) { throw new Error(`Unknown AI engine: ${params.engine}. Available: ${ALL_ENGINE_KEYS.join(', ')}`); }
+  // Note: browser is NOT closed — it's a shared CDP session managed by xbrowser.
+  // Closing it would break subsequent commands in the same session.
+  return await executeSingleEngineOnPage(page, config, params);
 }
 
 async function handleAllEngines(params: SingleEngineParams & { all: boolean }, cdpEndpoint?: string): Promise<ReturnType<typeof ok>> {
@@ -532,9 +534,10 @@ async function handleAllEngines(params: SingleEngineParams & { all: boolean }, c
     const config = getEngineConfig(engineKey);
     if (!config) continue;
     console.log(`[ai-search --all] 正在搜索 ${config.name} (${engineKey})...`);
-    const { browser, context } = await createBrowserContext(cdpEndpoint);
+    const { context } = await createBrowserContext(cdpEndpoint);
     const page = await context.newPage();
-    try { const result = await executeSingleEngineOnPage(page, config, params); const data = result.data as AISearchResult; perEngineResults.set(engineKey, { success: true, result: data, duration: data.duration }); console.log(`[ai-search --all] ✅ ${config.name}: ${data.total} results`); } catch (e) { const msg = e instanceof Error ? e.message : String(e); perEngineResults.set(engineKey, { success: false, error: msg }); console.log(`[ai-search --all] ❌ ${config.name}: ${msg.slice(0, 100)}`); } finally { await browser.close(); }
+    try { const result = await executeSingleEngineOnPage(page, config, params); const data = result.data as AISearchResult; perEngineResults.set(engineKey, { success: true, result: data, duration: data.duration }); console.log(`[ai-search --all] ✅ ${config.name}: ${data.total} results`); } catch (e) { const msg = e instanceof Error ? e.message : String(e); perEngineResults.set(engineKey, { success: false, error: msg }); console.log(`[ai-search --all] ❌ ${config.name}: ${msg.slice(0, 100)}`); }
+    // Note: browser NOT closed — shared CDP session
     if (engineKey !== ALL_ENGINE_KEYS[ALL_ENGINE_KEYS.length - 1]) { console.log('[ai-search --all] 等待 3 秒后继续下一个引擎...'); await new Promise(resolve => setTimeout(resolve, 3000)); }
   }
   const aggregated = aggregateAllResults(perEngineResults, params.query);

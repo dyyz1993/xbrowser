@@ -1631,4 +1631,15 @@ export default function (xcli: XCLIAPI): void {
       }
     },
   });
+
+  site.login(async (ctx) => {
+    const page = ctx.page;
+    if (!page) return;
+    await page.goto(DOUYIN_BASE);
+    await ctx.storage.set('douyin_login', { at: Date.now() });
+  });
+
+  site.logout(async (ctx) => {
+    await ctx.storage.delete('douyin_login');
+  });
 }
