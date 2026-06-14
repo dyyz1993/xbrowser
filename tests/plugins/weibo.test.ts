@@ -51,8 +51,8 @@ describe('weibo plugin', () => {
     );
   });
 
-  it('should register 6 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(6);
+  it('should register 3 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(3);
   });
 
   it('should register search-image, post, and repost commands', () => {
