@@ -120,7 +120,7 @@ const seoPlugins: SEOPluginSpec[] = [
     name: 'juejin',
     importPath: '../../.xcli/plugins/juejin/index.ts',
     expectedUrl: 'https://juejin.cn',
-    expectedCommands: ['login', 'publish', 'draft', 'update-profile', 'fetch-articles'],
+    expectedCommands: ['login', 'publish', 'draft', 'upload-image', 'update-profile', 'fetch-articles'],
     requiresLogin: true,
   },
   {

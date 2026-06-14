@@ -41,7 +41,7 @@ function createMockCtx(page?: ReturnType<typeof createMockPage>) {
   };
 }
 
-const ALL_COMMANDS = ['login', 'publish', 'draft', 'update-profile', 'fetch-articles'];
+const ALL_COMMANDS = ['login', 'publish', 'draft', 'upload-image', 'update-profile', 'fetch-articles'];
 
 describe('juejin plugin', () => {
   beforeEach(() => {
@@ -61,8 +61,8 @@ describe('juejin plugin', () => {
     );
   });
 
-  it('should register 5 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(5);
+  it('should register 6 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(6);
   });
 
   it('should register expected command names', () => {
@@ -240,7 +240,7 @@ describe('juejin plugin', () => {
       const ctx = createMockCtx(page);
       await handler({ title: 'Draft', content: 'Content' }, ctx);
       expect(page.goto).toHaveBeenCalledWith(
-        'https://juejin.cn/editor/draft',
+        'https://juejin.cn/editor/drafts/new',
         expect.objectContaining({ waitUntil: 'domcontentloaded' })
       );
     }, 15000);
