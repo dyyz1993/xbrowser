@@ -697,9 +697,35 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(5000);
 
         let imageUrl = '';
+        let captchaDetected = false;
         const startTime = Date.now();
         while (Date.now() - startTime < 120000) {
           await page.waitForTimeout(3000);
+          // Check for captcha/verification first
+          try {
+            captchaDetected = await page.evaluate(() => {
+              const captchaSelectors = [
+                'img[src*="captcha"]', 'img[src*="verify"]', 'img[src*="Captcha"]',
+                '[class*="captcha"]', '[id*="captcha"]', '#captcha',
+                '[class*="verify"]', '[class*="Verify"]',
+                '[class*="slider-verify"]', '[class*="sliderConfirm"]',
+                '[class*="nc_iconfont"]', '[class*="login-nc"]',
+                'iframe[src*="captcha"]', 'iframe[src*="verify"]',
+              ];
+              for (const sel of captchaSelectors) {
+                if (document.querySelector(sel)) return true;
+              }
+              // Check for common captcha text
+              const body = document.body?.innerText || '';
+              if (body.includes('请完成验证') || body.includes('拖动滑块') ||
+                  body.includes('安全验证') || body.includes('拖动下方滑块')) return true;
+              return false;
+            });
+          } catch { /* ignore */ }
+          if (captchaDetected) {
+            tips.push('⚠️ 检测到验证码！请在浏览器中手动完成验证后重试。');
+            return fail('验证码拦截', ['豆包触发了安全验证', '请在浏览器中完成验证码后重新运行此命令', ...tips]);
+          }
           try {
             imageUrl = await page.evaluate((excludeUrls: string[]) => {
               const excludeSet = new Set(excludeUrls);
