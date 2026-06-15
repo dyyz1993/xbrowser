@@ -77,22 +77,30 @@ async function extractPageAudio(page: Page): Promise<string | null> {
 }
 
 /** Submit the current message by clicking the send button (or pressing Enter as fallback) */
-async function submitMessage(page: Page): Promise<void> {
-  const sendClicked = await page.evaluate(() => {
-    const btn = document.querySelector('button.chat-assistant-send-button, button[aria-label="Send message"], button[aria-label*="发送"]');
-    if (btn && !btn.hasAttribute('disabled')) {
-      (btn as HTMLElement).click();
-      return true;
+async function submitMessage(page: Page): Promise<{ found: boolean; clicked: boolean }> {
+  const sendResult = await page.evaluate(() => {
+    // Doubao's send button ID is #flow-end-msg-send (confirmed via recording)
+    const btn = document.querySelector('#flow-end-msg-send, button[aria-label="Send message"], button[aria-label*="发送"]');
+    if (btn) {
+      const disabled = btn.hasAttribute('disabled') || (btn as HTMLButtonElement).disabled;
+      if (!disabled) {
+        (btn as HTMLElement).click();
+        return { found: true, disabled: false, clicked: true };
+      }
+      return { found: true, disabled: true, clicked: false };
     }
-    return false;
-  }).catch(() => false);
-  if (!sendClicked) {
+    return { found: false, disabled: false, clicked: false };
+  }).catch(() => ({ found: false, disabled: false, clicked: false }));
+
+  if (!sendResult.clicked) {
     await page.keyboard.press('Enter').catch(() => {});
   }
+  return sendResult;
 }
 
 async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
-  if (!page.url().startsWith(DB_URL)) {
+  const currentUrl = page.url();
+  if (!currentUrl.startsWith(DB_URL)) {
     await page.goto(DB_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(2000);
   }
@@ -630,8 +638,20 @@ export default function (xcli: XCLIAPI): void {
         if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         // Always create a fresh conversation to avoid picking up history images
-        await page.goto('https://www.doubao.com/chat/create-image', { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+        console.log(`[doubao] Before create-image goto: ${page.url()}`);
+        await page.goto('https://www.doubao.com/chat/create-image', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch((e: unknown) => console.log(`[doubao] goto failed: ${e}`));
         await page.waitForTimeout(3000);
+        // Check if page has real content (SPA may show about:blank as URL but still render)
+        const bodyText = await page.evaluate(() => document.body?.innerText?.substring(0, 500) || '').catch(() => '');
+        // If page doesn't have doubao content, login might be missing
+        if (!bodyText.includes('豆包') && !bodyText.includes('doubao') && !bodyText.includes('新对话')) {
+          return fail('无法访问豆包', [
+            'CDP 连接的标签页无法正确加载豆包页面',
+            `页面内容: ${bodyText.substring(0, 100)}`,
+            '解决方法：请在浏览器中手动打开 https://www.doubao.com 并确保已登录',
+            ...remoteTips,
+          ]);
+        }
         // Try to click "new conversation" button if it exists (to ensure clean state)
         await page.evaluate(() => {
           const newBtn = document.querySelector('[class*="new-conversation"], [class*="create-conversation"], [data-testid*="new"]');
@@ -640,6 +660,13 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(2000);
         await page.waitForSelector('[role="textbox"], [contenteditable="true"], textarea', { timeout: 15000 }).catch(() => {});
         const tips = buildTips(ctx);
+
+        // Helper: generate remote control info for error cases
+        const ctxAny = ctx as unknown as Record<string, unknown>;
+        const cdp = ctxAny.cdpEndpoint as string | undefined;
+        const remoteTips = cdp
+          ? [`远程操控: 浏览器地址栏已打开豆包页面，请直接在浏览器中操作`, `CDP地址: ${cdp}`, `会话已保留，完成后可重新运行命令`]
+          : [`请在浏览器中手动操作，完成后重新运行命令`];
 
         if (params.ref) {
           const absPath = path.resolve(params.ref);
@@ -653,14 +680,13 @@ export default function (xcli: XCLIAPI): void {
         }
 
         const prompt = params.prompt;
-        // Doubao now uses TipTap/ProseMirror editor
+        // Doubao uses TipTap/ProseMirror (contenteditable div), confirmed via recording
         const inputSelectors = [
+          'div[contenteditable="true"]',
           '.tiptap.ProseMirror',
-          '[contenteditable="true"]',
-          'textarea',
           '[role="textbox"]',
+          'textarea',
           '[class*="chat-input"] textarea',
-          '[class*="editor"] [contenteditable]',
         ];
         let inputFound = false;
         for (const sel of inputSelectors) {
@@ -668,9 +694,10 @@ export default function (xcli: XCLIAPI): void {
             const locator = page.locator(sel).first();
             if (await locator.count() > 0) {
               await locator.click({ timeout: 3000 });
-              await page.waitForTimeout(200);
-              // Type character-by-character to simulate real user typing
-              await locator.type(`画图: ${prompt}`, { delay: 10 });
+              await page.waitForTimeout(300);
+              // For TipTap/ProseMirror, use keyboard.type (locator.type doesn't work with TipTap)
+              await page.keyboard.type(`画图: ${prompt}`, { delay: 30 });
+              await page.waitForTimeout(300);
               inputFound = true;
               break;
             }
@@ -690,8 +717,21 @@ export default function (xcli: XCLIAPI): void {
         }) as string[];
         tips.push(`📸 已记录 ${existingUrls.length} 张历史图片URL`);
 
-        await page.waitForTimeout(500);
-        await submitMessage(page);
+        await page.waitForTimeout(1000);
+        // Wait for send button to become available (TipTap needs time to register input)
+        await page.waitForSelector('#flow-end-msg-send:not([disabled]), button[aria-label="Send message"]:not([disabled])', { timeout: 5000 }).catch(() => {});
+        const submitResult = await submitMessage(page);
+        console.log(`[doubao] Message submitted: ${JSON.stringify(submitResult)}`);
+        // If send button wasn't found, don't wait 120s — return error immediately
+        if (!submitResult.clicked) {
+          return fail('发送失败', [
+            '未能找到或点击发送按钮',
+            '可能原因：输入框内容未写入，或豆包页面未完全加载',
+            `当前URL: ${page.url()}`,
+            '请尝试在浏览器中手动操作',
+            ...remoteTips,
+          ]);
+        }
         tips.push('图片生成请求已提交，等待生成...');
         // Doubao image generation typically takes 15-60s, start checking after 5s
         await page.waitForTimeout(5000);
@@ -724,7 +764,7 @@ export default function (xcli: XCLIAPI): void {
           } catch { /* ignore */ }
           if (captchaDetected) {
             tips.push('⚠️ 检测到验证码！请在浏览器中手动完成验证后重试。');
-            return fail('验证码拦截', ['豆包触发了安全验证', '请在浏览器中完成验证码后重新运行此命令', ...tips]);
+            return fail('验证码拦截', ['豆包触发了安全验证', '请在浏览器中完成验证码后重新运行此命令', ...remoteTips, ...tips]);
           }
           try {
             imageUrl = await page.evaluate((excludeUrls: string[]) => {

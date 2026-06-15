@@ -461,7 +461,21 @@ export async function createEphemeralContext(
     const { browser: b } = await launch({ cdpEndpoint: endpoint });
     const contexts = b.contexts();
     const ctx = contexts[0] || await b.newContext();
-    const page = await ctx.newPage();
+
+    // Prefer existing pages over creating new ones.
+    // A new blank tab (about:blank) won't have the site's JS loaded,
+    // and page.goto() on a fresh tab may not render SPAs correctly.
+    const allPages = ctx.pages();
+    const existingPages = allPages.filter(p => {
+      const url = p.url();
+      return url !== 'about:blank' && !url.startsWith('chrome://');
+    });
+    const page = existingPages.length > 0
+      ? existingPages[0]  // Reuse the user's existing tab
+      : allPages.length > 0
+        ? allPages[0]  // Use any page (even about:blank) rather than creating new
+        : await ctx.newPage();  // Last resort: create new tab
+
     resetIdleTimer();
     // Store the browser connection so closeEphemeralContext can disconnect it.
     ephemeralConnections.set(page, b);
