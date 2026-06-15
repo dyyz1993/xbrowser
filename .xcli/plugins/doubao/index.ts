@@ -76,6 +76,21 @@ async function extractPageAudio(page: Page): Promise<string | null> {
   });
 }
 
+/** Submit the current message by clicking the send button (or pressing Enter as fallback) */
+async function submitMessage(page: Page): Promise<void> {
+  const sendClicked = await page.evaluate(() => {
+    const btn = document.querySelector('button.chat-assistant-send-button, button[aria-label="Send message"], button[aria-label*="发送"]');
+    if (btn && !btn.hasAttribute('disabled')) {
+      (btn as HTMLElement).click();
+      return true;
+    }
+    return false;
+  }).catch(() => false);
+  if (!sendClicked) {
+    await page.keyboard.press('Enter').catch(() => {});
+  }
+}
+
 async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
   if (!page.url().startsWith(DB_URL)) {
     await page.goto(DB_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -451,7 +466,7 @@ export default function (xcli: XCLIAPI): void {
           });
         }
 
-        await page.keyboard.press('Enter');
+        await submitMessage(page);
         tips.push('消息已发送，等待 AI 回复...');
         await page.waitForTimeout(2000);
 
@@ -638,9 +653,9 @@ export default function (xcli: XCLIAPI): void {
         }
 
         const prompt = params.prompt;
-        // Simulate REAL user behavior: click → focus → type character-by-character
-        // This triggers React's onChange/onInput handlers properly (unlike execCommand insertText)
+        // Doubao now uses TipTap/ProseMirror editor
         const inputSelectors = [
+          '.tiptap.ProseMirror',
           '[contenteditable="true"]',
           'textarea',
           '[role="textbox"]',
@@ -676,10 +691,10 @@ export default function (xcli: XCLIAPI): void {
         tips.push(`📸 已记录 ${existingUrls.length} 张历史图片URL`);
 
         await page.waitForTimeout(500);
-        await page.keyboard.press('Enter');
+        await submitMessage(page);
         tips.push('图片生成请求已提交，等待生成...');
-        // Doubao image generation typically takes 30-60s, start checking after 10s
-        await page.waitForTimeout(10000);
+        // Doubao image generation typically takes 15-60s, start checking after 5s
+        await page.waitForTimeout(5000);
 
         let imageUrl = '';
         const startTime = Date.now();
@@ -707,6 +722,18 @@ export default function (xcli: XCLIAPI): void {
                   if (src && src.startsWith('http') && !src.includes('data:image') && !src.includes('avatar') && !src.includes('BIZ_BOT') && !src.includes('/static/') && !excludeSet.has(src)) {
                     return src;
                   }
+                }
+              }
+              // Fallback: find any large new image (>300px wide, loaded, not excluded)
+              const allImgs = document.querySelectorAll('img');
+              for (const img of allImgs) {
+                const src = (img as HTMLImageElement).src;
+                const w = (img as HTMLImageElement).naturalWidth;
+                if (src && src.startsWith('http') && w > 300 &&
+                    !src.includes('avatar') && !src.includes('static') &&
+                    !src.includes('icon') && !src.includes('BIZ_BOT') &&
+                    !src.includes('data:image') && !excludeSet.has(src)) {
+                  return src;
                 }
               }
               return '';
@@ -1122,7 +1149,7 @@ export default function (xcli: XCLIAPI): void {
         if (!inputFound) throw new Error('找不到输入框');
 
         await page.waitForTimeout(500);
-        await page.keyboard.press('Enter');
+        await submitMessage(page);
         tips.push('视频生成任务已提交');
         await page.waitForTimeout(2000);
 
@@ -2125,7 +2152,7 @@ export default function (xcli: XCLIAPI): void {
           await route.fulfill({ body, headers: resp.headers(), status: resp.status() });
         });
 
-        await page.keyboard.press('Enter');
+        await submitMessage(page);
         tips.push('搜索请求已发送');
         await page.waitForTimeout(2000);
 
