@@ -407,6 +407,29 @@ async function clickAddMoreButton(page: Page, buttonText: string): Promise<boole
 
   if (openerClicked) {
     await page.waitForTimeout(1000); // 等 Radix 菜单挂载
+
+    // 先 hover 目标元素（Radix 菜单子项可能需要 hover 才渲染/激活）
+    await page.evaluate((text: string) => {
+      const norm = (s: string) => s.replace(/\s+/g, '').toLowerCase();
+      const target = norm(text);
+      const candidates = Array.from(
+        document.querySelectorAll('[role="menuitem"], [role="menuitemradio"], button, [class*="add"]'),
+      ) as HTMLElement[];
+      for (const el of candidates) {
+        if (el.offsetParent === null) continue;
+        const t = norm((el.textContent || '').trim());
+        const aria = norm(el.getAttribute('aria-label') || '');
+        if (t.includes(target) || aria.includes(target)) {
+          const r = el.getBoundingClientRect();
+          el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }));
+          el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }));
+          el.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2 }));
+          break;
+        }
+      }
+    }, buttonText);
+    await page.waitForTimeout(300); // 等 hover 渲染
+
     clicked = await findAndClickByText(page, buttonText);
     if (clicked) return true;
   }

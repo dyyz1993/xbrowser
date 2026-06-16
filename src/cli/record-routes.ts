@@ -313,6 +313,41 @@ function printHumanReadableSummary(summary: RecordingSummary): void {
     }
   }
 
+  // 站点特定操作分析（帮助大模型理解录制中的关键操作）
+  const keyOps: string[] = [];
+  for (const step of summary.steps) {
+    const a = step.action;
+    const el = a.element;
+    const text = (el?.text || '').toLowerCase();
+    const sel = el?.selector || '';
+
+    // 上传操作
+    if (a.type === 'filechooser') {
+      const count = (a as { files?: { count?: number } }).files?.count || 1;
+      keyOps.push(`📎 文件上传：${count} 个文件，selector=${sel}`);
+    }
+    // 发送/提交
+    if (a.type === 'click' && (text.includes('发送') || text.includes('submit') || sel.includes('submit'))) {
+      keyOps.push(`📤 消息发送：${sel}`);
+    }
+    // 模型/等级切换
+    if (a.type === 'click' && (text.includes('超高') || text.includes('均衡') || text.includes('高级') || text.includes('极速'))) {
+      keyOps.push(`⚙️ 模型设置：选择"${el?.text}"`);
+    }
+    // 登录操作
+    if (a.type === 'click' && (text.includes('登录') || text.includes('login') || text.includes('sign in'))) {
+      keyOps.push(`🔐 登录操作：${sel}`);
+    }
+  }
+
+  if (keyOps.length > 0) {
+    console.log('');
+    console.log('站点关键操作:');
+    for (const op of keyOps) {
+      console.log(`  ${op}`);
+    }
+  }
+
   if (summary.checkpoints && summary.checkpoints.length > 0) {
     console.log('');
     console.log(`Checkpoints (${summary.checkpoints.length}):`);
