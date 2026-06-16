@@ -216,10 +216,18 @@ export async function createBrowser(options?: BrowserLaunchOptions): Promise<Bro
       const proxyPort = await _sharedCdpProxy.start();
       console.error(`[CDP Interceptor] Proxy running on ws://localhost:${proxyPort}, forwarding to ${realEndpoint}`);
       const { browser } = await launch({ cdpEndpoint: `ws://localhost:${proxyPort}` });
+      // Interceptor proxy already wraps the connection — contexts should be visible.
       return browser;
     }
 
     const { browser } = await launch({ cdpEndpoint: realEndpoint });
+    // CDP tunnel/attach connections don't reliably fire Target.attachedToTarget
+    // events for existing pages. Without this call, `browser.contexts()` would
+    // return [] and downstream code would fall back to creating a brand-new
+    // isolated context — losing all the user's existing cookies/login state.
+    await browser.discoverContexts().catch((err: unknown) => {
+      console.error(`[browser] discoverContexts failed: ${(err as Error).message}`);
+    });
     return browser;
   }
 
@@ -740,17 +748,36 @@ export async function createSession(
     context = contexts[0] || (await b.newContext());
 
     let targetPage: Page | null = null;
+    const targetHostname = url ? (() => { try { return new URL(url).hostname; } catch { return ''; } })() : '';
 
-    for (const ctx of contexts) {
-      const pages = ctx.pages();
-      for (const p of pages) {
-        const pUrl = p.url();
-        if (pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome://')) {
-          targetPage = p;
-          break;
+    // 第一遍：找 hostname 匹配的页面（修复"session 总被绑到错 tab"bug）
+    if (targetHostname) {
+      for (const ctx of contexts) {
+        const pages = ctx.pages();
+        for (const p of pages) {
+          const pUrl = p.url();
+          if (pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome://') && pUrl.includes(targetHostname)) {
+            targetPage = p;
+            break;
+          }
         }
+        if (targetPage) break;
       }
-      if (targetPage) break;
+    }
+
+    // 第二遍：fallback 到任意非空白、非 chrome:// 页面
+    if (!targetPage) {
+      for (const ctx of contexts) {
+        const pages = ctx.pages();
+        for (const p of pages) {
+          const pUrl = p.url();
+          if (pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome://')) {
+            targetPage = p;
+            break;
+          }
+        }
+        if (targetPage) break;
+      }
     }
 
     if (!targetPage && options?.cdpEndpoint) {

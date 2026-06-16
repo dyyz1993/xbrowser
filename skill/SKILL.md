@@ -186,8 +186,10 @@ See [references/command-reference.md](references/command-reference.md) for full 
 | Clicking elements | `locator().click()` | `evaluateHandle` + `mouse.click(x,y)` |
 | Closing browser | `browser.close()` | Handler auto-disconnects |
 | Selectors | `:has-text("xxx")` | class / id / data-testid |
+| File upload (CDP mode) | `el.click()` / click file input | `page.mouse.click(trigger)` + `page.setInputFiles` |
+| Synthetic events (CDP Firewall) | `el.click()` in `page.evaluate` | `page.mouse.click(x, y)` (`isTrusted=true`) |
 
-See [references/cdp-pitfalls.md](references/cdp-pitfalls.md) for detailed explanations.
+See [references/cdp-pitfalls.md](references/cdp-pitfalls.md) for detailed explanations, and **[file-upload/SKILL.md](file-upload/SKILL.md)** for the full file-upload decision tree (5 patterns, 豆包 reference-image 实战, helper function, recorder integration, debugger checklist).
 
 ---
 
@@ -218,6 +220,7 @@ See [references/lint-rules.md](references/lint-rules.md) for all 10 rules.
 | [command-reference.md](references/command-reference.md) | All 49 commands with parameters, scope, options | Looking up command usage |
 | [session-lifecycle.md](references/session-lifecycle.md) | Session management, CDP modes, viewer | Debugging session issues |
 | [cdp-pitfalls.md](references/cdp-pitfalls.md) | CDP driver pitfalls and solutions | CDP-related bugs |
+| [file-upload/SKILL.md](file-upload/SKILL.md) | File upload decision tree (5 patterns), CDP Firewall avoidance, `setInputFiles` 实战, `shared/file-upload.ts` helper | Writing plugin handlers that upload files (image / attachment / avatar) |
 | [lint-rules.md](references/lint-rules.md) | All 10 lint rules in detail | Lint errors |
 | [testing-patterns.md](references/testing-patterns.md) | Core test patterns, mock strategies | Testing core modules |
 | `AGENTS.md` (repo root) | Complete project manual (workspace rules) | Onboarding, full feature reference |

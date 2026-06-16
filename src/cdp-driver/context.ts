@@ -156,6 +156,19 @@ export class XBContextImpl implements XBContext {
     this._emitter.off(event, handler as (...args: unknown[]) => void);
   }
 
+  /**
+   * Register a page that was attached to an existing target (discovered via
+   * Target.getTargets). Used by XBBrowserImpl.discoverContexts() to wire up
+   * pages from the user's existing browser session into the context wrapper
+   * so they appear in `context.pages()` and can be reused by plugins.
+   */
+  _addDiscoveredPage(page: XBPageImpl): void {
+    const exists = this._pages.some((p) => p._targetId === page._targetId);
+    if (exists) return;
+    this._pages.push(page);
+    this.forwardPageEvents(page);
+  }
+
   // ── Private ─────────────────────────────────────────────────
 
   /** Forward page-level events (request, response, etc.) to context listeners */

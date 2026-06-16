@@ -64,34 +64,8 @@ describe('session-routes', () => {
     mockIsDaemonRunning.mockResolvedValue(true);
   });
 
-  // ── open ──
-
-  it('should open a session with url and default name', async () => {
-    mockForwardSessionCreate.mockResolvedValue({ id: '1', name: 'default', url: 'https://example.com' });
-    await handleSession(['open', 'https://example.com'], {}, 'json');
-    expect(mockForwardSessionCreate).toHaveBeenCalledWith('default', 'https://example.com', undefined);
-    expect(mockOutputResult).toHaveBeenCalledWith(
-      expect.objectContaining({ ok: true, name: 'default' }),
-      'json'
-    );
-  });
-
-  it('should open a session with custom name', async () => {
-    mockForwardSessionCreate.mockResolvedValue({ id: '2', name: 'my-session', url: 'https://example.com' });
-    await handleSession(['open', 'https://example.com'], { name: 'my-session' }, 'text');
-    expect(mockForwardSessionCreate).toHaveBeenCalledWith('my-session', 'https://example.com', undefined);
-  });
-
-  it('should output error when open has no url', async () => {
-    await expect(handleSession(['open'], {}, 'text')).rejects.toThrow('EXIT');
-    expect(mockOutputError).toHaveBeenCalledWith(expect.stringContaining('Usage'));
-  });
-
-  it('should pass cdpEndpoint to forwardSessionCreate', async () => {
-    mockForwardSessionCreate.mockResolvedValue({ id: '3', name: 'default', url: 'https://example.com' });
-    await handleSession(['open', 'https://example.com'], {}, 'text', 'http://localhost:9222');
-    expect(mockForwardSessionCreate).toHaveBeenCalledWith('default', 'https://example.com', 'http://localhost:9222');
-  });
+  // Note: 'open' subcommand was removed. Sessions are auto-created when commands run.
+  // (See AGENTS.md: "会话已改为自动创建（无需显式 `session open`）")
 
   // ── close ──
 

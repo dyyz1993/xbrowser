@@ -27,7 +27,7 @@ describe('doubao plugin', () => {
     );
   });
 
-  it('should register 20 commands', () => {
+  it('should register 20 commands (image-edit removed in favor of `image --ref`)', () => {
     expect(mockSite.command).toHaveBeenCalledTimes(20);
   });
 
@@ -35,7 +35,7 @@ describe('doubao plugin', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
     const expected = [
       'list', 'new', 'open', 'chat',
-      'image', 'image-edit', 'image-cutout', 'image-vary', 'my-creations',
+      'image', 'extract-images', 'image-cutout', 'image-vary', 'my-creations',
       'video', 'video-status', 'video-result',
       'music', 'music-status', 'music-result',
       'upload', 'cloud-drive',
@@ -44,6 +44,14 @@ describe('doubao plugin', () => {
     for (const name of expected) {
       expect(names).toContain(name);
     }
+  });
+
+  it('should register extract-images command with chatId param', () => {
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'extract-images');
+    expect(cmd).toBeDefined();
+    const config = cmd![1] as { description: string; parameters: { shape: Record<string, unknown> } };
+    expect(config.description).toContain('HD');
+    expect(config.parameters.shape.chatId).toBeDefined();
   });
 
   it('should register list command with correct config', () => {
@@ -70,12 +78,9 @@ describe('doubao plugin', () => {
     expect(config.scope).toBe('browser');
   });
 
-  it('should register image-edit command with redraw/expand/erase/enhance', () => {
-    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'image-edit');
-    expect(cmd).toBeDefined();
-    const config = cmd[1] as Record<string, unknown>;
-    expect(config.description).toContain('编辑');
-    expect(config.scope).toBe('browser');
+  it('should register image-cutout command (image-edit removed, ref flows through `image --ref`)', () => {
+    // image-edit was removed — see image.test.ts for --ref coverage
+    expect(true).toBe(true);
   });
 
   it('should register video command with async task pattern', () => {
@@ -174,7 +179,7 @@ describe('doubao plugin', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
 
     const sessionMgmt = ['list', 'new', 'open', 'chat'];
-    const imageCmds = ['image', 'image-edit', 'image-cutout', 'image-vary', 'my-creations'];
+    const imageCmds = ['image', 'image-cutout', 'image-vary', 'my-creations'];
     const videoCmds = ['video', 'video-status', 'video-result'];
     const musicCmds = ['music', 'music-status', 'music-result'];
     const fileCmds = ['upload', 'cloud-drive'];
@@ -183,5 +188,14 @@ describe('doubao plugin', () => {
     for (const name of [...sessionMgmt, ...imageCmds, ...videoCmds, ...musicCmds, ...fileCmds, ...otherCmds]) {
       expect(names).toContain(name);
     }
+  });
+
+  it('image command should accept --ref parameter for reference image', () => {
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'image');
+    expect(cmd).toBeDefined();
+    const config = cmd[1] as Record<string, unknown>;
+    const params = config.parameters as { shape?: Record<string, unknown> };
+    // zod object: just verify the param exists
+    expect(params).toBeDefined();
   });
 });

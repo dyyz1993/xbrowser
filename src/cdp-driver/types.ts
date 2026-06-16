@@ -15,6 +15,14 @@ export interface XBBrowser {
   close(): Promise<void>;
   newContext(opts?: XBContextOptions): Promise<XBContext>;
   contexts(): XBContext[];
+  /**
+   * Discover existing browser contexts and pages from the CDP browser.
+   * Required when connecting via CDP tunnel (cdp-tunnel) where
+   * auto-attach events are unreliable. After this call, `contexts()`
+   * returns the user's actual browser contexts (with their existing
+   * cookies and login state) instead of an empty list.
+   */
+  discoverContexts(): Promise<void>;
   on(event: string, handler: Function): void;
   off(event: string, handler: Function): void;
 }
@@ -146,6 +154,7 @@ export interface XBPage {
   // Dialog
   on(event: string, handler: Function): void;
   off(event: string, handler: Function): void;
+  waitForEvent(event: string, opts?: { timeout?: number; predicate?: (...args: unknown[]) => boolean }): Promise<unknown>;
 
   // CDP escape hatch (internal, for advanced use)
   _cdpSend<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;

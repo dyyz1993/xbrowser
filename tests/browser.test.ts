@@ -29,6 +29,7 @@ const hoisted = vi.hoisted(() => {
     close: vi.fn().mockResolvedValue(undefined),
     newContext: vi.fn().mockResolvedValue(mockContext),
     contexts: vi.fn().mockReturnValue([]),
+    discoverContexts: vi.fn().mockResolvedValue(undefined),
     on: vi.fn(),
     off: vi.fn(),
     disconnected: false,
@@ -208,6 +209,58 @@ describe('browser', () => {
 
       expect(session.isCDP).toBe(true);
       expect(session.page).toBe(existingPage);
+    });
+
+    it('should prioritize page whose hostname matches the requested URL', async () => {
+      const geminiPage = {
+        url: vi.fn().mockReturnValue('https://ai.google.dev/gemini-api/docs'),
+        goto: vi.fn(),
+        on: vi.fn(),
+        close: vi.fn(),
+        evaluate: vi.fn().mockResolvedValue(true),
+        isClosed: vi.fn().mockReturnValue(false),
+      };
+      const doubaoPage = {
+        url: vi.fn().mockReturnValue('https://www.doubao.com/chat/create-image'),
+        goto: vi.fn(),
+        on: vi.fn(),
+        close: vi.fn(),
+        evaluate: vi.fn().mockResolvedValue(true),
+        isClosed: vi.fn().mockReturnValue(false),
+      };
+      // gemini is "first" (would be picked by old buggy code)
+      // doubao is "second" but hostname matches
+      mockBrowser.contexts.mockReturnValue([mockContext]);
+      mockContext.pages.mockReturnValue([geminiPage, doubaoPage]);
+
+      const session = await createSession('hostname-match', 'https://www.doubao.com/chat/create-image', {
+        cdpEndpoint: 'ws://test',
+      });
+
+      expect(session.isCDP).toBe(true);
+      // 关键断言：选中 doubao 页面，不是 gemini
+      expect(session.page).toBe(doubaoPage);
+      expect(session.page).not.toBe(geminiPage);
+    });
+
+    it('should fall back to any non-blank page when no hostname matches', async () => {
+      const anyPage = {
+        url: vi.fn().mockReturnValue('https://any-other-site.com'),
+        goto: vi.fn().mockResolvedValue(undefined),
+        on: vi.fn(),
+        close: vi.fn(),
+        evaluate: vi.fn().mockResolvedValue(true),
+        isClosed: vi.fn().mockReturnValue(false),
+      };
+      mockBrowser.contexts.mockReturnValue([mockContext]);
+      mockContext.pages.mockReturnValue([anyPage]);
+
+      const session = await createSession('fallback', 'https://www.doubao.com/chat', {
+        cdpEndpoint: 'ws://test',
+      });
+
+      // 没有匹配的 doubao，应该退回 anyPage
+      expect(session.page).toBe(anyPage);
     });
   });
 

@@ -22,6 +22,7 @@ const hoisted = vi.hoisted(() => {
     newContext: vi.fn().mockResolvedValue(mockBrowserContext),
     contexts: vi.fn().mockReturnValue([]),
     close: vi.fn().mockResolvedValue(undefined),
+    discoverContexts: vi.fn().mockResolvedValue(undefined),
   };
   return { mockBrowser };
 });
@@ -108,21 +109,25 @@ describe('Executor', () => {
     expect(result.message).toContain('Available:');
   });
 
-  it('should return error when no session exists', async () => {
-    const { resetForTesting } = await import('../src/browser.js');
+  it('should auto-create default session when none exists', async () => {
+    const { resetForTesting, getAllSessions } = await import('../src/browser.js');
     resetForTesting();
+    expect(getAllSessions().length).toBe(0);
     const { executeCommand } = await import('../src/executor.js');
+    // Sessions are auto-created now (see AGENTS.md), so this should NOT fail
+    // with "session not found" — it should attempt to use a default session.
     const result = await executeCommand('title', {});
-    expect(result.success).toBe(false);
-    expect(result.message).toContain('Session');
+    expect(result).toBeDefined();
   });
 
-  it('should mention --session hint when session not found', async () => {
-    const { resetForTesting } = await import('../src/browser.js');
+  it('should use custom session name from session arg when auto-creating', async () => {
+    const { resetForTesting, getAllSessions } = await import('../src/browser.js');
     resetForTesting();
     const { executeCommand } = await import('../src/executor.js');
-    const result = await executeCommand('title', {});
-    expect(result.message).toContain('--session');
+    await executeCommand('title', {}, 'my-session');
+    const sessions = getAllSessions();
+    expect(sessions.length).toBeGreaterThan(0);
+    expect(sessions.find(s => s.name === 'my-session')).toBeDefined();
   });
 
   it('should report invalid parameters', async () => {
@@ -153,36 +158,18 @@ describe('Executor', () => {
     expect(result.data).toBeNull();
   });
 
-  it('should use default session name when not specified', async () => {
-    const { resetForTesting } = await import('../src/browser.js');
-    resetForTesting();
-    const { executeCommand } = await import('../src/executor.js');
-    const result = await executeCommand('title', {});
-    expect(result.success).toBe(false);
-    expect(result.message).toContain("Session 'default' not found");
-  });
-
-  it('should use custom session name in error', async () => {
-    const { resetForTesting } = await import('../src/browser.js');
-    resetForTesting();
-    const { executeCommand } = await import('../src/executor.js');
-    const result = await executeCommand('title', {}, 'my-session');
-    expect(result.success).toBe(false);
-    expect(result.message).toContain("Session 'my-session' not found");
-  });
-
-  it('should return error result with correct shape for missing session', async () => {
+  it('should return error result with correct shape for click without page', async () => {
     const { resetForTesting } = await import('../src/browser.js');
     resetForTesting();
     const { executeCommand } = await import('../src/executor.js');
     const result = await executeCommand('click', { selector: '#btn' });
-    expect(result).toEqual({
-      success: false,
-      data: null,
-      message: expect.stringContaining('Session'),
-      duration: 0,
-      tips: [],
-    });
+    // Session auto-created but mock page.click fails — verify error shape
+    expect(result.success).toBe(false);
+    expect(result.data).toBeNull();
+    // duration is small but non-zero (real timing), not strictly 0
+    expect(typeof result.duration).toBe('number');
+    expect(result.duration).toBeLessThan(5000);
+    expect(Array.isArray(result.tips)).toBe(true);
   });
 });
 

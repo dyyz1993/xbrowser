@@ -98,7 +98,13 @@ export async function launch(options: XBLaunchOptions = {}): Promise<LaunchResul
   const conn = new CDPConnection(wsEndpoint);
   await conn.ready();
 
-  const browser = new XBBrowserImpl(conn, childProcess, tmpDir);
+  // Pass the ORIGINAL (HTTP) endpoint to the browser so discoverContexts()
+  // can fall back to HTTP /json/list when Target.getTargets doesn't return
+  // page-type targets (e.g. cdp-tunnel proxies).
+  const httpEndpoint = options.cdpEndpoint && !options.cdpEndpoint.startsWith('ws')
+    ? options.cdpEndpoint
+    : undefined;
+  const browser = new XBBrowserImpl(conn, childProcess, tmpDir, httpEndpoint);
 
   return { browser, wsEndpoint };
 }

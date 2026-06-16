@@ -2,6 +2,8 @@ import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
 import { buildTips, uploadFileViaDataTransfer } from '../shared/ai-chat-base.js';
+import { extractAllHDImages } from '../shared/image-lightbox.js';
+import { clickButtonByText } from '../shared/file-upload.js';
 import path from 'path';
 import fs from 'fs';
 import type { PluginPage, PluginElementHandle, PluginRoute } from '../types.js';
@@ -637,12 +639,22 @@ export default function (xcli: XCLIAPI): void {
         const page = ctx.page;
         if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
-        // Always create a fresh conversation to avoid picking up history images
-        console.log(`[doubao] Before create-image goto: ${page.url()}`);
-        await page.goto('https://www.doubao.com/chat/create-image', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch((e: unknown) => console.log(`[doubao] goto failed: ${e}`));
+        try {
+          await page.goto('https://www.doubao.com/chat/create-image', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        } catch (e: unknown) {
+          tips.push(`[goto] ⚠ ${(e as Error).message}`);
+        }
         await page.waitForTimeout(3000);
         // Check if page has real content (SPA may show about:blank as URL but still render)
         const bodyText = await page.evaluate(() => document.body?.innerText?.substring(0, 500) || '').catch(() => '');
+        // Helper: generate remote control info for error cases (declared early so it's
+        // available for the login/bodyText check below — fixes TDZ bug "Cannot access
+        // 'remoteTips' before initialization").
+        const ctxAny = ctx as unknown as Record<string, unknown>;
+        const cdp = ctxAny.cdpEndpoint as string | undefined;
+        const remoteTips = cdp
+          ? [`远程操控: 浏览器地址栏已打开豆包页面，请直接在浏览器中操作`, `CDP地址: ${cdp}`, `会话已保留，完成后可重新运行命令`]
+          : [`请在浏览器中手动操作，完成后重新运行命令`];
         // If page doesn't have doubao content, login might be missing
         if (!bodyText.includes('豆包') && !bodyText.includes('doubao') && !bodyText.includes('新对话')) {
           return fail('无法访问豆包', [
@@ -661,19 +673,52 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForSelector('[role="textbox"], [contenteditable="true"], textarea', { timeout: 15000 }).catch(() => {});
         const tips = buildTips(ctx);
 
-        // Helper: generate remote control info for error cases
-        const ctxAny = ctx as unknown as Record<string, unknown>;
-        const cdp = ctxAny.cdpEndpoint as string | undefined;
-        const remoteTips = cdp
-          ? [`远程操控: 浏览器地址栏已打开豆包页面，请直接在浏览器中操作`, `CDP地址: ${cdp}`, `会话已保留，完成后可重新运行命令`]
-          : [`请在浏览器中手动操作，完成后重新运行命令`];
-
         if (params.ref) {
           const absPath = path.resolve(params.ref);
           if (fs.existsSync(absPath)) {
-            await uploadFileViaDataTransfer(page, absPath);
-            await page.waitForTimeout(1000);
-            tips.push(`已上传参考图: ${path.basename(absPath)}`);
+            // 参考图流程 — 不点 file input（会触发系统文件框），改用 setInputFiles + DataTransfer：
+            //   1. 真实 mouse.click "参考图"按钮 → 弹窗出现，React 挂载 file input
+            //   2. 短暂等待 React 挂载完成
+            //   3. setInputFiles('input[type="file"]', file) → DataTransfer 注入 + 派发 change/input 事件
+            //      → React 的 onChange 监听器处理文件上传 → 系统文件框不出现
+            //   4. 等缩略图出现
+            const refBtnClicked = await clickButtonByText(page, '参考图');
+            if (!refBtnClicked) {
+              tips.push(`⚠ 找不到"参考图"按钮`);
+            } else {
+              // 等弹窗 + React 挂载
+              await page.waitForSelector('input[type="file"]', { timeout: 5000 }).catch(() => {});
+              await page.waitForTimeout(1500);
+              // 通过 DataTransfer 注入文件（不触发系统文件框）
+              const fileBuffer = fs.readFileSync(absPath);
+              const fileName = path.basename(absPath);
+              const mimeType = absPath.endsWith('.png') ? 'image/png'
+                : absPath.endsWith('.jpg') || absPath.endsWith('.jpeg') ? 'image/jpeg'
+                : absPath.endsWith('.webp') ? 'image/webp' : 'application/octet-stream';
+              try {
+                await page.setInputFiles('input[type="file"]', {
+                  name: fileName,
+                  mimeType,
+                  buffer: fileBuffer,
+                });
+                tips.push(`[setInputFiles] ✓ ${fileName} (${(fileBuffer.length / 1024).toFixed(1)} KB)`);
+                // 等 doubao 上传完成（缩略图出现）
+                await page.waitForTimeout(2500);
+                // 验证上传是否成功（页面里出现"图片"或"附件"文字）
+                const hasThumb = await page.evaluate(() => {
+                  return [...document.querySelectorAll('img, [class*=thumb], [class*=preview]')].some(el => {
+                    if (el.tagName === 'IMG') return (el as HTMLImageElement).src.includes('blob:') || (el as HTMLImageElement).src.startsWith('http');
+                    return el.textContent?.includes('图片') || el.textContent?.includes('附件');
+                  });
+                });
+                if (!hasThumb) {
+                  tips.push(`⚠ 未检测到缩略图，可能上传失败（请在 viewer 中确认）`);
+                }
+              } catch (e) {
+                tips.push(`[setInputFiles] ✗ ${(e as Error).message}`);
+                tips.push(`📌 请在 viewer 中手动上传参考图`);
+              }
+            }
           } else {
             tips.push(`⚠ 参考图文件不存在: ${params.ref}`);
           }
@@ -721,7 +766,6 @@ export default function (xcli: XCLIAPI): void {
         // Wait for send button to become available (TipTap needs time to register input)
         await page.waitForSelector('#flow-end-msg-send:not([disabled]), button[aria-label="Send message"]:not([disabled])', { timeout: 5000 }).catch(() => {});
         const submitResult = await submitMessage(page);
-        console.log(`[doubao] Message submitted: ${JSON.stringify(submitResult)}`);
         // If send button wasn't found, don't wait 120s — return error immediately
         if (!submitResult.clicked) {
           return fail('发送失败', [
@@ -736,7 +780,10 @@ export default function (xcli: XCLIAPI): void {
         // Doubao image generation typically takes 15-60s, start checking after 5s
         await page.waitForTimeout(5000);
 
-        let imageUrl = '';
+        // Image collection: returns ALL matching new image URLs (doubao
+        // usually generates 4 per prompt). Outer poll loop also tries to
+        // collect again on each tick in case generation is slow.
+        let allImageUrls: string[] = [];
         let captchaDetected = false;
         const startTime = Date.now();
         while (Date.now() - startTime < 120000) {
@@ -767,8 +814,10 @@ export default function (xcli: XCLIAPI): void {
             return fail('验证码拦截', ['豆包触发了安全验证', '请在浏览器中完成验证码后重新运行此命令', ...remoteTips, ...tips]);
           }
           try {
-            imageUrl = await page.evaluate((excludeUrls: string[]) => {
+            const found = await page.evaluate((excludeUrls: string[]) => {
               const excludeSet = new Set(excludeUrls);
+              const seen = new Set<string>();
+              const result: string[] = [];
               // Updated selectors based on actual doubao DOM (2026-05):
               // - Generated images have class like "image-Q7dBqW" (hash suffix varies)
               // - src contains "rc_gen_image" for generated content
@@ -781,12 +830,23 @@ export default function (xcli: XCLIAPI): void {
                 'img[class*="generated"]',
                 'img[class*="result"]',
               ];
+              const accept = (src: string): boolean => {
+                if (!src || !src.startsWith('http')) return false;
+                if (src.includes('data:image')) return false;
+                if (src.includes('avatar')) return false;
+                if (src.includes('BIZ_BOT')) return false;
+                if (src.includes('/static/')) return false;
+                if (excludeSet.has(src)) return false;
+                if (seen.has(src)) return false;
+                return true;
+              };
               for (const sel of selectors) {
                 const imgs = document.querySelectorAll(sel);
                 for (const img of imgs) {
                   const src = (img as HTMLImageElement).src;
-                  if (src && src.startsWith('http') && !src.includes('data:image') && !src.includes('avatar') && !src.includes('BIZ_BOT') && !src.includes('/static/') && !excludeSet.has(src)) {
-                    return src;
+                  if (accept(src)) {
+                    seen.add(src);
+                    result.push(src);
                   }
                 }
               }
@@ -795,93 +855,38 @@ export default function (xcli: XCLIAPI): void {
               for (const img of allImgs) {
                 const src = (img as HTMLImageElement).src;
                 const w = (img as HTMLImageElement).naturalWidth;
-                if (src && src.startsWith('http') && w > 300 &&
-                    !src.includes('avatar') && !src.includes('static') &&
-                    !src.includes('icon') && !src.includes('BIZ_BOT') &&
-                    !src.includes('data:image') && !excludeSet.has(src)) {
-                  return src;
+                if (w > 300 && accept(src)) {
+                  seen.add(src);
+                  result.push(src);
                 }
               }
-              return '';
+              return result;
             }, existingUrls);
-            if (imageUrl) break;
+            if (found.length > 0) {
+              allImageUrls = found;
+              break;
+            }
           } catch { /* ignore */ }
         }
 
-        // Download image: prefer HD version (click preview → fetch via browser → base64 → save)
-        if (imageUrl) {
-          let downloaded: { localPath: string; size: number } | null = null;
-
-          // Try HD: click to open preview → find HD img → fetch as base64 in browser context
-          try {
-            const clicked = await page.evaluate((excludeUrls: string[]) => {
-              const excludeSet = new Set(excludeUrls);
-              const imgs = document.querySelectorAll('img[src*="rc_gen_image"]');
-              for (const img of imgs) {
-                const src = (img as HTMLImageElement).src;
-                if (src && !excludeSet.has(src)) {
-                  (img as HTMLElement).click();
-                  return true;
-                }
-              }
-              return false;
-            }, existingUrls);
-
-            if (clicked) {
-              // Wait for HD preview image to load (up to 10s)
-              let hdLoaded = false;
-              for (let i = 0; i < 5; i++) {
-                await page.waitForTimeout(2000);
-                hdLoaded = await page.evaluate(() => {
-                  const imgs = document.querySelectorAll('img');
-                  for (const img of imgs) {
-                    if ((img as HTMLImageElement).src.includes('rc_gen_image') && (img as HTMLImageElement).naturalWidth > 1000) return true;
-                  }
-                  return false;
-                });
-                if (hdLoaded) break;
-              }
-              if (!hdLoaded) { throw new Error('HD preview not loaded'); }
-              // Fetch HD image inside browser (has cookies/referer, bypasses CORS)
-              const hdResult = await page.evaluate(async () => {                const imgs = document.querySelectorAll('img');
-                let hdSrc = '';
-                for (const img of imgs) {
-                  const src = (img as HTMLImageElement).src;
-                  const nw = (img as HTMLImageElement).naturalWidth;
-                  if (src && src.includes('rc_gen_image') && nw > 1000) { hdSrc = src; break; }
-                }
-                if (!hdSrc) return { ok: false as const, error: 'no hd image' };
-                const resp = await fetch(hdSrc);
-                const blob = await resp.blob();
-                return new Promise<{ ok: boolean; data?: string; size?: number }>((resolve) => {
-                  const reader = new FileReader();
-                  reader.onload = () => {
-                    const base64 = (reader.result as string).split(',')[1];
-                    resolve({ ok: true, data: base64, size: blob.size });
-                  };
-                  reader.onerror = () => resolve({ ok: false });
-                  reader.readAsDataURL(blob);
-                });
-              }) as { ok: boolean; data?: string; size?: number };
-
-              if (hdResult.ok && hdResult.data) {
-                const downloadDir = path.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads');
-                if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir, { recursive: true });
-                const localPath = path.join(downloadDir, `image_${Date.now()}.png`);
-                fs.writeFileSync(localPath, Buffer.from(hdResult.data, 'base64'));
-                downloaded = { localPath, size: hdResult.size! };
-                tips.push(`🔍 高清图 ${(hdResult.size! / 1024 / 1024).toFixed(1)}MB`);
-              }
-            }
-          } catch { /* fallback to curl */ }
-
-          // Fallback: download thumbnail via curl
-          if (!downloaded) {
-            downloaded = await downloadMedia(imageUrl, 'image');
-            tips.push('⚠ 缩略图（高清获取失败）');
-          }
-
-          return ok({ url: imageUrl, localPath: downloaded.localPath, prompt, duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` }, [...tips, `📁 ${downloaded.localPath} (${formatFileSize(downloaded.size)})`]);
+        // HD acquisition + download. Reuses the shared lightbox helper that
+        // opens the lightbox, clicks through thumbnails, captures HD URLs
+        // from network responses, and downloads all images.
+        if (allImageUrls.length > 0) {
+          const downloads = await extractAllHDImages(page, allImageUrls, 'image', tips);
+          const total = allImageUrls.length;
+          const localPaths = downloads.map((d) => d.localPath);
+          const first = downloads[0];
+          return ok({
+            urls: allImageUrls,
+            localPaths,
+            count: total,
+            // Backward-compatible single-image fields (only when we actually
+            // have at least one successful download)
+            ...(first ? { url: allImageUrls[0], localPath: first.localPath } : {}),
+            prompt,
+            duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
+          }, [...tips]);
         }
 
         return ok({ prompt }, [...tips, '图片可能还在生成中，请到豆包页面查看']);
@@ -891,100 +896,161 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
-  //  6. image-edit — 图片编辑（重绘/扩图/擦除/增强）
-  site.command('image-edit', {
-    description: '图片编辑：重绘(redraw)、扩图(expand)、擦除(erase)、增强(enhance)',
+  //  5b. extract-images — 从已有对话提取全部图片（HD 优先）
+  //
+  // 不重新生成图片（省豆包算力）。打开指定 chatId 所在页面，监听网络
+  // 响应捕获所有 rc_gen_image 图片 URL（包含 image_pre_watermark_1_5b
+  // 参数的为 HD 原图），直接下载到本地。用于异步/批量补抓历史生成结果。
+  site.command('extract-images', {
+    description: '从已有对话中提取全部图片（HD 优先，缩略图回退）',
     scope: 'browser',
     parameters: z.object({
-      action: z.enum(['redraw', 'expand', 'erase', 'enhance']).describe('编辑操作：redraw=重绘, expand=扩图, erase=擦除, enhance=增强'),
-      image: z.string().describe('待编辑图片路径'),
-      prompt: z.string().optional().describe('编辑提示词（仅 redraw 需要）'),
+      chatId: z.string().describe('豆包对话 ID（URL 路径中 /chat/<id> 后的数字串）'),
     }),
     examples: [
-      { cmd: 'xbrowser doubao image-edit --action redraw --image /path/to/img.jpg --prompt "改成油画风格"', description: '重绘' },
-      { cmd: 'xbrowser doubao image-edit --action erase --image /path/to/img.jpg', description: '擦除' },
-      { cmd: 'xbrowser doubao image-edit --action enhance --image /path/to/img.jpg', description: '增强' },
+      { cmd: 'xbrowser doubao extract-images 38430692706121730', description: '从指定对话提取全部 HD 图片' },
     ],
-    result: z.object({ action: z.string(), image: z.string(), submitted: z.boolean() }).passthrough(),
+    result: z.object({
+      chatId: z.string(),
+      chatUrl: z.string(),
+      count: z.number(),
+      urls: z.array(z.string()),
+      hdUrls: z.array(z.string()),
+      localPaths: z.array(z.string()),
+      prompt: z.string().optional(),
+    }).passthrough(),
     handler: async (params, ctx) => {
       try {
         const page = ctx.page;
-        if (!page) throw new Error("需要浏览器页面");
+        if (!page) throw new Error('需要浏览器页面');
         await ensurePage(page, ctx);
-        await page.waitForTimeout(2000);
         const tips = buildTips(ctx);
 
-        const absPath = path.resolve(params.image);
-        if (!fs.existsSync(absPath)) throw new Error(`图片文件不存在: ${absPath}`);
-
-        const uploaded = await uploadFileViaDataTransfer(page, absPath);
-        if (!uploaded) {
-          await safeClickSelector(page, '[class*="upload"], [class*="image-upload"], [class*="attach"]');
-          await page.waitForTimeout(500);
-          await uploadFileViaDataTransfer(page, absPath);
+        // Validate chatId — must be numeric
+        if (!/^\d+$/.test(params.chatId)) {
+          return fail('参数错误', [`chatId 必须是数字字符串: ${params.chatId}`]);
         }
-        await page.waitForTimeout(1000);
-        tips.push(`已上传图片: ${path.basename(absPath)}`);
 
-        const actionLabels: Record<string, string> = {
-          redraw: '重绘', expand: '扩图', erase: '擦除', enhance: '增强',
+        const chatUrl = `https://www.doubao.com/chat/${params.chatId}`;
+        tips.push(`导航到对话: ${chatUrl}`);
+
+        // Start capturing network responses BEFORE navigation.
+        // 豆包用 Next.js SSR，生成的图片 URL 是在初次页面加载时通过
+        // <picture><source srcset=...> 引用的；其 URL 出现在网络响应里。
+        // 我们抓所有 rc_gen_image 的响应 URL，HD 版的特征是包含
+        // "image_pre_watermark_1_5b" 参数；缩略图是 "downsize_watermark"。
+        const seen = new Set<string>();
+        const captured: { hd: string[]; thumb: string[] } = { hd: [], thumb: [] };
+        const captureHandler = (resp: unknown): void => {
+          const r = resp as { url?: () => string };
+          const url = typeof r.url === 'function' ? r.url() : '';
+          if (!url || !url.includes('rc_gen_image')) return;
+          if (seen.has(url)) return;
+          seen.add(url);
+          if (url.includes('image_pre_watermark_1_5b')) {
+            captured.hd.push(url);
+          } else if (url.includes('downsize_watermark') || url.includes('img_pre_mark')) {
+            captured.thumb.push(url);
+          }
         };
-        const label = actionLabels[params.action];
+        page.on('response', captureHandler);
 
-        const clicked = await page.evaluate((actionLabel: string) => {
-          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-          let node: Text | null;
-          while ((node = walker.nextNode() as Text | null)) {
-            if (node.textContent?.includes(actionLabel)) {
-              const parent = node.parentElement;
-              if (parent) {
-                parent.click();
-                return true;
-              }
-            }
+        try {
+          await page.goto(chatUrl, { waitUntil: 'domcontentloaded' });
+          // 豆包 SPA 边滚动边懒加载 — 滚到底确保所有图片被请求
+          await page.waitForTimeout(3000);
+          for (let i = 0; i < 3; i++) {
+            await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+            await page.waitForTimeout(2500);
           }
-          return false;
-        }, label);
+        } finally {
+          page.off('response', captureHandler);
+        }
 
-        if (!clicked) tips.push(`⚠ 未找到"${label}"按钮，请确认页面已显示编辑选项`);
+        // Dedupe by base filename (drop query/transform params)
+        const dedupeByBase = (urls: string[]): string[] => {
+          const out: string[] = [];
+          const bases = new Set<string>();
+          for (const u of urls) {
+            // Base = first part of path + filename (before ~tplv transform)
+            const tplIdx = u.indexOf('~tplv-');
+            const base = tplIdx > 0 ? u.substring(0, tplIdx) : u;
+            if (bases.has(base)) continue;
+            bases.add(base);
+            out.push(u);
+          }
+          return out;
+        };
 
-        if (params.prompt) {
-          await page.waitForTimeout(500);
-          const promptInput = page.locator('textarea, [contenteditable="true"], [role="textbox"]').first();
-          if (await promptInput.count() > 0) {
-            await promptInput.fill(params.prompt);
-            await page.waitForTimeout(300);
+        const hdUrls = dedupeByBase(captured.hd);
+        const thumbUrls = dedupeByBase(captured.thumb);
+
+        tips.push(`📸 网络捕获: ${hdUrls.length} 张 HD + ${thumbUrls.length} 张缩略图`);
+
+        if (hdUrls.length === 0 && thumbUrls.length === 0) {
+          return fail('未找到图片', [
+            '该对话中没有发现生成的图片（网络层未捕获到 rc_gen_image）',
+            `可能原因：对话 ID 错误、对话已被删除、或图片还没生成完`,
+            `当前URL: ${page.url()}`,
+            ...tips,
+          ]);
+        }
+
+        // For each HD URL, find its matching thumbnail (same base) for fallback
+        const sourceImages = hdUrls.length > 0
+          ? hdUrls
+          : thumbUrls.slice(0, 4);  // fallback to first 4 thumbnails
+        tips.push(`📥 开始下载 ${sourceImages.length} 张图片...`);
+
+        // Download all — HD will be tried first; thumbnails are fallback if HD fails
+        const downloads: { url: string; localPath: string; size: number; isHD: boolean }[] = [];
+        for (let i = 0; i < sourceImages.length; i++) {
+          const url = sourceImages[i]!;
+          const isHD = url.includes('image_pre_watermark_1_5b');
+          try {
+            const result = await downloadMedia(url, 'extract');
+            downloads.push({ url, localPath: result.localPath, size: result.size, isHD });
+            tips.push(`📁 [${i + 1}/${sourceImages.length}] ${result.localPath} (${isHD ? 'HD' : '缩略图'}, ${(result.size / 1024).toFixed(1)}KB)`);
+          } catch (err) {
+            tips.push(`⚠️ [${i + 1}/${sourceImages.length}] 下载失败: ${err instanceof Error ? err.message : String(err)}`);
           }
         }
 
-        const submitHandle = await (page as unknown as PluginPage).evaluateHandle(() => {
-          const selectors = ['button[class*="submit"]', 'button[class*="generate"]', '[class*="confirm"] button'];
-          for (const sel of selectors) {
-            const el = document.querySelector(sel);
-            if (el) return el;
-          }
-          for (const btn of document.querySelectorAll('button')) {
-            if (btn.textContent?.includes('生成')) return btn;
-          }
-          return null;
-        });
-        const submitEl = (submitHandle as unknown as PluginElementHandle).asElement();
-        if (submitEl) {
-          const submitBox = await submitEl.boundingBox();
-          if (submitBox) await page.mouse.click(submitBox.x + submitBox.width / 2, submitBox.y + submitBox.height / 2);
-          tips.push('编辑请求已提交，等待处理...');
+        if (downloads.length === 0) {
+          return fail('下载失败', ['所有图片均下载失败', ...tips]);
         }
 
-        await page.waitForTimeout(3000);
+        // Try to extract the prompt (first user message text) from the chat
+        const prompt = await page.evaluate(() => {
+          const candidates = document.querySelectorAll(
+            '[class*="user-message"] [class*="text"], [class*="query-text"], [class*="message-content"]'
+          );
+          for (const c of Array.from(candidates)) {
+            const t = c.textContent?.trim();
+            if (t && t.length > 4 && t.length < 500) return t;
+          }
+          return undefined;
+        }).catch(() => undefined) as string | undefined;
 
-        return ok({ action: params.action, image: absPath, submitted: true }, tips);
-      } catch {
-        return fail('未知错误', ['图片编辑失败']);
+        return ok({
+          chatId: params.chatId,
+          chatUrl,
+          count: downloads.length,
+          urls: downloads.map((d) => d.url),
+          hdUrls: downloads.filter((d) => d.isHD).map((d) => d.url),
+          localPaths: downloads.map((d) => d.localPath),
+          ...(prompt ? { prompt } : {}),
+        }, tips);
+      } catch (error) {
+        return fail('未知错误', [
+          '提取图片失败',
+          `错误详情: ${error instanceof Error ? error.message : String(error)}`,
+        ]);
       }
     },
   });
 
-  //  7. image-cutout — AI 抠图
+  //  6. image-cutout — AI 抠图
   site.command('image-cutout', {
     description: 'AI 抠图（背景移除）',
     scope: 'browser',
@@ -1050,7 +1116,7 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
-  //  8. image-vary — 图片衍生（以图生图）
+  //  7. image-vary — 图片衍生（以图生图）
   site.command('image-vary', {
     description: '以图生图（Variation），基于参考图生成变体',
     scope: 'browser',

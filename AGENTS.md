@@ -751,6 +751,63 @@ xbrowser marketplace publish <plugin-name> --registry https://your-registry.com
 
 完整内容见 `.opencode/ui-automator/troubleshooting/`。
 
+### CDP Firewall 检测合成事件（重要！2026-06 豆包实战）
+
+生产站点（豆包、TikTok、抖音等）会监听 `isTrusted` 属性，**JS 触发的合成事件**（`el.click()`、`el.dispatchEvent`）会被识别并可能导致：
+- 页面跳转到 `about:blank`
+- 操作被静默拒绝
+- 弹警告：`⚠️ CDP Firewall: Event simulation detected: "el.click()"`
+
+**绝对不要**：
+```typescript
+// ❌ 在 page.evaluate 里调用 el.click() — isTrusted=false
+await page.evaluate(() => document.querySelector('button').click());
+
+// ❌ Locator.click() 内部也是合成事件
+await page.locator('button').click();
+```
+
+**正确**：
+```typescript
+// ✅ 用真实 Input.dispatchMouseEvent，isTrusted=true
+const rect = await page.evaluate(() => {
+  const btn = document.querySelector('button');
+  const r = btn.getBoundingClientRect();
+  return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+});
+await page.mouse.click(rect.x, rect.y);
+```
+
+封装在 `.xcli/plugins/shared/file-upload.ts` 的 `clickButtonByText(page, text)` 已用真实 mouse 事件。
+
+### 文件上传：不要点 file input
+
+**绝对不要**：
+```typescript
+// ❌ 点 file input 会弹系统文件选择框 + 触发 CDP Firewall
+await page.mouse.click(fileInputRect.x, fileInputRect.y);
+```
+
+**正确**：用 `page.setInputFiles`（CDP 模式已实现，内部用 DataTransfer + dispatch change 事件，React 监听 onChange 处理）。
+
+```typescript
+const fileBuffer = fs.readFileSync(absPath);
+await page.setInputFiles('input[type="file"]', {
+  name: path.basename(absPath),
+  mimeType: 'image/png',
+  buffer: fileBuffer,
+});
+```
+
+完整决策树（5 种 pattern）见 `skill/file-upload/SKILL.md`。
+
+### page.waitForEvent vs page.context().waitForEvent
+
+- ✅ `page.waitForEvent('filechooser', { timeout: 5000 })` — 监听 page 事件
+- ❌ `page.context().waitForEvent` — context 上**没有**这个方法，会报 "not a function"
+
+如果要在事件触发时执行动作（如 `filechooser`），用 `page.waitForEvent`。
+
 ### contenteditable 输入框
 
 - ❌ 不要用 `page.fill()` — 不会触发 React/ProseMirror 状态更新

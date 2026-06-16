@@ -637,8 +637,33 @@ export class XBPageImpl implements XBPage {
     this._emitter.on(event, handler);
   }
 
-  off(event: string, handler: Function): void {
+  off(event: string, handler: (...args: unknown[]) => void): void {
     this._emitter.off(event, handler as (...args: unknown[]) => void);
+  }
+
+  /**
+   * Wait for a one-shot event (Playwright-compatible subset).
+   * Used to listen for 'filechooser', 'dialog', 'popup', 'framenavigated', etc.
+   */
+  async waitForEvent(
+    event: string,
+    opts: { timeout?: number; predicate?: (...args: unknown[]) => boolean } = {}
+  ): Promise<unknown> {
+    const timeout = opts.timeout ?? 30000;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this._emitter.off(event, handler);
+        reject(new Error(`waitForEvent('${event}') timeout after ${timeout}ms`));
+      }, timeout);
+
+      const handler = (...args: unknown[]) => {
+        if (opts.predicate && !opts.predicate(...args)) return;
+        clearTimeout(timer);
+        this._emitter.off(event, handler);
+        resolve(args.length === 1 ? args[0] : args);
+      };
+      this._emitter.on(event, handler);
+    });
   }
 
   // ── Lifecycle ───────────────────────────────────────────────

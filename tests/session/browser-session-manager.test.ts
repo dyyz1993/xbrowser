@@ -31,6 +31,7 @@ const hoisted = vi.hoisted(() => {
     close: vi.fn().mockResolvedValue(undefined),
     newContext: vi.fn().mockResolvedValue(mockContext),
     contexts: vi.fn().mockReturnValue([]),
+    discoverContexts: vi.fn().mockResolvedValue(undefined),
     on: vi.fn(),
     off: vi.fn(),
     disconnected: false,
