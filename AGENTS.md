@@ -258,6 +258,82 @@ chrome --remote-debugging-port=9222
 xbrowser --cdp 9222 chatgpt list
 ```
 
+### 7.5 cdp-tunnel 隔离规范（2026-06-16 强制）
+
+**铁律**：cdp-tunnel **共享 Chrome profile / cookie / 登录态**，**只隔离**"tab 列表"和"每个 clientId 自己创建的 tab"。
+
+| 维度 | 共享 / 隔离 |
+|------|------------|
+| **登录态 / Cookie / localStorage** | ✅ **共享** |
+| **Profile / user-data-dir** | ✅ **共享** |
+| **`GET /json/list`（HTTP）** | **只返回本 clientId 的 page**（cdp-tunnel 已隔离） |
+| **`WS Target.getTargets`** | **只返回本 clientId 的 page** |
+| **`WS Target.attachToTarget`** | **本 clientId 拥有**的 targetId 才放行；其他 clientId 的 targetId 返回 `close(1008)` |
+| **其他客户端已开的 tab** | ❌ 看不到、不能操作、不能 attach |
+
+**含义**：
+- xbrowser 客户端 A **继承同一个 Chrome 实例的登录态** — `page.goto(已登录站点)` 跳到的是已登录主页
+- 看不到 / 操作不了 client B 开的 tab — 隔离边界
+- 想"复用登录态" 不需要重新登录，直接 `page.goto` 即可
+
+#### 🚫 禁止用 HTTP `/json/list` 拿 tabs
+
+**`GET /json/list` 已经被 cdp-tunnel 隔离**（create 模式返回空 / takeover 模式才返回 tabs）。xbrowser **不允许**用 `fetch('http://host:port/json/list')` 拿 tab 列表 — 即使能拿到，也违反"显式 cdp-tunnel 行为边界"的契约。
+
+**正确做法：走标准 CDP 协议**
+
+| 需求 | 协议方法 | 备注 |
+|------|---------|------|
+| 发现已有的 tabs | `WS Target.getTargets` | cdp-tunnel 已按 clientId 过滤 |
+| 等新 tab 自动 attach | `WS Target.setAutoAttach` | 标准 CDP auto-attach 流程 |
+| 主动 attach 一个 tab | `WS Target.attachToTarget` | 仅限本 clientId 拥有 |
+| 拿 browser-level ws（连 cdp 入口） | `GET /json/version` | 这个**安全**（不暴露 page 列表） |
+
+**反例（❌ HTTP /json/list 拿 tabs）**：
+```typescript
+// ❌ 错：用 HTTP /json/list 拿所有 tab，然后 webSocketDebuggerUrl 直连 attach
+const targets = await fetch('http://localhost:9221/json/list').then(r => r.json());
+for (const t of targets) {
+  // attach 别人的 tab — 即使 cdp-tunnel 放行，xbrowser 也不应该这么做
+  attach(t.webSocketDebuggerUrl);
+}
+```
+
+**正例（✅ 标准 CDP）**：
+```typescript
+// ✅ 正确：连 WS /devtools/browser/ → 用 Target.getTargets 拿自己 clientId 的 tabs
+const browser = await launch({ cdpEndpoint });
+await browser.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+const { targetInfos } = await browser.send('Target.getTargets');
+for (const t of targetInfos.filter(t => t.type === 'page')) {
+  // t.targetId 一定属于本 clientId（cdp-tunnel 已过滤）
+  const session = await browser.send('Target.attachToTarget', { targetId: t.targetId, flatten: true });
+}
+```
+
+**xbrowser 代码层面已修**：
+- ✅ `findTargetPage` 改用 `context.pages()`（Playwright 内部就是 `Target.getTargets` 的封装）
+- ✅ `createSession` 移除 `getCDPTargets` 兜底（`browser.ts:781`）
+- ✅ `src/browser.ts` 删掉 `getCDPTargets` 函数（不再使用）
+- ⚠️ `discoverContexts` HTTP 兜底（`cdp-driver/browser.ts:273-301`）按新协议永远返回空，**建议移除**
+
+#### 常见误判（修正后的理解）
+
+**反例（❌ 之前误判）**：
+```typescript
+// ❌ 错：以为 cookie 不共享，所以"看不到登录" → 走分支让用户重新登录
+//    实际上：cookie 共享，page.goto(chatgpt.com) 跳到的是已登录主页
+if (page.url() === 'about:blank') {
+  // 不应该断言"未登录"！cdp-tunnel 隔离下，xbrowser 自己的 page 就是 about:blank
+  // 但 goto 之后会复用同一 Chrome 的 cookie
+}
+```
+
+**正例（✅）**：
+- `ensurePage` 中 `page.goto(CG_URL)` 正常跳到 chatgpt 主页（已登录态）
+- 上传附件前用 `page.url()` 检查**目标站点的实际 url**（如 `chatgpt.com/c/xxx`），不是检查"是否 about:blank"
+- 菜单操作失败时，先看 page 是不是 chatgpt 对话页（`url.pathname.startsWith('/c/')`），如果不是则需要 `page.goto` 到对话页或先发条消息激活 composer
+
 ---
 
 ## 8. 验证码处理

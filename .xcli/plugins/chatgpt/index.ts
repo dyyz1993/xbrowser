@@ -8,7 +8,7 @@ type Page = import('../types').Page;
 const CG_URL = 'https://chatgpt.com';
 
 async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
-  const url = page.url();
+  const url = page.url() || '';
   if (!url.includes('chatgpt.com') && !url.includes('chat.openai.com')) {
     await page.goto(CG_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
   }
@@ -312,7 +312,11 @@ export default function (xcli: XCLIAPI): void {
         }
 
         if (params.path || params.paths) {
-          await handleChatAttachments(page, params.path, params.paths, params.type || 'image', tips);
+          const r = await handleChatAttachments(page, params.path, params.paths, params.type || 'image', tips);
+          // 强约束：上传校验未通过则中止（避免发空消息 + 误导用户）
+          if (!r.ok) {
+            return fail(`附件上传未通过校验 (${r.uploaded}/${r.total})`, tips);
+          }
         }
 
         const inputFound = await fillInput(page, params.message);
@@ -480,8 +484,9 @@ export default function (xcli: XCLIAPI): void {
           tips.push('AI 回复超时或未检测到');
           return ok({ response: '' }, tips);
         }
-      } catch {
-        return fail('未知错误', ['发送消息失败']);
+      } catch (e) {
+        const msg = (e as Error).message || String(e);
+        return fail('未知错误', ['发送消息失败', `原因: ${msg}`]);
       }
     },
   });
@@ -621,7 +626,20 @@ async function fillInput(page: Page, message: string): Promise<boolean> {
 }
 
 async function sendMessage(page: Page): Promise<void> {
-  await page.keyboard.press('Enter');
+  // ChatGPT 的 contenteditable 不响应 CDP keyboard.press('Enter')
+  // 优先点击发送按钮（#composer-submit-button），fallback 到 Enter
+  const clicked = await page.evaluate(() => {
+    const btn = document.querySelector('#composer-submit-button') as HTMLElement;
+    if (btn && btn.offsetParent !== null) {
+      btn.click();
+      return true;
+    }
+    return false;
+  });
+  if (!clicked) {
+    // fallback: 真实键盘 Enter
+    await page.keyboard.press('Enter');
+  }
 }
 
 

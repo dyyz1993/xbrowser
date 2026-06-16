@@ -315,7 +315,8 @@ export default function (xcli: XCLIAPI): void {
         }
 
         if (params.path || params.paths) {
-          await handleChatAttachments(page, params.path, params.paths, 'image', tips);
+          const r = await handleChatAttachments(page, params.path, params.paths, 'image', tips);
+          if (!r.ok) return fail(`附件上传未通过校验 (${r.uploaded}/${r.total})`, tips);
         }
 
         const inputLocator = page.locator('.ql-editor, #searchbar-editor, [contenteditable="true"]').first();

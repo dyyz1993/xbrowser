@@ -339,7 +339,8 @@ export default function (xcli: XCLIAPI): void {
 
         // 先上传附件（如果有）
         if (params.path || params.paths) {
-          await handleChatAttachments(page, params.path, params.paths, params.type || 'image', tips);
+          const r = await handleChatAttachments(page, params.path, params.paths, params.type || 'image', tips);
+          if (!r.ok) return fail(`附件上传未通过校验 (${r.uploaded}/${r.total})`, tips);
         }
 
         // 找输入框（多种选择器兜底）

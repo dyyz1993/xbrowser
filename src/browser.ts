@@ -129,43 +129,31 @@ process.on('exit', () => {
   sessions.clear();
 });
 
-async function getCDPTargets(cdpEndpoint: string | number): Promise<Array<{ id: string; url: string; title: string; webSocketDebuggerUrl: string }>> {
-  try {
-    const ep = String(cdpEndpoint);
-    let host = 'localhost';
-    let port = '9222';
-    if (ep.startsWith('http://') || ep.startsWith('https://')) {
-      const u = new URL(ep);
-      host = u.hostname;
-      port = u.port || '9222';
-    } else if (/^\d+$/.test(ep)) {
-      port = ep;
-    }
-    const url = `http://${host}:${port}/json/list`;
-    const resp = await fetch(url);
-    return (await resp.json()) as Array<{ id: string; url: string; title: string; webSocketDebuggerUrl: string }>;
-  } catch {
-    return [];
-  }
-}
-
 export async function findTargetPage(
   cdpEndpoint: string | number,
   target: string
 ): Promise<{ pageId: string; wsUrl: string; title: string; url: string } | null> {
-  const targets = await getCDPTargets(cdpEndpoint);
-  const pages = targets.filter(t => t.url && !t.url.startsWith('about:blank') && !t.url.startsWith('chrome://'));
-
-  const byId = pages.find(t => t.id === target);
-  if (byId) return { pageId: byId.id, wsUrl: byId.webSocketDebuggerUrl, title: byId.title, url: byId.url };
-
-  const lowerTarget = target.toLowerCase();
-  const byTitle = pages.find(t => t.title && t.title.toLowerCase().includes(lowerTarget));
-  if (byTitle) return { pageId: byTitle.id, wsUrl: byTitle.webSocketDebuggerUrl, title: byTitle.title, url: byTitle.url };
-
-  const byUrl = pages.find(t => t.url.toLowerCase().includes(lowerTarget));
-  if (byUrl) return { pageId: byUrl.id, wsUrl: byUrl.webSocketDebuggerUrl, title: byUrl.title, url: byUrl.url };
-
+  // cdp-tunnel 隔离规范 §7.5：不调 GET /json/list（会泄露其他 clientId 的 tab）
+  // 改为通过 cdp-driver 连 cdp 后用 context.pages() 拿自己 clientId 的 pages
+  const { launch } = await import('./cdp-driver/index.js');
+  const ep = String(cdpEndpoint);
+  const { browser: b } = await launch({ cdpEndpoint: ep });
+  await new Promise((r) => setTimeout(r, 300));
+  const contexts = b.contexts();
+  const pages: Array<{ id: string; url: string; title: string }> = [];
+  for (const ctx of contexts) {
+    for (const p of ctx.pages()) {
+      pages.push({ id: '', url: p.url(), title: await p.title() });
+    }
+  }
+  const usable = pages.filter(
+    (p) => p.url && p.url !== 'about:blank' && !p.url.startsWith('chrome://'),
+  );
+  const byTitle = usable.find((p) => p.title && p.title.toLowerCase().includes(target.toLowerCase()));
+  if (byTitle) return { pageId: '', wsUrl: '', title: byTitle.title, url: byTitle.url };
+  const byUrl = usable.find((p) => p.url.toLowerCase().includes(target.toLowerCase()));
+  if (byUrl) return { pageId: '', wsUrl: '', title: byUrl.title, url: byUrl.url };
+  await b.close().catch(() => {});
   return null;
 }
 
@@ -377,17 +365,8 @@ export function deleteSessionDiskMeta(name: string): void {
     // Use hostname-matched page, or fallback to first usable page
     page = page || fallbackPage;
 
-    if (!page) {
-      const targets = await getCDPTargets(ep);
-      const matchTarget = targets.find(t =>
-        t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://') &&
-        (targetHostname ? t.url.includes(targetHostname) : true)
-      );
-      if (matchTarget && matchTarget.url) {
-        page = await context.newPage();
-        await page.goto(matchTarget.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-      }
-    }
+    // 不调用 getCDPTargets()，避免泄露其他 clientId 的 tab 信息
+    // （cdp-tunnel 隔离规范 §7.5：HTTP /json/list 暴露所有 tab，不允许未授权访问）
 
     if (!page) {
       const pages = context.pages();
@@ -780,17 +759,7 @@ export async function createSession(
       }
     }
 
-    if (!targetPage && options?.cdpEndpoint) {
-      const targets = await getCDPTargets(options.cdpEndpoint);
-      const matchTarget = targets.find(t =>
-        t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://') &&
-        (url ? t.url.includes(new URL(url).hostname) : true)
-      );
-      if (matchTarget && matchTarget.url) {
-        targetPage = await context.newPage();
-        await targetPage.goto(matchTarget.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-      }
-    }
+    // cdp-tunnel 隔离规范 §7.5：不调用 getCDPTargets()（GET /json/list 会泄露其他 clientId 的 tab）
 
     if (!targetPage) {
       const pages = context.pages();

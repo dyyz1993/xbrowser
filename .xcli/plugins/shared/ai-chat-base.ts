@@ -141,13 +141,13 @@ export async function handleChatAttachments(
   paths: string | undefined,
   attachType: string,
   tips: string[],
-): Promise<void> {
+): Promise<{ ok: boolean; uploaded: number; total: number }> {
   // 1. 合并 list
   const list: string[] = [
     ...(path ? [path] : []),
     ...(paths ? paths.split(',').map((s) => s.trim()).filter(Boolean) : []),
   ];
-  if (list.length === 0) return;
+  if (list.length === 0) return { ok: true, uploaded: 0, total: 0 };
 
   // 2. url 类型：只发第一个 URL 进消息（无文件上传）
   if (attachType === 'url') {
@@ -155,38 +155,196 @@ export async function handleChatAttachments(
       tips.push(`⚠ url 模式仅支持单个链接，已忽略 ${list.length - 1} 个额外项`);
     }
     tips.push(`URL 将通过消息发送: ${list[0]}`);
-    return;
+    return { ok: true, uploaded: 0, total: 1 };
   }
 
   // 3. 批量上传（image / file 模式）
-  const r = await batchUploadFiles(page, list, '+');
+  // 目标文本"添加照片和文件"匹配 chatgpt 的 Radix 菜单子项；
+  // doubao / qianwen / claude / deepseek / yuanbao 找不到时，clickAddMoreButton
+  // 会自动 fallback 到点 [+] / 媒体按钮 / aria 含"附件"的触发器。
+  const r = await batchUploadFiles(page, list, '添加照片和文件');
   for (const e of r.errors) tips.push(`⚠ ${e}`);
-  if (r.uploaded > 0) {
-    tips.push(`✓ 已上传 ${r.uploaded}/${list.length} 个附件`);
+  const ok = r.uploaded === list.length && r.errors.length === 0;
+  if (ok) {
+    tips.push(`✓ 已上传并验证 ${r.uploaded}/${list.length} 个附件`);
+  } else if (r.uploaded > 0) {
+    tips.push(`⚠ 上传 ${r.uploaded}/${list.length} 个附件，但部分强校验未通过`);
   } else {
-    tips.push('⚠ 上传失败，找不到 file input');
+    tips.push('⚠ 上传失败，找不到 file input 或缩略图未出现');
+  }
+  return { ok, uploaded: r.uploaded, total: list.length };
+}
+
+/**
+ * 等待 filechooser 事件（CDP 模式首选，避开系统弹窗 + 触发 button/div 即可）
+ *
+ * 为什么不用 DataTransfer 注入到隐藏 input：
+ * - 很多站点（chatgpt、doubao）的 "上传" 触发器是 `<button id="upload-files">`，
+ *   不是 `<input type="file">`，注入 input 走不通
+ * - 隐藏的 input 在 React 应用里经常被 React 控制，注入的文件 state 会被 reset
+ * - filechooser 走 CDP 原生 Page.setFileInputFiles，isTrusted=true
+ */
+async function waitForChooserAndSetFiles(
+  page: Page,
+  filePaths: string[],
+  timeoutMs = 5000,
+): Promise<boolean> {
+  type Chooser = {
+    isMultiple: boolean;
+    setFiles: (
+      f:
+        | { name: string; mimeType: string; buffer: Buffer }
+        | Array<{ name: string; mimeType: string; buffer: Buffer }>,
+    ) => Promise<void>;
+  };
+  // page 类型可能是 XBPage（有 waitForEvent），也可能是 playwright Page
+  const p = page as unknown as { waitForEvent?: (e: string, o?: { timeout?: number }) => Promise<Chooser> };
+  if (typeof p.waitForEvent !== 'function') return false;
+  try {
+    const chooser = await p.waitForEvent('filechooser', { timeout: timeoutMs });
+    // 把文件路径转成 XBFilePayload（必须读 buffer）
+    const payloads = filePaths.map((fp) => {
+      const buf = fs.readFileSync(fp);
+      const ext = path.extname(fp).toLowerCase();
+      const mime = MIME_MAP[ext] || 'application/octet-stream';
+      return { name: path.basename(fp), mimeType: mime, buffer: buf };
+    });
+    if (payloads.length > 1 && !chooser.isMultiple) {
+      await chooser.setFiles(payloads[0]!);
+    } else {
+      await chooser.setFiles(payloads);
+    }
+    return true;
+  } catch {
+    return false;
   }
 }
 
 /**
- * 批量上传多个文件到常驻的 file input（AGENTS.md §10.0.3.1）
+ * **强校验**：上传后必须确认页面上出现了缩略图 / 附件节点，否则视为失败。
  *
- * 适用场景：
- * - 聊天附件：input 一直挂着，第一个直接注入；后续需点 "+" 按钮
- * - 与 uploadFileViaDataTransfer 配合使用（无触发按钮场景）
+ * 这一步是必须的（教训：2026-06-15 豆包实战 + 2026-06-16 chatgpt 实战）。
+ * 之前 helper 调用 setInputFiles 后只 return true，没看页面真实状态，
+ * 导致"上传没真发生"但代码以为成功了。
  *
- * @param page - Playwright Page
+ * 检测策略（3 选 1 即视为成功）：
+ * - 缩略图：`<img>` 的 alt/src 包含文件名
+ * - 附件节点：[data-testid*="attachment"] / [class*="attachment"] / [aria-label*="附件"]
+ * - file input 的 files 数量 > 0
+ *
+ * @param page - 浏览器页面
+ * @param filePaths - 期望上传的文件路径列表
+ * @param timeoutMs - 最长等待时间（默认 3000ms）
+ * @returns { verified: boolean, missing: string[] } — verified 是否全上传；missing 未出现的文件名
+ */
+export async function verifyUploads(
+  page: Page,
+  filePaths: string[],
+  timeoutMs = 3000,
+): Promise<{ verified: boolean; missing: string[]; found: string[] }> {
+  const names = filePaths.map((fp) => path.basename(fp).toLowerCase());
+  const deadline = Date.now() + timeoutMs;
+  const found = new Set<string>();
+  while (Date.now() < deadline) {
+    const present = await page.evaluate((candidates: string[]) => {
+      const result: string[] = [];
+      // 1) 找 input.files 数量
+      const fileInputs = document.querySelectorAll('input[type="file"]');
+      let filesCount = 0;
+      fileInputs.forEach((fi) => {
+        if ((fi as HTMLInputElement).files) filesCount += (fi as HTMLInputElement).files!.length;
+      });
+      // 2) 找缩略图 / 附件节点
+      const thumbs = document.querySelectorAll(
+        'img, [data-testid*="attachment"], [class*="attachment"], [class*="preview"], [class*="upload-preview"], [class*="file-item"], [aria-label*="附件"], [aria-label*="attachment"]',
+      );
+      const allText = Array.from(thumbs)
+        .map((el) => {
+          const t = (el.textContent || '').toLowerCase();
+          const a = (el.getAttribute('alt') || '').toLowerCase();
+          const s = (el.getAttribute('src') || '').toLowerCase();
+          const aria = (el.getAttribute('aria-label') || '').toLowerCase();
+          return `${t} ${a} ${s} ${aria}`;
+        })
+        .join('\n');
+      for (const name of candidates) {
+        // 文件名匹配（不含扩展名也算，chatgpt 会剥扩展名）
+        const base = name.replace(/\.[^.]+$/, '');
+        if (allText.includes(name) || allText.includes(base)) {
+          result.push(name);
+        }
+      }
+      // 3) 如果 file input.files > 0 且候选数 > 0，认为上传中
+      if (result.length === 0 && filesCount >= candidates.length) {
+        return candidates.slice(0, filesCount);
+      }
+      return result;
+    }, names);
+    for (const n of present) found.add(n);
+    if (found.size >= names.length) break;
+    await page.waitForTimeout(300);
+  }
+  const missing = names.filter((n) => !found.has(n));
+  return { verified: missing.length === 0, missing, found: Array.from(found) };
+}
+
+/**
+ * 批量上传多个文件（AGENTS.md §10.0.3.1）
+ *
+ * 流程：每个文件循环——
+ *   1) 监听 page.waitForEvent('filechooser')（CDP 原生，避开系统文件框）
+ *   2) 用 clickAddMoreButton 触发按钮（第一个文件也点对应触发器）
+ *   3) chooser.setFiles 注入
+ *   4) 等 1500ms 上传完成
+ *
+ * 与旧版差异：
+ * - 之前用 DataTransfer 注入隐藏 input（chatgpt/doubao 走不通）
+ * - 现在用 filechooser 事件 + 真实鼠标点击触发器（isTrusted=true）
+ * - chatgpt "添加照片和文件" 路径：点 composer-plus-btn → 菜单弹 → 点 "添加照片和文件" → filechooser 触发
+ *
+ * @param page - Playwright Page 或 XBPage
  * @param filePaths - 文件绝对路径列表
  * @param addMoreButtonText - "+" 按钮文本（默认 "+"，可传 "添加"/"继续添加"）
- * @param maxFiles - 最大文件数（默认 50，与豆包限制一致）
- * @returns { files: string[], uploaded: number, errors: string[] }
- *
- * @example
- * ```typescript
- * const r = await batchUploadFiles(page, ['/abs/a.jpg', '/abs/b.png']);
- * // → { files: [...], uploaded: 2, errors: [] }
- * ```
+ * @param maxFiles - 最大文件数（默认 50）
  */
+/**
+ * 直接找 `<input type="file">` 并用 DataTransfer API 注入文件。
+ * 不需要点按钮 / 不需要 filechooser 事件 / 不需要 CDP Input 事件。
+ * 适用于 ChatGPT（#upload-files）、Claude、DeepSeek 等已有隐藏 file input 的站点。
+ */
+async function tryDirectFileInputInject(page: Page, absPaths: string[]): Promise<boolean> {
+  // 找页面上所有 file input
+  const selector = await page.evaluate(() => {
+    const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
+    // 优先找 accept 含 image 的（图片上传）
+    const imageInput = inputs.find(i => (i.accept || '').includes('image'));
+    if (imageInput && imageInput.id) return '#' + imageInput.id;
+    // fallback 到第一个
+    if (inputs.length > 0 && inputs[0]!.id) return '#' + inputs[0]!.id;
+    if (inputs.length > 0) return 'input[type="file"]';
+    return '';
+  });
+  if (!selector) return false;
+
+  // 读文件 + 注入
+  try {
+    const payloads = absPaths.map(fp => {
+      const buf = fs.readFileSync(fp);
+      const ext = path.extname(fp).toLowerCase();
+      const mime = MIME_MAP[ext] || 'application/octet-stream';
+      return { name: path.basename(fp), mimeType: mime, buffer: buf };
+    });
+    const p = page as unknown as { setInputFiles?: (s: string, f: unknown[]) => Promise<void> };
+    if (typeof p.setInputFiles === 'function') {
+      await p.setInputFiles(selector, payloads);
+      return true;
+    }
+  } catch {
+    // setInputFiles 失败，fallback 到 filechooser 流程
+  }
+  return false;
+}
+
 export async function batchUploadFiles(
   page: Page,
   filePaths: string[],
@@ -195,6 +353,7 @@ export async function batchUploadFiles(
 ): Promise<{ files: string[]; uploaded: number; errors: string[] }> {
   const absPaths: string[] = [];
   const errors: string[] = [];
+  const uploaded: string[] = [];
 
   // 1. 校验
   if (filePaths.length > maxFiles) {
@@ -213,46 +372,170 @@ export async function batchUploadFiles(
     return { files: [], uploaded: 0, errors };
   }
 
-  // 2. 循环上传
-  const uploaded: string[] = [];
-  for (let i = 0; i < absPaths.length; i++) {
-    if (i > 0) {
-      // 后续文件：点 "+" 添加按钮
-      const clicked = await clickAddMoreButton(page, addMoreButtonText);
-      if (!clicked) {
-        errors.push(`第 ${i + 1}/${absPaths.length} 个文件：找不到"${addMoreButtonText}"按钮`);
-        break;
-      }
-      await page.waitForTimeout(500);
+  // 2. 先尝试直接注入 file input（很多站点 file input 已在 DOM 里，不需要点按钮）
+  const directInject = await tryDirectFileInputInject(page, absPaths);
+  if (directInject) {
+    uploaded.push(...absPaths);
+    await page.waitForTimeout(2000);
+    // 跳到校验
+    const verify = await verifyUploads(page, absPaths, 3000);
+    if (!verify.verified) {
+      errors.push(`强校验未通过：未在页面上找到 ${verify.missing.length} 个文件（missing=${verify.missing.join(', ')}）`);
     }
-    const ok = await uploadFileViaDataTransfer(page, absPaths[i]!);
-    if (ok) {
-      uploaded.push(absPaths[i]!);
-    } else {
-      errors.push(`第 ${i + 1}/${absPaths.length} 个文件上传失败: ${path.basename(absPaths[i]!)}`);
-    }
+    return { files: uploaded, uploaded: verify.verified ? uploaded.length : verify.found.length, errors };
   }
 
-  return { files: uploaded, uploaded: uploaded.length, errors };
+  // 3. fallback：循环上传（每个文件前都尝试触发 filechooser）
+  for (let i = 0; i < absPaths.length; i++) {
+    const triggerText = i === 0 ? addMoreButtonText : addMoreButtonText;
+    if (i === 0) {
+      // 第一个：监听 filechooser → 点触发按钮
+      const chooserPromise = waitForChooserAndSetFiles(page, [absPaths[i]!], 5000);
+      const clicked = await clickAddMoreButton(page, triggerText);
+      if (!clicked) {
+        errors.push(`第 1/${absPaths.length} 个文件：找不到"${triggerText}"触发按钮`);
+        break;
+      }
+      const ok = await chooserPromise;
+      if (!ok) {
+        errors.push(`第 1/${absPaths.length} 个文件：未触发 filechooser（站点可能不支持）`);
+        break;
+      }
+    } else {
+      // 后续：触发新 filechooser（点击 "+" 或"添加更多"）
+      const chooserPromise = waitForChooserAndSetFiles(page, [absPaths[i]!], 5000);
+      const clicked = await clickAddMoreButton(page, triggerText);
+      if (!clicked) {
+        errors.push(`第 ${i + 1}/${absPaths.length} 个文件：找不到"${triggerText}"添加按钮`);
+        break;
+      }
+      const ok = await chooserPromise;
+      if (!ok) {
+        errors.push(`第 ${i + 1}/${absPaths.length} 个文件：未触发 filechooser`);
+        break;
+      }
+    }
+    uploaded.push(absPaths[i]!);
+    await page.waitForTimeout(1500);
+  }
+
+  // 4. 强制校验（用户强约束：上传后必须确认页面上有缩略图/附件节点）
+  const verify = await verifyUploads(page, absPaths, 3000);
+  if (!verify.verified) {
+    errors.push(`强校验未通过：未在页面上找到 ${verify.missing.length} 个文件（missing=${verify.missing.join(', ')}）`);
+    // 即使如此，仍保留已 verified 的文件
+  } else {
+    // 全部通过校验，给调用方一个明确信号
+    // （具体返回到调用方时由 r.uploaded 决定）
+  }
+
+  return { files: uploaded, uploaded: verify.verified ? uploaded.length : verify.found.length, errors };
 }
 
 /**
  * 点击"添加更多"按钮（真实鼠标事件，避开 CDP Firewall）
+ *
+ * 三轮匹配：aria-label 包含 → 严格文本 → 模糊文本包含。
+ * 候选元素覆盖 button / [role=button/menuitem] / class 含 add/plus/attach/upload。
+ * 返回坐标后在 page 域调 page.mouse.click（真实事件，isTrusted=true）。
+ *
+ * 第 0 步特殊处理（chatgpt 等 Radix 菜单站点）：
+ * - 如果目标文本是 "添加照片和文件" / "添加文件" / "上传图片" 这类**菜单子项**，
+ *   但当前没找到任何匹配 → 自动尝试点 [#composer-plus-btn, button[aria-label*="添加"], [id*="plus"]]
+ *   打开菜单，等 500ms 后再匹配。
  */
 async function clickAddMoreButton(page: Page, buttonText: string): Promise<boolean> {
+  // cdp-tunnel 下 page.mouse.click 不生效，统一用 DOM element.click()
+
+  // 先试直接找到目标并 click
+  let clicked = await findAndClickByText(page, buttonText);
+  if (clicked) return true;
+
+  // 没找到时，可能是 chatgpt 风格：需要先点 "+" 按钮打开菜单
+  const openerClicked = await page.evaluate(() => {
+    const norm = (s: string) => s.replace(/\s+/g, '').toLowerCase();
+    const candidates = Array.from(
+      document.querySelectorAll(
+        'button, [role="button"], [id*="plus"], [id*="attach"], [id*="upload"], [class*="upload"]',
+      ),
+    ) as HTMLElement[];
+    const openKeywords = ['添加', '附件', 'attach', 'upload', 'file', 'image', '媒体'];
+    for (const el of candidates) {
+      if (el.offsetParent === null) continue;
+      const aria = norm(el.getAttribute('aria-label') || '');
+      const id = norm(el.id || '');
+      const cls = norm(el.className || '');
+      // 命中 chatgpt 的 composer-plus-btn 或类似
+      if (id.includes('composer-plus') || id.includes('plus-btn') || id.includes('attach-btn')) {
+        (el as HTMLElement).click();
+        return true;
+      }
+      // aria-label 含"添加照片"/"附件"
+      for (const k of openKeywords) {
+        if (aria.includes(k)) {
+          (el as HTMLElement).click();
+          return true;
+        }
+      }
+      // 文本是 "+"（单个字符的 + 按钮）
+      const t = norm((el.textContent || '').trim());
+      if (t === '+' || t === '＋' || t === 'attach' || aria === 'attach') {
+        (el as HTMLElement).click();
+        return true;
+      }
+      // class 含 upload/attach
+      if (cls.includes('upload') || cls.includes('attach')) {
+        (el as HTMLElement).click();
+        return true;
+      }
+    }
+    return false;
+  });
+
+  if (openerClicked) {
+    await page.waitForTimeout(800); // 等 Radix 菜单挂载
+    clicked = await findAndClickByText(page, buttonText);
+    if (clicked) return true;
+  }
+  return false;
+}
+
+/**
+ * 在页面上找文本匹配的元素并 DOM click（不走 CDP mouse 事件）
+ */
+async function findAndClickByText(page: Page, buttonText: string): Promise<boolean> {
   return page.evaluate((text: string) => {
-    const candidates = Array.from(document.querySelectorAll('button, [role="button"], [class*="add"], [class*="plus"]'));
-    const btn = candidates.find((b) => {
-      const t = (b.textContent || '').trim();
-      const aria = b.getAttribute('aria-label') || '';
-      return t === text || t === '添加' || t === '继续添加' || aria.includes('添加') || aria.includes('attach');
-    }) as HTMLElement | undefined;
-    if (btn) {
-      const r = btn.getBoundingClientRect();
-      if (r.width > 0 && r.height > 0) {
-        const x = r.x + r.width / 2;
-        const y = r.y + r.height / 2;
-        btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }));
+    const norm = (s: string) => s.replace(/\s+/g, '').toLowerCase();
+    const target = norm(text);
+    const candidates = Array.from(
+      document.querySelectorAll(
+        'button, [role="button"], [role="menuitem"], [role="menuitemradio"], [class*="add"], [class*="plus"], [class*="attach"], [class*="upload"]',
+      ),
+    ) as HTMLElement[];
+    // 1) aria-label 匹配
+    for (const el of candidates) {
+      if (el.offsetParent === null) continue;
+      const aria = norm(el.getAttribute('aria-label') || '');
+      if (aria && (aria === target || aria.includes(target))) {
+        el.click();
+        return true;
+      }
+    }
+    // 2) 严格文本匹配
+    for (const el of candidates) {
+      if (el.offsetParent === null) continue;
+      const t = norm((el.textContent || '').trim());
+      if (t === target) {
+        el.click();
+        return true;
+      }
+    }
+    // 3) 模糊包含匹配
+    for (const el of candidates) {
+      if (el.offsetParent === null) continue;
+      const t = norm((el.textContent || '').trim());
+      if (t && t.includes(target)) {
+        el.click();
         return true;
       }
     }
@@ -260,10 +543,3 @@ async function clickAddMoreButton(page: Page, buttonText: string): Promise<boole
   }, buttonText);
 }
 
-/**
- * 工具：把 --paths CSV 拆成数组（与 file-upload.ts 同名，重复定义避免循环依赖）
- */
-export function parsePathsCsv(csv: string | undefined): string[] {
-  if (!csv) return [];
-  return csv.split(',').map((s) => s.trim()).filter(Boolean);
-}

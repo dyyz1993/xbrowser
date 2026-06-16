@@ -47,7 +47,9 @@ export class XBBrowserImpl implements XBBrowser {
     this.conn = conn;
     this.childProcess = childProcess ?? null;
     this.tmpDir = tmpDir;
+    // 保留 cdpEndpoint 字段供未来 CDP 协议调用使用（HTTP /json/list 兜底已删除，见 §7.5）
     this.cdpEndpoint = cdpEndpoint;
+    void this.cdpEndpoint;
 
     conn.on('disconnect', () => {
       this._disconnected = true;
@@ -187,26 +189,7 @@ export class XBBrowserImpl implements XBBrowser {
   }
 
   /**
-   * Derive the HTTP /json base URL from the original cdpEndpoint for use
-   * as a fallback when Target.getTargets doesn't return page targets.
-   * Supports both http:// and ws:// input formats.
-   */
-  private _httpFallbackURL(): string | undefined {
-    if (!this.cdpEndpoint) return undefined;
-    // http://host:port → use as-is
-    if (this.cdpEndpoint.startsWith('http://') || this.cdpEndpoint.startsWith('https://')) {
-      return this.cdpEndpoint;
-    }
-    // ws://host:port/devtools/browser/<id> → http://host:port
-    if (this.cdpEndpoint.startsWith('ws://') || this.cdpEndpoint.startsWith('wss://')) {
-      const url = this.cdpEndpoint.replace(/^ws/, 'http');
-      const slashIdx = url.indexOf('/', url.indexOf('//') + 2);
-      return slashIdx >= 0 ? url.substring(0, slashIdx) : url;
-    }
-    return undefined;
-  }
-
-  /** Create a new page target within a browser context */
+   * Create a new page target within a browser context */
   async _createTarget(contextId: string, url = 'about:blank'): Promise<{ targetId: string }> {
     const params: Record<string, unknown> = { url };
     if (contextId && contextId !== 'default') {
@@ -270,35 +253,10 @@ export class XBBrowserImpl implements XBBrowser {
       return;
     }
 
-    // 1b) Fallback: HTTP /json/list when Target.getTargets doesn't return
-    //     page-type targets. Some CDP proxies (cdp-tunnel) only expose pages
-    //     via the HTTP endpoint, not the browser-level Target.getTargets.
-    //     We use the page list to discover targetIds, then attach via
-    //     Target.attachToTarget (which DOES work in cdp-tunnel).
-    const pageTargets = targetInfos.filter((t) => t.type === 'page');
-    const httpFallbackUrl = this._httpFallbackURL();
-    if (pageTargets.length === 0 && httpFallbackUrl) {
-      console.log(`[discoverContexts] Target.getTargets returned ${targetInfos.length} targets (0 page type). Falling back to HTTP /json/list at ${httpFallbackUrl}`);
-      try {
-        const { getCDPTargets } = await import('./launcher.js');
-        const httpPages = await getCDPTargets(httpFallbackUrl);
-        console.log(`[discoverContexts] HTTP /json/list returned ${httpPages.length} pages`);
-        for (const p of httpPages) {
-          if (p.type !== 'page') continue;
-          if (!p.url || p.url.startsWith('chrome://') || p.url.startsWith('devtools://')) continue;
-          targetInfos.push({
-            targetId: p.id,
-            type: 'page',
-            url: p.url,
-            title: p.title,
-          });
-        }
-        console.log(`[discoverContexts] After HTTP fallback: ${targetInfos.length} total targets, ${targetInfos.filter(t => t.type === 'page').length} pages`);
-      } catch (err) {
-        console.log(`[discoverContexts] HTTP fallback failed: ${(err as Error).message}`);
-        // HTTP fallback failed — proceed with whatever Target.getTargets gave us.
-      }
-    }
+    // cdp-tunnel 隔离规范 §7.5：不再走 HTTP /json/list 兜底
+    // - HTTP /json/list 已被 cdp-tunnel 隔离（create 模式返回空）
+    // - 即使能拿到，也违反"xbrowser 只能看本 clientId tabs"的契约
+    // - 改用纯 WS Target.getTargets（已按 clientId 过滤）
 
     // 2) Group page targets by browserContextId
     const pagesByContext = new Map<string, typeof targetInfos>();

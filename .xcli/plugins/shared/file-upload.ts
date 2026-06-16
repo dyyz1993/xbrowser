@@ -136,19 +136,43 @@ export async function uploadFile(
 export async function clickButtonByText(page: Page, text: string): Promise<boolean> {
   // 1. 找元素位置（必须先 evaluate，再 click，因为 evaluate 内不能调 page.mouse）
   const rect = await page.evaluate((t: string) => {
+    const norm = (s: string) => s.replace(/\s+/g, '').toLowerCase();
+    const target = norm(t);
+    const candidates = Array.from(
+      document.querySelectorAll(
+        'button, [role="button"], [role="menuitem"], [role="menuitemradio"], a, label, [class*="upload"], [class*="attach"]',
+      ),
+    );
+    // 1) 严格匹配文本或 aria-label
+    for (const el of candidates) {
+      const txt = norm((el.textContent || '').trim());
+      const aria = norm(el.getAttribute('aria-label') || '');
+      if (!txt && !aria) continue;
+      if (txt === target || aria === target) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      }
+    }
+    // 2) 模糊匹配（包含 target 子串，处理 "添加照片和文件⌘U" 等带快捷键后缀的菜单项）
+    for (const el of candidates) {
+      const txt = norm((el.textContent || '').trim());
+      const aria = norm(el.getAttribute('aria-label') || '');
+      if (!txt && !aria) continue;
+      if (txt.includes(target) || aria.includes(target)) {
+        const r = el.getBoundingClientRect();
+        if (r.width > 0 && r.height > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      }
+    }
+    // 3) 兜底：遍历文本节点，匹配父级
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     let node: Text | null;
     while ((node = walker.nextNode() as Text | null)) {
-      if (node.textContent?.trim() === t) {
-        // 优先取 button，否则取 parent
-        const target = (node.parentElement as HTMLElement | null)?.closest('button')
-          || (node.parentElement as HTMLElement | null);
-        if (target) {
-          const r = target.getBoundingClientRect();
-          // 必须可见且尺寸 > 0
-          if (r.width > 0 && r.height > 0) {
-            return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-          }
+      const txt = norm(node.textContent || '');
+      if (txt === target || (txt.includes(target) && txt.length < target.length + 6)) {
+        const target2 = (node.parentElement as HTMLElement | null)?.closest('button, [role="button"], [role="menuitem"], [role="menuitemradio"]');
+        if (target2) {
+          const r = target2.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0) return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
         }
       }
     }

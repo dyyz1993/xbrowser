@@ -414,7 +414,8 @@ export default function (xcli: XCLIAPI): void {
         }
 
         if (params.path || params.paths) {
-          await handleChatAttachments(page, params.path, params.paths, params.type || 'image', tips);
+          const r = await handleChatAttachments(page, params.path, params.paths, params.type || 'image', tips);
+          if (!r.ok) return fail(`附件上传未通过校验 (${r.uploaded}/${r.total})`, tips);
         }
 
         await page.waitForSelector('textarea, [contenteditable="true"], [role="textbox"]', { timeout: 15000 }).catch(() => {});

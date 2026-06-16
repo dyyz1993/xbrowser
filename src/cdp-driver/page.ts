@@ -118,8 +118,8 @@ export class XBPageImpl implements XBPage {
         'Target.getTargetInfo',
         { targetId: this._targetId },
       );
-      this._url = info.url;
-      this._title = info.title;
+      if (typeof info.url === 'string') this._url = info.url;
+      if (typeof info.title === 'string') this._title = info.title;
     } catch { /* target info optional */ }
   }
 
@@ -833,9 +833,13 @@ export class XBPageImpl implements XBPage {
     // Page navigation events
     this._subscriptions.push(
       this.conn.subscribe('Page.frameNavigated', this.sessionId, (params: unknown) => {
-        const p = params as { frame: { url: string } };
+        const p = params as { frame: { id?: string; url: string } };
         if (p.frame) {
-          this._url = p.frame.url;
+          // 只更新主 frame 的 url（子 iframe 的 frameNavigated 不应覆盖主 frame url）
+          // CDP 的主 frame id == targetId
+          if ((!p.frame.id || p.frame.id === this._targetId) && typeof p.frame.url === 'string') {
+            this._url = p.frame.url;
+          }
         }
         this._emit('framenavigated', this.mainFrame());
       }),
