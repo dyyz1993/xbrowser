@@ -28,6 +28,67 @@ export function buildTips(ctx: CommandContext): string[] {
 }
 
 /**
+ * 通用登录检查：goto 到站点 → 检查 URL 和 DOM 判断是否登录。
+ *
+ * @param page - XBPage 实例
+ * @param siteUrl - 站点 URL（如 https://chat.deepseek.com）
+ * @param loginIndicators - 登录态的 URL/selector 特征
+ * @returns { loggedIn: boolean; url: string; detail: string }
+ */
+export async function checkLoginStatus(
+  page: Page,
+  siteUrl: string,
+  loginIndicators: {
+    loginUrlPatterns?: string[];     // URL 含这些片段 = 未登录（如 ['/login', '/auth']）
+    loggedInSelectors?: string[];     // 这些 selector 存在 = 已登录
+    loggedOutSelectors?: string[];    // 这些 selector 存在 = 未登录
+    loginTextPatterns?: string[];     // body 含这些文本 = 未登录（如 ['登录', '注册']）
+  },
+): Promise<{ loggedIn: boolean; url: string; detail: string }> {
+  // 导航到站点
+  await page.goto(siteUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+  await page.waitForTimeout(3000);
+
+  const url = page.url();
+  const { loginUrlPatterns = [], loggedInSelectors = [], loggedOutSelectors = [], loginTextPatterns = [] } = loginIndicators;
+
+  // 1) URL 检查
+  for (const pattern of loginUrlPatterns) {
+    if (url.includes(pattern)) {
+      return { loggedIn: false, url, detail: `URL 含 "${pattern}"（未登录）` };
+    }
+  }
+
+  // 2) 已登录 selector 检查
+  for (const sel of loggedInSelectors) {
+    const found = await page.evaluate((s: string) => !!document.querySelector(s), sel).catch(() => false);
+    if (found) {
+      return { loggedIn: true, url, detail: `找到已登录标记 "${sel}"` };
+    }
+  }
+
+  // 3) 未登录 selector 检查
+  for (const sel of loggedOutSelectors) {
+    const found = await page.evaluate((s: string) => !!document.querySelector(s), sel).catch(() => false);
+    if (found) {
+      return { loggedIn: false, url, detail: `找到未登录标记 "${sel}"` };
+    }
+  }
+
+  // 4) 文本检查
+  if (loginTextPatterns.length > 0) {
+    const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 500) || '').catch(() => '') as string;
+    const allPresent = loginTextPatterns.every(t => body.includes(t));
+    if (allPresent && body.length < 200) {
+      return { loggedIn: false, url, detail: `页面文本含 ${JSON.stringify(loginTextPatterns)}（疑似未登录）` };
+    }
+  }
+
+  // 5) 默认：URL 没有跳到 login 页 → 假设已登录
+  return { loggedIn: true, url, detail: 'URL 未跳转到登录页（默认已登录）' };
+}
+
+/**
  * MIME type map covering image / document / code / audio / video / ebook formats.
  *
  * Union of all MIME maps across the 6 plugins (superset).

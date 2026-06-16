@@ -1,7 +1,7 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
-import { buildTips, batchUploadFiles, handleChatAttachments } from '../shared/ai-chat-base.js';
+import { buildTips, batchUploadFiles, handleChatAttachments, checkLoginStatus } from '../shared/ai-chat-base.js';
 
 type Page = import('../types').Page;
 
@@ -58,6 +58,28 @@ export default function (xcli: XCLIAPI): void {
       } catch {
         return true;
       }
+    },
+  });
+
+  // ═══════════════════════════════════════════════════
+  //  0. check-login — 检查是否已登录
+  // ═══════════════════════════════════════════════════
+  site.command('check-login', {
+    description: '检查通义千问登录状态',
+    parameters: z.object({}),
+    requiresLogin: false,
+    handler: async (_params, ctx) => {
+      const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
+      if (!page) return fail({ message: '需要浏览器页面' });
+      const result = await checkLoginStatus(page, SITE_URL, {
+        loginUrlPatterns: ['/login', '/auth', '/passport'],
+        loggedInSelectors: ['div[role="textbox"][contenteditable="true"]'],
+      });
+      const tips = buildTips(ctx);
+      if (result.loggedIn) {
+        return ok({ data: { loggedIn: true, url: result.url, detail: result.detail }, tips });
+      }
+      return ok({ data: { loggedIn: false, url: result.url, detail: result.detail }, tips });
     },
   });
 
