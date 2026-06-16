@@ -39,8 +39,10 @@ export default function (xcli: XCLIAPI): void {
     isLogin: async (ctx) => {
       try {
         const page = ctx.page;
-        if (!page) return false;
+        // No page or blank page — assume logged in, handler will navigate
+        if (!page) return true;
         const url = page.url();
+        if (!url || url === 'about:blank' || url === '') return true;
         if (url.includes('/login') || url.includes('/auth') || url.includes('/passport')) return false;
         const hasInput = await page.evaluate(() => {
           const editor = document.querySelector('.ql-editor, #searchbar-editor, [contenteditable="true"]');
@@ -51,7 +53,7 @@ export default function (xcli: XCLIAPI): void {
         if (!body || (body.includes('登录') && body.includes('注册'))) return false;
         return true;
       } catch {
-        return false;
+        return true;
       }
     },
   });
