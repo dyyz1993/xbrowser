@@ -86,6 +86,19 @@ export class TipsManager {
           });
         } catch { /* ignore */ }
       });
+
+      // download（文件下载：started/completed）
+      page.on('download', (info: unknown) => {
+        const d = info as { state?: string; filename?: string; url?: string };
+        try {
+          const stateLabel = d.state === 'completed' ? '完成' : d.state === 'canceled' ? '取消' : '开始';
+          this.detectedEvents.push({
+            type: 'download',
+            message: `文件下载${stateLabel}：${d.filename || 'unknown'}${d.url ? ` (${d.url.slice(0, 80)})` : ''}`,
+            commandName: this.lastCommandName,
+          });
+        } catch { /* ignore */ }
+      });
     }
 
     if (!this.domWatcher) {
@@ -190,6 +203,9 @@ export class TipsManager {
       } else if (evt.type === 'popup') {
         suggestions.push('页面尝试打开新窗口（可能被浏览器拦截）');
         suggestions.push('如需处理：检查弹窗拦截设置或使用 page.on("popup") 监听');
+      } else if (evt.type === 'download') {
+        suggestions.push('页面触发了文件下载');
+        suggestions.push('如需控制路径：page.setDownloadBehavior(path)');
       }
 
       return {

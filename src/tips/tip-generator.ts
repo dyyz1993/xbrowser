@@ -117,6 +117,7 @@ export class TipGenerator {
       overlay: 'Overlay',
       filechooser: '文件选择弹窗',
       popup: '新窗口弹窗',
+      download: '文件下载',
       unknown: '弹窗',
     };
     return labels[category] || '弹窗';

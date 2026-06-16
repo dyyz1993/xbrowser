@@ -143,11 +143,11 @@ describe('TipsManager — CDP 弹窗事件检测', () => {
     await tipsManager.beforeCommand(page as never, 'click', { selector: '#b' });
     await tipsManager.beforeCommand(page as never, 'click', { selector: '#c' });
 
-    // dialog + filechooser + popup = 3 次（不管 beforeCommand 调几次）
+    // dialog + filechooser + popup + download = 4 次
     const onCalls = (page.on as ReturnType<typeof vi.fn>).mock.calls.filter(
-      (c: unknown[]) => c[0] === 'dialog' || c[0] === 'filechooser' || c[0] === 'popup'
+      (c: unknown[]) => ['dialog', 'filechooser', 'popup', 'download'].includes(c[0] as string)
     );
-    expect(onCalls.length).toBe(3);
+    expect(onCalls.length).toBe(4);
   });
 
   it('检测到 popup 事件（window.open）应生成 SmartTip', async () => {
@@ -177,5 +177,49 @@ describe('TipsManager — CDP 弹窗事件检测', () => {
     expect(tips.some(t => t.category === 'dialog')).toBe(true);
     expect(tips.some(t => t.category === 'popup')).toBe(true);
     expect(tips.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('检测到 download 事件（开始下载）应生成 SmartTip', async () => {
+    await tipsManager.beforeCommand(page as never, 'click', { selector: '#download-btn' });
+
+    page._emit('download', { downloadId: 'd1', state: 'started', filename: 'report.pdf', url: 'https://example.com/report.pdf' });
+
+    const tips = await tipsManager.afterCommand();
+
+    const dlTip = tips.find(t => t.category === 'download');
+    expect(dlTip).toBeDefined();
+    expect(dlTip!.message).toContain('文件下载开始');
+    expect(dlTip!.message).toContain('report.pdf');
+    expect(dlTip!.message).toContain('click');
+  });
+
+  it('检测到 download 完成事件应显示"完成"', async () => {
+    await tipsManager.beforeCommand(page as never, 'click', { selector: '#dl-btn' });
+
+    page._emit('download', { state: 'completed', filename: 'data.zip', url: 'https://example.com/data.zip' });
+
+    const tips = await tipsManager.afterCommand();
+
+    const dlTip = tips.find(t => t.category === 'download');
+    expect(dlTip).toBeDefined();
+    expect(dlTip!.message).toContain('文件下载完成');
+    expect(dlTip!.message).toContain('data.zip');
+  });
+
+  it('四种弹窗事件全部检测（filechooser + dialog + popup + download）', async () => {
+    await tipsManager.beforeCommand(page as never, 'click', { selector: '#all-in-one' });
+
+    page._emit('filechooser', { selector: '#f1', isMultiple: true, setFiles: vi.fn() });
+    page._emit('dialog', { type: () => 'prompt', message: () => '输入名称', accept: vi.fn(), dismiss: vi.fn() });
+    page._emit('popup', { url: 'https://ad.com' });
+    page._emit('download', { state: 'started', filename: 'test.csv', url: 'https://example.com/test.csv' });
+
+    const tips = await tipsManager.afterCommand();
+
+    expect(tips.some(t => t.category === 'filechooser')).toBe(true);
+    expect(tips.some(t => t.category === 'dialog')).toBe(true);
+    expect(tips.some(t => t.category === 'popup')).toBe(true);
+    expect(tips.some(t => t.category === 'download')).toBe(true);
+    expect(tips.length).toBe(4);
   });
 });

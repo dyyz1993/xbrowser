@@ -11,6 +11,7 @@ export type TipCategory =
   | 'overlay'
   | 'filechooser'
   | 'popup'
+  | 'download'
   | 'unknown';
 
 export interface DetectedElement {

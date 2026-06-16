@@ -113,6 +113,11 @@ export class XBPageImpl implements XBPage {
     await this.conn.send('Page.setInterceptFileChooserDialog', { enabled: true }, this.sessionId)
       .catch((e) => console.error('[XBPage] setInterceptFileChooserDialog failed:', (e as Error).message));
 
+    // 启用下载事件监听（Browser domain，downloadWillBegin / downloadProgress）
+    // 注意：Browser domain 事件是 browser-level 的，但 cdp-tunnel 会转发到 page session
+    await this.conn.send('Browser.enable', undefined, this.sessionId)
+      .catch(() => {});  // 某些 Chrome 版本可能不支持，忽略错误
+
     // Resume if paused at debugger
     await this.conn.send('Runtime.runIfWaitingForDebugger', undefined, this.sessionId).catch(() => {});
 
@@ -928,6 +933,77 @@ export class XBPageImpl implements XBPage {
         this._emit('popup', { url: p.url, windowName: p.windowName });
       }),
     );
+
+    // 下载（Browser.downloadWillBegin / Browser.downloadProgress）
+    const downloadStates = new Map<string, { filename: string; url: string; receivedBytes: number; totalBytes: number }>();
+
+    this._subscriptions.push(
+      this.conn.subscribe('Browser.downloadWillBegin', this.sessionId, (params: unknown) => {
+        const p = params as { downloadId: string; url: string; filename: string; suggestedFilename?: string };
+        const filename = p.suggestedFilename || p.filename || 'unknown';
+        downloadStates.set(p.downloadId, { filename, url: p.url, receivedBytes: 0, totalBytes: 0 });
+        this._emit('download', {
+          downloadId: p.downloadId,
+          state: 'started',
+          filename,
+          url: p.url,
+        });
+      }),
+    );
+
+    this._subscriptions.push(
+      this.conn.subscribe('Browser.downloadProgress', this.sessionId, (params: unknown) => {
+        const p = params as { downloadId: string; state: string; receivedBytes?: number; totalBytes?: number };
+        const st = downloadStates.get(p.downloadId);
+        const filename = st?.filename || 'unknown';
+        const url = st?.url || '';
+        if (p.state === 'inProgress') {
+          if (st && p.receivedBytes !== undefined) st.receivedBytes = p.receivedBytes;
+          if (st && p.totalBytes !== undefined) st.totalBytes = p.totalBytes;
+          this._emit('download', {
+            downloadId: p.downloadId,
+            state: 'inProgress',
+            filename,
+            url,
+            receivedBytes: p.receivedBytes || st?.receivedBytes || 0,
+            totalBytes: p.totalBytes || st?.totalBytes || 0,
+          });
+        } else if (p.state === 'completed') {
+          this._emit('download', {
+            downloadId: p.downloadId,
+            state: 'completed',
+            filename,
+            url,
+          });
+          downloadStates.delete(p.downloadId);
+        } else if (p.state === 'canceled') {
+          this._emit('download', {
+            downloadId: p.downloadId,
+            state: 'canceled',
+            filename,
+            url,
+          });
+          downloadStates.delete(p.downloadId);
+        }
+      }),
+    );
+  }
+
+  /**
+   * 设置下载路径（CDP Browser.setDownloadBehavior）
+   * @param downloadPath - 下载目录绝对路径
+   * @param behavior - 'allowAndName'（自动下载） | 'deny'（拒绝下载） | 'default'（浏览器默认）
+   */
+  async setDownloadBehavior(downloadPath: string, behavior: 'allowAndName' | 'deny' | 'default' = 'allowAndName'): Promise<void> {
+    if (behavior === 'default') {
+      await this.conn.send('Browser.setDownloadBehavior', { behavior: 'default' }, this.sessionId);
+    } else {
+      await this.conn.send('Browser.setDownloadBehavior', {
+        behavior,
+        downloadPath,
+        eventsEnabled: true,
+      }, this.sessionId);
+    }
   }
 
   private setupNetworkEvents(): void {
