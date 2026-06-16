@@ -10,6 +10,7 @@ export type TipCategory =
   | 'tooltip'
   | 'overlay'
   | 'filechooser'
+  | 'popup'
   | 'unknown';
 
 export interface DetectedElement {

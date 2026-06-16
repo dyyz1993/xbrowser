@@ -74,6 +74,18 @@ export class TipsManager {
           });
         } catch { /* ignore */ }
       });
+
+      // popup（新窗口/window.open）
+      page.on('popup', (info: unknown) => {
+        const p = info as { url?: string; windowName?: string };
+        try {
+          this.detectedEvents.push({
+            type: 'popup',
+            message: `新窗口弹窗：url=${p.url || '(unknown)'}${p.windowName ? ` name=${p.windowName}` : ''}`,
+            commandName: this.lastCommandName,
+          });
+        } catch { /* ignore */ }
+      });
     }
 
     if (!this.domWatcher) {
@@ -161,7 +173,7 @@ export class TipsManager {
 
   /**
    * 把检测到的 CDP 弹窗事件转成 SmartTip
-   * 包括：dialog（alert/confirm/prompt）、filechooser（文件选择弹窗）
+   * 包括：dialog（alert/confirm/prompt）、filechooser（文件选择弹窗）、popup（新窗口）
    */
   private collectCdpEventTips(): SmartTip[] {
     if (this.detectedEvents.length === 0) return [];
@@ -175,6 +187,9 @@ export class TipsManager {
       } else if (evt.type === 'filechooser') {
         suggestions.push('此弹窗由页面操作触发（如点击上传按钮）');
         suggestions.push('如需自动处理：使用 --path/--paths 参数上传文件');
+      } else if (evt.type === 'popup') {
+        suggestions.push('页面尝试打开新窗口（可能被浏览器拦截）');
+        suggestions.push('如需处理：检查弹窗拦截设置或使用 page.on("popup") 监听');
       }
 
       return {

@@ -143,10 +143,39 @@ describe('TipsManager — CDP 弹窗事件检测', () => {
     await tipsManager.beforeCommand(page as never, 'click', { selector: '#b' });
     await tipsManager.beforeCommand(page as never, 'click', { selector: '#c' });
 
-    // page.on('dialog') + page.on('filechooser') = 2 次调用（不管 beforeCommand 调几次）
+    // dialog + filechooser + popup = 3 次（不管 beforeCommand 调几次）
     const onCalls = (page.on as ReturnType<typeof vi.fn>).mock.calls.filter(
-      (c: unknown[]) => c[0] === 'dialog' || c[0] === 'filechooser'
+      (c: unknown[]) => c[0] === 'dialog' || c[0] === 'filechooser' || c[0] === 'popup'
     );
-    expect(onCalls.length).toBe(2);
+    expect(onCalls.length).toBe(3);
+  });
+
+  it('检测到 popup 事件（window.open）应生成 SmartTip', async () => {
+    await tipsManager.beforeCommand(page as never, 'click', { selector: '#open-window-btn' });
+
+    page._emit('popup', { url: 'https://ads.example.com/popup', windowName: 'ad' });
+
+    const tips = await tipsManager.afterCommand();
+
+    const popupTip = tips.find(t => t.category === 'popup');
+    expect(popupTip).toBeDefined();
+    expect(popupTip!.message).toContain('新窗口弹窗');
+    expect(popupTip!.message).toContain('https://ads.example.com/popup');
+    expect(popupTip!.message).toContain('click');
+  });
+
+  it('filechooser + dialog + popup 三种事件同时检测', async () => {
+    await tipsManager.beforeCommand(page as never, 'click', { selector: '#complex-btn' });
+
+    page._emit('filechooser', { selector: '#f1', isMultiple: false, setFiles: vi.fn() });
+    page._emit('dialog', { type: () => 'confirm', message: () => 'OK?', accept: vi.fn(), dismiss: vi.fn() });
+    page._emit('popup', { url: 'https://example.com/new' });
+
+    const tips = await tipsManager.afterCommand();
+
+    expect(tips.some(t => t.category === 'filechooser')).toBe(true);
+    expect(tips.some(t => t.category === 'dialog')).toBe(true);
+    expect(tips.some(t => t.category === 'popup')).toBe(true);
+    expect(tips.length).toBeGreaterThanOrEqual(3);
   });
 });

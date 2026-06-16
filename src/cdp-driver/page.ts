@@ -920,6 +920,14 @@ export class XBPageImpl implements XBPage {
         this._emit('filechooser', fileChooser);
       }),
     );
+
+    // 新窗口/popup（window.open）
+    this._subscriptions.push(
+      this.conn.subscribe('Page.windowOpen', this.sessionId, (params: unknown) => {
+        const p = params as { url: string; windowName?: string };
+        this._emit('popup', { url: p.url, windowName: p.windowName });
+      }),
+    );
   }
 
   private setupNetworkEvents(): void {
