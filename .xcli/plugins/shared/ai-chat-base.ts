@@ -176,51 +176,6 @@ export async function handleChatAttachments(
 }
 
 /**
- * 等待 filechooser 事件（CDP 模式首选，避开系统弹窗 + 触发 button/div 即可）
- *
- * 为什么不用 DataTransfer 注入到隐藏 input：
- * - 很多站点（chatgpt、doubao）的 "上传" 触发器是 `<button id="upload-files">`，
- *   不是 `<input type="file">`，注入 input 走不通
- * - 隐藏的 input 在 React 应用里经常被 React 控制，注入的文件 state 会被 reset
- * - filechooser 走 CDP 原生 Page.setFileInputFiles，isTrusted=true
- */
-async function waitForChooserAndSetFiles(
-  page: Page,
-  filePaths: string[],
-  timeoutMs = 5000,
-): Promise<boolean> {
-  type Chooser = {
-    isMultiple: boolean;
-    setFiles: (
-      f:
-        | { name: string; mimeType: string; buffer: Buffer }
-        | Array<{ name: string; mimeType: string; buffer: Buffer }>,
-    ) => Promise<void>;
-  };
-  // page 类型可能是 XBPage（有 waitForEvent），也可能是 playwright Page
-  const p = page as unknown as { waitForEvent?: (e: string, o?: { timeout?: number }) => Promise<Chooser> };
-  if (typeof p.waitForEvent !== 'function') return false;
-  try {
-    const chooser = await p.waitForEvent('filechooser', { timeout: timeoutMs });
-    // 把文件路径转成 XBFilePayload（必须读 buffer）
-    const payloads = filePaths.map((fp) => {
-      const buf = fs.readFileSync(fp);
-      const ext = path.extname(fp).toLowerCase();
-      const mime = MIME_MAP[ext] || 'application/octet-stream';
-      return { name: path.basename(fp), mimeType: mime, buffer: buf };
-    });
-    if (payloads.length > 1 && !chooser.isMultiple) {
-      await chooser.setFiles(payloads[0]!);
-    } else {
-      await chooser.setFiles(payloads);
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * **强校验**：上传后必须确认页面上出现了缩略图 / 附件节点，否则视为失败。
  *
  * 这一步是必须的（教训：2026-06-15 豆包实战 + 2026-06-16 chatgpt 实战）。
@@ -278,6 +233,14 @@ export async function verifyUploads(
       if (result.length === 0 && filesCount >= candidates.length) {
         return candidates.slice(0, filesCount);
       }
+      // 4) ChatGPT 等站点：上传后 input.files 被清空，缩略图是 blob: img
+      // 如果 blob img 数量 >= 候选数，按数量匹配
+      if (result.length === 0) {
+        const blobImgs = document.querySelectorAll('img[src^="blob:"]');
+        if (blobImgs.length >= candidates.length) {
+          return candidates.slice();
+        }
+      }
       return result;
     }, names);
     for (const n of present) found.add(n);
@@ -307,44 +270,6 @@ export async function verifyUploads(
  * @param addMoreButtonText - "+" 按钮文本（默认 "+"，可传 "添加"/"继续添加"）
  * @param maxFiles - 最大文件数（默认 50）
  */
-/**
- * 直接找 `<input type="file">` 并用 DataTransfer API 注入文件。
- * 不需要点按钮 / 不需要 filechooser 事件 / 不需要 CDP Input 事件。
- * 适用于 ChatGPT（#upload-files）、Claude、DeepSeek 等已有隐藏 file input 的站点。
- */
-async function tryDirectFileInputInject(page: Page, absPaths: string[]): Promise<boolean> {
-  // 找页面上所有 file input
-  const selector = await page.evaluate(() => {
-    const inputs = Array.from(document.querySelectorAll('input[type="file"]'));
-    // 优先找 accept 含 image 的（图片上传）
-    const imageInput = inputs.find(i => (i.accept || '').includes('image'));
-    if (imageInput && imageInput.id) return '#' + imageInput.id;
-    // fallback 到第一个
-    if (inputs.length > 0 && inputs[0]!.id) return '#' + inputs[0]!.id;
-    if (inputs.length > 0) return 'input[type="file"]';
-    return '';
-  });
-  if (!selector) return false;
-
-  // 读文件 + 注入
-  try {
-    const payloads = absPaths.map(fp => {
-      const buf = fs.readFileSync(fp);
-      const ext = path.extname(fp).toLowerCase();
-      const mime = MIME_MAP[ext] || 'application/octet-stream';
-      return { name: path.basename(fp), mimeType: mime, buffer: buf };
-    });
-    const p = page as unknown as { setInputFiles?: (s: string, f: unknown[]) => Promise<void> };
-    if (typeof p.setInputFiles === 'function') {
-      await p.setInputFiles(selector, payloads);
-      return true;
-    }
-  } catch {
-    // setInputFiles 失败，fallback 到 filechooser 流程
-  }
-  return false;
-}
-
 export async function batchUploadFiles(
   page: Page,
   filePaths: string[],
@@ -372,61 +297,42 @@ export async function batchUploadFiles(
     return { files: [], uploaded: 0, errors };
   }
 
-  // 2. 先尝试直接注入 file input（很多站点 file input 已在 DOM 里，不需要点按钮）
-  const directInject = await tryDirectFileInputInject(page, absPaths);
-  if (directInject) {
+  // 2. 直走 pointer 事件链 + file input 注入
+  // 流程：pointerdown "+" → 等 Radix 菜单 → pointerdown "添加照片和文件" → 直接 setInputFiles 到 #upload-files
+  {
+    // 先点 "+" 打开菜单
+    const openerClicked = await clickAddMoreButton(page, addMoreButtonText);
+    if (!openerClicked) {
+      errors.push(`找不到"${addMoreButtonText}"触发按钮`);
+      return { files: [], uploaded: 0, errors };
+    }
+    // 菜单点击后 ChatGPT 的 #upload-files input 已经准备好，直接注入
+    await page.waitForTimeout(500);
+    const p = page as unknown as { setInputFiles?: (s: string, f: unknown[]) => Promise<void> };
+    if (typeof p.setInputFiles !== 'function') {
+      errors.push('page.setInputFiles 不可用');
+      return { files: [], uploaded: 0, errors };
+    }
+    const payloads = absPaths.map(fp => {
+      const buf = fs.readFileSync(fp);
+      const ext = path.extname(fp).toLowerCase();
+      const mime = MIME_MAP[ext] || 'application/octet-stream';
+      return { name: path.basename(fp), mimeType: mime, buffer: buf };
+    });
+    try {
+      await p.setInputFiles('#upload-files', payloads);
+    } catch {
+      errors.push('setInputFiles 注入失败');
+      return { files: [], uploaded: 0, errors };
+    }
     uploaded.push(...absPaths);
-    await page.waitForTimeout(2000);
-    // 跳到校验
-    const verify = await verifyUploads(page, absPaths, 3000);
-    if (!verify.verified) {
-      errors.push(`强校验未通过：未在页面上找到 ${verify.missing.length} 个文件（missing=${verify.missing.join(', ')}）`);
-    }
-    return { files: uploaded, uploaded: verify.verified ? uploaded.length : verify.found.length, errors };
+    await page.waitForTimeout(3000);
   }
 
-  // 3. fallback：循环上传（每个文件前都尝试触发 filechooser）
-  for (let i = 0; i < absPaths.length; i++) {
-    const triggerText = i === 0 ? addMoreButtonText : addMoreButtonText;
-    if (i === 0) {
-      // 第一个：监听 filechooser → 点触发按钮
-      const chooserPromise = waitForChooserAndSetFiles(page, [absPaths[i]!], 5000);
-      const clicked = await clickAddMoreButton(page, triggerText);
-      if (!clicked) {
-        errors.push(`第 1/${absPaths.length} 个文件：找不到"${triggerText}"触发按钮`);
-        break;
-      }
-      const ok = await chooserPromise;
-      if (!ok) {
-        errors.push(`第 1/${absPaths.length} 个文件：未触发 filechooser（站点可能不支持）`);
-        break;
-      }
-    } else {
-      // 后续：触发新 filechooser（点击 "+" 或"添加更多"）
-      const chooserPromise = waitForChooserAndSetFiles(page, [absPaths[i]!], 5000);
-      const clicked = await clickAddMoreButton(page, triggerText);
-      if (!clicked) {
-        errors.push(`第 ${i + 1}/${absPaths.length} 个文件：找不到"${triggerText}"添加按钮`);
-        break;
-      }
-      const ok = await chooserPromise;
-      if (!ok) {
-        errors.push(`第 ${i + 1}/${absPaths.length} 个文件：未触发 filechooser`);
-        break;
-      }
-    }
-    uploaded.push(absPaths[i]!);
-    await page.waitForTimeout(1500);
-  }
-
-  // 4. 强制校验（用户强约束：上传后必须确认页面上有缩略图/附件节点）
-  const verify = await verifyUploads(page, absPaths, 3000);
+  // 3. 强制校验
+  const verify = await verifyUploads(page, absPaths, 5000);
   if (!verify.verified) {
     errors.push(`强校验未通过：未在页面上找到 ${verify.missing.length} 个文件（missing=${verify.missing.join(', ')}）`);
-    // 即使如此，仍保留已 verified 的文件
-  } else {
-    // 全部通过校验，给调用方一个明确信号
-    // （具体返回到调用方时由 r.uploaded 决定）
   }
 
   return { files: uploaded, uploaded: verify.verified ? uploaded.length : verify.found.length, errors };
@@ -445,7 +351,8 @@ export async function batchUploadFiles(
  *   打开菜单，等 500ms 后再匹配。
  */
 async function clickAddMoreButton(page: Page, buttonText: string): Promise<boolean> {
-  // cdp-tunnel 下 page.mouse.click 不生效，统一用 DOM element.click()
+  // cdp-tunnel 下 page.mouse.click 不生效，统一用 DOM 指针事件链
+  // Radix 等组件需要 pointerdown → mousedown → pointerup → mouseup → click 才能打开菜单
 
   // 先试直接找到目标并 click
   let clicked = await findAndClickByText(page, buttonText);
@@ -454,6 +361,18 @@ async function clickAddMoreButton(page: Page, buttonText: string): Promise<boole
   // 没找到时，可能是 chatgpt 风格：需要先点 "+" 按钮打开菜单
   const openerClicked = await page.evaluate(() => {
     const norm = (s: string) => s.replace(/\s+/g, '').toLowerCase();
+    const firePointerEvents = (el: HTMLElement): boolean => {
+      const r = el.getBoundingClientRect();
+      const cx = r.x + r.width / 2;
+      const cy = r.y + r.height / 2;
+      const opts = { bubbles: true, cancelable: true, clientX: cx, clientY: cy, pointerId: 1, pointerType: 'mouse' };
+      el.dispatchEvent(new PointerEvent('pointerdown', opts));
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: cx, clientY: cy }));
+      el.dispatchEvent(new PointerEvent('pointerup', opts));
+      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: cx, clientY: cy }));
+      el.click();
+      return true;
+    };
     const candidates = Array.from(
       document.querySelectorAll(
         'button, [role="button"], [id*="plus"], [id*="attach"], [id*="upload"], [class*="upload"]',
@@ -467,33 +386,27 @@ async function clickAddMoreButton(page: Page, buttonText: string): Promise<boole
       const cls = norm(el.className || '');
       // 命中 chatgpt 的 composer-plus-btn 或类似
       if (id.includes('composer-plus') || id.includes('plus-btn') || id.includes('attach-btn')) {
-        (el as HTMLElement).click();
-        return true;
+        return firePointerEvents(el);
       }
       // aria-label 含"添加照片"/"附件"
       for (const k of openKeywords) {
-        if (aria.includes(k)) {
-          (el as HTMLElement).click();
-          return true;
-        }
+        if (aria.includes(k)) return firePointerEvents(el);
       }
       // 文本是 "+"（单个字符的 + 按钮）
       const t = norm((el.textContent || '').trim());
       if (t === '+' || t === '＋' || t === 'attach' || aria === 'attach') {
-        (el as HTMLElement).click();
-        return true;
+        return firePointerEvents(el);
       }
       // class 含 upload/attach
       if (cls.includes('upload') || cls.includes('attach')) {
-        (el as HTMLElement).click();
-        return true;
+        return firePointerEvents(el);
       }
     }
     return false;
   });
 
   if (openerClicked) {
-    await page.waitForTimeout(800); // 等 Radix 菜单挂载
+    await page.waitForTimeout(1000); // 等 Radix 菜单挂载
     clicked = await findAndClickByText(page, buttonText);
     if (clicked) return true;
   }
@@ -501,11 +414,23 @@ async function clickAddMoreButton(page: Page, buttonText: string): Promise<boole
 }
 
 /**
- * 在页面上找文本匹配的元素并 DOM click（不走 CDP mouse 事件）
+ * 在页面上找文本匹配的元素并发完整指针事件链（Radix 需要 pointerdown）
  */
 async function findAndClickByText(page: Page, buttonText: string): Promise<boolean> {
   return page.evaluate((text: string) => {
     const norm = (s: string) => s.replace(/\s+/g, '').toLowerCase();
+    const firePointerEvents = (el: HTMLElement): boolean => {
+      const r = el.getBoundingClientRect();
+      const cx = r.x + r.width / 2;
+      const cy = r.y + r.height / 2;
+      const opts = { bubbles: true, cancelable: true, clientX: cx, clientY: cy, pointerId: 1, pointerType: 'mouse' };
+      el.dispatchEvent(new PointerEvent('pointerdown', opts));
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, clientX: cx, clientY: cy }));
+      el.dispatchEvent(new PointerEvent('pointerup', opts));
+      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, clientX: cx, clientY: cy }));
+      el.click();
+      return true;
+    };
     const target = norm(text);
     const candidates = Array.from(
       document.querySelectorAll(
@@ -516,28 +441,19 @@ async function findAndClickByText(page: Page, buttonText: string): Promise<boole
     for (const el of candidates) {
       if (el.offsetParent === null) continue;
       const aria = norm(el.getAttribute('aria-label') || '');
-      if (aria && (aria === target || aria.includes(target))) {
-        el.click();
-        return true;
-      }
+      if (aria && (aria === target || aria.includes(target))) return firePointerEvents(el);
     }
     // 2) 严格文本匹配
     for (const el of candidates) {
       if (el.offsetParent === null) continue;
       const t = norm((el.textContent || '').trim());
-      if (t === target) {
-        el.click();
-        return true;
-      }
+      if (t === target) return firePointerEvents(el);
     }
     // 3) 模糊包含匹配
     for (const el of candidates) {
       if (el.offsetParent === null) continue;
       const t = norm((el.textContent || '').trim());
-      if (t && t.includes(target)) {
-        el.click();
-        return true;
-      }
+      if (t && t.includes(target)) return firePointerEvents(el);
     }
     return false;
   }, buttonText);

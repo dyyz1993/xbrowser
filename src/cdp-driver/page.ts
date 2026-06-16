@@ -880,8 +880,8 @@ export class XBPageImpl implements XBPage {
       }),
     );
 
-    // Enable file chooser interception (optional - don't block if not needed)
-    // this.conn.send('Page.setInterceptFileChooserDialog', { enabled: true }, this.sessionId).catch(() => {});
+    // Enable file chooser interception
+    this.conn.send('Page.setInterceptFileChooserDialog', { enabled: true }, this.sessionId).catch(() => {});
 
     this._subscriptions.push(
       this.conn.subscribe('Page.fileChooserOpened', this.sessionId, async (params: unknown) => {
