@@ -109,6 +109,10 @@ export class XBPageImpl implements XBPage {
     this.setupNetworkEvents();
     this.setupConsoleEvents();
 
+    // 启用 file chooser 拦截（必须在操作前生效，所以 await）
+    await this.conn.send('Page.setInterceptFileChooserDialog', { enabled: true }, this.sessionId)
+      .catch((e) => console.error('[XBPage] setInterceptFileChooserDialog failed:', (e as Error).message));
+
     // Resume if paused at debugger
     await this.conn.send('Runtime.runIfWaitingForDebugger', undefined, this.sessionId).catch(() => {});
 
@@ -880,8 +884,7 @@ export class XBPageImpl implements XBPage {
       }),
     );
 
-    // Enable file chooser interception
-    this.conn.send('Page.setInterceptFileChooserDialog', { enabled: true }, this.sessionId).catch(() => {});
+    // file chooser 拦截已在 _init() 中 await 启用
 
     this._subscriptions.push(
       this.conn.subscribe('Page.fileChooserOpened', this.sessionId, async (params: unknown) => {
