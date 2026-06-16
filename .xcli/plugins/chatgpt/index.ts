@@ -238,6 +238,10 @@ export default function (xcli: XCLIAPI): void {
         if (!page) throw new Error('需要浏览器页面');
         await ensurePage(page, ctx);
         await page.waitForTimeout(3000);
+        const urlAfter = page.url();
+        if (!urlAfter.includes('chatgpt.com')) {
+          throw new Error(`ensurePage 后 page 不在 chatgpt.com (url=${urlAfter})`);
+        }
         const tips = buildTips(ctx);
 
         // 切换模型

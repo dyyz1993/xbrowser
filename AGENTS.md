@@ -32,7 +32,7 @@ npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 | `src/cdp-driver/` | 自研 CDP 驱动（Playwright 替代） |
 | `src/cli/` | 子命令路由（session / plugin / record / preview / viewer） |
 | `src/daemon/` | 后台 daemon + WebSocket preview 服务器 |
-| `.xcli/plugins/` | **插件主目录**（70 个站点插件） |
+| `.xcli/plugins/` | **插件主目录**（69 个站点插件） |
 | `.xcli/storage/` | 插件持久化数据（cookie、登录态、运行缓存） |
 | `tests/` | 单元/E2E 测试 |
 | `lint-scripts/` | lint 规则（Plugin Contract 校验、参数检查） |
@@ -478,7 +478,7 @@ if (detected) {
    - 单数：`--path <file>` / `--image <file>` / `--ref <file>`
    - 复数：`--paths <csv>`（`a.jpg,b.jpg,c.jpg`）
 4. **同语义必须同名**：
-   - 所有 AI 聊天插件（chatgpt / claude / doubao / qianwen / yuanbao / deepseek）**必须**用 `attach`
+   - 所有 AI 聊天插件（chatgpt / doubao / qianwen / yuanbao / deepseek）**必须**用 `attach`
    - 所有云盘/文件管理命令**必须**用 `upload`
    - 资源/编辑器场景用 `upload-image`
 5. **多张上传的 handler 模板**：
@@ -545,7 +545,7 @@ site.command('attach', {
 
 #### 10.0.3.2 chat 命令内嵌附件的规范（2026-06 统一）
 
-**6 个 AI 聊天插件的 `chat` 命令**（chatgpt / claude / deepseek / doubao / qianwen / yuanbao）已统一为：
+**5 个 AI 聊天插件的 `chat` 命令**（chatgpt / deepseek / doubao / qianwen / yuanbao）已统一为：
 
 ```bash
 # 单文件
@@ -554,7 +554,7 @@ chatgpt chat "分析这张图" --path /path/to/img.jpg
 # 多张
 chatgpt chat "对比这3张" --paths "/a.jpg,/b.png,/c.jpg"
 
-# URL 链接（仅 chatgpt/claude/deepseek/doubao 支持，qianwen/yuanbao 无 url 类型）
+# URL 链接（仅 chatgpt/deepseek/doubao 支持，qianwen/yuanbao 无 url 类型）
 chatgpt chat "看这个" --type url --path https://example.com
 ```
 
@@ -576,7 +576,7 @@ chatgpt chat "看这个" --type url --path https://example.com
 
 #### 10.0.3.3 TODO：哪些插件未来需要补 attach 命令？
 
-**当前已有 attach 命令**（6 个 AI 聊天插件）：chatgpt、claude、deepseek、doubao、qianwen、yuanbao
+**当前已有 attach 命令**（5 个 AI 聊天插件）：chatgpt、deepseek、doubao、qianwen、yuanbao
 
 **未来可能需要补 attach 命令的插件**（按场景分类）：
 
