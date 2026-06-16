@@ -118,6 +118,57 @@ export async function handleAttachment(
 }
 
 /**
+ * 解析 chat 命令的 --path / --paths 参数并批量上传（AGENTS.md §10.0.3.1）
+ *
+ * 适用场景：chat 命令的内嵌附件上传，替代旧的 --attach / --attachType。
+ * 6 个 AI 聊天插件（doubao/chatgpt/claude/deepseek/qianwen/yuanbao）统一调用。
+ *
+ * @param page - Playwright Page
+ * @param path - 单文件路径（可选）
+ * @param paths - 多文件 CSV 路径（可选）
+ * @param attachType - 'image' | 'file' | 'url'（url 模式：把第一个 path 视为 URL 推入 tips）
+ * @param tips - 状态消息数组（in/out 复用）
+ *
+ * @example
+ * ```typescript
+ * // chatgpt chat "分析这3张图" --paths a.jpg,b.png,c.jpg
+ * await handleChatAttachments(page, undefined, params.paths, 'image', tips);
+ * ```
+ */
+export async function handleChatAttachments(
+  page: Page,
+  path: string | undefined,
+  paths: string | undefined,
+  attachType: string,
+  tips: string[],
+): Promise<void> {
+  // 1. 合并 list
+  const list: string[] = [
+    ...(path ? [path] : []),
+    ...(paths ? paths.split(',').map((s) => s.trim()).filter(Boolean) : []),
+  ];
+  if (list.length === 0) return;
+
+  // 2. url 类型：只发第一个 URL 进消息（无文件上传）
+  if (attachType === 'url') {
+    if (list.length > 1) {
+      tips.push(`⚠ url 模式仅支持单个链接，已忽略 ${list.length - 1} 个额外项`);
+    }
+    tips.push(`URL 将通过消息发送: ${list[0]}`);
+    return;
+  }
+
+  // 3. 批量上传（image / file 模式）
+  const r = await batchUploadFiles(page, list, '+');
+  for (const e of r.errors) tips.push(`⚠ ${e}`);
+  if (r.uploaded > 0) {
+    tips.push(`✓ 已上传 ${r.uploaded}/${list.length} 个附件`);
+  } else {
+    tips.push('⚠ 上传失败，找不到 file input');
+  }
+}
+
+/**
  * 批量上传多个文件到常驻的 file input（AGENTS.md §10.0.3.1）
  *
  * 适用场景：

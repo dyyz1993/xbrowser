@@ -1,7 +1,7 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
-import { buildTips, uploadFileViaDataTransfer } from '../shared/ai-chat-base.js';
+import { buildTips, uploadFileViaDataTransfer, handleChatAttachments } from '../shared/ai-chat-base.js';
 import { extractAllHDImages } from '../shared/image-lightbox.js';
 import { clickButtonByText } from '../shared/file-upload.js';
 import path from 'path';
@@ -329,14 +329,17 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({
       message: z.string().describe('消息内容'),
-      attach: z.string().optional().describe('附件路径（图片或文件）'),
+      path: z.string().optional().describe('单附件路径（图片/文件/URL）'),
+      paths: z.string().optional().describe('多附件路径（CSV，与 --type 匹配）'),
+      type: z.enum(['image', 'file', 'url']).optional().describe('附件类型（默认 image）'),
       think: z.boolean().optional().describe('开启深度思考模式'),
       search: z.boolean().optional().describe('开启联网搜索'),
       showSources: z.boolean().optional().describe('显示联网搜索引用的来源 URL 和域名'),
     }),
     examples: [
       { cmd: 'xbrowser doubao chat "你好"', description: '发送消息' },
-      { cmd: 'xbrowser doubao chat "分析这张图" --attach /path/to/img.jpg', description: '发送消息+图片' },
+      { cmd: 'xbrowser doubao chat "分析这张图" --path /path/to/img.jpg', description: '发送消息+单张图片' },
+      { cmd: 'xbrowser doubao chat "对比这3张" --paths "/a.jpg,/b.png,/c.jpg"', description: '发送消息+多张图片' },
       { cmd: 'xbrowser doubao chat "深度分析" --think', description: '开启深度思考' },
       { cmd: 'xbrowser doubao chat "2024年新闻" --search --showSources', description: '联网搜索+显示来源' },
       { cmd: 'xbrowser doubao chat "深度研究AI趋势" --think --search --showSources', description: '深度思考+联网搜索+来源' },
@@ -410,34 +413,8 @@ export default function (xcli: XCLIAPI): void {
           }
         }
 
-        if (params.attach) {
-          const absPath = path.resolve(params.attach);
-          if (!fs.existsSync(absPath)) {
-            tips.push(`⚠ 附件文件不存在: ${params.attach}，跳过附件`);
-          } else {
-            const uploaded = await uploadFileViaDataTransfer(page, absPath);
-            if (uploaded) {
-              tips.push(`已上传附件: ${path.basename(absPath)}`);
-              await page.waitForTimeout(1500);
-            } else {
-              tips.push('⚠ 上传失败，尝试点击上传按钮');
-              const uploadBtnSelectors = [
-                '[class*="upload"]', '[class*="attach"]', '[class*="clip"]',
-                'button[class*="image"]', '[class*="file-upload"]',
-              ];
-              for (const sel of uploadBtnSelectors) {
-                if (await safeClickSelector(page, sel)) {
-                  await page.waitForTimeout(500);
-                  const retry = await uploadFileViaDataTransfer(page, absPath);
-                  if (retry) {
-                    tips.push(`已上传附件: ${path.basename(absPath)}`);
-                    await page.waitForTimeout(1500);
-                  }
-                  break;
-                }
-              }
-            }
-          }
+        if (params.path || params.paths) {
+          await handleChatAttachments(page, params.path, params.paths, params.type || 'image', tips);
         }
 
         await page.waitForSelector('textarea, [contenteditable="true"], [role="textbox"]', { timeout: 15000 }).catch(() => {});

@@ -467,6 +467,59 @@ site.command('attach', {
 | `--type image --paths a.jpg,b.pdf` | 混合类型 | 拆成两次调用 |
 | `--type image --paths ""` | 空字符串 | 去掉 `--paths` 或填入实际路径 |
 
+#### 10.0.3.2 chat 命令内嵌附件的规范（2026-06 统一）
+
+**6 个 AI 聊天插件的 `chat` 命令**（chatgpt / claude / deepseek / doubao / qianwen / yuanbao）已统一为：
+
+```bash
+# 单文件
+chatgpt chat "分析这张图" --path /path/to/img.jpg
+
+# 多张
+chatgpt chat "对比这3张" --paths "/a.jpg,/b.png,/c.jpg"
+
+# URL 链接（仅 chatgpt/claude/deepseek/doubao 支持，qianwen/yuanbao 无 url 类型）
+chatgpt chat "看这个" --type url --path https://example.com
+```
+
+**字段规范**：
+
+| 字段 | 类型 | 必选 | 说明 |
+|------|------|------|------|
+| `path` | string | 否 | 单附件路径（绝对路径） |
+| `paths` | string | 否 | 多附件路径（CSV，与 `--type` 匹配） |
+| `type` | enum | 否 | `image`（默认）/ `file` / `url` |
+
+**禁止**：
+
+- ❌ `chat --attach <file>`（旧的单文件短选项，已废弃）
+- ❌ `chat --attachType image|file|url`（旧类型字段，已废弃）
+- ❌ `chat --paths a.jpg --paths b.jpg`（错误合并方式，应一次性传 CSV）
+
+**实现**：所有 6 个 chat 命令的 handler 内部统一调用 `shared/ai-chat-base.ts` 的 `handleChatAttachments(page, path, paths, type, tips)`，不要再自己写上传逻辑。
+
+#### 10.0.3.3 TODO：哪些插件未来需要补 attach 命令？
+
+**当前已有 attach 命令**（6 个 AI 聊天插件）：chatgpt、claude、deepseek、doubao、qianwen、yuanbao
+
+**未来可能需要补 attach 命令的插件**（按场景分类）：
+
+| 类别 | 候选插件 | 触发条件 |
+|------|---------|---------|
+| AI 对话 | gemini、qwen（阿里通义） | 如果与 6 个 chat 插件行为对齐 |
+| 社交/UGC | twitter、facebook、instagram、weibo、xiaohongshu、douyin、bilibili、reddit、quora、zhihu、tumblr | 当用户提出"发帖配图"需求时 |
+| 技术社区 | devto、medium、juejin、csdn、wordpress、hashnode、blogger、producthunt | 当用户提出"发博文配图"需求时 |
+| 图站 | flickr、imgur、p500px、9gag、pixabay、pexels、unsplash、shutterstock、gettyimages、artstation、behance、deviantart、dribbble、duitang、huaban、quanjing、699pic、58pic、1688 | 当用户提出"上传图片"需求时 |
+| 电商/资源 | jd、taobao | 上传商品图 |
+| 其他 | 1688、steam、cmf-seats、ctrip-review | 评估中 |
+
+**决策原则**（避免过度设计）：
+
+1. **不做预防性添加**：插件没提需求时不要主动加 `attach` 命令（违反"只做被要求的事"）
+2. **加时一次性补齐**：如果某插件出现上传需求，**一次性**集成 `attach` + `handleChatAttachments` 到 chat/发消息/发贴 命令，并写 E2E 测试
+3. **复用 helper**：必须接入 `shared/ai-chat-base.ts` 的 `batchUploadFiles` 或 `handleChatAttachments`，不要在插件里写自定义上传
+4. **写测试**：每个新加 attach 的插件必须有 `tests/plugins/<name>.test.ts` 覆盖 attach 行为
+
 #### 10.0.4 使用 Playwright API，不要 `execSync` 调 xbrowser
 
 ```typescript

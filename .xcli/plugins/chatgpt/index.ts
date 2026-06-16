@@ -1,7 +1,7 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
-import { buildTips, batchUploadFiles } from '../shared/ai-chat-base.js';
+import { buildTips, batchUploadFiles, handleChatAttachments } from '../shared/ai-chat-base.js';
 
 type Page = import('../types').Page;
 
@@ -216,8 +216,9 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({
       message: z.string().describe('消息内容'),
-      attach: z.string().optional().describe('附件路径（图片或文件）'),
-      attachType: z.enum(['image', 'file', 'url']).optional().describe('附件类型'),
+      path: z.string().optional().describe('单附件路径（图片/文件/URL）'),
+      paths: z.string().optional().describe('多附件路径（CSV，与 --type 匹配）'),
+      type: z.enum(['image', 'file', 'url']).optional().describe('附件类型（默认 image，url 模式把 path 当 URL 推入消息）'),
       model: z.string().optional().describe('模型名称 (如 GPT-4o, o1, o3, 4o-mini)'),
       search: z.boolean().optional().describe('开启联网搜索'),
       showSources: z.boolean().optional().describe('显示联网搜索引用的来源 URL 和域名'),
@@ -225,7 +226,9 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ response: z.string(), duration: z.string().optional(), conversationId: z.string().optional(), sources: z.record(z.string(), z.any()).optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser chatgpt chat "你好"', description: '发送消息' },
-      { cmd: 'xbrowser chatgpt chat "分析这张图" --attach /path/to/img.jpg', description: '发送消息+图片' },
+      { cmd: 'xbrowser chatgpt chat "分析这张图" --path /path/to/img.jpg', description: '发送消息+单张图片' },
+      { cmd: 'xbrowser chatgpt chat "对比这3张" --paths "/a.jpg,/b.png,/c.jpg"', description: '发送消息+多张图片' },
+      { cmd: 'xbrowser chatgpt chat "看这个" --type url --path https://example.com', description: '发送消息+URL 链接' },
       { cmd: 'xbrowser chatgpt chat "推理分析" --model o1', description: '使用 o1 推理模型' },
       { cmd: 'xbrowser chatgpt chat "最新新闻" --search --showSources', description: '联网搜索+来源' },
     ],
@@ -308,9 +311,8 @@ export default function (xcli: XCLIAPI): void {
           }
         }
 
-        if (params.attach) {
-          const attachType = params.attachType || 'image';
-          await handleAttachment(page, params.attach, attachType, tips);
+        if (params.path || params.paths) {
+          await handleChatAttachments(page, params.path, params.paths, params.type || 'image', tips);
         }
 
         const inputFound = await fillInput(page, params.message);
