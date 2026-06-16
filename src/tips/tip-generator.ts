@@ -115,6 +115,7 @@ export class TipGenerator {
       dropdown: '下拉菜单',
       tooltip: 'Tooltip',
       overlay: 'Overlay',
+      filechooser: '文件选择弹窗',
       unknown: '弹窗',
     };
     return labels[category] || '弹窗';
