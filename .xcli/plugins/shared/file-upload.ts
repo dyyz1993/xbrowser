@@ -186,3 +186,93 @@ export async function clickFileInputByClass(page: Page, className: string): Prom
   await page.mouse.click(rect.x, rect.y);
   return true;
 }
+
+/**
+ * 多文件批量上传（AGENTS.md §10.0.3.1 统一规范）
+ *
+ * 第一个文件：点触发按钮（firstTriggerText）→ setInputFiles
+ * 后续文件：点"添加"按钮（addMoreButtonText）→ setInputFiles
+ *
+ * 调用方必须传对按钮文本：
+ * - doubao/chatgpt 等聊天："图片" / "文件" / "+"
+ * - juejin 掘金 CDN："插入图片" / "+"
+ *
+ * @example
+ * ```typescript
+ * const results = await uploadFiles(page, [
+ *   '/abs/photo1.jpg',
+ *   '/abs/photo2.jpg',
+ *   '/abs/photo3.png',
+ * ], {
+ *   firstTriggerText: '图片',     // 第一个：点"图片"按钮
+ *   addMoreButtonText: '+',       // 后续：点"+"按钮
+ *   waitBetweenMs: 1500,          // 每个文件上传后等 1.5s
+ * });
+ * ```
+ */
+export interface BatchUploadOptions {
+  /** 第一个文件的触发按钮文本（必传，UI 文本如 "图片"/"文件"） */
+  firstTriggerText: string;
+  /** 后续添加文件的按钮文本（不传则假定 UI 不支持多张，遇到第 2 个会 fail） */
+  addMoreButtonText?: string;
+  /** 每个文件上传后的等待时间（毫秒，默认 1500） */
+  waitBetweenMs?: number;
+  /** file input selector（默认 'input[type="file"]'） */
+  fileInputSelector?: string;
+}
+
+export async function uploadFiles(
+  page: Page,
+  filePaths: string[],
+  options: BatchUploadOptions,
+): Promise<UploadResult[]> {
+  if (filePaths.length === 0) return [];
+  const results: UploadResult[] = [];
+  const waitMs = options.waitBetweenMs ?? 1500;
+  const fileInputSel = options.fileInputSelector ?? 'input[type="file"]';
+
+  for (let i = 0; i < filePaths.length; i++) {
+    // 1. 触发按钮（第一个 vs 后续）
+    const triggerText = i === 0 ? options.firstTriggerText : (options.addMoreButtonText ?? '');
+    if (!triggerText) {
+      results.push({
+        ok: false,
+        method: 'none',
+        tips: [`第 ${i + 1}/${filePaths.length} 个文件：未配置 addMoreButtonText，UI 可能不支持多张上传`],
+      });
+      continue;
+    }
+    const triggered = await clickButtonByText(page, triggerText);
+    if (!triggered) {
+      results.push({
+        ok: false,
+        method: 'none',
+        tips: [`第 ${i + 1}/${filePaths.length} 个文件：找不到"${triggerText}"按钮`],
+      });
+      continue;
+    }
+    // 2. 等 React 挂载 input
+    await page.waitForSelector(fileInputSel, { timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(800);
+
+    // 3. setInputFiles
+    const r = await uploadFile(page, filePaths[i], { fileInputSelector: fileInputSel });
+    results.push(r);
+    if (!r.ok) {
+      // 失败不打断后续（best-effort），但记录
+      results[results.length - 1]!.tips.push(`⚠ 后续 ${filePaths.length - i - 1} 个文件可能未上传`);
+    }
+    // 4. 等上传完成
+    await page.waitForTimeout(waitMs);
+  }
+
+  return results;
+}
+
+/**
+ * 工具：把 --paths CSV 拆成数组
+ */
+export function parsePathsCsv(csv: string | undefined): string[] {
+  if (!csv) return [];
+  return csv.split(',').map((s) => s.trim()).filter(Boolean);
+}

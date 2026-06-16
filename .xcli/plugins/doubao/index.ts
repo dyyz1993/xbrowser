@@ -2025,29 +2025,43 @@ export default function (xcli: XCLIAPI): void {
   //  FILE & CLOUD DRIVE (2 commands)
   // ═══════════════════════════════════════════════════
 
-  //  16. upload — 上传文件到豆包
+  //  16. upload — 上传文件到豆包云盘
+  //  规范：AGENTS.md §10.0.3.1（云盘/资源管理用 upload，单/多张 --path / --paths）
   site.command('upload', {
-    description: '上传文件到豆包',
+    description: '上传文件到豆包云盘',
     scope: 'browser',
     parameters: z.object({
-      path: z.string().describe('待上传文件路径'),
+      path: z.string().optional().describe('单文件路径'),
+      paths: z.string().optional().describe('多文件路径（CSV，如 a.jpg,b.pdf）'),
+    }).refine((d) => Boolean(d.path) || Boolean(d.paths), {
+      message: '必须提供 --path 或 --paths 至少一个',
     }),
     examples: [
-      { cmd: 'xbrowser doubao upload --path /path/to/document.pdf', description: '上传文件' },
-      { cmd: 'xbrowser doubao upload --path ~/photo.jpg', description: '上传图片' },
+      { cmd: 'xbrowser doubao upload --path ~/document.pdf', description: '上传单个文件' },
+      { cmd: 'xbrowser doubao upload --paths "~/a.jpg,~/b.pdf,~/c.docx"', description: '批量上传多文件' },
     ],
-    result: z.object({ file: z.string(), uploaded: z.boolean() }).passthrough(),
+    result: z.object({ files: z.array(z.string()), uploaded: z.number() }).passthrough(),
     handler: async (params, ctx) => {
-      try {
-        const page = ctx.page;
-        if (!page) throw new Error("需要浏览器页面");
-        await ensurePage(page, ctx);
-        await page.waitForTimeout(1000);
-        const tips = buildTips(ctx);
+      const list = [
+        ...(params.path ? [params.path] : []),
+        ...(params.paths ? params.paths.split(',').map((s) => s.trim()).filter(Boolean) : []),
+      ];
+      if (list.length === 0) return fail('参数错误', ['--path 或 --paths 至少二选一']);
 
-        const absPath = path.resolve(params.path);
-        if (!fs.existsSync(absPath)) throw new Error(`文件不存在: ${absPath}`);
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
+      await ensurePage(page, ctx);
+      await page.waitForTimeout(1000);
+      const tips = buildTips(ctx);
 
+      const results: Array<{ file: string; ok: boolean; error?: string }> = [];
+      for (let i = 0; i < list.length; i++) {
+        const absPath = path.resolve(list[i]!);
+        if (!fs.existsSync(absPath)) {
+          results.push({ file: absPath, ok: false, error: '文件不存在' });
+          tips.push(`⚠ [${i + 1}/${list.length}] 文件不存在: ${absPath}`);
+          continue;
+        }
         const uploaded = await uploadFileViaDataTransfer(page, absPath);
         if (!uploaded) {
           const uploadBtnSelectors = [
@@ -2064,7 +2078,7 @@ export default function (xcli: XCLIAPI): void {
           }
           if (!btnClicked) {
             const textHandle = await (page as unknown as PluginPage).evaluateHandle(() => {
-              return Array.from(document.querySelectorAll('button')).find(b => b.textContent?.includes('上传')) || null;
+              return Array.from(document.querySelectorAll('button')).find((b) => b.textContent?.includes('上传')) || null;
             });
             const textEl = (textHandle as unknown as PluginElementHandle).asElement();
             if (textEl) {
@@ -2074,16 +2088,28 @@ export default function (xcli: XCLIAPI): void {
               btnClicked = true;
             }
           }
-          if (!btnClicked) throw new Error('找不到上传按钮或文件输入框');
+          if (!btnClicked) {
+            results.push({ file: absPath, ok: false, error: '找不到上传按钮' });
+            tips.push(`❌ [${i + 1}/${list.length}] 找不到上传按钮`);
+            break;
+          }
           const retry = await uploadFileViaDataTransfer(page, absPath);
-          if (!retry) throw new Error('文件上传失败');
+          if (!retry) {
+            results.push({ file: absPath, ok: false, error: '上传失败' });
+            tips.push(`❌ [${i + 1}/${list.length}] 上传失败: ${path.basename(absPath)}`);
+            continue;
+          }
         }
-
-        await page.waitForTimeout(1500);
-        return ok({ file: absPath, uploaded: true }, [...tips, `文件名: ${path.basename(absPath)}`]);
-      } catch {
-        return fail('未知错误', ['文件上传失败']);
+        results.push({ file: absPath, ok: true });
+        // 后续文件等待 + 同样路径（豆包云盘通过 addMoreText 复用 + 按钮）
+        if (i < list.length - 1) await page.waitForTimeout(1500);
       }
+
+      await page.waitForTimeout(1500);
+      const successCount = results.filter((r) => r.ok).length;
+      return successCount === list.length
+        ? ok({ files: results.map((r) => r.file), uploaded: successCount }, [...tips, `✓ 上传 ${successCount}/${list.length} 个文件`])
+        : fail(`部分失败 (${successCount}/${list.length})`, [...tips]);
     },
   });
 
@@ -2376,75 +2402,146 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
-  //  20. attach — 上传附件（支持多种文件格式，最多50个文件）
+  //  20. attach — 上传附件（支持 pdf/txt/csv/docx/xlsx/pptx/md/mobi/epub 及图片，最多50个文件）
+  //  规范：AGENTS.md §10.0.3.1（type 走 --type，单/多张走 --path / --paths）
   site.command('attach', {
     description: '上传附件（支持 pdf/txt/csv/docx/xlsx/pptx/md/mobi/epub 及图片，最多50个文件）',
     scope: 'browser',
     parameters: z.object({
       type: z.enum(['image', 'file']).describe('附件类型：image=图片, file=文件'),
-      path: z.string().describe('附件路径'),
+      path: z.string().optional().describe('单文件路径'),
+      paths: z.string().optional().describe('多文件路径（CSV，如 a.jpg,b.jpg,c.png）'),
+    }).refine((d) => Boolean(d.path) || Boolean(d.paths), {
+      message: '必须提供 --path 或 --paths 至少一个',
     }),
     examples: [
-      { cmd: 'xbrowser doubao attach image ~/photo.jpg', description: '上传图片' },
-      { cmd: 'xbrowser doubao attach file ~/document.pdf', description: '上传文件' },
-      { cmd: 'xbrowser doubao attach file ~/report.xlsx', description: '上传 Excel 文件' },
+      { cmd: 'xbrowser doubao attach --type image --path ~/photo.jpg', description: '上传单张图片' },
+      { cmd: 'xbrowser doubao attach --type file --path ~/document.pdf', description: '上传单个文件' },
+      { cmd: 'xbrowser doubao attach --type image --paths "~/a.jpg,~/b.png,~/c.webp"', description: '批量上传多张图片' },
     ],
-    result: z.object({ type: z.string(), file: z.string(), uploaded: z.boolean() }).passthrough(),
+    result: z.object({ type: z.string(), files: z.array(z.string()), uploaded: z.number() }).passthrough(),
     handler: async (params, ctx) => {
-      try {
-        const page = ctx.page;
-        if (!page) throw new Error("需要浏览器页面");
-        await ensurePage(page, ctx);
-        await page.waitForTimeout(500);
-        const tips = buildTips(ctx);
+      const list = [
+        ...(params.path ? [params.path] : []),
+        ...(params.paths ? params.paths.split(',').map((s) => s.trim()).filter(Boolean) : []),
+      ];
+      if (list.length === 0) return fail('参数错误', ['--path 或 --paths 至少二选一']);
+      if (list.length > 50) return fail('超出限制', [`最多 50 个文件，当前 ${list.length}`]);
 
-        const absPath = path.resolve(params.path);
-        if (!fs.existsSync(absPath)) throw new Error(`文件不存在: ${absPath}`);
+      const page = ctx.page;
+      if (!page) throw new Error('需要浏览器页面');
+      await ensurePage(page, ctx);
+      await page.waitForTimeout(500);
+      const tips = buildTips(ctx);
 
+      const supportedExts = ['.pdf', '.txt', '.csv', '.docx', '.xlsx', '.pptx', '.md', '.mobi', '.epub',
+        '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.ico'];
+
+      const results: Array<{ file: string; ok: boolean; error?: string }> = [];
+
+      for (let i = 0; i < list.length; i++) {
+        const absPath = path.resolve(list[i]!);
+        if (!fs.existsSync(absPath)) {
+          results.push({ file: absPath, ok: false, error: '文件不存在' });
+          tips.push(`⚠ [${i + 1}/${list.length}] 文件不存在: ${absPath}`);
+          continue;
+        }
         const ext = path.extname(absPath).toLowerCase();
-        const supportedExts = ['.pdf', '.txt', '.csv', '.docx', '.xlsx', '.pptx', '.md', '.mobi', '.epub',
-          '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg', '.ico'];
         if (!supportedExts.includes(ext)) {
-          tips.push(`⚠ 文件格式 ${ext} 可能不受支持，将尝试上传`);
+          tips.push(`⚠ [${i + 1}/${list.length}] 格式 ${ext} 可能不受支持，将尝试上传`);
         }
 
-        const uploaded = await uploadFileViaDataTransfer(page, absPath);
-        if (!uploaded) {
-          const uploadBtnSelectors = [
-            '[class*="attach"]', '[class*="upload"]',
-          ];
-          let clicked = false;
-          for (const sel of uploadBtnSelectors) {
-            if (await safeClickSelector(page, sel)) {
-              await page.waitForTimeout(500);
-              clicked = true;
+        if (i === 0) {
+          // 第一个文件：直接尝试通过已有 input 上传
+          const uploaded = await uploadFileViaDataTransfer(page, absPath);
+          if (!uploaded) {
+            // 兜底：点触发按钮
+            const uploadBtnSelectors = ['[class*="attach"]', '[class*="upload"]'];
+            let clicked = false;
+            for (const sel of uploadBtnSelectors) {
+              if (await safeClickSelector(page, sel)) {
+                await page.waitForTimeout(500);
+                clicked = true;
+                break;
+              }
+            }
+            if (!clicked) {
+              const textHandle = await (page as unknown as PluginPage).evaluateHandle(() => {
+                return Array.from(document.querySelectorAll('button')).find(
+                  (b) => b.textContent?.includes('上传') || b.textContent?.includes('附件'),
+                ) || null;
+              });
+              const textEl = (textHandle as unknown as PluginElementHandle).asElement();
+              if (textEl) {
+                const textBox = await textEl.boundingBox();
+                if (textBox) await page.mouse.click(textBox.x + textBox.width / 2, textBox.y + textBox.height / 2);
+                await page.waitForTimeout(500);
+                clicked = true;
+              }
+            }
+            if (!clicked) {
+              results.push({ file: absPath, ok: false, error: '找不到附件上传入口' });
+              tips.push(`❌ [1/${list.length}] 找不到附件上传入口`);
+              break;
+            }
+            const retry = await uploadFileViaDataTransfer(page, absPath);
+            if (!retry) {
+              results.push({ file: absPath, ok: false, error: '附件上传失败' });
+              tips.push(`❌ [1/${list.length}] 上传失败: ${path.basename(absPath)}`);
               break;
             }
           }
-          if (!clicked) {
-            const textHandle = await (page as unknown as PluginPage).evaluateHandle(() => {
-              return Array.from(document.querySelectorAll('button')).find(
-                b => b.textContent?.includes('上传') || b.textContent?.includes('附件')
-              ) || null;
-            });
-            const textEl = (textHandle as unknown as PluginElementHandle).asElement();
-            if (textEl) {
-              const textBox = await textEl.boundingBox();
-              if (textBox) await page.mouse.click(textBox.x + textBox.width / 2, textBox.y + textBox.height / 2);
-              await page.waitForTimeout(500);
-              clicked = true;
-            }
-          }
-          if (!clicked) throw new Error('找不到附件上传入口');
-          const retry = await uploadFileViaDataTransfer(page, absPath);
-          if (!retry) throw new Error('附件上传失败');
+          results.push({ file: absPath, ok: true });
+          continue;
         }
 
-        await page.waitForTimeout(1000);
-        return ok({ type: params.type, file: absPath, uploaded: true }, [...tips, `附件: ${path.basename(absPath)}`]);
-      } catch {
-        return fail('未知错误', ['上传附件失败']);
+        // 后续文件：点"+"添加按钮 → 注入文件
+        await page.waitForTimeout(800);
+        const addClicked = await page.evaluate(() => {
+          const candidates = Array.from(document.querySelectorAll('button, [role="button"], [class*="add"], [class*="plus"]'));
+          const addBtn = candidates.find((b) => {
+            const t = (b.textContent || '').trim();
+            const aria = b.getAttribute('aria-label') || '';
+            return t === '+' || t === '添加' || t === '继续添加' || aria.includes('添加') || aria.includes('attach');
+          }) as HTMLElement | undefined;
+          if (addBtn) {
+            const r = addBtn.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) {
+              const x = r.x + r.width / 2;
+              const y = r.y + r.height / 2;
+              addBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }));
+              return true;
+            }
+          }
+          return false;
+        });
+        if (!addClicked) {
+          results.push({ file: absPath, ok: false, error: '找不到"+"按钮' });
+          tips.push(`⚠ [${i + 1}/${list.length}] 找不到"+"按钮，跳过后续文件`);
+          break;
+        }
+        await page.waitForTimeout(500);
+        const ok2 = await uploadFileViaDataTransfer(page, absPath);
+        if (!ok2) {
+          results.push({ file: absPath, ok: false, error: '上传失败' });
+          tips.push(`❌ [${i + 1}/${list.length}] 上传失败: ${path.basename(absPath)}`);
+          continue;
+        }
+        results.push({ file: absPath, ok: true });
       }
+
+      await page.waitForTimeout(1000);
+      const successCount = results.filter((r) => r.ok).length;
+      const allOk = successCount === list.length;
+      const data = {
+        type: params.type,
+        files: results.map((r) => r.file),
+        uploaded: successCount,
+        total: list.length,
+      };
+      return allOk
+        ? ok(data, [...tips, `✓ 上传 ${successCount}/${list.length} 个文件`])
+        : fail(`部分失败 (${successCount}/${list.length})`, [...tips]);
     },
   });
 

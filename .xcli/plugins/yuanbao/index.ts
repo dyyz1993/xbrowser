@@ -1,7 +1,7 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
-import { buildTips, uploadFileViaDataTransfer } from '../shared/ai-chat-base.js';
+import { buildTips, batchUploadFiles } from '../shared/ai-chat-base.js';
 import path from 'path';
 import fs from 'fs';
 
@@ -473,47 +473,37 @@ export default function (xcli: XCLIAPI): void {
     description: '上传附件到当前对话',
     scope: 'browser',
     parameters: z.object({
-      file: z.string().describe('附件文件路径'),
+      path: z.string().optional().describe('单文件路径'),
+      paths: z.string().optional().describe('多文件路径（CSV，如 a.jpg,b.pdf）'),
+    }).refine((d) => Boolean(d.path) || Boolean(d.paths), {
+      message: '必须提供 --path 或 --paths 至少一个',
     }),
-    result: z.object({ file: z.string(), uploaded: z.boolean() }).passthrough(),
+    result: z.object({ files: z.array(z.string()), uploaded: z.number() }).passthrough(),
     examples: [
-      { cmd: 'xbrowser yuanbao attach /path/to/file.pdf', description: '上传文件' },
-      { cmd: 'xbrowser yuanbao attach /path/to/image.png', description: '上传图片' },
+      { cmd: 'xbrowser yuanbao attach --path /path/to/file.pdf', description: '上传单个文件' },
+      { cmd: 'xbrowser yuanbao attach --path /path/to/image.png', description: '上传单张图片' },
+      { cmd: 'xbrowser yuanbao attach --paths "/a.pdf,/b.png"', description: '批量上传' },
     ],
     handler: async (params, ctx) => {
-      try {
-        const page = ctx.page;
-        if (!page) throw new Error('需要浏览器页面');
-        await ensurePage(page, ctx);
-        const tips = buildTips(ctx);
+      const list = [
+        ...(params.path ? [params.path] : []),
+        ...(params.paths ? params.paths.split(',').map((s) => s.trim()).filter(Boolean) : []),
+      ];
+      if (list.length === 0) return fail('参数错误', ['--path 或 --paths 至少二选一']);
 
-        const absPath = path.resolve(params.file);
-        if (!fs.existsSync(absPath)) throw new Error(`文件不存在: ${absPath}`);
+      const page = ctx.page;
+      if (!page) throw new Error('需要浏览器页面');
+      await ensurePage(page, ctx);
+      const tips = buildTips(ctx);
 
-        let uploaded = await uploadFileViaDataTransfer(page, absPath);
-
-        if (!uploaded) {
-          const uploadBtnSelectors = [
-            '[class*="upload"]', '[class*="attach"]', '[class*="clip"]',
-            'button[class*="image"]', '[class*="file-upload"]',
-          ];
-          for (const sel of uploadBtnSelectors) {
-            if (await safeClickSelector(page, sel)) {
-              await page.waitForTimeout(500);
-              uploaded = await uploadFileViaDataTransfer(page, absPath);
-              if (uploaded) break;
-            }
-          }
-        }
-
-        if (!uploaded) throw new Error('上传失败：找不到文件上传入口');
-
-        await page.waitForTimeout(1000);
-        tips.push(`已上传: ${path.basename(absPath)}`);
-        return ok({ file: absPath, uploaded: true }, tips);
-      } catch {
-        return fail('未知错误', ['上传附件失败']);
+      const r = await batchUploadFiles(page, list);
+      if (r.errors.length > 0) tips.push(...r.errors.map((e) => `⚠ ${e}`));
+      if (r.uploaded === 0) {
+        return fail('上传失败', ['找不到 file input 或上传入口']);
       }
+      await page.waitForTimeout(1000);
+      tips.push(`✓ 已上传 ${r.uploaded}/${list.length} 个文件`);
+      return ok({ files: r.files, uploaded: r.uploaded }, tips);
     },
   });
 }

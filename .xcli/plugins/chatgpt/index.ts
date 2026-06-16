@@ -1,9 +1,7 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
-import { buildTips, uploadFileViaDataTransfer, handleAttachment } from '../shared/ai-chat-base.js';
-import path from 'path';
-import fs from 'fs';
+import { buildTips, batchUploadFiles } from '../shared/ai-chat-base.js';
 
 type Page = import('../types').Page;
 
@@ -492,44 +490,50 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({
       type: z.enum(['image', 'file', 'url']).describe('附件类型'),
-      path: z.string().describe('文件路径 或 URL 链接'),
+      path: z.string().optional().describe('单文件路径 或 URL 链接'),
+      paths: z.string().optional().describe('多文件路径（CSV，如 a.jpg,b.pdf）— 仅 image/file 类型有效'),
+    }).refine((d) => {
+      if (d.type === 'url') return Boolean(d.path) && !d.paths;
+      return Boolean(d.path) || Boolean(d.paths);
+    }, {
+      message: 'url 类型只能用 --path（单条）；image/file 用 --path 或 --paths',
     }),
-    result: z.object({ type: z.string().optional(), sent: z.boolean().optional(), file: z.string().optional(), uploaded: z.boolean().optional() }).passthrough(),
+    result: z.object({ type: z.string().optional(), sent: z.boolean().optional(), file: z.string().optional(), uploaded: z.boolean().optional(), files: z.array(z.string()).optional() }).passthrough(),
     examples: [
-      { cmd: 'xbrowser chatgpt attach image ~/photo.jpg', description: '上传图片' },
-      { cmd: 'xbrowser chatgpt attach url "https://example.com"', description: '发送 URL 链接' },
-      { cmd: 'xbrowser chatgpt attach file ~/doc.pdf', description: '上传文件' },
+      { cmd: 'xbrowser chatgpt attach --type image --path ~/photo.jpg', description: '上传单张图片' },
+      { cmd: 'xbrowser chatgpt attach --type url "https://example.com"', description: '发送 URL 链接' },
+      { cmd: 'xbrowser chatgpt attach --type file --paths "~/a.pdf,~/b.docx"', description: '批量上传多文件' },
     ],
     handler: async (params, ctx) => {
-      try {
-        const page = ctx.page;
-        if (!page) throw new Error('需要浏览器页面');
-        await ensurePage(page, ctx);
-        await page.waitForTimeout(500);
-        const tips = buildTips(ctx);
+      const page = ctx.page;
+      if (!page) throw new Error('需要浏览器页面');
+      await ensurePage(page, ctx);
+      await page.waitForTimeout(500);
+      const tips = buildTips(ctx);
 
-        if (params.type === 'url') {
-          await fillInput(page, params.path);
-          await page.waitForTimeout(300);
-          await sendMessage(page);
-          tips.push(`URL "${params.path}" 已作为消息发送`);
-          return ok({ type: 'url', sent: true }, tips);
-        }
-
-        const absPath = path.resolve(params.path);
-        if (!fs.existsSync(absPath)) {
-          throw new Error(`文件不存在: ${absPath}`);
-        }
-        const uploaded = await uploadFileViaDataTransfer(page, absPath);
-        if (!uploaded) {
-          throw new Error('找不到 file input。请检查 ChatGPT 是否支持该类型的文件上传。');
-        }
-        await page.waitForTimeout(1000);
-        tips.push(`附件 "${path.basename(absPath)}" 已上传`);
-        return ok({ type: params.type, file: absPath, uploaded: true }, tips);
-      } catch {
-        return fail('未知错误', ['上传附件失败']);
+      if (params.type === 'url') {
+        await fillInput(page, params.path!);
+        await page.waitForTimeout(300);
+        await sendMessage(page);
+        tips.push(`URL "${params.path}" 已作为消息发送`);
+        return ok({ type: 'url', sent: true }, tips);
       }
+
+      // image/file：支持单 + 多
+      const list = [
+        ...(params.path ? [params.path] : []),
+        ...(params.paths ? params.paths.split(',').map((s) => s.trim()).filter(Boolean) : []),
+      ];
+      if (list.length === 0) return fail('参数错误', ['--path 或 --paths 至少二选一']);
+
+      const r = await batchUploadFiles(page, list);
+      if (r.errors.length > 0) tips.push(...r.errors.map((e) => `⚠ ${e}`));
+      if (r.uploaded === 0) {
+        return fail('上传失败', ['找不到 file input，请检查 ChatGPT 是否支持该类型']);
+      }
+      await page.waitForTimeout(1000);
+      tips.push(`✓ 已上传 ${r.uploaded}/${list.length} 个文件`);
+      return ok({ type: params.type, files: r.files, uploaded: r.uploaded === list.length }, tips);
     },
   });
 

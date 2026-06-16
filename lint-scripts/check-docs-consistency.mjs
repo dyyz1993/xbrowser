@@ -6,7 +6,7 @@
  * Checks:
  *   1. No removed commands in docs (`daemon start/stop/status`, `getProperty`,
  *      `evaluateFn`, `getSessionStorage`/`setSessionStorage`/`clearSessionStorage`,
- *      `waitForTimeout`, `attach`)
+ *      `waitForTimeout`)
  *   2. No old project name (`agent-browser`) in docs or src/
  *   3. AGENTS.md plugin count (69) and command count (49) match reality
  *   4. docs/commands.md Scope table does not contain `daemon`
@@ -34,7 +34,8 @@ const REMOVED_CAPTURES = [
   { pattern: /`setSessionStorage`/, label: 'fictional command `setSessionStorage`' },
   { pattern: /`clearSessionStorage`/, label: 'fictional command `clearSessionStorage`' },
   { pattern: /`waitForTimeout`/, label: 'fictional command `waitForTimeout` (use `wait`)' },
-  { pattern: /`attach`/, label: 'fictional command `attach`' },
+  // Note: `attach` is NOT a fictional command — it's the unified upload command
+  // for AI chat plugins (doubao/chatgpt/claude/deepseek/qianwen/yuanbao).
   { pattern: /`getProperty`/, label: 'fictional command `getProperty` (use `eval`)' },
 
   // Old project name

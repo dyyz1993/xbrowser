@@ -116,3 +116,103 @@ export async function handleAttachment(
     tips.push('⚠ 上传失败，找不到 file input');
   }
 }
+
+/**
+ * 批量上传多个文件到常驻的 file input（AGENTS.md §10.0.3.1）
+ *
+ * 适用场景：
+ * - 聊天附件：input 一直挂着，第一个直接注入；后续需点 "+" 按钮
+ * - 与 uploadFileViaDataTransfer 配合使用（无触发按钮场景）
+ *
+ * @param page - Playwright Page
+ * @param filePaths - 文件绝对路径列表
+ * @param addMoreButtonText - "+" 按钮文本（默认 "+"，可传 "添加"/"继续添加"）
+ * @param maxFiles - 最大文件数（默认 50，与豆包限制一致）
+ * @returns { files: string[], uploaded: number, errors: string[] }
+ *
+ * @example
+ * ```typescript
+ * const r = await batchUploadFiles(page, ['/abs/a.jpg', '/abs/b.png']);
+ * // → { files: [...], uploaded: 2, errors: [] }
+ * ```
+ */
+export async function batchUploadFiles(
+  page: Page,
+  filePaths: string[],
+  addMoreButtonText = '+',
+  maxFiles = 50,
+): Promise<{ files: string[]; uploaded: number; errors: string[] }> {
+  const absPaths: string[] = [];
+  const errors: string[] = [];
+
+  // 1. 校验
+  if (filePaths.length > maxFiles) {
+    errors.push(`超出最大文件数 (${filePaths.length}/${maxFiles})`);
+    return { files: [], uploaded: 0, errors };
+  }
+  for (const fp of filePaths) {
+    const abs = path.resolve(fp);
+    if (!fs.existsSync(abs)) {
+      errors.push(`文件不存在: ${abs}`);
+      continue;
+    }
+    absPaths.push(abs);
+  }
+  if (absPaths.length === 0) {
+    return { files: [], uploaded: 0, errors };
+  }
+
+  // 2. 循环上传
+  const uploaded: string[] = [];
+  for (let i = 0; i < absPaths.length; i++) {
+    if (i > 0) {
+      // 后续文件：点 "+" 添加按钮
+      const clicked = await clickAddMoreButton(page, addMoreButtonText);
+      if (!clicked) {
+        errors.push(`第 ${i + 1}/${absPaths.length} 个文件：找不到"${addMoreButtonText}"按钮`);
+        break;
+      }
+      await page.waitForTimeout(500);
+    }
+    const ok = await uploadFileViaDataTransfer(page, absPaths[i]!);
+    if (ok) {
+      uploaded.push(absPaths[i]!);
+    } else {
+      errors.push(`第 ${i + 1}/${absPaths.length} 个文件上传失败: ${path.basename(absPaths[i]!)}`);
+    }
+  }
+
+  return { files: uploaded, uploaded: uploaded.length, errors };
+}
+
+/**
+ * 点击"添加更多"按钮（真实鼠标事件，避开 CDP Firewall）
+ */
+async function clickAddMoreButton(page: Page, buttonText: string): Promise<boolean> {
+  return page.evaluate((text: string) => {
+    const candidates = Array.from(document.querySelectorAll('button, [role="button"], [class*="add"], [class*="plus"]'));
+    const btn = candidates.find((b) => {
+      const t = (b.textContent || '').trim();
+      const aria = b.getAttribute('aria-label') || '';
+      return t === text || t === '添加' || t === '继续添加' || aria.includes('添加') || aria.includes('attach');
+    }) as HTMLElement | undefined;
+    if (btn) {
+      const r = btn.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) {
+        const x = r.x + r.width / 2;
+        const y = r.y + r.height / 2;
+        btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y }));
+        return true;
+      }
+    }
+    return false;
+  }, buttonText);
+}
+
+/**
+ * 工具：把 --paths CSV 拆成数组（与 file-upload.ts 同名，重复定义避免循环依赖）
+ */
+export function parsePathsCsv(csv: string | undefined): string[] {
+  if (!csv) return [];
+  return csv.split(',').map((s) => s.trim()).filter(Boolean);
+}

@@ -383,6 +383,90 @@ if (detected) {
 ❌ xbrowser devto devto-publish    # 加了站点前缀，冗余
 ```
 
+#### 10.0.3.1 上传 / 附件命令命名规范（2026-06 统一）
+
+**动词在前，类型用 `--type`，单/多张用 `--path` / `--paths`**：
+
+| 场景 | 命令 | 单数 | 复数（多张） |
+|------|------|------|-------------|
+| 聊天附件（AI 对话） | `attach` | `--type image/file --path <f>` | `--type image --paths a.jpg,b.jpg,c.png` |
+| 云盘/资源管理 | `upload` | `--path <f>` | `--paths a.jpg,b.pdf` |
+| CDN/编辑器插入图片 | `upload-image` | `--path <f>` | `--paths a.jpg,b.png` |
+| 文生图参考图（特殊） | `image` | `--ref <f>` | 不支持（UI 单图） |
+
+**强制规则**：
+
+1. **动词唯一**：`attach`（附着到消息）/ `upload`（上传到存储）/ `upload-image`（上传并获取 URL）
+2. **类型用 `--type`**，不写在命令名里：`<plugin> attach image ...` ❌ → `<plugin> attach --type image ...` ✅
+3. **单/多张通过参数后缀**：
+   - 单数：`--path <file>` / `--image <file>` / `--ref <file>`
+   - 复数：`--paths <csv>`（`a.jpg,b.jpg,c.jpg`）
+4. **同语义必须同名**：
+   - 所有 AI 聊天插件（chatgpt / claude / doubao / qianwen / yuanbao / deepseek）**必须**用 `attach`
+   - 所有云盘/文件管理命令**必须**用 `upload`
+   - 资源/编辑器场景用 `upload-image`
+5. **多张上传的 handler 模板**：
+
+```typescript
+// shared/file-upload.ts 已提供
+import { uploadFiles } from '../shared/file-upload.js';
+
+site.command('attach', {
+  parameters: z.object({
+    type: z.enum(['image', 'file']),
+    path: z.string().optional().describe('单文件路径'),
+    paths: z.string().optional().describe('多文件路径（CSV）'),
+  }),
+  handler: async (params, ctx) => {
+    const list = [
+      ...(params.path ? [params.path] : []),
+      ...(params.paths ? params.paths.split(',').map(s => s.trim()) : []),
+    ];
+    if (list.length === 0) return fail('缺少参数', ['--path 或 --paths 二选一']);
+    return uploadFiles(page, params.type, list);  // 内部循环上传
+  },
+});
+```
+
+**多张上传硬性约束（`--paths` 走 CSV 格式，强制遵守）**：
+
+| # | 约束 | 规则 | 反例 → 正确 |
+|---|------|------|------------|
+| 1 | **CSV 分隔符** | 唯一使用英文逗号 `,`，每个值无引号 | `--paths "a.jpg, b.png"` ❌（带空格）→ `a.jpg,b.png` ✅ |
+| 2 | **同类型** | 一个 `--paths` 内的所有文件类型一致（与 `--type` 匹配） | `--type image --paths a.jpg,b.pdf` ❌ → 拆成两次调用 |
+| 3 | **数量上限** | 单次最多 50 个（`shared/uploadFiles` 内部硬限制） | 51 个文件 → 拆成两次调用或循环 |
+| 4 | **路径展开** | 路径中**不**支持 `~`、通配符、相对路径，必须是绝对路径或命令解析器展开的路径 | `--paths "~/*.jpg"` ❌ → 调用方先 `ls` 展开成绝对路径 |
+| 5 | **顺序保证** | 文件按 CSV 顺序依次上传，第 N 个失败时**不**打断后续（best-effort），结果里标注 `uploaded` 字段 | — |
+| 6 | **空列表拒绝** | `--paths` 解析后为空时返回 `fail`，**不**静默成功 | `paths=""` 或 `paths=",,,"` → fail |
+| 7 | **去重** | 同一路径在 `--path` 和 `--paths` 中重复出现时，**去重保留**第一次出现的 | — |
+| 8 | **混合大小写** | 扩展名大小写不敏感（`.JPG` 和 `.jpg` 等价） | — |
+
+**多张上传结果字段**（`shared/uploadFiles` 返回值）：
+
+```typescript
+{
+  ok: boolean,        // 至少 1 个文件上传成功
+  uploaded: number,   // 成功数
+  total: number,      // 总数
+  files: string[],    // 成功的绝对路径
+  errors: string[],   // 每个失败的文件 + 原因
+}
+```
+
+**反例**：
+
+| 反例 | 问题 | 正确 |
+|------|------|------|
+| `doubao attach image` | 类型写在命令名 | `doubao attach --type image` |
+| `doubao upload-image` | 在 doubao 上下文里和 `attach` 重复 | `doubao attach --type image` |
+| `doubao upload --paths a,b` 复数参数名错 | 应该是 `attach` | `doubao attach --type file --paths a,b` |
+| 命令只接单文件，不支持多张 | 违反"多张上传"统一规范 | 改成 `--paths <csv>` |
+| `--paths "a.jpg; b.png; c.webp"` | 用了分号 | `--paths "a.jpg,b.png,c.webp"` |
+| `--paths "a.jpg b.png c.webp"` | 用了空格 | `--paths "a.jpg,b.png,c.webp"` |
+| `--paths "~/photos/*.jpg"` | 通配符 | 调用方先展开：`paths=$(ls ~/photos/*.jpg | tr '\n' ',' | sed 's/,$//')` |
+| `--type image --paths a.jpg,b.pdf` | 混合类型 | 拆成两次调用 |
+| `--type image --paths ""` | 空字符串 | 去掉 `--paths` 或填入实际路径 |
+
 #### 10.0.4 使用 Playwright API，不要 `execSync` 调 xbrowser
 
 ```typescript
