@@ -282,8 +282,10 @@ export default function (xcli: XCLIAPI): void {
     isLogin: async (ctx) => {
       try {
         const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-        if (!page) return false;
+        if (!page) return true; // no page — assume logged in, handler will navigate
         const url = page.url();
+        // about:blank / 空页面 — assume logged in, handler 会导航到站点
+        if (url === 'about:blank' || url === '' || !url.includes('qianwen.com')) return true;
         if (url.includes('/login') || url.includes('/auth') || url.includes('/passport')) return false;
         return checkLogin(page);
       } catch {
@@ -720,7 +722,7 @@ export default function (xcli: XCLIAPI): void {
   // ── chat — 发送消息（补充命令，之前只有 image） ──
   site.command('chat', {
     description: '发送消息并等待 AI 回复',
-    requiresLogin: true,
+    requiresLogin: false,
     scope: 'browser',
     parameters: z.object({
       message: z.string().describe('消息内容'),
