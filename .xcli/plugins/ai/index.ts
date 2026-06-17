@@ -151,4 +151,79 @@ export default function (xcli: XCLIAPI): void {
       return ok({ results: formatted }, tips);
     },
   });
+
+  // ── image — 文生图 / 以图生图（多站点并行对比）──
+  const IMAGE_PROVIDERS = ['doubao', 'qwen'];
+
+  site.command('image', {
+    description: '统一文生图 / 以图生图 — 多站点并行生成对比',
+    scope: 'project',
+    parameters: z.object({
+      prompt: z.string().describe('图片描述提示词'),
+      provider: z.string().optional().describe('单站点（如 doubao）'),
+      providers: z.string().optional().describe('多站点 CSV（如 doubao,qwen）'),
+      ref: z.string().optional().describe('参考图片路径（以图生图模式）'),
+      ratio: z.string().optional().describe('图片比例（如 1:1, 16:9）'),
+      cdp: z.string().optional().describe('CDP endpoint'),
+      timeout: z.number().optional().describe('超时秒数（默认 120）'),
+    }).refine(d => d.provider || d.providers, {
+      message: '需要 --provider 或 --providers',
+    }),
+    result: z.object({
+      results: z.array(z.object({
+        provider: z.string(),
+        urls: z.array(z.string()).optional(),
+        localPaths: z.array(z.string()).optional(),
+        error: z.string().optional(),
+      }).passthrough()),
+    }).passthrough(),
+    examples: [
+      { cmd: 'xbrowser ai image "可爱的猫咪" --provider doubao', description: '文生图' },
+      { cmd: 'xbrowser ai image "赛博朋克城市" --providers doubao,qwen', description: '两站点对比' },
+      { cmd: 'xbrowser ai image "更亮色调" --provider doubao --ref img.png', description: '以图生图' },
+    ],
+    handler: async (params) => {
+      const targets = params.providers
+        ? params.providers.split(',').map(s => s.trim()).filter(Boolean)
+        : params.provider ? [params.provider] : [];
+      if (targets.length === 0) return fail('未指定站点', ['--provider 或 --providers']);
+      const invalid = targets.filter(t => !IMAGE_PROVIDERS.includes(t));
+      if (invalid.length > 0) return fail(`不支持文生图: ${invalid.join(',')}`, [`可用: ${IMAGE_PROVIDERS.join(', ')}`]);
+
+      const cdpFlag = params.cdp ? `--cdp ${params.cdp}` : '--cdp http://localhost:9221';
+      const timeoutSec = params.timeout ?? 120;
+      const extraFlags: string[] = [];
+                  if (params.ref) extraFlags.push("--ref " + params.ref);
+      if (params.ratio) extraFlags.push(`--ratio ${params.ratio}`);
+      const extraStr = extraFlags.length > 0 ? ' ' + extraFlags.join(' ') : '';
+
+      const results = await Promise.all(
+        targets.map(async (provider) => {
+          const escaped = params.prompt.replace(/'/g, "'\\''");
+          const cmd = `node dist/cli.js ${cdpFlag} ${provider} image '${escaped}'${extraStr} --json 2>/dev/null`;
+          try {
+            const output = execSync(cmd, { cwd: process.cwd(), timeout: timeoutSec * 1000, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+            const urls: string[] = [];
+            const localPaths: string[] = [];
+            for (const line of output.split('\n')) {
+              const urlMatch = line.match(/https?:\/\/[^\s"']+/g);
+              if (urlMatch) urls.push(...urlMatch);
+              const localMatch = line.match(/(\/[^\s"']+\.(png|jpg|jpeg|webp))/gi);
+              if (localMatch) localPaths.push(...localMatch);
+            }
+            return { provider, urls: [...new Set(urls)], localPaths: [...new Set(localPaths)], error: urls.length > 0 ? undefined : '未生成图片' };
+          } catch (e) {
+            return { provider, error: (e as Error).message.slice(0, 100) };
+          }
+        }),
+      );
+
+      const tips = results.map(r => {
+        if (r.error) return `❌ ${r.provider}: ${r.error}`;
+        const count = r.urls?.length || r.localPaths?.length || 0;
+        return `✅ ${r.provider}: 生成 ${count} 张图片`;
+      });
+      return ok({ results }, tips);
+    },
+  });
 }
