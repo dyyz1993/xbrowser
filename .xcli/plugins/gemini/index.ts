@@ -180,6 +180,73 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  // ── image — 文生图（录制确认流程 2026-06-17）──
+  // Gemini 文生图入口：点"上传和工具" → "制作图片" → 输入提示词 → 发送 → 等 .image-button
+  site.command('image', {
+    description: '文生图（Gemini Imagen）',
+    requiresLogin: false,
+    scope: 'browser',
+    parameters: z.object({
+      prompt: z.string().describe('图片描述提示词'),
+    }),
+    result: z.object({ images: z.array(z.string()).optional(), status: z.string() }).passthrough(),
+    examples: [
+      { cmd: 'xbrowser gemini image --prompt "画一只可爱的猫咪"', description: '文生图' },
+    ],
+    handler: async (params, ctx) => {
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
+      const tips = buildCdpTips(ctx);
+      try {
+        // 1. 导航到 Gemini
+        if (!page.url().includes('gemini.google.com')) {
+          await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+          await page.waitForTimeout(5000);
+        }
+
+        // 2. 点"上传和工具"弹菜单（录制 action[14]）
+        await page.click('[aria-label="上传和工具"]', { timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(800);
+        // 3. 点"制作图片"切换到图片模式（录制 action[16]）
+        await page.evaluate(() => {
+          const items = document.querySelectorAll('toolbox-drawer-item button span, [role="menuitem"], span');
+          for (const el of items) {
+            if ((el.textContent || '').trim() === '制作图片') { (el as HTMLElement).click(); return; }
+          }
+        }).catch(() => {});
+        await page.waitForTimeout(500);
+
+        // 4. 输入提示词（录制 action[17]）
+        await page.locator('[aria-label="为 Gemini 输入提示"], .ql-editor').first().click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(200);
+        await page.keyboard.type(params.prompt, { delay: 15 });
+        await page.waitForTimeout(400);
+
+        // 5. 点发送（录制 action[49]）
+        await page.click('mat-icon[fonticon="arrow_upward"]', { timeout: 5000 }).catch(() => {});
+        tips.push('已发送文生图请求，等待 Gemini 生成...');
+
+        // 6. 等图片生成（等 .image-button 出现）
+        const startTime = Date.now();
+        while (Date.now() - startTime < 120000) {
+          await page.waitForTimeout(3000);
+          const found = await page.evaluate(() => {
+            const imgs = document.querySelectorAll('.image-button img, .response-content img');
+            return Array.from(imgs).map(img => (img as HTMLImageElement).src).filter(s => s && s.startsWith('http'));
+          }).catch(() => [] as string[]) as string[];
+          if (found.length > 0) {
+            tips.push(`✓ Gemini 生成了 ${found.length} 张图片`);
+            return ok({ images: found, status: 'completed' }, tips);
+          }
+        }
+        tips.push('⚠ Gemini 生成超时');
+        return ok({ images: [], status: 'timeout' }, tips);
+      } catch {
+        return fail('文生图失败', ['请检查 Gemini 登录状态']);
+      }
+    },
+  });
+
   // ── check-login ──
   site.command('check-login', {
     description: '检查 Gemini 登录状态',

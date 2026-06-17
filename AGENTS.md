@@ -1775,3 +1775,35 @@ doubao 的图片编辑功能（抠图/扩图/标记/擦除/变清晰）**入口�
 - DALL-E 生成后图片有唯一 `#image-{uuid}`
 - 图片上有"编辑"按钮 → 可选区域修改 → 重新生成
 - ai 聚合层 IMAGE_PROVIDERS 已加入 chatgpt
+
+### 23.9 Gemini 文生图录制确认（2026-06-17）
+
+通过用户录制 Gemini 文生图（131 actions）定位的流程：
+
+| 步骤 | action | selector/文案 |
+|------|:---:|---------|
+| 输入框 | [2] | `[aria-label="为 Gemini 输入提示"]` |
+| 点"上传和工具" | [14] | `[aria-label="上传和工具"]` |
+| **选"制作图片"** | [16] | `toolbox-drawer-item:nth-of-type(1) > button > span` |
+| 输入提示词 | [17] | `.ql-editor > p` |
+| 发送 | [49] | `mat-icon[fonticon="arrow_upward"]` |
+| **生成结果** | [109] | `.image-button`（图片容器）|
+| 下载 | [118] | `mat-icon[fonticon="download"]` |
+| 更多选项 | [91] | `mat-icon[fonticon="more_horiz"]` |
+| 回复内容 | [94] | `.response-content` |
+| 素描/编辑 | [126] | `.doodle-editing-column`，文案"素描文本" |
+
+**Gemini 文生图特点**：
+- 需要先点"上传和工具"→"制作图片"切换到图片生成模式（不是直接 chat）
+- 生成结果在 `.image-button` 容器里
+- 有下载按钮 `mat-icon[fonticon="download"]`
+- 有编辑模式 `.doodle-editing-column`（素描文本）
+
+#### ai 聚合层文生图覆盖度（4 站点）
+
+| 站点 | 文生图引擎 | ai image 支持 |
+|------|----------|:---:|
+| doubao | 豆包图像生成 | ✅ |
+| qwen | 通义万相 | ✅ |
+| chatgpt | DALL-E | ✅ |
+| gemini | Imagen | ✅ |
