@@ -1,0 +1,18 @@
+{
+  "name": "xbrowser-plugin-ai",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": { "zod": "^3.24.0" },
+  "peerDependencies": { "@dyyz1993/xcli-core": ">=1.0.0" },
+  "xbrowser": {
+    "name": "ai",
+    "slug": "ai",
+    "version": "1.0.0",
+    "author": "xbrowser",
+    "description": "AI 聚合 — 多站点并行对比、统一参数（--think/--search/--providers）",
+    "site": "about:blank",
+    "requiresLogin": false,
+    "commands": ["chat", "list-providers"]
+  }
+}
