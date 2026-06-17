@@ -8,6 +8,9 @@
  * 详见 docs/ai-chat-plugin-spec.md
  */
 import type { Page } from '../types.js';
+import type { CommandContext } from '@dyyz1993/xcli-core';
+import * as path from 'path';
+import * as fs from 'fs';
 import { smartExtractReply } from './smart-extract.js';
 
 // ─── 类型定义 ───────────────────────────────────────────────
@@ -38,6 +41,24 @@ export interface AIChatSiteConfig {
   smartFallback?: boolean;
   /** CDP endpoint（smartFallback 用） */
   cdpEndpoint?: string;
+
+  // ── 登录检测 ──
+  /** 已登录标志：body 含这些词的任一个 = 已登录（如 ['深度思考', '豆包']） */
+  loggedInTextPatterns?: string[];
+  /** 未登录标志：body 同时含这些词 = 未登录（如 ['登录', '注册']） */
+  loggedOutTextPatterns?: string[];
+  /** 已登录 selector（存在即已登录，如 ['#prompt-textarea']） */
+  loggedInSelectors?: string[];
+
+  // ── 附件上传 ──
+  /** 附件上传方式 */
+  attachMethod?: 'setInputFiles' | 'pasteFiles' | 'triggerButton';
+  /** file input selector（attachMethod='setInputFiles'/'triggerButton' 时） */
+  fileInputSelector?: string;
+  /** editor selector（attachMethod='pasteFiles' 时） */
+  editorSelector?: string;
+  /** 上传后等此元素消失（如 '.ds-loading'） */
+  waitLoadingSelector?: string;
 }
 
 // ─── 1. listConversations ──────────────────────────────────
@@ -168,3 +189,170 @@ export async function extractReply(
   return '';
 }
 
+// ─── 5. ensureChatPage ─────────────────────────────────────
+
+/**
+ * 确保在正确的页面 + 检查登录态（统一 ensurePage）。
+ *
+ * 登录检测逻辑：
+ * 1. 如果 loggedInSelectors 存在 → 检查 DOM 是否有这些元素
+ * 2. 如果 loggedOutTextPatterns 存在 → body 同时含这些词 = 未登录
+ * 3. 如果 loggedInTextPatterns 存在 → body 含任一词 = 已登录
+ */
+export async function ensureChatPage(
+  page: Page,
+  ctx: CommandContext | undefined,
+  config: Pick<AIChatSiteConfig, 'url' | 'name' | 'loggedInSelectors' | 'loggedOutTextPatterns' | 'loggedInTextPatterns'>,
+): Promise<void> {
+  if (!page.url().startsWith(config.url)) {
+    await page.goto(config.url, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+    await page.waitForTimeout(2000);
+  }
+
+  // 登录检测（仅首次，缓存到 ctx）
+  if (ctx) {
+    const ctxObj = ctx as unknown as Record<string, unknown>;
+    if (!ctxObj.__loginChecked) {
+      ctxObj.__loginChecked = true;
+      const result = await page.evaluate(({ loggedInSels, loggedOutPatterns, loggedInPatterns }) => {
+        const bodyText = (document.body?.textContent || '').trim().slice(0, 500);
+        // 优先用 selector
+        if (loggedInSels?.length) {
+          for (const sel of loggedInSels) {
+            if (document.querySelector(sel)) return { loggedIn: true };
+          }
+        }
+        // 未登录词组（全部匹配才算未登录）
+        if (loggedOutPatterns?.length) {
+          const allMatch = loggedOutPatterns.every(w => bodyText.includes(w));
+          if (allMatch) return { loggedIn: false };
+        }
+        // 已登录词（任一匹配）
+        if (loggedInPatterns?.length) {
+          const anyMatch = loggedInPatterns.some(w => bodyText.includes(w));
+          return { loggedIn: anyMatch };
+        }
+        return { loggedIn: true }; // 无配置默认已登录
+      }, {
+        loggedInSels: config.loggedInSelectors,
+        loggedOutPatterns: config.loggedOutTextPatterns,
+        loggedInPatterns: config.loggedInTextPatterns,
+      }).catch(() => ({ loggedIn: true })) as { loggedIn: boolean };
+
+      if (!result.loggedIn) {
+        throw new Error(`${config.name} 未登录！请先在浏览器中登录，或运行: xbrowser ${config.name} login`);
+      }
+    }
+  }
+}
+
+// ─── 6. uploadAttachment ───────────────────────────────────
+
+/**
+ * 统一附件上传（三种方式）：
+ * - setInputFiles：直接注入到 input[type=file]（deepseek/doubao）
+ * - pasteFiles：粘贴到 contenteditable editor（yuanbao）
+ * - triggerButton：先点触发按钮挂载 file input，再 setInputFiles（doubao）
+ */
+export async function uploadAttachment(
+  page: Page,
+  filePaths: string[],
+  config: Pick<AIChatSiteConfig, 'attachMethod' | 'fileInputSelector' | 'editorSelector' | 'waitLoadingSelector'>,
+): Promise<{ uploaded: number; errors: string[] }> {
+  const errors: string[] = [];
+  const absPaths = filePaths.map(fp => path.resolve(fp));
+  const valid = absPaths.filter(fp => {
+    if (!fs.existsSync(fp)) { errors.push(`文件不存在: ${fp}`); return false; }
+    return true;
+  });
+  if (valid.length === 0) return { uploaded: 0, errors };
+
+  const method = config.attachMethod || 'setInputFiles';
+
+  // 构造文件 payload
+  const payloads = valid.map(fp => {
+    const buf = fs.readFileSync(fp);
+    const ext = path.extname(fp).toLowerCase();
+    const mime: Record<string, string> = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf',
+    };
+    return { name: path.basename(fp), mimeType: mime[ext] || 'application/octet-stream', buffer: buf };
+  });
+
+  try {
+    if (method === 'pasteFiles' && config.editorSelector) {
+      // 粘贴方式：构造 ClipboardEvent + DataTransfer
+      const base64Files = payloads.map(p => ({
+        name: p.name, mime: p.mimeType, base64: p.buffer.toString('base64'),
+      }));
+      await page.evaluate(({ sel, files }) => {
+        const editor = document.querySelector(sel) as HTMLElement | null;
+        if (!editor) return;
+        editor.focus();
+        for (const f of files) {
+          const binary = atob(f.base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          const blob = new Blob([bytes], { type: f.mime });
+          const fileObj = new File([blob], f.name, { type: f.mime });
+          const dt = new DataTransfer();
+          dt.items.add(fileObj);
+          editor.dispatchEvent(new ClipboardEvent('paste', {
+            bubbles: true, cancelable: true, clipboardData: dt,
+          }));
+        }
+      }, { sel: config.editorSelector, files: base64Files }).catch(() => {});
+
+    } else {
+      // setInputFiles / triggerButton 方式
+      if (method === 'triggerButton') {
+        // 先点输入框左侧触发按钮，挂载 file input
+        const coord = await page.evaluate(() => {
+          const ed = document.querySelector('[contenteditable="true"],[role="textbox"],textarea');
+          if (!ed) return null;
+          const er = ed.getBoundingClientRect();
+          const btns: HTMLElement[] = [];
+          document.querySelectorAll('button').forEach(el => {
+            const r = el.getBoundingClientRect();
+            if (r.width === 0) return;
+            if (r.x < er.x && Math.abs(r.y - er.y) < 100) btns.push(el as HTMLElement);
+          });
+          if (btns.length === 0) return null;
+          const r = btns[0].getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        });
+        if (coord) {
+          await page.mouse.click(coord.x, coord.y).catch(() => {});
+          await page.waitForTimeout(500);
+        }
+      }
+      // 等 file input 挂载
+      await page.waitForSelector(config.fileInputSelector || 'input[type="file"]', { timeout: 5000 }).catch(() => {});
+      // 注入文件
+      const p = page as unknown as { setInputFiles?: (s: string, f: unknown[]) => Promise<void> };
+      if (p.setInputFiles) {
+        await p.setInputFiles(config.fileInputSelector || 'input[type="file"]', payloads);
+      } else {
+        errors.push('page.setInputFiles 不可用');
+        return { uploaded: 0, errors };
+      }
+    }
+
+    // 等待 loading 消失
+    if (config.waitLoadingSelector) {
+      for (let i = 0; i < 30; i++) {
+        const loading = await page.evaluate((sel: string) => !!document.querySelector(sel), config.waitLoadingSelector).catch(() => false);
+        if (!loading) break;
+        await page.waitForTimeout(500).catch(() => {});
+      }
+    } else {
+      await page.waitForTimeout(2000).catch(() => {});
+    }
+
+    return { uploaded: valid.length, errors };
+  } catch (e) {
+    errors.push(`上传失败: ${(e as Error).message}`);
+    return { uploaded: 0, errors };
+  }
+}
