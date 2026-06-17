@@ -78,23 +78,18 @@ export default function (xcli: XCLIAPI): void {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
       const tips = buildCdpTips(ctx);
-      try {
-        // Navigate to Gemini if needed
+      try {        // Navigate to Gemini if needed
         try {
           await page.goto(GEMINI_URL + '/app', { waitUntil: 'domcontentloaded', timeout: 20000 });
         } catch {
           await page.evaluate((u: string) => { window.location.href = u; }, GEMINI_URL + '/app');
         }
         await new Promise(r => setTimeout(r, 5000));
-
         // Type and send message（keyboard.type 真实按键，不用 page.fill 合成事件）
         const inputSel = '[aria-label*="输入提示"], [contenteditable="true"]';
         await page.locator(inputSel).first().click({ timeout: 5000 }).catch(() => {});
-        await page.waitForTimeout(200);
-        await page.keyboard.type(params.message, { delay: 10 });
-        await page.waitForTimeout(400);
+        await page.waitForTimeout(200);        await page.keyboard.type(params.message, { delay: 10 });        await page.waitForTimeout(400);
         await page.keyboard.press('Enter');
-
         // 等回复
         await new Promise(r => setTimeout(r, 3000));
         let responseText = '';
