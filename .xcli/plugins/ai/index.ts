@@ -194,13 +194,15 @@ export default function (xcli: XCLIAPI): void {
       const timeoutSec = params.timeout ?? 120;
       const extraFlags: string[] = [];
                   if (params.ref) extraFlags.push("--ref " + params.ref);
-      if (params.ratio) extraFlags.push(`--ratio ${params.ratio}`);
+      // qwen image 需 --wait 同步等待结果，doubao 不需要
+            if (params.ratio) extraFlags.push(`--ratio ${params.ratio}`);
       const extraStr = extraFlags.length > 0 ? ' ' + extraFlags.join(' ') : '';
 
       const results = await Promise.all(
         targets.map(async (provider) => {
+          const providerFlags = provider === 'qwen' ? ' --wait ' + timeoutSec : '';
           const escaped = params.prompt.replace(/'/g, "'\\''");
-          const cmd = `node dist/cli.js ${cdpFlag} ${provider} image '${escaped}'${extraStr} --json 2>/dev/null`;
+          const cmd = `node dist/cli.js ${cdpFlag} ${provider} image --prompt '${escaped}'${extraStr}${providerFlags} --json 2>/dev/null`;
           try {
             const output = execSync(cmd, { cwd: process.cwd(), timeout: timeoutSec * 1000, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
             const urls: string[] = [];
