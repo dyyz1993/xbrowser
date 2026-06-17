@@ -55,6 +55,7 @@ export default function (xcli: XCLIAPI): void {
       providers: z.string().optional().describe('多站点 CSV（如 deepseek,doubao）— 并行对比'),
       think: z.boolean().optional().describe('开启深度思考（转发给支持的站点）'),
       search: z.boolean().optional().describe('开启联网搜索（转发给支持的站点）'),
+      showSources: z.boolean().optional().describe('显示搜索来源（转发给支持的站点）'),
       path: z.string().optional().describe('附件路径（单文件）'),
       paths: z.string().optional().describe('附件路径（多文件 CSV）'),
       cdp: z.string().optional().describe('CDP endpoint（如 http://localhost:9221）'),
@@ -88,6 +89,7 @@ export default function (xcli: XCLIAPI): void {
       const extraFlags: string[] = [];
       if (params.think) extraFlags.push('--think');
       if (params.search) extraFlags.push('--search');
+      if (params.showSources) extraFlags.push('--showSources');
       if (params.path) extraFlags.push(`--path ${JSON.stringify(params.path)}`);
       if (params.paths) extraFlags.push(`--paths ${JSON.stringify(params.paths)}`);
       const extraStr = extraFlags.length > 0 ? ' ' + extraFlags.join(' ') : '';
@@ -132,14 +134,19 @@ export default function (xcli: XCLIAPI): void {
       });
 
       // tips 格式化——对齐表格对比
-      const maxProviderLen = Math.max(...formatted.map(r => r.provider.length), 8);
-      const tips = formatted.map(r => {
-        const providerPad = r.provider.padEnd(maxProviderLen);
-        if (r.error) return `❌ ${providerPad}  错误: ${r.error}`;
-        const preview = r.response.replace(/\n/g, ' ').slice(0, 40);
-        const dur = r.duration ? ` (${r.duration})` : '';
-        return `✅ ${providerPad}  ${preview}${dur}`;
+      const rows = formatted.map(r => {
+        if (r.error) return { provider: r.provider, status: '❌', text: r.error.slice(0, 40), time: '' };
+        return { provider: r.provider, status: '✅', text: (r.response || '').replace(/\n/g, ' ').slice(0, 40), time: r.duration || '' };
       });
+      const colP = Math.max(8, ...rows.map(r => r.provider.length));
+      const colT = Math.max(8, ...rows.map(r => [...r.text].length));
+      const lines: string[] = [];
+      lines.push(['Provider'.padEnd(colP), 'Response'.padEnd(colT), 'Time'].join('  '));
+      lines.push('-'.repeat(colP + colT + 8));
+      for (const r of rows) {
+        lines.push([r.provider.padEnd(colP), r.text.padEnd(colT), r.time].join('  '));
+      }
+      const tips = [lines.join('\n')];
 
       return ok({ results: formatted }, tips);
     },
