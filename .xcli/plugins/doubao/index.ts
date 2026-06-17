@@ -1,9 +1,10 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
-import { buildTips, uploadFileViaDataTransfer, handleChatAttachments, checkLoginStatus } from '../shared/ai-chat-base.js';
+import { buildTips, uploadFileViaDataTransfer, checkLoginStatus } from '../shared/ai-chat-base.js';
 import { extractAllHDImages } from '../shared/image-lightbox.js';
 import { clickButtonByText } from '../shared/file-upload.js';
+import { smartExtractReply } from '../shared/smart-extract.js';
 import path from 'path';
 import fs from 'fs';
 import type { PluginPage, PluginElementHandle, PluginRoute } from '../types.js';
@@ -78,26 +79,19 @@ async function extractPageAudio(page: Page): Promise<string | null> {
   });
 }
 
-/** Submit the current message by clicking the send button (or pressing Enter as fallback) */
+/** Submit the current message by clicking the send button (React fiber onClick + DOM click fallback) */
 async function submitMessage(page: Page): Promise<{ found: boolean; clicked: boolean }> {
-  const sendResult = await page.evaluate(() => {
-    // Doubao's send button ID is #flow-end-msg-send (confirmed via recording)
-    const btn = document.querySelector('#flow-end-msg-send, button[aria-label="Send message"], button[aria-label*="发送"]');
-    if (btn) {
-      const disabled = btn.hasAttribute('disabled') || (btn as HTMLButtonElement).disabled;
-      if (!disabled) {
-        (btn as HTMLElement).click();
-        return { found: true, disabled: false, clicked: true };
-      }
-      return { found: true, disabled: true, clicked: false };
-    }
-    return { found: false, disabled: false, clicked: false };
-  }).catch(() => ({ found: false, disabled: false, clicked: false }));
-
-  if (!sendResult.clicked) {
+  // cdp-tunnel Input 转发 bug 已修复（2026-06-17），keyboard/mouse 事件正常。
+  // 先点发送按钮（真实 mouse click），失败则 Enter 兜底。
+  try {
+    const sel = '#flow-end-msg-send, button[aria-label="Send message"], button[aria-label*="发送"]';
+    await page.click(sel, { timeout: 3000 });
+    return { found: true, clicked: true };
+  } catch {
+    // 兜底：keyboard Enter
     await page.keyboard.press('Enter').catch(() => {});
+    return { found: false, clicked: false };
   }
-  return sendResult;
 }
 
 async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
@@ -435,8 +429,47 @@ export default function (xcli: XCLIAPI): void {
         }
 
         if (params.path || params.paths) {
-          const r = await handleChatAttachments(page, params.path, params.paths, params.type || 'image', tips);
-          if (!r.ok) return fail(`附件上传未通过校验 (${r.uploaded}/${r.total})`, tips);
+          // doubao 专属：直接 setInputFiles 到 input[type=file]（不走路 ChatGPT 菜单流程）。
+          // doubao 的 file input 直接存在，setInputFiles 不依赖 dispatchMouseEvent。
+          const fileList = [
+            ...(params.path ? [params.path] : []),
+            ...(params.paths ? params.paths.split(',').map((s2: string) => s2.trim()).filter(Boolean) : []),
+          ];
+          const absPaths = fileList.map((fp) => path.resolve(fp));
+          const payloads = absPaths.map((fp) => {
+            const buf = fs.readFileSync(fp);
+            const ext = path.extname(fp).toLowerCase();
+            const mime: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf' };
+            return { name: path.basename(fp), mimeType: mime[ext] || 'application/octet-stream', buffer: buf };
+          });
+          try {
+            // doubao 的 file input 默认不挂载，需先点输入框左侧的触发按钮（用真实 mouse click）。
+            const triggerCoord = await page.evaluate(() => {
+              const ta = document.querySelector('[contenteditable="true"],[role="textbox"],textarea');
+              if (!ta) return null;
+              const tr = ta.getBoundingClientRect();
+              const btns: HTMLElement[] = [];
+              document.querySelectorAll('button').forEach((el) => {
+                const r = el.getBoundingClientRect();
+                if (r.width === 0) return;
+                if (r.x < tr.x && Math.abs(r.y - tr.y) < 100) btns.push(el as HTMLElement);
+              });
+              if (btns.length === 0) return null;
+              const r = btns[0].getBoundingClientRect();
+              return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+            });
+            if (triggerCoord) {
+              await page.mouse.click(triggerCoord.x, triggerCoord.y);
+            }
+            await page.waitForTimeout(500);
+            // 等 file input 挂载
+            await page.waitForSelector('input[type="file"]', { timeout: 5000 }).catch(() => {});
+            await page.setInputFiles('input[type="file"]', payloads);
+            tips.push(`✓ 已上传 ${absPaths.length} 个附件`);
+            await page.waitForTimeout(2000);
+          } catch (e) {
+            return fail('附件上传失败', [`setInputFiles: ${(e as Error).message}`]);
+          }
         }
 
         await page.waitForSelector('textarea, [contenteditable="true"], [role="textbox"]', { timeout: 15000 }).catch(() => {});
@@ -459,8 +492,10 @@ export default function (xcli: XCLIAPI): void {
 
         if (!inputEl || !inputSel) throw new Error('找不到消息输入框');
 
-        await inputEl.click();
-        await inputEl.fill(params.message);
+        // click 聚焦 + keyboard.type 逐字输入（cdp-tunnel 修复后 keyboard 正常）
+        await page.locator(inputSel).first().click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(200);
+        await page.keyboard.type(params.message, { delay: 10 });
         await page.waitForTimeout(500);
 
         const wantSources = !!params.showSources;
@@ -488,7 +523,7 @@ export default function (xcli: XCLIAPI): void {
               const getText = (el: Element) => el.textContent?.trim() || '';
               const pageTxt = document.body.textContent || '';
 
-              if (pageTxt.includes('停止生成') || pageTxt.includes('思考中') || pageTxt.includes('生成中')) return '';
+              if (pageTxt.includes('停止生成') || pageTxt.includes('思考中') || pageTxt.includes('生成中') || pageTxt.includes('正在搜索') || pageTxt.includes('搜索中')) return '';
 
               // 策略 1：message-list 中找 md-box-root（豆包 AI 回复的 markdown 渲染容器）
               const msgList = document.querySelector('[class*="message-list"]');
@@ -603,6 +638,18 @@ export default function (xcli: XCLIAPI): void {
 
           return ok(result, tips);
         } else {
+          // selector 提取失败（可能改版），用大模型分析 snapshot 兜底
+          tips.push('⚠ 回复提取失败，尝试用 AI 分析页面快照...');
+          const smartReply = await smartExtractReply(
+            page,
+            params.message,
+            'doubao 聊天页，用户发了消息等待 AI 回复',
+            (ctx as unknown as Record<string, unknown>).cdpEndpoint as string | undefined,
+          ).catch(() => null);
+          if (smartReply) {
+            tips.push('✓ AI 快照分析成功');
+            return ok({ response: smartReply }, tips);
+          }
           tips.push('AI 回复超时或未检测到');
           return ok({ response: '' }, tips);
         }
@@ -2322,7 +2369,7 @@ export default function (xcli: XCLIAPI): void {
               const getText = (el: Element) => el.textContent?.trim() || '';
               const pageTxt = document.body.textContent || '';
 
-              if (pageTxt.includes('停止生成') || pageTxt.includes('思考中') || pageTxt.includes('生成中')) return '';
+              if (pageTxt.includes('停止生成') || pageTxt.includes('思考中') || pageTxt.includes('生成中') || pageTxt.includes('正在搜索') || pageTxt.includes('搜索中')) return '';
 
               const chatArea = document.querySelector('[class*="min-h-100"]');
               if (chatArea) {

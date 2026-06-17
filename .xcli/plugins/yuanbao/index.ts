@@ -1,7 +1,8 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
-import { buildTips, batchUploadFiles, handleChatAttachments, checkLoginStatus } from '../shared/ai-chat-base.js';
+import { buildTips, batchUploadFiles, checkLoginStatus } from '../shared/ai-chat-base.js';
+import { pasteFiles } from '../shared/paste-files.js';
 
 type Page = import('../types').Page;
 
@@ -339,8 +340,16 @@ export default function (xcli: XCLIAPI): void {
         }
 
         if (params.path || params.paths) {
-          const r = await handleChatAttachments(page, params.path, params.paths, 'image', tips);
-          if (!r.ok) return fail(`附件上传未通过校验 (${r.uploaded}/${r.total})`, tips);
+          // yuanbao 专属：通过「粘贴」上传图片到 Quill editor（yuanbao 支持粘贴图片）。
+          const fileList = [
+            ...(params.path ? [params.path] : []),
+            ...(params.paths ? params.paths.split(',').map((s2: string) => s2.trim()).filter(Boolean) : []),
+          ];
+          const r = await pasteFiles(page, '.ql-editor, [contenteditable="true"]', fileList);
+          if (r.errors.length > 0) tips.push(...r.errors.map((e) => `⚠ ${e}`));
+          if (r.pasted === 0) return fail('附件上传失败', r.errors.length ? r.errors : ['粘贴失败']);
+          tips.push(`✓ 已粘贴 ${r.pasted} 个附件`);
+          await page.waitForTimeout(2000);
         }
 
         const inputLocator = page.locator('.ql-editor, #searchbar-editor, [contenteditable="true"]').first();

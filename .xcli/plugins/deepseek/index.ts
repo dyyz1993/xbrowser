@@ -1,7 +1,9 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
-import { buildTips, batchUploadFiles, handleChatAttachments, checkLoginStatus } from '../shared/ai-chat-base.js';
+import * as path from 'path';
+import * as fs from 'fs';
+import { buildTips, checkLoginStatus } from '../shared/ai-chat-base.js';
 
 type Page = import('../types').Page;
 
@@ -37,12 +39,59 @@ async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
 
 const SEL = {
   input: 'textarea[name="search"]',
+  // 发送按钮：录制确认的稳定 selector（DeepSeek 发送按钮无 aria-label/文字，纯图标）
+  // .ds-button--primary 在输入区右下方，页面上唯一可见的 primary 按钮即发送键
+  sendBtn: '.ds-button--primary',
   toggleBtn: 'div[role="button"][class*="ds-toggle-button"]',
   radioBtn: '[role="radio"]',
   newChat: 'text=开启新对话',
   conversationLinks: 'a[href*="/a/chat/s/"]',
   fileInput: 'input[type="file"]',
 } as const;
+
+/**
+ * DeepSeek 专属文件上传：直接 setInputFiles 到 input[type=file]。
+ * DeepSeek 的 file input 直接存在（不需要点菜单触发），与 ChatGPT 的 "+" 菜单流程不同。
+ * setInputFiles 不依赖 dispatchMouseEvent，cdp-tunnel 下一直正常。
+ */
+async function dsUploadFiles(page: Page, filePaths: string[]): Promise<{ files: string[]; uploaded: number; errors: string[] }> {
+  const absPaths = filePaths.map((fp) => path.resolve(fp));
+  const errors: string[] = [];
+  const valid: string[] = [];
+  for (const fp of absPaths) {
+    if (!fs.existsSync(fp)) { errors.push(`文件不存在: ${fp}`); continue; }
+    valid.push(fp);
+  }
+  if (valid.length === 0) return { files: [], uploaded: 0, errors };
+  const payloads = valid.map((fp) => {
+    const buf = fs.readFileSync(fp);
+    const ext = path.extname(fp).toLowerCase();
+    const mime: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf' };
+    return { name: path.basename(fp), mimeType: mime[ext] || 'application/octet-stream', buffer: buf };
+  });
+  const p = page as unknown as { setInputFiles?: (s: string, f: unknown[]) => Promise<void> };
+  let uploaded = 0;
+  if (typeof p.setInputFiles === 'function') {
+    try {
+      await p.setInputFiles('input[type="file"]', payloads);
+      uploaded = valid.length;
+    } catch (e) {
+      errors.push(`setInputFiles 失败: ${(e as Error).message}`);
+    }
+  } else {
+    errors.push('page.setInputFiles 不可用');
+  }
+  // 等待 DeepSeek 上传 loading 消失（ds-loading 元素），最多等 15s
+  if (uploaded > 0) {
+    for (let i = 0; i < 30; i++) {
+      const stillLoading = await page.evaluate(() => !!document.querySelector('.ds-loading')).catch(() => false);
+      if (!stillLoading) break;
+      await page.waitForTimeout?.(500).catch?.(() => {});
+    }
+  }
+  return { files: valid, uploaded, errors };
+}
+
 
 // ─── 插件入口 ────────────────────────────────────────
 
@@ -363,27 +412,37 @@ export default function (xcli: XCLIAPI): void {
 
         // 先上传附件（如果有）
         if (params.path || params.paths) {
-          const r = await handleChatAttachments(page, params.path, params.paths, params.type || 'image', tips);
-          if (!r.ok) return fail(`附件上传未通过校验 (${r.uploaded}/${r.total})`, tips);
+          const list = [
+            ...(params.path ? [params.path] : []),
+            ...(params.paths ? params.paths.split(',').map((s2) => s2.trim()).filter(Boolean) : []),
+          ];
+          const r = await dsUploadFiles(page, list);
+          if (r.errors.length > 0) tips.push(...r.errors.map((e) => `⚠ ${e}`));
+          if (r.uploaded === 0) return fail('附件上传失败', r.errors.length ? r.errors : ['未上传任何文件']);
+          tips.push(`✓ 已上传 ${r.uploaded}/${list.length} 个附件`);
         }
 
-        // 找输入框（多种选择器兜底）
+
+        // 填充输入框：click 聚焦 + keyboard.type 逐字输入（带延迟，模拟人类打字）。
+        // cdp-tunnel 的 Input 转发 bug 已修复（2026-06-17），keyboard/mouse 事件正常到 DOM。
         const inputSel = SEL.input;
         let inputFound = false;
         for (const sel of ['textarea', '[contenteditable="true"]', '[role="textbox"]', inputSel]) {
           const count = await page.locator(sel).count();
           if (count > 0) {
             await page.locator(sel).first().waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
-            await page.locator(sel).first().fill(params.message);
+            await page.locator(sel).first().click({ timeout: 5000 }).catch(() => {});
+            await page.waitForTimeout(150);
+            await page.keyboard.type(params.message, { delay: 5 });
             inputFound = true;
             break;
           }
         }
         if (!inputFound) throw new Error('找不到消息输入框');
 
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(400);
 
-        // 发送：Enter 键（DeepSeek SSR 会刷新页面）
+        // 发送：keyboard.press('Enter')（录制确认 DeepSeek 用 Enter 发送，触发 completion）。
         await page.keyboard.press('Enter');
         tips.push('消息已发送，等待 AI 回复...');
 
@@ -404,38 +463,51 @@ export default function (xcli: XCLIAPI): void {
           });
         }
 
-        // 轮询 AI 回复（最多 60s）
+        // 等页面稳定
+        await page.waitForTimeout(2000);
+        // 轮询策略：先提取回复内容，再用「停止生成按钮」判断是否还在生成。
+        // ⚠️ 不能用 [class*=loading] 早返回——DeepSeek 底部模式切换器常带 loading class，
+        //    会导致轮询永远返回空（之前 chat 超时的根因）。
         let responseText = '';
         const startTime = Date.now();
         while (Date.now() - startTime < 60000) {
           await page.waitForTimeout(1500);
           try {
-            responseText = await page.evaluate(({ fileMode }) => {
+            const poll = await page.evaluate(({ fileMode }) => {
               const allText = document.body.textContent || '';
-              if (fileMode && allText.includes('文件解析中')) return '';
-              const loading = document.querySelector('[class*="loading"], [class*="typing"], [class*="spinner"], [class*="skeleton"]');
-              if (loading) return '';
-              if (allText.includes('深度思考') && allText.includes('...')) return '';
-              const answers = document.querySelectorAll('[class*="ds-assistant-message-main-content"]');
-              for (let i = answers.length - 1; i >= 0; i--) {
-                const txt = answers[i].textContent?.trim() || '';
-                if (txt.length > 0) return txt.slice(0, 2000);
-              }
-              const fallbackAnswers = document.querySelectorAll('[class*="ds-markdown"]');
-              for (let i = fallbackAnswers.length - 1; i >= 0; i--) {
-                const txt = fallbackAnswers[i].textContent?.trim() || '';
-                if (txt.length > 0) return txt.slice(0, 2000);
-              }
-              if (fileMode) {
-                if (allText.includes('异常') || allText.includes('错误') || allText.includes('删除')) {
-                  const idx = allText.indexOf('异常');
-                  return '[系统提示] ' + allText.slice(Math.max(0, idx-40), idx+60).trim().slice(0, 200);
+              // 文件解析中：跳过本轮
+              if (fileMode && allText.includes('文件解析中')) return { text: '', generating: true };
+
+              // 1. 提取 AI 回复：优先 ds-assistant-message-main-content，兜底 ds-markdown
+              const pickLast = (sel: string): string => {
+                const els = document.querySelectorAll(sel);
+                for (let i = els.length - 1; i >= 0; i--) {
+                  const txt = (els[i].textContent || '').trim();
+                  if (txt.length > 0) return txt.slice(0, 2000);
                 }
                 return '';
+              };
+              let text = pickLast('[class*="ds-assistant-message-main-content"]');
+              if (!text) text = pickLast('[class*="ds-markdown"]');
+
+              // 2. 判断是否还在生成：有「停止生成」按钮（DeepSeek 生成中会显示 stop 图标）
+              //    停止按钮通常含 stop/pause 类，或发送按钮变成 loading 状态
+              const stopBtn = document.querySelector('[class*="stop"], [class*="pause"], [aria-label*="停止"], [aria-label*="stop"]');
+              const generating = !!stopBtn;
+
+              // 3. 文件模式错误检测
+              if (fileMode && !text && (allText.includes('异常') || allText.includes('错误'))) {
+                const idx = allText.indexOf('异常');
+                return { text: '[系统提示] ' + allText.slice(Math.max(0, idx - 40), idx + 60).trim().slice(0, 200), generating: false };
               }
-              return '';
-            }, { fileMode: hasFile }) as string;
-            if (responseText) break;
+              return { text, generating };
+            }, { fileMode: hasFile }) as { text: string; generating: boolean };
+
+            // 有文本且不再生成 → 完成
+            if (poll.text && !poll.generating) {
+              responseText = poll.text;
+              break;
+            }
           } catch {
             // continue polling on page evaluate failure
           }
@@ -743,12 +815,9 @@ export default function (xcli: XCLIAPI): void {
       ];
       if (list.length === 0) return fail('参数错误', ['--path 或 --paths 至少二选一']);
 
-      const r = await batchUploadFiles(page, list);
+      const r = await dsUploadFiles(page, list);
       if (r.errors.length > 0) tips.push(...r.errors.map((e) => `⚠ ${e}`));
-      if (r.uploaded === 0) {
-        return fail('上传失败', ['找不到 file input，请检查 DeepSeek 是否支持该类型']);
-      }
-      await page.waitForTimeout(1000);
+      if (r.uploaded === 0) return fail('上传失败', r.errors.length ? r.errors : ['未上传任何文件']);
       tips.push(`✓ 已上传 ${r.uploaded}/${list.length} 个文件`);
       return ok({ type: params.type, files: r.files, uploaded: r.uploaded === list.length }, tips);
     },
