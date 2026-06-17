@@ -1690,3 +1690,30 @@ ai 聚合层（.xcli/plugins/ai/）     ← 统一入口，多站点并行对比
 **focus 去重**：同一 selector 3s 内连续 focus 只记一次（SPA 框架频繁触发 focusin，原来 86 个 action 里 20 个 focus，去重后大幅减少）。
 
 **验证限制**：cdp-tunnel 隔离 page 下，录制器只能监听用户真实操作的 page（CDP 命令在另一个隔离 page 执行，录制器捕获不到）。需通过 viewer 操作验证。
+
+### 23.6 图片能力验证（2026-06-17）
+
+#### ai 聚合层图片命令
+
+| 命令 | 说明 | 验证 |
+|------|------|:---:|
+| `ai image "prompt" --providers doubao,qwen` | 多站点文生图并行对比 | ✅ doubao 4张 + qwen 1张 |
+| `ai image "prompt" --provider doubao --ref img` | 以图生图（参考图变体）| ✅ |
+| `ai chat "..." --path img --providers deepseek,yuanbao` | 带图聊天多站点对比 | ✅ |
+
+#### 站点级图片命令
+
+| 命令 | 说明 | 验证 |
+|------|------|:---:|
+| `doubao image "prompt"` | 文生图（4张+下载）| ✅ |
+| `doubao image "prompt" --ref img` | 以图生图 | ✅ |
+| `doubao image-vary --image img` | 图片变体 | ⚠️ "衍生"按钮改版需录制定位 |
+| `doubao image-cutout --image img` | AI抠图 | ⚠️ "抠图"按钮改版需录制定位 |
+| `qwen image --prompt "prompt"` | 文生图（通义万相）| ✅（需 --wait 同步等待）|
+
+#### 关键经验
+
+1. **ai image 用 `--prompt` 命名参数**（不是位置参数），后端站点 chat 命令都用命名参数
+2. **qwen image 需要 `--wait N`** 同步等待结果（doubao 是同步的不需要）
+3. **图片下载**：doubao 自动下载到 `~/.xbrowser/downloads/`，qwen 返回 URL
+4. **doubao 图片编辑类命令（image-vary/image-cutout）的 UI 按钮改版了**，需要录制定位新 selector
