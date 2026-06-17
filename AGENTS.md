@@ -1752,3 +1752,26 @@ doubao 的图片编辑功能（抠图/扩图/标记/擦除/变清晰）**入口�
 4. 子选项按文案点击
 5. 等待结果 + 下载
 ```
+
+### 23.8 ChatGPT 文生图录制确认（2026-06-17）
+
+通过用户录制 ChatGPT DALL-E 文生图（78 actions）定位的流程：
+
+| 步骤 | action | selector/文案 |
+|------|:---:|---------|
+| 点"+"菜单 | [5] | `#composer-plus-btn` |
+| 选"创建图片" | [7] | 文案"创建图片" |
+| 选比例 | [9-11] | `#radix-*`（自动/方形/宽屏）|
+| 输入提示词 | [13] | `#prompt-textarea` |
+| 选质量 | [18-20] | `#radix-*`（均衡/超高）|
+| 发送 | [23] | `#composer-submit-button` |
+| 图片出现 | — | `#image-{uuid}` 或 `img[src*="oaidalleapiprodscus"]` |
+| 编辑 | [35] | 文案"编辑" |
+| 选编辑区域 | [41-43] | "选择" / `#paper-view-0` |
+| 预览 | [72] | `#image-{uuid} > div` |
+
+**ChatGPT 文生图特点**：
+- 入口是"+"菜单里的"创建图片"（不是直接 chat）
+- DALL-E 生成后图片有唯一 `#image-{uuid}`
+- 图片上有"编辑"按钮 → 可选区域修改 → 重新生成
+- ai 聚合层 IMAGE_PROVIDERS 已加入 chatgpt

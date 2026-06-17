@@ -153,7 +153,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   // ── image — 文生图 / 以图生图（多站点并行对比）──
-  const IMAGE_PROVIDERS = ['doubao', 'qwen'];
+  const IMAGE_PROVIDERS = ['doubao', 'qwen', 'chatgpt'];
 
   site.command('image', {
     description: '统一文生图 / 以图生图 — 多站点并行生成对比',

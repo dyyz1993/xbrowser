@@ -570,6 +570,73 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  // ── image — 文生图（DALL-E，录制确认流程 2026-06-17）──
+  // ChatGPT 文生图入口：#composer-plus-btn → "创建图片" → 输入提示词 → 发送 → 等图片生成
+  site.command('image', {
+    description: '文生图（DALL-E 集成）',
+    requiresLogin: true,
+    scope: 'browser',
+    parameters: z.object({
+      prompt: z.string().describe('图片描述提示词'),
+      ratio: z.string().optional().describe('图片比例（自动/方形/宽屏，默认自动）'),
+    }),
+    result: z.object({ images: z.array(z.string()).optional(), status: z.string() }).passthrough(),
+    examples: [
+      { cmd: 'xbrowser chatgpt image --prompt "画一只可爱的柴犬"', description: '文生图' },
+    ],
+    handler: async (params, ctx) => {
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
+      const tips = buildCdpTips(ctx);
+      try {
+        // 1. 点"+"按钮打开菜单（录制 action[5]）
+        await page.click('#composer-plus-btn', { timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(800);
+        // 2. 点"创建图片"（录制 action[7]）
+        await page.evaluate(() => {
+          const items = document.querySelectorAll('[role="menuitem"], button, div');
+          for (const el of items) {
+            if ((el.textContent || '').trim() === '创建图片') { (el as HTMLElement).click(); return; }
+          }
+        }).catch(() => {});
+        await page.waitForTimeout(1000);
+        // 3. 输入提示词（录制 action[13]）
+        await page.locator('#prompt-textarea').first().click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(200);
+        await page.keyboard.type(params.prompt, { delay: 15 });
+        await page.waitForTimeout(400);
+        // 4. 发送（录制 action[23]）
+        await page.click('#composer-submit-button', { timeout: 5000 }).catch(() => {});
+        tips.push('已发送文生图请求，等待 DALL-E 生成...');
+
+        // 5. 等图片生成（等 #image-{uuid} 元素出现）
+        const startTime = Date.now();
+        const imageUrls: string[] = [];
+        while (Date.now() - startTime < 120000) {
+          await page.waitForTimeout(3000);
+          const urls = await page.evaluate(() => {
+            // ChatGPT 生成的图片：#image-{uuid} 或 img[src*="oaidalleapiprodscus"]
+            const imgs = document.querySelectorAll('img[src*="oaidalleapiprodscus"], img[src*="files.oaiusercontent"], #image-[id] img');
+            return Array.from(imgs).map(img => (img as HTMLImageElement).src).filter(Boolean);
+          }).catch(() => [] as string[]) as string[];
+          if (urls.length > 0) {
+            imageUrls.push(...new Set(urls));
+            break;
+          }
+        }
+
+        if (imageUrls.length > 0) {
+          tips.push(`✓ DALL-E 生成了 ${imageUrls.length} 张图片`);
+          return ok({ images: imageUrls, status: 'completed' }, tips);
+        }
+        tips.push('⚠ DALL-E 生成超时');
+        return ok({ images: [], status: 'timeout' }, tips);
+      } catch {
+        return fail('文生图失败', ['请检查 ChatGPT 登录状态']);
+      }
+    },
+  });
+
   site.login(async (ctx) => {
     const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
     const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint;
