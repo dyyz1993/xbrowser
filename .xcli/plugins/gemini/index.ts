@@ -195,10 +195,14 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
-  // ── attach — 上传附件 ──
+  // ── attach — 上传附件（录制确认流程） ──
+  // gemini 上传流程（录制 actions [31][32][36]）：
+  //   1. click [aria-label="上传和工具"] → 弹菜单
+  //   2. click "上传文件"（span.menu-text）→ 触发 filechooser
+  //   3. setInputFiles('input[type=file]') 注入文件
   site.command('attach', {
     description: '上传附件（图片/文件）',
-    requiresLogin: true,
+    requiresLogin: false,
     scope: 'page',
     parameters: z.object({
       path: z.string().describe('文件路径'),
@@ -215,6 +219,20 @@ export default function (xcli: XCLIAPI): void {
         const ext = path.extname(absPath).toLowerCase();
         const mime: Record<string, string> = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif', '.webp': 'image/webp', '.pdf': 'application/pdf' };
         const payload = { name: path.basename(absPath), mimeType: mime[ext] || 'application/octet-stream', buffer: buf };
+
+        // 1. 点"上传和工具"按钮弹菜单
+        await page.click('[aria-label="上传和工具"]', { timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(500);
+        // 2. 点"上传文件"菜单项
+        await page.evaluate(() => {
+          const items = document.querySelectorAll('span.menu-text, [class*="menu-text"], [role="menuitem"]');
+          for (const el of items) {
+            if ((el.textContent || '').includes('上传文件')) { (el as HTMLElement).click(); return; }
+          }
+        }).catch(() => {});
+        await page.waitForTimeout(500);
+        // 3. 等 file input 挂载 + 注入文件
+        await page.waitForSelector('input[type="file"]', { timeout: 5000 }).catch(() => {});
         const p = page as unknown as { setInputFiles?: (s: string, f: unknown[]) => Promise<void> };
         await p.setInputFiles?.('input[type="file"]', [payload]);
         await new Promise(r => setTimeout(r, 2000));

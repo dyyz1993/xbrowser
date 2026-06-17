@@ -1647,3 +1647,28 @@ ai 聚合层（.xcli/plugins/ai/）     ← 统一入口，多站点并行对比
 5. **shared helpers**（`shared/ai-chat-commands.ts`）：站点插件内部复用减少重复，但不替代站点插件。新插件可选用 `registerAIChatSite(xcli, config)`（`shared/ai-chat-engine.ts`）一行注册全部标准命令。
 
 6. **qwen 和 qianwen 是同一站点**（`qianwen.com`），命令互补（qwen 有 image，qianwen 有 chat/list/open）。后续可考虑合并。
+
+### 23.4 Gemini 录制确认的 selector（2026-06-17）
+
+通过用户录制 gemini 对话（86 actions）定位的关键 selector：
+
+| 元素 | selector | 录制 action |
+|------|---------|------------|
+| 输入框 | `[aria-label*="输入提示"]` 或 `.ql-editor > p` | [43] input |
+| 发送按钮 | `mat-icon[fonticon="arrow_upward"]` | [70] click |
+| 对话容器 | `[data-test-id="conversation"]` | [84] click |
+| 对话历史区 | `[data-test-id="chat-history-container"]` | [84] |
+| 上传入口 | `[aria-label="上传和工具"]` | [31] click |
+| 上传菜单项 | `span.menu-text`（文本"上传文件"） | [32] click |
+| file input | `input[type="file"]`（点上传文件后挂载） | [36] filechooser |
+
+**gemini 上传流程**（录制确认）：
+1. click `[aria-label="上传和工具"]` → 弹抽屉菜单
+2. click "上传文件"（`span.menu-text`）→ 触发 filechooser
+3. `setInputFiles('input[type="file"]', payload)` → 注入文件
+
+**gemini 回复提取**：
+- 对话轮次容器 = `[data-test-id="conversation"]`
+- 最后一个 conversation 的文本含 "你说 xxx Gemini 说 yyy"
+- 提取时去掉 "Gemini 说" 前缀即为 AI 回复
+- 首页 `/app` 初始无 conversation 元素，发消息后 SPA 才渲染
