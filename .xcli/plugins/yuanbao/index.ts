@@ -2,6 +2,7 @@ import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
 import { buildTips, batchUploadFiles, checkLoginStatus } from '../shared/ai-chat-base.js';
+import { smartExtractReply } from '../shared/smart-extract.js';
 import { pasteFiles } from '../shared/paste-files.js';
 
 type Page = import('../types').Page;
@@ -455,6 +456,14 @@ export default function (xcli: XCLIAPI): void {
               duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
             }, tips);
         } else {
+          // selector 提取失败，用大模型分析 snapshot 兜底
+          tips.push('⚠ 回复提取失败，尝试用 AI 分析页面快照...');
+          const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint as string | undefined;
+          const smartReply = await smartExtractReply(page, params.message, 'yuanbao 聊天页，用户发了消息等待 AI 回复', cdp).catch(() => null);
+          if (smartReply) {
+            tips.push('✓ AI 快照分析成功');
+            return ok({ response: smartReply }, tips);
+          }
           tips.push('AI 回复超时或未检测到');
           return ok({ response: '' }, tips);
         }

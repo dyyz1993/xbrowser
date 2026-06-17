@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { buildTips, checkLoginStatus } from '../shared/ai-chat-base.js';
 import { listConversations, openByTitle, sendChatMessage } from '../shared/ai-chat-commands.js';
+import { smartExtractReply } from '../shared/smart-extract.js';
 
 type Page = import('../types').Page;
 
@@ -250,10 +251,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = ctx.page;
-        if (!page) throw new Error("需要浏览器页面");
-        await ensurePage(page, ctx);
-        await page.waitForTimeout(1000);
+        const page = ctx.page;        if (!page) throw new Error("需要浏览器页面");
+        await ensurePage(page, ctx);        await page.waitForTimeout(1000);
 
         const clicked = await openByTitle(page, params.title, 'a[href*="/a/chat/s/"]');
 
@@ -297,10 +296,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = ctx.page;
-        if (!page) throw new Error("需要浏览器页面");
-        await ensurePage(page, ctx);
-        await page.waitForTimeout(3000); // 等 React 渲染
+        const page = ctx.page;        if (!page) throw new Error("需要浏览器页面");
+        await ensurePage(page, ctx);        await page.waitForTimeout(3000); // 等 React 渲染
         const tips = buildTips(ctx);
 
         // 切换对话模式（快速/专家）
@@ -402,16 +399,12 @@ export default function (xcli: XCLIAPI): void {
           if (r.errors.length > 0) tips.push(...r.errors.map((e) => `⚠ ${e}`));
           if (r.uploaded === 0) return fail('附件上传失败', r.errors.length ? r.errors : ['未上传任何文件']);
           tips.push(`✓ 已上传 ${r.uploaded}/${list.length} 个附件`);
-        }
-
-
-        // 输入 + 发送（共享函数）
+        }        // 输入 + 发送（共享函数）
         await sendChatMessage(page, params.message, {
           inputSelector: SEL.input,
           sendMethod: 'enter',
           typeDelay: 5,
-        });
-        tips.push('消息已发送，等待 AI 回复...');
+        });        tips.push('消息已发送，等待 AI 回复...');
 
         // 等页面稳定
         await page.waitForTimeout(2000);
@@ -562,8 +555,16 @@ export default function (xcli: XCLIAPI): void {
 
           return ok(result, tips)
         } else {
+          // selector 提取失败（可能改版），用大模型分析 snapshot 兜底
+          tips.push('⚠ 回复提取失败，尝试用 AI 分析页面快照...');
+          const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint as string | undefined;
+          const smartReply = await smartExtractReply(page, params.message, 'deepseek 聊天页，用户发了消息等待 AI 回复', cdp).catch(() => null);
+          if (smartReply) {
+            tips.push('✓ AI 快照分析成功');
+            return ok({ response: smartReply }, tips);
+          }
           tips.push('AI 回复超时或未检测到');
-          return ok({ response: '' }, tips)
+          return ok({ response: '' }, tips);
         }
       } catch {
         return fail('未知错误', ['发送消息失败'])
@@ -589,10 +590,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = ctx.page;
-        if (!page) throw new Error("需要浏览器页面");
-        await ensurePage(page, ctx);
-        await page.waitForTimeout(500);
+        const page = ctx.page;        if (!page) throw new Error("需要浏览器页面");
+        await ensurePage(page, ctx);        await page.waitForTimeout(500);
 
         const label = params.mode === 'expert' ? '专家模式' : '快速模式';
         await page.waitForTimeout(2000);
@@ -674,10 +673,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = ctx.page;
-        if (!page) throw new Error("需要浏览器页面");
-        await ensurePage(page, ctx);
-        const targetPressed = params.state === 'on';
+        const page = ctx.page;        if (!page) throw new Error("需要浏览器页面");
+        await ensurePage(page, ctx);        const targetPressed = params.state === 'on';
         const toggleResult = await toggleButton(page, '深度思考', targetPressed);
         await page.waitForTimeout(500);
 
@@ -713,10 +710,8 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
-        const page = ctx.page;
-        if (!page) throw new Error("需要浏览器页面");
-        await ensurePage(page, ctx);
-        const targetPressed = params.state === 'on';
+        const page = ctx.page;        if (!page) throw new Error("需要浏览器页面");
+        await ensurePage(page, ctx);        const targetPressed = params.state === 'on';
         const toggleResult = await toggleButton(page, '智能搜索', targetPressed);
         await page.waitForTimeout(500);
 
