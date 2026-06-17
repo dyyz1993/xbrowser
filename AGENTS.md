@@ -1672,3 +1672,21 @@ ai 聚合层（.xcli/plugins/ai/）     ← 统一入口，多站点并行对比
 - 最后一个 conversation 的文本含 "你说 xxx Gemini 说 yyy"
 - 提取时去掉 "Gemini 说" 前缀即为 AI 回复
 - 首页 `/app` 初始无 conversation 元素，发消息后 SPA 才渲染
+
+### 23.5 录制器文本变化感知 + 体积压缩（2026-06-17）
+
+**新增 `text-render` action 类型**：MutationObserver 监听 body textContent 变化，检测 AI 回复渲染过程。
+
+| phase | 触发条件 | 记录内容 |
+|-------|---------|---------|
+| `start` | body 文本增长 > 20 字符（首次） | delta、bodyLen |
+| `end` | 1.5s 内无新文本变化 | duration、bodyLen、preview（末尾 80 字符）|
+
+**压缩策略**：
+- 只记 start/end 两个关键点，不记中间每字符变化（去头去尾）
+- MutationObserver 节流 500ms（避免每个 DOM 变化都触发检查）
+- preview 只取末尾 80 字符（AI 回复的结尾部分）
+
+**focus 去重**：同一 selector 3s 内连续 focus 只记一次（SPA 框架频繁触发 focusin，原来 86 个 action 里 20 个 focus，去重后大幅减少）。
+
+**验证限制**：cdp-tunnel 隔离 page 下，录制器只能监听用户真实操作的 page（CDP 命令在另一个隔离 page 执行，录制器捕获不到）。需通过 viewer 操作验证。
