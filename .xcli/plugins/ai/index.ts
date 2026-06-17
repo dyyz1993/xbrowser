@@ -131,11 +131,14 @@ export default function (xcli: XCLIAPI): void {
         return { provider: '?', response: '', error: r.reason?.message || '失败' };
       });
 
-      // tips 格式化对比
+      // tips 格式化——对齐表格对比
+      const maxProviderLen = Math.max(...formatted.map(r => r.provider.length), 8);
       const tips = formatted.map(r => {
-        if (r.error) return `❌ ${r.provider}: ${r.error}`;
-        const preview = r.response.slice(0, 50);
-        return `✅ ${r.provider}: ${preview}${r.duration ? ` (${r.duration})` : ''}`;
+        const providerPad = r.provider.padEnd(maxProviderLen);
+        if (r.error) return `❌ ${providerPad}  错误: ${r.error}`;
+        const preview = r.response.replace(/\n/g, ' ').slice(0, 40);
+        const dur = r.duration ? ` (${r.duration})` : '';
+        return `✅ ${providerPad}  ${preview}${dur}`;
       });
 
       return ok({ results: formatted }, tips);

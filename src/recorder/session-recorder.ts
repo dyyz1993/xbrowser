@@ -57,7 +57,7 @@ export interface UserAction {
   type: 'click' | 'input' | 'change' | 'keydown' | 'submit' | 'scroll'
     | 'navigation' | 'goto' | 'cdp-fill' | 'cdp-click' | 'cdp-eval' | 'filechooser'
     | 'dblclick' | 'contextmenu' | 'hover' | 'drag' | 'resize' | 'clipboard'
-    | 'touch' | 'focus' | 'visibility';
+    | 'touch' | 'focus' | 'visibility' | 'text-render';
   timestamp: number;
   url: string;
   pageTitle: string;
@@ -965,13 +965,21 @@ const ACTION_SIGNAL_SCRIPT = `
     });
   }, true);
 
-  // ── Focus / Blur ──
+  // ── Focus / Blur（去重：同一元素连续 focus 只记一次） ──
+  var __xb_last_focus_sel = '';
+  var __xb_last_focus_ts = 0;
   document.addEventListener('focusin', function(e) {
     var target = actualTarget(e);
     var tag = target.tagName && target.tagName.toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable) {
+      var desc = describe(target);
+      var sel = desc.selector || '';
+      // 去重：同一 selector 3s 内连续 focus 只记一次（SPA 频繁触发 focusin 噪音）
+      if (sel === __xb_last_focus_sel && Date.now() - __xb_last_focus_ts < 3000) return;
+      __xb_last_focus_sel = sel;
+      __xb_last_focus_ts = Date.now();
       pushAction('focus', {
-        element: describe(target),
+        element: desc,
         focus: { focusType: 'focus' },
       });
     }
@@ -980,6 +988,7 @@ const ACTION_SIGNAL_SCRIPT = `
     var target = actualTarget(e);
     var tag = target.tagName && target.tagName.toLowerCase();
     if (tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable) {
+      // blur 不去重（focusout 是明确的焦点离开信号）
       pushAction('focus', {
         element: describe(target),
         focus: { focusType: 'blur' },
@@ -993,6 +1002,66 @@ const ACTION_SIGNAL_SCRIPT = `
       visibility: { state: document.hidden ? 'hidden' : 'visible' },
     });
   }, true);
+
+  // ── Text render detection（AI 回复文本渲染感知）──
+  // 监听 body textContent 变化，检测 AI 回复的"开始渲染→持续增长→停止"过程。
+  // 压缩策略：只在"文本开始增长"和"文本停止增长"两个关键点记录 action，
+  // 不记录中间每一个字符的变化（去头去尾、控制体积）。
+  var __xb_last_body_len = (document.body.textContent || '').length;
+  var __xb_render_start_ts = 0;
+  var __xb_render_peak_len = __xb_last_body_len;
+  var __xb_render_timer = null;
+
+  function __xb_check_text_render() {
+    var curLen = (document.body.textContent || '').length;
+    var delta = curLen - __xb_last_body_len;
+
+    if (delta > 20) {
+      // 文本在增长（AI 回复渲染中）
+      if (__xb_render_start_ts === 0) {
+        // 首次检测到增长 → 记录"渲染开始"
+        __xb_render_start_ts = Date.now();
+        __xb_render_peak_len = curLen;
+        pushAction('text-render', {
+          textRender: { phase: 'start', delta: delta, bodyLen: curLen },
+        });
+      } else {
+        // 持续增长 → 更新峰值（不 pushAction，压缩）
+        __xb_render_peak_len = curLen;
+      }
+    }
+
+    __xb_last_body_len = curLen;
+
+    // 重置定时器：如果 1.5s 内没有新变化，判定渲染结束
+    if (__xb_render_timer) clearTimeout(__xb_render_timer);
+    if (__xb_render_start_ts > 0) {
+      __xb_render_timer = setTimeout(function() {
+        // 渲染结束 → 记录"渲染完成"（含总增量 + 预览）
+        var totalDelta = __xb_render_peak_len - (__xb_render_peak_len - delta);
+        pushAction('text-render', {
+          textRender: {
+            phase: 'end',
+            duration: Date.now() - __xb_render_start_ts,
+            bodyLen: __xb_render_peak_len,
+            preview: (document.body.textContent || '').trim().slice(-80),
+          },
+        });
+        __xb_render_start_ts = 0;
+      }, 1500);
+    }
+  }
+
+  // MutationObserver 监听 DOM 变化 → 节流检查文本
+  var __xb_mo_timer = null;
+  var __xb_observer = new MutationObserver(function() {
+    if (__xb_mo_timer) return;
+    __xb_mo_timer = setTimeout(function() {
+      __xb_mo_timer = null;
+      __xb_check_text_render();
+    }, 500);
+  });
+  __xb_observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 })();
 `;
 
