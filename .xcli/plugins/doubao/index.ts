@@ -1122,22 +1122,19 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(1000);
         tips.push(`已上传图片: ${path.basename(absPath)}`);
 
-        const cutoutClicked = await page.evaluate(() => {
-          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-          let node: Text | null;
-          while ((node = walker.nextNode() as Text | null)) {
-            if (node.textContent?.includes('抠图') || node.textContent?.includes('去背景')) {
-              const parent = node.parentElement;
-              if (parent) {
-                parent.click();
-                return true;
-              }
-            }
-          }
-          return false;
-        });
-
-        if (!cutoutClicked) tips.push('⚠ 未找到抠图按钮');
+        // 录制确认的抠图流程：点图片打开预览 → 工具栏点"抠图" → 点"抠出主体"
+        await page.evaluate(() => {
+          const imgs = document.querySelectorAll('img[src*="rc_gen_image"], img[src*="generate"]');
+          const last = imgs[imgs.length - 1] as HTMLElement;
+          last?.click();
+        }).catch(() => {});
+        await page.waitForTimeout(1000);
+        const cutoutClicked = await clickButtonByText(page, '抠图');
+        if (cutoutClicked) {
+          await page.waitForTimeout(800);
+          await clickButtonByText(page, '抠出主体').catch(() => {});
+        }
+        if (!cutoutClicked) tips.push('⚠ 未找到抠图按钮（需先点图片打开预览）');
 
         await page.waitForTimeout(5000);
         let resultUrl = '';
@@ -1190,20 +1187,18 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(1000);
         tips.push(`已上传参考图: ${path.basename(absPath)}`);
 
-        const varyClicked = await page.evaluate(() => {
-          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-          let node: Text | null;
-          while ((node = walker.nextNode() as Text | null)) {
-            if (node.textContent?.includes('衍生') || node.textContent?.includes('变体') || node.textContent?.includes('类似')) {
-              const parent = node.parentElement;
-              if (parent) {
-                parent.click();
-                return true;
-              }
-            }
-          }
-          return false;
-        });
+        // 录制确认的图片编辑流程：点图片 → 工具栏点"扩图" → 点"按新尺寸生成图片"
+        await page.evaluate(() => {
+          const imgs = document.querySelectorAll('img[src*="rc_gen_image"], img[src*="generate"]');
+          const last = imgs[imgs.length - 1] as HTMLElement;
+          last?.click();
+        }).catch(() => {});
+        await page.waitForTimeout(1000);
+        const varyClicked = await clickButtonByText(page, '扩图');
+        if (varyClicked) {
+          await page.waitForTimeout(800);
+          await clickButtonByText(page, '按新尺寸生成图片').catch(() => {});
+        }
         if (!varyClicked) tips.push('⚠ 未找到"衍生"按钮');
 
         if (params.prompt) {
