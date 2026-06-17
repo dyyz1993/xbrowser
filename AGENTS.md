@@ -260,6 +260,98 @@ xbrowser --cdp 9222 chatgpt list
 
 ### 7.5 cdp-tunnel 隔离规范（2026-06-16 强制）
 
+#### 7.5.0 cdp-tunnel 是什么 + 怀疑 CDP 问题时怎么诊断（2026-06-17 实测）
+
+**本仓库默认的 CDP 端口 `9221` 归属于 `cdp-tunnel` 服务**（npm 全局包，作者 dyyz1993，与本仓库同一作者）。它的架构是「代理服务器 + Chrome 扩展」：
+
+```
+┌─────────────────────────────────────────────────────┐
+│        cdp-tunnel Proxy Server (localhost:9221)     │
+│                                                     │
+│   /plugin (WS)  ←── Chrome 扩展 "CDP Bridge"        │
+│   /json/* (HTTP) ←── Playwright/xbrowser 客户端     │
+└─────────────────────────────────────────────────────┘
+         ↑                ↑                ↑
+   xbrowser (A)     xbrowser (B)     其他 CDP 客户端
+   clientId_1       clientId_2       clientId_3
+```
+
+- **背后的 Chrome 扩展叫 "CDP Bridge"**（MV3，权限含 `debugger`/`tabs`），通过 Chrome 的 `chrome.debugger` API 把浏览器暴露成一个标准 CDP endpoint。代理服务器（`server/proxy-server.js`）只是转发层。
+- 所以：`xbrowser --cdp http://localhost:9221` = 「连到 cdp-tunnel 代理 → 代理通过已装的 CDP Bridge 扩展操控你的真实 Chrome」。
+- **想看完整用法和所有子命令：`cdp-tunnel --help`**（已实测，子命令：`start` / `stop` / `status` / `restart` 没有但可用 stop+start / `diagnose` / `extension` / `setup` / `update` / `config` / `remote`）。
+
+**⚠️ 怀疑是 CDP 问题时——必须先复现，再下结论。** 下面这套诊断流程每一步都已在 2026-06-17 实测跑通，Agent 怀疑 CDP 故障时**必须**逐项跑过并贴出输出，禁止仅凭"感觉"判定是 CDP 问题。
+
+**第一步：定位端口归属（确认 9221 确实是 cdp-tunnel，不是别的进程抢了）**
+
+```bash
+# 看 9221 被谁占着
+lsof -nP -iTCP:9221 -sTCP:LISTEN
+# 预期：node .../cdp-tunnel/server/proxy-server.js  (PID 形如 12xxx)
+# 反例：如果显示的是 chrome --remote-debugging-port 或别的进程 → 端口被抢，CDP 行为不符本文档
+```
+
+**第二步：看 cdp-tunnel 自己的状态（它最清楚扩展连没连）**
+
+```bash
+cdp-tunnel status      # 一行：服务器/CDP地址/扩展状态
+cdp-tunnel diagnose    # 五项体检：Proxy / HTTP / 扩展 / Targets / Chrome 进程
+```
+
+| 子命令 | 关注输出 | 健康值 | 出问题说明 |
+|--------|---------|--------|-----------|
+| `status` | `服务器:` / `扩展:` | `运行中` / `已连接` | 服务器没起 → `cdp-tunnel start`；扩展显示"已安装但未连接" → 见下方⚠️ |
+| `diagnose` | 第 3 项 `Chrome 扩展` | `✅ 已连接` | `❌ 未连接` 时 takeover/create 桥接不通 |
+
+**第三步：探 HTTP 端点（最低成本判断代理死活）**
+
+```bash
+curl -s --max-time 3 http://localhost:9221/json/version
+# 预期：{"Browser":"Chrome/149.0.0.0 (cdp-tunnel/2.10.12)", "totalPlugins":2, ...}
+#   totalPlugins>0 = 扩展已桥接；=0 或连不上 = 扩展/代理有问题
+```
+
+> **关键反直觉点（已实测）**：`diagnose` 报"扩展未连接"**不等于** CDP 完全不可用。代理服务器的 HTTP 端点 `/json/version` 仍会返回数据、xbrowser 的简单命令（如 `title`）可能仍能跑——因为代理本身活着，只是「扩展桥接通道」断了会表现为：新 page 创建失败、attach 失败、隔离行为异常。**判断标准以 `totalPlugins` 字段和实际 CDP 命令是否成功为准，不要只看 status 文案。**
+
+**第四步：用 xbrowser 端到端冒烟（最终判定）**
+
+```bash
+# 最小冒烟：拿标题
+xbrowser title --cdp http://localhost:9221 --json
+# 预期：{"success":true,"data":{"title":"<真实页面标题>"}}
+#   success:false / 超时 / 连接拒绝 → CDP 链路确实断了
+
+# 再深一层：能否列 targets（走标准 CDP，不走 HTTP /json/list）
+xbrowser eval --cdp http://localhost:9221 --json "1+1"   # 任意 JS 求值，验证 attach 成功
+```
+
+**CDP 问题 → 症状 → 诊断命令 → 预期 → 修复 对照表**
+
+| 怀疑的 CDP 问题 | 典型症状 | 跑哪条命令 | 健康预期 | 修复动作 |
+|---|---|---|---|---|
+| 代理服务器没启动 | `connect ECONNREFUSED 127.0.0.1:9221` / xbrowser 全部命令连接拒绝 | `lsof -nP -iTCP:9221 -sTCP:LISTEN` | 有 cdp-tunnel 进程监听 | `cdp-tunnel start`（或 `setup` 一键） |
+| 端口被别人抢了 | CDP 行为和本文档对不上（隔离/登录态表现异常） | `lsof ...` 看进程路径 | 是 `.../cdp-tunnel/server/proxy-server.js` | 杀掉占用进程，重启 cdp-tunnel |
+| 扩展桥接断了 | `newPage()` 失败 / attach 超时 / 看不到任何 target | `cdp-tunnel diagnose`（第3项）+ `curl /json/version` 看 `totalPlugins` | 扩展 `✅已连接` 且 `totalPlugins>0` | 点 Chrome 工具栏 CDP Bridge 图标重连；或 `cdp-tunnel extension` 重装；或重启 Chrome |
+| 登录态"看起来丢了" | goto 到登录页而非已登录主页 | `cdp-tunnel status`（看是不是端口被抢/换实例）+ 检查是否连到了别的 Chrome 实例 | 登录态共享，goto 直接进已登录页 | 确认连的是装了 CDP Bridge 且已登录的那个 Chrome；别误判成"需要重新登录" |
+| 标签隔离异常 | 能看到/操作别的 clientId 的 tab | `cdp-tunnel --help` 确认版本 ≥ 2.10.x；走 WS `Target.getTargets` 而非 HTTP `/json/list` | 只看到本 clientId 的 page | 升级 `cdp-tunnel update`；代码侧禁止 HTTP `/json/list`（见下方） |
+| 扩展未连但 HTTP 通（误判重灾区） | status 写"未连接"但 xbrowser `title` 仍能跑 | `curl /json/version` 看 `totalPlugins` | 诊断文案与 `totalPlugins` 一致 | 以 `totalPlugins`/实际命令为准，别被 status 文案误导 |
+
+**给用户的可复制验证片段**（Agent 把 `<SYMP>` 换成怀疑的症状后发给用户）：
+
+```bash
+# —— cdp-tunnel 链路体检（怀疑症状: <SYMP>）——
+echo "[1] 端口归属:";  lsof -nP -iTCP:9221 -sTCP:LISTEN
+echo "[2] 服务状态:";  cdp-tunnel status
+echo "[3] 深度诊断:";  cdp-tunnel diagnose
+echo "[4] HTTP 探活:";  curl -s --max-time 3 http://localhost:9221/json/version
+echo "[5] xbrowser 冒烟:";  xbrowser title --cdp http://localhost:9221 --json
+# 把以上 5 步的完整输出贴回来，即可定位是 CDP 链路还是业务逻辑问题
+```
+
+> **硬性要求**：在 issue / commit message / PR 里断言"是 CDP 的问题"之前，上述 5 步必须全部跑过且输出已记录。**没复现就别下结论是 CDP 的锅**——先排除业务逻辑（选择器、时序、登录态、CDP Firewall 合成事件检测等）。
+
+---
+
 **铁律**：cdp-tunnel **共享 Chrome profile / cookie / 登录态**，**只隔离**"tab 列表"和"每个 clientId 自己创建的 tab"。
 
 | 维度 | 共享 / 隔离 |
@@ -1399,3 +1491,109 @@ node dist/cli.js record stop --session regression
 ```
 
 预期：6 actions，无 about:blank，无重复，有 navigation，有 network。
+
+## 22. cdp-tunnel Input 丢失 Bug + 对抗测试方法论（2026-06-17）
+
+> ✅ **已修复（2026-06-17 当天）**：cdp-tunnel 的 Input 转发 bug 已修复，keyboard/mouse 事件正常到 DOM。
+> 以下为历史记录 + 对抗测试方法论（方法论仍然有效，作为未来排查参考）。
+>
+> **历史发现**：cdp-tunnel 代理层曾在隔离 page 上**丢弃** `Input.dispatchKeyEvent` 和 `Input.dispatchMouseEvent`，
+> 只有 `Input.insertText` 和 `Runtime.evaluate` 正常。这不是网站反自动化——是 cdp-tunnel 的转发 bug。
+
+### 22.1 确证实验（可复现）
+
+用 `/Applications/Chromium.app/Contents/MacOS/Chromium --headless=new --remote-debugging-port=9333`
+启动**不走 cdp-tunnel 的干净 Chromium**，对比 cdp-tunnel（9221）：
+
+| CDP 命令 | 直连 Chromium (9333) | cdp-tunnel (9221) |
+|---------|---------------------|--------------------|
+| `Input.dispatchKeyEvent`（keyboard.type/press/down/up） | ✅ 到 DOM，isTrusted=true | ❌ **丢失，不到 DOM** |
+| `Input.dispatchMouseEvent`（mouse.click/move） | ✅ 到 DOM，isTrusted=true | ❌ **丢失/卡死** |
+| `Input.insertText` | ✅ 到 DOM，isTrusted=true | ✅ **正常** |
+| `Runtime.evaluate` | ✅ | ✅ **正常** |
+| Textarea Enter 触发 submit | ✅ | ❌ |
+
+**复现脚本**：`output/.scripts/cdp-input-bench.mjs`（对比直连 vs cdp-tunnel）
+**对抗测试页**：`tests/fixtures/anti-automation-bench.html`（含 click/keyboard/textarea/CDP 痕迹检测）
+
+```bash
+# 启动干净 Chromium（不走 cdp-tunnel）
+/Applications/Chromium.app/Contents/MacOS/Chromium --headless=new --remote-debugging-port=9333 &
+
+# 起 http 服务供对抗页
+cd tests/fixtures && python3 -m http.server 9911 &
+
+# 对比测试
+node output/.scripts/cdp-input-bench.mjs 9333 "DIRECT"    # 直连，应全 ✅
+node output/.scripts/cdp-input-bench.mjs 9221 "TUNNEL"    # cdp-tunnel，keyboard/mouse 应 ❌
+```
+
+### 22.2 对插件的影响
+
+| 场景 | cdp-tunnel 下的可用方法 | 不可用方法 |
+|------|----------------------|-----------|
+| **写输入框值** | `keyboard.insertText` ✅（React onChange 触发，fiber props.value 正确） | `page.fill`（React state 不更新）、`keyboard.type`（事件丢失）、`page.type`（同） |
+| **点击按钮** | 无可靠方法 | `page.click`、`mouse.click`、`locator.click`（全丢失/卡死） |
+| **键盘按键**（Enter 发送等） | 无可靠方法 | `keyboard.press`、`keyboard.down/up`（全丢失） |
+| **JS 执行** | `page.evaluate` ✅ | — |
+
+### 22.3 Bug 期间的绕行手段（✅ cdp-tunnel 修复后不再需要，保留备查）
+
+1. **`keyboard.insertText`** — 写输入框值（唯一可靠）。触发 React onChange。
+2. **React fiber onClick 直调** — 从 `__reactProps` 取 onClick 函数直接调用，绕过事件系统 + isTrusted 检查。
+   - 能触发"创建会话/提交表单"等 onClick 逻辑
+   - **限制**：只能触发 onClick 绑定的逻辑；如果提交由 onKeyDown(Enter) 触发（如 DeepSeek），onClick 无效
+   - 实现见 `.xcli/plugins/shared/react-click.ts`
+3. **`dispatchEvent(new KeyboardEvent(...))`** — 走 DOM 事件冒泡 → React 合成事件
+   - **限制**：isTrusted=false，被检查 isTrusted 的站点拦截
+4. **`page.evaluate(() => el.click())`** — 合成 click
+   - **限制**：isTrusted=false，同上
+
+### 22.4 受影响的插件
+
+| 插件 | 问题 | 状态 |
+|------|------|------|
+| **deepseek chat** | 发送靠 Enter keydown（曾被 cdp-tunnel 丢失） | ✅ **已修复**（cdp-tunnel 修后 keyboard.type+Enter 正常，response=7 验证通过） |
+| **doubao chat** | 同类问题 | ✅ 应已修复（cdp-tunnel 修后 keyboard 事件正常，待最终验证） |
+| **yuanbao chat** | 同类问题 | ✅ 应已修复（同上，待最终验证） |
+| **所有 attach/upload** | `setInputFiles` 不依赖 dispatchMouseEvent | ✅ 一直正常 |
+
+### 22.5 对抗测试方法论（写进 AGENTS 的原因）
+
+> 遇到"操作不生效"时，**不要假设是网站反自动化**。先做对照实验区分根因：
+
+```
+操作不生效
+  ├─ 是 cdp-tunnel bug？→ 启动干净 Chromium（9333），对比测试（见 22.1）
+  ├─ 是网站反自动化？→ 干净 Chromium 上也不生效（检查 isTrusted/navigator.webdriver 等）
+  └─ 是 selector/时序问题？→ 用 evaluate 检查 DOM 状态 + 录制对比真实操作
+```
+
+**验证流程**：
+1. 写对抗 HTML（`tests/fixtures/anti-automation-bench.html`）：含要测试的元素 + 事件监听日志 + CDP 痕迹检测
+2. 起 http 服务（`python3 -m http.server`）
+3. 启动干净 Chromium（`--remote-debugging-port=9333`，**不带 cdp-tunnel**）
+4. 跑对比脚本（直连 vs cdp-tunnel）
+5. 看哪个环境失效 → 定位根因层
+
+**沉淀原则**：每次发现新的对抗/绕行手段，更新本节表格 + 对抗测试页。
+
+### 22.6 cdp-tunnel 修复方向（✅ 已修复）
+
+cdp-tunnel 的 Input 转发 bug 已于 2026-06-17 修复。修复后 keyboard（type/press/down/up）和
+mouse（click/move）事件在隔离 page 上正常到达 DOM，isTrusted=true。
+
+验证：`node output/.scripts/cdp-input-bench.mjs 9221 "TUNNEL"` 应全 ✅。
+deepseek chat 验证：`response: 7, duration: 1.5s, AI 回复已收到`。
+
+cdp-tunnel 源码：`~/.nvm/versions/node/v25.2.1/lib/node_modules/cdp-tunnel/server/proxy-server.js`
+
+疑似根因：cdp-tunnel 的 Target/session 路由逻辑在转发 `Input.*` 命令时，可能把 `sessionId` 映射错误，
+导致 keyboard/mouse 事件发到了不存在的 session（事件丢失）。`Input.insertText` 可能走了不同的转发路径。
+
+**修复优先级**：高（影响所有需要键盘/鼠标操作的 AI 聊天插件）
+
+**临时绕行**（待 cdp-tunnel 修复前）：
+- 写值：`keyboard.insertText`
+- 触发提交：React fiber onClick 直调（`shared/react-click.ts`）
+- 完整发送（含 AI 回复）：暂不可用，需 cdp-tunnel 修复
