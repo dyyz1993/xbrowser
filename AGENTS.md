@@ -1807,3 +1807,48 @@ doubao 的图片编辑功能（抠图/扩图/标记/擦除/变清晰）**入口�
 | qwen | 通义万相 | ✅ |
 | chatgpt | DALL-E | ✅ |
 | gemini | Imagen | ✅ |
+
+### 23.10 录制器事件捕获审计 + 补全（2026-06-17）
+
+#### 审计方法
+
+用 4 个录制文件（gemrec/dbimgrec/gptimgrec/gmimgrec，共 395 actions）统计每个事件类型的捕获率。
+
+#### 之前缺失的事件（已补全）
+
+| 事件 | 影响 | 补全方式 |
+|------|------|---------|
+| **navigation（URL 变化）** | SPA 切对话时 URL 变了但没录到，回放无法重放导航 | hook `history.pushState/replaceState` + `popstate` + `hashchange` |
+| **keyup** | 回放时键盘事件不完整（只有 keydown）| 监听 keyup，只记特殊键/组合键（普通字符 keyup 价值低）|
+| **paste（粘贴）** | Ctrl+V 粘贴只显示为 input，无法区分粘贴 vs 打字 | 监听 paste 事件，记录粘贴内容长度 + 预览 |
+
+#### navigation 监听实现（SPA 路由感知）
+
+```javascript
+// hook history API（SPA 框架用 pushState/replaceState 改 URL，不触发传统 navigation 事件）
+['pushState', 'replaceState'].forEach(function(method) {
+  var orig = history[method];
+  history[method] = function() { orig.apply(this, arguments); checkNav(method); };
+});
+window.addEventListener('popstate', function() { checkNav('popstate'); });
+window.addEventListener('hashchange', function() { checkNav('hashchange'); });
+```
+
+录制 navigation action 时记录 from/to URL + source（哪个 API 触发的）。
+
+#### 完整事件捕获清单（补全后）
+
+| 类型 | 捕获 | 说明 |
+|------|:---:|------|
+| click / dblclick | ✅ | |
+| keydown / **keyup** | ✅ | keyup 新增（特殊键+组合键）|
+| input / **paste** | ✅ | paste 新增（区分粘贴 vs 打字）|
+| **navigation** | ✅ | 新增（pushState/replaceState/popstate/hashchange）|
+| scroll / hover / focus | ✅ | focus 已加去重 |
+| submit / contextmenu | ✅ | |
+| drag / drop / dragend | ✅ | |
+| copy / cut | ✅ | |
+| resize / visibility | ✅ | |
+| touch / filechooser | ✅ | |
+| text-render | ✅ | MutationObserver（需 viewer 操作触发）|
+| dialog | ✅ | 不再 auto-dismiss |

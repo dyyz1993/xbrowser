@@ -57,7 +57,8 @@ export interface UserAction {
   type: 'click' | 'input' | 'change' | 'keydown' | 'submit' | 'scroll'
     | 'navigation' | 'goto' | 'cdp-fill' | 'cdp-click' | 'cdp-eval' | 'filechooser'
     | 'dblclick' | 'contextmenu' | 'hover' | 'drag' | 'resize' | 'clipboard'
-    | 'touch' | 'focus' | 'visibility' | 'text-render';
+    | 'touch' | 'focus' | 'visibility' | 'text-render'
+    | 'keyup' | 'paste' | 'navigation';
   timestamp: number;
   url: string;
   pageTitle: string;
@@ -834,6 +835,29 @@ const ACTION_SIGNAL_SCRIPT = `
     }
   }, true);
 
+  // ── keyup（记录释放，回放更完整） ──
+  document.addEventListener('keyup', function(e) {
+    // 只记特殊键和组合键的 keyup（普通字符的 keyup 价值低）
+    if (e.key === 'Enter' || e.key === 'Tab' || e.key === 'Escape' ||
+        e.key.startsWith('Arrow') || e.key === 'Backspace' || e.key === 'Delete' ||
+        e.ctrlKey || e.metaKey || e.altKey) {
+      pushAction('keyup', { key: e.key, element: describe(actualTarget(e)) });
+    }
+  }, true);
+
+  // ── paste（粘贴事件，区分键盘输入和粘贴） ──
+  document.addEventListener('paste', function(e) {
+    var pastedText = '';
+    try {
+      // 从 clipboardData 读粘贴内容（可能被安全策略拦截）
+      pastedText = (e.clipboardData || window.clipboardData).getData('text').slice(0, 100);
+    } catch (err) { /* ignore */ }
+    pushAction('paste', {
+      element: describe(actualTarget(e)),
+      paste: { textLength: pastedText.length, preview: pastedText.slice(0, 50) },
+    });
+  }, true);
+
   document.addEventListener('submit', function(e) {
     pushAction('submit', { element: describe(actualTarget(e)) });
   }, true);
@@ -942,6 +966,32 @@ const ACTION_SIGNAL_SCRIPT = `
   document.addEventListener('cut', function(e) {
     pushAction('clipboard', { clipboard: { operation: 'cut' } });
   }, true);
+
+  // ── Navigation（URL 变化，SPA pushState/replaceState/popstate）──
+  var __xb_last_url = location.href;
+  function __xb_check_nav(source) {
+    var curUrl = location.href;
+    if (curUrl !== __xb_last_url) {
+      pushAction('navigation', {
+        navigation: {
+          from: __xb_last_url.slice(0, 120),
+          to: curUrl.slice(0, 120),
+          source: source, // 'pushState' | 'replaceState' | 'popstate' | 'hashchange'
+        },
+      });
+      __xb_last_url = curUrl;
+    }
+  }
+  // hook history API（SPA 路由变化）
+  ['pushState', 'replaceState'].forEach(function(method) {
+    var orig = history[method];
+    history[method] = function() {
+      orig.apply(this, arguments);
+      __xb_check_nav(method);
+    };
+  });
+  window.addEventListener('popstate', function() { __xb_check_nav('popstate'); });
+  window.addEventListener('hashchange', function() { __xb_check_nav('hashchange'); });
 
   // ── Touch events ──
   document.addEventListener('touchstart', function(e) {
