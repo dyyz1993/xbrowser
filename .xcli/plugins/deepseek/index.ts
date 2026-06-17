@@ -4,6 +4,7 @@ import { z } from 'zod/v4';
 import * as path from 'path';
 import * as fs from 'fs';
 import { buildTips, checkLoginStatus } from '../shared/ai-chat-base.js';
+import { listConversations, openByTitle, sendChatMessage } from '../shared/ai-chat-commands.js';
 
 type Page = import('../types').Page;
 
@@ -162,14 +163,7 @@ export default function (xcli: XCLIAPI): void {
         await ensurePage(page, ctx);
         await page.waitForTimeout(1500);
 
-        const conversations = await page.evaluate(() => {
-          const links = document.querySelectorAll('a[href*="/a/chat/s/"]');
-          return Array.from(links).map((a, i) => ({
-            index: i,
-            title: (a.textContent || '').trim(),
-            url: (a as HTMLAnchorElement).href,
-          })).filter(c => c.title.length > 0);
-        }) as Array<{ index: number; title: string; url: string }>;
+        const conversations = await listConversations(page, 'a[href*="/a/chat/s/"]');
 
         const tips = buildTips(ctx);
         tips.push(`共 ${conversations.length} 个会话`);
@@ -261,21 +255,9 @@ export default function (xcli: XCLIAPI): void {
         await ensurePage(page, ctx);
         await page.waitForTimeout(1000);
 
-        const clicked = await page.evaluate(({ searchTitle }) => {
-          const links = document.querySelectorAll('a[href*="/a/chat/s/"]');
-          for (const link of links) {
-            const text = (link.textContent || '').trim();
-            if (text.includes(searchTitle)) {
-              (link as HTMLAnchorElement).click();
-              return { found: true, title: text };
-            }
-          }
-          return { found: false, title: '' };
-        }, { searchTitle: params.title }) as { found: boolean; title: string };
+        const clicked = await openByTitle(page, params.title, 'a[href*="/a/chat/s/"]');
 
         if (!clicked.found) throw new Error(`未找到包含"${params.title}"的会话`);
-
-        await page.waitForTimeout(2000);
         const tips = buildTips(ctx);
         tips.push(`已打开会话：${clicked.title}`);
         return ok({ opened: clicked.title }, tips)
@@ -423,27 +405,12 @@ export default function (xcli: XCLIAPI): void {
         }
 
 
-        // 填充输入框：click 聚焦 + keyboard.type 逐字输入（带延迟，模拟人类打字）。
-        // cdp-tunnel 的 Input 转发 bug 已修复（2026-06-17），keyboard/mouse 事件正常到 DOM。
-        const inputSel = SEL.input;
-        let inputFound = false;
-        for (const sel of ['textarea', '[contenteditable="true"]', '[role="textbox"]', inputSel]) {
-          const count = await page.locator(sel).count();
-          if (count > 0) {
-            await page.locator(sel).first().waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
-            await page.locator(sel).first().click({ timeout: 5000 }).catch(() => {});
-            await page.waitForTimeout(150);
-            await page.keyboard.type(params.message, { delay: 5 });
-            inputFound = true;
-            break;
-          }
-        }
-        if (!inputFound) throw new Error('找不到消息输入框');
-
-        await page.waitForTimeout(400);
-
-        // 发送：keyboard.press('Enter')（录制确认 DeepSeek 用 Enter 发送，触发 completion）。
-        await page.keyboard.press('Enter');
+        // 输入 + 发送（共享函数）
+        await sendChatMessage(page, params.message, {
+          inputSelector: SEL.input,
+          sendMethod: 'enter',
+          typeDelay: 5,
+        });
         tips.push('消息已发送，等待 AI 回复...');
 
         // 等页面稳定
