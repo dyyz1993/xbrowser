@@ -90,21 +90,28 @@ export default function (xcli: XCLIAPI): void {
         await page.locator(inputSel).first().click({ timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(200);        await page.keyboard.type(params.message, { delay: 10 });        await page.waitForTimeout(400);
         await page.keyboard.press('Enter');
-        // 等回复
-        await new Promise(r => setTimeout(r, 3000));
+
+        // 记录发送前的对话数量，定位新增回复
+        const convBefore = await page.evaluate(() => document.querySelectorAll('[data-test-id="conversation"]').length).catch(() => 0);
+
+        // 等新增 conversation 出现 + 回复完成
         let responseText = '';
         const startTime = Date.now();
         while (Date.now() - startTime < 60000) {
           await page.waitForTimeout(2000);
           try {
-            responseText = await page.evaluate(() => {
-              const all = document.querySelectorAll('[class*="model-response-text"], [class*="response-container"], [data-message-author-role="model"], .markdown');
-              for (let i = all.length - 1; i >= 0; i--) {
-                const t = (all[i].textContent || '').trim();
-                if (t.length > 0) return t.slice(0, 8000);
+            responseText = await page.evaluate((before: number) => {
+              const convs = document.querySelectorAll('[data-test-id="conversation"]');
+              for (let i = convs.length - 1; i >= before; i--) {
+                const txt = (convs[i].textContent || '').trim();
+                if (txt.length > 0) {
+                  const gi = txt.indexOf('Gemini 说');
+                  if (gi >= 0) return txt.slice(gi + 7).trim().slice(0, 8000);
+                  return txt.slice(0, 8000);
+                }
               }
               return '';
-            }) as string;
+            }, convBefore) as string;
             if (responseText) break;
           } catch { /* continue */ }
         }
