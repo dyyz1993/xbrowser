@@ -21,7 +21,7 @@ function createMockPage(url = 'https://example.com') {
   return {
     url: vi.fn(() => currentUrl),
     goto: vi.fn(async () => { currentUrl = url; }),
-    evaluate: vi.fn(async (script: unknown) => {
+    evaluate: vi.fn(async () => {
       // Return empty array for recorder polling
       return [];
     }),
@@ -29,7 +29,9 @@ function createMockPage(url = 'https://example.com') {
     on: vi.fn(),
     off: vi.fn(),
     waitForTimeout: vi.fn(async () => {}),
-    _setUrl: (u: string) => { currentUrl = u; },
+    title: vi.fn(async () => 'Test Page'),
+    setFileDialogInterception: vi.fn(async () => {}),
+    _setUrl: (u) => { currentUrl = u; },
   };
 }
 
@@ -346,6 +348,61 @@ describe('SessionRecorder', () => {
       for (const action of data.actions) {
         expect(action.url).not.toContain('about:blank');
       }
+    });
+  });
+
+  // ─── filechooser / dialog 拦截开关（录制期关闭，执行期开启）─────────
+  describe('filechooser & dialog interception', () => {
+    it('start() should disable file dialog interception (let real popup show)', async () => {
+      await startRecording('https://example.com');
+
+      // 录制开始时应关闭拦截，让真实文件选择框弹出
+      expect(mockPage.setFileDialogInterception).toHaveBeenCalledWith(false);
+    });
+
+    it('stop() should re-enable file dialog interception (restore execution default)', async () => {
+      await startRecording('https://example.com');
+      mockPage.setFileDialogInterception.mockClear();
+      await recorder.stop();
+
+      // 录制结束后恢复拦截，确保后续插件命令能走 filechooser 路径
+      expect(mockPage.setFileDialogInterception).toHaveBeenCalledWith(true);
+    });
+
+    it('stop() should remove filechooser listener (fix prior leak)', async () => {
+      await startRecording('https://example.com');
+      await recorder.stop();
+
+      // start 时挂了 filechooser 监听，stop 必须解绑（之前缺失）
+      const offCalls = (mockPage.off as ReturnType<typeof vi.fn>).mock.calls;
+      const filechooserOff = offCalls.some(
+        (c: unknown[]) => c[0] === 'filechooser',
+      );
+      expect(filechooserOff).toBe(true);
+    });
+
+    it('handleDialog should NOT dismiss dialogs during recording', async () => {
+      await startRecording('https://example.com');
+
+      // 模拟一个 alert 弹窗到达
+      const fakeDialog = {
+        type: 'alert',
+        message: () => 'Are you sure?',
+        defaultValue: () => '',
+        dismiss: vi.fn(async () => {}),
+        accept: vi.fn(async () => {}),
+      };
+      // 直接调用内部 handler
+      await (recorder as unknown as { handleDialog: (d: typeof fakeDialog) => Promise<void> }).handleDialog(fakeDialog);
+
+      // 录制期不应 dismiss —— 弹窗要留在屏幕上让用户处理
+      expect(fakeDialog.dismiss).not.toHaveBeenCalled();
+
+      // 但 checkpoint 应被记录
+      const { data } = await recorder.stop();
+      const dialogCheckpoint = data.checkpoints.find((c) => c.type === 'dialog');
+      expect(dialogCheckpoint).toBeDefined();
+      expect(dialogCheckpoint?.context?.dialogType).toBe('alert');
     });
   });
 });

@@ -798,6 +798,17 @@ export async function createSession(
   logSessionEvent('create_session', `name="${name}" id="${session.id}" url="${url || '(no url)'}" isCDP=${isCDP} cdpEndpoint=${options?.cdpEndpoint || '(none)'}`);
   resetIdleTimer();
   await installNetworkCapture(page, name);
+
+  // 执行期默认：开启文件选择框拦截。让插件 attach/upload 命令走 filechooser 首选路径
+  // （waitForEvent('filechooser') → setFiles/setInputFiles）。
+  // 录制器 start() 时会关闭它（让真实文件框弹出），stop() 时恢复。
+  // cdp-driver 的 _init() 不再全局开启，改由这里按需控制。
+  // 用 optional chaining + try/catch 防御：mock page 或旧版缓存插件可能没有此方法。
+  try {
+    const fn = (page as { setFileDialogInterception?: (e: boolean) => Promise<void> }).setFileDialogInterception;
+    if (fn) await fn.call(page, true);
+  } catch { /* best-effort: 拦截开关失败不影响 session 创建 */ }
+
   return session;
 }
 

@@ -160,6 +160,12 @@ export interface XBPage {
   _cdpSend<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
   _subscribe(event: string, handler: (params: unknown) => void): () => void;
 
+  /**
+   * 开启/关闭原生文件选择框拦截（执行期默认 true，录制期默认 false）。
+   * 详见 cdp-driver/page.ts 的实现注释。
+   */
+  setFileDialogInterception(enabled: boolean): Promise<void>;
+
   // Lifecycle
   close(): Promise<void>;
   isClosed(): boolean;

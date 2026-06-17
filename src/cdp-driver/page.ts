@@ -109,9 +109,12 @@ export class XBPageImpl implements XBPage {
     this.setupNetworkEvents();
     this.setupConsoleEvents();
 
-    // 启用 file chooser 拦截（必须在操作前生效，所以 await）
-    await this.conn.send('Page.setInterceptFileChooserDialog', { enabled: true }, this.sessionId)
-      .catch((e) => console.error('[XBPage] setInterceptFileChooserDialog failed:', (e as Error).message));
+    // NOTE: file chooser 拦截不再在此全局开启。改由上层按需控制：
+    //   - 执行期（插件 attach/upload）：daemon 创建 session page 时开启（setFileDialogInterception(true)）
+    //   - 录制期：保持关闭，让真实文件选择框弹出供用户操作（录制器不主动开启）
+    //   - 回放期：用 setInputFiles，不依赖拦截
+    // setupPageEvents() 里的 Page.fileChooserOpened 订阅仍保留——当上层开启拦截时，
+    // 该订阅负责把 CDP 事件转成 page 'filechooser' 事件。
 
     // 启用下载事件监听（Browser domain，downloadWillBegin / downloadProgress）
     // 注意：Browser domain 事件是 browser-level 的，但 cdp-tunnel 会转发到 page session
@@ -829,6 +832,21 @@ export class XBPageImpl implements XBPage {
   /** Send a CDP command scoped to this page's session */
   async _cdpSend<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
     return this.conn.send<T>(method, params, this.sessionId);
+  }
+
+  /**
+   * 开启/关闭原生文件选择框拦截（CDP stateful 开关）。
+   *
+   * - enabled=true（执行期默认）：点击上传按钮时不弹系统文件框，改发 Page.fileChooserOpened 事件，
+   *   page 的 'filechooser' 监听器拿到 chooser 后用 setFiles/setInputFiles 注入文件。
+   * - enabled=false（录制期默认）：真实文件选择框正常弹出，用户手动选文件；
+   *   前端 input[type=file] 的 change 事件由 action signal 脚本捕获记录。
+   *
+   * 可多次调用切换状态（CDP 协议是 stateful 的）。
+   */
+  async setFileDialogInterception(enabled: boolean): Promise<void> {
+    await this.conn.send('Page.setInterceptFileChooserDialog', { enabled }, this.sessionId)
+      .catch((e) => console.error('[XBPage] setInterceptFileChooserDialog failed:', (e as Error).message));
   }
 
   /** Subscribe to a CDP event on this page's session. Returns unsubscribe function. */

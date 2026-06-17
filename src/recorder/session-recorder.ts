@@ -1401,6 +1401,11 @@ export class SessionRecorder {
     this.checkpointCounter = 0;
     this.lastKnownUrl = this.page.url();  // Initialize URL tracking
 
+    // 录制期：关闭文件选择框拦截，让真实的系统文件选择框弹出供用户操作。
+    // （session page 创建时默认开启了拦截——见 browser.ts createSession；
+    //  录制需要真实弹窗，故在此关闭，stop() 时恢复。）
+    await this.page.setFileDialogInterception(false).catch(() => {});
+
     // Register init scripts BEFORE goto so they execute on the freshly loaded page.
     // order matters: selector-utils first, then action signal script (which uses it).
     await this.page.addInitScript(getSelectorGeneratorScript());
@@ -1473,15 +1478,25 @@ export class SessionRecorder {
     if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
     if (this.flushTimer) { clearInterval(this.flushTimer); this.flushTimer = null; }
 
-    // Remove listeners
+    // Remove listeners（补全 filechooser + activePages 的 dialog/filechooser 解绑）
     this.context.off('request', this.handleRequest);
     this.context.off('response', this.handleResponse);
     this.context.off('page', this.handleNewPage);
     this.page.off('framenavigated', this.handleFrameNavigated);
     this.page.off('dialog', this.handleDialog);
+    this.page.off('filechooser', this.handleFileChooser);
     for (const p of this.activePages) {
-      try { p.off('framenavigated', this.handleFrameNavigated); } catch { /* page may be closed */ }
+      try {
+        p.off('framenavigated', this.handleFrameNavigated);
+        p.off('dialog', this.handleDialog);
+        p.off('filechooser', this.handleFileChooser);
+      } catch { /* page may be closed */ }
     }
+
+    // 恢复执行期默认：开启文件选择框拦截。
+    // 录制期保持拦截关闭（让真实弹窗弹出），录制结束后恢复为执行期默认（拦截），
+    // 确保后续在该 page 上跑的插件 attach/upload 命令仍能走 filechooser 首选路径。
+    await this.page.setFileDialogInterception(true).catch(() => {});
 
     // Final flush of pending frontend actions
     await this.flushPendingActions(this.page);
@@ -1869,7 +1884,10 @@ export class SessionRecorder {
       source: 'auto',
       context: { dialogType: dialog.type, message: dialog.message() },
     });
-    await dialog.dismiss().catch(() => {});
+    // 录制期不自动 dismiss —— 让真实的 alert/confirm/prompt 弹窗留在屏幕上，
+    // 由用户手动处理（点确定/取消），忠实记录用户操作链。
+    // 注意：alert/confirm 是同步阻塞的，弹窗会暂停页面 JS，直到用户操作；这是录制真实交互的应有行为。
+    // （之前的 dialog.dismiss() 会让用户看不到弹窗，导致录制不完整。）
   };
 
   private handleFileChooser = async (fileChooser: { selector: string; isMultiple: boolean }): Promise<void> => {
