@@ -20,7 +20,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   /** 可用的后端站点（有 chat 命令的） */
-  const PROVIDERS = ['deepseek', 'doubao', 'qianwen', 'yuanbao', 'chatgpt', 'gemini'];
+  const PROVIDERS = ['deepseek', 'doubao', 'qianwen', 'yuanbao', 'chatgpt', 'gemini', 'qwen'];
 
   // ── list-providers ──
   site.command('list-providers', {

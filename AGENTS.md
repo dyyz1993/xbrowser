@@ -1597,3 +1597,53 @@ cdp-tunnel 源码：`~/.nvm/versions/node/v25.2.1/lib/node_modules/cdp-tunnel/se
 - 写值：`keyboard.insertText`
 - 触发提交：React fiber onClick 直调（`shared/react-click.ts`）
 - 完整发送（含 AI 回复）：暂不可用，需 cdp-tunnel 修复
+
+## 23. AI 聊天插件统一架构（2026-06-17）
+
+> 所有 AI 聊天站点共享一套架构：**站点插件独立完整 + ai 聚合层多站点并行 + shared helpers 减少重复**。
+> 详见 `docs/ai-chat-plugin-spec.md`。
+
+### 23.1 架构总览
+
+```
+ai 聚合层（.xcli/plugins/ai/）     ← 统一入口，多站点并行对比
+  │  xbrowser ai chat "问题" --providers deepseek,doubao,yuanbao
+  │  → 并行调各站点 → 结果对比
+  │
+  ├─ deepseek  doubao  qianwen  yuanbao  chatgpt  gemini  qwen
+  │  （站点插件，各自独立完整，维护自己的 selector + 特色命令）
+  │
+  └─ shared/ai-chat-commands.ts    ← 通用函数（listConversations/openByTitle/sendChatMessage/extractReply/ensureChatPage/uploadAttachment）
+```
+
+### 23.2 站点插件能力对照
+
+| 能力 | deepseek | doubao | qianwen | yuanbao | chatgpt | gemini | qwen |
+|------|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| chat | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| attach | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| list | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| open | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| check-login | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| --think | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| --search | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
+| 文生图 | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| 音乐 | ❌ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| 视频 | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+
+### 23.3 关键经验
+
+1. **发送统一用 `keyboard.type(msg, {delay}) + keyboard.press('Enter')`**——不用 page.fill（合成事件 React 不认）。cdp-tunnel Input bug 已修复（§22）。
+
+2. **附件上传三选一**：
+   - `setInputFiles('input[type=file]')` — 有现成 file input 的站点（deepseek/doubao）
+   - `pasteFiles(editor)` — 支持粘贴的 editor（yuanbao Quill）
+   - 触发按钮 → setInputFiles — file input 需要先点按钮挂载的（doubao）
+
+3. **回复提取**：各站点 selector 不同，统一兜底用 `smartExtractReply`（超时后用 deepseek 分析页面 snapshot 提取回复——用 AI 修 AI）。所有插件已接入。
+
+4. **ai 聚合层**（`.xcli/plugins/ai/`）：不操作 DOM，只 `execSync` 调站点插件。`--providers deepseek,doubao` 并行对比。已验证三站点并行工作。
+
+5. **shared helpers**（`shared/ai-chat-commands.ts`）：站点插件内部复用减少重复，但不替代站点插件。新插件可选用 `registerAIChatSite(xcli, config)`（`shared/ai-chat-engine.ts`）一行注册全部标准命令。
+
+6. **qwen 和 qianwen 是同一站点**（`qianwen.com`），命令互补（qwen 有 image，qianwen 有 chat/list/open）。后续可考虑合并。

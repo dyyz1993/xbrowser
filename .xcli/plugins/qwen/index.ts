@@ -4,6 +4,7 @@ import { z } from 'zod/v4';
 import path from 'path';
 import fs from 'fs';
 import type { PluginPage, PluginElementHandle } from '../types.js';
+import { smartExtractReply } from '../shared/smart-extract.js';
 
 type Page = import('../types').Page;
 type Response = import('../types').Response;
@@ -713,6 +714,134 @@ export default function (xcli: XCLIAPI): void {
       } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['检查状态失败']);
       }
+    },
+  });
+
+  // ── chat — 发送消息（补充命令，之前只有 image） ──
+  site.command('chat', {
+    description: '发送消息并等待 AI 回复',
+    requiresLogin: true,
+    scope: 'browser',
+    parameters: z.object({
+      message: z.string().describe('消息内容'),
+      path: z.string().optional().describe('单附件路径'),
+      paths: z.string().optional().describe('多附件路径（CSV）'),
+    }),
+    result: z.object({ response: z.string(), duration: z.string().optional() }).passthrough(),
+    handler: async (params, ctx) => {
+      const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
+      if (!page) return fail('需要浏览器页面', []);
+      const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint as string | undefined;
+      try {
+        // 导航
+        if (!page.url().includes('qianwen.com')) {
+          await page.goto(QWEN_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+          await page.waitForTimeout(3000);
+        }
+
+        // 附件（如果有）
+        if (params.path || params.paths) {
+          const list = [
+            ...(params.path ? [params.path] : []),
+            ...(params.paths ? params.paths.split(',').map((x: string) => x.trim()).filter(Boolean) : []),
+          ];
+          const payloads = list.map((fp: string) => {
+            const abs = path.resolve(fp);
+            const buf = fs.readFileSync(abs);
+            return { name: path.basename(abs), mimeType: 'application/octet-stream', buffer: buf };
+          });
+          const p = page as unknown as { setInputFiles?: (s: string, f: unknown[]) => Promise<void> };
+          await p.setInputFiles?.('input[type="file"]', payloads).catch(() => {});
+          await page.waitForTimeout(2000);
+        }
+
+        // 输入 + 发送
+        const inputSel = 'div[role="textbox"][contenteditable="true"]';
+        await page.locator(inputSel).first().click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(200);
+        await page.keyboard.type(params.message, { delay: 20 });
+        await page.waitForTimeout(400);
+        await page.keyboard.press('Enter');
+
+        // 等回复
+        await page.waitForTimeout(3000);
+        let responseText = '';
+        const startTime = Date.now();
+        while (Date.now() - startTime < 60000) {
+          await page.waitForTimeout(2000);
+          try {
+            responseText = await page.evaluate(() => {
+              const sels = ['div.answer-common-card', 'div.chat-answers-card-wrap', '[class*="markdown"]'];
+              for (const sel of sels) {
+                const els = document.querySelectorAll(sel);
+                for (let i = els.length - 1; i >= 0; i--) {
+                  const t = (els[i].textContent || '').trim();
+                  if (t.length > 0) return t.slice(0, 8000);
+                }
+              }
+              return '';
+            }) as string;
+            if (responseText) break;
+          } catch { /* continue */ }
+        }
+
+        // smart 兜底
+        if (!responseText) {
+          responseText = await smartExtractReply(page, params.message, 'qwen 聊天页', cdp).catch(() => '') as string;
+        }
+
+        return ok({ response: responseText, duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s` },
+          [responseText ? 'AI 回复已收到' : '回复超时']);
+      } catch {
+        return fail('未知错误', ['发送消息失败']);
+      }
+    },
+  });
+
+  // ── attach — 上传附件 ──
+  site.command('attach', {
+    description: '上传附件（图片/文件）',
+    requiresLogin: true,
+    scope: 'browser',
+    parameters: z.object({
+      path: z.string().optional().describe('单文件路径'),
+      paths: z.string().optional().describe('多文件路径（CSV）'),
+    }).refine(d => d.path || d.paths, { message: '--path 或 --paths 至少二选一' }),
+    result: z.object({ uploaded: z.boolean(), files: z.array(z.string()) }).passthrough(),
+    handler: async (params, ctx) => {
+      const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
+      if (!page) return fail('需要浏览器页面', []);
+      const list = [
+        ...(params.path ? [params.path] : []),
+        ...(params.paths ? params.paths.split(',').map((x: string) => x.trim()).filter(Boolean) : []),
+      ];
+      const payloads = list.map((fp: string) => {
+        const abs = path.resolve(fp);
+        const buf = fs.readFileSync(abs);
+        return { name: path.basename(abs), mimeType: 'application/octet-stream', buffer: buf };
+      });
+      try {
+        const p = page as unknown as { setInputFiles?: (s: string, f: unknown[]) => Promise<void> };
+        await p.setInputFiles?.('input[type="file"]', payloads);
+        await page.waitForTimeout(2000);
+        return ok({ uploaded: true, files: list }, [`✓ 已上传 ${list.length} 个文件`]);
+      } catch (e) {
+        return fail('上传失败', [(e as Error).message]);
+      }
+    },
+  });
+
+  // ── check-login ──
+  site.command('check-login', {
+    description: '检查千问登录状态',
+    scope: 'browser',
+    parameters: z.object({}),
+    result: z.object({ loggedIn: z.boolean(), url: z.string().optional() }).passthrough(),
+    handler: async (_params, ctx) => {
+      const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
+      if (!page) return fail({ message: '需要浏览器页面' });
+      const hasInput = await page.evaluate(() => !!document.querySelector('div[role="textbox"][contenteditable="true"]')).catch(() => false);
+      return ok({ data: { loggedIn: hasInput, url: page.url() } }, [`登录状态: ${hasInput ? '✅' : '❌'}`]);
     },
   });
 
