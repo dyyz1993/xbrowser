@@ -327,16 +327,18 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({
       prompt: z.string().describe('图片描述提示词'),
+      session: z.string().optional().describe('API 会话 ID（复用已有会话，保持风格延续 — 实验性，需要 API token 配合）'),
       image: z.string().optional().describe('参考图片本地路径（可选，用于图生图）'),
       ratio: z.string().optional().describe('画面比例: 1:1, 16:9, 9:16, 4:3（默认 1:1）'),
       wait: z.coerce.number().int().positive().optional().describe('同步等待秒数（如 --wait 60），不传则异步提交'),
     }),
-    result: z.object({ images: z.array(z.string()).optional(), status: z.string().optional(), prompt: z.string().optional(), ratio: z.string().optional() }).passthrough(),
+    result: z.object({ images: z.array(z.string()).optional(), status: z.string().optional(), prompt: z.string().optional(), ratio: z.string().optional(), conversationUrl: z.string().optional(), conversationId: z.string().optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser qwen image --prompt "画一只可爱的猫咪" --cdp 9221', description: '基础文生图' },
       { cmd: 'xbrowser qwen image --prompt "皮克斯风格建筑" --ratio 16:9 --cdp 9221', description: '指定比例' },
       { cmd: 'xbrowser qwen image --prompt "改成水彩风格" --image ./photo.jpg --cdp 9221', description: '图生图' },
       { cmd: 'xbrowser qwen image --prompt "赛博朋克城市" --wait 60 --cdp 9221', description: '同步等待结果' },
+      { cmd: 'xbrowser qwen image --prompt "第2镜" --session xxx --cdp 9221', description: '复用会话（实验性）' },
     ],
     handler: async (params, ctx) => {
       try {
@@ -443,20 +445,24 @@ export default function (xcli: XCLIAPI): void {
           }
           const imageUrls = (raceResult as Record<string, unknown>).urls as string[];
 
+          const conversationUrl = page.url();
+          const conversationId = params.session || '';
+
           if (imageUrls.length > 0) {
             tips.push(`✅ 生成完成！共 ${imageUrls.length} 张图片`);
             for (const u of imageUrls.slice(0, 3)) {
               tips.push(`🖼 ${u}`);
             }
             tips.push('💡 URL 有时效，建议尽快下载');
+            if (conversationId) tips.push(`🔗 会话 ID: ${conversationId}（下次用 --session ${conversationId} 复用）`);
             return ok(
-              { images: imageUrls, prompt: params.prompt, ratio: params.ratio || '1:1' },
+              { images: imageUrls, prompt: params.prompt, ratio: params.ratio || '1:1', conversationUrl, conversationId },
               tips,
             );
           }
 
           return ok(
-            { status: 'timeout', prompt: params.prompt },
+            { status: 'timeout', prompt: params.prompt, conversationUrl, conversationId },
             [
               ...tips,
               `⏱ 等待 ${waitSeconds}s 超时，图片可能还在生成`,
@@ -466,7 +472,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok(
-          { status: 'submitted', prompt: params.prompt },
+          { status: 'submitted', prompt: params.prompt, conversationUrl: page.url(), conversationId: params.session || '' },
           [
             ...tips,
             '✅ 生成请求已提交（异步模式）',

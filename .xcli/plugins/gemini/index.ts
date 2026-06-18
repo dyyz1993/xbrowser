@@ -197,20 +197,25 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({
       prompt: z.string().describe('图片描述提示词'),
+      session: z.string().optional().describe('会话 ID（复用已有会话 /app/{id}，保持风格延续，用于连续漫画/分镜）'),
     }),
-    result: z.object({ images: z.array(z.string()).optional(), status: z.string() }).passthrough(),
+    result: z.object({ images: z.array(z.string()).optional(), status: z.string(), conversationUrl: z.string().optional(), conversationId: z.string().optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser gemini image --prompt "画一只可爱的猫咪"', description: '文生图' },
+      { cmd: 'xbrowser gemini image --prompt "第2镜" --session abc123', description: '复用会话（连续漫画）' },
     ],
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
       const tips = buildCdpTips(ctx);
       try {
-        // 1. 强制导航到 Gemini 新对话页（每次都导航，避免残留状态导致
-        //    Quill editor 不可写或停在旧对话里）
-        await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+        // 1. 导航：有 session → goto 已有会话（风格延续）；无 → 新建 /app
+        const targetUrl = params.session
+          ? `https://gemini.google.com/app/${params.session}`
+          : 'https://gemini.google.com/app';
+        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
         await page.waitForTimeout(5000);
+        if (params.session) tips.push(`📌 复用会话 ${params.session}（风格延续）`);
 
         // 2. 切换到"制作图片"模式（关键！）。
         //    Gemini 默认是聊天模式，描述性 prompt（无"画"字）只回文字不生图。
@@ -336,7 +341,11 @@ export default function (xcli: XCLIAPI): void {
                     tips.push(`⚠️ [${i + 1}] 写文件失败: ${err instanceof Error ? err.message : String(err)}`);
                   }
                 }
-                return ok({ images: allUrls, localPaths, status: 'completed' }, tips);
+                // 提取会话 URL（供连续漫画 --session 复用）
+                const conversationUrl = page.url();
+                const conversationId = (conversationUrl.match(/\/app\/([a-f0-9]+)/) || ['', ''])[1];
+                if (conversationId) tips.push(`🔗 会话 ID: ${conversationId}（下次用 --session ${conversationId} 复用）`);
+                return ok({ images: allUrls, localPaths, status: 'completed', conversationUrl, conversationId }, tips);
               }
             } else {
               stableTicks = 0;
@@ -345,7 +354,9 @@ export default function (xcli: XCLIAPI): void {
           }
         }
         tips.push('⚠ Gemini 生成超时');
-        return ok({ images: [], status: 'timeout' }, tips);
+        const conversationUrl = page.url();
+        const conversationId = (conversationUrl.match(/\/app\/([a-f0-9]+)/) || ['', ''])[1];
+        return ok({ images: [], status: 'timeout', conversationUrl, conversationId }, tips);
       } catch {
         return fail('文生图失败', ['请检查 Gemini 登录状态']);
       }

@@ -579,23 +579,29 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({
       prompt: z.string().describe('图片描述提示词'),
+      session: z.string().optional().describe('会话 ID（复用已有会话 /c/{id}，保持风格延续，用于连续漫画/分镜）'),
       ratio: z.string().optional().describe('图片比例（自动/方形/宽屏，默认自动）'),
     }),
-    result: z.object({ images: z.array(z.string()).optional(), status: z.string() }).passthrough(),
+    result: z.object({ images: z.array(z.string()).optional(), status: z.string(), conversationUrl: z.string().optional(), conversationId: z.string().optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser chatgpt image --prompt "画一只可爱的柴犬"', description: '文生图' },
+      { cmd: 'xbrowser chatgpt image --prompt "第2镜" --session abc-123', description: '复用会话（连续漫画）' },
     ],
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
       const tips = buildTips(ctx);
       try {
-        // 0. 确保 ChatGPT 已导航（聚合对比时 page 可能停留在别的站点）
+        // 0. 导航：有 session → goto 已有会话（风格延续）；无 → 首页
+        const targetUrl = params.session
+          ? `https://chatgpt.com/c/${params.session}`
+          : CG_URL;
         const curUrl = page.url();
-        if (!curUrl.includes('chatgpt.com') && !curUrl.includes('chat.openai.com')) {
-          tips.push('导航到 ChatGPT...');
-          await page.goto(CG_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+        if (params.session || !curUrl.includes('chatgpt.com')) {
+          tips.push(params.session ? `导航到会话 ${params.session}...` : '导航到 ChatGPT...');
+          await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
           await page.waitForTimeout(4000);
+          if (params.session) tips.push(`📌 复用会话 ${params.session}（风格延续）`);
         } else {
           await page.waitForTimeout(1500);
         }
@@ -659,10 +665,15 @@ export default function (xcli: XCLIAPI): void {
 
         if (imageUrls.length > 0) {
           tips.push(`✓ DALL-E 生成了 ${imageUrls.length} 张图片`);
-          return ok({ images: imageUrls, status: 'completed' }, tips);
+          const conversationUrl = page.url();
+          const conversationId = (conversationUrl.match(/\/c\/([a-f0-9-]+)/) || ['', ''])[1];
+          if (conversationId) tips.push(`🔗 会话 ID: ${conversationId}（下次用 --session ${conversationId} 复用）`);
+          return ok({ images: imageUrls, status: 'completed', conversationUrl, conversationId }, tips);
         }
         tips.push('⚠ DALL-E 生成超时');
-        return ok({ images: [], status: 'timeout' }, tips);
+        const conversationUrl = page.url();
+        const conversationId = (conversationUrl.match(/\/c\/([a-f0-9-]+)/) || ['', ''])[1];
+        return ok({ images: [], status: 'timeout', conversationUrl, conversationId }, tips);
       } catch {
         return fail('文生图失败', ['请检查 ChatGPT 登录状态']);
       }
