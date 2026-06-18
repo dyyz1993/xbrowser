@@ -119,24 +119,44 @@ async function checkLogin(page: Page): Promise<boolean> {
 }
 
 async function enterImageMode(page: Page): Promise<boolean> {
-  const clicked = await safeClickText(page, 'AI生图');
-  if (clicked) {
-    await page.waitForTimeout(1500);
-    return true;
+  // 千问 2026-06 实测流程：AI生图 藏在输入框工具栏的"更多"菜单里。
+  //   1. 点输入框激活工具栏（否则工具栏不显示）
+  //   2. 点"更多"展开隐藏选项
+  //   3. 点"AI生图"切换到生图模式
+  // 不切换模式直接发"画一只猫"，千问会回复"我无法生成图片"。
+  const result = await page.evaluate(() => {
+    // Step 1: focus 输入框激活工具栏
+    const input = document.querySelector('div[contenteditable="true"], textarea, [role="textbox"]') as HTMLElement | null;
+    if (input) input.focus();
+    return input ? 'input_focused' : 'no_input';
+  }).catch(() => 'eval_error');
+
+  if (result === 'no_input' || result === 'eval_error') {
+    // 输入框都没有，直接试旧路径
+    return (await safeClickText(page, 'AI生图')) || (await safeClickText(page, '图像生成'));
   }
 
-  const clicked2 = await safeClickText(page, '生图');
-  if (clicked2) {
-    await page.waitForTimeout(1500);
-    return true;
-  }
+  await page.waitForTimeout(800);
 
-  const clicked3 = await safeClickText(page, '图像生成');
-  if (clicked3) {
-    await page.waitForTimeout(1500);
-    return true;
-  }
+  // Step 2: 点"更多"展开（aria-label="更多"）
+  const moreClicked = await page.evaluate(() => {
+    const more = Array.from(document.querySelectorAll('[aria-label="更多"], button, [role="button"]'))
+      .find(el => (el.getAttribute('aria-label') === '更多' || (el.textContent || '').trim() === '更多'));
+    if (more) { (more as HTMLElement).click(); return true; }
+    return false;
+  }).catch(() => false);
 
+  // 如果"更多"没找到，直接试 AI生图（可能工具栏已展开显示）
+  const candidates = moreClicked
+    ? ['AI生图', 'AI 生图', '图像生成']
+    : ['AI生图', 'AI 生图', '图像生成', '生图'];
+  for (const text of candidates) {
+    const clicked = await safeClickText(page, text);
+    if (clicked) {
+      await page.waitForTimeout(1500);
+      return true;
+    }
+  }
   return false;
 }
 

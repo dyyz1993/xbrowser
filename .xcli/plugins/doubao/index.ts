@@ -2,7 +2,7 @@ import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
 import { buildTips, uploadFileViaDataTransfer, checkLoginStatus } from '../shared/ai-chat-base.js';
-import { extractAllHDImages } from '../shared/image-lightbox.js';
+import { extractAllHDImages, installImageCapture, downloadCapturedImages } from '../shared/image-lightbox.js';
 import { clickButtonByText } from '../shared/file-upload.js';
 import { smartExtractReply } from '../shared/smart-extract.js';
 import path from 'path';
@@ -797,23 +797,24 @@ export default function (xcli: XCLIAPI): void {
 
         if (!inputFound) throw new Error('找不到输入框');
 
-        // Record existing image URLs before submitting (to avoid picking up history images)
-        const existingUrls = await page.evaluate(() => {
-          const urls = new Set<string>();
-          document.querySelectorAll('img').forEach(img => {
-            const src = (img as HTMLImageElement).src;
-            if (src && src.startsWith('http')) urls.add(src);
-          });
-          return [...urls];
-        }) as string[];
-        tips.push(`📸 已记录 ${existingUrls.length} 张历史图片URL`);
-
         await page.waitForTimeout(1000);
         // Wait for send button to become available (TipTap needs time to register input)
         await page.waitForSelector('#flow-end-msg-send:not([disabled]), button[aria-label="Send message"]:not([disabled])', { timeout: 5000 }).catch(() => {});
+
+        // ─────────────────────────────────────────────────────────────
+        //  CRITICAL: install the network listener BEFORE submitting.
+        //  Like the recorder, the listener must be up before the action
+        //  so no generation response slips through. doubao serves HD
+        //  (`image_pre_watermark_1_5b`) and thumbnail (`downsize_watermark`)
+        //  variants over the network during generation; we capture both
+        //  here and never need to open the lightbox afterwards.
+        // ─────────────────────────────────────────────────────────────
+        const capture = installImageCapture(page);
+
         const submitResult = await submitMessage(page);
-        // If send button wasn't found, don't wait 120s — return error immediately
+        // If send button wasn't found, stop the listener and bail out.
         if (!submitResult.clicked) {
+          capture.stop();
           return fail('发送失败', [
             '未能找到或点击发送按钮',
             '可能原因：输入框内容未写入，或豆包页面未完全加载',
@@ -822,19 +823,19 @@ export default function (xcli: XCLIAPI): void {
             ...remoteTips,
           ]);
         }
-        tips.push('图片生成请求已提交，等待生成...');
-        // Doubao image generation typically takes 15-60s, start checking after 5s
-        await page.waitForTimeout(5000);
+        tips.push('图片生成请求已提交，等待生成（全程网络监听中）...');
 
-        // Image collection: returns ALL matching new image URLs (doubao
-        // usually generates 4 per prompt). Outer poll loop also tries to
-        // collect again on each tick in case generation is slow.
-        let allImageUrls: string[] = [];
-        let captchaDetected = false;
+        // Poll until the network capture stabilises (no new rc_gen_image
+        // responses for ~6s) or timeout. doubao generates ~4 images per
+        // prompt, each arriving as a separate network response.
+        let lastCount = -1;
+        let stableTicks = 0;
         const startTime = Date.now();
         while (Date.now() - startTime < 120000) {
           await page.waitForTimeout(3000);
-          // Check for captcha/verification first
+
+          // Captcha check (still DOM-based — captcha isn't a network event)
+          let captchaDetected = false;
           try {
             captchaDetected = await page.evaluate(() => {
               const captchaSelectors = [
@@ -848,7 +849,6 @@ export default function (xcli: XCLIAPI): void {
               for (const sel of captchaSelectors) {
                 if (document.querySelector(sel)) return true;
               }
-              // Check for common captcha text
               const body = document.body?.innerText || '';
               if (body.includes('请完成验证') || body.includes('拖动滑块') ||
                   body.includes('安全验证') || body.includes('拖动下方滑块')) return true;
@@ -856,80 +856,116 @@ export default function (xcli: XCLIAPI): void {
             });
           } catch { /* ignore */ }
           if (captchaDetected) {
+            capture.stop();
             tips.push('⚠️ 检测到验证码！请在浏览器中手动完成验证后重试。');
             return fail('验证码拦截', ['豆包触发了安全验证', '请在浏览器中完成验证码后重新运行此命令', ...remoteTips, ...tips]);
           }
-          try {
-            const found = await page.evaluate((excludeUrls: string[]) => {
-              const excludeSet = new Set(excludeUrls);
-              const seen = new Set<string>();
-              const result: string[] = [];
-              // Updated selectors based on actual doubao DOM (2026-05):
-              // - Generated images have class like "image-Q7dBqW" (hash suffix varies)
-              // - src contains "rc_gen_image" for generated content
-              // - Also check legacy selectors for backwards compatibility
-              const selectors = [
-                'img[src*="rc_gen_image"]',
-                'img[src*="image_generation"]',
-                'img[class*="image-"]',
-                'img[class*="image-item-img"]',
-                'img[class*="generated"]',
-                'img[class*="result"]',
-              ];
-              const accept = (src: string): boolean => {
-                if (!src || !src.startsWith('http')) return false;
-                if (src.includes('data:image')) return false;
-                if (src.includes('avatar')) return false;
-                if (src.includes('BIZ_BOT')) return false;
-                if (src.includes('/static/')) return false;
-                if (excludeSet.has(src)) return false;
-                if (seen.has(src)) return false;
-                return true;
-              };
-              for (const sel of selectors) {
-                const imgs = document.querySelectorAll(sel);
-                for (const img of imgs) {
-                  const src = (img as HTMLImageElement).src;
-                  if (accept(src)) {
-                    seen.add(src);
-                    result.push(src);
-                  }
-                }
-              }
-              // Fallback: find any large new image (>300px wide, loaded, not excluded)
-              const allImgs = document.querySelectorAll('img');
-              for (const img of allImgs) {
-                const src = (img as HTMLImageElement).src;
-                const w = (img as HTMLImageElement).naturalWidth;
-                if (w > 300 && accept(src)) {
-                  seen.add(src);
-                  result.push(src);
-                }
-              }
-              return result;
-            }, existingUrls);
-            if (found.length > 0) {
-              allImageUrls = found;
+
+          const { hd, thumb } = capture.get();
+          // Completion heuristic: doubao sends thumbnail variants first
+          // (fast, CDN-cached) and HD variants slightly later (sourced
+          // from the generator). We must NOT exit as soon as the thumbnail
+          // count stabilises — we need to give the HD variants time to
+          // arrive. So:
+          //   - Wait until we have at least 1 image (generation started).
+          //   - Stop early if HD count catches up with thumb count.
+          //   - Otherwise track stability of the TOTAL count; only stop on
+          //     stability if we already have HD (don’t cut off a late
+          //     HD burst). If still 0 HD after a long quiet period, give up.
+          if (hd.length + thumb.length > 0) {
+            // Best case: HD count caught up with thumb count → done.
+            if (thumb.length > 0 && hd.length >= thumb.length) {
               break;
             }
-          } catch { /* ignore */ }
+            const total = hd.length + thumb.length;
+            if (total === lastCount) {
+              stableTicks++;
+              // 3 stable ticks (~9s) AND at least 1 HD → safe to stop.
+              if (stableTicks >= 3 && hd.length > 0) break;
+              // Still 0 HD after ~15s of quiet → HD stream failed.
+              if (stableTicks >= 5) break;
+            } else {
+              stableTicks = 0;
+            }
+            lastCount = total;
+          }
         }
 
-        // HD acquisition + download. Reuses the shared lightbox helper that
-        // opens the lightbox, clicks through thumbnails, captures HD URLs
-        // from network responses, and downloads all images.
-        if (allImageUrls.length > 0) {
-          const downloads = await extractAllHDImages(page, allImageUrls, 'image', tips);
-          const total = allImageUrls.length;
+        // Stop the listener — generation is done (or timed out).
+        capture.stop();
+        const captured = capture.get();
+        tips.push(`📸 网络捕获: ${captured.hd.length} 张 HD + ${captured.thumb.length} 张缩略图`);
+
+        if (captured.hd.length > 0 || captured.thumb.length > 0) {
+          // Download — HD preferred, thumbnail fallback. The shared
+          // helper pairs HD/thumb by their shared object key.
+          const downloads = downloadCapturedImages(captured, 'image', tips);
+          const allUrls = [...captured.hd, ...captured.thumb];
           const localPaths = downloads.map((d) => d.localPath);
           const first = downloads[0];
           return ok({
-            urls: allImageUrls,
+            urls: allUrls,
+            hdUrls: captured.hd,
             localPaths,
-            count: total,
-            // Backward-compatible single-image fields (only when we actually
-            // have at least one successful download)
-            ...(first ? { url: allImageUrls[0], localPath: first.localPath } : {}),
+            count: downloads.length,
+            ...(first ? { url: first.hdUrl, localPath: first.localPath } : {}),
+            prompt,
+            duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
+          }, [...tips]);
+        }
+
+        // Fallback: network capture found nothing (maybe generation
+        // finished too fast and responses were cached from a prior run).
+        // Fall back to the DOM-scrape + lightbox flow.
+        tips.push('⚠ 网络捕获为空，回退到 DOM 提取 + 灯箱流程...');
+        const existingUrls = await page.evaluate(() => {
+          const urls = new Set<string>();
+          document.querySelectorAll('img').forEach(img => {
+            const src = (img as HTMLImageElement).src;
+            if (src && src.startsWith('http')) urls.add(src);
+          });
+          return [...urls];
+        }) as string[];
+        const found = await page.evaluate((excludeUrls: string[]) => {
+          const excludeSet = new Set(excludeUrls);
+          const seen = new Set<string>();
+          const result: string[] = [];
+          const selectors = [
+            'img[src*="rc_gen_image"]', 'img[src*="image_generation"]',
+            'img[class*="image-"]', 'img[class*="image-item-img"]',
+            'img[class*="generated"]', 'img[class*="result"]',
+          ];
+          const accept = (src: string): boolean => {
+            if (!src || !src.startsWith('http')) return false;
+            if (src.includes('data:image') || src.includes('avatar')) return false;
+            if (src.includes('BIZ_BOT') || src.includes('/static/')) return false;
+            if (excludeSet.has(src) || seen.has(src)) return false;
+            return true;
+          };
+          for (const sel of selectors) {
+            for (const img of document.querySelectorAll(sel)) {
+              const src = (img as HTMLImageElement).src;
+              if (accept(src)) { seen.add(src); result.push(src); }
+            }
+          }
+          for (const img of document.querySelectorAll('img')) {
+            const src = (img as HTMLImageElement).src;
+            if ((img as HTMLImageElement).naturalWidth > 300 && accept(src)) {
+              seen.add(src); result.push(src);
+            }
+          }
+          return result;
+        }, existingUrls).catch(() => []) as string[];
+
+        if (found.length > 0) {
+          const downloads = await extractAllHDImages(page, found, 'image', tips);
+          const localPaths = downloads.map((d) => d.localPath);
+          const first = downloads[0];
+          return ok({
+            urls: found,
+            localPaths,
+            count: found.length,
+            ...(first ? { url: found[0], localPath: first.localPath } : {}),
             prompt,
             duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
           }, [...tips]);
@@ -993,7 +1029,7 @@ export default function (xcli: XCLIAPI): void {
           if (!url || !url.includes('rc_gen_image')) return;
           if (seen.has(url)) return;
           seen.add(url);
-          if (url.includes('image_pre_watermark_1_5b')) {
+          if (url.includes('image_pre_watermark')) {
             captured.hd.push(url);
           } else if (url.includes('downsize_watermark') || url.includes('img_pre_mark')) {
             captured.thumb.push(url);
@@ -1052,7 +1088,7 @@ export default function (xcli: XCLIAPI): void {
         const downloads: { url: string; localPath: string; size: number; isHD: boolean }[] = [];
         for (let i = 0; i < sourceImages.length; i++) {
           const url = sourceImages[i]!;
-          const isHD = url.includes('image_pre_watermark_1_5b');
+          const isHD = url.includes('image_pre_watermark');
           try {
             const result = await downloadMedia(url, 'extract');
             downloads.push({ url, localPath: result.localPath, size: result.size, isHD });

@@ -587,8 +587,17 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
-      const tips = buildCdpTips(ctx);
+      const tips = buildTips(ctx);
       try {
+        // 0. 确保 ChatGPT 已导航（聚合对比时 page 可能停留在别的站点）
+        const curUrl = page.url();
+        if (!curUrl.includes('chatgpt.com') && !curUrl.includes('chat.openai.com')) {
+          tips.push('导航到 ChatGPT...');
+          await page.goto(CG_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+          await page.waitForTimeout(4000);
+        } else {
+          await page.waitForTimeout(1500);
+        }
         // 1. 点"+"按钮打开菜单（录制 action[5]）
         await page.click('#composer-plus-btn', { timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(800);
@@ -615,9 +624,25 @@ export default function (xcli: XCLIAPI): void {
         while (Date.now() - startTime < 120000) {
           await page.waitForTimeout(3000);
           const urls = await page.evaluate(() => {
-            // ChatGPT 生成的图片：#image-{uuid} 或 img[src*="oaidalleapiprodscus"]
-            const imgs = document.querySelectorAll('img[src*="oaidalleapiprodscus"], img[src*="files.oaiusercontent"], #image-[id] img');
-            return Array.from(imgs).map(img => (img as HTMLImageElement).src).filter(Boolean);
+            // ChatGPT 图片 URL 模式（2026-06 实测）：
+            //   新版: chatgpt.com/backend-api/estuary/content?id=file_xxx
+            //   旧版: oaidalleapiprodscus / files.oaiusercontent
+            // 容器: #image-{uuid}（Radix 渲染的图片块）
+            const selectors = [
+              'div[id^="image-"] img',
+              'img[src*="estuary/content"]',
+              'img[src*="oaidalleapiprodscus"]',
+              'img[src*="files.oaiusercontent"]',
+            ];
+            const seen = new Set<string>();
+            const out: string[] = [];
+            for (const sel of selectors) {
+              for (const img of document.querySelectorAll(sel)) {
+                const src = (img as HTMLImageElement).src;
+                if (src && !seen.has(src)) { seen.add(src); out.push(src); }
+              }
+            }
+            return out;
           }).catch(() => [] as string[]) as string[];
           if (urls.length > 0) {
             imageUrls.push(...new Set(urls));

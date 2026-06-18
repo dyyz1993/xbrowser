@@ -198,45 +198,92 @@ export default function (xcli: XCLIAPI): void {
       if (!page) throw new Error("需要浏览器页面");
       const tips = buildCdpTips(ctx);
       try {
-        // 1. 导航到 Gemini
-        if (!page.url().includes('gemini.google.com')) {
-          await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-          await page.waitForTimeout(5000);
-        }
+        // 1. 强制导航到 Gemini 新对话页（每次都导航，避免残留状态导致
+        //    Quill editor 不可写或停在旧对话里）
+        await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+        await page.waitForTimeout(5000);
 
-        // 2. 点"上传和工具"弹菜单（录制 action[14]）
-        await page.click('[aria-label="上传和工具"]', { timeout: 5000 }).catch(() => {});
+        // 2. 输入提示词 — Gemini rich-textarea (Quill) 极严格：
+        //    必须在导航后、无其他 DOM 操作干扰的情况下，同一 page.evaluate
+        //    内先 focus 再 execCommand insertText。
+        //    不要先点"上传和工具"/"制作图片"——会让 .ql-editor 失焦导致
+        //    execCommand 失败。Gemini 默认就能根据"画xxx"prompt 生图。
+        // execCommand insertText — 用字符串表达式（框架对字符串不包 IIFE，
+        // 保留 execCommand 所需的 user activation 上下文）。
+        // 注意：CSS 选择器里的双引号不需要转义（在 JS 模板字符串里）。
+        const safePrompt = params.prompt.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        await page.evaluate(
+          `(function(){var e=document.querySelector('.ql-editor');if(!e)return false;e.focus();return document.execCommand('insertText',false,'${safePrompt}');})()`
+        ).catch(() => false);
         await page.waitForTimeout(800);
-        // 3. 点"制作图片"切换到图片模式（录制 action[16]）
-        await page.evaluate(() => {
-          const items = document.querySelectorAll('toolbox-drawer-item button span, [role="menuitem"], span');
-          for (const el of items) {
-            if ((el.textContent || '').trim() === '制作图片') { (el as HTMLElement).click(); return; }
-          }
-        }).catch(() => {});
-        await page.waitForTimeout(500);
-
-        // 4. 输入提示词（录制 action[17]）
-        await page.locator('[aria-label="为 Gemini 输入提示"], .ql-editor').first().click({ timeout: 5000 }).catch(() => {});
-        await page.waitForTimeout(200);
-        await page.keyboard.type(params.prompt, { delay: 15 });
-        await page.waitForTimeout(400);
 
         // 5. 点发送（录制 action[49]）
+        // 发送按钮：录制确认是 arrow_upward（输入框有内容后出现）
         await page.click('mat-icon[fonticon="arrow_upward"]', { timeout: 5000 }).catch(() => {});
         tips.push('已发送文生图请求，等待 Gemini 生成...');
 
-        // 6. 等图片生成（等 .image-button 出现）
+        // 6. 等图片生成 — 检测到就立刻在同一 evaluate 里 fetch→base64，
+        //    避免 blob URL 在跨 evaluate 间失效（blob 生命周期绑定 document）。
         const startTime = Date.now();
+        let lastCount = 0;
+        let stableTicks = 0;
         while (Date.now() - startTime < 120000) {
           await page.waitForTimeout(3000);
-          const found = await page.evaluate(() => {
-            const imgs = document.querySelectorAll('.image-button img, .response-content img');
-            return Array.from(imgs).map(img => (img as HTMLImageElement).src).filter(s => s && s.startsWith('http'));
-          }).catch(() => [] as string[]) as string[];
-          if (found.length > 0) {
-            tips.push(`✓ Gemini 生成了 ${found.length} 张图片`);
-            return ok({ images: found, status: 'completed' }, tips);
+          // 一次性：检测 + fetch + 转 base64，在同一页面上下文完成
+          const result = await page.evaluate(async () => {
+            const imgs = Array.from(document.querySelectorAll<HTMLImageElement>(
+              '.image-button img.loaded, .image-button img'
+            )).filter(img => img.naturalWidth > 50);
+            if (imgs.length === 0) return { count: 0, images: [] as Array<{ src: string; b64: string }> };
+            // 立刻 fetch 每个 blob/http URL 转 base64
+            const out: Array<{ src: string; b64: string }> = [];
+            for (const img of imgs) {
+              try {
+                const resp = await fetch(img.src);
+                const blob = await resp.blob();
+                const b64 = await new Promise<string>((resolve) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve((reader.result as string).replace(/^data:[^;]+;base64,/, ''));
+                  reader.readAsDataURL(blob);
+                });
+                if (b64.length > 100) out.push({ src: img.src, b64 });
+              } catch { /* ignore individual failure */ }
+            }
+            return { count: imgs.length, images: out };
+          }).catch(() => ({ count: 0, images: [] })) as { count: number; images: Array<{ src: string; b64: string }> };
+
+          // 稳定性检查：图片数稳定后（可能多张陆续生成完）才下载
+          if (result.count > 0) {
+            if (result.count === lastCount) {
+              stableTicks++;
+              // 2 个 tick（~6s）图片数不变 → 生成完成，下载
+              if (stableTicks >= 2 && result.images.length > 0) {
+                tips.push(`✓ Gemini 生成了 ${result.images.length} 张图片`);
+                const downloadDir = `${process.env.HOME || '/tmp'}/.xbrowser/downloads`;
+                const fsMod = await import('fs');
+                const pathMod = await import('path');
+                if (!fsMod.existsSync(downloadDir)) fsMod.mkdirSync(downloadDir, { recursive: true });
+                const localPaths: string[] = [];
+                const allUrls: string[] = [];
+                for (let i = 0; i < result.images.length; i++) {
+                  const item = result.images[i]!;
+                  allUrls.push(item.src);
+                  try {
+                    const localPath = pathMod.join(downloadDir, `gemini_${Date.now()}_${i}.png`);
+                    fsMod.writeFileSync(localPath, Buffer.from(item.b64, 'base64'));
+                    localPaths.push(localPath);
+                    const sz = fsMod.statSync(localPath).size;
+                    tips.push(`📁 [${i + 1}/${result.images.length}] ${localPath} (${(sz / 1024).toFixed(0)}KB)`);
+                  } catch (err) {
+                    tips.push(`⚠️ [${i + 1}] 写文件失败: ${err instanceof Error ? err.message : String(err)}`);
+                  }
+                }
+                return ok({ images: allUrls, localPaths, status: 'completed' }, tips);
+              }
+            } else {
+              stableTicks = 0;
+            }
+            lastCount = result.count;
           }
         }
         tips.push('⚠ Gemini 生成超时');
