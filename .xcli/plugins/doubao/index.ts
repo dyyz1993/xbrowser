@@ -759,15 +759,15 @@ export default function (xcli: XCLIAPI): void {
                   });
                 });
                 if (!hasThumb) {
-                  tips.push(`⚠ 未检测到缩略图，可能上传失败（请在 viewer 中确认）`);
+                  // 严格步骤检查：参考图没上传成功就 abort，别带错状态生图（一步错步步错）
+                  return fail('参考图上传失败', ['未检测到缩略图', '请在 viewer 中手动上传参考图后重试', ...remoteTips, ...tips]);
                 }
               } catch (e) {
-                tips.push(`[setInputFiles] ✗ ${(e as Error).message}`);
-                tips.push(`📌 请在 viewer 中手动上传参考图`);
+                return fail('参考图上传异常', [`setInputFiles 失败: ${(e as Error).message}`, '请在 viewer 中手动上传后重试', ...remoteTips, ...tips]);
               }
             }
           } else {
-            tips.push(`⚠ 参考图文件不存在: ${params.ref}`);
+            return fail('参考图文件不存在', [params.ref, ...tips]);
           }
         }
 
@@ -798,6 +798,16 @@ export default function (xcli: XCLIAPI): void {
 
         if (!inputFound) throw new Error('找不到输入框');
 
+        // 严格步骤检查：验证 prompt 真的写进输入框了（避免提交空消息）
+        const promptWritten = await page.evaluate((exp: string) => {
+          const ed = document.querySelector('[contenteditable="true"], textarea') as HTMLElement;
+          const text = ed?.textContent || (ed as HTMLTextAreaElement)?.value || '';
+          return text.includes(exp.substring(0, Math.min(20, exp.length)));
+        }, prompt).catch(() => false);
+        if (!promptWritten) {
+          return fail('prompt 未写入输入框', ['keyboard.type 后输入框内容不匹配', '可能 TipTap 状态未更新', ...remoteTips, ...tips]);
+        }
+
         await page.waitForTimeout(1000);
         // Wait for send button to become available (TipTap needs time to register input)
         await page.waitForSelector('#flow-end-msg-send:not([disabled]), button[aria-label="Send message"]:not([disabled])', { timeout: 5000 }).catch(() => {});
@@ -823,6 +833,22 @@ export default function (xcli: XCLIAPI): void {
             '请尝试在浏览器中手动操作',
             ...remoteTips,
           ]);
+        }
+        // 严格步骤检查：发送后验证消息真发出去了。
+        // 三选一证据（任一即可）：① editor 清空 ② 出现新消息 ③ 网络监听到生图请求
+        // 等 4s 给豆包足够时间（editor 清空有延迟，别太早判失败）
+        await page.waitForTimeout(4000);
+        const peekCapture = capture.get();
+        const sentVerified = await page.evaluate(() => {
+          const ed = document.querySelector('[contenteditable="true"]') as HTMLElement;
+          const emptied = ed && (ed.textContent || '').trim() === '';
+          const msgs = document.querySelectorAll('[class*="message"], [class*="msg-content"], [class*="receive"]');
+          return emptied || msgs.length > 0;
+        }).catch(() => false);
+        const hasNetworkActivity = peekCapture.hd.length > 0 || peekCapture.thumb.length > 0;
+        if (!sentVerified && !hasNetworkActivity) {
+          capture.stop();
+          return fail('发送未生效', ['点击发送后 editor 未清空、无新消息、网络无生图请求', '可能发送按钮被拦截或网络异常', ...remoteTips, ...tips]);
         }
         tips.push('图片生成请求已提交，等待生成（全程网络监听中）...');
 
