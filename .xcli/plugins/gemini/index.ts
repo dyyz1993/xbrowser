@@ -291,7 +291,7 @@ export default function (xcli: XCLIAPI): void {
             tips.push('⚠️ Gemini 拒绝生图（' + refusal.reason + '）：' + refusal.text.substring(0, 100));
             return fail('Gemini 拒绝生图', ['请检查 Gemini 登录状态或更换提示词', ...tips]);
           }
-          // 一次性：检测 + canvas 提取 base64，在同一页面上下文完成
+          // 一次性：检测 + canvas 提取 base64 + 取真实 URL（用 window.location 避免 cdp page.url 不更新）
           const result = await page.evaluate(() => {
             const imgs = Array.from(document.querySelectorAll<HTMLImageElement>(
               '.image-button img'
@@ -312,8 +312,11 @@ export default function (xcli: XCLIAPI): void {
                 if (b64.length > 100) out.push({ src: img.src, b64 });
               } catch { /* tainted canvas 或其他，忽略 */ }
             }
-            return { count: imgs.length, images: out };
-          }).catch(() => ({ count: 0, images: [] })) as { count: number; images: Array<{ src: string; b64: string }> };
+            // 从真实 window.location 提取会话 ID（cdp page.url() 可能滞后）
+            const realUrl = window.location.href;
+            const convMatch = realUrl.match(/\/app\/([a-f0-9]+)/i);
+            return { count: imgs.length, images: out, conversationId: convMatch ? convMatch[1] : '' };
+          }).catch(() => ({ count: 0, images: [] })) as { count: number; images: Array<{ src: string; b64: string }>; conversationId?: string };
 
           // 稳定性检查：图片数稳定后（可能多张陆续生成完）才下载
           if (result.count > 0) {
@@ -341,10 +344,10 @@ export default function (xcli: XCLIAPI): void {
                     tips.push(`⚠️ [${i + 1}] 写文件失败: ${err instanceof Error ? err.message : String(err)}`);
                   }
                 }
-                // 提取会话 URL（供连续漫画 --session 复用）
+                // 提取会话 URL（用 evaluate 内的 window.location 更准确）
                 const conversationUrl = page.url();
-                const conversationId = (conversationUrl.match(/\/app\/([a-f0-9]+)/) || ['', ''])[1];
-                if (conversationId) tips.push(`🔗 会话 ID: ${conversationId}（下次用 --session ${conversationId} 复用）`);
+                const conversationId = result.conversationId || (conversationUrl.match(/\/app\/([a-f0-9]+)/i) || ['', ''])[1];
+                if (conversationId) tips.push(`🔗 会话 ID: ${conversationId}（下次用 --session ${conversationId} 复用此会话）`);
                 return ok({ images: allUrls, localPaths, status: 'completed', conversationUrl, conversationId }, tips);
               }
             } else {
@@ -355,7 +358,10 @@ export default function (xcli: XCLIAPI): void {
         }
         tips.push('⚠ Gemini 生成超时');
         const conversationUrl = page.url();
-        const conversationId = (conversationUrl.match(/\/app\/([a-f0-9]+)/) || ['', ''])[1];
+        const conversationId = await page.evaluate(() => {
+          const m = window.location.href.match(/\/app\/([a-f0-9]+)/i);
+          return m ? m[1] : '';
+        }).catch(() => '') as string;
         return ok({ images: [], status: 'timeout', conversationUrl, conversationId }, tips);
       } catch {
         return fail('文生图失败', ['请检查 Gemini 登录状态']);
