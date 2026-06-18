@@ -666,13 +666,19 @@ export default function (xcli: XCLIAPI): void {
         if (imageUrls.length > 0) {
           tips.push(`✓ DALL-E 生成了 ${imageUrls.length} 张图片`);
           const conversationUrl = page.url();
-          const conversationId = (conversationUrl.match(/\/c\/([a-f0-9-]+)/) || ['', ''])[1];
+          const conversationId = await page.evaluate(() => {
+            const m = window.location.href.match(/\/c\/([a-f0-9-]+)/i);
+            return m ? m[1] : '';
+          }).catch(() => '') as string;
           if (conversationId) tips.push(`🔗 会话 ID: ${conversationId}（下次用 --session ${conversationId} 复用）`);
           return ok({ images: imageUrls, status: 'completed', conversationUrl, conversationId }, tips);
         }
         tips.push('⚠ DALL-E 生成超时');
         const conversationUrl = page.url();
-        const conversationId = (conversationUrl.match(/\/c\/([a-f0-9-]+)/) || ['', ''])[1];
+        const conversationId = await page.evaluate(() => {
+          const m = window.location.href.match(/\/c\/([a-f0-9-]+)/i);
+          return m ? m[1] : '';
+        }).catch(() => '') as string;
         return ok({ images: [], status: 'timeout', conversationUrl, conversationId }, tips);
       } catch {
         return fail('文生图失败', ['请检查 ChatGPT 登录状态']);
