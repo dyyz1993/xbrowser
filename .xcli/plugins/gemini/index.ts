@@ -209,70 +209,77 @@ export default function (xcli: XCLIAPI): void {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
       const tips = buildCdpTips(ctx);
-      try {
-        // 1. 导航：有 session → goto 已有会话（风格延续）；无 → 新建 /app
-        const targetUrl = params.session
-          ? `https://gemini.google.com/app/${params.session}`
-          : 'https://gemini.google.com/app';
-        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-        await page.waitForTimeout(5000);
-        if (params.session) tips.push(`📌 复用会话 ${params.session}（风格延续）`);
+	      try {
+	        // 1. 导航：如果页面已经在目标页面上，跳过 goto（支持 xbrowser --session 复用同一页面）
+	        //    用 xbrowser --session 保持页面不关，gemini 会话自然延续，不需要重新 goto。
+	        const targetUrl = params.session
+	          ? `https://gemini.google.com/app/${params.session}`
+	          : 'https://gemini.google.com/app';
+	        const curUrl = page.url();
+	        const alreadyThere = params.session
+	          ? curUrl.includes(`/app/${params.session}`)
+	          : curUrl.includes('gemini.google.com');
+	        if (!alreadyThere) {
+	          await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+	          await page.waitForTimeout(5000);
+	        } else {
+	          tips.push('📌 页面已在目标会话中，跳过导航');
+	        }
+	        if (params.session) tips.push(`📌 复用会话 ${params.session}（风格延续）`);
 
-        // 2. 切换到"制作图片"模式（关键！）。
-        //    Gemini 默认是聊天模式，描述性 prompt（无"画"字）只回文字不生图。
-        //    必须主动切生图模式：点"上传和工具" → 点"制作图片"。
-        //    实测：切后 .ql-editor 还在，输入/发送流程不变。
-        //    全程真鼠标点击（合成事件 isTrusted=false 会被 Angular 拒）。
-        const toolsClicked = await page.evaluate(() => {
-          const btn = document.querySelector('button[aria-label="上传和工具"]');
-          if (!btn) return false;
-          const r = btn.getBoundingClientRect();
-          return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
-        }).catch(() => false);
-        if (toolsClicked) {
-          await page.mouse.click(toolsClicked.x, toolsClicked.y).catch(() => {});
-          await page.waitForTimeout(1200);
-          // 菜单展开后点"制作图片"
-          const imageModeClicked = await page.evaluate(() => {
-            const btns = Array.from(document.querySelectorAll('button'));
-            const b = btns.find(x => (x.textContent || '').trim() === '制作图片');
-            if (!b) return false;
-            const r = b.getBoundingClientRect();
-            return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
-          }).catch(() => false);
-          if (imageModeClicked) {
-            await page.mouse.click(imageModeClicked.x, imageModeClicked.y).catch(() => {});
-            tips.push('已切换到制作图片模式');
-          } else {
-            tips.push('⚠️ 未找到"制作图片"入口，尝试直接发送（依赖 prompt 关键词触发）');
-          }
-          await page.waitForTimeout(1500);
+        // 2. 不切换"制作图片"模式！直接在常规聊天输入"画..."即可。
+        //    gemini 能理解"画一只猫"就是要生图，URL 自动从 /app → /app/{id}，
+        //    且会话内容会被正常保存（方便 --session 复用）。
+        //    切图片模式创建的会话是空的，无法复用。
+        if (!params.session) {
+          tips.push('📌 新建会话：直接输入"画..."，gemini 自动生图');
         } else {
-          tips.push('⚠️ 未找到"上传和工具"按钮，尝试直接发送');
+          tips.push('📌 复用会话：继续在已有对话中输入"画..."');
         }
 
-        // 3. 输入提示词 — 实测 keyboard.type 在 Gemini rich-textarea (Quill) 上完全工作。
-        //    与 chatgpt/doubao/qwen 统一：真键盘事件 Input.dispatchKeyEvent。
+        // 3. 输入提示词 — 用 keyboard.type（实测在 gemini 上 100% 可靠）。
+        //    execCommand('insertText') 在 CDP evaluate 里缺少 user activation，
+        //    特别是已有会话（--session）页面上经常写不进去。
         await page.locator('.ql-editor').first().click({ timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(200);
-        await fastInput(page, params.prompt, "execCommand");
+        await page.keyboard.type(params.prompt, { delay: 10 });
         await page.waitForTimeout(400);
+        // 验证写入是否成功
+        const promptWritten = await page.evaluate((exp: string) => {
+          const ed = document.querySelector('.ql-editor');
+          return ed ? (ed.textContent || '').includes(exp.substring(0, Math.min(10, exp.length))) : false;
+        }, params.prompt).catch(() => false);
+        if (!promptWritten) {
+          tips.push('⚠️ keyboard.type 后 Quill editor 未更新，尝试 fastInput 兜底');
+          await fastInput(page, params.prompt, 'execCommand');
+        }
 
-        // 4. 点发送 — 必须用真鼠标点击（Input.dispatchMouseEvent，isTrusted=true）。
-        //    page.click() / locator.click() 是合成事件 isTrusted=false，会被
-        //    Gemini Angular 拒绝（点完 url 不跳转、editor 不清空）。
-        //    实测：真鼠标坐标点击后 url /app → /app/{conversationId}，editor 清空。
-        const sendClicked = await page.evaluate(() => {
-          const btn = document.querySelector('button[aria-label="发送"], button[aria-label="Send"]');
-          if (!btn || (btn as HTMLButtonElement).disabled) return null;
-          const r = (btn as HTMLElement).getBoundingClientRect();
-          return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
-        }).catch(() => null);
-        if (sendClicked) {
-          await page.mouse.click(sendClicked.x, sendClicked.y).catch(() => {});
+        // 4. 点发送 — 先用 Enter 键发送（最可靠，录制确认 gemini 支持 Enter 发送）。
+        //    如果 Enter 发送后 editor 没清空（没生效），再用真鼠标点击兜底。
+        await page.waitForTimeout(500);
+        // 首选：Enter 键发送
+        await page.keyboard.press('Enter').catch(() => {});
+        await page.waitForTimeout(1500);
+        // 验证是否成功发送（editor 清空 = 发送了）
+        const sentViaEnter = await page.evaluate(() => {
+          const ed = document.querySelector('.ql-editor');
+          return ed ? (ed.textContent || '').trim() === '' : false;
+        }).catch(() => false);
+        if (sentViaEnter) {
+          tips.push('✓ 已用 Enter 发送');
         } else {
-          // 兜底：尝试 Enter 键发送
-          await page.keyboard.press('Enter').catch(() => {});
+          // 兜底：真鼠标点击发送按钮
+          tips.push('⚠️ Enter 发送未生效，尝试鼠标点击');
+          const sendClicked = await page.evaluate(() => {
+            const btn = document.querySelector('[aria-label="发送"], [aria-label="Send message"]');
+            if (!btn || (btn as HTMLButtonElement).disabled) return null;
+            const r = (btn as HTMLElement).getBoundingClientRect();
+            return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+          }).catch(() => null);
+          if (sendClicked) {
+            await page.mouse.click(sendClicked.x, sendClicked.y).catch(() => {});
+            await page.waitForTimeout(1000);
+          }
         }
         tips.push('已发送文生图请求，等待 Gemini 生成...');
 
