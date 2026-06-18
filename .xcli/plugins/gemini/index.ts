@@ -70,6 +70,49 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  // ── open — 通过标题打开指定会话（模糊匹配）──
+  site.command('open', {
+    description: '通过标题打开指定会话（模糊匹配）',
+    scope: 'browser',
+    parameters: z.object({
+      title: z.string().describe('会话标题（支持模糊匹配）'),
+    }),
+    examples: [
+      { cmd: 'xbrowser gemini open "猫咪"', description: '打开包含"猫咪"的会话' },
+    ],
+    result: z.object({ opened: z.string() }).passthrough(),
+    handler: async (params, ctx) => {
+      const page = ctx.page;
+      if (!page) throw new Error('需要浏览器页面');
+      const tips = buildCdpTips(ctx);
+      try {
+        // 确保在 gemini 首页（侧边栏才显示历史）
+        const curUrl = page.url();
+        if (!curUrl.includes('gemini.google.com')) {
+          await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+          await page.waitForTimeout(4000);
+        }
+        const clicked = await page.evaluate((title: string) => {
+          const links = document.querySelectorAll('a[href*="/app/"]');
+          for (const link of links) {
+            const text = (link.textContent || '').trim();
+            if (text.length > 0 && text.includes(title)) {
+              (link as HTMLAnchorElement).click();
+              return { found: true, title: text };
+            }
+          }
+          return { found: false, title: '' };
+        }, params.title) as { found: boolean; title: string };
+        if (!clicked.found) return fail(`未找到包含"${params.title}"的会话`, tips);
+        await page.waitForTimeout(3000);
+        tips.push(`✓ 已打开：${clicked.title}`);
+        return ok({ opened: clicked.title }, tips);
+      } catch {
+        return fail('打开会话失败', tips);
+      }
+    },
+  });
+
   // ── chat — 发送消息 ──
   site.command('chat', {
     description: '发送消息',
