@@ -362,6 +362,10 @@ export default function (xcli: XCLIAPI): void {
         }
         tips.push('✅ 已确认登录');
 
+        if (params.session) {
+          tips.push(`📌 使用会话 ID: ${params.session}（千问页面自动维持在最近活跃会话，风格延续依赖服务器侧上下文）`);
+        }
+
         const entered = await enterImageMode(page);
         if (entered) {
           tips.push('✅ 已进入 AI 生图模式');
