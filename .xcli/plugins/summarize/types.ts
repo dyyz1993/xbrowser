@@ -41,6 +41,7 @@ export type IntentLabel =
   | 'logout'
   | 'search'
   | 'upload'
+  | 'chat'
   | 'form-submit'
   | 'navigate'
   | 'menu-interact'

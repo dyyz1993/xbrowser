@@ -17,6 +17,7 @@ const INTENT_CATEGORY: Record<string, string> = {
   logout: '账号',
   search: '浏览',
   navigate: '浏览',
+  chat: '对话',
   upload: '附件',
   'form-submit': '表单',
   'menu-interact': '交互',
@@ -26,7 +27,8 @@ const INTENT_CATEGORY: Record<string, string> = {
 /** 中文意图标签（同 template.ts，保持一致）。 */
 const INTENT_LABEL: Record<string, string> = {
   login: '登录', logout: '登出', search: '搜索', upload: '上传',
-  'form-submit': '表单提交', navigate: '页面导航', 'menu-interact': '菜单交互', unknown: '未识别操作',
+  chat: '发送消息', 'form-submit': '表单提交', navigate: '页面导航',
+  'menu-interact': '菜单交互', unknown: '未识别操作',
 };
 
 /** 从 flow 文件解析 frontmatter（轻量版，复用 store 逻辑太重，这里只读 fm）。 */
