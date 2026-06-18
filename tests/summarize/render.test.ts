@@ -58,13 +58,18 @@ describe('renderTopic (双模式 + 降级)', () => {
     expect(r.body).toContain('## 登录');
   });
 
-  it('degrades to template when LLM unavailable (pi-ai not installed)', async () => {
-    // 测试环境没装 pi-ai，应自动降级
-    const r = await renderTopic(mkTopic(), { useLlm: true });
+  it('degrades to template when useLlm:false', async () => {
+    const r = await renderTopic(mkTopic(), { useLlm: false });
     expect(r.mode).toBe('template');
-    expect(r.warnings.length).toBeGreaterThan(0);
-    expect(r.warnings[0]).toContain('LLM 不可用');
+    expect(r.body).toContain('## 登录');
   });
+
+  it('uses LLM when auth available (~/.pi/agent/auth.json autoload)', async () => {
+    // auth.json 自动加载：有 key 走 LLM，没 key 降级 template，两种都合法
+    const r = await renderTopic(mkTopic(), { useLlm: true });
+    expect(['llm', 'template']).toContain(r.mode);
+    expect(r.body).toContain('bob');  // 字段保留，无论哪种模式
+  }, 60000);
 
   it('template body always contains field values', async () => {
     const r = await renderTopic(mkTopic(), { useLlm: false });

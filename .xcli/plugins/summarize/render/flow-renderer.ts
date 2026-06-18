@@ -70,6 +70,42 @@ function validateFields(topic: Topic, output: string): { ok: boolean; missing: s
   return { ok: missing.length === 0, missing };
 }
 
+/**
+ * 自动从 ~/.pi/agent/auth.json 加载 provider 的 API key 到环境变量。
+ * pi-ai 库默认读环境变量（如 OPENCODE_API_KEY），但用户的 key 可能存在
+ * pi CLI 的 auth.json 里（type=api_key）。这里做零配置自动注入：
+ * 环境变量已有则跳过；没有则读 auth.json 并 set。
+ *
+ * provider → 环境变量名映射（同 pi-ai 的 env-api-keys 约定）
+ */
+const PROVIDER_ENV_VAR: Record<string, string> = {
+  'opencode-go': 'OPENCODE_API_KEY',
+  'opencode': 'OPENCODE_API_KEY',
+  'deepseek': 'DEEPSEEK_API_KEY',
+  'openai': 'OPENAI_API_KEY',
+  'anthropic': 'ANTHROPIC_API_KEY',
+};
+
+let authLoaded = false;  // 只加载一次
+function autoloadAuth(provider: string): void {
+  if (authLoaded) return;
+  authLoaded = true;
+  const envVar = PROVIDER_ENV_VAR[provider];
+  if (!envVar || process.env[envVar]) return;  // 环境变量已有，无需加载
+  try {
+    const { readFileSync } = require('node:fs');
+    const { homedir } = require('node:os');
+    const authPath = `${homedir()}/.pi/agent/auth.json`;
+    const auth = JSON.parse(readFileSync(authPath, 'utf8'));
+    const entry = auth[provider];
+    if (entry && typeof entry.key === 'string') {
+      process.env[envVar] = entry.key;
+    }
+  } catch {
+    // auth.json 不存在或格式不对，静默跳过（降级模板）
+  }
+}
+
 /** 尝试动态加载 pi-ai 并调用 LLM（单轮）。失败返回 null。 */
 async function tryLlmRender(prompt: string, opts: RenderOptions): Promise<string | null> {
   try {
@@ -81,6 +117,7 @@ async function tryLlmRender(prompt: string, opts: RenderOptions): Promise<string
     // 注意 opencode-go 的模型都是 reasoning 模型，需要足够大的 maxTokens
     // 让 reasoning 完成后还有余量生成正文（reasoning 通常消耗 500-1500 token）
     const provider = (opts.provider ?? 'opencode-go') as Parameters<typeof piAi.getModel>[0];
+    autoloadAuth(provider);  // 零配置：自动从 ~/.pi/agent/auth.json 读 key
     const defaultModel = provider === 'opencode-go' ? 'deepseek-v4-flash'
       : provider === 'deepseek' ? 'deepseek-chat'
       : undefined;
