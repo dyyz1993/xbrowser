@@ -441,18 +441,16 @@ export default function (xcli: XCLIAPI): void {
 	  });
 
 	  // ── storyboard — 连续分镜（单命令内循环，页面不关，会话不断）──
-	  // 与 image 命令不同：内部循环多次，每次输入+发送+等待+下载，
-	  // 页面始终不关，gemini 会话自然延续。
-	  // 每个步骤都校验：输入是否写入？发送是否成功？图片是否生成？
+	  // 每步校验 + 锚点法抓图（只认"发送后新增"的图，不碰旧图）
 	  site.command('storyboard', {
 	    description: '连续分镜（单命令内循环，页面不关，会话不断）',
 	    scope: 'browser',
 	    parameters: z.object({
-	      shots: z.string().describe('分镜提示词 CSV（如 "第1镜,第2镜,第3镜"）'),
+	      shots: z.string().describe('分镜提示词 CSV（如 "画猫咪站着,画猫咪坐下,画猫咪躺下"）'),
 	    }),
 	    result: z.object({ images: z.array(z.string()).optional(), count: z.number(), status: z.string() }).passthrough(),
 	    examples: [
-	      { cmd: 'xbrowser gemini storyboard --shots "猫咪站着,猫咪坐下,猫咪躺下" --cdp 9221', description: '3 镜连续' },
+	      { cmd: 'xbrowser gemini storyboard --shots "画猫咪站着,画猫咪坐下,画猫咪躺下" --cdp 9221', description: '3 镜连续' },
 	    ],
 	    handler: async (params, ctx) => {
 	      const page = ctx.page;
@@ -462,9 +460,12 @@ export default function (xcli: XCLIAPI): void {
 	      if (prompts.length === 0) return fail('未指定分镜', ['--shots 至少一个']);
 	      if (prompts.length > 10) return fail('最多 10 镜', ['超过上限，请分批']);
 
-	      // 1. 导航到 gemini
+	      // 1. 导航到 gemini（一次，循环中不再 goto）
 	      await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
 	      await page.waitForTimeout(5000);
+	      // 校验：编辑器必须存在
+	      const editorOk = await page.evaluate(() => !!document.querySelector('.ql-editor')).catch(() => false);
+	      if (!editorOk) return fail('gemini 页面未加载好', ['.ql-editor 不存在', ...tips]);
 	      tips.push(`📌 已加载 Gemini，开始 ${prompts.length} 镜连续分镜`);
 
 	      const allImages: string[] = [];
@@ -474,7 +475,12 @@ export default function (xcli: XCLIAPI): void {
 	        const prompt = prompts[i]!;
 	        tips.push(`\n📽 第${i + 1}/${prompts.length}镜：${prompt.substring(0, 40)}${prompt.length > 40 ? '...' : ''}`);
 
-	        // 2. 输入（聚焦 + keyboard.type + 校验）
+	        // ── 步骤 A：记录锚点（发送前的 imgCount，用于后续只认新增图）──
+	        const anchor = await page.evaluate(() =>
+	          document.querySelectorAll('.image-button img').length
+	        ).catch(() => 0);
+
+	        // ── 步骤 B：输入（focus + keyboard.type + 校验写入）──
 	        await page.locator('.ql-editor').first().click({ timeout: 5000 }).catch(() => {});
 	        await page.waitForTimeout(200);
 	        await page.keyboard.type(prompt, { delay: 10 });
@@ -484,78 +490,82 @@ export default function (xcli: XCLIAPI): void {
 	          return ed ? (ed.textContent || '').includes(exp.substring(0, Math.min(10, exp.length))) : false;
 	        }, prompt).catch(() => false);
 	        if (!written) {
-	          await fastInput(page, prompt, 'execCommand');
-	          tips.push('  ⚠️ keyboard.type 无写入，execCommand 兜底');
+	          tips.push(`  ❌ 第${i + 1}镜输入失败，跳过`);
+	          continue;
 	        }
 
-	        // 3. 发送（Enter 优先 + 校验 editor 清空）
-	        await page.waitForTimeout(300);
-	        await page.keyboard.press('Enter').catch(() => {});
-	        await page.waitForTimeout(2000);
-	        const sent = await page.evaluate(() => {
+	        // ── 步骤 C：发送（真鼠标点击 + 校验 editor 清空 AND URL 变化）──
+	        const urlBefore = await page.evaluate(() => window.location.href).catch(() => '');
+	        const sendCoord = await page.evaluate(() => {
+	          const b = document.querySelector('[aria-label="发送"], [aria-label="Send message"]') as HTMLButtonElement;
+	          if (!b || b.disabled) return null;
+	          const r = b.getBoundingClientRect();
+	          return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+	        }).catch(() => null);
+	        if (!sendCoord) {
+	          tips.push(`  ❌ 第${i + 1}镜发送按钮不可用，跳过`);
+	          continue;
+	        }
+	        await page.mouse.click(sendCoord.x, sendCoord.y).catch(() => {});
+	        await page.waitForTimeout(3000);
+	        // 校验发送：editor 清空 OR URL 变化（任一即可）
+	        const sendVerified = await page.evaluate((before: string) => {
 	          const ed = document.querySelector('.ql-editor');
-	          return ed ? (ed.textContent || '').trim() === '' : false;
-	        }).catch(() => false);
-	        if (!sent) {
-	          // 鼠标点击兜底
-	          const btn = await page.evaluate(() => {
-	            const b = document.querySelector('[aria-label="发送"], [aria-label="Send message"]');
-	            if (!b || (b as HTMLButtonElement).disabled) return null;
-	            const r = (b as HTMLElement).getBoundingClientRect();
-	            return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
-	          }).catch(() => null);
-	          if (btn) {
-	            await page.mouse.click(btn.x, btn.y).catch(() => {});
-	            await page.waitForTimeout(1000);
-	          }
+	          const emptied = ed ? (ed.textContent || '').trim() === '' : false;
+	          const urlChanged = window.location.href !== before;
+	          return emptied || urlChanged;
+	        }, urlBefore).catch(() => false);
+	        if (!sendVerified) {
+	          tips.push(`  ❌ 第${i + 1}镜发送未生效（editor 未清空、URL 未变），跳过`);
+	          continue;
 	        }
 
-	        // 4. 等图（最多 60s，检测 .image-button img）
+	        // ── 步骤 D：等图（锚点法：只认 imgCount > anchor 的新图）──
 	        const startTime = Date.now();
 	        let gotImage = false;
-	        while (Date.now() - startTime < 60000) {
+	        while (Date.now() - startTime < 90000) {
 	          await page.waitForTimeout(3000);
-	          const result = await page.evaluate(() => {
-	            const imgs = Array.from(document.querySelectorAll<HTMLImageElement>('.image-button img'))
+	          const result = await page.evaluate((anchorCount: number) => {
+	            const allImgs = Array.from(document.querySelectorAll<HTMLImageElement>('.image-button img'))
 	              .filter(img => img.naturalWidth > 100 && img.complete);
-	            if (imgs.length === 0) return { ok: false, images: [] as Array<{ src: string; b64: string }> };
-	            const out: Array<{ src: string; b64: string }> = [];
-	            for (const img of imgs) {
-	              try {
-	                const c = document.createElement('canvas');
-	                c.width = img.naturalWidth;
-	                c.height = img.naturalHeight;
-	                const ctx = c.getContext('2d');
-	                if (!ctx) continue;
-	                ctx.drawImage(img, 0, 0);
-	                const dataUrl = c.toDataURL('image/png');
-	                const b64 = dataUrl.replace(/^data:image\/png;base64,/, '');
-	                if (b64.length > 100) out.push({ src: img.src, b64 });
-	              } catch { /* skip */ }
+	            // 只取锚点之后的新图
+	            const newImgs = allImgs.slice(anchorCount);
+	            if (newImgs.length === 0) return { count: allImgs.length, newCount: 0, image: null as null | { src: string; b64: string } };
+	            // canvas 提取最新一张
+	            const img = newImgs[newImgs.length - 1]!;
+	            try {
+	              const c = document.createElement('canvas');
+	              c.width = img.naturalWidth;
+	              c.height = img.naturalHeight;
+	              const ctx = c.getContext('2d');
+	      if (!ctx) return { count: allImgs.length, newCount: newImgs.length, image: null };
+	              ctx.drawImage(img, 0, 0);
+	              const dataUrl = c.toDataURL('image/png');
+	              const b64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+	              return { count: allImgs.length, newCount: newImgs.length, image: b64.length > 100 ? { src: img.src, b64 } : null };
+	            } catch {
+	              return { count: allImgs.length, newCount: newImgs.length, image: null };
 	            }
-	            const lastImg = out[out.length - 1];
-	            return { ok: out.length > 0, images: lastImg ? [lastImg] : [] };
-	          }).catch(() => ({ ok: false, images: [] })) as { ok: boolean; images: Array<{ src: string; b64: string }> };
+	          }, anchor).catch(() => ({ count: 0, newCount: 0, image: null })) as { count: number; newCount: number; image: { src: string; b64: string } | null };
 
-	          if (result.ok && result.images.length > 0) {
+	          if (result.newCount > 0 && result.image) {
 	            // 下载
-	            const item = result.images[0]!;
 	            const downloadDir = `${process.env.HOME || '/tmp'}/.xbrowser/downloads`;
 	            const fsMod = await import('fs');
 	            const pathMod = await import('path');
 	            if (!fsMod.existsSync(downloadDir)) fsMod.mkdirSync(downloadDir, { recursive: true });
 	            const localPath = pathMod.join(downloadDir, `gemini_story_${Date.now()}_${i}.png`);
-	            fsMod.writeFileSync(localPath, Buffer.from(item.b64, 'base64'));
+	            fsMod.writeFileSync(localPath, Buffer.from(result.image.b64, 'base64'));
 	            const sz = fsMod.statSync(localPath).size;
-	            tips.push(`  ✅ 第${i + 1}镜生成：${(sz / 1024).toFixed(0)}KB`);
-	            allImages.push(item.src);
+	            tips.push(`  ✅ 第${i + 1}镜生成：${(sz / 1024).toFixed(0)}KB（anchor=${anchor}, new=${result.newCount}）`);
+	            allImages.push(result.image.src);
 	            allLocalPaths.push(localPath);
 	            gotImage = true;
 	            break;
 	          }
 	        }
 	        if (!gotImage) {
-	          tips.push(`  ⚠️ 第${i + 1}镜超时未生成，继续下一镜`);
+	          tips.push(`  ⚠️ 第${i + 1}镜超时未生成新图，继续下一镜`);
 	        }
 
 	        await page.waitForTimeout(1000);
