@@ -593,18 +593,52 @@ export default function (xcli: XCLIAPI): void {
       if (!page) throw new Error("需要浏览器页面");
       const tips = buildTips(ctx);
       try {
-        // 0. 导航：有 session → goto 已有会话（风格延续）；无 → 首页
-        const targetUrl = params.session
-          ? `https://chatgpt.com/c/${params.session}`
-          : CG_URL;
+        // 0. 导航策略（关键：已在目标会话页就跳过，保持页面状态）
+        //    录制确认：连续发图时页面不关，URL 保持 /c/{id} 不变。
+        //    恢复会话优先用"点击侧边栏会话项"（chatgpt 内部路由，比 goto 可靠），
+        //    goto 作为兜底。
         const curUrl = page.url();
-        if (params.session || !curUrl.includes('chatgpt.com')) {
-          tips.push(params.session ? `导航到会话 ${params.session}...` : '导航到 ChatGPT...');
-          await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-          await page.waitForTimeout(4000);
-          if (params.session) tips.push(`📌 复用会话 ${params.session}（风格延续）`);
+        const targetSession = params.session || '';
+        const alreadyOnTarget = targetSession
+          ? curUrl.includes(`/c/${targetSession}`)
+          : curUrl.includes('chatgpt.com');
+
+        if (!alreadyOnTarget) {
+          if (targetSession) {
+            // 优先：点击侧边栏会话项（录制确认 li > a 是会话列表项结构）
+            const clickedViaSidebar = await page.evaluate((sid: string) => {
+              // 侧边栏会话链接：li > a[href*="/c/"]
+              const links = document.querySelectorAll<HTMLAnchorElement>('nav a[href*="/c/"], aside a[href*="/c/"]');
+              for (const link of links) {
+                if (link.href.includes(`/c/${sid}`)) {
+                  link.click();
+                  return true;
+                }
+              }
+              return false;
+            }, targetSession).catch(() => false);
+
+            if (clickedViaSidebar) {
+              tips.push(`📌 点击侧边栏进入会话 ${targetSession}`);
+              // 等输入框出现 = 页面加载完
+              await page.waitForSelector('#prompt-textarea', { timeout: 15000 }).catch(() => {});
+              await page.waitForTimeout(2000);
+            } else {
+              // 兜底：goto（可能页面加载不全，但至少能到）
+              tips.push(`📌 goto 会话 ${targetSession}（侧边栏未找到，用 goto）`);
+              await page.goto(`https://chatgpt.com/c/${targetSession}`, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+              await page.waitForSelector('#prompt-textarea', { timeout: 15000 }).catch(() => {});
+              await page.waitForTimeout(2000);
+            }
+          } else {
+            // 无 session：goto 首页
+            tips.push('导航到 ChatGPT...');
+            await page.goto(CG_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+            await page.waitForTimeout(4000);
+          }
         } else {
-          await page.waitForTimeout(1500);
+          tips.push('📌 已在目标会话页，跳过导航（保持页面状态）');
+          await page.waitForTimeout(1000);
         }
         // 1. chatgpt 改版后不需要走"+"菜单→"创建图片"，直接输入"画..."就能生图
         //    #prompt-textarea 现在是 contenteditable DIV（不是 textarea）
