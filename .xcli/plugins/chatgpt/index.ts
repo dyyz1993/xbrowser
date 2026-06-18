@@ -749,6 +749,121 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  // ── storyboard — 连续分镜（单命令内循环，页面不关，会话不断）──
+  // chatgpt 跟 gemini 一样：跨命令无法保持会话状态。
+  // 必须单命令内循环，页面始终不关，会话自然延续。
+  // 锚点法抓图：发送前记 imgCount，只认新增。
+  site.command('storyboard', {
+    description: '连续分镜（单命令内循环，页面不关，会话不断）',
+    scope: 'browser',
+    parameters: z.object({
+      shots: z.string().describe('分镜提示词 CSV（如 "画猫咪站着,画猫咪坐下,画猫咪躺下"）'),
+    }),
+    result: z.object({ images: z.array(z.string()).optional(), count: z.number(), status: z.string(), conversationId: z.string().optional() }).passthrough(),
+    examples: [
+      { cmd: 'xbrowser chatgpt storyboard --shots "画猫咪站着,画猫咪坐下,画猫咪躺下" --cdp 9221', description: '3 镜连续' },
+    ],
+    handler: async (params, ctx) => {
+      const page = ctx.page;
+      if (!page) throw new Error("需要浏览器页面");
+      const tips = buildTips(ctx);
+      const prompts = params.shots.split(',').map(s => s.trim()).filter(Boolean);
+      if (prompts.length === 0) return fail('未指定分镜', ['--shots 至少一个']);
+      if (prompts.length > 10) return fail('最多 10 镜', ['超过上限，请分批']);
+
+      // 1. 导航到 chatgpt 首页（一次）
+      const curUrl = page.url();
+      if (!curUrl.includes('chatgpt.com')) {
+        await page.goto(CG_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+      }
+      await page.waitForSelector('#prompt-textarea', { timeout: 15000 }).catch(() => {});
+      await page.waitForTimeout(2000);
+      tips.push(`📌 已加载 ChatGPT，开始 ${prompts.length} 镜连续分镜`);
+
+      const allImages: string[] = [];
+
+      for (let i = 0; i < prompts.length; i++) {
+        const prompt = prompts[i]!;
+        tips.push(`\n📽 第${i + 1}/${prompts.length}镜：${prompt.substring(0, 40)}${prompt.length > 40 ? '...' : ''}`);
+
+        // ── 锚点：记录发送前已有图片 URL 集合 ──
+        const anchorUrls = await page.evaluate(() => {
+          const sels = ['div[id^="image-"] img', 'img[src*="estuary/content"]', 'img[src*="oaidalleapiprodscus"]', 'img[src*="files.oaiusercontent"]'];
+          const seen = new Set<string>();
+          for (const sel of sels) for (const img of document.querySelectorAll(sel)) { const src = (img as HTMLImageElement).src; if (src) seen.add(src); }
+          return Array.from(seen);
+        }).catch(() => [] as string[]);
+
+        // ── 输入（contenteditable + keyboard.type）──
+        await page.locator('#prompt-textarea').first().click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(200);
+        await page.keyboard.type(prompt, { delay: 15 });
+        await page.waitForTimeout(400);
+        const written = await page.evaluate((exp: string) => {
+          const ed = document.querySelector('#prompt-textarea');
+          return ed ? (ed.textContent || '').includes(exp.substring(0, Math.min(10, exp.length))) : false;
+        }, prompt).catch(() => false);
+        if (!written) {
+          await fastInput(page, prompt, 'execCommand');
+          await page.waitForTimeout(300);
+        }
+
+        // ── 发送（真鼠标点击 #composer-submit-button）──
+        const sendCoord = await page.evaluate(() => {
+          const b = document.querySelector('#composer-submit-button') as HTMLButtonElement;
+          if (!b || b.disabled) return null;
+          const r = b.getBoundingClientRect();
+          return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+        }).catch(() => null);
+        if (!sendCoord) {
+          tips.push(`  ❌ 第${i + 1}镜发送按钮不可用，跳过`);
+          continue;
+        }
+        await page.mouse.click(sendCoord.x, sendCoord.y).catch(() => {});
+        await page.waitForTimeout(3000);
+
+        // ── 等图（锚点法：只认 anchor 之外的新图）──
+        const startTime = Date.now();
+        let gotImage = false;
+        while (Date.now() - startTime < 120000) {
+          await page.waitForTimeout(3000);
+          const newUrls = await page.evaluate((anchor: string[]) => {
+            const anchorSet = new Set(anchor);
+            const sels = ['div[id^="image-"] img', 'img[src*="estuary/content"]', 'img[src*="oaidalleapiprodscus"]', 'img[src*="files.oaiusercontent"]'];
+            const seen = new Set<string>();
+            const out: string[] = [];
+            for (const sel of sels) for (const img of document.querySelectorAll(sel)) {
+              const src = (img as HTMLImageElement).src;
+              if (src && !anchorSet.has(src) && !seen.has(src)) { seen.add(src); out.push(src); }
+            }
+            return out;
+          }, anchorUrls).catch(() => [] as string[]) as string[];
+
+          if (newUrls.length > 0) {
+            tips.push(`  ✅ 第${i + 1}镜生成：${newUrls.length} 张新图（anchor=${anchorUrls.length}）`);
+            allImages.push(...newUrls);
+            gotImage = true;
+            break;
+          }
+        }
+        if (!gotImage) {
+          tips.push(`  ⚠️ 第${i + 1}镜超时未生成新图，继续下一镜`);
+        }
+        await page.waitForTimeout(1000);
+      }
+
+      // 提取会话 ID
+      const conversationId = await page.evaluate(() => {
+        const m = window.location.href.match(/\/c\/([a-f0-9-]+)/i);
+        return m ? m[1] : '';
+      }).catch(() => '') as string;
+      if (conversationId) tips.push(`🔗 会话 ID: ${conversationId}`);
+
+      tips.push(`\n📦 完成：${allImages.length} 张图`);
+      return ok({ images: allImages, count: allImages.length, status: 'completed', conversationId }, tips);
+    },
+  });
+
   site.login(async (ctx) => {
     const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
     const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint;
