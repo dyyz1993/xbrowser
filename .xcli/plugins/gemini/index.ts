@@ -180,8 +180,16 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
-  // ── image — 文生图（录制确认流程 2026-06-17）──
-  // Gemini 文生图入口：点"上传和工具" → "制作图片" → 输入提示词 → 发送 → 等 .image-button
+  // ── image — 文生图（实测修复 2026-06-17）──
+  // 根因调查（详见提交记录）：
+  //   ❌ 之前的假设全错：execCommand/keyboard.type/cdp-tunnel 都不是问题
+  //   ✅ 真正的两个 bug：
+  //      1. 发送用了 page.click() 合成事件 → isTrusted=false 被 Angular 拒绝
+  //      2. （次要）execCommand insertText 依赖 user activation，CDP evaluate 无激活
+  //   修复：
+  //      - 输入：keyboard.type（真键盘，与 chatgpt/doubao/qwen 统一）
+  //      - 发送：真鼠标坐标点击 page.mouse.click(x,y)，Input.dispatchMouseEvent isTrusted=true
+  //   验证：点击后 url /app → /app/{conversationId}，editor 清空，发送成功
   site.command('image', {
     description: '文生图（Gemini Imagen）',
     requiresLogin: false,
@@ -203,51 +211,61 @@ export default function (xcli: XCLIAPI): void {
         await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
         await page.waitForTimeout(5000);
 
-        // 2. 输入提示词 — Gemini rich-textarea (Quill) 极严格：
-        //    必须在导航后、无其他 DOM 操作干扰的情况下，同一 page.evaluate
-        //    内先 focus 再 execCommand insertText。
-        //    不要先点"上传和工具"/"制作图片"——会让 .ql-editor 失焦导致
-        //    execCommand 失败。Gemini 默认就能根据"画xxx"prompt 生图。
-        // execCommand insertText — 用字符串表达式（框架对字符串不包 IIFE，
-        // 保留 execCommand 所需的 user activation 上下文）。
-        // 注意：CSS 选择器里的双引号不需要转义（在 JS 模板字符串里）。
-        const safePrompt = params.prompt.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-        await page.evaluate(
-          `(function(){var e=document.querySelector('.ql-editor');if(!e)return false;e.focus();return document.execCommand('insertText',false,'${safePrompt}');})()`
-        ).catch(() => false);
-        await page.waitForTimeout(800);
+        // 2. 输入提示词 — 实测 keyboard.type 在 Gemini rich-textarea (Quill) 上完全工作。
+        //    与 chatgpt/doubao/qwen 统一：真键盘事件 Input.dispatchKeyEvent。
+        await page.locator('.ql-editor').first().click({ timeout: 5000 }).catch(() => {});
+        await page.waitForTimeout(200);
+        await page.keyboard.type(params.prompt, { delay: 15 });
+        await page.waitForTimeout(400);
 
-        // 5. 点发送（录制 action[49]）
-        // 发送按钮：录制确认是 arrow_upward（输入框有内容后出现）
-        await page.click('mat-icon[fonticon="arrow_upward"]', { timeout: 5000 }).catch(() => {});
+        // 3. 点发送 — 必须用真鼠标点击（Input.dispatchMouseEvent，isTrusted=true）。
+        //    page.click() / locator.click() 是合成事件 isTrusted=false，会被
+        //    Gemini Angular 拒绝（点完 url 不跳转、editor 不清空）。
+        //    实测：真鼠标坐标点击后 url /app → /app/{conversationId}，editor 清空。
+        const sendClicked = await page.evaluate(() => {
+          const btn = document.querySelector('button[aria-label="发送"], button[aria-label="Send"]');
+          if (!btn || (btn as HTMLButtonElement).disabled) return null;
+          const r = (btn as HTMLElement).getBoundingClientRect();
+          return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+        }).catch(() => null);
+        if (sendClicked) {
+          await page.mouse.click(sendClicked.x, sendClicked.y).catch(() => {});
+        } else {
+          // 兜底：尝试 Enter 键发送
+          await page.keyboard.press('Enter').catch(() => {});
+        }
         tips.push('已发送文生图请求，等待 Gemini 生成...');
 
-        // 6. 等图片生成 — 检测到就立刻在同一 evaluate 里 fetch→base64，
-        //    避免 blob URL 在跨 evaluate 间失效（blob 生命周期绑定 document）。
+        // 4. 等图片生成 — 检测到就立刻在同一 evaluate 里用 canvas 提取 base64。
+        //    ⚠️ 不能用 fetch(blobUrl)！Gemini 生成的图是 blob: URL，会被很快
+        //    revoke，跨 evaluate fetch 报 "Failed to fetch"。
+        //    canvas.toDataURL() 直接从已加载的 <img> 像素提取，绕过 blob 生命周期。
+        //    实测：1024×559 图成功提取 1.25MB PNG。
         const startTime = Date.now();
         let lastCount = 0;
         let stableTicks = 0;
         while (Date.now() - startTime < 120000) {
           await page.waitForTimeout(3000);
-          // 一次性：检测 + fetch + 转 base64，在同一页面上下文完成
-          const result = await page.evaluate(async () => {
+          // 一次性：检测 + canvas 提取 base64，在同一页面上下文完成
+          const result = await page.evaluate(() => {
             const imgs = Array.from(document.querySelectorAll<HTMLImageElement>(
-              '.image-button img.loaded, .image-button img'
-            )).filter(img => img.naturalWidth > 50);
+              '.image-button img'
+            )).filter(img => img.naturalWidth > 100 && img.complete);
             if (imgs.length === 0) return { count: 0, images: [] as Array<{ src: string; b64: string }> };
-            // 立刻 fetch 每个 blob/http URL 转 base64
+            // canvas 提取每个 img 的像素数据 → base64
             const out: Array<{ src: string; b64: string }> = [];
             for (const img of imgs) {
               try {
-                const resp = await fetch(img.src);
-                const blob = await resp.blob();
-                const b64 = await new Promise<string>((resolve) => {
-                  const reader = new FileReader();
-                  reader.onloadend = () => resolve((reader.result as string).replace(/^data:[^;]+;base64,/, ''));
-                  reader.readAsDataURL(blob);
-                });
+                const c = document.createElement('canvas');
+                c.width = img.naturalWidth;
+                c.height = img.naturalHeight;
+                const ctx = c.getContext('2d');
+                if (!ctx) continue;
+                ctx.drawImage(img, 0, 0);
+                const dataUrl = c.toDataURL('image/png');
+                const b64 = dataUrl.replace(/^data:image\/png;base64,/, '');
                 if (b64.length > 100) out.push({ src: img.src, b64 });
-              } catch { /* ignore individual failure */ }
+              } catch { /* tainted canvas 或其他，忽略 */ }
             }
             return { count: imgs.length, images: out };
           }).catch(() => ({ count: 0, images: [] })) as { count: number; images: Array<{ src: string; b64: string }> };
@@ -305,7 +323,7 @@ export default function (xcli: XCLIAPI): void {
       if (!page) return fail({ message: '需要浏览器页面' });
       const url = page.url();
       const loggedIn = !url.includes('/login') && !url.includes('/signin') && (url.includes('gemini.google.com') || url === 'about:blank');
-      return ok({ data: { loggedIn, url } }, [`登录状态: ${loggedIn ? '✅' : '❌'}`]);
+      return ok({ loggedIn, url }, [`登录状态: ${loggedIn ? '✅' : '❌'}`]);
     },
   });
 
