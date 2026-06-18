@@ -1,4 +1,5 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import { checkRefusal } from "../shared/refusal-detect.js";
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
 import { buildTips, batchUploadFiles, handleChatAttachments, checkLoginStatus } from '../shared/ai-chat-base.js';
@@ -623,6 +624,12 @@ export default function (xcli: XCLIAPI): void {
         const imageUrls: string[] = [];
         while (Date.now() - startTime < 120000) {
           await page.waitForTimeout(3000);
+          // 拒绝/错误文案检测：没图时才查，避免误判"先出图后说话"。
+          const refusal = await checkRefusal(page, ['[data-message-author-role="assistant"] .markdown', '[data-message-author-role="assistant"]']).catch(() => ({ refused: false, reason: null, text: '' }));
+          if (refusal.refused && refusal.reason) {
+            tips.push("⚠️ ChatGPT 拒绝生图（" + refusal.reason + "）：" + refusal.text.substring(0, 100));
+            return fail("ChatGPT 拒绝生图", tips);
+          }
           const urls = await page.evaluate(() => {
             // ChatGPT 图片 URL 模式（2026-06 实测）：
             //   新版: chatgpt.com/backend-api/estuary/content?id=file_xxx

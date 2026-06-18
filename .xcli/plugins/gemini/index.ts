@@ -9,6 +9,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import * as path from 'path';
 import * as fs from 'fs';
 import { smartExtractReply } from '../shared/smart-extract.js';
+import { checkRefusal } from '../shared/refusal-detect.js';
 
 const GEMINI_URL = 'https://gemini.google.com';
 type Page = import('../types').Page;
@@ -246,6 +247,12 @@ export default function (xcli: XCLIAPI): void {
         let stableTicks = 0;
         while (Date.now() - startTime < 120000) {
           await page.waitForTimeout(3000);
+          // 拒绝/错误文案检测：没图时才查，避免误判"先出图后说话"。
+          const refusal = await checkRefusal(page, ['.model-response-text', 'message-content', '.response-container']).catch(() => ({ refused: false, reason: null, text: '' }));
+          if (refusal.refused && refusal.reason) {
+            tips.push('⚠️ Gemini 拒绝生图（' + refusal.reason + '）：' + refusal.text.substring(0, 100));
+            return fail('Gemini 拒绝生图', ['请检查 Gemini 登录状态或更换提示词', ...tips]);
+          }
           // 一次性：检测 + canvas 提取 base64，在同一页面上下文完成
           const result = await page.evaluate(() => {
             const imgs = Array.from(document.querySelectorAll<HTMLImageElement>(

@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import type { PluginPage, PluginElementHandle } from '../types.js';
 import { smartExtractReply } from '../shared/smart-extract.js';
+import { checkRefusal } from '../shared/refusal-detect.js';
 
 type Page = import('../types').Page;
 type Response = import('../types').Response;
@@ -267,6 +268,13 @@ async function waitForImages(page: Page, timeoutMs: number): Promise<string[]> {
       if (urls.length > 0) return urls;
     }
 
+    // 拒绝/错误文案检测：没图时才查。命中就 reject，让上层 race 感知。
+    if (urls.length === 0) {
+      const refusal = await checkRefusal(page, ['div.answer-common-card', 'div.chat-answers-card-wrap', '[class*="markdown"]']).catch(() => ({ refused: false, reason: null, text: '' }));
+      if (refusal.refused && refusal.reason) {
+        throw new Error("QWEN_REFUSAL:" + refusal.reason + ":" + refusal.text.substring(0, 100));
+      }
+    }
     await new Promise(r => setTimeout(r, 2000));
   }
 
@@ -417,14 +425,22 @@ export default function (xcli: XCLIAPI): void {
           const netImages = networkPromise!;
 
           const timeout = waitSeconds * 1000;
+          // waitForImages 检测到拒绝会抛 QWEN_REFUSAL:reason:text，转成 refused 结果
           const raceResult = await Promise.race([
-            domImages.then(urls => ({ source: 'dom' as const, urls })),
+            domImages.then(urls => ({ source: 'dom' as const, urls })).catch((e: Error) => ({ source: 'refused' as const, urls: [], error: e.message })),
             netImages.then(urls => ({ source: 'network' as const, urls })),
             new Promise<Record<string, unknown>>(resolve =>
               setTimeout(() => resolve({ source: 'timeout', urls: [] }), timeout)
             ),
           ]);
 
+          // 拒绝检测命中：提前退出
+          if ((raceResult as Record<string, unknown>).source === 'refused') {
+            const errMsg = ((raceResult as Record<string, unknown>).error as string) || '';
+            const parts = errMsg.split(':');
+            tips.push('⚠️ 通义千问拒绝生图（' + (parts[1] || '未知原因') + '）：' + (parts.slice(2).join(':')).substring(0, 100));
+            return fail('通义千问拒绝生图', tips);
+          }
           const imageUrls = (raceResult as Record<string, unknown>).urls as string[];
 
           if (imageUrls.length > 0) {

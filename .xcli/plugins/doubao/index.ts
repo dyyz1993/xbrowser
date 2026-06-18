@@ -5,6 +5,7 @@ import { buildTips, uploadFileViaDataTransfer, checkLoginStatus } from '../share
 import { extractAllHDImages, installImageCapture, downloadCapturedImages } from '../shared/image-lightbox.js';
 import { clickButtonByText } from '../shared/file-upload.js';
 import { smartExtractReply } from '../shared/smart-extract.js';
+import { checkRefusal } from '../shared/refusal-detect.js';
 import path from 'path';
 import fs from 'fs';
 import type { PluginPage, PluginElementHandle, PluginRoute } from '../types.js';
@@ -859,6 +860,18 @@ export default function (xcli: XCLIAPI): void {
             capture.stop();
             tips.push('⚠️ 检测到验证码！请在浏览器中手动完成验证后重试。');
             return fail('验证码拦截', ['豆包触发了安全验证', '请在浏览器中完成验证码后重新运行此命令', ...remoteTips, ...tips]);
+          }
+
+          // 拒绝/错误文案检测：只有在还没有任何图片时才查（避免"AI 先出图后插话"误判）。
+          // 命中明确拒绝词（如"无法生成/违反政策"）就提前退出，不傻等超时。
+          const peekCap = capture.get();
+          if (peekCap.hd.length === 0 && peekCap.thumb.length === 0) {
+            const refusal = await checkRefusal(page, ['[class*="flow-markdown-body"]', '[class*="receive-msg"]', '[class*="answer-content"]']).catch(() => ({ refused: false, reason: null, text: '' }));
+            if (refusal.refused && refusal.reason) {
+              capture.stop();
+              tips.push("⚠️ 豆包拒绝生图（" + refusal.reason + "）：" + refusal.text.substring(0, 100));
+              return fail("豆包拒绝生图", [...remoteTips, ...tips]);
+            }
           }
 
           const { hd, thumb } = capture.get();

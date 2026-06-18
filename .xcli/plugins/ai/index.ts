@@ -198,27 +198,34 @@ export default function (xcli: XCLIAPI): void {
             if (params.ratio) extraFlags.push(`--ratio ${params.ratio}`);
       const extraStr = extraFlags.length > 0 ? ' ' + extraFlags.join(' ') : '';
 
-      const results = await Promise.all(
-        targets.map(async (provider) => {
-          const providerFlags = provider === 'qwen' ? ' --wait ' + timeoutSec : '';
-          const escaped = params.prompt.replace(/'/g, "'\\''");
-          const cmd = `node dist/cli.js ${cdpFlag} ${provider} image --prompt '${escaped}'${extraStr}${providerFlags} --json 2>/dev/null`;
-          try {
-            const output = execSync(cmd, { cwd: process.cwd(), timeout: timeoutSec * 1000, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
-            const urls: string[] = [];
-            const localPaths: string[] = [];
-            for (const line of output.split('\n')) {
-              const urlMatch = line.match(/https?:\/\/[^\s"']+/g);
-              if (urlMatch) urls.push(...urlMatch);
-              const localMatch = line.match(/(\/[^\s"']+\.(png|jpg|jpeg|webp))/gi);
-              if (localMatch) localPaths.push(...localMatch);
-            }
-            return { provider, urls: [...new Set(urls)], localPaths: [...new Set(localPaths)], error: urls.length > 0 ? undefined : '未生成图片' };
-          } catch (e) {
-            return { provider, error: (e as Error).message.slice(0, 100) };
+      // ⚠️ 串行执行，不要 Promise.all 并行！
+      // 原因：所有 provider 共享同一个 Chrome（cdp-tunnel），并行 goto/生图会
+      // 互相抢 tab、干扰登录态、触发站点限频（实测 doubao/chatgpt 并行时失败率高）。
+      // 串行 + 站点间缓冲是批量对比能稳定跑通的关键。
+      const results: Array<{ provider: string; urls?: string[]; localPaths?: string[]; error?: string }> = [];
+      for (const provider of targets) {
+        const providerFlags = provider === 'qwen' ? ' --wait ' + timeoutSec : '';
+        const escaped = params.prompt.replace(/'/g, "'\\''");
+        const cmd = `node dist/cli.js ${cdpFlag} ${provider} image --prompt '${escaped}'${extraStr}${providerFlags} --json 2>/dev/null`;
+        try {
+          const output = execSync(cmd, { cwd: process.cwd(), timeout: timeoutSec * 1000, encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 });
+          const urls: string[] = [];
+          const localPaths: string[] = [];
+          for (const line of output.split('\n')) {
+            const urlMatch = line.match(/https?:\/\/[^\s"']+/g);
+            if (urlMatch) urls.push(...urlMatch);
+            const localMatch = line.match(/(\/[^\s"']+\.(png|jpg|jpeg|webp))/gi);
+            if (localMatch) localPaths.push(...localMatch);
           }
-        }),
-      );
+          results.push({ provider, urls: [...new Set(urls)], localPaths: [...new Set(localPaths)], error: urls.length > 0 || localPaths.length > 0 ? undefined : '未生成图片' });
+        } catch (e) {
+          results.push({ provider, error: (e as Error).message.slice(0, 100) });
+        }
+        // 站点间缓冲 3 秒，避免 Chrome 疲劳
+        if (targets.indexOf(provider) < targets.length - 1) {
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
 
       const tips = results.map(r => {
         if (r.error) return `❌ ${r.provider}: ${r.error}`;
