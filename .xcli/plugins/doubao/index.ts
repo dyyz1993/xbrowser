@@ -670,6 +670,7 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({
       prompt: z.string().describe('图片描述提示词'),
+      session: z.string().optional().describe('会话 ID（复用已有会话，保持风格延续，用于连续漫画/分镜）'),
       model: z.enum(['Seedream4.5', 'Seedance']).optional().describe('模型：Seedream4.5 / Seedance'),
       ratio: z.enum(['3:4', '16:9', '1:1']).optional().describe('图片比例 3:4 / 16:9 / 1:1'),
       style: z.string().optional().describe('风格（如：写实、动漫、水彩）'),
@@ -686,8 +687,13 @@ export default function (xcli: XCLIAPI): void {
         const page = ctx.page;
         if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
+        // 会话复用：有 session 参数 → goto 已有会话（风格延续）；无 → 新建 create-image 会话
+        const targetUrl = params.session
+          ? `https://www.doubao.com/chat/${params.session}`
+          : 'https://www.doubao.com/chat/create-image';
         try {
-          await page.goto('https://www.doubao.com/chat/create-image', { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          if (params.session) tips.push(`📌 复用会话 ${params.session}（风格延续）`);
         } catch (e: unknown) {
           tips.push(`[goto] ⚠ ${(e as Error).message}`);
         }
@@ -935,6 +941,11 @@ export default function (xcli: XCLIAPI): void {
         const captured = capture.get();
         tips.push(`📸 网络捕获: ${captured.hd.length} 张 HD + ${captured.thumb.length} 张缩略图`);
 
+        // 提取会话 URL（供连续漫画/分镜 --session 复用）
+        const conversationUrl = page.url();
+        const conversationId = (conversationUrl.match(/\/chat\/(\d{10,})/) || ['', ''])[1];
+        if (conversationId) tips.push(`🔗 会话 ID: ${conversationId}（下次用 --session ${conversationId} 复用此会话）`);
+
         if (captured.hd.length > 0 || captured.thumb.length > 0) {
           // Download — HD preferred, thumbnail fallback. The shared
           // helper pairs HD/thumb by their shared object key.
@@ -949,6 +960,8 @@ export default function (xcli: XCLIAPI): void {
             count: downloads.length,
             ...(first ? { url: first.hdUrl, localPath: first.localPath } : {}),
             prompt,
+            conversationUrl,
+            conversationId,
             duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
           }, [...tips]);
         }
@@ -1006,11 +1019,13 @@ export default function (xcli: XCLIAPI): void {
             count: found.length,
             ...(first ? { url: found[0], localPath: first.localPath } : {}),
             prompt,
+            conversationUrl,
+            conversationId,
             duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
           }, [...tips]);
         }
 
-        return ok({ prompt }, [...tips, '图片可能还在生成中，请到豆包页面查看']);
+        return ok({ prompt, conversationUrl, conversationId }, [...tips, '图片可能还在生成中，请到豆包页面查看']);
       } catch (error) {
         return fail('未知错误', ['文生图失败', `错误详情: ${error instanceof Error ? error.message : String(error)}`]);
       }
