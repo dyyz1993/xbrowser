@@ -20,6 +20,9 @@
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
+// 触发内置匹配器自注册（插件入口加载即注册，所有命令都能用）
+import './matchers/register-builtin.js';
+import './matchers/register-more.js';
 import { runSummarize, DEFAULT_KB_ROOT } from './pipeline/run.js';
 import { reindex } from './pipeline/reindex.js';
 import { listFlows, readFlow, initKb } from './kb/store.js';

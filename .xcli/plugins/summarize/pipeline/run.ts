@@ -19,6 +19,7 @@ import { renderTopic } from '../render/flow-renderer.js';
 import { writeFlow, listFlows, initKb } from '../kb/store.js';
 import { writeIndexOutline } from '../render/index-outline.js';
 import type { ChangeEntry } from '../types.js';
+// 匹配器自注册在插件入口 index.ts 完成（import 该模块即副作用注册）
 
 /** 默认知识库根目录。 */
 export const DEFAULT_KB_ROOT = '.xcli/knowledge';
