@@ -17,7 +17,7 @@ import { renderTopicTemplate } from './template.js';
 export interface RenderOptions {
   /** 是否尝试用 LLM 渲染（false 则强制模板）。默认 true。 */
   useLlm?: boolean;
-  /** provider（如 'deepseek'/'openai'/'anthropic'）。默认 'deepseek'。 */
+  /** provider（如 'opencode-go'/'deepseek'/'openai'）。默认 'opencode-go'。 */
   provider?: string;
   /** model id。默认按 provider 取一个便宜的。 */
   model?: string;
@@ -75,19 +75,46 @@ async function tryLlmRender(prompt: string, opts: RenderOptions): Promise<string
   try {
     // 动态 import，避免强制依赖
     const piAi = await import('@dyyz1993/pi-ai').catch(() => null);
-    if (!piAi || typeof piAi.getModel !== 'function') return null;
-    const provider = (opts.provider ?? 'deepseek') as Parameters<typeof piAi.getModel>[0];
-    const model = (opts.model ?? undefined) as Parameters<typeof piAi.getModel>[1];
-    const modelHandle = piAi.getModel(provider, model);
+    if (!piAi || typeof piAi.getModel !== 'function' || typeof piAi.complete !== 'function') return null;
+
+    // 默认 provider/model：opencode-go 的 deepseek-v4-flash（同作者 provider，已验证可用）
+    // 注意 opencode-go 的模型都是 reasoning 模型，需要足够大的 maxTokens
+    // 让 reasoning 完成后还有余量生成正文（reasoning 通常消耗 500-1500 token）
+    const provider = (opts.provider ?? 'opencode-go') as Parameters<typeof piAi.getModel>[0];
+    const defaultModel = provider === 'opencode-go' ? 'deepseek-v4-flash'
+      : provider === 'deepseek' ? 'deepseek-chat'
+      : undefined;
+    const modelId = (opts.model ?? defaultModel) as Parameters<typeof piAi.getModel>[1];
+    const modelHandle = piAi.getModel(provider, modelId);
+    if (!modelHandle) return null;
+
     const context = {
       systemPrompt: SYSTEM_PROMPT,
       messages: [{ role: 'user' as const, content: prompt }],
     };
-    const result = await piAi.complete(modelHandle, context);
-    // result 可能是消息对象或字符串
+    // complete 第三参数是 options（StreamOptions），含 maxTokens/temperature
+    const result = await piAi.complete(modelHandle, context, {
+      maxTokens: 2000,    // reasoning 模型需要大余量
+      temperature: 0.3,   // 低温度，字段值稳定
+    });
+
+    // result.content 是 ContentBlock 数组（pi-ai 标准），提取文本块
     if (typeof result === 'string') return result;
-    const r = result as { content?: string; message?: { content?: string }; text?: string };
-    return r.content ?? r.message?.content ?? r.text ?? null;
+    const r = result as {
+      content?: Array<{ type: string; text?: string }>;
+      text?: string;
+      errorMessage?: string;
+      stopReason?: string;
+    };
+    if (r.errorMessage || r.stopReason === 'error') return null;
+    if (Array.isArray(r.content)) {
+      const text = r.content
+        .filter(b => b.type === 'text' && b.text)
+        .map(b => b.text!)
+        .join('\n');
+      return text || null;
+    }
+    return r.text ?? null;
   } catch {
     return null;
   }

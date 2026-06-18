@@ -637,22 +637,39 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(2000);
         tips.push('已发送文生图请求，等待 DALL-E 生成...');
 
-        // 5. 等图片生成（等 #image-{uuid} 元素出现）
+        // 5. 等图片生成（锚点法：只认发送后新增的图，不抓旧图）
+        //    发送前先记录页面已有图片 URL 数量作为锚点
+        const imgAnchorUrls = await page.evaluate(() => {
+          const selectors = [
+            'div[id^="image-"] img',
+            'img[src*="estuary/content"]',
+            'img[src*="oaidalleapiprodscus"]',
+            'img[src*="files.oaiusercontent"]',
+          ];
+          const seen = new Set<string>();
+          for (const sel of selectors) {
+            for (const img of document.querySelectorAll(sel)) {
+              const src = (img as HTMLImageElement).src;
+              if (src) seen.add(src);
+            }
+          }
+          return Array.from(seen);
+        }).catch(() => [] as string[]);
+        tips.push(`📌 锚点：发送前已有 ${imgAnchorUrls.length} 张图`);
+
         const startTime = Date.now();
         const imageUrls: string[] = [];
         while (Date.now() - startTime < 120000) {
           await page.waitForTimeout(3000);
-          // 拒绝/错误文案检测：没图时才查，避免误判"先出图后说话"。
+          // 拒绝/错误文案检测：没新增图时才查
           const refusal = await checkRefusal(page, ['[data-message-author-role="assistant"] .markdown', '[data-message-author-role="assistant"]']).catch(() => ({ refused: false, reason: null, text: '' }));
           if (refusal.refused && refusal.reason) {
             tips.push("⚠️ ChatGPT 拒绝生图（" + refusal.reason + "）：" + refusal.text.substring(0, 100));
             return fail("ChatGPT 拒绝生图", tips);
           }
-          const urls = await page.evaluate(() => {
-            // ChatGPT 图片 URL 模式（2026-06 实测）：
-            //   新版: chatgpt.com/backend-api/estuary/content?id=file_xxx
-            //   旧版: oaidalleapiprodscus / files.oaiusercontent
-            // 容器: #image-{uuid}（Radix 渲染的图片块）
+          // 锚点法：只收集锚点之外的新图
+          const urls = await page.evaluate((anchor: string[]) => {
+            const anchorSet = new Set(anchor);
             const selectors = [
               'div[id^="image-"] img',
               'img[src*="estuary/content"]',
@@ -664,11 +681,11 @@ export default function (xcli: XCLIAPI): void {
             for (const sel of selectors) {
               for (const img of document.querySelectorAll(sel)) {
                 const src = (img as HTMLImageElement).src;
-                if (src && !seen.has(src)) { seen.add(src); out.push(src); }
+                if (src && !anchorSet.has(src) && !seen.has(src)) { seen.add(src); out.push(src); }
               }
             }
             return out;
-          }).catch(() => [] as string[]) as string[];
+          }, imgAnchorUrls).catch(() => [] as string[]) as string[];
           if (urls.length > 0) {
             imageUrls.push(...new Set(urls));
             break;

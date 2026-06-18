@@ -84,6 +84,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@dyyz1993/pi-ai": "^0.78.2",
     "@dyyz1993/xcli-core": "file:../mpage/packages/core",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/turndown": "^5.0.6",
