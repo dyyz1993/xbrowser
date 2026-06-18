@@ -208,7 +208,7 @@ async function inputPrompt(page: Page, prompt: string): Promise<boolean> {
       const el = document.querySelector('div[role="textbox"][contenteditable="true"]');
       if (el) el.textContent = '';
     });
-    await page.keyboard.type(prompt, { delay: 30 });
+    await fastInput(page, prompt, "execCommand");
     return true;
   }
 

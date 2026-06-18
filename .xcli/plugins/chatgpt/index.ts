@@ -619,7 +619,8 @@ export default function (xcli: XCLIAPI): void {
         // 3. 输入提示词（录制 action[13]）
         await page.locator('#prompt-textarea').first().click({ timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(200);
-        await page.keyboard.type(params.prompt, { delay: 15 });
+        // fastInput textarea setter — 瞬间写入，比 keyboard.type 快 10x
+        await fastInput(page, params.prompt, "textarea");
         await page.waitForTimeout(400);
         // 4. 发送（录制 action[23]）
         await page.click('#composer-submit-button', { timeout: 5000 }).catch(() => {});

@@ -6,6 +6,7 @@ import { extractAllHDImages, installImageCapture, downloadCapturedImages } from 
 import { clickButtonByText } from '../shared/file-upload.js';
 import { smartExtractReply } from '../shared/smart-extract.js';
 import { checkRefusal } from '../shared/refusal-detect.js';
+import { fastInput } from '../shared/fast-input.js';
 import path from 'path';
 import fs from 'fs';
 import type { PluginPage, PluginElementHandle, PluginRoute } from '../types.js';
@@ -794,7 +795,7 @@ export default function (xcli: XCLIAPI): void {
               await locator.click({ timeout: 3000 });
               await page.waitForTimeout(300);
               // For TipTap/ProseMirror, use keyboard.type (locator.type doesn't work with TipTap)
-              await page.keyboard.type(`画图: ${prompt}`, { delay: 30 });
+              await fastInput(page, prompt, "textarea");
               await page.waitForTimeout(300);
               inputFound = true;
               break;

@@ -10,6 +10,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { smartExtractReply } from '../shared/smart-extract.js';
 import { checkRefusal } from '../shared/refusal-detect.js';
+import { fastInput } from '../shared/fast-input.js';
 
 const GEMINI_URL = 'https://gemini.google.com';
 type Page = import('../types').Page;
@@ -254,7 +255,7 @@ export default function (xcli: XCLIAPI): void {
         //    与 chatgpt/doubao/qwen 统一：真键盘事件 Input.dispatchKeyEvent。
         await page.locator('.ql-editor').first().click({ timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(200);
-        await page.keyboard.type(params.prompt, { delay: 15 });
+        await fastInput(page, params.prompt, "execCommand");
         await page.waitForTimeout(400);
 
         // 4. 点发送 — 必须用真鼠标点击（Input.dispatchMouseEvent，isTrusted=true）。
