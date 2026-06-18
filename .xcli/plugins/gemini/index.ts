@@ -212,14 +212,47 @@ export default function (xcli: XCLIAPI): void {
         await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
         await page.waitForTimeout(5000);
 
-        // 2. 输入提示词 — 实测 keyboard.type 在 Gemini rich-textarea (Quill) 上完全工作。
+        // 2. 切换到"制作图片"模式（关键！）。
+        //    Gemini 默认是聊天模式，描述性 prompt（无"画"字）只回文字不生图。
+        //    必须主动切生图模式：点"上传和工具" → 点"制作图片"。
+        //    实测：切后 .ql-editor 还在，输入/发送流程不变。
+        //    全程真鼠标点击（合成事件 isTrusted=false 会被 Angular 拒）。
+        const toolsClicked = await page.evaluate(() => {
+          const btn = document.querySelector('button[aria-label="上传和工具"]');
+          if (!btn) return false;
+          const r = btn.getBoundingClientRect();
+          return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+        }).catch(() => false);
+        if (toolsClicked) {
+          await page.mouse.click(toolsClicked.x, toolsClicked.y).catch(() => {});
+          await page.waitForTimeout(1200);
+          // 菜单展开后点"制作图片"
+          const imageModeClicked = await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button'));
+            const b = btns.find(x => (x.textContent || '').trim() === '制作图片');
+            if (!b) return false;
+            const r = b.getBoundingClientRect();
+            return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+          }).catch(() => false);
+          if (imageModeClicked) {
+            await page.mouse.click(imageModeClicked.x, imageModeClicked.y).catch(() => {});
+            tips.push('已切换到制作图片模式');
+          } else {
+            tips.push('⚠️ 未找到"制作图片"入口，尝试直接发送（依赖 prompt 关键词触发）');
+          }
+          await page.waitForTimeout(1500);
+        } else {
+          tips.push('⚠️ 未找到"上传和工具"按钮，尝试直接发送');
+        }
+
+        // 3. 输入提示词 — 实测 keyboard.type 在 Gemini rich-textarea (Quill) 上完全工作。
         //    与 chatgpt/doubao/qwen 统一：真键盘事件 Input.dispatchKeyEvent。
         await page.locator('.ql-editor').first().click({ timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(200);
         await page.keyboard.type(params.prompt, { delay: 15 });
         await page.waitForTimeout(400);
 
-        // 3. 点发送 — 必须用真鼠标点击（Input.dispatchMouseEvent，isTrusted=true）。
+        // 4. 点发送 — 必须用真鼠标点击（Input.dispatchMouseEvent，isTrusted=true）。
         //    page.click() / locator.click() 是合成事件 isTrusted=false，会被
         //    Gemini Angular 拒绝（点完 url 不跳转、editor 不清空）。
         //    实测：真鼠标坐标点击后 url /app → /app/{conversationId}，editor 清空。
@@ -237,7 +270,7 @@ export default function (xcli: XCLIAPI): void {
         }
         tips.push('已发送文生图请求，等待 Gemini 生成...');
 
-        // 4. 等图片生成 — 检测到就立刻在同一 evaluate 里用 canvas 提取 base64。
+        // 5. 等图片生成 — 检测到就立刻在同一 evaluate 里用 canvas 提取 base64。
         //    ⚠️ 不能用 fetch(blobUrl)！Gemini 生成的图是 blob: URL，会被很快
         //    revoke，跨 evaluate fetch 报 "Failed to fetch"。
         //    canvas.toDataURL() 直接从已加载的 <img> 像素提取，绕过 blob 生命周期。
