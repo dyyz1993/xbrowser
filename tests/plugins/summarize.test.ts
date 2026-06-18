@@ -60,25 +60,21 @@ describe('summarize plugin (骨架阶段)', () => {
   });
 
   // ─── 核心 summarize 命令参数 schema ─────────────────
-  it('summarize command should accept session/site/noLlm/dryRun/mergeStrategy/json', () => {
+  it('summarize command should accept session/site/noLlm/dryRun/json', () => {
     const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'summarize');
     const config = call![1] as { parameters: { shape: Record<string, unknown> } };
-    // zod/v4 object schema 用 .shape 取字段
     const keys = Object.keys(config.parameters.shape);
     expect(keys).toEqual(expect.arrayContaining([
-      'session', 'site', 'noLlm', 'dryRun', 'mergeStrategy', 'json',
+      'session', 'site', 'noLlm', 'dryRun', 'json',
     ]));
   });
 
-  // ─── stub handler 可调用 ────────────────────────────
-  it('summarize handler returns ok stub (Task 1 阶段)', async () => {
+  // ─── handler 真实行为：录制不存在时返回 fail ─────────
+  it('summarize handler fails when recording does not exist', async () => {
     const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'summarize');
     const handler = call![1].handler as (p: unknown) => Promise<unknown>;
-    const result = await handler({ session: 'test', noLlm: false, dryRun: false, mergeStrategy: 'skip', json: false }) as Record<string, unknown>;
-    // ok() 返回结构含 success + data
-    expect(result).toHaveProperty('success', true);
-    expect(result).toHaveProperty('data');
-    const data = result.data as Record<string, unknown>;
-    expect(data.stub).toBe(true);
+    const result = await handler({ session: '__nonexistent_session__', noLlm: true, dryRun: true, json: false }) as Record<string, unknown>;
+    expect(result.success).toBe(false);
+    expect(String(result.message)).toContain('不存在');
   });
 });

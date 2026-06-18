@@ -84,9 +84,11 @@ export function renderTopicTemplate(topic: Topic): string {
       const text = a.element?.text ?? '';
       const val = a.value ?? '';
       const sel = a.element?.selector ?? '';
+      // 脱敏：password 类型的 input 不渲染 value
+      const isPassword = a.element?.type === 'password';
       let line = '';
       if (a.type === 'click') line = `点击「${text || sel}」`;
-      else if (a.type === 'input') line = `输入 ${val || '(空)'}${sel ? ` 到 ${sel}` : ''}`;
+      else if (a.type === 'input') line = `输入 ${isPassword ? '***' : (val || '(空)')}${sel ? ` 到 ${sel}` : ''}`;
       else if (a.type === 'navigation' || a.type === 'goto') line = `导航到 ${a.url}`;
       else if (a.type === 'filechooser') line = `选择文件`;
       else if (a.type === 'keydown') line = `按下 ${a.key}`;
