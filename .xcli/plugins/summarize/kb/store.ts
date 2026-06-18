@@ -85,9 +85,9 @@ function parseFrontmatter(text: string): { fm: FlowFrontmatter; rest: string } {
 function serializeChanges(changes: ChangeEntry[]): string {
   if (changes.length === 0) return '';
   const rows = changes.map(c =>
-    `| ${c.date} | v${c.version} | ${c.command} | ${c.sourceSession ?? '—'} | ${c.summary} |`,
+    `| ${c.date} | v${c.version} | ${c.type} | ${c.command} | ${c.sourceSession ?? '—'} | ${c.summary} |`,
   );
-  return '## 变更历史\n\n| 日期 | 版本 | 命令 | 来源 session | 变更摘要 |\n|---|---|---|---|---|\n' + rows.join('\n');
+  return '## 变更历史\n\n| 日期 | 版本 | 类型 | 命令 | 来源 session | 变更摘要 |\n|---|---|---|---|---|---|\n' + rows.join('\n');
 }
 
 /** 从正文中解析出变更历史表（如果存在）。 */
@@ -97,19 +97,33 @@ function parseChanges(rest: string): { body: string; changes: ChangeEntry[] } {
   const body = rest.slice(0, idx).trim();
   const table = rest.slice(idx);
   const changes: ChangeEntry[] = [];
-  // 解析表格行（跳过表头和分隔行）
+  // 解析表格行（支持两种列数：6 列新版含类型，5 列旧版兼容）
   for (const line of table.split('\n')) {
-    const m = line.match(/^\|\s*(\S+)\s*\|\s*v(\d+)\s*\|\s*(\S+)\s*\|\s*([^|]*)\s*\|\s*([^|]*)\s*\|$/);
-    if (!m) continue;
-    const [, date, ver, command, source, summary] = m;
-    changes.push({
-      date,
-      version: Number(ver),
-      command: command as ChangeEntry['command'],
-      sourceSession: source.trim() === '—' ? undefined : source.trim(),
-      type: 'created',  // 表格里没存 type，解析时无法精确还原；以 summary 为准
-      summary: summary.trim(),
-    });
+    // 新版 6 列：| date | v | type | command | source | summary |
+    const m6 = line.match(/^\|\s*(\S+)\s*\|\s*v(\d+)\s*\|\s*(\S+)\s*\|\s*(\S+)\s*\|\s*([^|]*)\s*\|\s*([^|]*)\s*\|$/);
+    if (m6) {
+      const [, date, ver, type, command, source, summary] = m6;
+      changes.push({
+        date, version: Number(ver),
+        type: type as ChangeEntry['type'],
+        command: command as ChangeEntry['command'],
+        sourceSession: source.trim() === '—' ? undefined : source.trim(),
+        summary: summary.trim(),
+      });
+      continue;
+    }
+    // 旧版 5 列兼容（无 type 列）
+    const m5 = line.match(/^\|\s*(\S+)\s*\|\s*v(\d+)\s*\|\s*(\S+)\s*\|\s*([^|]*)\s*\|\s*([^|]*)\s*\|$/);
+    if (m5) {
+      const [, date, ver, command, source, summary] = m5;
+      changes.push({
+        date, version: Number(ver),
+        type: 'created',
+        command: command as ChangeEntry['command'],
+        sourceSession: source.trim() === '—' ? undefined : source.trim(),
+        summary: summary.trim(),
+      });
+    }
   }
   return { body, changes };
 }
