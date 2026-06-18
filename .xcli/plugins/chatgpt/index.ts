@@ -3,6 +3,7 @@ import { checkRefusal } from "../shared/refusal-detect.js";
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
 import { buildTips, batchUploadFiles, handleChatAttachments, checkLoginStatus } from '../shared/ai-chat-base.js';
+import { fastInput } from '../shared/fast-input.js';
 
 type Page = import('../types').Page;
 
@@ -605,25 +606,35 @@ export default function (xcli: XCLIAPI): void {
         } else {
           await page.waitForTimeout(1500);
         }
-        // 1. 点"+"按钮打开菜单（录制 action[5]）
-        await page.click('#composer-plus-btn', { timeout: 5000 }).catch(() => {});
-        await page.waitForTimeout(800);
-        // 2. 点"创建图片"（录制 action[7]）
-        await page.evaluate(() => {
-          const items = document.querySelectorAll('[role="menuitem"], button, div');
-          for (const el of items) {
-            if ((el.textContent || '').trim() === '创建图片') { (el as HTMLElement).click(); return; }
-          }
-        }).catch(() => {});
-        await page.waitForTimeout(1000);
-        // 3. 输入提示词（录制 action[13]）
+        // 1. chatgpt 改版后不需要走"+"菜单→"创建图片"，直接输入"画..."就能生图
+        //    #prompt-textarea 现在是 contenteditable DIV（不是 textarea）
+        //    #composer-submit-button 只在输入有内容后才出现
         await page.locator('#prompt-textarea').first().click({ timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(200);
-        // fastInput textarea setter — 瞬间写入，比 keyboard.type 快 10x
-        await fastInput(page, params.prompt, "textarea");
+        // contenteditable 用 keyboard.type（真键盘，React/ProseMirror 兼容）
+        await page.keyboard.type(params.prompt, { delay: 15 });
         await page.waitForTimeout(400);
-        // 4. 发送（录制 action[23]）
-        await page.click('#composer-submit-button', { timeout: 5000 }).catch(() => {});
+        // 校验写入
+        const written = await page.evaluate((exp: string) => {
+          const ed = document.querySelector('#prompt-textarea');
+          return ed ? (ed.textContent || '').includes(exp.substring(0, Math.min(10, exp.length))) : false;
+        }, params.prompt).catch(() => false);
+        if (!written) {
+          // 兜底：execCommand insertText（contenteditable 兼容）
+          await fastInput(page, params.prompt, 'execCommand');
+          await page.waitForTimeout(300);
+        }
+        // 2. 发送（输入后发送按钮才出现，用真鼠标点击）
+        const sendCoord = await page.evaluate(() => {
+          const b = document.querySelector('#composer-submit-button') as HTMLButtonElement;
+          if (!b || b.disabled) return null;
+          const r = b.getBoundingClientRect();
+          return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+        }).catch(() => null);
+        if (sendCoord) {
+          await page.mouse.click(sendCoord.x, sendCoord.y).catch(() => {});
+        }
+        await page.waitForTimeout(2000);
         tips.push('已发送文生图请求，等待 DALL-E 生成...');
 
         // 5. 等图片生成（等 #image-{uuid} 元素出现）
@@ -681,8 +692,8 @@ export default function (xcli: XCLIAPI): void {
           return m ? m[1] : '';
         }).catch(() => '') as string;
         return ok({ images: [], status: 'timeout', conversationUrl, conversationId }, tips);
-      } catch {
-        return fail('文生图失败', ['请检查 ChatGPT 登录状态']);
+      } catch (e) {
+        return fail('文生图失败', ['错误详情: ' + (e instanceof Error ? e.message : String(e)), '请检查 ChatGPT 登录状态']);
       }
     },
   });
