@@ -16,10 +16,11 @@ export const searchMatcher: IntentMatcher = {
   match(segment: Segment): MatchResult | null {
     const acts = segment.actions;
 
-    // 信号1：input 的 placeholder/ariaLabel 含搜索关键词
+    // 信号1：input 的 placeholder/ariaLabel/selector 含搜索关键词
     const inputAct = acts.find(a => {
       if (a.type !== 'input' || !a.element) return false;
-      const hints = [a.element.placeholder, a.element.ariaLabel].filter(Boolean) as string[];
+      const hints = [a.element.placeholder, a.element.ariaLabel, a.element.selector]
+        .filter(Boolean) as string[];
       return hints.some(h => SEARCH_HINTS.some(s => h.toLowerCase().includes(s)));
     });
 

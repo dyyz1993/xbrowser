@@ -72,6 +72,18 @@ describe('preprocess (去噪 + 合并)', () => {
     expect(out).toHaveLength(6);
   });
 
+  // ─── CDP 类型归一化 ────────────────────────────────
+  it('normalizes cdp-fill→input, cdp-click→click, cdp-eval→eval', () => {
+    const out = preprocess([
+      mkAction({ id: 1, type: 'cdp-fill', element: { tag: 'input', selector: '#u', text: '' }, value: 'a' }),
+      mkAction({ id: 2, type: 'cdp-click', element: { tag: 'button', selector: '#b', text: 'ok' } }),
+      mkAction({ id: 3, type: 'cdp-eval', value: '1+1' }),
+    ]);
+    expect(out[0].type).toBe('input');
+    expect(out[1].type).toBe('click');
+    expect(out[2].type).toBe('eval');
+  });
+
   // ─── 边界情况 ──────────────────────────────────────
   it('returns empty array for empty input', () => {
     expect(preprocess([])).toEqual([]);

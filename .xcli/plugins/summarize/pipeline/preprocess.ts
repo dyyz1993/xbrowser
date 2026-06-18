@@ -29,8 +29,32 @@ const NOISE_TYPES = new Set<UserAction['type']>([
  * @returns 清理后的 action（保持原顺序，长度 ≤ 输入）
  */
 export function preprocess(actions: UserAction[]): CleanAction[] {
+  // Step 0: 归一化 CDP 命令类型（cdp-fill→input, cdp-click→click, cdp-eval→eval）
+  // 录制器对 CDP 命令标 cdp-* 前缀（AGENTS §20.7），但语义上和真实用户操作等价，
+  // 归一化后所有匹配器只需认标准类型，无需各自处理 cdp-* 变体。
+  const CDP_TYPE_MAP: Record<string, UserAction['type']> = {
+    'cdp-fill': 'input',
+    'cdp-click': 'click',
+    'cdp-eval': 'eval',
+  };
+  const normalized = actions.map(a => {
+    const mapped = CDP_TYPE_MAP[a.type];
+    return mapped ? { ...a, type: mapped } : a;
+  });
+
   // Step 1: 去噪
-  const kept = actions.filter(a => !NOISE_TYPES.has(a.type));
+  const kept = normalized.filter(a => !NOISE_TYPES.has(a.type));
+
+  // Step 1.5: 全局脱敏——疑似密码的 input value 替换为 '***'
+  // 判断依据（任一即脱敏，宁可误杀不可漏放）：
+  //   - element.type === 'password'
+  //   - selector 含 password/pwd/pass（CDP 在页面加载失败时拿不到 type，靠 selector 兜底）
+  for (const a of kept) {
+    if (a.type !== 'input' || !a.value) continue;
+    const sel = a.element?.selector?.toLowerCase() ?? '';
+    const isPwd = a.element?.type === 'password' || /password|pwd|\bpass\b/.test(sel);
+    if (isPwd) a.value = '***';
+  }
 
   // Step 2: 合并相邻同 selector 的 input
   const out: CleanAction[] = [];
