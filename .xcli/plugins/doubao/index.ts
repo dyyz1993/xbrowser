@@ -497,7 +497,7 @@ export default function (xcli: XCLIAPI): void {
         // click 聚焦 + keyboard.type 逐字输入（cdp-tunnel 修复后 keyboard 正常）
         await page.locator(inputSel).first().click({ timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(200);
-        await page.keyboard.type(params.message, { delay: 10 });
+        await fastInput(page, params.message);
         await page.waitForTimeout(500);
 
         const wantSources = !!params.showSources;

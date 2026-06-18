@@ -90,7 +90,7 @@ export default function (xcli: XCLIAPI): void {
         // Type and send message（keyboard.type 真实按键，不用 page.fill 合成事件）
         const inputSel = '[aria-label*="输入提示"], [contenteditable="true"]';
         await page.locator(inputSel).first().click({ timeout: 5000 }).catch(() => {});
-        await page.waitForTimeout(200);        await page.keyboard.type(params.message, { delay: 10 });        await page.waitForTimeout(400);
+        await page.waitForTimeout(200);        await fastInput(page, params.message);        await page.waitForTimeout(400);
         await page.keyboard.press('Enter');
 
         // 记录发送前的对话数量，定位新增回复
@@ -171,7 +171,7 @@ export default function (xcli: XCLIAPI): void {
         const inputSel2 = '[aria-label*="输入提示"], [contenteditable="true"]';
         await page.locator(inputSel2).first().click({ timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(200);
-        await page.keyboard.type(params.prompt, { delay: 10 });
+        await fastInput(page, params.prompt);
         await page.waitForTimeout(400);
         await page.keyboard.press('Enter');
 

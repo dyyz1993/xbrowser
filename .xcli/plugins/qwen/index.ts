@@ -4,7 +4,7 @@ import { z } from 'zod/v4';
 import path from 'path';
 import fs from 'fs';
 import type { PluginPage, PluginElementHandle } from '../types.js';
-import { smartExtractReply } from '../shared/smart-extract.js';
+import { smartExtractReply } from '../shared/smart-extract.js';import { fastInput } from '../shared/fast-input.js';
 import { checkRefusal } from '../shared/refusal-detect.js';
 
 type Page = import('../types').Page;
@@ -807,7 +807,7 @@ export default function (xcli: XCLIAPI): void {
         const inputSel = 'div[role="textbox"][contenteditable="true"]';
         await page.locator(inputSel).first().click({ timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(200);
-        await page.keyboard.type(params.message, { delay: 20 });
+        await fastInput(page, params.message);
         await page.waitForTimeout(400);
         await page.keyboard.press('Enter');
 
