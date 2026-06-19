@@ -55,4 +55,23 @@ describe('chat matcher (发消息/AI 对话)', () => {
     const r = recognizeIntent(seg);
     expect(r.intent).toBe('chat');
   });
+
+  it('matches real-recording pattern: empty native input + cdp-fill has value + submit click after noise', () => {
+    // 模拟真实 ChatGPT 录制的噪音序列（cdp-tunnel 录制器真实捕获的形态）
+    const seg = mkSeg([
+      { type: 'click', element: { tag: 'textarea', selector: '#prompt-textarea', text: '' } },
+      { type: 'input', element: { tag: 'textarea', selector: '#prompt-textarea', text: '' }, value: '' },  // native input 值为空
+      { type: 'keydown', element: { tag: 'textarea', selector: '#prompt-textarea' }, key: 'Backspace' },
+      { type: 'keyup', element: { tag: 'textarea', selector: '#prompt-textarea' }, key: 'Backspace' },
+      { type: 'focus', element: { tag: 'textarea', selector: '#prompt-textarea' } },
+      { type: 'input', element: { tag: 'textarea', selector: '#prompt-textarea', text: '' }, value: 'hello' },  // cdp-fill 归一化后有值
+      { type: 'hover', element: { tag: 'div', selector: '.something' } },
+      { type: 'focus', element: { tag: 'button', selector: '#composer-submit-button' } },
+      { type: 'click', element: { tag: 'button', selector: '#composer-submit-button', text: '发送' } },  // 隔了 3 步
+    ]);
+    const r = recognizeIntent(seg);
+    expect(r.intent).toBe('chat');
+    expect(r.fields.message).toMatchObject({ kind: 'text', value: 'hello' });
+    expect(r.fields.sendBtn).toMatchObject({ kind: 'selector', selector: '#composer-submit-button' });
+  });
 });

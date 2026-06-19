@@ -25,25 +25,35 @@ export const chatMatcher: IntentMatcher = {
   match(segment: Segment): MatchResult | null {
     const acts = segment.actions;
 
-    // 找输入消息的 action（textarea 或 input，且非 password/file）
-    const msgAct = acts.find(a =>
-      a.type === 'input' &&
-      a.element?.tag === 'textarea' || (a.element?.tag === 'input' && a.element?.type !== 'password' && a.element?.type !== 'file'),
-    );
-    if (!msgAct || !msgAct.value) return null;
+    // 找输入消息的 action：取最后一个有非空 value 的 input（textarea 或非 password/file 的 input）。
+    // 用"最后一个"而非第一个，因为真实录制里常有多个 input（第一个 value 为空，cdp-fill 才有真实值）。
+    let msgAct: typeof acts[number] | undefined;
+    for (let i = acts.length - 1; i >= 0; i--) {
+      const a = acts[i];
+      if (a.type !== 'input') continue;
+      const tag = a.element?.tag;
+      const elType = a.element?.type;
+      const isMsgField = tag === 'textarea' || (tag === 'input' && elType !== 'password' && elType !== 'file');
+      if (isMsgField && a.value && a.value.trim().length > 0) {
+        msgAct = a;
+        break;
+      }
+    }
+    if (!msgAct) return null;
 
     // 找后续的发送动作（发送按钮 click 或 Enter keydown）
+    // 真实录制噪音多（focus/keydown/keyup/hover），放宽到 15 步窗口
     const msgIdx = acts.indexOf(msgAct);
     let sendAction: typeof acts[number] | undefined;
     let sendKind: 'button' | 'enter' | null = null;
 
-    for (let i = msgIdx + 1; i < acts.length && i < msgIdx + 5; i++) {
+    for (let i = msgIdx + 1; i < acts.length && i < msgIdx + 15; i++) {
       const a = acts[i];
       if (a.type === 'click' && a.element) {
         if (looksLikeSendButton(a.element.text ?? '', a.element.selector ?? '')) {
           sendAction = a; sendKind = 'button'; break;
         }
-        // 点击紧邻的按钮（非明确发送文案）也可能是发送（ChatGPT 的 submit button）
+        // selector 含 submit/send 的按钮（ChatGPT 的 #composer-submit-button）
         if (a.element.selector?.includes('submit') || a.element.selector?.includes('send')) {
           sendAction = a; sendKind = 'button'; break;
         }
