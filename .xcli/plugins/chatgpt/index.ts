@@ -758,15 +758,33 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({
       shots: z.string().describe('分镜提示词 CSV（如 "画猫咪站着,画猫咪坐下,画猫咪躺下"）'),
+      progress: z.string().optional().describe('进度文件路径（JSON）。中断后重跑自动跳过已完成镜，配合 conversationId 恢复同一会话'),
     }),
     result: z.object({ images: z.array(z.string()).optional(), count: z.number(), status: z.string(), conversationId: z.string().optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser chatgpt storyboard --shots "画猫咪站着,画猫咪坐下,画猫咪躺下" --cdp 9221', description: '3 镜连续' },
+      { cmd: 'xbrowser chatgpt storyboard --shots "..." --progress ./baize-progress.json --cdp 9221', description: '带进度持久化（中断可续）' },
     ],
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
       const tips = buildTips(ctx);
+
+      // 进度持久化：读已有进度（conversationId + completed 镜号 + 已下载图）
+      const fsMod = await import('fs');
+      const pathMod = await import('path');
+      const progressPath = params.progress || '';
+      type Progress = { conversationId: string; completed: number[]; images: string[] };
+      const loadProgress = (): Progress => {
+        if (!progressPath || !fsMod.existsSync(progressPath)) return { conversationId: '', completed: [], images: [] };
+        try { return JSON.parse(fsMod.readFileSync(progressPath, 'utf8')); } catch { return { conversationId: '', completed: [], images: [] }; }
+      };
+      const saveProgress = (p: Progress) => {
+        if (!progressPath) return;
+        try { fsMod.writeFileSync(progressPath, JSON.stringify(p, null, 2)); } catch { /* 忽略写入失败 */ }
+      };
+      const progress = loadProgress();
+      if (progress.completed.length > 0) tips.push(`📌 恢复进度：已完成 ${progress.completed.length} 镜，从断点继续`);
       const prompts = params.shots.split(',').map(s => s.trim()).filter(Boolean);
       if (prompts.length === 0) return fail('未指定分镜', ['--shots 至少一个']);
       if (prompts.length > 10) return fail('最多 10 镜', ['超过上限，请分批']);
@@ -780,16 +798,32 @@ export default function (xcli: XCLIAPI): void {
       await page.waitForTimeout(2000);
       tips.push(`📌 已加载 ChatGPT，开始 ${prompts.length} 镜连续分镜`);
 
-      const allImages: string[] = [];
+      const allImages: string[] = [...progress.images];  // 继承已下载的图
       const MAX_RETRY = 3;  // 每镜没生成图就重发的最大次数
 
+      // 导航：有 progress.conversationId 就恢复该会话，否则新会话
+      if (progress.conversationId) {
+        const curUrl = page.url();
+        if (!curUrl.includes(`/c/${progress.conversationId}`)) {
+          await page.goto(`https://chatgpt.com/c/${progress.conversationId}`, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+          await page.waitForSelector('#prompt-textarea', { timeout: 15000 }).catch(() => {});
+          await page.waitForTimeout(2000);
+          tips.push(`📌 恢复会话 ${progress.conversationId}`);
+        }
+      }
+
       for (let i = 0; i < prompts.length; i++) {
+        const shotNum = i + 1;
+        // 跳过已完成的镜
+        if (progress.completed.includes(shotNum)) {
+          continue;
+        }
         const prompt = prompts[i]!;
         let shotDone = false;
 
         for (let retry = 0; retry < MAX_RETRY && !shotDone; retry++) {
           const retryTag = retry > 0 ? ` (重试 ${retry}/${MAX_RETRY})` : '';
-          tips.push(`\n📽 第${i + 1}/${prompts.length}镜${retryTag}：${prompt.substring(0, 40)}${prompt.length > 40 ? '...' : ''}`);
+          tips.push(`\n📽 第${shotNum}/${prompts.length}镜${retryTag}：${prompt.substring(0, 40)}${prompt.length > 40 ? '...' : ''}`);
 
         // ── 锚点：记录发送前已有图片 URL 集合 ──
         const anchorUrls = await page.evaluate(() => {
@@ -869,8 +903,6 @@ export default function (xcli: XCLIAPI): void {
 
             // 写文件到本地
             const downloadDir = `${process.env.HOME || '/tmp'}/.xbrowser/downloads`;
-            const fsMod = await import('fs');
-            const pathMod = await import('path');
             if (!fsMod.existsSync(downloadDir)) fsMod.mkdirSync(downloadDir, { recursive: true });
             for (let k = 0; k < downloaded.length; k++) {
               const item = downloaded[k]!;
@@ -882,10 +914,21 @@ export default function (xcli: XCLIAPI): void {
               } catch { /* 写入失败跳过 */ }
             }
             if (downloaded.length > 0) {
-              tips.push(`  ✅ 第${i + 1}镜生成并下载：${downloaded.length} 张新图（anchor=${anchorUrls.length}）`);
+              tips.push(`  ✅ 第${shotNum}镜生成并下载：${downloaded.length} 张新图（anchor=${anchorUrls.length}）`);
               allImages.push(...downloaded.map(d => d.src));
               gotImage = true;
               shotDone = true;  // 标记本镜完成，退出 retry 循环
+              // 写进度（关键：每镜成功即保存，中断后可从断点续）
+              progress.completed.push(shotNum);
+              progress.images = [...allImages];
+              if (!progress.conversationId) {
+                const cid = await page.evaluate(() => {
+                  const m = window.location.href.match(/\/c\/([a-f0-9-]+)/i);
+                  return m ? m[1] : '';
+                }).catch(() => '') as string;
+                if (cid) progress.conversationId = cid;
+              }
+              saveProgress(progress);
               // 关键：下载成功不代表生成完全结束！按钮可能还在"停止"状态。
               // 必须等按钮恢复"发送"才能进入下一镜，否则下一镜会点到"停止"按钮。
               const btnReadyStart = Date.now();
