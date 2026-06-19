@@ -781,10 +781,15 @@ export default function (xcli: XCLIAPI): void {
       tips.push(`📌 已加载 ChatGPT，开始 ${prompts.length} 镜连续分镜`);
 
       const allImages: string[] = [];
+      const MAX_RETRY = 3;  // 每镜没生成图就重发的最大次数
 
       for (let i = 0; i < prompts.length; i++) {
         const prompt = prompts[i]!;
-        tips.push(`\n📽 第${i + 1}/${prompts.length}镜：${prompt.substring(0, 40)}${prompt.length > 40 ? '...' : ''}`);
+        let shotDone = false;
+
+        for (let retry = 0; retry < MAX_RETRY && !shotDone; retry++) {
+          const retryTag = retry > 0 ? ` (重试 ${retry}/${MAX_RETRY})` : '';
+          tips.push(`\n📽 第${i + 1}/${prompts.length}镜${retryTag}：${prompt.substring(0, 40)}${prompt.length > 40 ? '...' : ''}`);
 
         // ── 锚点：记录发送前已有图片 URL 集合 ──
         const anchorUrls = await page.evaluate(() => {
@@ -880,6 +885,7 @@ export default function (xcli: XCLIAPI): void {
               tips.push(`  ✅ 第${i + 1}镜生成并下载：${downloaded.length} 张新图（anchor=${anchorUrls.length}）`);
               allImages.push(...downloaded.map(d => d.src));
               gotImage = true;
+              shotDone = true;  // 标记本镜完成，退出 retry 循环
               // 关键：下载成功不代表生成完全结束！按钮可能还在"停止"状态。
               // 必须等按钮恢复"发送"才能进入下一镜，否则下一镜会点到"停止"按钮。
               const btnReadyStart = Date.now();
@@ -901,10 +907,15 @@ export default function (xcli: XCLIAPI): void {
           }  // close if newUrls.length > 0
         }  // close while
         if (!gotImage) {
-          tips.push(`  ⚠️ 第${i + 1}镜超时未生成新图，继续下一镜`);
+          if (retry < MAX_RETRY - 1) {
+            tips.push(`  🔄 第${i + 1}镜未生成图，准备重发`);
+          } else {
+            tips.push(`  ❌ 第${i + 1}镜重试 ${MAX_RETRY} 次仍失败，跳过`);
+          }
         }
         await page.waitForTimeout(1000);
-      }
+        }  // close retry for
+      }  // close shot for
 
       // 提取会话 ID
       const conversationId = await page.evaluate(() => {
