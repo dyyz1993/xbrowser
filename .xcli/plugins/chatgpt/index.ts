@@ -840,8 +840,48 @@ export default function (xcli: XCLIAPI): void {
           }, anchorUrls).catch(() => [] as string[]) as string[];
 
           if (newUrls.length > 0) {
-            tips.push(`  ✅ 第${i + 1}镜生成：${newUrls.length} 张新图（anchor=${anchorUrls.length}）`);
-            allImages.push(...newUrls);
+            // 立刻下载：用 page.evaluate 的 fetch（同源，带 cookie）获取 blob → base64
+            // estuary URL 需登录态，必须用 fetch（同源）不能用 canvas（tainted）
+            const downloaded = await page.evaluate(async (urls: string[]) => {
+              const out: Array<{ src: string; b64: string }> = [];
+              for (const url of urls) {
+                try {
+                  const resp = await fetch(url, { credentials: 'include' });
+                  if (!resp.ok) continue;
+                  const blob = await resp.blob();
+                  const b64 = await new Promise<string>((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve((reader.result as string).replace(/^data:[^;]+;base64,/, ''));
+                    reader.readAsDataURL(blob);
+                  });
+                  if (b64.length > 100) out.push({ src: url, b64 });
+                } catch { /* 跳过单个失败 */ }
+              }
+              return out;
+            }, newUrls).catch(() => [] as Array<{ src: string; b64: string }>) as Array<{ src: string; b64: string }>;
+
+            // 写文件到本地
+            const downloadDir = `${process.env.HOME || '/tmp'}/.xbrowser/downloads`;
+            const fsMod = await import('fs');
+            const pathMod = await import('path');
+            if (!fsMod.existsSync(downloadDir)) fsMod.mkdirSync(downloadDir, { recursive: true });
+            for (let k = 0; k < downloaded.length; k++) {
+              const item = downloaded[k]!;
+              const localPath = pathMod.join(downloadDir, `chatgpt_story_${Date.now()}_${i}_${k}.png`);
+              try {
+                fsMod.writeFileSync(localPath, Buffer.from(item.b64, 'base64'));
+                const sz = fsMod.statSync(localPath).size;
+                tips.push(`  📁 第${i + 1}镜 img${k + 1}: ${(sz / 1024).toFixed(0)}KB`);
+              } catch { /* 写入失败跳过 */ }
+            }
+            if (downloaded.length > 0) {
+              tips.push(`  ✅ 第${i + 1}镜生成并下载：${downloaded.length} 张新图（anchor=${anchorUrls.length}）`);
+              allImages.push(...downloaded.map(d => d.src));
+              gotImage = true;
+              break;
+            } else {
+              tips.push(`  ⚠️ 第${i + 1}镜检测到 ${newUrls.length} 张图但下载失败（可能跨域），继续等`);
+            }
             gotImage = true;
             break;
           }
