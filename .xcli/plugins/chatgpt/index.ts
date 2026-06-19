@@ -799,11 +799,11 @@ export default function (xcli: XCLIAPI): void {
           return Array.from(seen);
         }).catch(() => [] as string[]);
 
-        // ── 输入（contenteditable + keyboard.type）──
+        // ── 输入（fastInput execCommand，一次插入，比 keyboard.type 快 100 倍）──
         await page.locator('#prompt-textarea').first().click({ timeout: 5000 }).catch(() => {});
         await page.waitForTimeout(200);
-        await page.keyboard.type(prompt, { delay: 15 });
-        await page.waitForTimeout(400);
+        await fastInput(page, prompt, 'execCommand');
+        await page.waitForTimeout(300);
         const written = await page.evaluate((exp: string) => {
           const ed = document.querySelector('#prompt-textarea');
           return ed ? (ed.textContent || '').includes(exp.substring(0, Math.min(10, exp.length))) : false;
