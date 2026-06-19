@@ -820,9 +820,11 @@ export default function (xcli: XCLIAPI): void {
           continue;
         }
         await page.mouse.click(sendCoord.x, sendCoord.y).catch(() => {});
-        await page.waitForTimeout(3000);
+        // 发送后按钮会变成"停止"状态（正在生成）。必须等它变回"发送"才能继续。
+        // 否则下一镜点的其实是停止按钮，会把当前生成停掉！
+        await page.waitForTimeout(2000);
 
-        // ── 等图（锚点法：只认 anchor 之外的新图）──
+        // ── 等图（锚点法：只认 anchor 之外的新图）+ 等按钮恢复 ──
         const startTime = Date.now();
         let gotImage = false;
         while (Date.now() - startTime < 120000) {
@@ -878,14 +880,26 @@ export default function (xcli: XCLIAPI): void {
               tips.push(`  ✅ 第${i + 1}镜生成并下载：${downloaded.length} 张新图（anchor=${anchorUrls.length}）`);
               allImages.push(...downloaded.map(d => d.src));
               gotImage = true;
+              // 关键：下载成功不代表生成完全结束！按钮可能还在"停止"状态。
+              // 必须等按钮恢复"发送"才能进入下一镜，否则下一镜会点到"停止"按钮。
+              const btnReadyStart = Date.now();
+              while (Date.now() - btnReadyStart < 30000) {
+                await page.waitForTimeout(2000);
+                const ready = await page.evaluate(() => {
+                  const b = document.querySelector('#composer-submit-button');
+                  if (!b) return true;
+                  const label = b.getAttribute('aria-label') || '';
+                  return !/stop|停止/i.test(label);
+                }).catch(() => true);
+                if (ready) { tips.push(`  ✓ 按钮恢复发送状态，可进入下一镜`); break; }
+              }
               break;
             } else {
               tips.push(`  ⚠️ 第${i + 1}镜检测到 ${newUrls.length} 张图但下载失败（可能跨域），继续等`);
+              continue;
             }
-            gotImage = true;
-            break;
-          }
-        }
+          }  // close if newUrls.length > 0
+        }  // close while
         if (!gotImage) {
           tips.push(`  ⚠️ 第${i + 1}镜超时未生成新图，继续下一镜`);
         }
