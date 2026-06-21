@@ -271,10 +271,10 @@ export class XBBrowserImpl implements XBBrowser {
       return;
     }
 
-    // cdp-tunnel 隔离规范 §7.5：不再走 HTTP /json/list 兜底
-    // - HTTP /json/list 已被 cdp-tunnel 隔离（create 模式返回空）
-    // - 即使能拿到，也违反"xbrowser 只能看本 clientId tabs"的契约
-    // - 改用纯 WS Target.getTargets（已按 clientId 过滤）
+    // 标准 CDP：用 WS Target.getTargets 而非 HTTP /json/list
+    // - HTTP /json/list 非协议标准
+    // - 多客户端环境下可能暴露其他连接的 tab
+    // - WS Target.getTargets 是标准做法
 
     // 2) Group page targets by browserContextId
     const pagesByContext = new Map<string, typeof targetInfos>();

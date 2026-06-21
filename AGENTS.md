@@ -20,6 +20,45 @@ npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 - **临时编辑脚本、debug 脚本、recordings、capture 产物** 全部放 `output/` 或 `.xcli/storage/`，**不要**进 git。
 - **禁止把数据/报告/HTML 输出** 提交进 git（ctrip-report.html、stats-*.png、douyin_works_sample.json 等）。
 
+### 1.1 CDP 协议中立原则（2026-06-21 新增）
+
+> **xbrowser 是标准 CDP 客户端，不为任何特定 CDP 代理/隧道（cdp-tunnel、st-browser 等）做定制或 hack。**
+
+**核心准则**：
+
+1. **只遵守标准 CDP 协议**——所有 CDP 命令（`Target.createTarget`、`Target.attachToTarget`、`Page.navigate`、`Runtime.evaluate` 等）按 Chrome DevTools Protocol 规范发送，不针对特定代理做参数变体或时序 hack。
+2. **不做产品特判**——禁止代码里出现 `if (端口 === 9231)`、`if (是 cdp-tunnel)`、`isPoolPort` 之类的分支。连 `--remote-debugging-port` 直连和走代理应该走完全相同的代码路径。
+3. **问题反馈而非绕行**——遇到代理层 bug（事件丢失、navigate 失败、closeTarget 不生效等），**只做两件事**：
+   - 提供精确的失败日志（proxy debug 日志 + 完整 CDP 命令序列）
+   - 提供最小复现脚本（裸 CDP WS 脚本，不含 xbrowser 封装）
+   - **绝不**在 xbrowser 里加 retry/skip/workaround 来兜底代理的 bug——那会把代理问题掩盖，污染客户端代码。
+4. **注释不绑定产品**——代码注释描述"标准 CDP 行为"，不写"cdp-tunnel 隔离规范 §7.5"。例如：
+   - ❌ `// cdp-tunnel 隔离规范 §7.5：不调 GET /json/list`
+   - ✅ `// 标准 CDP：用 WS Target.getTargets 而非 HTTP /json/list（后者非协议标准，且可能暴露其他客户端的 tab）`
+5. **现有 §7.5 引用**——历史代码里提到 "cdp-tunnel 隔离规范 §7.5" 的注释，行为本身是对的（用 WS 不用 HTTP），但措辞要逐步改为标准 CDP 描述。
+
+**违反反例（禁止）**：
+```typescript
+// ❌ 为 cdp-tunnel 端口池加特判
+const isPoolPort = /:(923\d)/.test(endpoint);
+if (isPoolPort) { skipDiscoverContexts(); }  // hack
+
+// ❌ 在客户端层给代理的 navigate bug 兜底
+if (page.url() === 'about:blank') { await page.goto(url); }  // retry hack
+
+// ❌ 注释绑定特定产品
+// cdp-tunnel 会把 Browser.enable 转发到 page session
+```
+
+**正确做法**：
+```typescript
+// ✅ 标准 CDP：用 WS 而非 HTTP 发现 targets
+const targets = await conn.send('Target.getTargets');
+
+// ✅ 代理 bug 反馈给代理方修，不在客户端兜底
+// 发现 navigate 失败 → 抓日志 + 复现脚本 → 发给代理方 → 等修复
+```
+
 ---
 
 ## 2. 仓库速览

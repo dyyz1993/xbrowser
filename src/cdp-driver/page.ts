@@ -117,9 +117,9 @@ export class XBPageImpl implements XBPage {
     // 该订阅负责把 CDP 事件转成 page 'filechooser' 事件。
 
     // 启用下载事件监听（Browser domain，downloadWillBegin / downloadProgress）
-    // 注意：Browser domain 事件是 browser-level 的，但 cdp-tunnel 会转发到 page session。
-    // 此命令在部分环境返回 -32601 "'Browser.enable' wasn't found"（直连 Chrome 和
-    // cdp-tunnel 端口池均如此），用 catch 忽略——下载事件不是核心功能。
+    // Browser domain 事件是 browser-level 的，但部分 CDP 代理会转发到 page session。
+    // 此命令在部分环境返回 -32601 "'Browser.enable' wasn't found"（标准 CDP 和部分代理均如此），
+    // 用 catch 忽略——下载事件不是核心功能。
     await this.conn.send('Browser.enable', undefined, this.sessionId)
       .catch(() => {});
 
