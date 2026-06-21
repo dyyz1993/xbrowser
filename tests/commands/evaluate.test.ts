@@ -58,6 +58,42 @@ describe('Evaluate Commands', () => {
       );
       expect(result).toEqual({ success: true, data: { result: obj }, tips: [] });
     });
+
+    it('should write result to file when --output is specified', async () => {
+      const ctx = createMockContext('hello world');
+      const { evaluateCommand } = await import('../../src/commands/evaluate.js');
+      const result = await evaluateCommand.handler(
+        { expression: '"hello world"', output: 'output/test-eval.txt' },
+        ctx
+      ) as { success: boolean; data: { result: string; path: string; size: number }; tips: string[] };
+      expect(result.success).toBe(true);
+      expect(result.data.path).toContain('test-eval.txt');
+      expect(result.data.size).toBe('hello world'.length);
+      expect(result.data.result).toContain('已写入');
+    });
+
+    it('should JSON.stringify object result when writing to file', async () => {
+      const obj = { a: 1, b: 2 };
+      const ctx = createMockContext(obj);
+      const { evaluateCommand } = await import('../../src/commands/evaluate.js');
+      const result = await evaluateCommand.handler(
+        { expression: 'window.obj', output: 'output/test-eval-obj.json' },
+        ctx
+      ) as { success: boolean; data: { path: string; size: number }; tips: string[] };
+      expect(result.success).toBe(true);
+      expect(result.data.size).toBe(JSON.stringify(obj, null, 2).length);
+    });
+
+    it('should not write file when --output is absent (backward compat)', async () => {
+      const ctx = createMockContext('plain result');
+      const { evaluateCommand } = await import('../../src/commands/evaluate.js');
+      const result = await evaluateCommand.handler(
+        { expression: '"plain result"' },
+        ctx
+      );
+      expect(result).toEqual({ success: true, data: { result: 'plain result' }, tips: [] });
+    });
   });
 
 });
+

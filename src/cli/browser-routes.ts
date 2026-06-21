@@ -174,7 +174,7 @@ export async function handleBrowserCommand(
       case 'eval':
         if (!args[0]) outputError('Usage: xbrowser eval <expression>');
         cmdName = 'eval';
-        params = { expression: args.join(' ') };
+        params = { expression: args.join(' '), output: options.output };
         break;
       case 'scroll': {
         const direction = args[0] || 'down';

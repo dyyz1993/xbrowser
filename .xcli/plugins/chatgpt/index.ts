@@ -583,7 +583,7 @@ export default function (xcli: XCLIAPI): void {
       session: z.string().optional().describe('会话 ID（复用已有会话 /c/{id}，保持风格延续，用于连续漫画/分镜）'),
       ratio: z.string().optional().describe('图片比例（自动/方形/宽屏，默认自动）'),
     }),
-    result: z.object({ images: z.array(z.string()).optional(), status: z.string(), conversationUrl: z.string().optional(), conversationId: z.string().optional() }).passthrough(),
+    result: z.object({ images: z.array(z.string()).optional(), localPaths: z.array(z.string()).optional(), status: z.string(), conversationUrl: z.string().optional(), conversationId: z.string().optional() }).passthrough(),
     examples: [
       { cmd: 'xbrowser chatgpt image --prompt "画一只可爱的柴犬"', description: '文生图' },
       { cmd: 'xbrowser chatgpt image --prompt "第2镜" --session abc-123', description: '复用会话（连续漫画）' },
@@ -728,13 +728,51 @@ export default function (xcli: XCLIAPI): void {
 
         if (imageUrls.length > 0) {
           tips.push(`✓ DALL-E 生成了 ${imageUrls.length} 张图片`);
+
+          // 下载图片到本地（同源 fetch + base64,绕过登录态 cookie 问题）
+          // estuary/oaiusercontent URL 需登录态，必须用 fetch（同源）不能用 canvas（tainted）
+          const downloaded = await page.evaluate(async (urls: string[]) => {
+            const out: Array<{ src: string; b64: string }> = [];
+            for (const url of urls) {
+              try {
+                const resp = await fetch(url, { credentials: 'include' });
+                if (!resp.ok) continue;
+                const blob = await resp.blob();
+                const b64 = await new Promise<string>((resolve) => {
+                  const reader = new FileReader();
+                  reader.onloadend = () => resolve((reader.result as string).replace(/^data:[^;]+;base64,/, ''));
+                  reader.readAsDataURL(blob);
+                });
+                if (b64.length > 100) out.push({ src: url, b64 });
+              } catch { /* 跳过单个失败 */ }
+            }
+            return out;
+          }, imageUrls).catch(() => [] as Array<{ src: string; b64: string }>);
+
+          const localPaths: string[] = [];
+          if (downloaded.length > 0) {
+            const fsMod = await import('fs');
+            const pathMod = await import('path');
+            const downloadDir = `${process.env.HOME || '/tmp'}/.xbrowser/downloads`;
+            if (!fsMod.existsSync(downloadDir)) fsMod.mkdirSync(downloadDir, { recursive: true });
+            for (let k = 0; k < downloaded.length; k++) {
+              const localPath = pathMod.join(downloadDir, `chatgpt_image_${Date.now()}_${k}.png`);
+              try {
+                fsMod.writeFileSync(localPath, Buffer.from(downloaded[k]!.b64, 'base64'));
+                const sz = fsMod.statSync(localPath).size;
+                localPaths.push(localPath);
+                tips.push(`  📁 已下载 img${k + 1}: ${(sz / 1024).toFixed(0)}KB → ${localPath}`);
+              } catch { /* 写入失败跳过 */ }
+            }
+          }
+
           const conversationUrl = page.url();
           const conversationId = await page.evaluate(() => {
             const m = window.location.href.match(/\/c\/([a-f0-9-]+)/i);
             return m ? m[1] : '';
           }).catch(() => '') as string;
           if (conversationId) tips.push(`🔗 会话 ID: ${conversationId}（下次用 --session ${conversationId} 复用）`);
-          return ok({ images: imageUrls, status: 'completed', conversationUrl, conversationId }, tips);
+          return ok({ images: imageUrls, localPaths, status: 'completed', conversationUrl, conversationId }, tips);
         }
         tips.push('⚠ DALL-E 生成超时');
         const conversationUrl = page.url();

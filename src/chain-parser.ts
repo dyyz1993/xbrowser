@@ -149,7 +149,7 @@ registerCommandDefinition('hover', ['selector']);
 registerCommandDefinition('dblclick', ['selector']);
 registerCommandDefinition('wait', ['selector']);
 registerCommandDefinition('screenshot', []);
-registerCommandDefinition('eval', ['expression']);
+registerCommandDefinition('eval', ['expression', 'output']);
 registerCommandDefinition('scroll', ['direction']);
 registerCommandDefinition('title', []);
 registerCommandDefinition('url', []);
