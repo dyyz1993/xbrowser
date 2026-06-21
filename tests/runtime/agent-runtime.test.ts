@@ -20,11 +20,8 @@ describe('agent runtime', () => {
             role: 'button',
             name: 'Submit',
             tag: 'button',
-            visible: true,
             enabled: true,
             editable: false,
-            box: { x: 10, y: 20, width: 80, height: 30 },
-            actions: ['click', 'hover'],
           },
         ],
       }),
@@ -43,6 +40,11 @@ describe('agent runtime', () => {
       role: 'button',
       name: 'Submit',
     }));
+    // 字段精简：box/actions/visible/timestamp 不应出现在输出中（详见 docs/snapshot-benchmark.md）
+    expect(observation.targets[0]).not.toHaveProperty('box');
+    expect(observation.targets[0]).not.toHaveProperty('actions');
+    expect(observation.targets[0]).not.toHaveProperty('visible');
+    expect(observation).not.toHaveProperty('timestamp');
   });
 
   it('formats compact observation output with selector map', async () => {
@@ -50,7 +52,6 @@ describe('agent runtime', () => {
       url: 'https://example.com/login',
       title: 'Login',
       screenHash: 'abc123',
-      timestamp: '2026-06-04T00:00:00.000Z',
       targets: [
         {
           ref: 'e1',
@@ -58,10 +59,8 @@ describe('agent runtime', () => {
           role: 'textbox',
           name: 'Email',
           tag: 'input',
-          visible: true,
           enabled: true,
           editable: true,
-          actions: ['fill', 'type', 'click', 'hover'],
         },
         {
           ref: 'e2',
@@ -69,10 +68,8 @@ describe('agent runtime', () => {
           role: 'button',
           name: 'Sign In',
           tag: 'button',
-          visible: true,
           enabled: false,
           editable: false,
-          actions: ['click', 'hover'],
         },
       ],
     };
@@ -101,10 +98,8 @@ describe('agent runtime', () => {
               role: 'button',
               name: 'Submit',
               tag: 'button',
-              visible: true,
               enabled: true,
               editable: false,
-              actions: ['click', 'hover'],
             },
           ],
         })
@@ -137,10 +132,8 @@ describe('agent runtime', () => {
               role: 'button',
               name: 'Submit',
               tag: 'button',
-              visible: true,
               enabled: true,
               editable: false,
-              actions: ['click', 'hover'],
             },
           ],
         })

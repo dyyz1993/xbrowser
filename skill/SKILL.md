@@ -176,6 +176,25 @@ xbrowser preview --session s1  # Preview specific session
 
 See [references/command-reference.md](references/command-reference.md) for full parameters and options.
 
+### Snapshot modes (2026-06 optimized)
+
+`snapshot` defaults to **interactive mode** — returns `@e1`/`@e2` refs for direct interaction. This is the recommended entry point before clicking/filling.
+
+```bash
+snapshot                  # DEFAULT: interactive @refs + compact text
+snapshot --selectors      # add ref → CSS selector map (cross-session reuse)
+snapshot --type aria      # filtered accessibility tree (structure view, noise removed)
+snapshot --type text      # visible text only
+snapshot --type dom       # element tree with attrs/box
+
+# Workflow: snapshot → interact via ref → re-snapshot after page change
+snapshot                  # @e1 [button] "Submit"
+click @e1                 # interact
+snapshot                  # refs refreshed (old @e1 invalidated)
+```
+
+Mode comparison and xbrowser vs agent-browser benchmark: [`docs/snapshot-benchmark.md`](../docs/snapshot-benchmark.md).
+
 ---
 
 ## CDP Pitfalls (Critical)

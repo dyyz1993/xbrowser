@@ -9,20 +9,48 @@ import { buildSelectorMap, formatObservationCompact, observePage } from '../runt
 
 export const snapshotCommand = registerCommand({
   name: 'snapshot',
-  description: 'Capture a quick page state snapshot — aria tree, visible text, or DOM summary',
+  description: 'Get page state: interactive @refs to operate (default); --type aria=page outline; --type text=content; --type dom=debug DOM',
   scope: 'page',
   selectorParams: ['selector'],
+  examples: [
+    {
+      cmd: 'xbrowser snapshot',
+      description: 'I want to OPERATE the page → returns clickable/fillable @refs (use click @e1, fill @e2)',
+      output: '@e1 [button] "Submit"\n@e2 [textbox editable] "Email"',
+    },
+    {
+      cmd: 'xbrowser snapshot --type aria',
+      description: 'I want the page OUTLINE/skeleton (nav, heading hierarchy, regions)',
+      output: 'banner:\n  navigation:\n    link "Home"\nmain:\n  heading "Welcome"',
+    },
+    {
+      cmd: 'xbrowser snapshot --type text',
+      description: 'I want the page TEXT CONTENT (extract body copy/information)',
+      output: 'Welcome\nPlease enter your email\nSubmit',
+    },
+    {
+      cmd: 'xbrowser snapshot --type dom',
+      description: 'I want to DEBUG the DOM (tag names, attributes, nesting)',
+    },
+    {
+      cmd: 'xbrowser snapshot --selectors',
+      description: 'I want to operate AND need stable CSS selectors (reuse across sessions)',
+      output: 'e1: #submit | e2: #email',
+    },
+  ],
   parameters: z.object({
-    type: z.enum(['aria', 'text', 'dom', 'all']).default('aria').describe('Snapshot type: aria (accessibility tree), text (visible text), dom (element summary), all (combined)'),
-    selector: z.string().optional().describe('Scope to a specific element'),
-    depth: z.number().optional().default(6).describe('Max depth for DOM/aria tree'),
-    interactive: z.boolean().optional().default(false).describe('Return interactive agent refs only'),
-    interactiveOnly: z.boolean().optional().default(false).describe('Alias for interactive'),
-    i: z.boolean().optional().default(false).describe('Short alias for interactive'),
-    compact: z.boolean().optional().default(false).describe('Include compact xbrowser style snapshot text'),
-    c: z.boolean().optional().default(false).describe('Short alias for compact'),
-    selectors: z.boolean().optional().default(false).describe('Include ref to CSS selector map'),
-    all: z.boolean().optional().default(false).describe('Include hidden interactive targets when using interactive snapshot'),
+    type: z.enum(['interactive', 'aria', 'text', 'dom', 'all']).default('interactive').describe(
+      'Choose by intent: interactive(default)=operate page, get @refs of clickable/fillable elements; aria=page outline (nav/headings/regions); text=page text content; dom=debug DOM tags/attrs; all=everything'
+    ),
+    selector: z.string().optional().describe('限定到某个元素（CSS 选择器），只快照该子树'),
+    depth: z.number().optional().default(6).describe('aria/dom 树的最大深度'),
+    interactive: z.boolean().optional().default(false).describe('强制 interactive 模式（等同 --type interactive，兼容 -i）'),
+    interactiveOnly: z.boolean().optional().default(false).describe('interactive 的别名'),
+    i: z.boolean().optional().default(false).describe('interactive 的短别名'),
+    compact: z.boolean().optional().default(false).describe('附带紧凑文本快照（interactive 模式默认已含）'),
+    c: z.boolean().optional().default(false).describe('compact 的短别名'),
+    selectors: z.boolean().optional().describe('附带 ref → CSS 选择器映射（需要稳定选择器时开）'),
+    all: z.boolean().optional().default(false).describe('interactive 模式下连隐藏元素一起采集（注意：这是采集范围，不是 --type all 的合并快照）'),
   }),
   result: z.object({
     url: z.string(),
@@ -37,14 +65,16 @@ export const snapshotCommand = registerCommand({
     const url = page.url();
     const title = await page.title().catch(() => '');
 
-    if (p.interactive || p.interactiveOnly || p.i || p.compact || p.c || p.selectors) {
+    // Default: interactive refs. Triggered by --type interactive (default),
+    // or any of the -i/--interactive/--compact/--selectors flags.
+    const wantInteractive = p.type === 'interactive' || p.interactive || p.interactiveOnly || p.i || p.compact || p.c || p.selectors;
+    if (wantInteractive) {
       const observation = await observePage(page, ctx.sessionId, {
         includeHidden: p.all,
       });
       if (p.selectors) observation.selectors = buildSelectorMap(observation);
-      if (p.compact || p.c || p.interactive || p.interactiveOnly || p.i) {
-        observation.compact = formatObservationCompact(observation, { selectors: p.selectors });
-      }
+      // compact is always generated for interactive mode (it's the primary human/AI-readable output)
+      observation.compact = formatObservationCompact(observation, { selectors: p.selectors });
       return ok(observation, [
         `refs refreshed for ${observation.targets.length} targets; use click @e1 or fill @e2 "text"`,
       ]);
@@ -68,14 +98,21 @@ export const snapshotCommand = registerCommand({
     }
 
     if (p.type === 'all') {
-      const [aria, text, dom] = await Promise.all([
+      const [observation, aria, text, dom] = await Promise.all([
+        observePage(page, ctx.sessionId, { includeHidden: p.all }),
         captureAriaSnapshot(page, p.selector, p.depth),
         captureTextSnapshot(page, p.selector),
         captureDomSnapshot(page, p.selector, p.depth ?? 6),
       ]);
+      observation.compact = formatObservationCompact(observation, { selectors: p.selectors });
+      if (p.selectors) observation.selectors = buildSelectorMap(observation);
       const tips = await buildRefTips(page, aria);
       persistSemantics(url, aria);
-      return ok({ url, title, aria, text, dom }, tips);
+      // all = interactive targets + aria outline + text content + dom tree
+      return ok({ ...observation, aria, text, dom }, [
+        ...tips,
+        `${observation.targets.length} interactive targets + aria + text + dom combined`,
+      ]);
     }
 
     return fail(`Unknown snapshot type: ${p.type}`);
@@ -108,16 +145,45 @@ async function buildRefTips(page: Page, aria: string | undefined): Promise<strin
 }
 
 async function captureAriaSnapshot(page: Page, selector?: string, _depth?: number): Promise<string> {
+  let raw: string;
   try {
     const locator = selector ? page.locator(selector).first() : page.locator('body');
-    return await locator.ariaSnapshot();
+    raw = await locator.ariaSnapshot();
   } catch {
     try {
-      return await page.locator('body').ariaSnapshot();
+      raw = await page.locator('body').ariaSnapshot();
     } catch {
       return '(aria snapshot not available)';
     }
   }
+  return filterAriaNoise(raw);
+}
+
+/**
+ * 过滤 Playwright ariaSnapshot() 的噪音行。
+ *
+ * ariaSnapshot() 会输出大量对 AI 无意义的节点：
+ * - `none:` / `none: xxx`：无 ARIA 角色的容器（Chromium 内部节点）
+ * - `InlineTextBox`：Chromium 布局引擎的文本片段
+ * - `ListMarker: •`：列表圆点等装饰标记
+ * - `xxx: `（半空行）：只有角色名没有内容/子节点的空容器
+ *
+ * 实测同页面噪音占比 71%（见 docs/snapshot-benchmark.md），过滤后体积降 ~70%。
+ */
+function filterAriaNoise(raw: string): string {
+  return raw
+    .split('\n')
+    .filter((line) => {
+      const t = line.trim();
+      if (!t) return false;
+      if (t === 'none:' || t.startsWith('none: ')) return false;
+      if (t.includes('InlineTextBox')) return false;
+      if (t.includes('ListMarker')) return false;
+      // 半空行：纯角色名 + 冒号 + 空格，如 "banner: " / "navigation: " / "generic: "
+      if (/^[a-z]+: $/.test(t)) return false;
+      return true;
+    })
+    .join('\n');
 }
 
 async function captureTextSnapshot(page: Page, selector?: string): Promise<string> {

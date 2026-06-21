@@ -1,19 +1,16 @@
 import type { Page } from '../browser-shim.js';
 import { getRefTarget, normalizeAgentRef, replaceRefs } from './ref-store.js';
-import type { AgentActionInput, AgentActionResult, AgentObservation, AgentTarget, AgentTargetAction, AgentWaitInput, AgentWaitResult } from './types.js';
+import type { AgentActionInput, AgentActionResult, AgentObservation, AgentTarget, AgentWaitInput, AgentWaitResult } from './types.js';
 
 interface RawTarget {
   selector: string;
   role: string;
   name: string;
   tag: string;
-  visible: boolean;
   enabled: boolean;
   editable: boolean;
   checked?: boolean;
   value?: string;
-  box?: AgentTarget['box'];
-  actions: AgentTargetAction[];
 }
 
 interface RawObservation {
@@ -138,15 +135,6 @@ export async function observePage(
           return direct.replace(/\s+/g, ' ').trim().slice(0, 120);
         }
 
-        function actionsFor(role: string, editable: boolean): AgentTargetAction[] {
-          const actions: AgentTargetAction[] = [];
-          if (editable) actions.push('fill', 'type');
-          if (role === 'combobox') actions.push('select');
-          if (role === 'checkbox' || role === 'radio') actions.push('check');
-          actions.push('click', 'hover');
-          return Array.from(new Set(actions));
-        }
-
         const selector = [
           'a[href]',
           'button',
@@ -158,6 +146,13 @@ export async function observePage(
           '[role]',
           '[tabindex]',
           '[contenteditable="true"]',
+          // 非标准可交互控件：内联事件属性（agent-browser 基于 aria tree 完全不覆盖这类）。
+          // 仅抓 HTML 显式声明 onclick/onmousedown 等的元素；addEventListener 绑定的无法静态发现。
+          '[onclick]',
+          '[onmousedown]',
+          '[onmouseup]',
+          '[onmouseover]',
+          '[onkeydown]',
         ].join(',');
 
         const candidates = Array.from(document.querySelectorAll(selector));
@@ -192,13 +187,10 @@ export async function observePage(
             role,
             name: textName(el),
             tag,
-            visible,
             enabled,
             editable,
             ...(checked !== undefined ? { checked } : {}),
             ...(editable && input.value ? { value: input.value.slice(0, 120) } : {}),
-            ...(visible ? { box: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) } } : {}),
-            actions: actionsFor(role, editable),
           });
 
           if (targets.length >= limit) break;
@@ -226,7 +218,6 @@ export async function observePage(
     url: page.url(),
     title,
     screenHash: raw.screenHash,
-    timestamp: new Date().toISOString(),
     targets,
   };
 }
