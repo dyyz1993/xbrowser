@@ -36,6 +36,11 @@ export interface ManagedSession {
   lastActivityAt: number;
   isCDP?: boolean;
   cdpEndpoint?: string;
+  /**
+   * 标记 page 是否是复用已有 tab（hostname 匹配），而非 xbrowser 新建的。
+   * true 时 closeSession 不关 page（那是用户开着的 tab，删了会破坏用户工作区）。
+   */
+  reusedExistingPage?: boolean;
 }
 
 /** Extra metadata stored on disk for cross-process session recovery. */
@@ -703,6 +708,9 @@ export async function createSession(
   url?: string,
   options?: BrowserLaunchOptions
 ): Promise<ManagedSession> {
+  // 标记 page 是新建的还是复用已有 tab 的（影响 closeSession 行为）
+  let reusedExistingPage = false;
+
   // Enforce name uniqueness: close any existing session with the same name.
   // A session name is a unique identifier — there can be only one per name.
   const existing = findSession(name);
@@ -729,30 +737,26 @@ export async function createSession(
     let targetPage: Page | null = null;
     const targetHostname = url ? (() => { try { return new URL(url).hostname; } catch { return ''; } })() : '';
 
-    // 第一遍：找 hostname 匹配的页面（修复"session 总被绑到错 tab"bug）
+    // 复用已开 tab：仅当 url 的 hostname 精确匹配某个已开 page 时才复用。
+    // 这是唯一安全的复用路径——语义上等价于"切到已经开着的那个站"。
+    //
+    // ⚠️ 禁止 fallback 到"任意非空白 page"：在共享用户 Chrome 的场景下（如 cdp-tunnel 9221），
+    // 已有 page 可能是用户正在用的 tab（bilibili/工作后台等），fallback 会抓走用户 tab，
+    // 后续 session.page.goto() 会把用户 tab 导航走，session close 时 page.close() 还会删掉它。
+    // 详见 docs/snapshot-benchmark.md 的根因分析。
     if (targetHostname) {
       for (const ctx of contexts) {
         const pages = ctx.pages();
         for (const p of pages) {
           const pUrl = p.url();
-          if (pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome://') && pUrl.includes(targetHostname)) {
-            targetPage = p;
-            break;
-          }
-        }
-        if (targetPage) break;
-      }
-    }
-
-    // 第二遍：fallback 到任意非空白、非 chrome:// 页面
-    if (!targetPage) {
-      for (const ctx of contexts) {
-        const pages = ctx.pages();
-        for (const p of pages) {
-          const pUrl = p.url();
-          if (pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome://')) {
-            targetPage = p;
-            break;
+          // hostname 精确匹配（不是 includes，避免 localhost 匹配到 localhost.xxx）
+          try {
+            if (pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome://') && new URL(pUrl).hostname === targetHostname) {
+              targetPage = p;
+              break;
+            }
+          } catch {
+            // pUrl 不是合法 URL，跳过
           }
         }
         if (targetPage) break;
@@ -761,13 +765,11 @@ export async function createSession(
 
     // cdp-tunnel 隔离规范 §7.5：不调用 getCDPTargets()（GET /json/list 会泄露其他 clientId 的 tab）
 
+    // 找不到匹配的已开 tab → 创建新 tab（绝不抢已有 page）
     if (!targetPage) {
-      const pages = context.pages();
-      if (pages.length > 0) {
-        targetPage = pages[0];
-      } else {
-        targetPage = await context.newPage();
-      }
+      targetPage = await context.newPage();
+    } else {
+      reusedExistingPage = true; // hostname 匹配复用了已有 tab
     }
 
     page = targetPage;
@@ -793,6 +795,7 @@ export async function createSession(
     lastActivityAt: Date.now(),
     isCDP,
     cdpEndpoint: options?.cdpEndpoint,
+    ...(isCDP ? { reusedExistingPage } : {}),
   };
   sessions.set(session);
   logSessionEvent('create_session', `name="${name}" id="${session.id}" url="${url || '(no url)'}" isCDP=${isCDP} cdpEndpoint=${options?.cdpEndpoint || '(none)'}`);
@@ -823,12 +826,18 @@ export async function closeSessionByName(name: string): Promise<boolean> {
     if (session.name === name || session.id === name) {
       logSessionEvent('close_session', `name="${session.name}" id="${session.id}" url="${session.page.url()}"`);
       if (session.isCDP) {
-        // CDP mode: close the page/tab we created (not the whole browser).
-        // This only affects the tab xbrowser opened, not other user tabs.
-        try { await session.page.close(); } catch { /* page may already be closed */ }
-        // Disconnect the CDP WebSocket connection
-        if (session.browser) {
-          await session.browser.close().catch(() => {});
+        if (session.reusedExistingPage) {
+          // 复用了用户已有 tab（hostname 匹配）——绝不 close page/context/browser，
+          // 否则会删掉用户正在用的 tab。只断开 WS 连接。
+          logSessionEvent('close_session', `name="${session.name}" — reused existing tab, disconnecting only (no page/context/browser close)`);
+          try { await session.browser.disconnect?.(); } catch { /* best-effort */ }
+        } else {
+          // 新建的 page —— 正常关闭 tab（不影响用户其他 tab）
+          try { await session.page.close(); } catch { /* page may already be closed */ }
+          // Disconnect the CDP WebSocket connection（cdp-driver 的 close 不会 kill 用户 Chrome）
+          if (session.browser) {
+            await session.browser.close().catch(() => {});
+          }
         }
       } else {
         // Non-CDP mode: close the context (and its pages), then the browser

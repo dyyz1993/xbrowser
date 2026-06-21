@@ -112,6 +112,24 @@ export class XBBrowserImpl implements XBBrowser {
     this._emitter.emit('disconnected');
   }
 
+  /**
+   * 只断开 WebSocket 连接，不关闭任何 page/context（用于复用已有 tab 的场景）。
+   * 与 close() 的区别：close() 会关掉所有 page 和 context（可能删用户 tab），
+   * disconnect() 只是挂断电话。
+   */
+  async disconnect(): Promise<void> {
+    if (this._disconnected) return;
+    this._disconnected = true;
+
+    if (this._exitHandler) {
+      process.removeListener('exit', this._exitHandler);
+      this._exitHandler = null;
+    }
+
+    await this.conn.close();
+    this._emitter.emit('disconnected');
+  }
+
   async newContext(opts: XBContextOptions = {}): Promise<XBContext> {
     if (this._disconnected) {
       throw new Error('Browser is disconnected');

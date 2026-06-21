@@ -13,6 +13,11 @@ export interface XBBrowser {
   readonly disconnected: boolean;
 
   close(): Promise<void>;
+  /**
+   * 只断开 WS 连接，不关闭任何 page/context。
+   * 用于复用已有 tab 的场景——close() 会删 page，disconnect() 不会。
+   */
+  disconnect(): Promise<void>;
   newContext(opts?: XBContextOptions): Promise<XBContext>;
   contexts(): XBContext[];
   /**
