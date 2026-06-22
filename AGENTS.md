@@ -922,6 +922,103 @@ function tipsToMessages(tips: Tip[] | undefined): string[] {
 
 ---
 
+## 12.2 npm 发版流程（2026-06-23）
+
+> **xbrowser 的 npm 发布靠 `package.json` 版本号变化触发，不是 git tag。**
+
+### 触发机制
+
+`.github/workflows/publish.yml` 监听：
+```yaml
+on:
+  push:
+    branches: [master]
+    paths: ['package.json']   # ← 只有 package.json 变化才触发
+```
+
+**含义**：任何 push 到 master 且 `package.json` 有改动（通常是版本号 bump），自动触发 `npm publish`。
+
+### 发版步骤（标准流程）
+
+```bash
+# 1. 从 origin/master 切干净的发布分支
+git checkout -b release/v<X.Y.Z> origin/master
+
+# 2. bump 版本号（手动改 package.json 的 version 字段）
+#    PATCH: 1.0.2 → 1.0.3（bug 修复 / 重构）
+#    MINOR: 1.0.x → 1.1.0（新功能，向后兼容）
+#    MAJOR: 1.x.0 → 2.0.0（不兼容 API 变更）
+
+# 3. 提交
+git add package.json
+git commit -m "chore(release): bump version to v<X.Y.Z>"
+
+# 4. push + 开 PR
+git push -u origin release/v<X.Y.Z>
+gh pr create --base master --head release/v<X.Y.Z> \
+  --title "chore(release): bump version to v<X.Y.Z>" \
+  --body "版本号 bump 触发 npm publish"
+
+# 5. 等 CI 绿（lint + typecheck + build + test 必须全过）
+
+# 6. 合并 PR（squash merge）
+gh pr merge <PR_NUMBER> --squash --delete-branch --admin
+
+# 7. 合并后 publish.yml 自动触发 → npm publish
+#    验证：npm view @xbrowser/cli version
+```
+
+### 验证发布
+
+```bash
+npm view @xbrowser/cli version        # 确认版本号更新
+npm view @xbrowser/cli versions --json # 查看所有版本
+```
+
+### 手动发布（CI 失败时的 fallback）
+
+如果 CI 的 `NPM_TOKEN` 失效（E404/E403），可以本地发布：
+
+```bash
+# 1. 确认本地 npm 登录
+npm whoami                            # 应输出 dyyz1993
+
+# 2. 从 origin/master 创建干净 worktree
+git worktree add /tmp/xb-publish origin/master
+cd /tmp/xb-publish
+
+# 3. 安装 + 构建 + 发布
+npm ci && npm run build
+npm publish --access public
+
+# 4. 验证 + 清理
+npm view @xbrowser/cli version
+cd - && git worktree remove /tmp/xb-publish --force
+```
+
+### NPM_TOKEN 维护
+
+CI 用的 `NPM_TOKEN` 存在 GitHub repo Secrets 里。如果失效（E404 "Not Found"）：
+
+```bash
+# 从本地 ~/.npmrc 读取有效 token
+TOKEN=$(grep authToken ~/.npmrc | sed 's/.*=//')
+
+# 更新到 GitHub Secrets
+gh secret set NPM_TOKEN --body "$TOKEN" --repo dyyz1993/xbrowser
+
+# 验证
+gh secret list --repo dyyz1993/xbrowser | grep NPM_TOKEN
+```
+
+### 注意事项
+
+- **npm 不允许重复发布同一版本号**——如果该版本已发布（E403 "cannot publish over"），需要 bump 到下一个版本
+- **E2E workflow 失败不阻塞发版**——e2e 有既存的断言过期问题（plugin-lifecycle help 文本），与发版无关，主 CI 全绿即可合并
+- **不要用 git tag 发版**——xbrowser 的 publish.yml 不监听 tag，只监听 package.json 变化
+
+---
+
 ## 13. 发布到 marketplace
 
 ```bash
