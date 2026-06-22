@@ -15,6 +15,7 @@ import { EventEmitter } from 'node:events';
 import { CDPConnection } from './connection.js';
 import { XBContextImpl } from './context.js';
 import { XBPageImpl } from './page.js';
+import { errMsg } from '../utils/error.js';
 import type { XBBrowser, XBContext, XBContextOptions } from './types.js';
 import type { ChildProcess } from 'node:child_process';
 
@@ -295,7 +296,7 @@ export class XBBrowserImpl implements XBBrowser {
         }
         console.log(`[discoverContexts] After HTTP fallback: ${targetInfos.length} total targets, ${targetInfos.filter(t => t.type === 'page').length} pages`);
       } catch (err) {
-        console.log(`[discoverContexts] HTTP fallback failed: ${(err as Error).message}`);
+        console.log(`[discoverContexts] HTTP fallback failed: ${errMsg(err)}`);
         // HTTP fallback failed — proceed with whatever Target.getTargets gave us.
       }
     }
