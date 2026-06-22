@@ -191,7 +191,7 @@ describe('browser', () => {
       expect(mockPage.goto).not.toHaveBeenCalled();
     });
 
-    it('should handle CDP sessions with existing pages', async () => {
+    it('should handle CDP sessions by creating a new page when no url given', async () => {
       const existingPage = {
         url: vi.fn().mockReturnValue('https://existing.com'),
         goto: vi.fn(),
@@ -208,7 +208,9 @@ describe('browser', () => {
       });
 
       expect(session.isCDP).toBe(true);
-      expect(session.page).toBe(existingPage);
+      // 无 url → 无法判断 hostname → 创建新 tab，不抢已有 page（安全规范）
+      expect(session.page).not.toBe(existingPage);
+      expect(mockContext.newPage).toHaveBeenCalled();
     });
 
     it('should prioritize page whose hostname matches the requested URL', async () => {
@@ -243,7 +245,7 @@ describe('browser', () => {
       expect(session.page).not.toBe(geminiPage);
     });
 
-    it('should fall back to any non-blank page when no hostname matches', async () => {
+    it('should create a new page (not fall back to arbitrary existing page) when no hostname matches', async () => {
       const anyPage = {
         url: vi.fn().mockReturnValue('https://any-other-site.com'),
         goto: vi.fn().mockResolvedValue(undefined),
@@ -259,8 +261,10 @@ describe('browser', () => {
         cdpEndpoint: 'ws://test',
       });
 
-      // 没有匹配的 doubao，应该退回 anyPage
-      expect(session.page).toBe(anyPage);
+      // 安全规范：hostname 不匹配时绝不抢已有 page（可能是用户正在用的 tab），
+      // 而是创建新 tab。详见 src/browser.ts createSession 注释 + docs/snapshot-benchmark.md。
+      expect(session.page).not.toBe(anyPage);
+      expect(mockContext.newPage).toHaveBeenCalled();
     });
   });
 
