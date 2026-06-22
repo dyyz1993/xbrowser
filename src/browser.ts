@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { Browser, BrowserContext, Page } from './browser-shim.js';
 import { launch } from './cdp-driver/index.js';
-import type { XBPage } from './cdp-driver/types.js';
 import { CDPInterceptorProxy } from './cdp-interceptor/proxy.js';
 import type { CDPInterceptorConfig } from './cdp-interceptor/types.js';
 import type { BrowserCommandContext } from './context.js';
@@ -567,7 +566,8 @@ async function installNetworkCapture(page: Page, sessionName: string): Promise<v
     type: string;
   }>();
 
-  const xbPage = page as unknown as XBPage;
+  // page is already XBPage (browser-shim aliases XBPage as Page)
+  const xbPage = page;
 
   // Capture request data
   xbPage.on('request', (params: unknown) => {

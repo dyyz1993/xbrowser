@@ -427,12 +427,21 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     return { session: sessionName, total: entries.length, analyzed };
   }
 
+  function extractCurlOptions(params: Record<string, unknown>): CurlOptions {
+    return {
+      includeHeaders: params.includeHeaders as boolean | undefined,
+      includeBody: params.includeBody as boolean | undefined,
+      compressed: params.compressed as boolean | undefined,
+      insecure: params.insecure as boolean | undefined,
+    };
+  }
+
   function handleNetworkCurl(params: Record<string, unknown>) {
     const sessionName = (params.session as string) || 'default';
     const id = params.id as number;
     const entry = networkStore.inspect(sessionName, id);
     if (!entry.capture) return { error: `Entry #${id} not found` };
-    return generateCurl(entry.capture, params as unknown as CurlOptions);
+    return generateCurl(entry.capture, extractCurlOptions(params));
   }
 
   async function handleNetworkReplay(params: Record<string, unknown>) {
@@ -440,7 +449,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const id = params.id as number;
     const entry = networkStore.inspect(sessionName, id);
     if (!entry.capture) return { error: `Entry #${id} not found` };
-    return await replayEntry(entry.capture, params as unknown as CurlOptions);
+    return await replayEntry(entry.capture, extractCurlOptions(params));
   }
 
   function handleNetworkLike(params: Record<string, unknown>) {
