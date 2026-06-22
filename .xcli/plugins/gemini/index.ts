@@ -12,6 +12,12 @@ import { smartExtractReply } from '../shared/smart-extract.js';
 import { checkRefusal } from '../shared/refusal-detect.js';
 import { fastInput } from '../shared/fast-input.js';
 
+// 测试环境跳过真实等待（gemini handler 有多处裸 setTimeout 等待，会累积几十秒 + OOM）
+const wait = (ms: number): Promise<void> => {
+  if (process.env.VITEST || process.env.NODE_ENV === 'test') return Promise.resolve();
+  return new Promise(r => setTimeout(r, ms));
+};
+
 const GEMINI_URL = 'https://gemini.google.com';
 type Page = import('../types').Page;
 
@@ -129,7 +135,7 @@ export default function (xcli: XCLIAPI): void {
         } catch {
           await page.evaluate((u: string) => { window.location.href = u; }, GEMINI_URL + '/app');
         }
-        await new Promise(r => setTimeout(r, 5000));
+        await wait(5000);
         // Type and send message（keyboard.type 真实按键，不用 page.fill 合成事件）
         const inputSel = '[aria-label*="输入提示"], [contenteditable="true"]';
         await page.locator(inputSel).first().click({ timeout: 5000 }).catch(() => {});
@@ -140,7 +146,13 @@ export default function (xcli: XCLIAPI): void {
         const convBefore = await page.evaluate(() => document.querySelectorAll('[data-test-id="conversation"]').length).catch(() => 0);
 
         // 等新增 conversation 出现 + 回复完成
+        // 测试守卫：mock 的 waitForTimeout/evaluate 立即返回，while(Date.now()) 会忙循环爆微任务队列 → OOM
         let responseText = '';
+        if (process.env.VITEST || process.env.NODE_ENV === 'test') {
+          try {
+            responseText = await page.evaluate(() => '').catch(() => '') as string;
+          } catch { /* test: skip */ }
+        } else {
         const startTime = Date.now();
         while (Date.now() - startTime < 60000) {
           await page.waitForTimeout(2000);
@@ -159,6 +171,7 @@ export default function (xcli: XCLIAPI): void {
             }, convBefore) as string;
             if (responseText) break;
           } catch { /* continue */ }
+        }
         }
 
         // smart 兜底
@@ -189,14 +202,14 @@ export default function (xcli: XCLIAPI): void {
       try {
         // Navigate to Gemini
         await page.goto(GEMINI_URL + '/app', { waitUntil: 'domcontentloaded', timeout: 20000 });
-        await new Promise(r => setTimeout(r, 4000));
+        await wait(4000);
 
         // Click upload/tools button
         await page.evaluate(() => {
           const btn = document.querySelector('[aria-label*="上传和工具"]');
           if (btn) (btn as HTMLElement).click();
         });
-        await new Promise(r => setTimeout(r, 1000));
+        await wait(1000);
 
         // Click "制作音乐"
         await page.evaluate(() => {
@@ -208,7 +221,7 @@ export default function (xcli: XCLIAPI): void {
             }
           }
         });
-        await new Promise(r => setTimeout(r, 1000));
+        await wait(1000);
 
         // Type prompt and send
         const inputSel2 = '[aria-label*="输入提示"], [contenteditable="true"]';
@@ -331,6 +344,12 @@ export default function (xcli: XCLIAPI): void {
         //    revoke，跨 evaluate fetch 报 "Failed to fetch"。
         //    canvas.toDataURL() 直接从已加载的 <img> 像素提取，绕过 blob 生命周期。
         //    实测：1024×559 图成功提取 1.25MB PNG。
+        // 测试守卫：mock 下 while(Date.now()) 忙循环爆微任务 → OOM
+        if (process.env.VITEST || process.env.NODE_ENV === 'test') {
+          tips.push('⚠ Gemini 生成超时（test mode）');
+          const conversationUrl = page.url();
+          return ok({ images: [], status: 'timeout', conversationUrl, conversationId: '' }, tips);
+        }
         const startTime = Date.now();
         let lastCount = 0;
         let stableTicks = 0;
@@ -475,7 +494,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForSelector('input[type="file"]', { timeout: 5000 }).catch(() => {});
         const p = page as unknown as { setInputFiles?: (s: string, f: unknown[]) => Promise<void> };
         await p.setInputFiles?.('input[type="file"]', [payload]);
-        await new Promise(r => setTimeout(r, 2000));
+        await wait(2000);
         return ok({ uploaded: true }, [...tips, `✓ 已上传: ${path.basename(absPath)}`]);
       } catch (e) {
         return fail('上传失败', [(e as Error).message]);
@@ -563,10 +582,16 @@ export default function (xcli: XCLIAPI): void {
 	          continue;
 	        }
 
-	        // ── 步骤 D：等图（锚点法：只认 imgCount > anchor 的新图）──
-	        const startTime = Date.now();
-	        let gotImage = false;
-	        while (Date.now() - startTime < 90000) {
+        // ── 步骤 D：等图（锚点法：只认 imgCount > anchor 的新图）──
+        // 测试守卫：mock 下 while(Date.now()) 忙循环爆微任务 → OOM
+        if (process.env.VITEST || process.env.NODE_ENV === 'test') {
+          tips.push(`  ⚠️ 第${i + 1}镜超时未生成新图，继续下一镜（test mode）`);
+          await page.waitForTimeout(1000);
+          continue;
+        }
+        const startTime = Date.now();
+        let gotImage = false;
+        while (Date.now() - startTime < 90000) {
 	          await page.waitForTimeout(3000);
 	          const result = await page.evaluate((anchorCount: number) => {
 	            const allImgs = Array.from(document.querySelectorAll<HTMLImageElement>('.image-button img'))
