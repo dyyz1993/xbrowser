@@ -104,11 +104,13 @@ async function navigateForMap(page: Page, url: string, timeout = 15000): Promise
 
 async function extractPageLinks(page: Page, baseUrl: string): Promise<string[]> {
   await navigateForMap(page, baseUrl);
-  await new Promise(resolve => setTimeout(resolve, 2000));
+  // 测试环境跳过真实等待（避免单元测试累积几十秒）
+  const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+  if (!(process.env.VITEST || process.env.NODE_ENV === 'test')) await wait(2000);
   await page.evaluate(() => {
     window.scrollTo(0, document.body.scrollHeight);
   });
-  await new Promise(resolve => setTimeout(resolve, 1000));
+  if (!(process.env.VITEST || process.env.NODE_ENV === 'test')) await wait(1000);
   const origin = new URL(baseUrl).origin;
   const rawLinks = await page.evaluate<string[]>((evalOrigin: string) => {
     return Array.from(document.querySelectorAll('a[href]'))

@@ -130,10 +130,12 @@ async function captureApis(
   const result: CapturedApi = { profile: null, models: [], feed: [] };
 
   return new Promise<CapturedApi>(async (resolve) => {
+    // 测试环境立即返回（mock page 不会触发 response 事件，否则等满超时）
+    const isTest = process.env.VITEST || process.env.NODE_ENV === 'test';
     const timer = setTimeout(() => {
       page.off('response', handler);
       resolve(result);
-    }, timeoutMs);
+    }, isTest ? 0 : timeoutMs);
 
     let settled = false;
     const handler = async (resp: Response) => {
@@ -365,7 +367,9 @@ export default function (xcli: XCLIAPI): void {
 
         // Register API listener BEFORE navigation so we capture profile response
         const loginPromise = new Promise<boolean>(async (resolve) => {
-          const timer = setTimeout(() => { page.off('response', handler); resolve(false); }, 15000);
+          // 测试环境立即返回（mock page 不会触发 response 事件，否则等满 15s）
+          const isTest = process.env.VITEST || process.env.NODE_ENV === 'test';
+          const timer = setTimeout(() => { page.off('response', handler); resolve(false); }, isTest ? 0 : 15000);
           const handler = async (resp: Response) => {
             if (resp.url().includes('/api/pgc/profile') && resp.status() === 200) {
               clearTimeout(timer);

@@ -19,7 +19,11 @@ import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
 
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+const sleep = (ms: number) => {
+  // 测试环境跳过真实等待（避免单元测试累积几十秒）
+  if (process.env.VITEST || process.env.NODE_ENV === 'test') return Promise.resolve();
+  return new Promise(r => setTimeout(r, ms));
+};
 
 async function extractReviews(page: Page): Promise<Array<Record<string, string>>> {
   return await page.evaluate(() => {

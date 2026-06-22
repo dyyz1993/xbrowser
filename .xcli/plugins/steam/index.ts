@@ -150,6 +150,8 @@ export default function(xcli: XCLIAPI): void {
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {
+  // 测试环境跳过真实等待（human* 行为模拟函数会累积几十秒 sleep，拖垮单元测试）
+  if (process.env.VITEST || process.env.NODE_ENV === 'test') return Promise.resolve();
   return new Promise(r => setTimeout(r, ms));
 }
 

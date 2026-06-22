@@ -76,10 +76,12 @@ async function captureFeed(
   const targetUrl = opts.url || `${SUNO_URL}/library`;
 
   return new Promise<Array<Record<string, unknown>>>(async (resolve) => {
+    // 测试环境立即返回（mock page 不会触发 response 事件，否则等满超时）
+    const isTest = process.env.VITEST || process.env.NODE_ENV === 'test';
     const timer = setTimeout(() => {
       page.off('response', handler);
       resolve([]);
-    }, timeoutMs);
+    }, isTest ? 0 : timeoutMs);
 
     let settled = false;
     const handler = async (resp: Response) => {
@@ -121,10 +123,12 @@ async function captureGeneration(
   clips: Array<Record<string, unknown>>;
 }> {
   return new Promise<{ clipIds: string[]; clips: Array<Record<string, unknown>> }>(async (resolve) => {
+    // 测试环境立即返回（mock page 不会触发 response 事件，否则等满超时）
+    const isTest = process.env.VITEST || process.env.NODE_ENV === 'test';
     const timer = setTimeout(() => {
       page.off('response', handler);
       resolve({ clipIds: [], clips: [] });
-    }, timeoutMs);
+    }, isTest ? 0 : timeoutMs);
 
     let settled = false;
     const handler = async (resp: Response) => {

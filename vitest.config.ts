@@ -7,7 +7,9 @@ export default defineConfig({
     pool: 'forks',
     poolOptions: {
       forks: {
-        maxForks: 2,
+        // 单 worker 串行跑，避免多 worker 并发累积内存导致 OOM（180+ 测试文件）
+        // 配合 pre-push hook 的 NODE_OPTIONS=--max-old-space-size=8192
+        maxForks: 1,
       },
     },
     exclude: [

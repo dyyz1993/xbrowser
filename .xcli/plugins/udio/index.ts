@@ -13,6 +13,8 @@ const CREATE_URL = 'https://www.udio.com/create';
  * Udio has strict anti-automation checks — fixed timing patterns are easily flagged.
  */
 function humanDelay(minMs = 800, maxMs = 2500): Promise<void> {
+  // 测试环境跳过真实等待（避免单元测试累积几十秒）
+  if (process.env.VITEST || process.env.NODE_ENV === 'test') return Promise.resolve();
   const ms = minMs + Math.random() * (maxMs - minMs);
   return new Promise(r => setTimeout(r, ms));
 }
@@ -56,10 +58,12 @@ function captureApiResponses(
   const result: CapturedApiData = {};
 
   return new Promise<CapturedApiData>(async (resolve) => {
+    // 测试环境立即返回（mock page 不会触发 response 事件，否则会等满超时）
+    const isTest = process.env.VITEST || process.env.NODE_ENV === 'test';
     const timer = setTimeout(() => {
       page.off('response', handler);
       resolve(result);
-    }, timeoutMs);
+    }, isTest ? 0 : timeoutMs);
 
     let settled = false;
     const handler = async (resp: Response) => {
