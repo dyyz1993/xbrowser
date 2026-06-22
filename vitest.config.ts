@@ -30,6 +30,14 @@ export default defineConfig({
         'eslint.config.js',
         'tsup.config.ts',
         'vitest.config.ts',
+        // Temp/debug scripts — not part of the published package
+        'output/**',
+        'scripts/**',
+        'lint-scripts/**',
+        'recordings/**',
+        '**/*.mjs',
+        '**/*.cjs',
+        '**/*.js',
       ],
       thresholds: {
         branches: 75,
