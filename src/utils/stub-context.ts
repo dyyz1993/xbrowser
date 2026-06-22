@@ -1,7 +1,9 @@
+import { join } from 'node:path';
+import { homedir } from 'node:os';
 import { TipCollector, CompositeStorage } from '@dyyz1993/xcli-core';
 import type { CommandContext, SiteInstance, SiteConfig } from '@dyyz1993/xcli-core';
 
-const CONFIG_DIR = require('node:path').join(require('node:os').homedir(), '.xbrowser');
+const CONFIG_DIR = join(homedir(), '.xbrowser');
 
 /**
  * A no-op SiteInstance stub for contexts where commands don't access site.
