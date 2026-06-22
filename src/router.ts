@@ -1,5 +1,6 @@
 import { parseArgs, outputFormatter, isCommandResult, type CommandResult, helpGenerator, TipCollector, normalizeTips, tip as makeTip } from '@dyyz1993/xcli-core';
 import { parsePluginParams } from './utils/plugin-params.js';
+import { asZodSchema } from './utils/zod-internal.js';
 import { version } from './version.js';
 import { executeChain, isChainInput, getPluginStorage } from './executor.js';
 import { loadHooks } from './hooks/loader.js';
@@ -54,8 +55,9 @@ function showCommandHelp(siteName: string, cmd: unknown, siteConfig: { descripti
   if (mode === 'json') {
     const paramsList: Array<{ name: string; type: string; required: boolean; default_: unknown; description: string; enumValues?: string[] }> = [];
     if (c.parameters) {
-      const def = (c.parameters as unknown as { _def: { shape?: () => Record<string, unknown> } })._def;
-      const shape = def.shape?.() as Record<string, unknown> | undefined;
+      const def = asZodSchema(c.parameters)._def;
+      const rawShape = def?.shape;
+      const shape = typeof rawShape === 'function' ? (rawShape as () => Record<string, unknown>)() : (rawShape as Record<string, unknown> | undefined);
       if (shape) {
         for (const [key, value] of Object.entries(shape)) {
           const info = extractZodFieldInfo(value);
@@ -335,16 +337,16 @@ export async function routeCommand(
     if (builtinCmd) {
       if (mode === 'json') {
         const paramsList: Array<{ name: string; type: string; required: boolean; description: string }> = [];
-        const schema = builtinCmd.parameters as unknown as { _def?: { shape?: Record<string, unknown> }; shape?: Record<string, unknown> } | undefined;
+        const schema = asZodSchema(builtinCmd.parameters);
         const shape = schema?.shape ?? (schema?._def as Record<string, unknown>)?.shape as Record<string, unknown> | undefined;
         if (shape) {
           for (const [key, value] of Object.entries(shape)) {
-            const fieldSchema = value as unknown as Record<string, unknown>;
+            const fieldSchema = asZodSchema(value);
             const fieldDef = fieldSchema._def as Record<string, unknown> | undefined;
             const description = (fieldSchema.description as string) || (fieldDef?.description as string) || '';
             const typeName = (fieldDef?.typeName as string) || '';
-            const isOptional = typeName === 'ZodOptional' || (typeof fieldSchema.isOptional === 'function' && (fieldSchema.isOptional as () => boolean)());
-            const innerType = fieldDef?.innerType as unknown as Record<string, unknown> | undefined;
+            const isOptional = typeName === 'ZodOptional' || (typeof (fieldSchema as Record<string, unknown>).isOptional === 'function' && ((fieldSchema as Record<string, unknown>).isOptional as () => boolean)());
+            const innerType = asZodSchema(fieldDef?.innerType);
             const innerTypeName = innerType?._def ? (innerType._def as Record<string, unknown>).typeName as string : typeName;
             let type = 'unknown';
             if (innerTypeName === 'ZodString' || typeName === 'ZodString') type = 'string';
@@ -359,7 +361,7 @@ export async function routeCommand(
         }
         outputResult({ command: builtinCmd.name, description: builtinCmd.description, scope: builtinCmd.scope, parameters: paramsList }, mode);
       } else {
-        console.log(helpGenerator.generate(builtinCmd as unknown as Parameters<typeof helpGenerator.generate>[0], { color: true, emoji: false }));
+        console.log(helpGenerator.generate(builtinCmd as Parameters<typeof helpGenerator.generate>[0], { color: true, emoji: false }));
       }
       return;
     }
@@ -528,7 +530,7 @@ export async function routeCommand(
 
           // Validate plugin params against Zod schema — reject unknown flags
           if (cmdEntry.parameters) {
-            const schemaAny = cmdEntry.parameters as unknown as Record<string, unknown>;
+            const schemaAny = asZodSchema(cmdEntry.parameters);
             const def = schemaAny._def as Record<string, unknown> | undefined;
             // ZodObject stores shape as a function (getter) in _def.shape
             const shapeOrFn = def?.shape ?? (schemaAny as Record<string, unknown>).shape;
@@ -559,7 +561,7 @@ export async function routeCommand(
             const { forwardExec } = await import('./client/daemon-client.js');
             const userTimeout = typeof params.timeout === 'number' && params.timeout > 0 ? params.timeout * 1000 + 30000 : undefined;
             const result = await forwardExec(`${command}.${subCommand}`, params, sessionName, cdpEndpoint, userTimeout);
-            const resultData = result && typeof result === 'object' ? (result as unknown as Record<string, unknown>).data as Record<string, unknown> | undefined : undefined;
+            const resultData = result && typeof result === 'object' && 'data' in result ? (result.data as Record<string, unknown> | undefined) : undefined;
             if (result && result.success === false && resultData?.code === 'LOGIN_REQUIRED') {
               outputLoginRequired(result, mode);
               return;
