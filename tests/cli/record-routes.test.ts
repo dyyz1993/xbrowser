@@ -64,7 +64,7 @@ vi.mock('../../src/recorder/session-recorder.js', () => ({
   SessionRecorder: {
     readSummary: mockReadSummary,
     readMarkdownSummary: mockReadMarkdownSummary,
-    getRecordingsDir: mockGetRecordingsDir,
+    findRecordingsDir: mockGetRecordingsDir,
   },
 }));
 

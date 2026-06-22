@@ -10,12 +10,13 @@
  *   record stop  → signal file written, recording process flushes & exits
  *   session close → recordings directory cleaned up
  */
-import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync, readFileSync, rmSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { BrowserContext, Frame, Page, Request, Response, Dialog } from '../browser-shim.js';
 import { getSelectorGeneratorScript } from './selector-utils.js';
 import { updateSiteKnowledge } from './site-knowledge.js';
+import { filterAriaNoise } from '../commands/snapshot.js';
 
 // ─── Types ───────────────────────────────────────────────────────
 
@@ -1487,12 +1488,67 @@ export class SessionRecorder {
     return cp;
   }
 
-  /** Directory for this session's recordings. */
+  /** Directory for this session's recordings（start() 时缓存，含 startUrl 提取的 site）。 */
+  private _recordingsDir: string | null = null;
   get recordingsDir(): string {
-    return SessionRecorder.getRecordingsDir(this.sessionName);
+    // start() 已缓存路径时用它；否则回退旧式 session 路径（兼容未 start 的场景）
+    return this._recordingsDir ?? join(homedir(), '.xbrowser', 'sessions', this.sessionName, 'recordings');
   }
 
-  static getRecordingsDir(sessionName: string): string {
+  /**
+   * 从录制 URL 提取站点名（doubao.com → doubao，gemini.google.com → gemini）。
+   * 用于按网站维度组织录制目录。
+   */
+  static getSiteFromUrl(url: string): string {
+    try {
+      const host = new URL(url).hostname.replace(/^www\./, '');
+      return host.split('.')[0] || 'unknown';
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  /**
+   * 录制目录路径（网站为维度）：
+   *   ~/.xbrowser/recordings/<site>/<YYYY-MM-DD_HHMMSS>_<session>/
+   *
+   * startUrl 用于提取 site；不传时 site=unknown。
+   * sessionName 用于辨识同站不同次录制。
+   */
+  static getRecordingsDir(sessionName: string, startUrl?: string): string {
+    const site = startUrl ? SessionRecorder.getSiteFromUrl(startUrl) : 'unknown';
+    const d = new Date();
+    const ts = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}_${String(d.getHours()).padStart(2, '0')}${String(d.getMinutes()).padStart(2, '0')}`;
+    return join(homedir(), '.xbrowser', 'recordings', site, `${ts}_${sessionName}`);
+  }
+
+  /**
+   * 按 sessionName 查找最新的录制目录（用于 readData/readSummary 等读取方法）。
+   * 扫描 ~/.xbrowser/recordings/<site>/ 下匹配 *_<sessionName> 的目录，取最新。
+   * 找不到时回退旧路径 ~/.xbrowser/sessions/<sessionName>/recordings/。
+   */
+  static findRecordingsDir(sessionName: string): string {
+    const base = join(homedir(), '.xbrowser', 'recordings');
+    try {
+      const sites = readdirSync(base);
+      const candidates: Array<{ dir: string; mtime: number }> = [];
+      for (const site of sites) {
+        const siteDir = join(base, site);
+        try {
+          const entries = readdirSync(siteDir);
+          for (const entry of entries) {
+            if (entry.endsWith('_' + sessionName)) {
+              const full = join(siteDir, entry);
+              candidates.push({ dir: full, mtime: statSync(full).mtimeMs });
+            }
+          }
+        } catch { /* skip */ }
+      }
+      if (candidates.length > 0) {
+        return candidates.sort((a, b) => b.mtime - a.mtime)[0]!.dir;
+      }
+    } catch { /* dir not exist yet */ }
+    // 回退旧路径
     return join(homedir(), '.xbrowser', 'sessions', sessionName, 'recordings');
   }
 
@@ -1531,13 +1587,26 @@ export class SessionRecorder {
     await this.page.addInitScript(ACTION_SIGNAL_SCRIPT);
     await this.page.addInitScript(CHECKPOINT_OVERLAY_SCRIPT);
 
-    // Navigate if URL provided
+    // Navigate if URL provided — 但如果 page 已经在目标页面（或同站点），跳过 goto。
+    // 无条件 goto 会导致页面刷新，用户已输入的内容/页面状态被清空，
+    // 而且在 cdp-tunnel 隔离 page 下重新 goto 可能拿到新的 about:blank。
     if (url) {
-      await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-      this.startUrl = url;
+      const curUrl = this.page.url();
+      const curHost = (() => { try { return new URL(curUrl).hostname; } catch { return ''; } })();
+      const tgtHost = (() => { try { return new URL(url).hostname; } catch { return ''; } })();
+      if (curUrl === url || (curHost && tgtHost && curHost === tgtHost && curUrl !== 'about:blank')) {
+        // 已在目标站点，跳过导航，避免刷新清空用户状态
+        this.startUrl = curUrl;
+      } else {
+        await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        this.startUrl = url;
+      }
     } else {
       this.startUrl = this.page.url();
     }
+
+    // 缓存录制目录路径（网站为维度，需要 startUrl 提取 site）
+    this._recordingsDir = SessionRecorder.getRecordingsDir(this.sessionName, this.startUrl);
 
     // Ensure recordings directory exists
     mkdirSync(this.recordingsDir, { recursive: true });
@@ -1630,6 +1699,11 @@ export class SessionRecorder {
     // Write final files
     this.writeFinalOutput(data, summary);
 
+    // 抓取停止时的页面快照（aria + 截图），供失败分析。
+    // best-effort：page 可能已关闭/导航走/超时，任何失败都不影响录制结果
+    // （和 site-knowledge 生成同样的容错模式）。
+    await this.captureStopSnapshot();
+
     // Generate/update site knowledge base (LLM-readable documentation)
     try {
       const knowledge = updateSiteKnowledge(data);
@@ -1657,7 +1731,7 @@ export class SessionRecorder {
   // ─── Cleanup (called on session close) ──────────────────────────
 
   static cleanup(sessionName: string): void {
-    const dir = SessionRecorder.getRecordingsDir(sessionName);
+    const dir = SessionRecorder.findRecordingsDir(sessionName);
     if (existsSync(dir)) {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1681,7 +1755,7 @@ export class SessionRecorder {
   // ─── Static: send stop signal to a running recorder ─────────────
 
   static async sendStopSignal(sessionName: string): Promise<RecordingControlFile | null> {
-    const dir = SessionRecorder.getRecordingsDir(sessionName);
+    const dir = SessionRecorder.findRecordingsDir(sessionName);
     const controlPath = join(dir, '.control.json');
     const stopPath = join(dir, '.stop');
 
@@ -1722,18 +1796,66 @@ export class SessionRecorder {
   // ─── Static: read recording from disk ───────────────────────────
 
   static readSummary(sessionName: string): RecordingSummary | null {
-    const path = join(SessionRecorder.getRecordingsDir(sessionName), 'summary.json');
+    // 新格式：从 index.txt 头部解析元信息；旧格式回退读 summary.json
+    const dir = SessionRecorder.findRecordingsDir(sessionName);
     try {
-      return JSON.parse(readFileSync(path, 'utf-8'));
+      const index = readFileSync(join(dir, 'index.txt'), 'utf-8');
+      // 解析头部 `#` 行提取元信息
+      const header = index.split('\n').find(l => l.startsWith('# Recording:'));
+      if (header) {
+        const m = header.match(/duration (\d+)s \| (\d+) actions \| (\d+) API/);
+        const url = (index.split('\n').find(l => l.startsWith('# URL:')) || '').replace('# URL: ', '');
+        if (m) {
+          return {
+            startUrl: url,
+            recordedAt: header.match(/\| ([^|]+) \| duration/)?.[1].trim() || new Date().toISOString(),
+            durationMs: parseInt(m[1]) * 1000,
+            totalActions: parseInt(m[2]),
+            totalNetworkRequests: parseInt(m[3]),
+            steps: [],
+            elements: {},
+            checkpoints: [],
+          };
+        }
+      }
+    } catch { /* fall through to legacy */ }
+    // 旧格式回退
+    try {
+      return JSON.parse(readFileSync(join(dir, 'summary.json'), 'utf-8'));
     } catch {
       return null;
     }
   }
 
   static readData(sessionName: string): RecordingData | null {
-    const path = join(SessionRecorder.getRecordingsDir(sessionName), 'recording.json');
+    // 新格式：从 jsonl 重组；旧格式回退读 recording.json
+    const dir = SessionRecorder.findRecordingsDir(sessionName);
+    const readJsonl = (name: string): unknown[] => {
+      try {
+        const txt = readFileSync(join(dir, name), 'utf-8').trim();
+        if (!txt) return [];
+        return txt.split('\n').map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean);
+      } catch { return []; }
+    };
+    // 先试新格式
+    const actions = readJsonl('actions.jsonl');
+    const network = readJsonl('network-all.jsonl');
+    if (actions.length > 0 || network.length > 0 || existsSync(join(dir, 'index.txt'))) {
+      const indexHead = (() => { try { return readFileSync(join(dir, 'index.txt'), 'utf-8'); } catch { return ''; } })();
+      const startUrl = (indexHead.split('\n').find(l => l.startsWith('# URL:')) || '').replace('# URL: ', '') || '';
+      return {
+        startUrl,
+        sessionName,
+        startedAt: new Date().toISOString(),
+        actions: actions as UserAction[],
+        network: network as NetworkEntry[],
+        contextChanges: [],
+        checkpoints: [],
+      };
+    }
+    // 旧格式回退
     try {
-      return JSON.parse(readFileSync(path, 'utf-8'));
+      return JSON.parse(readFileSync(join(dir, 'recording.json'), 'utf-8'));
     } catch {
       return null;
     }
@@ -2194,9 +2316,11 @@ export class SessionRecorder {
 
       this.actionCounter++;
 
-      // For click actions, capture popover/dropdown context after a delay
+      // For click/hover actions, capture popover/dropdown context after a delay.
+      // hover 也要采集——很多 popover/dropdown 是 hover 触发的（如豆包的工具栏说明、
+      // 模型选项预览），不采集就丢失了"hover 出现了什么"这个关键信号。
       let clickContext: ClickContext | undefined;
-      if (raw.type === 'click' && raw.x !== undefined && raw.y !== undefined) {
+      if ((raw.type === 'click' || raw.type === 'hover') && raw.x !== undefined && raw.y !== undefined) {
         clickContext = await this.captureClickContext(page, raw.x, raw.y);
       }
 
@@ -2390,21 +2514,104 @@ export class SessionRecorder {
   // ─── Periodic disk flush ────────────────────────────────────────
 
   private flushToDisk(): void {
+    // 录制中定期落盘（崩溃恢复用）。写 actions.jsonl + network-all.jsonl，
+    // stop() 时再写完整的 index.txt + network.jsonl。
     const data = this.buildData();
     try {
-      writeFileSync(
-        join(this.recordingsDir, 'recording.json'),
-        JSON.stringify(data, null, 2),
-        'utf-8',
-      );
+      const actionsL = data.actions.map(a => JSON.stringify(a)).join('\n');
+      writeFileSync(join(this.recordingsDir, 'actions.jsonl'), actionsL + (actionsL ? '\n' : ''), 'utf-8');
+      const allNetL = data.network.map(n => JSON.stringify(n)).join('\n');
+      writeFileSync(join(this.recordingsDir, 'network-all.jsonl'), allNetL + (allNetL ? '\n' : ''), 'utf-8');
     } catch { /* best effort */ }
   }
 
+  /**
+   * 写录制产物（两层架构：索引层 + 详情层）。
+   *
+   * - index.txt        索引地图（一行一条，给 LLM 看）
+   * - actions.jsonl    action 详情（每行一个 JSON）
+   * - network.jsonl    API 请求详情（XHR/Fetch，过滤掉图片/JS/CSS）
+   * - network-all.jsonl 全量 network（含图片/JS/CSS，按需查）
+   *
+   * summary.json/summary.md/recording.json 已废弃（信息被 index.txt + jsonl 覆盖）。
+   */
   private writeFinalOutput(data: RecordingData, summary: RecordingSummary): void {
     mkdirSync(this.recordingsDir, { recursive: true });
-    writeFileSync(join(this.recordingsDir, 'recording.json'), JSON.stringify(data, null, 2), 'utf-8');
-    writeFileSync(join(this.recordingsDir, 'summary.json'), JSON.stringify(summary, null, 2), 'utf-8');
-    writeFileSync(join(this.recordingsDir, 'summary.md'), this.buildMarkdownSummary(data, summary), 'utf-8');
+
+    // actions.jsonl — 每行一个 action
+    const actionsL = data.actions.map(a => JSON.stringify(a)).join('\n');
+    writeFileSync(join(this.recordingsDir, 'actions.jsonl'), actionsL + (actionsL ? '\n' : ''), 'utf-8');
+
+    // network.jsonl — 只存有价值的 API（过滤掉 image/script/css/font/埋点）
+    const apiNetwork = data.network.filter(n => this.isMeaningfulNetwork(n));
+    const netL = apiNetwork.map(n => JSON.stringify(n)).join('\n');
+    writeFileSync(join(this.recordingsDir, 'network.jsonl'), netL + (netL ? '\n' : ''), 'utf-8');
+
+    // network-all.jsonl — 全量（含图片/JS/CSS），按需查
+    const allNetL = data.network.map(n => JSON.stringify(n)).join('\n');
+    writeFileSync(join(this.recordingsDir, 'network-all.jsonl'), allNetL + (allNetL ? '\n' : ''), 'utf-8');
+
+    // index.txt — LLM 索引地图
+    writeFileSync(join(this.recordingsDir, 'index.txt'), this.buildIndexTxt(data, summary), 'utf-8');
+  }
+
+  /**
+   * 判断 network 条目是否是噪音（静态资源/埋点），用于从全量 network 中
+   * 筛选出有分析价值的 API 请求（XHR/Fetch）。
+   *
+   * 例外：Image 请求如果 URL 含生图特征（rc_gen_image/image_generation/imagen 等），
+   * 视为文生图产物（要下载），不算噪音。
+   */
+  private isNoiseNetwork(n: NetworkEntry): boolean {
+    const url = n.url || '';
+    const path = n.path || '';
+    // resourceType 大小写不敏感比较（录制里是 "Script"/"Image"/"XHR" 等，首字母大写）
+    const rt = (n.resourceType || '').toLowerCase();
+    if (['stylesheet', 'font', 'manifest', 'other'].includes(rt)) return true;
+    if (rt === 'script') return true; // JS 文件纯噪音
+    if (rt === 'image') {
+      // 生图产物（豆包 rc_gen_image / 通用 image_generation / HD 水印图）不算噪音——要下载
+      const isGenImage = /rc_gen_image|image_generation|image_pre_watermark|gen_image|dalle|imagen/i.test(url + path);
+      if (isGenImage) return false;
+      return true; // 普通图片（avatar/icon/logo/css-bg）是噪音
+    }
+    if (n.status === 0) return true;
+    if (/\/ztbox|\/mwb2\.gif|\/hmslog|\/log\.gif|\/tongji|hm\.baidu|clickstream|\/actionlog|\/collect\?|\/track|\/beacon/i.test(url)) return true;
+    if (/\/favicon\.ico|\/robots\.txt/i.test(path)) return true;
+    return false;
+  }
+
+  /** 取反：是否是有价值的 API 请求 */
+  private isMeaningfulNetwork(n: NetworkEntry): boolean {
+    return !this.isNoiseNetwork(n);
+  }
+
+  /**
+   * 抓取停止时的页面快照（aria 无障碍树 + 截图），保存到录制目录。
+   *
+   * 录制产物 = 交互动作（actions.jsonl）+ 最终页面状态（snapshot.txt/png）。
+   * 失败场景（输入了但不生成、风控拒绝、超时卡住）的关键信号在快照里：
+   * aria 快照能看到错误文案/DOM 结构，截图能看到视觉状态。
+   *
+   * best-effort：page 可能已关闭/导航走/超时，任何失败都不影响录制结果。
+   * 过滤逻辑复用 snapshot 命令的 filterAriaNoise（去 71% 噪音）。
+   */
+  private async captureStopSnapshot(): Promise<void> {
+    // aria 快照
+    try {
+      const raw = await this.page.locator('body').ariaSnapshot();
+      const filtered = filterAriaNoise(raw);
+      if (filtered.trim()) {
+        writeFileSync(join(this.recordingsDir, 'snapshot.txt'), filtered, 'utf-8');
+      }
+    } catch { /* best-effort: page closed/navigated/timed out */ }
+    // 截图
+    try {
+      const buf = await this.page.screenshot();
+      if (buf && buf.length > 0) {
+        writeFileSync(join(this.recordingsDir, 'snapshot.png'), buf);
+      }
+    } catch { /* best-effort */ }
   }
 
   private buildData(): RecordingData {
@@ -2455,16 +2662,7 @@ export class SessionRecorder {
       return ref;
     }
 
-    const isNoiseNetwork = (n: NetworkEntry): boolean => {
-      const url = n.url || '';
-      const path = n.path || '';
-      const rt = n.resourceType || '';
-      if (['image', 'stylesheet', 'font', 'manifest', 'other'].includes(rt)) return true;
-      if (n.status === 0) return true;
-      if (/\/ztbox|\/mwb2\.gif|\/hmslog|\/log\.gif|\/tongji|hm\.baidu|clickstream|\/actionlog|\/collect\?|\/track|\/beacon/i.test(url)) return true;
-      if (/\/favicon\.ico|\/robots\.txt/i.test(path)) return true;
-      return false;
-    };
+    const isNoiseNetwork = (n: NetworkEntry): boolean => this.isNoiseNetwork(n);
 
     const meaningfulNetwork = data.network.filter(n => !isNoiseNetwork(n));
 
@@ -2578,208 +2776,204 @@ export class SessionRecorder {
     }
   }
 
-  private buildMarkdownSummary(_data: RecordingData, summary: RecordingSummary): string {
+  // 拒绝/错误关键词（用于从 action 文案和网络响应中提取失败信号）
+  // 保持简短，只匹配明确的拒绝/失败/限制信号
+  private static readonly REFUSAL_KEYWORDS = [
+    '抱歉', '无法', '不能', '限制', '失败', '版权', '敏感', '违规', '上限', '额度',
+    '拒绝', '禁止', '不允许', '不可用', '出错', '异常', 'try again', 'unable', 'refuse',
+  ];
+
+  /** 检测文案是否含拒绝/错误信号，返回匹配到的关键词或 null */
+  private static detectRefusal(text: string): string | null {
+    const lower = text.toLowerCase();
+    for (const kw of SessionRecorder.REFUSAL_KEYWORDS) {
+      if (text.includes(kw) || lower.includes(kw)) return kw;
+    }
+    return null;
+  }
+
+  /**
+   * 生成 index.txt —— 给 LLM 看的索引大纲。
+   *
+   * 结构：① 文件头（元信息 + jsonl 查询方式）
+   *      ② 关键步骤（一行一条，过滤噪音）+ 每步的操作结果信号（缩进 → 行）
+   *      ③ network 摘要（分类计数 + 异常 + 生图 URL）
+   *
+   * 操作结果信号（4 类，从已采集数据提取）：
+   *   - 按钮状态变化（clickContext.stateChanges）
+   *   - 弹窗/新元素（clickContext.appeared）
+   *   - 拒绝/错误文案（element.text + 网络响应匹配关键词）
+   *   - 生图图片 URL（network 里 rc_gen_image HD 地址）
+   */
+  private buildIndexTxt(data: RecordingData, summary: RecordingSummary): string {
     const lines: string[] = [];
     const durSec = Math.round(summary.durationMs / 1000);
+    const apiNet = data.network.filter(n => this.isMeaningfulNetwork(n));
 
-    lines.push('# Recording Summary');
+    // ── 文件头：元信息 + 数据源引用 ──
+    lines.push(`# Recording: ${data.sessionName} | ${summary.recordedAt.slice(0, 19).replace('T', ' ')} | duration ${durSec}s | ${data.actions.length} actions | ${apiNet.length} API (of ${data.network.length} total)`);
+    lines.push(`# URL: ${data.startUrl}`);
+    lines.push(`# 查 actions 细节: actions.jsonl  (jq '.id==6' actions.jsonl)`);
+    lines.push(`# 查 API 请求: network.jsonl  (jq '.path|test("rc_gen")' network.jsonl)`);
+    lines.push(`# 查全量 network(含图片/JS): network-all.jsonl`);
+    lines.push(`# 页面快照(停止时): snapshot.txt / snapshot.png`);
     lines.push('');
-    lines.push(`- **URL**: ${summary.startUrl}`);
-    lines.push(`- **Recorded**: ${summary.recordedAt}`);
-    lines.push(`- **Duration**: ${durSec}s`);
-    lines.push(`- **Steps**: ${summary.totalActions} actions, ${summary.totalNetworkRequests} network requests`);
-    if (summary.checkpoints.length > 0) {
-      const cpTypes = summary.checkpoints.map(c => c.type);
-      lines.push(`- **Checkpoints**: ${summary.checkpoints.length} (${[...new Set(cpTypes)].join(', ')})`);
-    } else {
-      lines.push('- **Checkpoints**: 0');
-    }
 
-    const checkpointSteps = new Map<number, CheckpointEntry>();
-    for (const cp of summary.checkpoints) {
-      if (cp.relatedActionId != null) {
-        for (const step of summary.steps) {
-          if (step.action.id === cp.relatedActionId) {
-            checkpointSteps.set(step.step, cp);
-            break;
+    // ── 提取生图图片 URL（去重，HD 优先）──
+    const genImgUrls = [...new Set(
+      data.network
+        .filter(n => /rc_gen_image|image_pre_watermark/i.test((n.url || '') + (n.path || '')) && n.url)
+        .map(n => n.url!)
+    )];
+
+    // ── 提取拒绝/错误文案（从 action 文案 + 网络消息体）──
+    const refusalTexts = new Set<string>();
+    for (const a of data.actions) {
+      const txt = a.element?.text || a.value || '';
+      if (txt.length > 10 && SessionRecorder.detectRefusal(txt)) {
+        refusalTexts.add(txt.substring(0, 60));
+      }
+    }
+    // 从网络消息体搜索拒绝文案
+    for (const n of apiNet) {
+      if (n.responseBody && typeof n.responseBody === 'object') {
+        const found: string[] = [];
+        const walk = (obj: unknown, depth = 0): void => {
+          if (depth > 6 || found.length >= 3) return;
+          if (typeof obj === 'string' && obj.length > 8 && obj.length < 200) {
+            if (SessionRecorder.detectRefusal(obj)) found.push(obj);
+            return;
           }
-        }
+          if (typeof obj === 'object' && obj !== null) {
+            for (const v of Object.values(obj as Record<string, unknown>)) walk(v, depth + 1);
+          }
+        };
+        walk(n.responseBody);
+        for (const f of found) refusalTexts.add(f.substring(0, 60));
       }
     }
 
-    lines.push('');
-    lines.push('## Steps');
-    lines.push('');
-
-    for (const step of summary.steps) {
-      const a = step.action;
+    // ── 关键步骤 + 操作结果信号 ──
+    // 噪音：scroll/resize/keyup/focus/blur（visibility 不算噪音——它代表 tab 切换）
+    const NOISE_TYPES = new Set(['scroll', 'resize', 'keyup', 'focus', 'blur']);
+    for (const a of data.actions) {
+      if (NOISE_TYPES.has(a.type)) continue;
+      if (a.type === 'keydown') {
+        const k = a.key || '';
+        if (!/Enter|Tab|Escape|Backspace|Arrow|Meta\+[VCvac]/i.test(k)) continue;
+      }
       const el = a.element;
-      const cp = checkpointSteps.get(step.step);
-
-      if (cp) {
-        lines.push(`### Step ${step.step}: ⚠️ CHECKPOINT — ${cp.hint}`);
-        lines.push(`- **Type**: ${cp.type} (${cp.source})`);
-        lines.push(`- **Hint**: ${cp.hint}`);
-        if (cp.selector) lines.push(`- **Selector**: \`${cp.selector}\``);
-        lines.push(`- **Action needed**: Human intervention required before continuing`);
+      // selector 简化
+      let sel = el?.selector || el?.tag || '';
+      sel = sel
+        .replace(/\[([a-z_-]+)=["'][^"']*["']\]/gi, '[$1]')
+        .replace(/\.([a-z][a-z]+)[A-Za-z0-9_-]*/g, '.$1')
+        .replace(/^[a-z]+(?=\[)/, '')
+        .slice(0, 25);
+      const txt = (el?.text || a.value || '').substring(0, 25).replace(/\n/g, ' ');
+      const key = (a.type === 'keydown' && a.key) ? ` ${a.key}` : '';
+      // visibility = tab 切换信号（hidden=切走，visible=切回）
+      if (a.type === 'visibility') {
+        const state = a.visibility?.state || '?';
+        lines.push(`[${a.id}] tab_switch (${state})`);
+        continue;
+      }
+      if (a.type === 'navigation') {
+        const u = (a.url || '').replace(/^https?:\/\/[^/]+/, '');
+        lines.push(`[${a.id}] nav ${u}`);
       } else {
-        const title = describeActionTitle(a);
-        lines.push(`### Step ${step.step}: ${title}`);
+        lines.push(`[${a.id}] ${a.type}${key} ${sel}${txt ? ` "${txt}"` : ''}`);
       }
 
-      if (el) {
-        const parts: string[] = [`\`${el.selector || el.tag}\``];
-        if (el.text) parts.push(`"${el.text.substring(0, 60)}"`);
-        parts.push(`(${el.tag})`);
-        if (el.type) parts.push(`type=${el.type}`);
-        lines.push(`- **Element**: ${parts.join(' ')}`);
-      }
-
-      if (a.value != null && a.type === 'input') {
-        lines.push(`- **Value**: "${a.value.substring(0, 100)}"`);
-      }
-
-      if (step.network.length > 0) {
-        const netDescs = step.network.map(n => {
-          let desc = `${n.method} ${n.path}`;
-          if (n.status) desc += ` → ${n.status}`;
-          if (n.responseSize > 0) desc += ` (${formatBytes(n.responseSize)})`;
-          return desc;
-        });
-        lines.push(`- **Network**: ${netDescs.join(', ')}`);
-
-        for (const n of step.network) {
-          if (n.requestBody && typeof n.requestBody === 'object') {
-            const bodyStr = JSON.stringify(n.requestBody);
-            if (bodyStr.length <= 300) {
-              lines.push(`  - \`${n.method} ${n.path}\` body: \`${bodyStr}\``);
-            } else {
-              lines.push(`  - \`${n.method} ${n.path}\` body: \`${bodyStr.substring(0, 300)}...\` (${bodyStr.length} bytes)`);
-            }
-          }
-        }
-      } else {
-        lines.push('- **Network**: none');
-      }
-
-      if (step.matchedInputs.length > 0) {
-        for (const m of step.matchedInputs) {
-          lines.push(`- **Input matched**: "${m.inputValue}" → ${m.paramName} (network #${m.networkId})`);
-        }
-      }
-
-      for (const ctx of step.contextChanges) {
-        if (ctx.type === 'navigate') {
-          lines.push(`- **Navigate**: → ${ctx.url}`);
-        } else if (ctx.type === 'new_tab') {
-          lines.push(`- **New tab**: ${ctx.url}`);
-        }
-      }
-
+      // ── 操作结果信号（缩进 → 行，紧跟在 action 后）──
       if (a.clickContext) {
-        if (a.clickContext.appeared?.length > 0) {
-          for (const popup of a.clickContext.appeared) {
-            const roleStr = popup.role ? ` [${popup.role}]` : '';
-            lines.push(`- **Popup**: <${popup.tag}${roleStr}> "${(popup.text || '').substring(0, 60)}"`);
-            if (popup.items?.length > 0) {
-              const itemStrs = popup.items.slice(0, 8).map(i => {
-                const dis = i.disabled ? ' [disabled]' : '';
-                return `"${i.text}"${dis}`;
-              });
-              let itemLine = `  - Items: ${itemStrs.join(', ')}`;
-              if (popup.items.length > 8) itemLine += ` ... +${popup.items.length - 8} more`;
-              lines.push(itemLine);
-            }
-          }
+        // 弹窗/新元素（工具栏、菜单等）
+        const appeared = a.clickContext.appeared?.filter(p => p.text?.trim()).slice(0, 5) ?? [];
+        if (appeared.length > 0) {
+          lines.push(`    → appeared: ${appeared.map(p => `"${p.text!.trim().substring(0, 15)}"`).join(', ')}`);
         }
-        if (a.clickContext.stateChanges?.length > 0) {
-          for (const sc of a.clickContext.stateChanges) {
+        // 按钮状态变化（expanded/disabled/dataState 非默认值）
+        const stateChanges = a.clickContext.stateChanges?.filter(s => {
+          const parts: string[] = [];
+          if (s.ariaExpanded !== undefined) parts.push('expanded=' + s.ariaExpanded);
+          if (s.disabled) parts.push('disabled');
+          if (s.dataState) parts.push('state=' + s.dataState);
+          return parts.length > 0;
+        }).slice(0, 3) ?? [];
+        if (stateChanges.length > 0) {
+          lines.push(`    → state: ${stateChanges.map(s => {
             const parts: string[] = [];
-            if (sc.ariaExpanded !== undefined) parts.push(`expanded=${sc.ariaExpanded}`);
-            if (sc.disabled) parts.push('disabled');
-            if (sc.ariaSelected !== undefined) parts.push(`selected=${sc.ariaSelected}`);
-            if (sc.dataState) parts.push(`state=${sc.dataState}`);
-            if (parts.length > 0) {
-              lines.push(`- **State**: <${sc.tag}> "${(sc.text || '').substring(0, 30)}" ${parts.join(', ')}`);
-            }
-          }
+            if (s.ariaExpanded !== undefined) parts.push('expanded=' + s.ariaExpanded);
+            if (s.disabled) parts.push('disabled');
+            if (s.dataState) parts.push('state=' + s.dataState);
+            return `"${(s.text || s.tag).substring(0, 12)}"[${parts.join(',')}]`;
+          }).join(', ')}`);
         }
       }
-
-      lines.push('');
-    }
-
-    const allNetwork = summary.steps.flatMap(s => s.network);
-    if (allNetwork.length > 0) {
-      lines.push('## Network Timeline');
-      lines.push('');
-      allNetwork.forEach((n, i) => {
-        let line = `${i + 1}. ${n.method} ${n.path}`;
-        if (n.status) line += ` → ${n.status}`;
-        if (n.requestBody && typeof n.requestBody === 'object') {
-          const bodyStr = JSON.stringify(n.requestBody);
-          if (bodyStr.length <= 150) {
-            line += ` ${bodyStr}`;
-          }
+      // 拒绝文案标注（如果这个 action 的文案含拒绝信号）
+      if (txt.length > 5) {
+        const fullTxt = (el?.text || a.value || '');
+        const refusal = SessionRecorder.detectRefusal(fullTxt);
+        if (refusal) {
+          lines.push(`    → ⚠ 拒绝信号(${refusal}): ${fullTxt.substring(0, 40)}`);
         }
-        if (n.responseSize > 0) line += ` (${formatBytes(n.responseSize)})`;
-        lines.push(line);
-      });
-      lines.push('');
-    }
-
-    const orphanCheckpoints = summary.checkpoints.filter(
-      cp => cp.relatedActionId == null || !checkpointSteps.has(
-        summary.steps.find(s => s.action.id === cp.relatedActionId)?.step ?? -1,
-      ),
-    );
-    if (orphanCheckpoints.length > 0) {
-      lines.push('## Unresolved Checkpoints');
-      lines.push('');
-      for (const cp of orphanCheckpoints) {
-        const src = cp.source === 'auto' ? '[auto]' : '[manual]';
-        lines.push(`- ${src} **${cp.type}**: ${cp.hint}`);
-        if (cp.selector) lines.push(`  - Selector: \`${cp.selector}\``);
       }
-      lines.push('');
     }
 
-    return lines.join('\n');
+    // ── 结果汇总 ──
+    lines.push('');
+    lines.push(`# Results:`);
+    lines.push(`#   图片: ${genImgUrls.length} 张${genImgUrls.length > 0 ? ' (URL 在 network.jsonl)' : ''}`);
+    if (genImgUrls.length > 0 && genImgUrls.length <= 4) {
+      for (const u of genImgUrls) {
+        lines.push(`#     ${u.substring(0, 100)}`);
+      }
+    }
+    if (refusalTexts.size > 0) {
+      lines.push(`#   ⚠ 拒绝/错误:`);
+      for (const t of [...refusalTexts].slice(0, 3)) {
+        lines.push(`#     ${t}`);
+      }
+    }
+
+    // ── network 摘要 ──
+    if (apiNet.length > 0) {
+      const errors = apiNet.filter(n => n.status >= 400);
+      const emptyResp = apiNet.filter(n => n.responseSize === 0 && /fetch|xhr/i.test(n.resourceType));
+      lines.push(`#   Network: ${errors.length} 报错, ${emptyResp.length} 空响应(API)`);
+      // 归并 endpoint
+      const pathBuckets = new Map<string, number>();
+      for (const n of apiNet) {
+        let p = (n.path || '').split('?')[0];
+        if (!p) continue;
+        p = p.replace(/\/(image_generation|rc_gen_image)\/[a-f0-9_]+/i, '/$1/*');
+        p = p.replace(/\/[a-f0-9]{16,}\./i, '/*.');
+        pathBuckets.set(p, (pathBuckets.get(p) || 0) + 1);
+      }
+      const topPaths = [...pathBuckets.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+      if (topPaths.length > 0) {
+        lines.push(`#   Endpoints: ${topPaths.map(([p, c]) => c > 1 ? `${p}(${c})` : p).join(', ')}`);
+      }
+      // 只列报错
+      for (const n of errors.slice(0, 3)) {
+        lines.push(`!   NET[${n.id}] ${n.method} ${n.path}  ${n.status}`);
+      }
+    }
+
+    return lines.join('\n') + '\n';
   }
 
   static readMarkdownSummary(sessionName: string): string | null {
-    const path = join(SessionRecorder.getRecordingsDir(sessionName), 'summary.md');
+    const dir = SessionRecorder.findRecordingsDir(sessionName);
+    // 新格式：index.txt（一行一条的索引）
     try {
-      return readFileSync(path, 'utf-8');
+      return readFileSync(join(dir, 'index.txt'), 'utf-8');
+    } catch { /* fall through */ }
+    // 旧格式回退
+    try {
+      return readFileSync(join(dir, 'summary.md'), 'utf-8');
     } catch {
       return null;
     }
   }
-}
-
-function describeActionTitle(a: UserAction): string {
-  const el = a.element;
-  const elText = el?.text ? `"${el.text.substring(0, 40)}"` : '';
-  const elTag = el?.tag ? `<${el.tag}>` : '';
-
-  switch (a.type) {
-    case 'click':
-      return `Click ${elText || elTag} button`.replace(/ +/g, ' ').trim();
-    case 'input':
-      return `Input "${(a.value || '').substring(0, 50)}" in ${elText || elTag || 'field'}`.replace(/ +/g, ' ').trim();
-    case 'change':
-      return `Change ${elText || elTag} to "${(a.value || '').substring(0, 30)}"`;
-    case 'keydown':
-      return `Press ${a.key || 'key'} on ${elText || elTag || 'element'}`;
-    case 'submit':
-      return `Submit ${elText || elTag || 'form'}`;
-    default:
-      return `${a.type} ${elText || elTag}`.trim() || a.type;
-  }
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }

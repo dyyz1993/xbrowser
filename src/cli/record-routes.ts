@@ -214,7 +214,7 @@ function printRecordingSummary(summary: RecordingSummary, sessionName: string): 
   }
 
   console.log('');
-  console.log(`  Files: ${SessionRecorder.getRecordingsDir(sessionName)}/`);
+  console.log(`  Files: ${SessionRecorder.findRecordingsDir(sessionName)}/`);
 
   if (summary.checkpoints && summary.checkpoints.length > 0) {
     console.log('');

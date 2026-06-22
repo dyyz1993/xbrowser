@@ -169,8 +169,11 @@ async function captureAriaSnapshot(page: Page, selector?: string, _depth?: numbe
  * - `xxx: `（半空行）：只有角色名没有内容/子节点的空容器
  *
  * 实测同页面噪音占比 71%（见 docs/snapshot-benchmark.md），过滤后体积降 ~70%。
+ *
+ * 导出供 session-recorder.ts 的 stop() 复用——录制结束时抓 aria 快照也走同一过滤，
+ * 保证 `xbrowser snapshot --type aria` 命令和录制产物的快照格式一致。
  */
-function filterAriaNoise(raw: string): string {
+export function filterAriaNoise(raw: string): string {
   return raw
     .split('\n')
     .filter((line) => {
@@ -179,8 +182,9 @@ function filterAriaNoise(raw: string): string {
       if (t === 'none:' || t.startsWith('none: ')) return false;
       if (t.includes('InlineTextBox')) return false;
       if (t.includes('ListMarker')) return false;
-      // 半空行：纯角色名 + 冒号 + 空格，如 "banner: " / "navigation: " / "generic: "
-      if (/^[a-z]+: $/.test(t)) return false;
+      // 半空行：纯角色名 + 冒号，无内容/子节点（如 "banner:" / "navigation:" / "generic:"）。
+      // 注意 t 已 trim，这里测的是去掉首尾空白后的纯角色名形式。
+      if (/^[a-z]+$/.test(t) || /^[a-z]+:$/.test(t)) return false;
       return true;
     })
     .join('\n');
