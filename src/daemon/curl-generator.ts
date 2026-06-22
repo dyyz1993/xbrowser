@@ -1,4 +1,5 @@
 import type { NetworkCaptureEntry } from './network-store.js';
+import { errMsg } from '../utils/error.js';
 
 export interface CurlOptions {
   includeHeaders?: boolean;
@@ -160,7 +161,7 @@ export async function replayEntry(
         size: 0,
         bodyMatch: false,
         duration: 0,
-        error: (err as Error).message,
+        error: errMsg(err),
       },
     };
   }

@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'http';
+import { errMsg } from '../utils/error.js';
 import { executeCommand, executeChain } from '../executor.js';
 import { findSession, findOrRestoreSession, getAllSessions, createSession, closeSessionByName } from '../browser.js';
 import { getCommand, getAllCommands } from '../commands/index.js';
@@ -137,7 +138,7 @@ async function createSessionHandler(req: APIRequest): Promise<APIResponse> {
       createdAt: session.createdAt,
     });
   } catch (err) {
-    return errorResponse(500, 'INTERNAL_ERROR', (err as Error).message);
+    return errorResponse(500, 'INTERNAL_ERROR', errMsg(err));
   }
 }
 
@@ -299,7 +300,7 @@ export async function route(
   try {
     return await match.route.handler(req);
   } catch (err) {
-    return errorResponse(500, 'INTERNAL_ERROR', (err as Error).message);
+    return errorResponse(500, 'INTERNAL_ERROR', errMsg(err));
   }
 }
 

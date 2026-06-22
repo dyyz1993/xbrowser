@@ -1,4 +1,5 @@
 import type { Page } from '../browser-shim.js';
+import { errMsg } from '../utils/error.js';
 import { getRefTarget, normalizeAgentRef, replaceRefs } from './ref-store.js';
 import type { AgentActionInput, AgentActionResult, AgentObservation, AgentTarget, AgentTargetAction, AgentWaitInput, AgentWaitResult } from './types.js';
 
@@ -389,7 +390,7 @@ export async function actOnPage(
       ref: normalizedRef,
       success: false,
       reason: 'browser_error',
-      message: (error as Error).message,
+      message: errMsg(error),
       stale,
       screenHash: hash,
       target: refMatch?.target,
@@ -487,7 +488,7 @@ export async function waitForPage(page: Page, input: AgentWaitInput): Promise<Ag
       matched: input.selector ? 'selector' : input.text ? 'text' : input.url ? 'url' : input.load ? 'load' : input.fn ? 'fn' : 'screenHashChanged',
       timeout,
       elapsed: Date.now() - startedAt,
-      message: (error as Error).message,
+      message: errMsg(error),
     };
   }
 

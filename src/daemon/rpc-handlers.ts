@@ -5,6 +5,7 @@
  * This replaces the giant switch/case in the old daemon-worker.ts.
  */
 import type { Page } from '../browser-shim.js';
+import { errMsg } from '../utils/error.js';
 import { writeFileSync, mkdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -528,7 +529,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       }, null, 2));
       return { ok: true, path: outPath, events: events.length };
     } catch (e) {
-      return { ok: false, error: (e as Error).message };
+      return { ok: false, error: errMsg(e) };
     }
   }
 
@@ -624,7 +625,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
           cdpEndpoint: session.cdpEndpoint,
         });
       } catch (e) {
-        return { ok: false, error: 'Failed to auto-create session: ' + (e as Error).message };
+        return { ok: false, error: 'Failed to auto-create session: ' + errMsg(e) };
       }
     }
 
@@ -634,7 +635,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       activeRecorders.set(sessionName, recorder);
       return { ok: true, session: sessionName, startUrl: url || session.page.url() };
     } catch (e) {
-      return { ok: false, error: (e as Error).message };
+      return { ok: false, error: errMsg(e) };
     }
   }
 
@@ -669,7 +670,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       };
     } catch (e) {
       activeRecorders.delete(sessionName);
-      return { ok: false, error: (e as Error).message };
+      return { ok: false, error: errMsg(e) };
     }
   }
 
@@ -751,15 +752,15 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const slowMo = (params.slowMo as number) || 1;
 
     if (!file) {
-      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, event: {} as never, error: 'Missing file parameter' }] };
+      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Missing file parameter' }] };
     }
 
     const session = findSession(sessionName);
     if (!session) {
-      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, event: {} as never, error: 'Session not found: ' + sessionName }] };
+      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Session not found: ' + sessionName }] };
     }
     if (!session.page) {
-      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, event: {} as never, error: 'Session has no page: ' + sessionName }] };
+      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Session has no page: ' + sessionName }] };
     }
 
     // Detect new session-recorder format (has 'actions' array) vs old format (has 'events' array)
@@ -769,7 +770,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       rawContent = readFileSync(file, 'utf8');
       parsed = JSON.parse(rawContent);
     } catch (e) {
-      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, event: {} as never, error: 'Failed to read/parse file: ' + String(e) }] };
+      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Failed to read/parse file: ' + String(e) }] };
     }
     const isNewFormat = Array.isArray(parsed.actions);
 
@@ -802,7 +803,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error('[replay] SessionReplayer error:', msg);
-        return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, event: {} as never, error: 'Replay failed: ' + msg }] };
+        return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Replay failed: ' + msg }] };
       }
     }
 
