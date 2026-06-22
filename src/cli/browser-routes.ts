@@ -1,6 +1,7 @@
 import { executeCommand } from '../executor.js';
 import { outputResult, outputError } from './output.js';
 import { normalizeSelector } from '../utils/selector.js';
+import { asZodSchema } from '../utils/zod-internal.js';
 import { getCommand } from '../commands/command-registry.js';
 import { helpGenerator } from '@dyyz1993/xcli-core';
 
@@ -43,16 +44,16 @@ export async function handleBrowserCommand(
       if (mode === 'json') {
         // JSON mode: output structured parameter info
         const paramsList: Array<{ name: string; type: string; required: boolean; description: string }> = [];
-        const schema = cmdDef.parameters as unknown as { _def?: { shape?: Record<string, unknown> }; shape?: Record<string, unknown> } | undefined;
+        const schema = asZodSchema(cmdDef.parameters);
         const shape = schema?.shape ?? (schema?._def as Record<string, unknown>)?.shape as Record<string, unknown> | undefined;
         if (shape) {
           for (const [key, value] of Object.entries(shape)) {
-            const fieldSchema = value as unknown as Record<string, unknown>;
+            const fieldSchema = asZodSchema(value);
             const fieldDef = fieldSchema._def as Record<string, unknown> | undefined;
             const description = (fieldSchema.description as string) || (fieldDef?.description as string) || '';
             const typeName = (fieldDef?.typeName as string) || '';
-            const isOptional = typeName === 'ZodOptional' || typeof fieldSchema.isOptional === 'function' && (fieldSchema.isOptional as () => boolean)();
-            const innerType = fieldDef?.innerType as unknown as Record<string, unknown> | undefined;
+            const isOptional = typeName === 'ZodOptional' || typeof (fieldSchema as Record<string, unknown>).isOptional === 'function' && ((fieldSchema as Record<string, unknown>).isOptional as () => boolean)();
+            const innerType = asZodSchema(fieldDef?.innerType);
             const innerTypeName = innerType?._def ? (innerType._def as Record<string, unknown>).typeName as string : typeName;
             let type = 'unknown';
             if (innerTypeName === 'ZodString' || typeName === 'ZodString') type = 'string';
@@ -67,7 +68,7 @@ export async function handleBrowserCommand(
         }
         outputResult({ command: cmdDef.name, description: cmdDef.description, scope: cmdDef.scope, parameters: paramsList }, mode);
       } else {
-        console.log(helpGenerator.generate(cmdDef as unknown as Parameters<typeof helpGenerator.generate>[0], { color: true, emoji: false }));
+        console.log(helpGenerator.generate(cmdDef as Parameters<typeof helpGenerator.generate>[0], { color: true, emoji: false }));
       }
     } else {
       outputError(`Unknown command: ${command}`);
