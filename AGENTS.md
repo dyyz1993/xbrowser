@@ -1013,6 +1013,91 @@ if (!value) throw new Error('需要 page');
 const page = (ctx as any).page;  // 会被 lint 拒绝
 ```
 
+### 12.1 xcli-core tips API 迁移（2026-06-22）
+
+> **背景**：xcli-core ≥ 0.15.0 把 `CommandResult.tips` 从 `string[]` 改成了 `Tip[]`（`{ level, message, label? }`）。
+> 本仓库已完成核心层迁移，但**插件层保持 `string[]`**（71 个插件零改动）。
+> 这通过**核心层适配**实现——在 xbrowser ↔ xcli-core 的类型边界做转换。
+
+#### 迁移原则：核心适配，插件零改动
+
+```
+插件代码（string[] tips）           ← 不改，保持 const tips: string[] = []
+    ↓
+xbrowser 核心层（executor/router）  ← normalizeTips(string[]) → Tip[] 转换
+    ↓
+xcli-core 0.15.0（Tip[] tips）      ← ok(data, Tip[]) / fail(msg, Tip[])
+```
+
+#### 关键 API（从 xcli-core import）
+
+| API | 作用 | 用法 |
+|-----|------|------|
+| `normalizeTips(tips: Array<string \| Tip>)` | `string[]` → `Tip[]` | 核心 command 返回 tips 时调用 |
+| `tip.info(msg)` / `tip.warn(msg)` / `tip.error(msg)` | 构造单个 `Tip` | 需要指定 level 时用 |
+| `TipCollector` | ctx.tips 的类型（CommandContext 要求） | 构造 ctx 时 `tips: new TipCollector()` |
+| `CompositeStorage` | 满足 `StorageContext`（含 plugin/global/cache/tmp） | 替代旧 `PluginStorage`（后者缺嵌套 store） |
+
+#### 三个适配点（核心代码必须遵守）
+
+| # | 位置 | 做法 |
+|---|------|------|
+| 1 | **构造 ctx 时** | 必须加 `tips: new TipCollector()`（CommandContext 要求） |
+| 2 | **核心 command 返回 tips** | `ok(data, normalizeTips(stringArray))`，不要直接传 `string[]` |
+| 3 | **archive 归档时** | `tipsToMessages(Tip[])` 转回 `string[]`（CommandArchiveEntry 协议要 string[]） |
+
+#### 插件开发者：不需要改
+
+插件继续用 `tips: string[]`——核心层会自动转换：
+
+```typescript
+// ✅ 插件代码保持不变（核心层会 normalizeTips 转换）
+const tips: string[] = [];
+tips.push('操作成功');
+return ok(data, tips);  // ← 核心层的 ok 签名虽变，但插件层 ok() 有适配
+```
+
+> **注意**：如果插件直接 import xcli-core 的 `ok()`/`fail()`，需要手动 `normalizeTips()`。
+> 推荐插件用 `ctx.tips.info(msg)` 收集 tips（TipCollector 方式，自动适配）。
+
+#### 反例（禁止）
+
+```typescript
+// ❌ 直接把 string 塞进 Tip[]（result.tips 是 Tip[]）
+result.tips = ['some string'];
+
+// ❌ 构造 ctx 时漏掉 tips 字段（CommandContext 要求 tips: TipCollector）
+const ctx = { storage, output, ... };  // 缺 tips → typecheck 报错
+
+// ❌ archive 里传 Tip[]（协议要 string[]）
+recordArchive({ result: { tips: tipObjects } });  // 应 tipsToMessages(tipObjects)
+```
+
+#### 正确做法
+
+```typescript
+// ✅ 核心 command 返回 tips
+import { ok, normalizeTips } from '@dyyz1993/xcli-core';
+return ok(data, normalizeTips(['提示文案']));
+
+// ✅ 构造 ctx
+import { TipCollector, CompositeStorage } from '@dyyz1993/xcli-core';
+const ctx = { ..., tips: new TipCollector(), storage: new CompositeStorage(...) };
+
+// ✅ archive 归档（Tip[] → string[]）
+function tipsToMessages(tips: Tip[] | undefined): string[] {
+  return (tips || []).map(t => typeof t === 'string' ? t : t.message);
+}
+```
+
+#### 本次迁移涉及的文件（2026-06-22）
+
+| 文件 | 改动 |
+|------|------|
+| `src/executor.ts` | `ExecutionResult.tips` → `Tip[]`；ctx 补 `TipCollector`；storage 改 `CompositeStorage`；合并/归档转换 |
+| `src/router.ts` | ctx 补 `TipCollector`；login tips 适配；打印取 `.message` |
+| `src/commands/{agent,evaluate,find,interaction,snapshot}.ts` | `ok(data, normalizeTips([...]))` |
+
 ---
 
 ## 13. 发布到 marketplace

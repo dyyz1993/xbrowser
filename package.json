@@ -79,13 +79,13 @@
     "start": "node dist/cli.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "vitest run tests/e2e/",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "validate": "npm run typecheck && npm run lint && npm run lint:docs && npm run lint:plugin-contract && npm run build && npm test",
     "prepare": "husky"
   },
   "dependencies": {
     "@dyyz1993/pi-ai": "^0.78.2",
-    "@dyyz1993/xcli-core": "file:../mpage/packages/core",
+    "@dyyz1993/xcli-core": "^0.15.0",
     "@types/react-syntax-highlighter": "^15.5.13",
     "@types/turndown": "^5.0.6",
     "cheerio": "^1.2.0",
