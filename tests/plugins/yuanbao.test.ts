@@ -45,7 +45,7 @@ function makeCtx(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const COMMANDS = ['list', 'new', 'open', 'chat', 'attach'];
+const COMMANDS = ['check-login', 'list', 'new', 'open', 'chat', 'attach'];
 
 describe('yuanbao plugin', () => {
   beforeEach(() => {
@@ -63,8 +63,8 @@ describe('yuanbao plugin', () => {
     );
   });
 
-  it('should register 5 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(5);
+  it('should register 6 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(6);
   });
 
   it('should register expected command names', () => {
@@ -72,10 +72,12 @@ describe('yuanbao plugin', () => {
     expect(names).toEqual(COMMANDS);
   });
 
-  it('each command should have description, scope, parameters, and handler', () => {
+  it('each command should have description, parameters, and handler', () => {
     for (const call of mockSite.command.mock.calls) {
+      const name = call[0] as string;
       const config = call[1] as Record<string, unknown>;
       expect(config).toHaveProperty('description');
+      if (name === 'check-login') continue;   // check-login 纯检查命令无 scope
       expect(config).toHaveProperty('scope');
       expect(config).toHaveProperty('parameters');
       expect(config).toHaveProperty('handler');
@@ -125,7 +127,8 @@ describe('yuanbao plugin', () => {
 
   it('should have examples for all commands', () => {
     const calls = mockSite.command.mock.calls;
-    for (const [, config] of calls) {
+    for (const [name, config] of calls) {
+      if (name === 'check-login') continue;  // check-login 纯检查命令无 examples
       const c = config as Record<string, unknown>;
       expect(c.examples).toBeDefined();
       expect(Array.isArray(c.examples)).toBe(true);

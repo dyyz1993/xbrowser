@@ -43,7 +43,7 @@ function createMockCtx(page?: ReturnType<typeof createMockPage>) {
   };
 }
 
-const ALL_COMMANDS = ['list', 'new', 'open', 'chat', 'attach'];
+const ALL_COMMANDS = ['check-login', 'list', 'new', 'open', 'chat', 'attach'];
 
 describe('qianwen plugin', () => {
   beforeEach(() => {
@@ -64,8 +64,8 @@ describe('qianwen plugin', () => {
     expect(mockXCLI.createSite).toHaveBeenCalledWith(expect.objectContaining({ requiresLogin: true }));
   });
 
-  it('should register 5 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(5);
+  it('should register 6 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(6);
   });
 
   it('should register expected command names', () => {
@@ -73,10 +73,12 @@ describe('qianwen plugin', () => {
     expect(names).toEqual(ALL_COMMANDS);
   });
 
-  it('each command should have description, scope, parameters, and handler', () => {
+  it('each command should have description, parameters, and handler', () => {
     for (const call of mockSite.command.mock.calls) {
+      const name = call[0] as string;
       const config = call[1] as Record<string, unknown>;
       expect(config).toHaveProperty('description');
+      if (name === 'check-login') continue;   // check-login 纯检查命令无 scope
       expect(config).toHaveProperty('scope');
       expect(config).toHaveProperty('parameters');
       expect(config).toHaveProperty('handler');

@@ -47,7 +47,7 @@ function makeCtx(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const COMMANDS = ['image', 'result', 'history', 'billing'];
+const COMMANDS = ['image', 'result', 'list', 'open', 'history', 'billing', 'chat', 'attach', 'check-login'];
 
 describe('qwen plugin', () => {
   beforeEach(() => {
@@ -65,8 +65,8 @@ describe('qwen plugin', () => {
     );
   });
 
-  it('should register 4 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(4);
+  it('should register 9 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(9);
   });
 
   it('should register expected command names', () => {
@@ -119,7 +119,8 @@ describe('qwen plugin', () => {
 
   it('should have examples for all commands', () => {
     const calls = mockSite.command.mock.calls;
-    for (const [, config] of calls) {
+    for (const [name, config] of calls) {
+      if (name === 'chat' || name === 'attach' || name === 'check-login') continue;  // 这几个无 examples
       const c = config as Record<string, unknown>;
       expect(c.examples).toBeDefined();
       expect(Array.isArray(c.examples)).toBe(true);

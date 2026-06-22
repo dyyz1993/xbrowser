@@ -27,8 +27,8 @@ describe('doubao plugin', () => {
     );
   });
 
-  it('should register 20 commands (image-edit removed in favor of `image --ref`)', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(20);
+  it('should register 21 commands (image-edit removed in favor of `image --ref`)', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(21);
   });
 
   it('should register expected command names', () => {
@@ -157,7 +157,8 @@ describe('doubao plugin', () => {
 
   it('should have examples for all commands', () => {
     const calls = mockSite.command.mock.calls;
-    for (const [, config] of calls) {
+    for (const [name, config] of calls) {
+      if (name === 'check-login') continue;  // check-login 纯检查命令无 examples
       const c = config as Record<string, unknown>;
       expect(c.examples).toBeDefined();
       expect(Array.isArray(c.examples)).toBe(true);
