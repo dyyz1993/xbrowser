@@ -13,6 +13,7 @@ import {
   forwardNetworkInspect,
 } from '../client/daemon-client.js'
 import { outputResult, outputError } from './output.js'
+import { errMsg } from '../utils/error.js';
 
 export async function handleNetCommand(args: string[], options: Record<string, unknown>, mode: string, sessionName: string): Promise<void> {
   const subCommand = args[0] || 'list';
@@ -319,6 +320,6 @@ export async function handleNetCommand(args: string[], options: Record<string, u
         outputError(`Unknown net sub-command: ${subCommand}. Use: list, clear, top, log, around, analyze, curl, replay, inspect, like, dislike, export`);
     }
   } catch (err) {
-    outputError((err as Error).message || 'Network command failed');
+    outputError(errMsg(err) || 'Network command failed');
   }
 }

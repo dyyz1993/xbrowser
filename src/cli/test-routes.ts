@@ -185,9 +185,9 @@ async function runTest(plugin: string, command: string, cmdArgs: string[], optio
     } else if (msg.includes('登录') || msg.includes('login')) {
       status = 'LOGIN_REQUIRED';
     }
-    const ret: Record<string, unknown> = { status, message: msg || '暂无数据' };
+    const ret: { status: string; message?: string; viewerUrl?: string; count?: number; data?: string; errors?: string[]; note?: string } = { status, message: msg || '暂无数据' };
     if (viewerUrl) ret.viewerUrl = viewerUrl;
-    return ret as unknown as { status: string; message?: string; viewerUrl?: string; count?: number; data?: string; errors?: string[]; note?: string; };
+    return ret;
   }
 
   // 4. Schema 校验

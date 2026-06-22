@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import { errMsg } from '../utils/error.js';
 import * as yaml from 'yaml';
 import type { Page } from '../browser-shim.js';
 import type { RecordingSession, RecordedEvent } from './recorder.js';
@@ -19,7 +20,7 @@ export interface PlaybackResult {
   duration: number;
   eventsPlayed: number;
   totalEvents: number;
-  errors: Array<{ eventIndex: number; event: RecordedEvent; error: string }>;
+  errors: Array<{ eventIndex: number; event?: RecordedEvent; error: string }>;
 }
 
 /**
@@ -52,7 +53,7 @@ export class PlaybackEngine {
     };
 
     let recording: RecordingSession;
-    const checkpoints: CheckpointEntry[] = (raw as unknown as Record<string, unknown>).checkpoints as CheckpointEntry[] || [];
+    const checkpoints: CheckpointEntry[] = 'checkpoints' in raw ? (raw.checkpoints as CheckpointEntry[]) : [];
     if (raw.events && raw.events.length > 0) {
       recording = raw;
     } else if (raw.actions && raw.actions.length > 0) {
@@ -135,7 +136,7 @@ export class PlaybackEngine {
         errors.push({
           eventIndex: i,
           event,
-          error: (err as Error).message,
+          error: errMsg(err),
         });
         if (stopOnError) break;
       }

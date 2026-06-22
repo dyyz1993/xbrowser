@@ -13,6 +13,7 @@
  */
 
 import { EventEmitter } from 'node:events';
+import { errMsg } from '../utils/error.js';
 import type { CDPConnection } from './connection.js';
 import type {
   XBPage, XBContext, XBBrowser, XBLocator, XBMouse, XBKeyboard,
@@ -281,7 +282,7 @@ export class XBPageImpl implements XBPage {
         );
         if (result) return result;
       } catch (err) {
-        lastError = err as Error;
+        lastError = err instanceof Error ? err : new Error(errMsg(err));
       }
       const pollMs = typeof polling === 'number' ? polling : 16;
       await this.waitForTimeout(pollMs);
@@ -820,6 +821,21 @@ export class XBPageImpl implements XBPage {
   /** Send a CDP command scoped to this page's session */
   async _cdpSend<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
     return this.conn.send<T>(method, params, this.sessionId);
+  }
+
+  /**
+   * 开启/关闭原生文件选择框拦截（CDP stateful 开关）。
+   *
+   * - enabled=true（执行期默认）：点击上传按钮时不弹系统文件框，改发 Page.fileChooserOpened 事件，
+   *   page 的 'filechooser' 监听器拿到 chooser 后用 setFiles/setInputFiles 注入文件。
+   * - enabled=false（录制期默认）：真实文件选择框正常弹出，用户手动选文件；
+   *   前端 input[type=file] 的 change 事件由 action signal 脚本捕获记录。
+   *
+   * 可多次调用切换状态（CDP 协议是 stateful 的）。
+   */
+  async setFileDialogInterception(enabled: boolean): Promise<void> {
+    await this.conn.send('Page.setInterceptFileChooserDialog', { enabled }, this.sessionId)
+      .catch((e) => console.error('[XBPage] setInterceptFileChooserDialog failed:', errMsg(e)));
   }
 
   /** Subscribe to a CDP event on this page's session. Returns unsubscribe function. */

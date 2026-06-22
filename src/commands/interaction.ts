@@ -123,7 +123,7 @@ export const fillCommand = registerCommand({
 
     const isReact = await page.evaluate(() => {
       if (document.querySelector('[data-reactroot]') || document.querySelector('[data-reactid]')) return true;
-      if ((window as unknown as Record<string, unknown>).__REACT_DEVTOOLS_GLOBAL_HOOK__) return true;
+      if (window.__REACT_DEVTOOLS_GLOBAL_HOOK__) return true;
       const scripts = document.querySelectorAll('script[src]');
       for (const s of scripts) {
         const src = s.getAttribute('src') || '';

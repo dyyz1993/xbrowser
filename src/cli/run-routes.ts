@@ -1,4 +1,5 @@
 import { readCommandFile } from '../stdin.js';
+import { errMsg } from '../utils/error.js';
 import { executeChain } from '../executor.js';
 import { outputError } from './output.js';
 
@@ -10,7 +11,7 @@ export async function handleRun(
   try {
     commands = readCommandFile(filePath);
   } catch (e) {
-    outputError(`Failed to read file '${filePath}': ${(e as Error).message}`);
+    outputError(`Failed to read file '${filePath}': ${errMsg(e)}`);
     return;
   }
 

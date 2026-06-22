@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import { errMsg } from './utils/error.js';
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { Browser, BrowserContext, Page } from './browser-shim.js';
 import { launch } from './cdp-driver/index.js';
-import type { XBPage } from './cdp-driver/types.js';
 import { CDPInterceptorProxy } from './cdp-interceptor/proxy.js';
 import type { CDPInterceptorConfig } from './cdp-interceptor/types.js';
 import type { BrowserCommandContext } from './context.js';
@@ -226,7 +226,7 @@ export async function createBrowser(options?: BrowserLaunchOptions): Promise<Bro
     // return [] and downstream code would fall back to creating a brand-new
     // isolated context — losing all the user's existing cookies/login state.
     await browser.discoverContexts().catch((err: unknown) => {
-      console.error(`[browser] discoverContexts failed: ${(err as Error).message}`);
+      console.error(`[browser] discoverContexts failed: ${errMsg(err)}`);
     });
     return browser;
   }
@@ -442,7 +442,7 @@ export function deleteSessionDiskMeta(name: string): void {
     await installNetworkCapture(page, name);
     return session;
   } catch (e) {
-    console.error(`[Session Restore] Failed for "${name}":`, (e as Error).message);
+    console.error(`[Session Restore] Failed for "${name}":`, errMsg(e));
     // Discard corrupt session meta so next attempt starts fresh
     deleteSessionDiskMeta(name);
     return undefined;
@@ -566,7 +566,8 @@ async function installNetworkCapture(page: Page, sessionName: string): Promise<v
     type: string;
   }>();
 
-  const xbPage = page as unknown as XBPage;
+  // page is already XBPage (browser-shim aliases XBPage as Page)
+  const xbPage = page;
 
   // Capture request data
   xbPage.on('request', (params: unknown) => {

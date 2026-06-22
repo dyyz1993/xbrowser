@@ -462,7 +462,7 @@ export class DataCollector {
       viewport: { width: 1920, height: 1080 },
     });
 
-    (context as unknown as Record<string, unknown>)._browser = browser;
+    Reflect.set(context, '_browser', browser);
     return context;
   }
 

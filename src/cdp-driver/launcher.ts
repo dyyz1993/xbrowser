@@ -8,6 +8,7 @@
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
+import { errMsg } from '../utils/error.js';
 import { existsSync as fsExistsSync } from 'node:fs';
 
 // ── Types ──────────────────────────────────────────────────────
@@ -239,7 +240,7 @@ export async function launchChrome(options: ChromeLaunchOptions = {}): Promise<L
     // Include stderr in error for debugging
     const stderr = stderrLines.slice(-20).join('\n');
     const exitInfo = child.exitCode !== null ? ` (exit code: ${child.exitCode})` : ' (still running)';
-    throw new Error(`${(err as Error).message}${exitInfo}\nChrome stderr:\n${stderr || '(empty)'}`);
+    throw new Error(`${errMsg(err)}${exitInfo}\nChrome stderr:\n${stderr || '(empty)'}`);
   }
 }
 

@@ -4,6 +4,7 @@ import { PluginMetadataParser } from '../plugin/metadata-parser.js';
 import type { SearchOptions } from '../plugin/types.js';
 import { XBrowserPluginLoader } from '../plugin/loader.js';
 import { getPluginLoader } from '../utils/plugin-singleton.js';
+import { createStubContext } from '../utils/stub-context.js';
 
 export interface PluginSearchResult {
   source: string;
@@ -39,7 +40,7 @@ async function searchFromMarketplacePlugin(
         site: options.site,
         limit: options.limit,
       },
-      {} as never,
+      createStubContext('marketplace'),
     );
 
     const items = extractItems(result);

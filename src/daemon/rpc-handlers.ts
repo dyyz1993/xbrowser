@@ -5,6 +5,7 @@
  * This replaces the giant switch/case in the old daemon-worker.ts.
  */
 import type { Page } from '../browser-shim.js';
+import { errMsg } from '../utils/error.js';
 import { writeFileSync, mkdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -426,12 +427,21 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     return { session: sessionName, total: entries.length, analyzed };
   }
 
+  function extractCurlOptions(params: Record<string, unknown>): CurlOptions {
+    return {
+      includeHeaders: params.includeHeaders as boolean | undefined,
+      includeBody: params.includeBody as boolean | undefined,
+      compressed: params.compressed as boolean | undefined,
+      insecure: params.insecure as boolean | undefined,
+    };
+  }
+
   function handleNetworkCurl(params: Record<string, unknown>) {
     const sessionName = (params.session as string) || 'default';
     const id = params.id as number;
     const entry = networkStore.inspect(sessionName, id);
     if (!entry.capture) return { error: `Entry #${id} not found` };
-    return generateCurl(entry.capture, params as unknown as CurlOptions);
+    return generateCurl(entry.capture, extractCurlOptions(params));
   }
 
   async function handleNetworkReplay(params: Record<string, unknown>) {
@@ -439,7 +449,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const id = params.id as number;
     const entry = networkStore.inspect(sessionName, id);
     if (!entry.capture) return { error: `Entry #${id} not found` };
-    return await replayEntry(entry.capture, params as unknown as CurlOptions);
+    return await replayEntry(entry.capture, extractCurlOptions(params));
   }
 
   function handleNetworkLike(params: Record<string, unknown>) {
@@ -478,8 +488,8 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     if (!sess) return { recording: false, error: 'No session' };
     try {
       const result = await sess.page.evaluate<{ active: boolean; events: number; url: string }>(() => ({
-        active: !!(window as unknown as Record<string, unknown>).__xb_rec,
-        events: ((window as unknown as Record<string, unknown>).__xb_evts as unknown[])?.length || 0,
+        active: !!window.__xb_rec,
+        events: window.__xb_evts?.length || 0,
         url: location.href,
       }));
       return { recording: true, ...result };
@@ -492,7 +502,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const sess = findSession((params.session as string) || 'default');
     if (!sess) return { events: [], error: 'No session' };
     try {
-      const events = await sess.page.evaluate(() => (window as unknown as Record<string, unknown>).__xb_evts || []);
+      const events = await sess.page.evaluate(() => window.__xb_evts || []);
       return { events, url: sess.page.url() };
     } catch {
       return { events: [], error: 'Page unreachable' };
@@ -504,8 +514,8 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     if (!sess) return { ok: false, error: 'No session' };
     try {
       await sess.page.evaluate(() => {
-        (window as unknown as Record<string, unknown>).__xb_evts = [];
-        (window as unknown as Record<string, unknown>).__xb_t0 = Date.now();
+        window.__xb_evts = [];
+        window.__xb_t0 = Date.now();
       });
       return { ok: true };
     } catch {
@@ -517,7 +527,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const sess = findSession((params.session as string) || 'default');
     if (!sess) return { ok: false, error: 'No session' };
     try {
-      const events = await sess.page.evaluate(() => (window as unknown as Record<string, unknown>).__xb_evts || []) as unknown[];
+      const events = await sess.page.evaluate(() => window.__xb_evts || []) as unknown[];
       const recordingsDir = join(CONFIG_DIR, 'recordings');
       mkdirSync(recordingsDir, { recursive: true });
       const outPath = (params.path as string) || join(recordingsDir, `recording-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
@@ -528,7 +538,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       }, null, 2));
       return { ok: true, path: outPath, events: events.length };
     } catch (e) {
-      return { ok: false, error: (e as Error).message };
+      return { ok: false, error: errMsg(e) };
     }
   }
 
@@ -571,9 +581,8 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
         if (session?.page) {
           element = await session.page.evaluate((sel: string) => {
             const el = document.querySelector(sel);
-            const w = window as unknown as Record<string, unknown>;
-            if (!el || typeof w.__xb_describe !== 'function') return null;
-            return (w.__xb_describe as (el: Element) => Record<string, unknown>)(el);
+            if (!el || typeof window.__xb_describe !== 'function') return null;
+            return window.__xb_describe(el);
           }, selector);
         }
       } catch { /* page may have navigated or closed */ }
@@ -624,7 +633,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
           cdpEndpoint: session.cdpEndpoint,
         });
       } catch (e) {
-        return { ok: false, error: 'Failed to auto-create session: ' + (e as Error).message };
+        return { ok: false, error: 'Failed to auto-create session: ' + errMsg(e) };
       }
     }
 
@@ -634,7 +643,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       activeRecorders.set(sessionName, recorder);
       return { ok: true, session: sessionName, startUrl: url || session.page.url() };
     } catch (e) {
-      return { ok: false, error: (e as Error).message };
+      return { ok: false, error: errMsg(e) };
     }
   }
 
@@ -669,7 +678,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       };
     } catch (e) {
       activeRecorders.delete(sessionName);
-      return { ok: false, error: (e as Error).message };
+      return { ok: false, error: errMsg(e) };
     }
   }
 
@@ -751,15 +760,15 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const slowMo = (params.slowMo as number) || 1;
 
     if (!file) {
-      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, event: {} as never, error: 'Missing file parameter' }] };
+      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Missing file parameter' }] };
     }
 
     const session = findSession(sessionName);
     if (!session) {
-      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, event: {} as never, error: 'Session not found: ' + sessionName }] };
+      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Session not found: ' + sessionName }] };
     }
     if (!session.page) {
-      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, event: {} as never, error: 'Session has no page: ' + sessionName }] };
+      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Session has no page: ' + sessionName }] };
     }
 
     // Detect new session-recorder format (has 'actions' array) vs old format (has 'events' array)
@@ -769,7 +778,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       rawContent = readFileSync(file, 'utf8');
       parsed = JSON.parse(rawContent);
     } catch (e) {
-      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, event: {} as never, error: 'Failed to read/parse file: ' + String(e) }] };
+      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Failed to read/parse file: ' + String(e) }] };
     }
     const isNewFormat = Array.isArray(parsed.actions);
 
@@ -787,7 +796,11 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
             console.error(`[replay] Error at step ${action.type}: ${error.message}`);
           },
         });
-        await replayer.load(parsed as unknown as import('../recorder/session-recorder.js').RecordingData);
+        // Validate parsed JSON has the required RecordingData fields before loading
+        if (!Array.isArray(parsed.actions) || typeof parsed.startUrl !== 'string') {
+          return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Invalid recording format: missing actions or startUrl' }] };
+        }
+        await replayer.load(parsed);
         const startTime = Date.now();
         const result = await replayer.run();
         const duration = Date.now() - startTime;
@@ -802,7 +815,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error('[replay] SessionReplayer error:', msg);
-        return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, event: {} as never, error: 'Replay failed: ' + msg }] };
+        return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Replay failed: ' + msg }] };
       }
     }
 
