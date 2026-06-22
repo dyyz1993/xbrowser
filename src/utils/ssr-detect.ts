@@ -31,7 +31,7 @@ export async function detectSsr(page: Page): Promise<SsrDetectionResult | undefi
   try {
     const result = await page.evaluate<{ variable: string; keys: string[] } | null>((vars: string[]) => {
       for (const varName of vars) {
-        const value = (window as unknown as Record<string, unknown>)[varName];
+        const value = Reflect.get(window, varName);
         if (value != null && typeof value === 'object') {
           const keys = Object.keys(value as Record<string, unknown>).slice(0, 10);
           return { variable: varName, keys };

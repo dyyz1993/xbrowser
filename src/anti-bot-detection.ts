@@ -242,11 +242,11 @@ async function detectWebdriverExposure(page: Page): Promise<DetectionResult> {
   try {
     const webdriver = await page.evaluate<{ webdriver: boolean; webdriverScriptFn: boolean; webdriverEvaluate: boolean; chrome: boolean; permissions: unknown } | null>(() => {
       return {
-        webdriver: (window as unknown as Record<string, unknown>).navigator && (window as unknown as Record<string, unknown>).navigator instanceof Object ? ((window as unknown as Record<string, unknown>).navigator as Record<string, unknown>).webdriver : undefined,
-        webdriverScriptFn: !!((window as unknown as Record<string, unknown>)).__webdriver_script_fn,
-        webdriverEvaluate: !!((window as unknown as Record<string, unknown>)).__webdriver_evaluate,
-        chrome: !!((window as unknown as Record<string, unknown>)).chrome,
-        permissions: (window as unknown as Record<string, unknown>).navigator && (window as unknown as Record<string, unknown>).navigator instanceof Object ? ((window as unknown as Record<string, unknown>).navigator as Record<string, unknown>).permissions : undefined,
+        webdriver: navigator.webdriver,
+        webdriverScriptFn: !!window.__webdriver_script_fn,
+        webdriverEvaluate: !!window.__webdriver_evaluate,
+        chrome: !!window.chrome,
+        permissions: navigator.permissions,
       };
     }).catch(() => null);
 

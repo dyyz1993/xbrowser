@@ -479,8 +479,8 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     if (!sess) return { recording: false, error: 'No session' };
     try {
       const result = await sess.page.evaluate<{ active: boolean; events: number; url: string }>(() => ({
-        active: !!(window as unknown as Record<string, unknown>).__xb_rec,
-        events: ((window as unknown as Record<string, unknown>).__xb_evts as unknown[])?.length || 0,
+        active: !!window.__xb_rec,
+        events: window.__xb_evts?.length || 0,
         url: location.href,
       }));
       return { recording: true, ...result };
@@ -493,7 +493,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const sess = findSession((params.session as string) || 'default');
     if (!sess) return { events: [], error: 'No session' };
     try {
-      const events = await sess.page.evaluate(() => (window as unknown as Record<string, unknown>).__xb_evts || []);
+      const events = await sess.page.evaluate(() => window.__xb_evts || []);
       return { events, url: sess.page.url() };
     } catch {
       return { events: [], error: 'Page unreachable' };
@@ -505,8 +505,8 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     if (!sess) return { ok: false, error: 'No session' };
     try {
       await sess.page.evaluate(() => {
-        (window as unknown as Record<string, unknown>).__xb_evts = [];
-        (window as unknown as Record<string, unknown>).__xb_t0 = Date.now();
+        window.__xb_evts = [];
+        window.__xb_t0 = Date.now();
       });
       return { ok: true };
     } catch {
@@ -518,7 +518,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const sess = findSession((params.session as string) || 'default');
     if (!sess) return { ok: false, error: 'No session' };
     try {
-      const events = await sess.page.evaluate(() => (window as unknown as Record<string, unknown>).__xb_evts || []) as unknown[];
+      const events = await sess.page.evaluate(() => window.__xb_evts || []) as unknown[];
       const recordingsDir = join(CONFIG_DIR, 'recordings');
       mkdirSync(recordingsDir, { recursive: true });
       const outPath = (params.path as string) || join(recordingsDir, `recording-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
@@ -572,9 +572,8 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
         if (session?.page) {
           element = await session.page.evaluate((sel: string) => {
             const el = document.querySelector(sel);
-            const w = window as unknown as Record<string, unknown>;
-            if (!el || typeof w.__xb_describe !== 'function') return null;
-            return (w.__xb_describe as (el: Element) => Record<string, unknown>)(el);
+            if (!el || typeof window.__xb_describe !== 'function') return null;
+            return window.__xb_describe(el);
           }, selector);
         }
       } catch { /* page may have navigated or closed */ }
