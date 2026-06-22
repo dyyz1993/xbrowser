@@ -59,7 +59,14 @@ async function rpcCall<T = unknown>(
     signal: AbortSignal.timeout(timeoutMs),
   });
   if (!resp.ok) {
-    throw new Error(`Daemon error: ${resp.statusText}`);
+    // HTTP 500 的真实错误在 body 的 { error: <message> } 里（xcli-core 的 try/catch 兜底返回），
+    // statusText 永远是 "Internal Server Error"，没有诊断价值——必须读 body。
+    let detail = resp.statusText;
+    try {
+      const body = await resp.json() as { error?: string };
+      if (body?.error) detail = body.error;
+    } catch { /* body 不是 JSON，回退到 statusText */ }
+    throw new Error(`Daemon error: ${detail}`);
   }
   return resp.json() as Promise<T>;
 }
@@ -123,8 +130,8 @@ export async function forwardExec(
   if (cdpEndpoint) rpcParams.cdpEndpoint = cdpEndpoint;
   try {
     return await rpcCall<ExecutionResult>('exec', rpcParams, timeoutMs);
-  } catch {
-    return { success: false, data: null, message: `Daemon error: exec failed`, duration: 0 };
+  } catch (e) {
+    return { success: false, data: null, message: (e as Error).message, duration: 0 };
   }
 }
 
@@ -137,8 +144,8 @@ export async function forwardChain(
   if (cdpEndpoint) params.cdpEndpoint = cdpEndpoint;
   try {
     return await rpcCall('chain', params, 120000);
-  } catch {
-    return { success: false, steps: [], totalDuration: 0, stoppedReason: 'Daemon error' };
+  } catch (e) {
+    return { success: false, steps: [], totalDuration: 0, stoppedReason: (e as Error).message };
   }
 }
 

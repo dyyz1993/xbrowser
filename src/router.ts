@@ -1,4 +1,4 @@
-import { parseArgs, outputFormatter, isCommandResult, type CommandResult, helpGenerator } from '@dyyz1993/xcli-core';
+import { parseArgs, outputFormatter, isCommandResult, type CommandResult, helpGenerator, TipCollector, normalizeTips, tip as makeTip } from '@dyyz1993/xcli-core';
 import { parsePluginParams } from './utils/plugin-params.js';
 import { version } from './version.js';
 import { executeChain, isChainInput, getPluginStorage } from './executor.js';
@@ -94,7 +94,7 @@ function showCommandHelp(siteName: string, cmd: unknown, siteConfig: { descripti
   }
 }
 
-function outputLoginRequired(result: { message?: string; tips?: string[] }, mode: string): void {
+function outputLoginRequired(result: { message?: string; tips?: import('@dyyz1993/xcli-core').Tip[] }, mode: string): void {
   if (mode === 'json' || mode === 'yaml') {
     console.log(outputFormatter.format(result, { mode: mode as 'json' | 'yaml', color: false, emoji: false }));
     return;
@@ -103,7 +103,8 @@ function outputLoginRequired(result: { message?: string; tips?: string[] }, mode
   const message = result.message || 'Login required';
   console.error(message);
   for (const tip of result.tips || []) {
-    if (tip !== message) console.error(`  \u{1F4A1} ${tip}`);
+    const text = typeof tip === 'string' ? tip : tip.message;
+    if (text !== message) console.error(`  \u{1F4A1} ${text}`);
   }
   process.exit(1);
 }
@@ -607,6 +608,7 @@ export async function routeCommand(
             waitForHuman: async (_opts: Record<string, unknown>) => {
               return { solved: false, timedOut: true };
             },
+            tips: new TipCollector(),
           };
 
           try {
@@ -624,7 +626,7 @@ export async function routeCommand(
                 success: false,
                 data: loginGuard.data ?? null,
                 message: loginGuard.message,
-                tips: loginGuard.tips || [],
+                tips: normalizeTips(loginGuard.tips),
               };
               if (mode === 'json' || mode === 'yaml') {
                 outputLoginRequired(result, mode);
@@ -658,18 +660,19 @@ export async function routeCommand(
             // Inject viewerUrl for login-related failures (custom fail() calls that bypass login-guard)
             let injectedViewerUrl: string | undefined;
             const LOGIN_FAIL_KEYWORDS = ['登录','login','Login','未登录','not logged in','cdp','CDP','验证码','验证','captcha','需要登录','requires login'];
+            const tipTexts = (result.tips || []).map((t) => typeof t === 'string' ? t : t.message);
             const isLoginFail = isCommandResult(result) && result.success === false &&
-              [result.message, ...(result.tips || [])].filter(Boolean).join(' ').toLowerCase()
+              [result.message, ...tipTexts].filter(Boolean).join(' ').toLowerCase()
                 .match(new RegExp(LOGIN_FAIL_KEYWORDS.join('|'), 'i'));
             if (isLoginFail) {
               injectedViewerUrl = buildViewerUrl(sessionName);
               if (injectedViewerUrl) {
-                result.tips = [...(result.tips || []), `Open viewer to complete login: ${injectedViewerUrl}`];
+                result.tips = [...(result.tips || []), makeTip.info(`Open viewer to complete login: ${injectedViewerUrl}`)];
               }
             }
 
             const outputData = isCommandResult(result) ? result.data : (result && typeof result === 'object' ? ((result as Record<string, unknown>).data ?? result) : result);
-            const tips = isCommandResult(result) ? result.tips : ((result && typeof result === 'object') ? (result as Record<string, unknown>).tips as string[] | undefined : undefined);
+            const tips = isCommandResult(result) ? result.tips : ((result && typeof result === 'object') ? (result as Record<string, unknown>).tips as import('@dyyz1993/xcli-core').Tip[] | undefined : undefined);
 
             if (mode === 'json' || mode === 'yaml') {
               const finalOutput: Record<string, unknown> = {
@@ -686,12 +689,12 @@ export async function routeCommand(
               }
               console.log(outputFormatter.format(finalOutput, { mode: mode as 'json' | 'yaml', color: false, emoji: false }));
               if (tips?.length) {
-                for (const tip of tips) console.error(`\u{1F4A1} ${tip}`);
+                for (const tip of tips) console.error(`\u{1F4A1} ${typeof tip === 'string' ? tip : tip.message}`);
               }
             } else {
               console.log(outputFormatter.format(outputData, { mode: 'text', color: true, emoji: true }));
               if (tips?.length) {
-                for (const tip of tips) console.log(`  \u{1F4A1} ${tip}`);
+                for (const tip of tips) console.log(`  \u{1F4A1} ${typeof tip === 'string' ? tip : tip.message}`);
               }
               if (hookOutputs.length > 0) {
                 for (const ho of hookOutputs) {

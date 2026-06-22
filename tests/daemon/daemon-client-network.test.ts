@@ -93,6 +93,23 @@ describe('forwardNetworkList', () => {
     await expect(forwardNetworkList('s1')).rejects.toThrow('Daemon error: Internal Server Error');
   });
 
+  it('should surface the specific error from body, not the generic statusText', async () => {
+    // daemon (xcli-core) 在 500 时把真实错误放在 body 的 { error } 字段里。
+    // rpcCall 必须读 body 而非 statusText，否则用户只看到 "Internal Server Error"。
+    mockFetch.mockImplementation((url: string) => {
+      if (url.includes('/health')) {
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
+      }
+      return Promise.resolve({
+        ok: false,
+        statusText: 'Internal Server Error',
+        json: () => Promise.resolve({ error: 'Chrome/Chromium not found' }),
+      });
+    });
+
+    await expect(forwardNetworkList('s1')).rejects.toThrow('Chrome/Chromium not found');
+  });
+
   it('should handle empty captures list', async () => {
     mockFetch.mockImplementation((url: string) => {
       if (url.includes('/health')) {

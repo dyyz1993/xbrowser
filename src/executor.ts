@@ -3,12 +3,15 @@ import {
   fail,
   isCommandResult,
   type CommandResult,
+  type Tip,
+  type StorageContext,
+  CompositeStorage,
+  TipCollector,
+  normalizeTips,
   configureArchiveStore,
   appendCommandToArchive,
   type CommandArchiveEntry,
   checkGuard,
-  PluginStorage,
-  type StorageContext,
   unquote,
 } from '@dyyz1993/xcli-core';
 import { parsePluginParams } from './utils/plugin-params.js';
@@ -32,15 +35,17 @@ import { join } from 'path';
 const NAVIGATION_COMMANDS = new Set(['goto', 'back', 'forward', 'refresh']);
 const snapshotHintShown = new WeakSet<ManagedSession>();
 
-const STORAGE_DIR = join(homedir(), '.xbrowser', 'storage');
+const CONFIG_DIR = join(homedir(), '.xbrowser');
 
 export type SimpleStorage = StorageContext;
 
-const storageCache = new Map<string, PluginStorage>();
+const storageCache = new Map<string, StorageContext>();
 
 export function getPluginStorage(pluginName: string): StorageContext {
   if (!storageCache.has(pluginName)) {
-    storageCache.set(pluginName, new PluginStorage(pluginName, STORAGE_DIR));
+    // CompositeStorage satisfies StorageContext (provides plugin/global/cache/tmp stores),
+    // whereas the legacy PluginStorage class lacks those nested stores.
+    storageCache.set(pluginName, new CompositeStorage(pluginName, CONFIG_DIR, 'xbrowser'));
   }
   return storageCache.get(pluginName)!;
 }
@@ -84,7 +89,7 @@ export interface ExecutionResult {
   data: unknown;
   message?: string;
   duration: number;
-  tips?: string[];
+  tips?: Tip[];
   hookOutputs?: HookOutput[];
 }
 
@@ -98,7 +103,7 @@ export interface ChainStepResult {
   data: unknown;
   message?: string;
   duration: number;
-  tips?: string[];
+  tips?: Tip[];
   hookOutputs?: HookOutput[];
 }
 
@@ -115,6 +120,15 @@ export interface ChainExecutionResult {
 
 function errorResult(message: string): ExecutionResult {
   return { ...fail(message), duration: 0 };
+}
+
+/**
+ * Convert Tip[] back to string[] for the archive protocol (CommandArchiveEntry.result.tips).
+ * xcli-core's CommandResult.tips is Tip[], but the archive stores plain strings.
+ */
+function tipsToMessages(tips: Tip[] | undefined): string[] {
+  if (!tips || tips.length === 0) return [];
+  return tips.map((t) => (typeof t === 'string' ? t : t.message));
 }
 
 let wsServer: WSServer | null = null;
@@ -266,6 +280,7 @@ export async function executeCommand(
     config: {},
     site: {} as never,
     cliName: 'xbrowser',
+    tips: new TipCollector(),
   };
 
   const start = Date.now();
@@ -285,12 +300,12 @@ export async function executeCommand(
     await tipsManager.beforeCommand(session.page, commandName, params);
   }
 
-  let refTips: string[] = [];
+  let refTips: Tip[] = [];
   if (session?.page && command.selectorParams && command.selectorParams.length > 0) {
     const cache = new Map<string, string>();
     const resolved = await resolveRefParams(session.page, params, command.selectorParams, cache, session.id);
     if (resolved.tips.length > 0) {
-      refTips = resolved.tips;
+      refTips = normalizeTips(resolved.tips);
       params = resolved.params;
     }
   }
@@ -354,13 +369,21 @@ export async function executeCommand(
         snapshotHintShown.add(session);
         snapshotHint = '💡 使用 snapshot 命令获取页面快照和 ref 编号，然后用 ref 快速定位元素（如 click --selector e1）';
       }
-      const merged = [...(raw.tips || []), ...(smartTips || []), ...(snapshotHint ? [snapshotHint] : []), ...refTips];
+      // raw.tips is already Tip[] (from CommandResult); smartTips/snapshotHint/refTips are string[]
+      // from internal helpers — normalize them to Tip[] before merging.
+      const merged: Tip[] = [
+        ...(raw.tips || []),
+        ...normalizeTips(smartTips),
+        ...(snapshotHint ? normalizeTips([snapshotHint]) : []),
+        ...refTips,
+      ];
       const isSuccess = raw.success !== false;
+      const mergedOrRaw = merged.length > 0 ? merged : (raw.tips || []);
       recordArchive(session?.id, sessionName, {
         step: 0,
         command: commandName,
         params,
-        result: { success: isSuccess, data: raw.data, message: raw.message, tips: merged.length > 0 ? merged : raw.tips || [] },
+        result: { success: isSuccess, data: raw.data, message: raw.message, tips: tipsToMessages(mergedOrRaw) },
         toolCalls: [],
         duration: duration,
         timestamp: start,
@@ -368,19 +391,20 @@ export async function executeCommand(
       if (isSuccess) {
         return { ...ok(raw.data, merged.length > 0 ? merged : raw.tips), duration, ...(hookOutputs ? { hookOutputs } : {}) };
       }
-      return { success: false, data: raw.data, message: raw.message, tips: merged.length > 0 ? merged : raw.tips || [], duration, ...(hookOutputs ? { hookOutputs } : {}) };
+      return { success: false, data: raw.data, message: raw.message, tips: mergedOrRaw, duration, ...(hookOutputs ? { hookOutputs } : {}) };
     }
 
+    const smartTipNormalized = normalizeTips(smartTips);
     recordArchive(session?.id, sessionName, {
       step: 0,
       command: commandName,
       params,
-      result: { success: true, data: raw, tips: smartTips || [] },
+      result: { success: true, data: raw, tips: tipsToMessages(smartTipNormalized) },
       toolCalls: [],
       duration: duration,
       timestamp: start,
     });
-    return { ...ok(raw, smartTips), duration, ...(hookOutputs ? { hookOutputs } : {}) };
+    return { ...ok(raw, smartTipNormalized), duration, ...(hookOutputs ? { hookOutputs } : {}) };
   } catch (err) {
     const end = Date.now();
     const duration = end - start;
@@ -533,6 +557,7 @@ export async function executeChain(
             config: {},
             site,
             cliName: 'xbrowser',
+            tips: new TipCollector(),
           };
 
           const start = Date.now();
@@ -552,7 +577,7 @@ export async function executeChain(
                 step: results.length,
                 command: `${cmdName} ${subCommand}`,
                 params: pluginParams,
-                result: { success: false, data, message: loginGuard.message, tips: loginGuard.tips || [] },
+                result: { success: false, data, message: loginGuard.message, tips: loginGuard.tips || [] as string[] },
                 toolCalls: [],
                 duration,
                 timestamp: start,
@@ -563,7 +588,7 @@ export async function executeChain(
                 success: false,
                 data,
                 message: loginGuard.message,
-                tips: loginGuard.tips || [],
+                tips: normalizeTips(loginGuard.tips),
                 duration,
               });
               if (type === 'and') {
@@ -601,7 +626,7 @@ export async function executeChain(
               step: results.length,
               command: `${cmdName} ${subCommand}`,
               params: pluginParams,
-              result: { success: true, data, tips: raw?.tips || [] },
+              result: { success: true, data, tips: tipsToMessages(raw?.tips) },
               toolCalls: [],
               duration,
               timestamp: start,

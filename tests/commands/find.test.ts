@@ -133,7 +133,7 @@ describe('find command', () => {
 
     expect(result).toMatchObject({
       success: true,
-      tips: [expect.stringContaining('Matched 3 elements, used first match')],
+      tips: [expect.objectContaining({ message: expect.stringContaining('Matched 3 elements, used first match') })],
     });
   });
 });
