@@ -138,9 +138,8 @@ export async function findTargetPage(
   cdpEndpoint: string | number,
   target: string
 ): Promise<{ pageId: string; wsUrl: string; title: string; url: string } | null> {
-  // 标准 CDP：用 WS Target.getTargets 而非 HTTP /json/list（HTTP 端点非协议标准，
-  // 且在多客户端环境下可能暴露其他客户端的 tab）
-  // 改为通过 cdp-driver 连 cdp 后用 context.pages() 拿本连接的 pages
+  // 通过 cdp-driver 连 cdp 后用 context.pages() 拿本连接的 pages。
+  // （HTTP /json/list 也兼容可用，但这里用 context.pages() 更自然。）
   const { launch } = await import('./cdp-driver/index.js');
   const ep = String(cdpEndpoint);
   const { browser: b } = await launch({ cdpEndpoint: ep });
@@ -372,7 +371,7 @@ export function deleteSessionDiskMeta(name: string): void {
     page = page || fallbackPage;
 
     // 不调用 getCDPTargets()，避免泄露其他 clientId 的 tab 信息
-    // 标准 CDP：不用 HTTP /json/list（非协议标准，多客户端下暴露其他连接的 tab）
+    // 用 context.pages() 拿本连接的 pages（端口池隔离下 /json/list 也兼容）
 
     if (!page) {
       const pages = context.pages();
@@ -764,7 +763,7 @@ export async function createSession(
       }
     }
 
-    // 标准 CDP：不用 getCDPTargets()（HTTP /json/list 暴露所有连接的 tab）
+    // 用 context.pages() 拿本连接的 pages（端口池隔离，/json/list 也兼容）
 
     // 找不到匹配的已开 tab → 创建新 tab（绝不抢已有 page）
     if (!targetPage) {

@@ -33,8 +33,7 @@ export class XBBrowserImpl implements XBBrowser {
   private _exitHandler: (() => void) | null = null;
   /**
    * Original CDP endpoint (HTTP or ws URL) used to construct this browser.
-   * Used by discoverContexts() as a fallback to HTTP /json/list when
-   * Target.getTargets doesn't return page-type targets (e.g. cdp-tunnel proxy).
+   * Retained for protocol-level calls (e.g. /json/version, /json/list).
    */
   private cdpEndpoint: string | undefined;
 
@@ -47,7 +46,7 @@ export class XBBrowserImpl implements XBBrowser {
     this.conn = conn;
     this.childProcess = childProcess ?? null;
     this.tmpDir = tmpDir;
-    // 保留 cdpEndpoint 字段供未来 CDP 协议调用使用（HTTP /json/list 兜底已删除，见 §7.5）
+    // 保留 cdpEndpoint 字段供协议级 HTTP 端点调用使用（/json/version, /json/list）
     this.cdpEndpoint = cdpEndpoint;
     void this.cdpEndpoint;
 
@@ -271,10 +270,8 @@ export class XBBrowserImpl implements XBBrowser {
       return;
     }
 
-    // 标准 CDP：用 WS Target.getTargets 而非 HTTP /json/list
-    // - HTTP /json/list 非协议标准
-    // - 多客户端环境下可能暴露其他连接的 tab
-    // - WS Target.getTargets 是标准做法
+    // 标准 CDP：用 WS Target.getTargets 发现页面。
+    // （HTTP /json/list 也可用——端口池隔离下两种方式都兼容。）
 
     // 2) Group page targets by browserContextId
     const pagesByContext = new Map<string, typeof targetInfos>();

@@ -98,9 +98,8 @@ export async function launch(options: XBLaunchOptions = {}): Promise<LaunchResul
   const conn = new CDPConnection(wsEndpoint);
   await conn.ready();
 
-  // Pass the ORIGINAL (HTTP) endpoint to the browser so discoverContexts()
-  // can fall back to HTTP /json/list when Target.getTargets doesn't return
-  // page-type targets (e.g. cdp-tunnel proxies).
+  // Pass the ORIGINAL (HTTP) endpoint to the browser for protocol-level
+  // HTTP endpoint access (/json/version, /json/list — port pool compatible).
   const httpEndpoint = options.cdpEndpoint && !options.cdpEndpoint.startsWith('ws')
     ? options.cdpEndpoint
     : undefined;
