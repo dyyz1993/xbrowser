@@ -774,7 +774,7 @@ describe('snapshot hint on navigation', () => {
     const { executeCommand } = await import('../src/executor.js');
     const result = await executeCommand('goto', { url: 'https://example.com' });
     expect(result.success).toBe(true);
-    expect(result.tips?.some((t: string) => t.includes('snapshot'))).toBe(true);
+    expect(result.tips?.some((t: { message: string }) => t.message.includes('snapshot'))).toBe(true);
   });
 
   it('does not show snapshot hint on second goto', async () => {
@@ -785,7 +785,7 @@ describe('snapshot hint on navigation', () => {
     await executeCommand('goto', { url: 'https://example.com' });
     const result = await executeCommand('goto', { url: 'https://example.com/page2' });
     expect(result.success).toBe(true);
-    expect(result.tips?.some((t: string) => t.includes('snapshot'))).toBe(false);
+    expect(result.tips?.some((t: { message: string }) => t.message.includes('snapshot'))).toBe(false);
   });
 
   it('shows snapshot hint on back/forward/refresh only once', async () => {
@@ -794,12 +794,12 @@ describe('snapshot hint on navigation', () => {
     await createSession('default', undefined, {});
     const { executeCommand } = await import('../src/executor.js');
     const r1 = await executeCommand('goto', { url: 'https://example.com' });
-    expect(r1.tips?.some((t: string) => t.includes('snapshot'))).toBe(true);
+    expect(r1.tips?.some((t: { message: string }) => t.message.includes('snapshot'))).toBe(true);
     const r2 = await executeCommand('back', {});
-    expect(r2.tips?.some((t: string) => t.includes('snapshot'))).toBe(false);
+    expect(r2.tips?.some((t: { message: string }) => t.message.includes('snapshot'))).toBe(false);
     const r3 = await executeCommand('forward', {});
-    expect(r3.tips?.some((t: string) => t.includes('snapshot'))).toBe(false);
+    expect(r3.tips?.some((t: { message: string }) => t.message.includes('snapshot'))).toBe(false);
     const r4 = await executeCommand('refresh', {});
-    expect(r4.tips?.some((t: string) => t.includes('snapshot'))).toBe(false);
+    expect(r4.tips?.some((t: { message: string }) => t.message.includes('snapshot'))).toBe(false);
   });
 });

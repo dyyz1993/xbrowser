@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ok } from '@dyyz1993/xcli-core';
+import { ok, normalizeTips } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { detectCaptcha, waitForCaptchaSolved } from '../lib/captcha.js';
@@ -75,7 +75,7 @@ export const clickCommand = registerCommand({
         selector: p.selector,
         newTab: { url: newUrl, title: newTitle },
       });
-      result.tips = [`新 Tab 已打开: ${newTitle ? newTitle + ' — ' : ''}${newUrl}`];
+      result.tips = normalizeTips([`新 Tab 已打开: ${newTitle ? newTitle + ' — ' : ''}${newUrl}`]);
       return result;
     }
 
@@ -90,7 +90,7 @@ export const clickCommand = registerCommand({
         tips.push(solved ? '✅ CAPTCHA solved!' : '❌ CAPTCHA timeout');
       }
       const result = ok({ selector: p.selector, captcha: captchaInfo });
-      result.tips = tips;
+      result.tips = normalizeTips(tips);
       return result;
     }
 

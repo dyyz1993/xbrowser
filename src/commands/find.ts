@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ok, fail } from '@dyyz1993/xcli-core';
+import { ok, fail, normalizeTips } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import type { Locator, Page } from '../browser-shim.js';
@@ -87,7 +87,7 @@ export const findCommand = registerCommand({
 
 function okWithTips(data: { matched: number; selector: string; action?: string }, tips: string[]) {
   const result = ok(data);
-  if (tips.length > 0) result.tips = tips;
+  if (tips.length > 0) result.tips = normalizeTips(tips);
   return result;
 }
 

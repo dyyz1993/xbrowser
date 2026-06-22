@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ok, fail } from '@dyyz1993/xcli-core';
+import { ok, fail, normalizeTips } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import type { Page } from '../browser-shim.js';
 import { registerCommand } from './command-registry.js';
@@ -45,16 +45,16 @@ export const snapshotCommand = registerCommand({
       if (p.compact || p.c || p.interactive || p.interactiveOnly || p.i) {
         observation.compact = formatObservationCompact(observation, { selectors: p.selectors });
       }
-      return ok(observation, [
+      return ok(observation, normalizeTips([
         `refs refreshed for ${observation.targets.length} targets; use click @e1 or fill @e2 "text"`,
-      ]);
+      ]));
     }
 
     if (p.type === 'aria') {
       const aria = await captureAriaSnapshot(page, p.selector, p.depth);
       const tips = await buildRefTips(page, aria);
       persistSemantics(url, aria);
-      return ok({ url, title, aria }, tips);
+      return ok({ url, title, aria }, normalizeTips(tips));
     }
 
     if (p.type === 'text') {
@@ -75,7 +75,7 @@ export const snapshotCommand = registerCommand({
       ]);
       const tips = await buildRefTips(page, aria);
       persistSemantics(url, aria);
-      return ok({ url, title, aria, text, dom }, tips);
+      return ok({ url, title, aria, text, dom }, normalizeTips(tips));
     }
 
     return fail(`Unknown snapshot type: ${p.type}`);

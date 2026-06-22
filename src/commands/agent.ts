@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ok } from '@dyyz1993/xcli-core';
+import { ok, normalizeTips } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { observePage, actOnPage, waitForPage, buildSelectorMap, formatObservationCompact } from '../runtime/agent-runtime.js';
 import { registerCommand } from './command-registry.js';
@@ -26,9 +26,9 @@ export const observeCommand = registerCommand({
     });
     if (p.selectors) observation.selectors = buildSelectorMap(observation);
     if (p.compact) observation.compact = formatObservationCompact(observation, { selectors: p.selectors });
-    return ok(observation, [
+    return ok(observation, normalizeTips([
       `refs refreshed for ${observation.targets.length} targets; use act --ref @e1 --action click or click @e1`,
-    ]);
+    ]));
   },
 });
 
@@ -55,10 +55,10 @@ export const actCommand = registerCommand({
         success: false,
         data: result,
         message: result.message || result.reason || 'Action failed',
-        tips: result.stale ? ['run observe again to refresh refs'] : [],
+        tips: normalizeTips(result.stale ? ['run observe again to refresh refs'] : []),
       };
     }
-    return ok(result, result.stale ? ['ref screen hash changed; run observe if the next action is uncertain'] : []);
+    return ok(result, normalizeTips(result.stale ? ['ref screen hash changed; run observe if the next action is uncertain'] : []));
   },
 });
 
