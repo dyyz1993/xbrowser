@@ -1011,11 +1011,46 @@ gh secret set NPM_TOKEN --body "$TOKEN" --repo dyyz1993/xbrowser
 gh secret list --repo dyyz1993/xbrowser | grep NPM_TOKEN
 ```
 
+### 冒烟测试（发布前必须通过）
+
+> **v1.0.3 事故教训**：源码 typecheck + vitest 全过，但打包后 `require()` 在 ESM 崩溃。
+> 源码测试 ≠ 产物测试。**发布前必须验证打包产物能启动。**
+
+`publish.yml` 已内置冒烟测试步骤（build 后、publish 前自动执行）：
+
+```yaml
+- name: Smoke test — CLI must start
+  run: |
+    node dist/cli.js --version
+    node dist/cli.js --help > /dev/null
+    node -e "import('./dist/index.js').then(() => console.log('module import OK'))"
+```
+
+**手动发版时也必须跑**（不可跳过）：
+
+```bash
+npm run build
+
+# 冒烟测试 — 必须全部通过才能 publish
+node dist/cli.js --version           # CLI 能启动
+node dist/cli.js --help > /dev/null  # 帮助能输出
+node -e "import('./dist/index.js')"  # 模块入口能 import
+
+# 通过后才 publish
+npm publish --access public
+```
+
+**什么会通过 typecheck 但打包后崩溃**：
+- `require()` 在 ESM 模块顶层执行（tsup 无法 inline）
+- 动态 import 路径在打包后丢失
+- Node 内置模块（`path`/`fs`/`os`/`crypto`）用了 CJS require 而非 ESM import
+
 ### 注意事项
 
 - **npm 不允许重复发布同一版本号**——如果该版本已发布（E403 "cannot publish over"），需要 bump 到下一个版本
 - **E2E workflow 失败不阻塞发版**——e2e 有既存的断言过期问题（plugin-lifecycle help 文本），与发版无关，主 CI 全绿即可合并
 - **不要用 git tag 发版**——xbrowser 的 publish.yml 不监听 tag，只监听 package.json 变化
+- **ESM 包禁止 `require()`**——xbrowser 是 `"type": "module"`，任何 `require()` 在打包后都会崩溃。新增代码必须用 `import`
 
 ---
 

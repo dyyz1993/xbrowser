@@ -27,6 +27,21 @@ jobs:
           registry-url: https://registry.npmjs.org/
       - run: npm ci
       - run: npm run build
+
+      # ── Smoke test: verify the built package actually starts ──
+      # Catches ESM/CJS packaging bugs (e.g. require() in ESM output)
+      # that typecheck + unit tests miss. v1.0.3 shipped broken because
+      # this step didn't exist.
+      - name: Smoke test — CLI must start
+        run: |
+          echo "Testing: node dist/cli.js --version"
+          node dist/cli.js --version
+          echo "Testing: node dist/cli.js --help"
+          node dist/cli.js --help > /dev/null
+          echo "Testing: node dist/index.js (module entry)"
+          node -e "import('./dist/index.js').then(() => console.log('module import OK')).catch(e => { console.error(e); process.exit(1); })"
+          echo "✅ All smoke tests passed"
+
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
