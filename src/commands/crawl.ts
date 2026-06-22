@@ -7,7 +7,7 @@ import { getBrowser, resolveLaunchOpts } from '../browser.js';
 import { normalizeUrl, shouldSkipUrl, getBaseDomain, isSpaHashRoute } from '../utils/url.js';
 import type { Page, BrowserContext } from '../browser-shim.js';
 
-function stripHashAnchorQuery(url: string): string {
+export function stripHashAnchorQuery(url: string): string {
   try {
     const parsed = new URL(url);
     if (isSpaHashRoute(parsed.hash)) {
@@ -38,11 +38,11 @@ async function extractLinks(page: Page, origin: string): Promise<string[]> {
   }, origin);
 }
 
-interface DisallowRule {
+export interface DisallowRule {
   pathPrefix: string;
 }
 
-function parseRobotsTxt(text: string): DisallowRule[] {
+export function parseRobotsTxt(text: string): DisallowRule[] {
   const rules: DisallowRule[] = [];
   let inRelevantBlock = false;
   for (const line of text.split('\n')) {
@@ -64,7 +64,7 @@ function parseRobotsTxt(text: string): DisallowRule[] {
   return rules;
 }
 
-function isBlockedByRobots(urlPath: string, rules: DisallowRule[]): boolean {
+export function isBlockedByRobots(urlPath: string, rules: DisallowRule[]): boolean {
   for (const rule of rules) {
     if (urlPath.startsWith(rule.pathPrefix)) return true;
     try {
@@ -149,11 +149,11 @@ interface CrawlPageError {
 
 type CrawlResult = CrawlPage | CrawlPageError;
 
-function isPageError(r: CrawlResult): r is CrawlPageError {
+export function isPageError(r: CrawlResult): r is CrawlPageError {
   return 'error' in r;
 }
 
-function isUrlAllowed(
+export function isUrlAllowed(
   url: string,
   startUrl: URL,
   depth: number,
