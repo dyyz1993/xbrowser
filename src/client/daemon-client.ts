@@ -1,4 +1,5 @@
 import type { ExecutionResult } from '../executor.js';
+import { errMsg } from '../utils/error.js';
 import { startDaemonProcess } from '../daemon/daemon.js';
 
 const DAEMON_PORT = 9224;
@@ -131,7 +132,7 @@ export async function forwardExec(
   try {
     return await rpcCall<ExecutionResult>('exec', rpcParams, timeoutMs);
   } catch (e) {
-    return { success: false, data: null, message: (e as Error).message, duration: 0 };
+    return { success: false, data: null, message: errMsg(e), duration: 0 };
   }
 }
 
@@ -145,7 +146,7 @@ export async function forwardChain(
   try {
     return await rpcCall('chain', params, 120000);
   } catch (e) {
-    return { success: false, steps: [], totalDuration: 0, stoppedReason: (e as Error).message };
+    return { success: false, steps: [], totalDuration: 0, stoppedReason: errMsg(e) };
   }
 }
 

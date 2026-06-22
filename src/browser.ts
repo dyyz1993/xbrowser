@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { errMsg } from './utils/error.js';
 import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -219,7 +220,7 @@ export async function createBrowser(options?: BrowserLaunchOptions): Promise<Bro
     // return [] and downstream code would fall back to creating a brand-new
     // isolated context — losing all the user's existing cookies/login state.
     await browser.discoverContexts().catch((err: unknown) => {
-      console.error(`[browser] discoverContexts failed: ${(err as Error).message}`);
+      console.error(`[browser] discoverContexts failed: ${errMsg(err)}`);
     });
     return browser;
   }
@@ -426,7 +427,7 @@ export function deleteSessionDiskMeta(name: string): void {
     await installNetworkCapture(page, name);
     return session;
   } catch (e) {
-    console.error(`[Session Restore] Failed for "${name}":`, (e as Error).message);
+    console.error(`[Session Restore] Failed for "${name}":`, errMsg(e));
     // Discard corrupt session meta so next attempt starts fresh
     deleteSessionDiskMeta(name);
     return undefined;

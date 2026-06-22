@@ -1,4 +1,6 @@
 import { allBuiltins, handlePluginHelp } from '../builtins/index.js';
+import { errMsg } from '../utils/error.js';
+import { createStubContext } from '../utils/stub-context.js';
 import { XBrowserPluginLoader } from '../plugin/loader.js';
 import { PluginInstaller } from '../plugin/installer.js';
 import { NPMSearcher } from '../plugin/npm-search.js';
@@ -31,9 +33,11 @@ async function buildRuntimePluginInfo(): Promise<Map<string, PluginRuntimeInfo>>
     const cmds = site.getAllCommands();
     const commandNames = cmds.map(c => c.name);
     if (commandNames.length === 0) continue;
-    const anySite = site as never as Record<string, unknown>;
-    const hasLoginHandler = typeof anySite.hasLoginCommand === 'function'
-      && (anySite.hasLoginCommand as () => boolean)();
+    // SiteInstance may have a dynamically-attached hasLoginCommand method
+    // (added by login-required-patch.ts). Check with `in` instead of double-casting.
+    const hasLoginHandler = 'hasLoginCommand' in site
+      && typeof (site as Record<string, unknown>).hasLoginCommand === 'function'
+      && ((site as Record<string, unknown>).hasLoginCommand as () => boolean)();
     const configRequiresLogin = !!site.config.requiresLogin;
     const hasLogin = hasLoginHandler || configRequiresLogin;
     let loggedIn: boolean | null = null;
@@ -90,7 +94,7 @@ async function searchFromMarketplacePlugin(
         site: options.site,
         limit: options.limit,
       },
-      {} as never,
+      createStubContext('marketplace'),
     );
 
     const items = extractItems(result);
@@ -113,7 +117,7 @@ async function infoFromMarketplacePlugin(
   if (!infoCmd) return null;
 
   try {
-    const result = await infoCmd.handler({ slug }, {} as never);
+    const result = await infoCmd.handler({ slug }, createStubContext('marketplace'));
 
     if (!result || typeof result !== 'object') return null;
     const r = result as Record<string, unknown>;
@@ -247,7 +251,7 @@ async function handlePluginInfo(
     }
     console.error(`插件 '${slug}' 未找到`);
   } catch (err) {
-    console.error('查询失败:', (err as Error).message);
+    console.error('查询失败:', errMsg(err));
   }
 }
 

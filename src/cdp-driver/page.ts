@@ -13,6 +13,7 @@
  */
 
 import { EventEmitter } from 'node:events';
+import { errMsg } from '../utils/error.js';
 import type { CDPConnection } from './connection.js';
 import type {
   XBPage, XBContext, XBBrowser, XBLocator, XBMouse, XBKeyboard,
@@ -295,7 +296,7 @@ export class XBPageImpl implements XBPage {
         );
         if (result) return result;
       } catch (err) {
-        lastError = err as Error;
+        lastError = err instanceof Error ? err : new Error(errMsg(err));
       }
       const pollMs = typeof polling === 'number' ? polling : 16;
       await this.waitForTimeout(pollMs);
@@ -848,7 +849,7 @@ export class XBPageImpl implements XBPage {
    */
   async setFileDialogInterception(enabled: boolean): Promise<void> {
     await this.conn.send('Page.setInterceptFileChooserDialog', { enabled }, this.sessionId)
-      .catch((e) => console.error('[XBPage] setInterceptFileChooserDialog failed:', (e as Error).message));
+      .catch((e) => console.error('[XBPage] setInterceptFileChooserDialog failed:', errMsg(e)));
   }
 
   /** Subscribe to a CDP event on this page's session. Returns unsubscribe function. */

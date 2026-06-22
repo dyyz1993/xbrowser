@@ -15,6 +15,8 @@ import {
   unquote,
 } from '@dyyz1993/xcli-core';
 import { parsePluginParams } from './utils/plugin-params.js';
+import { errMsg } from './utils/error.js';
+import { NoopSiteInstance } from './utils/stub-context.js';
 import { getCommand, getAllCommands } from './commands/index.js';
 import type { BrowserCommandContext } from './context.js';
 import { findOrRestoreSession, createSession, saveSessionDiskMeta, closeSessionByName, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
@@ -278,7 +280,7 @@ export async function executeCommand(
       throw new Error(msg);
     },
     config: {},
-    site: {} as never,
+    site: new NoopSiteInstance(),
     cliName: 'xbrowser',
     tips: new TipCollector(),
   };
@@ -408,7 +410,7 @@ export async function executeCommand(
   } catch (err) {
     const end = Date.now();
     const duration = end - start;
-    const errorMessage = (err as Error).message;
+    const errorMessage = errMsg(err);
 
     if (session) {
       streamCommandEvent(session.id, {
@@ -649,7 +651,7 @@ export async function executeChain(
             }
           } catch (err) {
             const duration = Date.now() - start;
-            const errorMessage = (err as Error).message;
+            const errorMessage = errMsg(err);
             recordArchive(session!.id, sessionName, {
               step: results.length,
               command: `${cmdName} ${subCommand}`,
