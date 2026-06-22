@@ -251,9 +251,10 @@ async function handleChainInput(input: string, argv?: string[]): Promise<void> {
  * @param stdinCommands - Optional array of commands read from stdin.
  */
 export async function routeCommand(
-  argv: string[],
+  argvIn: string[],
   stdinCommands?: string[]
 ): Promise<void> {
+  let argv = argvIn;
   try {
     if (stdinCommands && stdinCommands.length > 0) {
       await handleStdinMode(stdinCommands, argv);
@@ -268,6 +269,17 @@ export async function routeCommand(
     if (argv.length === 1 && isChainInput(argv[0])) {
       await handleChainInput(argv[0], argv);
       return;
+    }
+
+    // Single quoted argument like: xbrowser "goto https://example.com" --cdp xxx
+    // Shell passes "goto https://..." as one argv element. Split into command + args.
+    if (argv[0] && argv[0].includes(' ')) {
+      const spaceIdx = argv[0].indexOf(' ');
+      const possibleCmd = argv[0].substring(0, spaceIdx);
+      // Split if first word looks like a command name (alphanumeric/hyphen, no URL chars)
+      if (/^[a-zA-Z][\w-]*$/.test(possibleCmd)) {
+        argv = [possibleCmd, argv[0].substring(spaceIdx + 1), ...argv.slice(1)];
+      }
     }
   } catch (e: unknown) {
     outputError(e instanceof Error ? e.message : String(e));

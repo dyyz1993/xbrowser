@@ -375,6 +375,19 @@ export async function handleBrowserCommand(
   } else if (!result.success) {
     outputError(result.message || 'Command failed');
   } else {
-    outputResult(result.data, mode);
+    // Detect "silent empty" — command succeeded but returned no meaningful data.
+    // This usually means no browser page is connected (e.g. about:blank with no title).
+    const data = result.data as Record<string, unknown> | null;
+    const isEmptyResult = data && typeof data === 'object' &&
+      Object.values(data).every(v => v === '' || v === null || v === undefined);
+    if (isEmptyResult) {
+      const hint = cdpEndpoint
+        ? `可能未连接到浏览器。请确认 ${cdpEndpoint} 上有 Chrome 运行（--remote-debugging-port）。`
+        : '可能未连接到浏览器。请使用 --cdp <endpoint> 连接，或安装 cdp-tunnel 复用已有 Chrome。';
+      outputResult(result.data, mode);
+      console.error(`\n  ⚠️  ${hint}`);
+    } else {
+      outputResult(result.data, mode);
+    }
   }
 }
