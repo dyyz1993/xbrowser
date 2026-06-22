@@ -194,7 +194,7 @@ export class CDPInterceptorProxy {
     const ctx = {
       method: request.method,
       params: request.params ?? {},
-      sessionId: makeCompoundId((browserWs as unknown as { _cdpSession?: string })._cdpSession, request.sessionId),
+      sessionId: makeCompoundId('_cdpSession' in browserWs ? (browserWs as Record<string, unknown>)._cdpSession as string | undefined : undefined, request.sessionId),
       direction: 'client→browser' as const,
     };
 

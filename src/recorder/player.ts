@@ -53,7 +53,7 @@ export class PlaybackEngine {
     };
 
     let recording: RecordingSession;
-    const checkpoints: CheckpointEntry[] = (raw as unknown as Record<string, unknown>).checkpoints as CheckpointEntry[] || [];
+    const checkpoints: CheckpointEntry[] = 'checkpoints' in raw ? (raw.checkpoints as CheckpointEntry[]) : [];
     if (raw.events && raw.events.length > 0) {
       recording = raw;
     } else if (raw.actions && raw.actions.length > 0) {

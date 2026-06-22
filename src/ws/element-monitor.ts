@@ -75,7 +75,7 @@ export class ElementMonitor {
     try {
       await this.page.evaluate(() => {
         (document.activeElement as HTMLElement)?.blur();
-        (window as unknown as Record<string, unknown>).__xb_last_focused = null;
+        window.__xb_last_focused = null;
       });
     } catch { /* ignore */ }
   }
@@ -89,14 +89,14 @@ export class ElementMonitor {
       document.addEventListener('focusin', (e) => {
         const el = e.target as HTMLElement;
         if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.contentEditable === 'true') {
-          const w = window as unknown as Record<string, unknown>;
-          w.__xb_focus_seq = ((w.__xb_focus_seq as number) || 0) + 1;
+          
+          window.__xb_focus_seq = ((window.__xb_focus_seq as number) || 0) + 1;
           const info: { selector: string; tag: string; value: string; placeholder: string; isFileInput?: boolean; seq: number } = {
             selector: '',
             tag: el.tagName,
             value: (el as HTMLInputElement).value || '',
             placeholder: (el as HTMLInputElement).placeholder || '',
-            seq: w.__xb_focus_seq as number,
+            seq: window.__xb_focus_seq as number,
           };
           if (el.id) info.selector = '#' + el.id;
           else if (el.getAttribute('name')) info.selector = '[name="' + el.getAttribute('name') + '"]';
@@ -104,11 +104,11 @@ export class ElementMonitor {
           if (el.tagName === 'INPUT' && (el as HTMLInputElement).type === 'file') {
             info.isFileInput = true;
           }
-          w.__xb_last_focused = info;
+          window.__xb_last_focused = info;
         }
       }, true);
       document.addEventListener('focusout', () => {
-        (window as unknown as Record<string, unknown>).__xb_last_focused = null;
+        window.__xb_last_focused = null;
       }, true);
     };
     this.page.evaluate(fn).catch(() => {});
@@ -118,7 +118,7 @@ export class ElementMonitor {
     if (this.getClientCount() <= 0) return;
     try {
       const info: FocusInfo = await this.page.evaluate(() => {
-        const f = (window as unknown as Record<string, unknown>).__xb_last_focused;
+        const f = window.__xb_last_focused;
         if (f) return { focused: true, ...f as object };
         const active = document.activeElement as HTMLElement | null;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.contentEditable === 'true')) {

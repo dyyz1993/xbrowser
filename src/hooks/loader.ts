@@ -79,15 +79,14 @@ const HOOK_REGISTRY: Record<string, ExecutionHook> = {
   recorder: {
     name: 'recorder',
     onAfterCommand: async (ctx): Promise<Record<string, unknown> | undefined> => {
-      const ctxAny = ctx as unknown as Record<string, unknown>;
-      const logs = (ctxAny.__commandLogs || []) as Array<Record<string, unknown>>;
+      const logs = ('__commandLogs' in ctx ? (ctx as Record<string, unknown>).__commandLogs : undefined) as Array<Record<string, unknown>> | undefined || [];
       logs.push({
         timestamp: Date.now(),
         command: ctx.command,
         params: JSON.parse(JSON.stringify(ctx.params)),
         duration: ctx.duration,
       });
-      ctxAny.__commandLogs = logs;
+      Reflect.set(ctx, '__commandLogs', logs);
       return undefined;
     },
   },
