@@ -2267,7 +2267,7 @@ export class SessionRecorder {
 
         flushIframes(document);
         return actions;
-      })()`) as unknown as PendingAction[];
+      })()`) as PendingAction[];
     } catch {
       return;
     }

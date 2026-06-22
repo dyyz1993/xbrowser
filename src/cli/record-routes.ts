@@ -661,9 +661,9 @@ interface XBPage {
 }
 
 function ensurePage(ctx: CommandContext): XBPage {
-  const page = (ctx as Record<string, unknown>).page;
+  const page = 'page' in ctx ? (ctx as Record<string, unknown>).page : undefined;
   if (!page) throw new Error('No active page. Start a session first.');
-  return page as unknown as XBPage;
+  return page as XBPage;
 }
 
 export default createSite({

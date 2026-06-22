@@ -45,7 +45,8 @@ export async function ensureProxyFetch(): Promise<void> {
         const body = init?.body;
         if (body instanceof globalThis.FormData && !(body instanceof UFormData)) {
           const ufd = new UFormData();
-          (body as unknown as FormData).forEach((value: FormDataEntryValue, key: string) => {
+          const domFormData = body as FormData;
+          domFormData.forEach((value: FormDataEntryValue, key: string) => {
             if (value instanceof Blob) {
               ufd.append(key, value, (value as File).name || 'file');
             } else {
