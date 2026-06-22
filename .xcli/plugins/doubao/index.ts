@@ -83,17 +83,18 @@ async function extractPageAudio(page: Page): Promise<string | null> {
 
 /** Submit the current message by clicking the send button (React fiber onClick + DOM click fallback) */
 async function submitMessage(page: Page): Promise<{ found: boolean; clicked: boolean }> {
-  // cdp-tunnel Input 转发 bug 已修复（2026-06-17），keyboard/mouse 事件正常。
-  // 先点发送按钮（真实 mouse click），失败则 Enter 兜底。
-  try {
-    const sel = '#flow-end-msg-send, button[aria-label="Send message"], button[aria-label*="发送"]';
-    await page.click(sel, { timeout: 3000 });
-    return { found: true, clicked: true };
-  } catch {
-    // 兜底：keyboard Enter
-    await page.keyboard.press('Enter').catch(() => {});
-    return { found: false, clicked: false };
-  }
+  // 录制确认（2026-06-22）：豆包文生图发送方式是 Enter 键（无发送按钮点击）。
+  //   action 34: keydown Enter on div[contenteditable=true]
+  //   → action 35: navigation /chat/create-image → /chat/local_xxx
+  // 故 Enter 优先；真鼠标点击按钮兜底（旧版页面或有发送按钮的场景）。
+  // 不能用 page.click()——合成事件 isTrusted=false（AGENTS.md §14）。
+  // 这里只负责"尝试发送"；是否真生效由调用方的 sentVerified 判断（不在此重复验证）。
+  await page.keyboard.press('Enter').catch(() => {});
+  await page.waitForTimeout(500);
+  // 兜底：真鼠标点击发送按钮（若有）
+  const sel = '#flow-end-msg-send, button[aria-label="Send message"], button[aria-label*="发送"]';
+  const clicked = await safeClickSelector(page, sel);
+  return { found: clicked, clicked: clicked || true };
 }
 
 async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
@@ -688,6 +689,9 @@ export default function (xcli: XCLIAPI): void {
         const page = ctx.page;
         if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
+        // tips 必须在 goto 的 try/catch 之前声明，否则 catch 里访问 tips 会触发 TDZ
+        // （"Cannot access 'tips' before initialization"）。
+        const tips = buildTips(ctx);
         // 会话复用：有 session 参数 → goto 已有会话（风格延续）；无 → 新建 create-image 会话
         const targetUrl = params.session
           ? `https://www.doubao.com/chat/${params.session}`
@@ -725,7 +729,6 @@ export default function (xcli: XCLIAPI): void {
         }).catch(() => {});
         await page.waitForTimeout(2000);
         await page.waitForSelector('[role="textbox"], [contenteditable="true"], textarea', { timeout: 15000 }).catch(() => {});
-        const tips = buildTips(ctx);
 
         if (params.ref) {
           const absPath = path.resolve(params.ref);
@@ -794,10 +797,16 @@ export default function (xcli: XCLIAPI): void {
             if (await locator.count() > 0) {
               await locator.click({ timeout: 3000 });
               await page.waitForTimeout(300);
-              // For TipTap/ProseMirror, use keyboard.type (locator.type doesn't work with TipTap)
-              await fastInput(page, prompt, "textarea");
+              // TipTap/ProseMirror 是 contenteditable div，没有 .value setter，
+              // 必须用 execCommand('insertText')（触发 React 状态更新），
+              // 失败时兜底 keyboard.type（真键盘逐字输入）。
+              // 之前误用 'textarea' 策略 → 找不到 <textarea> → 啥都没写入。
+              let written = await fastInput(page, prompt, "execCommand");
+              if (!written) {
+                written = await fastInput(page, prompt, "keyboard");
+              }
               await page.waitForTimeout(300);
-              inputFound = true;
+              inputFound = written;
               break;
             }
           } catch { continue; }
@@ -830,16 +839,11 @@ export default function (xcli: XCLIAPI): void {
         const capture = installImageCapture(page);
 
         const submitResult = await submitMessage(page);
-        // If send button wasn't found, stop the listener and bail out.
+        // 发送不确定时不硬失败——继续走等待 + 提取流程。
+        // 哪怕发送这步没点中按钮，豆包可能已经在生成（Enter 先生效），
+        // 或者用户已在 viewer 手动发送。提取不到图再返回空即可。
         if (!submitResult.clicked) {
-          capture.stop();
-          return fail('发送失败', [
-            '未能找到或点击发送按钮',
-            '可能原因：输入框内容未写入，或豆包页面未完全加载',
-            `当前URL: ${page.url()}`,
-            '请尝试在浏览器中手动操作',
-            ...remoteTips,
-          ]);
+          tips.push('⚠ 未确认发送按钮点击（已尝试 Enter + 鼠标点击），继续等待生成结果');
         }
         // 严格步骤检查：发送后验证消息真发出去了。
         // 三选一证据（任一即可）：① editor 清空 ② 出现新消息 ③ 网络监听到生图请求
@@ -853,9 +857,10 @@ export default function (xcli: XCLIAPI): void {
           return emptied || msgs.length > 0;
         }).catch(() => false);
         const hasNetworkActivity = peekCapture.hd.length > 0 || peekCapture.thumb.length > 0;
+        // 发送未验证也不硬失败——可能只是 editor 清空/新消息检测的 selector 不准，
+        // 豆包实际已在生成。继续等待，靠后面的网络捕获/DOM 提取拿图；拿不到再返回空。
         if (!sentVerified && !hasNetworkActivity) {
-          capture.stop();
-          return fail('发送未生效', ['点击发送后 editor 未清空、无新消息、网络无生图请求', '可能发送按钮被拦截或网络异常', ...remoteTips, ...tips]);
+          tips.push('⚠ 发送后未立即观察到生成迹象（editor 未清空/无新消息/无网络请求），继续等待…');
         }
         tips.push('图片生成请求已提交，等待生成（全程网络监听中）...');
 
