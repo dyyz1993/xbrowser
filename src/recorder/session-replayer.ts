@@ -51,13 +51,13 @@ export class SessionReplayer {
   }
 
   /** Load a recording from a file path or parsed JSON */
-  async load(source: string | RecordingData): Promise<void> {
+  async load(source: string | RecordingData | Record<string, unknown>): Promise<void> {
     if (typeof source === 'string') {
       const fs = await import('fs');
       const raw = fs.readFileSync(source, 'utf8');
       this.recording = JSON.parse(raw);
     } else {
-      this.recording = source;
+      this.recording = source as RecordingData;
     }
   }
 
