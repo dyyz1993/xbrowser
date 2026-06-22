@@ -27,6 +27,9 @@ output/
 .xcli/plugins/node_modules/
 .xcli/plugins/package.json
 
+# ── Runtime-generated site knowledge（录制自动生成，不入 git）──
+.xcli/knowledge/
+
 # ── Root-level artifacts (禁止根目录零散文件) ──────
 # 脚本
 /check-*.ts

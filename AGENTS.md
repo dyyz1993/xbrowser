@@ -33,9 +33,8 @@ npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
    - 提供最小复现脚本（裸 CDP WS 脚本，不含 xbrowser 封装）
    - **绝不**在 xbrowser 里加 retry/skip/workaround 来兜底代理的 bug——那会把代理问题掩盖，污染客户端代码。
 4. **注释不绑定产品**——代码注释描述"标准 CDP 行为"，不写"cdp-tunnel 隔离规范 §7.5"。例如：
-   - ❌ `// cdp-tunnel 隔离规范 §7.5：不调 GET /json/list`
-   - ✅ `// 标准 CDP：用 WS Target.getTargets 而非 HTTP /json/list（后者非协议标准，且可能暴露其他客户端的 tab）`
-5. **现有 §7.5 引用**——历史代码里提到 "cdp-tunnel 隔离规范 §7.5" 的注释，行为本身是对的（用 WS 不用 HTTP），但措辞要逐步改为标准 CDP 描述。
+  - ✅ `// 标准 CDP：发现 targets 用 Target.getTargets（HTTP /json/list 也可用，端口池兼容）`
+5. **现有 §7.5 引用**——历史代码里提到 "cdp-tunnel 隔离规范 §7.5" 的注释，措辞要改为标准 CDP / 端口池兼容描述（`/json/list` 和 `Target.getTargets` 均可用）。
 
 **违反反例（禁止）**：
 ```typescript
@@ -297,7 +296,7 @@ chrome --remote-debugging-port=9222
 xbrowser --cdp 9222 chatgpt list
 ```
 
-### 7.5 cdp-tunnel 隔离规范（2026-06-16 强制）
+### 7.5 CDP 端口池与隔离（2026-06-16，2026-06-22 更新：端口池兼容 /json/list）
 
 #### 7.5.0 cdp-tunnel 是什么 + 怀疑 CDP 问题时怎么诊断（2026-06-17 实测）
 
@@ -360,7 +359,7 @@ xbrowser title --cdp http://localhost:9221 --json
 # 预期：{"success":true,"data":{"title":"<真实页面标题>"}}
 #   success:false / 超时 / 连接拒绝 → CDP 链路确实断了
 
-# 再深一层：能否列 targets（走标准 CDP，不走 HTTP /json/list）
+# 再深一层：能否列 targets（标准 CDP WS 或 HTTP /json/list 均可，端口池兼容）
 xbrowser eval --cdp http://localhost:9221 --json "1+1"   # 任意 JS 求值，验证 attach 成功
 ```
 
@@ -372,7 +371,7 @@ xbrowser eval --cdp http://localhost:9221 --json "1+1"   # 任意 JS 求值，�
 | 端口被别人抢了 | CDP 行为和本文档对不上（隔离/登录态表现异常） | `lsof ...` 看进程路径 | 是 `.../cdp-tunnel/server/proxy-server.js` | 杀掉占用进程，重启 cdp-tunnel |
 | 扩展桥接断了 | `newPage()` 失败 / attach 超时 / 看不到任何 target | `cdp-tunnel diagnose`（第3项）+ `curl /json/version` 看 `totalPlugins` | 扩展 `✅已连接` 且 `totalPlugins>0` | 点 Chrome 工具栏 CDP Bridge 图标重连；或 `cdp-tunnel extension` 重装；或重启 Chrome |
 | 登录态"看起来丢了" | goto 到登录页而非已登录主页 | `cdp-tunnel status`（看是不是端口被抢/换实例）+ 检查是否连到了别的 Chrome 实例 | 登录态共享，goto 直接进已登录页 | 确认连的是装了 CDP Bridge 且已登录的那个 Chrome；别误判成"需要重新登录" |
-| 标签隔离异常 | 能看到/操作别的 clientId 的 tab | `cdp-tunnel --help` 确认版本 ≥ 2.10.x；走 WS `Target.getTargets` 而非 HTTP `/json/list` | 只看到本 clientId 的 page | 升级 `cdp-tunnel update`；代码侧禁止 HTTP `/json/list`（见下方） |
+| 标签隔离异常 | 能看到/操作别的 clientId 的 tab | `cdp-tunnel --help` 确认版本 ≥ 2.10.x | 只看到本 clientId 的 page | 升级 `cdp-tunnel update` |
 | 扩展未连但 HTTP 通（误判重灾区） | status 写"未连接"但 xbrowser `title` 仍能跑 | `curl /json/version` 看 `totalPlugins` | 诊断文案与 `totalPlugins` 一致 | 以 `totalPlugins`/实际命令为准，别被 status 文案误导 |
 
 **给用户的可复制验证片段**（Agent 把 `<SYMP>` 换成怀疑的症状后发给用户）：
@@ -397,8 +396,8 @@ echo "[5] xbrowser 冒烟:";  xbrowser title --cdp http://localhost:9221 --json
 |------|------------|
 | **登录态 / Cookie / localStorage** | ✅ **共享** |
 | **Profile / user-data-dir** | ✅ **共享** |
-| **`GET /json/list`（HTTP）** | **只返回本 clientId 的 page**（cdp-tunnel 已隔离） |
-| **`WS Target.getTargets`** | **只返回本 clientId 的 page** |
+| **`GET /json/list`（HTTP）** | **兼容可用**（端口池隔离，返回本客户端的 page） |
+| **`WS Target.getTargets`** | **兼容可用**（同上，端口池隔离） |
 | **`WS Target.attachToTarget`** | **本 clientId 拥有**的 targetId 才放行；其他 clientId 的 targetId 返回 `close(1008)` |
 | **其他客户端已开的 tab** | ❌ 看不到、不能操作、不能 attach |
 
@@ -407,46 +406,18 @@ echo "[5] xbrowser 冒烟:";  xbrowser title --cdp http://localhost:9221 --json
 - 看不到 / 操作不了 client B 开的 tab — 隔离边界
 - 想"复用登录态" 不需要重新登录，直接 `page.goto` 即可
 
-#### 🚫 禁止用 HTTP `/json/list` 拿 tabs
+#### CDP 发现 tabs（HTTP /json/list 和 WS Target.getTargets 均可用）
 
-**`GET /json/list` 已经被 cdp-tunnel 隔离**（create 模式返回空 / takeover 模式才返回 tabs）。xbrowser **不允许**用 `fetch('http://host:port/json/list')` 拿 tab 列表 — 即使能拿到，也违反"显式 cdp-tunnel 行为边界"的契约。
+端口池隔离下，`GET /json/list`（HTTP）和 `WS Target.getTargets` 都兼容——
+端口池已按客户端隔离，只返回本客户端拥有的 page。两种方式都可用，按场景选择：
 
-**正确做法：走标准 CDP 协议**
-
-| 需求 | 协议方法 | 备注 |
+| 需求 | 推荐方式 | 备注 |
 |------|---------|------|
-| 发现已有的 tabs | `WS Target.getTargets` | cdp-tunnel 已按 clientId 过滤 |
+| 发现已有的 tabs | `WS Target.getTargets` 或 `GET /json/list` | 端口池已按客户端隔离 |
 | 等新 tab 自动 attach | `WS Target.setAutoAttach` | 标准 CDP auto-attach 流程 |
-| 主动 attach 一个 tab | `WS Target.attachToTarget` | 仅限本 clientId 拥有 |
-| 拿 browser-level ws（连 cdp 入口） | `GET /json/version` | 这个**安全**（不暴露 page 列表） |
+| 主动 attach 一个 tab | `WS Target.attachToTarget` | 仅限本客户端拥有的 targetId |
+| 拿 browser-level ws（连 CDP 入口） | `GET /json/version` | 不暴露 page 列表 |
 
-**反例（❌ HTTP /json/list 拿 tabs）**：
-```typescript
-// ❌ 错：用 HTTP /json/list 拿所有 tab，然后 webSocketDebuggerUrl 直连 attach
-const targets = await fetch('http://localhost:9221/json/list').then(r => r.json());
-for (const t of targets) {
-  // attach 别人的 tab — 即使 cdp-tunnel 放行，xbrowser 也不应该这么做
-  attach(t.webSocketDebuggerUrl);
-}
-```
-
-**正例（✅ 标准 CDP）**：
-```typescript
-// ✅ 正确：连 WS /devtools/browser/ → 用 Target.getTargets 拿自己 clientId 的 tabs
-const browser = await launch({ cdpEndpoint });
-await browser.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
-const { targetInfos } = await browser.send('Target.getTargets');
-for (const t of targetInfos.filter(t => t.type === 'page')) {
-  // t.targetId 一定属于本 clientId（cdp-tunnel 已过滤）
-  const session = await browser.send('Target.attachToTarget', { targetId: t.targetId, flatten: true });
-}
-```
-
-**xbrowser 代码层面已修**：
-- ✅ `findTargetPage` 改用 `context.pages()`（Playwright 内部就是 `Target.getTargets` 的封装）
-- ✅ `createSession` 移除 `getCDPTargets` 兜底（`browser.ts:781`）
-- ✅ `src/browser.ts` 删掉 `getCDPTargets` 函数（不再使用）
-- ⚠️ `discoverContexts` HTTP 兜底（`cdp-driver/browser.ts:273-301`）按新协议永远返回空，**建议移除**
 
 #### 常见误判（修正后的理解）
 
@@ -1891,3 +1862,128 @@ window.addEventListener('hashchange', function() { checkNav('hashchange'); });
 | touch / filechooser | ✅ | |
 | text-render | ✅ | MutationObserver（需 viewer 操作触发）|
 | dialog | ✅ | 不再 auto-dismiss |
+
+### 23.11 doubao 文生图录制确认 + bug 修复（2026-06-22）
+
+#### 录制确认的流程（create-image 文生图）
+
+用户在真实 Chrome 录制文生图全流程（60 actions），定位的关键事实：
+
+| 步骤 | action | selector / key | 说明 |
+|------|:---:|---------|------|
+| 点击输入框聚焦 | [6] click (822,221) | `div[contenteditable="true"]` | 真实鼠标点击聚焦 |
+| 输入提示词 | [7-33] input | `div[contenteditable="true"]` | contenteditable div，**不是 textarea** |
+| **发送** | [34] keydown | **Enter** | Enter 键发送，**无发送按钮点击** |
+| 页面跳转 | [35] navigation | `/chat/create-image` → `/chat/local_xxx` | Enter 发送成功的标志 |
+| 对话页输入框 | [37] focus | `textarea[placeholder="发消息..."]` | 跳转后变成 textarea |
+
+**关键结论**：
+1. **create-image 页输入框是 `div[contenteditable="true"]`**（TipTap/ProseMirror），发送后跳到对话页才变成 `textarea[placeholder="发消息..."]`
+2. **发送方式是 Enter 键**，用户根本不点发送按钮——新版豆包发送按钮 selector（`#flow-end-msg-send`）已失效
+3. 图片生成请求走网络：`rc_gen_image/xxx.jpeg~tplv-a9rns2rl98-image_pre_watermark_1_5b.png`（HD，~4MB）+ `downsize_watermark_1_5_b.png`（缩略图）
+
+#### 修复的 bug（3 个）
+
+| # | bug | 根因 | 修复 |
+|---|-----|------|------|
+| 1 | **TDZ crash**：`Cannot access 'tips' before initialization` | `const tips = buildTips(ctx)` 声明在 goto try/catch 之后，但 catch 和成功分支都引用 tips → 命中 TDZ | tips 声明提前到 goto try/catch 之前 |
+| 2 | **prompt 写不进输入框** | 对 TipTap contenteditable 用了 `fastInput(page, prompt, "textarea")`——textarea 策略找 `<textarea>` 元素，而豆包是 contenteditable div，找不到 → 啥都没写入 | 改成 `execCommand` 主策略 + `keyboard` 兜底，据返回值设 `inputFound` |
+| 3 | **submitMessage 用合成事件 + 找不到发送按钮** | `page.click('#flow-end-msg-send')` 合成事件 isTrusted=false；且新版豆包该 selector 失效 | 改成 **Enter 优先**（录制确认）+ 真鼠标坐标点击兜底 |
+
+另外把两处硬失败（发送按钮没点中 / 发送未验证）改成**软警告**：继续走 120 秒等待 + 网络捕获 + DOM 提取流程，提取不到图再返回 ok + "图片可能还在生成中"。符合"发送不确定也继续等"的要求。
+
+#### 验证
+
+`xbrowser doubao image --prompt "一只可爱的小猫，毛茸茸的，大眼睛"` → 成功生成 4 张 HD 图（4.4-4.9MB each），网络捕获 `4 张 HD + 4 张缩略图`，全部下载到 `~/.xbrowser/downloads/`。
+
+#### 教训：录制是定位 selector 的唯一可靠方式
+
+这次调试走了弯路——先猜测"发送按钮 selector 失效"并盲改代码（合成事件→真鼠标→Enter 优先→…），浪费了很多轮。**一次录制就直接定位了**：输入框是 contenteditable（不是 textarea）、发送是 Enter（不是按钮）。以后遇到站点改版导致操作失效，**第一步就该录制用户真实操作**，不要猜。
+
+### 23.12 录制产物架构：索引层 + 详情层（2026-06-22）
+
+录制产物从"单文件 recording.json（340KB+）"重构为**两层架构**：索引层（给 LLM 看）+ 详情层（按需查）。
+
+#### 存储路径（网站为维度）
+
+```
+~/.xbrowser/recordings/
+├── doubao/
+│   ├── 2026-06-22_1312_fail-signal/     ← 每次录制一个目录（时间戳_session名）
+│   └── 2026-06-22_1400_success/
+├── gemini/
+│   └── 2026-06-22_1500_cat-image/
+└── chatgpt/
+```
+
+- **站点目录**：从录制 URL 提取域名（`doubao.com` → `doubao`）
+- **每次录制**：`YYYY-MM-DD_HHMM_<session-name>`，同站录制按时间排序
+- **旧路径兼容**：`~/.xbrowser/sessions/<session>/recordings/` 的旧数据仍可读（`findRecordingsDir` 回退）
+
+#### 产物文件结构
+
+```
+~/.xbrowser/recordings/<site>/<ts>_<session>/
+├── index.txt          主产物 · 给 LLM 看的索引大纲（2-5KB）
+├── actions.jsonl      action 详情（每行一个 JSON，可 jq/grep）
+├── network.jsonl      API 请求详情（XHR/Fetch + 生图 URL，过滤掉 JS/CSS/普通图片）
+├── network-all.jsonl  全量 network（含图片/JS/CSS，按需查）
+├── snapshot.txt       aria 快照（停止时页面结构，过滤了 71% 噪音）
+└── snapshot.png       截图（停止时页面视觉）
+```
+
+#### index.txt 格式约定
+
+index.txt 是 LLM 的"地图"——扫一眼就知道录了什么、结果是什么，需要细节时按头部引用去 jsonl 查。
+
+```
+# Recording: fail-signal | 2026-06-22 05:12 | duration 687s | 31 actions | 241 API
+# URL: https://www.doubao.com/chat/create-image
+# 查 actions 细节: actions.jsonl  (jq '.id==6' actions.jsonl)
+# 查 API 请求: network.jsonl  (jq '.path|test("rc_gen")' network.jsonl)
+# 页面快照: snapshot.txt / snapshot.png
+
+[5] click [contenteditable]
+    → appeared: "参考图", "Seedream 4.5", "比例", "图像", "视频"      ← 弹窗/新元素
+    → state: "图像"[state=active], "视频"[state=inactive]              ← 按钮状态变化
+[11] hover "Seedream 4.5"                                              ← hover 也采集 popover
+    → appeared: "模型Seedream 5.0 ", "参考图"                          ← hover 触发的 popover 内容
+[16] click "比例"
+    → state: "比例"[expanded=true,state=open]                          ← 下拉展开了
+[24] click "9:16 手机壁纸，人像"                                        ← 选择了比例
+[28] nav /chat/local_1721431706336352                                 ← 发送后跳转
+[29] click #flow-end-msg-send                                         ← 点发送按钮
+    → ⚠ 拒绝信号(版权): 抱歉，由于版权相关限制...                       ← 拒绝文案
+
+# Results:
+#   图片: 0 张                                                       ← 生图结果计数
+#   ⚠ 拒绝/错误:                                                     ← 失败信号汇总
+#     抱歉，由于版权相关限制，暂时无法创作对应的内容
+#   Network: 0 报错, 21 空响应(API)
+#   Endpoints: /ocean-cloud-tos/image_generation/*.webp(145), /list(29), ...
+```
+
+#### 4 类操作结果信号
+
+index.txt 不只记录"做了什么交互"，还记录"交互后发生了什么变化"：
+
+| 信号 | 数据来源 | 示例 |
+|------|---------|------|
+| **按钮状态变化** | `clickContext.stateChanges` | `比例[expanded=true,state=open]` |
+| **弹窗/新元素** | `clickContext.appeared` | `appeared: "参考图", "Seedream 4.5"` |
+| **生图图片 URL** | network 里 `rc_gen_image` HD 地址 | `图片: 4 张 (URL 在 network.jsonl)` |
+| **拒绝/错误文案** | action 文案 + 网络响应体匹配关键词 | `⚠ 拒绝信号(版权): 抱歉...` |
+
+**hover 也采集 popover**：hover 触发的 popover/dropdown（如工具栏说明、模型预览）会和 click 一样采集 `clickContext`，不丢失"hover 出现了什么"。
+
+#### 噪音过滤
+
+- **actions**：过滤 visibility/keyup/focus/blur/普通字母 keydown，只留有信息量的步骤
+- **network**：过滤 image/script/stylesheet/font/埋点，只留 XHR/Fetch（生图 URL 例外，保留）
+- **aria 快照**：过滤 `none:`/`generic:`/`InlineTextBox` 等 Chromium 内部噪音（71%）
+
+#### 拒绝关键词（recorder 内置）
+
+`抱歉/无法/不能/限制/失败/版权/敏感/违规/上限/额度/拒绝/禁止/try again/unable/refuse`
+
+匹配到就在 index 标注 `⚠ 拒绝信号(关键词): 文案`，并在 Results 区汇总。不依赖插件层的 `refusal-detect.ts`（核心层不依赖插件层）。
