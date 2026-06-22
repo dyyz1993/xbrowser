@@ -140,7 +140,16 @@ export async function launchChrome(options: ChromeLaunchOptions = {}): Promise<L
   const chromePath = executablePath ?? findChrome();
   if (!chromePath) {
     throw new Error(
-      'Chrome/Chromium not found. Set executablePath or install Chrome to a default location.',
+      [
+        'Chrome/Chromium not found.',
+        '',
+        '推荐：用 cdp-tunnel 复用你已有的 Chrome（含登录态、反爬友好）',
+        '  npx cdp-tunnel setup          # 零安装一键启动代理 + 加载 Chrome 扩展',
+        '  xbrowser goto https://example.com --cdp http://localhost:9221',
+        '',
+        '或指定 Chrome 路径：',
+        '  xbrowser config set browser.executablePath "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"',
+      ].join('\n'),
     );
   }
 
