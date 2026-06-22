@@ -796,7 +796,11 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
             console.error(`[replay] Error at step ${action.type}: ${error.message}`);
           },
         });
-        await replayer.load(parsed as unknown as import('../recorder/session-recorder.js').RecordingData);
+        // Validate parsed JSON has the required RecordingData fields before loading
+        if (!Array.isArray(parsed.actions) || typeof parsed.startUrl !== 'string') {
+          return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Invalid recording format: missing actions or startUrl' }] };
+        }
+        await replayer.load(parsed);
         const startTime = Date.now();
         const result = await replayer.run();
         const duration = Date.now() - startTime;
