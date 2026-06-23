@@ -224,6 +224,19 @@ export async function handleBrowserCommand(
         params = { width, height };
         break;
       }
+      case 'mouse': {
+        // Supports: mouse move 100 200  OR  mouse click 50 50  OR  mouse --action move --x 100 --y 200
+        const action = (options.action as string) || args.find(a => ['move','click','dblclick','down','up'].includes(a));
+        const actionIdx = action ? args.indexOf(action) : -1;
+        const x = options.x !== undefined ? Number(options.x) : (actionIdx >= 0 && args[actionIdx+1] ? Number(args[actionIdx+1]) : undefined);
+        const y = options.y !== undefined ? Number(options.y) : (actionIdx >= 0 && args[actionIdx+2] ? Number(args[actionIdx+2]) : undefined);
+        if (!action || x === undefined || y === undefined) {
+          outputError('Usage: xbrowser mouse <move|click|dblclick> <x> <y>\n       xbrowser mouse --action <action> --x <x> --y <y>');
+        }
+        cmdName = 'mouse';
+        params = { action, x, y, ...(options.button ? { button: options.button } : {}) };
+        break;
+      }
       case 'html':
         cmdName = 'html';
         params = { selector: (options.selector || options.s) as string | undefined };

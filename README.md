@@ -50,8 +50,10 @@ xbrowser "goto https://example.com && wait .content && text --selector .content"
 
 **SEO & Backlink Automation**
 ```bash
-# Auto-publish articles to 13+ SEO platforms
-xbrowser publish --platform devto,juejin --file article.md
+# Publish articles to SEO platforms via site plugins
+xbrowser devto publish --file article.md
+xbrowser juejin publish --file article.md
+# (Each platform has its own plugin — run `xbrowser plugin list` to see available)
 ```
 
 ## 快速开始
