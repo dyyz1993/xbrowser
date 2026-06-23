@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.2.1] - 2026-06-23
+
+### Fixed
+- `scrape` Element UI 表格列重复 2 次 — 提取前移除 fixed-column 副本 + `:scope >` 直接子元素选择器 (#52)
+
 ## [1.2.0] - 2026-06-23
 
 ### Fixed — 14 个 bug 修复（10 个 issue）
