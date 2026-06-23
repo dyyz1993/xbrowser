@@ -12,14 +12,15 @@ const { mockOutputResult, mockOutputError, mockInstallerInstall, mockInstallerIn
   mockInstallerList: vi.fn(),
   mockReloadPlugin: vi.fn(),
   mockGetPluginContract: vi.fn(),
-  mockGetPluginLoader: vi.fn().mockResolvedValue({
+  mockGetPluginLoader: vi.fn(() => Promise.resolve({
     getCore: () => ({
       loader: {
         getSites: () => [],
       },
     }),
+    reloadPlugin: async () => undefined,
     getPluginContract: vi.fn(),
-  }),
+  })),
 }));
 
 vi.mock('../../src/cli/output.js', () => ({
@@ -100,6 +101,7 @@ function setupMockLoaderWithSites(sites: unknown[] = []) {
         getSites: () => sites,
       },
     }),
+    reloadPlugin: mockReloadPlugin,
   });
 }
 

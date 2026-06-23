@@ -1,5 +1,4 @@
 import { z } from 'zod';
-import { errMsg } from '../utils/error.js';
 import { ok } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
@@ -460,7 +459,7 @@ export const healthCheckCommand = registerCommand({
             issues.push({
               severity: 'error',
               category: 'links',
-              message: `Broken link (fetch error): ${href} — ${errMsg(err) || 'unknown'}`,
+	              message: `Broken link (fetch error): ${href} — ${(err instanceof Error ? err.message : String(err)) || 'unknown'}`,
             });
           }
         }

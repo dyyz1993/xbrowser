@@ -32,7 +32,7 @@ describe('parseCommandChain', () => {
     const result = parseCommandChain('goto https://example.com ; title');
     expect(result).toHaveLength(2);
     expect(result[0].pipeline).toEqual(['goto https://example.com']);
-    expect(result[0].type).toBe('and');
+    expect(result[0].type).toBe('sequence');
     expect(result[1].pipeline).toEqual(['title']);
     expect(result[1].type).toBe('and');
   });
@@ -41,7 +41,7 @@ describe('parseCommandChain', () => {
     const result = parseCommandChain('goto https://example.com && title ; screenshot');
     expect(result).toHaveLength(2);
     expect(result[0].pipeline).toEqual(['goto https://example.com', 'title']);
-    expect(result[0].type).toBe('and');
+    expect(result[0].type).toBe('sequence');
     expect(result[1].pipeline).toEqual(['screenshot']);
   });
 

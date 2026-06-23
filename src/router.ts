@@ -203,9 +203,18 @@ function extractCdpFromArgv(argv: string[]): string | undefined {
 async function handleStdinMode(stdinCommands: string[], argv?: string[]): Promise<void> {
   const chain = stdinCommands.join(' && ');
   const cdpEndpoint = argv ? extractCdpFromArgv(argv) : undefined;
-  const chainResult = await executeChain(chain, { fileMode: true, cdpEndpoint });
+  const sessionName = argv ? extractSessionNameFromArgv(argv) : 'default';
+  const chainResult = await executeChain(chain, { fileMode: true, cdpEndpoint, sessionName });
   printChainResult(chainResult);
   if (!chainResult.success) throw new Error("Command failed");
+}
+
+function extractSessionNameFromArgv(argv: string[]): string {
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--session' && argv[i + 1]) return argv[i + 1];
+    if (typeof argv[i] === 'string' && argv[i].startsWith('--session=')) return argv[i].slice(10);
+  }
+  return process.env.XBROWSER_SESSION || 'default';
 }
 
 async function handleEvalMode(argv: string[]): Promise<void> {
@@ -375,6 +384,30 @@ export async function routeCommand(
       } else {
         console.log(helpGenerator.generate(builtinCmd as Parameters<typeof helpGenerator.generate>[0], { color: true, emoji: false }));
       }
+      return;
+    }
+    // Check for subcommand help (session, plugin, record, daemon, etc.)
+    const SUBCOMMAND_HELP: Record<string, string> = {
+      session: 'session open|close|kill|list [--session <name>] [--cdp <endpoint>]',
+      plugin: 'plugin install|uninstall|list|reload|schema|search|info <name>',
+      record: 'record start|stop|status [--url <url>] [--name <flow>]',
+      daemon: 'daemon status [--port <port>]',
+      replay: 'replay <file> [--slow-mo <ms>] [--stop-on-error]',
+      create: 'create <name> [--template static|dynamic|login|api]',
+      run: 'run <file>',
+      serve: 'serve [--port <port>] [--token <token>]',
+      remote: 'remote <url> [command] [--token <token>]',
+      convert: 'convert <file> [--to js|py|sh]',
+      extract: 'extract <file> [--format json|yaml]',
+      filter: 'filter <file> [--include <type>] [--exclude <type>]',
+      test: 'test <name> [--cdp <endpoint>]',
+      viewer: 'viewer [--session <name>]',
+      kill: 'kill [--all]',
+      net: 'net [--cdp <endpoint>]',
+    };
+    const subHelp = SUBCOMMAND_HELP[command];
+    if (subHelp) {
+      console.log(`\n  Usage: xbrowser ${subHelp}\n`);
       return;
     }
     showMainHelp();

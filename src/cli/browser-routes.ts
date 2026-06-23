@@ -29,6 +29,21 @@ const SELECTOR_COMMANDS = new Set([
   'check', 'uncheck', 'hover', 'dblclick', 'wait',
 ]);
 
+/**
+ * camelCase → kebab-case alias map for commands documented in README with
+ * camelCase names (e.g. getCookies → get-cookies). Users copying README
+ * examples get a helpful error instead of "Unknown command".
+ */
+const CAMEL_TO_KEBAB: Record<string, string> = {
+  getCookies: 'get-cookies',
+  setCookie: 'set-cookie',
+  clearCookies: 'clear-cookies',
+  getLocalStorage: 'get-local-storage',
+  setLocalStorage: 'set-local-storage',
+  clearLocalStorage: 'clear-local-storage',
+  setViewport: 'set-viewport',
+};
+
 export async function handleBrowserCommand(
   command: string,
   args: string[],
@@ -37,6 +52,9 @@ export async function handleBrowserCommand(
   mode: string,
   cdpEndpoint?: string
 ): Promise<void> {
+  // Normalize camelCase command names from README to kebab-case
+  command = CAMEL_TO_KEBAB[command] || command;
+
   // Auto-generate --help from Zod schema via HelpGenerator
   if (args.includes('--help') || args.includes('-h') || options.help || options.h) {
     const cmdDef = getCommand(command);
@@ -177,7 +195,7 @@ export async function handleBrowserCommand(
           type: options.type as string | undefined,
           selector: (options.selector || options.s) as string | undefined,
           base64: !!(options.base64),
-          output: (options.output || options.o) as string | undefined,
+          output: (options.output || options.o || args[0]) as string | undefined,
         };
         break;
       case 'eval':
@@ -426,13 +444,14 @@ export async function handleBrowserCommand(
     const data = result.data as Record<string, unknown> | null;
     const isEmptyResult = data && typeof data === 'object' &&
       Object.values(data).every(v => v === '' || v === null || v === undefined);
-    if (isEmptyResult) {
-      const hint = cdpEndpoint
-        ? `可能未连接到浏览器。请确认 ${cdpEndpoint} 上有 Chrome 运行（--remote-debugging-port）。`
-        : '可能未连接到浏览器。请使用 --cdp <endpoint> 连接，或安装 cdp-tunnel 复用已有 Chrome。';
-      outputResult(result.data, mode);
-      console.error(`\n  ⚠️  ${hint}`);
-    } else {
+	    if (isEmptyResult) {
+	      const hint = cdpEndpoint
+	        ? `可能未连接到浏览器。请确认 ${cdpEndpoint} 上有 Chrome 运行（--remote-debugging-port）。`
+	        : '可能未连接到浏览器。请使用 --cdp <endpoint> 连接，或安装 cdp-tunnel 复用已有 Chrome。';
+	      outputResult(result.data, mode);
+	      console.error(`\n  ⚠️  ${hint}`);
+	      process.exit(1);
+	    } else {
       outputResult(result.data, mode);
     }
   }

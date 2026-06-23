@@ -138,9 +138,63 @@ export const scrapeCommand = registerCommand({
 
           let content: string;
           switch (p.format) {
-            case 'markdown':
+            case 'markdown': {
+              // Extract tables via JS (handles complex frameworks like Element UI
+              // that use nested <div>s instead of standard <table> elements)
+              const tablesMd = await page.evaluate<string>(() => {
+                // Find all elements that look like tables: <table>, [class*="table"],
+                // [class*="grid"], or aria role="table"/"grid"
+                const tableSelectors = [
+                  'table',
+                  '[role="table"]',
+                  '[role="grid"]',
+                  '[class*="el-table"]',        // Element UI
+                  '[class*="ant-table"]',       // Ant Design
+                  '[class*="MuiTable"]',        // Material UI
+                  '[class*="table"]',           // Generic table-like
+                ].join(',');
+                const tables = document.querySelectorAll(tableSelectors);
+                if (tables.length === 0) return '';
+
+                return Array.from(tables).map(table => {
+                  // Try standard table rows first, then any row-like elements
+                  const rows = table.querySelectorAll('tr, [role="row"], [class*="row"]');
+                  if (rows.length === 0) return '';
+
+                  const mdRows = Array.from(rows).map(row => {
+                    const cells = row.querySelectorAll('th, td, [role="columnheader"], [role="cell"], [class*="cell"], [class*="col"]');
+                    return '| ' + Array.from(cells).map(c => {
+                      // For deeply nested content (Element UI), get the full text content
+                      const cellText = (c as HTMLElement).innerText?.trim().replace(/\n/g, ' ') || '';
+                      return cellText.replace(/\|/g, '\\|') || '';
+                    }).join(' | ') + ' |';
+                  }).join('\n');
+
+                  // Extract headers (first row if it has th or specific header classes)
+                  const headerRow = rows[0];
+                  const headerCells = headerRow.querySelectorAll('th, [role="columnheader"], [class*="header"]');
+                  const hasHeader = headerCells.length > 0;
+
+                  if (hasHeader && mdRows) {
+                    const headerCount = headerCells.length;
+                    const sep = '| ' + Array(headerCount).fill('---').join(' | ') + ' |';
+                    return mdRows.split('\n').map((line, i) => {
+                      if (i === 0) return line + '\n' + sep;
+                      return line;
+                    }).join('\n');
+                  }
+                  return mdRows;
+                }).join('\n\n');
+              });
+
               content = htmlToMarkdown(html, { onlyMainContent: p.onlyMainContent });
+
+              // If JS extracted tables, prepend them (turndown often misses complex table structures)
+              if (tablesMd) {
+                content = tablesMd + '\n\n' + content;
+              }
               break;
+            }
             case 'html':
               content = html;
               break;

@@ -113,7 +113,7 @@ bin/cli.ts
         │     ├── record-routes.ts (handleRecord)
         │     └── ... (daemon, create, config, run, etc.)
         │
-        ├── src/commands/ (49 commands via registerCommand)
+        ├── src/commands/ (50 commands via registerCommand)
         │     ├── index.ts (side-effect imports + re-exports)
         │     ├── navigation.ts (goto, open, back, forward, refresh, title, url)
         │     ├── interaction.ts (click, fill, type, press, select, check, hover, dblclick)

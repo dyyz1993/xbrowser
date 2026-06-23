@@ -1,6 +1,6 @@
 # xbrowser
 
-> **Browser automation CLI** for web scraping, headless browsing, SEO analysis, and AI agent workflows. 49 commands, 20+ plugins. A command-line alternative to Playwright, Puppeteer, and Selenium — **no code required**.
+> **Browser automation CLI** for web scraping, headless browsing, SEO analysis, and AI agent workflows. 50 commands, 20+ plugins. A command-line alternative to Playwright, Puppeteer, and Selenium — **no code required**.
 
 [![CI Status](https://github.com/dyyz1993/xbrowser/workflows/CI/badge.svg)](https://github.com/dyyz1993/xbrowser/actions)
 [![codecov](https://codecov.io/gh/dyyz1993/xbrowser/branch/master/graph/badge.svg)](https://codecov.io/gh/dyyz1993/xbrowser)
@@ -9,7 +9,7 @@
 
 ## 特性
 
-- **49 浏览器命令** — 导航、交互、查询、存储、截图，覆盖常见自动化场景
+- **50 浏览器命令** — 导航、交互、查询、存储、截图，覆盖常见自动化场景
 - **命令链** — 用 `&&`、`,`、`+`、`->`、`;` 串联多个命令，一行搞定复杂流程
 - **管道 & Heredoc** — 支持 stdin 管道和 heredoc 批量执行
 - **录制 / 回放** — 录制浏览器操作为 YAML，随时回放，可转换为 JS/Python/Bash 脚本
@@ -854,7 +854,7 @@ npm run validate
 ```
 xbrowser/
 ├── src/
-│   ├── commands/        # 49 个浏览器命令定义
+│   ├── commands/        # 50 个浏览器命令定义
 │   ├── builtins/        # CLI 内置命令（config, plugin, session, create）
 │   ├── recorder/        # 录制引擎（录制器 + 回放器）
 │   ├── session/         # 会话管理
