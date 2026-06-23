@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.3.0] - 2026-06-24
+
+### Fixed
+- **#62/#58**: 插件安装后缺少 `shared/` 依赖导致加载失败
+  - 安装器新增 `fixSharedDeps()` — 自动扫描 `../shared/` import 并从本地仓库复制缺失文件
+  - 插件加载失败不再静默 — 始终显示警告 + 修复建议
+  - 影响 douyin/xiaohongshu 等 import `shared/ssr-detect.js` 的插件
+
+- **#59**: zhihu trending/search 选择器更新（知乎改版导致 0 条结果）
+  - 兼容新旧 DOM 结构
+  - waitForTimeout 增至 3000ms
+
+### Changed
+- 插件加载器：默认显示加载失败警告（不再需要 XBROWSER_DEBUG）
+
 ## [1.2.2] - 2026-06-23
 
 ### Fixed

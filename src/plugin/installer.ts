@@ -3,8 +3,11 @@ import {
   readdirSync,
   mkdirSync,
   rmSync,
+  copyFileSync,
+  cpSync,
+  readFileSync,
 } from 'fs';
-import { resolve, basename } from 'path';
+import { resolve, basename, dirname } from 'path';
 import { homedir } from 'os';
 import { readJsonFile } from '../utils/json-file.js';
 import type { PluginListOptions } from './types.js';
@@ -60,18 +63,103 @@ export class PluginInstaller {
 
     switch (type) {
       case 'local':
-        return await installFromLocal(source, name, targetDir).then(r => { ensurePluginDependencies(this.pluginsDir); return r; });
+        return await installFromLocal(source, name, targetDir).then(r => { this.fixSharedDeps(targetDir); ensurePluginDependencies(this.pluginsDir); return r; });
       case 'npm':
-        return await installFromNpm(resolvedSource, name, targetDir).then(r => { ensurePluginDependencies(this.pluginsDir); return r; });
+        return await installFromNpm(resolvedSource, name, targetDir).then(r => { this.fixSharedDeps(targetDir); ensurePluginDependencies(this.pluginsDir); return r; });
       case 'git':
-        return await installFromGit(source, name, targetDir).then(r => { ensurePluginDependencies(this.pluginsDir); return r; });
+        return await installFromGit(source, name, targetDir).then(r => { this.fixSharedDeps(targetDir); ensurePluginDependencies(this.pluginsDir); return r; });
       case 'url':
-        return await installFromUrl(source, name, targetDir).then(r => { ensurePluginDependencies(this.pluginsDir); return r; });
+        return await installFromUrl(source, name, targetDir).then(r => { this.fixSharedDeps(targetDir); ensurePluginDependencies(this.pluginsDir); return r; });
+    }
+  }
+
+  /**
+   * Fix missing `../shared/` dependencies after installation.
+   *
+   * Some marketplace/npm packages import from `../shared/` (e.g. ssr-detect.js,
+   * ai-chat-base.ts) but the `shared/` directory is not included in the package.
+   * This method scans the installed plugin's index.ts for such imports and
+   * copies the missing files from the local repository's `.xcli/plugins/shared/`
+   * directory (if available).
+   */
+  private fixSharedDeps(pluginDir: string): void {
+    const indexPath = resolve(pluginDir, 'index.ts');
+    if (!existsSync(indexPath)) return;
+
+    let content: string;
+    try {
+      content = readFileSync(indexPath, 'utf8');
+    } catch {
+      return;
+    }
+
+    // Find all `from '../shared/xxx'` or `from "../shared/xxx"` imports
+    const sharedImportRegex = /from\s+['"]\.\.\/shared\/([^'"]+)['"]/g;
+    const missingFiles: string[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = sharedImportRegex.exec(content)) !== null) {
+      missingFiles.push(match[1]);
+    }
+
+    if (missingFiles.length === 0) return;
+
+    // Check which shared/ files are actually missing
+    const sharedDir = resolve(pluginDir, '..', 'shared');
+    const toCopy: string[] = [];
+    for (const file of missingFiles) {
+      const targetPath = resolve(sharedDir, file);
+      if (!existsSync(targetPath)) {
+        toCopy.push(file);
+      }
+    }
+
+    if (toCopy.length === 0) return;
+
+    // Try to find shared/ in local repo (.xcli/plugins/shared/)
+    const repoSharedDirs = [
+      resolve(process.cwd(), '.xcli/plugins/shared'),
+      resolve(homedir(), '.xbrowser/plugins/shared'),
+    ];
+
+    let sourceSharedDir: string | null = null;
+    for (const dir of repoSharedDirs) {
+      if (existsSync(dir)) {
+        sourceSharedDir = dir;
+        break;
+      }
+    }
+
+    if (!sourceSharedDir) {
+      console.warn(`⚠️  Plugin "${basename(pluginDir)}" imports shared files but they are missing: ${toCopy.join(', ')}`);
+      console.warn(`   To fix: install the "shared" plugin or copy .xcli/plugins/shared/ to ~/.xbrowser/plugins/shared/`);
+      return;
+    }
+
+    // Copy missing shared files
+    mkdirSync(sharedDir, { recursive: true });
+    for (const file of toCopy) {
+      const src = resolve(sourceSharedDir!, file);
+      const dst = resolve(sharedDir, file);
+      if (existsSync(src)) {
+        try {
+          cpSync(dirname(src), dirname(dst), { recursive: true });
+          console.log(`✅ Copied shared/${file} for plugin "${basename(pluginDir)}"`);
+        } catch {
+          try {
+            copyFileSync(src, dst);
+            console.log(`✅ Copied shared/${file} for plugin "${basename(pluginDir)}"`);
+          } catch {
+            console.warn(`⚠️  Could not copy shared/${file}`);
+          }
+        }
+      }
     }
   }
 
   async installFromMarketplace(slug: string, options?: InstallOptions): Promise<InstalledPlugin> {
     const result = await installFromMarketplace(this.pluginsDir, slug, options);
+    const targetDir = resolve(this.pluginsDir, result.name);
+    this.fixSharedDeps(targetDir);
     ensurePluginDependencies(this.pluginsDir);
     return result;
   }
