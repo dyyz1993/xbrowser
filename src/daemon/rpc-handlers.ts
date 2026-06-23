@@ -537,7 +537,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const sess = findSession((params.session as string) || 'default');
     if (!sess) return { ok: false, error: 'No session' };
     try {
-      const events = await sess.page.evaluate(() => window.__xb_evts || []) as unknown[];
+      const events: Record<string, unknown>[] = await sess.page.evaluate(() => window.__xb_evts || []);
       const recordingsDir = join(CONFIG_DIR, 'recordings');
       mkdirSync(recordingsDir, { recursive: true });
       const outPath = (params.path as string) || join(recordingsDir, `recording-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);

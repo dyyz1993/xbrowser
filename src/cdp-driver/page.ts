@@ -769,16 +769,16 @@ export class XBPageImpl implements XBPage {
 
       const frames: XBFrame[] = [];
       const collect = (node: typeof result.frameTree): void => {
-        frames.push({
+        const frame: XBFrame = {
           name: () => node.frame.name || '',
           url: () => node.frame.url,
-          // Helper for frame.ts to pick by index
-          childFrames: () => (node.childFrames || []).map(c => ({
-            name: () => c.frame.name || '',
-            url: () => c.frame.url,
-            childFrames: () => [],
-          })),
-        } as unknown as XBFrame);
+          isDetached: () => false,
+          page: () => this,
+          evaluate: <R>(fn: string | Function, ...args: unknown[]) => this.evaluate<R>(fn, ...args),
+          $: (sel: string) => this.$(sel),
+          $$: (sel: string) => this.$$(sel),
+        };
+        frames.push(frame);
         for (const child of node.childFrames || []) {
           collect({ frame: child.frame, childFrames: [] });
         }

@@ -136,6 +136,9 @@ export interface XBPage {
   // Scripts
   addInitScript(script: string): Promise<void>;
 
+  // Frame discovery
+  discoverFrames(): Promise<XBFrame[]>;
+
   // Page management
   bringToFront(): Promise<void>;
   setExtraHTTPHeaders(headers: Record<string, string>): Promise<void>;

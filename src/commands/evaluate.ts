@@ -22,7 +22,7 @@ export const evaluateCommand = registerCommand({
     });
     engine.stop();
 
-    const result = await ctx.page.evaluate(p.expression) as unknown;
+    const result = await ctx.page.evaluate(p.expression);
     const response = ok({ result });
     if (decision && decision.severity === 'danger') {
       response.tips = normalizeTips([
