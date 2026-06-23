@@ -3,6 +3,8 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 
+type FrameLike = { name(): string; url(): string };
+
 export const framesCommand = registerCommand({
   name: 'frames',
   description: 'List all frames in the current page',
@@ -15,7 +17,9 @@ export const framesCommand = registerCommand({
     })),
   }),
   handler: async (_p, ctx: BrowserCommandContext) => {
-    const frameList = ctx.page.frames().map((frame, index) => ({
+    const discover = (ctx.page as unknown as { discoverFrames?: () => Promise<FrameLike[]> }).discoverFrames;
+    const rawFrames: FrameLike[] = discover ? await discover.call(ctx.page) : ctx.page.frames() as unknown as FrameLike[];
+    const frameList = rawFrames.map((frame, index) => ({
       index,
       name: frame.name(),
       url: frame.url(),
@@ -38,13 +42,14 @@ export const frameCommand = registerCommand({
     error: z.string().optional(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
-    const allFrames = ctx.page.frames();
-    let targetFrame;
+    const discover = (ctx.page as unknown as { discoverFrames?: () => Promise<FrameLike[]> }).discoverFrames;
+    const rawFrames: FrameLike[] = discover ? await discover.call(ctx.page) : ctx.page.frames() as unknown as FrameLike[];
+    let targetFrame: FrameLike | undefined;
 
     if (p.index !== undefined) {
-      targetFrame = allFrames[p.index];
+      targetFrame = rawFrames[p.index];
     } else if (p.name !== undefined) {
-      targetFrame = allFrames.find((f) => f.name() === p.name);
+      targetFrame = rawFrames.find((f) => f.name() === p.name);
     } else {
       return fail('Must provide index or name');
     }

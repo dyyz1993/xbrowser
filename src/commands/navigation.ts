@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ok } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { detectSsr } from '../utils/ssr-detect.js';
@@ -27,14 +27,21 @@ export const gotoCommand = registerCommand({
       if (/^[\w-]+(\.[\w-]+)+/.test(url) || url.startsWith('localhost')) {
         url = 'https://' + url;
       } else {
-        throw new Error(`Invalid URL: "${url}". Expected http(s)://, file://, about:, data:, or a domain name.`);
+        return fail(`Invalid URL: "${url}". Expected http(s)://, file://, about:, data:, or a domain name.`);
       }
     }
 
-    const response = await ctx.page.goto(url, {
-      waitUntil: p.waitUntil || 'domcontentloaded',
-      ...(p.timeout ? { timeout: p.timeout } : {}),
-    });
+    // Wrap navigation in try/catch so || chains can fallback on failure
+    let response;
+    try {
+      response = await ctx.page.goto(url, {
+        waitUntil: p.waitUntil || 'domcontentloaded',
+        ...(p.timeout ? { timeout: p.timeout } : {}),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return fail(`Navigation failed: ${msg}`);
+    }
 
     const ssr = await detectSsr(ctx.page);
 
