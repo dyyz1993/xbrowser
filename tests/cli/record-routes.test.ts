@@ -151,7 +151,7 @@ describe('record-routes', () => {
 
       await handleRecord(['stop'], {}, 'json');
 
-      expect(mockForwardRecordStop).toHaveBeenCalledWith('default');
+      expect(mockForwardRecordStop).toHaveBeenCalledWith('default', undefined);
       expect(mockOutputResult).toHaveBeenCalledWith(
         expect.objectContaining({ ok: true, sessionName: 'default', actions: 5 }),
         'json',
@@ -204,7 +204,7 @@ describe('record-routes', () => {
 
       await handleRecord(['stop'], { session: 'my-session' }, 'json');
 
-      expect(mockForwardRecordStop).toHaveBeenCalledWith('my-session');
+      expect(mockForwardRecordStop).toHaveBeenCalledWith('my-session', undefined);
       expect(mockOutputResult).toHaveBeenCalledWith(
         expect.objectContaining({ sessionName: 'my-session' }),
         'json',

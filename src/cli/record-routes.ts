@@ -44,8 +44,9 @@ export async function handleRecord(
 
     case 'stop': {
       const sessionName = (options.session as string) || 'default';
+      const output = (options.output || options.o) as string | undefined;
 
-      const result = await forwardRecordStop(sessionName) as Record<string, unknown>;
+      const result = await forwardRecordStop(sessionName, output) as Record<string, unknown>;
 
       if (!result.ok) {
         outputError(String(result.error || 'Failed to stop recording'));
@@ -56,6 +57,7 @@ export async function handleRecord(
         ok: true,
         message: 'Recording stopped.',
         sessionName,
+        output: result.output || (output || SessionRecorder.getRecordingsDir(sessionName) + '/recording.json'),
         actions: result.actions,
         network: result.network,
         durationMs: result.durationMs,
