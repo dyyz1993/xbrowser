@@ -115,7 +115,7 @@ describe('Plugin Lifecycle E2E', () => {
       const result = run('xbrowser plugin --help');
       expect(result.stdout).toContain('install');
       expect(result.stdout).toContain('search');
-      expect(result.stdout).toContain('publish');
+      expect(result.stdout).toContain('schema');
     });
   });
 
