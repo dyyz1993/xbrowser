@@ -1,6 +1,6 @@
 # xbrowser
 
-> **Browser automation CLI** for web scraping, headless browsing, SEO analysis, and AI agent workflows. 49 commands, 69 plugins. A command-line alternative to Playwright, Puppeteer, and Selenium — **no code required**.
+> **Browser automation CLI** for web scraping, headless browsing, SEO analysis, and AI agent workflows. 49 commands, 20+ plugins. A command-line alternative to Playwright, Puppeteer, and Selenium — **no code required**.
 
 [![CI Status](https://github.com/dyyz1993/xbrowser/workflows/CI/badge.svg)](https://github.com/dyyz1993/xbrowser/actions)
 [![codecov](https://codecov.io/gh/dyyz1993/xbrowser/branch/master/graph/badge.svg)](https://codecov.io/gh/dyyz1993/xbrowser)
@@ -13,7 +13,7 @@
 - **命令链** — 用 `&&`、`,`、`+`、`->`、`;` 串联多个命令，一行搞定复杂流程
 - **管道 & Heredoc** — 支持 stdin 管道和 heredoc 批量执行
 - **录制 / 回放** — 录制浏览器操作为 YAML，随时回放，可转换为 JS/Python/Bash 脚本
-- **插件系统** — 基于 `@dyyz1993/xcli-core`，用 TypeScript 编写站点插件
+- **插件系统** — 基于 `@dyyz1993/xcli-core`，用 TypeScript 编写站点插件。快速开始：`xbrowser create my-plugin --template static`
 - **CDP 连接** — 连接已运行的 Chrome/Chromium，无需重新启动浏览器
 - **会话管理** — 多会话并行，独立上下文
 - **Daemon 模式** — 后台常驻，快速响应
@@ -256,7 +256,7 @@ xbrowser --cdp auto "goto https://example.com , title"
 | `html --selector "#main"` | 获取指定元素 HTML | `xbrowser html --selector "#main"` |
 | `text` | 获取页面文本 | `xbrowser text` |
 | `text --selector "#article"` | 获取指定元素文本 | `xbrowser text --selector "#article"` |
-| `getProperty <selector> <property>` | 获取元素属性 | `xbrowser getProperty "#link" href` |
+| `eval "expression"` | 执行 JS 获取元素属性 | `xbrowser eval "document.querySelector('#link').href"` |
 
 ### 截图与快照
 
@@ -282,20 +282,20 @@ xbrowser --cdp auto "goto https://example.com , title"
 |------|------|------|
 | `eval <expression>` | 执行 JS 表达式 | `xbrowser eval "document.title"` |
 | `eval "1 + 2"` | 计算表达式 | `xbrowser eval "1 + 2"` |
-| `evaluateFn <fn> --args 1 2` | 执行带参数的函数 | `xbrowser evaluateFn "return args[0] + args[1]" --args 1 2` |
+| `eval "(a, b) => a + b" --args 1 2` | 执行带参数的函数 | `xbrowser eval "(a, b) => a + b" --args 1 2` |
 
 ### 存储
 
 | 命令 | 说明 | 示例 |
 |------|------|------|
-| `getCookies` | 获取所有 Cookie | `xbrowser getCookies` |
-| `setCookie <name> <value>` | 设置 Cookie | `xbrowser setCookie session abc123` |
-| `setCookie <name> <value> --domain .example.com` | 指定域名 | `xbrowser setCookie session abc123 --domain .example.com` |
-| `clearCookies` | 清除所有 Cookie | `xbrowser clearCookies` |
-| `getLocalStorage` | 获取所有 localStorage | `xbrowser getLocalStorage` |
-| `getLocalStorage --key token` | 获取指定 key | `xbrowser getLocalStorage --key token` |
-| `setLocalStorage <key> <value>` | 设置 localStorage | `xbrowser setLocalStorage token "abc"` |
-| `clearLocalStorage` | 清除 localStorage | `xbrowser clearLocalStorage` |
+| `get-cookies` | 获取所有 Cookie | `xbrowser get-cookies` |
+| `set-cookie <name> <value>` | 设置 Cookie | `xbrowser set-cookie session abc123` |
+| `set-cookie <name> <value> --domain .example.com` | 指定域名 | `xbrowser set-cookie session abc123 --domain .example.com` |
+| `clear-cookies` | 清除所有 Cookie | `xbrowser clear-cookies` |
+| `get-local-storage` | 获取所有 localStorage | `xbrowser get-local-storage` |
+| `get-local-storage --key token` | 获取指定 key | `xbrowser get-local-storage --key token` |
+| `set-local-storage <key> <value>` | 设置 localStorage | `xbrowser set-local-storage token "abc"` |
+| `clear-local-storage` | 清除 localStorage | `xbrowser clear-local-storage` |
 
 ### 帧操作
 
@@ -309,8 +309,8 @@ xbrowser --cdp auto "goto https://example.com , title"
 
 | 命令 | 说明 | 示例 |
 |------|------|------|
-| `setViewport <width> <height>` | 设置视口大小 | `xbrowser setViewport 1920 1080` |
-| `setViewport 375 812 --isMobile true` | 移动设备模式 | `xbrowser setViewport 375 812 --isMobile true` |
+| `set-viewport <width> <height>` | 设置视口大小 | `xbrowser set-viewport 1920 1080` |
+| `set-viewport 375 812 --isMobile true` | 移动设备模式 | `xbrowser set-viewport 375 812 --isMobile true` |
 
 ### 配置管理
 
@@ -416,7 +416,10 @@ xbrowser create my-plugin --template static --force
 | `;` | 分割管线（前一个完成后开始下一个） | `goto https://example.com ; goto https://other.com` |
 | `\|\|` | 前一步成功则跳过后续 | `goto https://example.com \|\| goto https://fallback.com` |
 
-**注意**：命令链中如果包含特殊字符（如 `#`、`>`），需要用引号包裹整个命令链或对单个参数加引号。
+**注意**：
+- 命令链中如果包含特殊字符（如 `#`、`>`），需要用引号包裹整个命令链或对单个参数加引号。
+- `->` 和 `+` 分隔符要求两边有空格（`goto url -> title` ✅，`goto url->title` ❌）。
+- `,` 和 `;` 不要求空格。
 
 ```bash
 # 正确 — 整体引号
@@ -440,7 +443,7 @@ project > browser > page > element
 | Scope | 说明 | 需要的条件 | 典型命令 |
 |-------|------|------------|----------|
 | **project** | 项目级别 | 无 | config, daemon, plugin |
-| **browser** | 浏览器级别 | 浏览器实例 | setViewport, session |
+| **browser** | 浏览器级别 | 浏览器实例 | set-viewport, session |
 | **page** | 页面级别 | 活跃页面 | goto, wait, scroll, screenshot |
 | **element** | 元素级别 | 页面中的元素 | click, fill, type, hover |
 

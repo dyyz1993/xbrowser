@@ -353,6 +353,12 @@ export async function handlePlugin(
     case 'uninstall': {
       const name = subArgs[0];
       if (!name) outputError('Usage: xbrowser plugin uninstall <name>');
+      // Check if plugin is actually installed before uninstalling
+      const installed = await installer.list();
+      const exists = installed.some(p => p.name === name || p.metadata?.name === name);
+      if (!exists) {
+        outputError(`Plugin "${name}" is not installed. Use 'xbrowser plugin list' to see installed plugins.`);
+      }
       await installer.uninstall(name);
       outputResult({ ok: true, name }, mode);
       break;
