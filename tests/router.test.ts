@@ -328,7 +328,7 @@ describe('router', () => {
 
     await routeCommand([], ['goto https://example.com', 'title']);
 
-    expect(executeChain).toHaveBeenCalledWith('goto https://example.com && title', { fileMode: true, cdpEndpoint: undefined });
+	    expect(executeChain).toHaveBeenCalledWith('goto https://example.com && title', { fileMode: true, cdpEndpoint: undefined, sessionName: 'default' });
     expect(printChainResult).toHaveBeenCalled();
   });
 
@@ -690,7 +690,7 @@ describe('router', () => {
 
     await routeCommand(['session', 'list'], ['goto https://example.com']);
 
-    expect(executeChain).toHaveBeenCalledWith('goto https://example.com', { fileMode: true, cdpEndpoint: undefined });
+	    expect(executeChain).toHaveBeenCalledWith('goto https://example.com', { fileMode: true, cdpEndpoint: undefined, sessionName: 'default' });
   });
 
   it('handles eval mode taking priority over normal routing', async () => {

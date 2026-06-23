@@ -203,9 +203,18 @@ function extractCdpFromArgv(argv: string[]): string | undefined {
 async function handleStdinMode(stdinCommands: string[], argv?: string[]): Promise<void> {
   const chain = stdinCommands.join(' && ');
   const cdpEndpoint = argv ? extractCdpFromArgv(argv) : undefined;
-  const chainResult = await executeChain(chain, { fileMode: true, cdpEndpoint });
+  const sessionName = argv ? extractSessionNameFromArgv(argv) : 'default';
+  const chainResult = await executeChain(chain, { fileMode: true, cdpEndpoint, sessionName });
   printChainResult(chainResult);
   if (!chainResult.success) throw new Error("Command failed");
+}
+
+function extractSessionNameFromArgv(argv: string[]): string {
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--session' && argv[i + 1]) return argv[i + 1];
+    if (typeof argv[i] === 'string' && argv[i].startsWith('--session=')) return argv[i].slice(10);
+  }
+  return process.env.XBROWSER_SESSION || 'default';
 }
 
 async function handleEvalMode(argv: string[]): Promise<void> {
