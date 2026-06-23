@@ -290,7 +290,15 @@ export async function routeCommand(
       const possibleCmd = argv[0].substring(0, spaceIdx);
       // Split if first word looks like a command name (alphanumeric/hyphen, no URL chars)
       if (/^[a-zA-Z][\w-]*$/.test(possibleCmd)) {
-        argv = [possibleCmd, argv[0].substring(spaceIdx + 1), ...argv.slice(1)];
+        const remainder = argv[0].substring(spaceIdx + 1);
+        // If remainder starts with a --flag, split on spaces so --key value pairs work.
+        // But if it's a URL or selector (starts with http://, /, #, etc.), keep as single arg.
+        if (remainder.startsWith('--') || (remainder.includes(' --') && !remainder.match(/^\w+:\/\//))) {
+          const remainderParts = remainder.split(/\s+/).filter(Boolean);
+          argv = [possibleCmd, ...remainderParts, ...argv.slice(1)];
+        } else {
+          argv = [possibleCmd, remainder, ...argv.slice(1)];
+        }
       }
     }
   } catch (e: unknown) {
