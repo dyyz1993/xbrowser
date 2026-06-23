@@ -420,7 +420,27 @@ export class XBPageImpl implements XBPage {
   }
 
   getByRole(role: string, opts?: { name?: string; exact?: boolean }): XBLocator {
-    let sel = `[role="${role}"]`;
+    // Map ARIA roles to native HTML tags (implicit roles)
+    const ROLE_TO_TAGS: Record<string, string[]> = {
+      button: ['button'],
+      link: ['a[href]'],
+      heading: ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'],
+      textbox: ['input[type="text"]', 'input:not([type])', 'textarea'],
+      checkbox: ['input[type="checkbox"]'],
+      radio: ['input[type="radio"]'],
+      searchbox: ['input[type="search"]'],
+      combobox: ['select'],
+      img: ['img'],
+      navigation: ['nav'],
+      article: ['article'],
+      banner: ['header'],
+      contentinfo: ['footer'],
+      main: ['main'],
+      complementary: ['aside'],
+    };
+    const tags = ROLE_TO_TAGS[role] || [];
+    const tagSel = tags.length > 0 ? tags.join(',') + ',' : '';
+    let sel = `${tagSel}[role="${role}"]`;
     if (opts?.name) {
       sel += opts.exact
         ? `[aria-label="${opts.name}"]`

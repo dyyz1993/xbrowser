@@ -227,6 +227,23 @@ export const checkCommand = registerCommand({
   },
 });
 
+export const uncheckCommand = registerCommand({
+  name: 'uncheck',
+  description: 'Uncheck checkbox or radio',
+  scope: 'element',
+  selectorParams: ['selector'],
+  parameters: z.object({
+    selector: z.string(),
+  }),
+  result: z.object({
+    selector: z.string(),
+  }),
+  handler: async (p, ctx: BrowserCommandContext) => {
+    await ctx.page.uncheck(p.selector, { timeout: 10000 });
+    return ok({ selector: p.selector });
+  },
+});
+
 export const hoverCommand = registerCommand({
   name: 'hover',
   description: 'Hover over element',

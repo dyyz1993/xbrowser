@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as yaml from 'yaml';
-import type { Recording, RecordingEvent } from './definitions.js';
+import type { RecordingEvent } from './definitions.js';
 
 const DEFAULT_EXCLUDE_TYPES: string[] = [
   'panel_item_added',
@@ -40,11 +40,12 @@ export function filterRecording(
   excludeTypes?: string[]
 ): { originalCount: number; filteredCount: number; removed: number; percentage: number } {
   const content = fs.readFileSync(inputPath, 'utf-8');
-  const recording: Recording = yaml.parse(content);
+  const recording = yaml.parse(content) as Record<string, unknown>;
+  // Normalize: new recorder uses "actions" field, old format uses "events"
+  const events = (recording.actions || recording.events || []) as RecordingEvent[];
+  const originalCount = events.length;
 
   const exclude = excludeTypes || DEFAULT_EXCLUDE_TYPES;
-  const events = recording.events || [];
-  const originalCount = events.length;
 
   const filteredEvents = events.filter((event: RecordingEvent) => {
     return !exclude.includes(event.type);

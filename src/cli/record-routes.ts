@@ -373,6 +373,8 @@ export async function handleConvert(args: string[], _mode: string): Promise<void
 
   const content = fs.readFileSync(filePath, 'utf-8');
   const recording = yaml.parse(content);
+  // Normalize: new recorder uses "actions" field, old format uses "events"
+  if (recording.actions && !recording.events) recording.events = recording.actions;
 
   const ext = path.extname(outputPath).toLowerCase();
   let script: string;
@@ -388,7 +390,7 @@ export async function handleConvert(args: string[], _mode: string): Promise<void
   fs.writeFileSync(outputPath, script);
   fs.chmodSync(outputPath, 0o755);
 
-  const eventCount = (recording.events || []).length;
+  const eventCount = (recording.events || recording.actions || []).length;
   console.log(`Converted ${filePath} -> ${outputPath}`);
   console.log(`  Events: ${eventCount}, Start URL: ${recording.startUrl}`);
   console.log(`  Run: ${ext === '.py' ? 'python' : ext === '.sh' ? './' : 'node'} ${outputPath}`);
