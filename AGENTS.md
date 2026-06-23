@@ -28,7 +28,7 @@ npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 |------|------|
 | `bin/cli.ts` | CLI 入口（`xbrowser` 命令） |
 | `src/` | 核心代码（`browser.ts` / `commands/` / `cli/` / `daemon/` / `cdp-driver/`） |
-| `src/commands/` | 50 个内置命令（goto / click / fill / wait / waitForTimeout / scroll / record / replay / preview…） |
+| `src/commands/` | 51 个内置命令（goto / click / fill / wait / waitForTimeout / check / uncheck / scroll / record / replay / preview…） |
 | `src/cdp-driver/` | 自研 CDP 驱动（Playwright 替代） |
 | `src/cli/` | 子命令路由（session / plugin / record / preview / viewer） |
 | `src/daemon/` | 后台 daemon + WebSocket preview 服务器 |

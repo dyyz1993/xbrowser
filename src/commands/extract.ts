@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as yaml from 'yaml';
-import type { Recording, RecordingEvent } from './definitions.js';
+import type { RecordingEvent } from './definitions.js';
 
 interface ExtractSummary {
   startUrl: string;
@@ -25,12 +25,13 @@ interface ExtractSummary {
  */
 export function extractRecording(filePath: string): ExtractSummary {
   const content = fs.readFileSync(filePath, 'utf-8');
-  const recording: Recording = yaml.parse(content);
-
+  const recording = yaml.parse(content) as Record<string, unknown>;
+  // Normalize: new recorder uses "actions" field, old format uses "events"
+  const events = (recording.actions || recording.events || []) as RecordingEvent[];
   const keyEvents: RecordingEvent[] = [];
   const eventTypes: Record<string, number> = {};
 
-  for (const event of recording.events || []) {
+  for (const event of events) {
     const type = event.type;
     eventTypes[type] = (eventTypes[type] || 0) + 1;
 
@@ -50,8 +51,8 @@ export function extractRecording(filePath: string): ExtractSummary {
   }
 
   return {
-    startUrl: recording.startUrl,
-    totalEvents: (recording.events || []).length,
+    startUrl: recording.startUrl as string,
+    totalEvents: events.length,
     keyEventsCount: keyEvents.length,
     eventTypes,
     operations: keyEvents.map((e, i) => ({
