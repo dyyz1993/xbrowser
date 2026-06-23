@@ -25,12 +25,13 @@ if [ $? -ne 0 ]; then
 fi
 
 # 4. Smoke test — CLI must start (catches ESM require() crashes)
-node dist/cli.js --version > /dev/null
+# stdin redirected from /dev/null to prevent git push refs from being read as CLI input
+node dist/cli.js --version < /dev/null > /dev/null
 if [ $? -ne 0 ]; then
   echo "❌ Smoke test failed: CLI cannot start."
   exit 1
 fi
-node -e "import('./dist/index.js').then(() => {}).catch(() => process.exit(1))"
+node -e "import('./dist/index.js').then(() => {}).catch(() => process.exit(1))" < /dev/null
 if [ $? -ne 0 ]; then
   echo "❌ Smoke test failed: module import failed."
   exit 1
