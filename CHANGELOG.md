@@ -1,6 +1,42 @@
 # Changelog
 
-## [Unreleased] - 2026-06-11
+## [1.2.0] - 2026-06-23
+
+### Fixed — 14 个 bug 修复（10 个 issue）
+
+**插件系统**
+- `plugin install` 后插件不重新加载 — 改用异步 `getGlobalPluginLoader` + `reloadPlugin` (#32)
+- stdin/heredoc 模式忽略 `--session` 参数 — `handleStdinMode` 现在提取 session 名 (#32)
+- `plugin uninstall` 对不存在的插件返回 ok — 现在检查插件是否存在后调用 reload (#32)
+
+**CDP 驱动**
+- `find` 命令生成无效 xpath 选择器 — 创建 `selector-utils.ts`，`xpath=` 前缀走 `document.evaluate()` (#43)
+- `getByText`/`getByLabel` 的 xpath 选择器在所有 locator 方法中可用（click/fill/count/visible 等）
+- `FilteredLocator`（`.first()`/`.last()`/`.nth()`）支持 xpath snapshot 索引
+- alert/confirm/prompt 弹窗导致 `eval` 挂起 — 自动 dismiss 从 100ms 降到 0ms + 预评估清理 (#48)
+- `evaluate()` 前先 dismiss 残留 dialog，防止 30s 超时
+
+**命令修复**
+- `health` 命令 ReferenceError — `errMsg()` 在 `page.evaluate()` 浏览器上下文中未定义，改为内联 (#41)
+- `waitForTimeout` 命令恢复 — 新增 `scope:project` 的 CLI 命令 + chain-parser 定义 (#41)
+- CDP 连接失败退出码为 0 — 空结果后 `process.exit(1)` (#41, #49)
+- `;` 分隔符语义像 `&&` — chain-parser 对 `;` 使用 `type='sequence'`，失败继续 (#41)
+- camelCase 命令名不支持 — 添加 `CAMEL_TO_KEBAB` 映射表 (getCookies→get-cookies 等 7 个) (#44)
+- `screenshot` 位置参数路径被忽略 — 支持位置参数作为 `--output` (#47)
+- `scrape` Element UI 表格转换不完整 — JS 提取表格 + Markdown 输出 (兼容 el-table/ant-table/MUI) (#46)
+
+**文档与帮助**
+- `plugin publish` → `marketplace publish` 文档统一 (#45)
+- `--help` 子命令返回主帮助 — 添加 SUBCOMMAND_HELP 映射 (session/plugin/record/daemon 等) (#50)
+
+### Security
+- `ws` 依赖升级到 `^8.21.0`（修复 HIGH 级别漏洞：内存泄漏 + DoS）
+
+### Changed
+- CI Node.js 版本从 20 升级到 22
+- E2E 测试修复 `chromium is not defined`（改用 `launch()` from browser-shim）
+
+## [1.1.2] - 2026-06-23
 
 ### Fixed — 文档与规范修正（3 轮全量扫描）
 

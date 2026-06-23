@@ -57,7 +57,7 @@ describe('E2E: Chain Parser - Real-world inputs', () => {
     const input = "goto https://a.com ; goto https://b.com";
     const result = parseCommandChain(input);
     expect(result).toHaveLength(2);
-    expect(result[0].type).toBe('and');
+    expect(result[0].type).toBe('sequence');
     expect(result[1].type).toBe('and');
   });
 
