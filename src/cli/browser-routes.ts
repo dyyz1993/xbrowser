@@ -419,6 +419,18 @@ export async function handleBrowserCommand(
             };
             break;
           }
+          case 'tab': {
+            // Map positional subcommand: `tab list` → subcommand: 'list'
+            const tabSub = args[0];
+            const validSubs = ['list', 'new', 'close', 'switch'];
+            cmdName = 'tab';
+            params = {
+              subcommand: validSubs.includes(tabSub) ? tabSub : (options.subcommand as string | undefined),
+              url: args[1] || (options.url as string | undefined),
+              index: options.index ? Number(options.index) : undefined,
+            };
+            break;
+          }
         default:
          cmdName = command;
          params = { ...options };

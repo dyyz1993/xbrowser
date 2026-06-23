@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1] - 2026-06-24
+
+### Fixed — Critical regressions from 1.3.0
+- **#71 B4**: `||` 命令链空输出 — `isChainInput` 正则缺少 `||` 匹配
+- **#71 B5**: `tab` 命令需要 `--subcommand` — 现在支持位置参数 (`tab list` / `tab new url`)
+- 链式输出修复 — `||` 链现在正确显示 [OK]/[FAIL] + 数据
+
 ## [1.3.0] - 2026-06-24
 
 ### Fixed
