@@ -154,7 +154,7 @@ export async function findTargetPage(
   target: string
 ): Promise<{ pageId: string; wsUrl: string; title: string; url: string } | null> {
   const targets = await getCDPTargets(cdpEndpoint);
-  const pages = targets.filter(t => t.url && !t.url.startsWith('about:blank') && !t.url.startsWith('chrome://'));
+  const pages = targets.filter(t => t.url && !t.url.startsWith('about:blank') && !t.url.startsWith('chrome://') && !t.url.startsWith('chrome-untrusted://') && !t.url.startsWith('chrome-error://'));
 
   const byId = pages.find(t => t.id === target);
   if (byId) return { pageId: byId.id, wsUrl: byId.webSocketDebuggerUrl, title: byId.title, url: byId.url };
