@@ -55,7 +55,7 @@ export const waitForTimeoutCommand = registerCommand({
   description: 'Wait for a specified number of milliseconds',
   scope: 'project' as const,
   parameters: z.object({
-    timeout: z.number().describe('Milliseconds to wait').default(1000),
+    timeout: z.coerce.number().describe('Milliseconds to wait').default(1000),
   }),
   result: z.object({
     waited: z.number(),

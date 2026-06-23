@@ -1,6 +1,7 @@
 import { SessionRecorder } from '../recorder/session-recorder.js';
 import type { RecordingSummary } from '../recorder/session-recorder.js';
 import { outputResult, outputError } from './output.js';
+import { existsSync } from 'node:fs';
 import {
   forwardRecordStart,
   forwardRecordStop,
@@ -51,6 +52,29 @@ export async function handleRecord(
       if (!result.ok) {
         outputError(String(result.error || 'Failed to stop recording'));
         return;
+      }
+
+      // Fallback: if daemon didn't write to output path, copy from default location
+      if (output && !existsSync(output)) {
+        const defaultRecording = SessionRecorder.getRecordingsDir(sessionName) + '/recording.json';
+        if (existsSync(defaultRecording)) {
+          try {
+            const { mkdirSync, copyFileSync } = await import('node:fs');
+            const { dirname: pathDirname } = await import('node:path');
+            mkdirSync(pathDirname(output), { recursive: true });
+            // Write YAML or JSON based on extension
+            if (output.endsWith('.yaml') || output.endsWith('.yml')) {
+              const { default: yaml } = await import('yaml');
+              const data = SessionRecorder.readData(sessionName);
+              if (data) {
+                const fs = await import('node:fs');
+                fs.writeFileSync(output, yaml.stringify(data), 'utf-8');
+              }
+            } else {
+              copyFileSync(defaultRecording, output);
+            }
+          } catch { /* fallback failed — not critical */ }
+        }
       }
 
       outputResult({
