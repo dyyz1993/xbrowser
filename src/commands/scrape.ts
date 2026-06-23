@@ -142,49 +142,64 @@ export const scrapeCommand = registerCommand({
               // Extract tables via JS (handles complex frameworks like Element UI
               // that use nested <div>s instead of standard <table> elements)
               const tablesMd = await page.evaluate<string>(() => {
-                // Find all elements that look like tables: <table>, [class*="table"],
-                // [class*="grid"], or aria role="table"/"grid"
-                const tableSelectors = [
-                  'table',
-                  '[role="table"]',
-                  '[role="grid"]',
-                  '[class*="el-table"]',        // Element UI
-                  '[class*="ant-table"]',       // Ant Design
-                  '[class*="MuiTable"]',        // Material UI
-                  '[class*="table"]',           // Generic table-like
-                ].join(',');
-                const tables = document.querySelectorAll(tableSelectors);
-                if (tables.length === 0) return '';
+                // Remove Element UI fixed-column clones first — these duplicate
+                // the main table's content and cause every cell to appear twice.
+                document.querySelectorAll(
+                  '.el-table__fixed, .el-table__fixed-right, ' +
+                  '[class*="fixed-left"], [class*="fixed-right"], ' +
+                  '.ant-table-fixed-left, .ant-table-fixed-right'
+                ).forEach(el => el.remove());
+
+                // Also remove hidden/cloned table wrappers that frameworks create
+                document.querySelectorAll('table').forEach(t => {
+                  if (t.closest('.el-table__fixed, .el-table__fixed-right')) t.remove();
+                });
+
+                // Find all <table> elements (after removing clones above).
+                // We prefer standard <table> to avoid matching framework wrappers.
+                const tables = document.querySelectorAll('table');
+                if (tables.length === 0) {
+                  // Fallback: look for role=table or framework-specific table containers
+                  const altTables = document.querySelectorAll(
+                    '[role="table"], [role="grid"], .el-table__body, .ant-table-tbody'
+                  );
+                  if (altTables.length === 0) return '';
+
+                  return Array.from(altTables).map(table => {
+                    return extractRowsFromContainer(table);
+                  }).filter(md => md).join('\n\n');
+                }
 
                 return Array.from(tables).map(table => {
-                  // Try standard table rows first, then any row-like elements
-                  const rows = table.querySelectorAll('tr, [role="row"], [class*="row"]');
+                  return extractRowsFromContainer(table);
+                }).filter(md => md).join('\n\n');
+
+                function extractRowsFromContainer(container: Element): string {
+                  // Use direct children selectors to avoid matching nested cells
+                  const rows = container.querySelectorAll(':scope > tr, :scope > thead > tr, :scope > tbody > tr, :scope > tfoot > tr, [role="row"]');
                   if (rows.length === 0) return '';
 
                   const mdRows = Array.from(rows).map(row => {
-                    const cells = row.querySelectorAll('th, td, [role="columnheader"], [role="cell"], [class*="cell"], [class*="col"]');
+                    // Only direct children cells, not nested ones
+                    const cells = row.querySelectorAll(':scope > th, :scope > td, :scope > [role="columnheader"], :scope > [role="cell"]');
+                    if (cells.length === 0) return '';
                     return '| ' + Array.from(cells).map(c => {
-                      // For deeply nested content (Element UI), get the full text content
                       const cellText = (c as HTMLElement).innerText?.trim().replace(/\n/g, ' ') || '';
                       return cellText.replace(/\|/g, '\\|') || '';
                     }).join(' | ') + ' |';
-                  }).join('\n');
+                  }).filter(r => r);
 
-                  // Extract headers (first row if it has th or specific header classes)
+                  if (mdRows.length === 0) return '';
+
+                  // Add separator after header row
                   const headerRow = rows[0];
-                  const headerCells = headerRow.querySelectorAll('th, [role="columnheader"], [class*="header"]');
-                  const hasHeader = headerCells.length > 0;
-
-                  if (hasHeader && mdRows) {
-                    const headerCount = headerCells.length;
-                    const sep = '| ' + Array(headerCount).fill('---').join(' | ') + ' |';
-                    return mdRows.split('\n').map((line, i) => {
-                      if (i === 0) return line + '\n' + sep;
-                      return line;
-                    }).join('\n');
+                  const headerCells = headerRow.querySelectorAll(':scope > th, :scope > [role="columnheader"]');
+                  if (headerCells.length > 0) {
+                    const sep = '| ' + Array(headerCells.length).fill('---').join(' | ') + ' |';
+                    return mdRows[0] + '\n' + sep + '\n' + mdRows.slice(1).join('\n');
                   }
-                  return mdRows;
-                }).join('\n\n');
+                  return mdRows.join('\n');
+                }
               });
 
               content = htmlToMarkdown(html, { onlyMainContent: p.onlyMainContent });
