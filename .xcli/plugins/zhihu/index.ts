@@ -495,22 +495,36 @@ export default function (xcli: XCLIAPI): void {
       try {
         const searchUrl = `https://www.zhihu.com/search?type=${params.type}&q=${encodeURIComponent(params.query)}`;
         await page.goto(searchUrl, { waitUntil: 'domcontentloaded' });
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(3000);
         await dismissModals(page);
 
         const results = await page.evaluate((limit) => {
           const items: Array<{title: string; excerpt: string; author: string; link: string; type: string}> = [];
-          const cards = document.querySelectorAll('.SearchResult-Card, .List-item, [class*="SearchResult"]');
+          // Support both old and new Zhihu search layouts:
+          // Old: .SearchResult-Card, .List-item
+          // New: .SearchResult-Card, [class*="SearchResult"], .Card, div[data-za-detail-view-path-module]
+          const cards = document.querySelectorAll(
+            '.SearchResult-Card, .List-item, [class*="SearchResult"], .Card SearchResult-Card, ' +
+            'div[class*="SearchResult"], div[data-za-detail-view-path-module="SearchResult"]'
+          );
           cards.forEach((card, i) => {
             if (i >= limit) return;
-            const titleEl = card.querySelector('h2 a, .ContentItem-title a, a[data-za-detail-view-path-module]');
-            const excerptEl = card.querySelector('.content, .RichContent-inner, span.RichText');
-            const authorEl = card.querySelector('.AuthorInfo-name, .UserLink-link');
+            const titleEl = card.querySelector(
+              'h2 a, .ContentItem-title a, a[data-za-detail-view-path-module], ' +
+              '[class*="title"] a, a[class*="ContentLink"]'
+            );
+            const excerptEl = card.querySelector(
+              '.content, .RichContent-inner, span.RichText, [class*="excerpt"], [class*="content"]'
+            );
+            const authorEl = card.querySelector(
+              '.AuthorInfo-name, .UserLink-link, [class*="author"], [class*="AuthorInfo"]'
+            );
+            const linkEl = card.querySelector('a[href*="/question/"], a[href*="/p/"], a[href*="/search"]');
             items.push({
               title: titleEl?.textContent?.trim() || '',
               excerpt: excerptEl?.textContent?.trim()?.slice(0, 200) || '',
               author: authorEl?.textContent?.trim() || '',
-              link: titleEl instanceof HTMLAnchorElement ? titleEl.href : '',
+              link: linkEl instanceof HTMLAnchorElement ? linkEl.href : (titleEl instanceof HTMLAnchorElement ? titleEl.href : ''),
               type: card.querySelector('[class*="Question"]') ? 'question' :
                     card.querySelector('[class*="Article"]') ? 'article' : 'answer',
             });
@@ -546,17 +560,26 @@ export default function (xcli: XCLIAPI): void {
 
       try {
         await page.goto('https://www.zhihu.com/hot', { waitUntil: 'domcontentloaded' });
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(3000);
         await dismissModals(page);
 
         const items = await page.evaluate((limit) => {
           const results: Array<{rank: number; title: string; hotScore: string; link: string}> = [];
-          const hotItems = document.querySelectorAll('.HotList-list .HotItem, [class*="HotItem"]');
+          // Support both old and new Zhihu hot page layouts:
+          // Old: .HotList-list .HotItem
+          // New: .HotItem, [data-za-detail-view-path-module="HotItem"], div[class*="hotitem"]
+          const hotItems = document.querySelectorAll(
+            '.HotList-list .HotItem, .HotItem, [data-za-detail-view-path-module="HotItem"], div[class*="HotItem"]'
+          );
           hotItems.forEach((item, i) => {
             if (i >= limit) return;
-            const titleEl = item.querySelector('.HotItem-title, .HotItem-content .title, [class*="title"]');
-            const scoreEl = item.querySelector('.HotItem-metrics, .HotItem-content .metrics, [class*="metrics"]');
-            const linkEl = item.querySelector('a');
+            const titleEl = item.querySelector(
+              '.HotItem-title, .HotItem-content .title, [class*="title"], h2, a[class*="ContentLink"]'
+            );
+            const scoreEl = item.querySelector(
+              '.HotItem-metrics, .HotItem-content .metrics, [class*="metrics"], [class*="hot-score"], [class*="HotLives"]'
+            );
+            const linkEl = item.querySelector('a[href*="/question/"], a[href*="/p/"], a');
             results.push({
               rank: i + 1,
               title: titleEl?.textContent?.trim() || '',
