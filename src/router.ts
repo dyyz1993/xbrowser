@@ -785,7 +785,7 @@ async function handleServe(
     } else {
       console.log(`\n  🌐 xbrowser HTTP Server`);
       console.log(`\n  URL: ${output.url}`);
-      console.log(`  Auth: ${output.authRequired ? 'Enabled (Bearer token)' : 'Disabled (dev mode)'}\n`);
+      console.log(`  Auth: ${output.authRequired ? 'Enabled (Bearer token, except /health)' : 'Disabled (dev mode)'}\n`);
       console.log(`  Endpoints:`);
       for (const [, value] of Object.entries(output.endpoints)) {
         console.log(`    ${value}`);

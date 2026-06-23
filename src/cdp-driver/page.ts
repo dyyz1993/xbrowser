@@ -889,6 +889,13 @@ export class XBPageImpl implements XBPage {
           },
         };
         this._emit('dialog', dialog);
+
+        // Auto-dismiss dialog if no listener handled it (prevents page hang).
+        // Playwright auto-dismisses by default; we do the same after a short delay.
+        setTimeout(() => {
+          this.conn.send('Page.handleJavaScriptDialog', { accept: false }, this.sessionId)
+            .catch(() => { /* dialog may already be handled */ });
+        }, 100);
       }),
     );
 
