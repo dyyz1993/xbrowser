@@ -502,6 +502,14 @@ export async function routeCommand(
             for (const step of chainResult.steps) {
               if (step.success) {
                 console.log(`[OK] ${step.raw}`);
+                // Print data fields (same format as printChainResult)
+                if (step.data && typeof step.data === 'object') {
+                  const d = step.data as Record<string, unknown>;
+                  for (const [k, v] of Object.entries(d)) {
+                    if (k !== 'ok' && k !== 'success')
+                      console.log(`     ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+                  }
+                }
                 if (step.tips?.length) {
                   for (const tip of step.tips) {
                     console.log(`  💡 ${tip}`);
@@ -510,6 +518,9 @@ export async function routeCommand(
               } else {
                 console.error(`[FAIL] ${step.raw}: ${step.message}`);
               }
+            }
+            if (chainResult.stoppedReason) {
+              console.error(`Stopped: ${chainResult.stoppedReason}`);
             }
             if (!chainResult.success) throw new Error("Command failed");
             return;

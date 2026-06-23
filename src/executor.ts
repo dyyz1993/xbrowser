@@ -756,5 +756,5 @@ export async function executeChain(
  * @returns `true` if chain operators are present.
  */
 export function isChainInput(input: string): boolean {
-  return /\s&&\s|\s;\s|\s,\s|\s\+\s|\s->\s/.test(input);
+  return /\s&&\s|\|\|\s|\s;\s|\s,\s|\s\+\s|\s->\s/.test(input);
 }
