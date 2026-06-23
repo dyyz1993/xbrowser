@@ -75,7 +75,8 @@ describe('filter command', () => {
     it('should handle types with spaces', () => {
       const args = ['--exclude-types=click, scroll, type'];
       const result = parseExcludeTypes(args);
-      expect(result).toEqual(['click', ' scroll', ' type']);
+      // v1.1.0: trim() applied to each type
+      expect(result).toEqual(['click', 'scroll', 'type']);
     });
   });
 

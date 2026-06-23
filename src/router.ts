@@ -409,13 +409,13 @@ export async function routeCommand(
         handleConfig(cmdArgs, options);
         break;
       case 'convert':
-        handleConvert(cmdArgs, mode);
+        await handleConvert(cmdArgs, mode);
         break;
       case 'extract':
-        handleExtract(cmdArgs, mode);
+        await handleExtract(cmdArgs, mode);
         break;
       case 'filter':
-        handleFilter(cmdArgs, mode);
+        await handleFilter(cmdArgs, mode);
         break;
       case 'run':
         if (!cmdArgs[0]) {
