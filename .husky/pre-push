@@ -1,10 +1,40 @@
 set -e
 
-echo "🧪 [pre-push] Running full test suite..."
-# 加大 worker 内存：本仓库 180+ 测试文件，forks worker 复用会累积内存导致 OOM
-NODE_OPTIONS="--max-old-space-size=8192" npx vitest run --exclude='tests/e2e/**' --exclude='tests/human-interaction.test.ts' --exclude='tests/websocket-server.test.ts' --exclude='tests/screencast.test.ts' --exclude='tests/cli/daemon-session.test.ts'
+echo "🧪 [pre-push] Quick validation (typecheck + lint + smoke test)..."
+echo "   Full test suite runs in CI (GitHub Actions)."
+
+# 1. Typecheck (catches type errors fast)
+npm run typecheck
 if [ $? -ne 0 ]; then
-  echo "❌ Tests failed. All tests must pass before pushing."
+  echo "❌ Typecheck failed."
   exit 1
 fi
-echo "✅ [pre-push] All tests passed!"
+
+# 2. Lint (catches style/pattern violations fast)
+npm run lint
+if [ $? -ne 0 ]; then
+  echo "❌ Lint failed."
+  exit 1
+fi
+
+# 3. Build (catches ESM/packaging bugs like v1.0.3 incident)
+npm run build
+if [ $? -ne 0 ]; then
+  echo "❌ Build failed."
+  exit 1
+fi
+
+# 4. Smoke test — CLI must start (catches ESM require() crashes)
+node dist/cli.js --version > /dev/null
+if [ $? -ne 0 ]; then
+  echo "❌ Smoke test failed: CLI cannot start."
+  exit 1
+fi
+node -e "import('./dist/index.js').then(() => {}).catch(() => process.exit(1))"
+if [ $? -ne 0 ]; then
+  echo "❌ Smoke test failed: module import failed."
+  exit 1
+fi
+
+echo "✅ [pre-push] Quick validation passed! (typecheck + lint + build + smoke)"
+echo "   Full test suite will run in CI."
