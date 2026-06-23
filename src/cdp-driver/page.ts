@@ -754,6 +754,42 @@ export class XBPageImpl implements XBPage {
     return [this.mainFrame()];
   }
 
+  /**
+   * Discover all frames (main + iframes) via CDP Page.getFrameTree.
+   * This is async because CDP doesn't maintain a frame list client-side.
+   */
+  async discoverFrames(): Promise<XBFrame[]> {
+    try {
+      const result = await this.conn.send<{
+        frameTree: {
+          frame: { id: string; url: string; name?: string };
+          childFrames?: Array<{ frame: { id: string; url: string; name?: string } }>;
+        };
+      }>('Page.getFrameTree', undefined, this.sessionId);
+
+      const frames: XBFrame[] = [];
+      const collect = (node: typeof result.frameTree): void => {
+        frames.push({
+          name: () => node.frame.name || '',
+          url: () => node.frame.url,
+          // Helper for frame.ts to pick by index
+          childFrames: () => (node.childFrames || []).map(c => ({
+            name: () => c.frame.name || '',
+            url: () => c.frame.url,
+            childFrames: () => [],
+          })),
+        } as unknown as XBFrame);
+        for (const child of node.childFrames || []) {
+          collect({ frame: child.frame, childFrames: [] });
+        }
+      };
+      collect(result.frameTree);
+      return frames;
+    } catch {
+      return [this.mainFrame()];
+    }
+  }
+
   // ── CDP helpers exposed for locator/element ─────────────────
 
   /** Query a single element, returns CDP nodeId or 0 if not found */

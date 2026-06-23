@@ -201,7 +201,10 @@ function extractCdpFromArgv(argv: string[]): string | undefined {
 }
 
 async function handleStdinMode(stdinCommands: string[], argv?: string[]): Promise<void> {
-  const chain = stdinCommands.join(' && ');
+  // Use ';' (sequence) instead of '&&' so each line runs independently.
+  // With '&&', a failure on line 1 (e.g. title on about:blank) would stop
+  // all subsequent lines, which is not what users expect from stdin piping.
+  const chain = stdinCommands.join(' ; ');
   const cdpEndpoint = argv ? extractCdpFromArgv(argv) : undefined;
   const sessionName = argv ? extractSessionNameFromArgv(argv) : 'default';
   const chainResult = await executeChain(chain, { fileMode: true, cdpEndpoint, sessionName });

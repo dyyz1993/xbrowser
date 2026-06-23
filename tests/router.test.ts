@@ -328,7 +328,7 @@ describe('router', () => {
 
     await routeCommand([], ['goto https://example.com', 'title']);
 
-	    expect(executeChain).toHaveBeenCalledWith('goto https://example.com && title', { fileMode: true, cdpEndpoint: undefined, sessionName: 'default' });
+	    expect(executeChain).toHaveBeenCalledWith('goto https://example.com ; title', { fileMode: true, cdpEndpoint: undefined, sessionName: 'default' });
     expect(printChainResult).toHaveBeenCalled();
   });
 
