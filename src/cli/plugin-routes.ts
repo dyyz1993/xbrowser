@@ -339,6 +339,18 @@ export async function handlePlugin(
       }
       // Reload the plugin into memory so it's available for immediate use
       try { await (await getGlobalPluginLoader()).reloadPlugin(result.name); } catch { /* not critical */ }
+      // Also tell the daemon to re-scan plugins so newly installed ones are recognized
+      try {
+        const { daemonPing } = await import('../client/daemon-client.js');
+        if (await daemonPing()) {
+          await fetch('http://localhost:9224/rpc', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ method: 'plugins:reload', params: {} }),
+            signal: AbortSignal.timeout(5000),
+          });
+        }
+      } catch { /* daemon not running — skip */ }
       outputResult(
         { ok: true, name: result.name, source: result.source, path: result.path },
         mode

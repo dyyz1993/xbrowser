@@ -13,3 +13,13 @@ export async function getPluginLoader(): Promise<XBrowserPluginLoader> {
   }
   return pluginLoader;
 }
+
+/**
+ * Reset the cached plugin loader so the next getPluginLoader() call
+ * re-scans the plugin directories. Used after install/uninstall to
+ * ensure the daemon picks up newly added or removed plugins.
+ */
+export function resetPluginLoader(): void {
+  pluginLoader = null;
+  pluginsScanned = false;
+}

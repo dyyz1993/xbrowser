@@ -248,8 +248,10 @@ export async function forwardRecordStart(session: string, url?: string, cdpEndpo
   return rpcCall('record:start', { session, url, cdpEndpoint }, 15000);
 }
 
-export async function forwardRecordStop(session: string): Promise<unknown> {
-  return rpcCall('record:stop', { session }, 10000);
+export async function forwardRecordStop(session: string, output?: string): Promise<unknown> {
+  const params: Record<string, unknown> = { session };
+  if (output) params.output = output;
+  return rpcCall('record:stop', params, 10000);
 }
 
 export async function forwardRecordStatus(session: string): Promise<unknown> {

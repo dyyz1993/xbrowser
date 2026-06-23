@@ -139,6 +139,8 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
         // ── Utility ──
         case 'ping':
           return { ok: true, pid: process.pid };
+        case 'plugins:reload':
+          return handlePluginsReload();
 
         // ── Network analysis ──
         case 'network:list':
@@ -337,6 +339,14 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const result = await executeChain(input, { cdpEndpoint: cdp, sessionName });
     registerSessionIfNew(sessionName);
     return result;
+  }
+
+  async function handlePluginsReload(): Promise<{ ok: boolean; plugins: number }> {
+    const { resetPluginLoader } = await import('../utils/plugin-singleton.js');
+    resetPluginLoader();
+    const loader = await import('../utils/plugin-singleton.js').then(m => m.getPluginLoader());
+    const sites = loader.getCore().loader.getSites();
+    return { ok: true, plugins: sites.length };
   }
 
   async function handleAgentObserve(params: Record<string, unknown>) {
@@ -649,14 +659,21 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
 
   async function handleRecordStop(params: Record<string, unknown>) {
     const sessionName = (params.session as string) || 'default';
+    const outputPath = params.output as string | undefined;
     const recorder = activeRecorders.get(sessionName);
 
     if (!recorder) {
       const existingData = SessionRecorder.readData(sessionName);
       if (existingData) {
+        // Copy existing recording to output path if specified
+        if (outputPath) {
+          const { writeFileSync } = await import('node:fs');
+          writeFileSync(outputPath, JSON.stringify(existingData, null, 2), 'utf-8');
+        }
         return {
           ok: true,
           message: 'Recorder process already exited. Recording data found on disk.',
+          output: outputPath,
           session: sessionName,
           actions: existingData.actions.length,
           network: existingData.network.length,
@@ -668,8 +685,24 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     try {
       const { data, summary } = await recorder.stop();
       activeRecorders.delete(sessionName);
+
+      // Write to user-specified output path if provided
+      if (outputPath) {
+        const { writeFileSync, mkdirSync } = await import('node:fs');
+        const { dirname } = await import('node:path');
+        mkdirSync(dirname(outputPath), { recursive: true });
+        // If output ends with .yaml/.yml, write YAML; otherwise JSON
+        if (outputPath.endsWith('.yaml') || outputPath.endsWith('.yml')) {
+          const yaml = (await import('yaml')).default;
+          writeFileSync(outputPath, yaml.stringify(data), 'utf-8');
+        } else {
+          writeFileSync(outputPath, JSON.stringify(data, null, 2), 'utf-8');
+        }
+      }
+
       return {
         ok: true,
+        output: outputPath,
         session: sessionName,
         actions: data.actions.length,
         network: data.network.length,
@@ -776,7 +809,13 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     let parsed: Record<string, unknown>;
     try {
       rawContent = readFileSync(file, 'utf8');
-      parsed = JSON.parse(rawContent);
+      // Try JSON first, fall back to YAML for .yaml/.yml files or if JSON.parse fails
+      try {
+        parsed = JSON.parse(rawContent);
+      } catch {
+        const yaml = (await import('yaml')).default;
+        parsed = yaml.parse(rawContent);
+      }
     } catch (e) {
       return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Failed to read/parse file: ' + String(e) }] };
     }
