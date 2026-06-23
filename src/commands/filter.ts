@@ -67,9 +67,25 @@ export function filterRecording(
  * @returns Array of event type strings, or `undefined` if not specified.
  */
 export function parseExcludeTypes(args: string[]): string[] | undefined {
-  for (const arg of args) {
+  // Supports: --exclude-types=scroll,click  OR  --exclude scroll,click  OR  --exclude scroll click
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
     if (arg.startsWith('--exclude-types=')) {
-      return arg.replace('--exclude-types=', '').split(',');
+      return arg.replace('--exclude-types=', '').split(',').map(s => s.trim());
+    }
+    if (arg === '--exclude-types' && args[i + 1]) {
+      return args[i + 1].split(',').map(s => s.trim());
+    }
+    if (arg.startsWith('--exclude=')) {
+      return arg.replace('--exclude=', '').split(',').map(s => s.trim());
+    }
+    if (arg === '--exclude' && args[i + 1]) {
+      // Collect all following non-flag args as types
+      const types: string[] = [];
+      for (let j = i + 1; j < args.length && !args[j].startsWith('-'); j++) {
+        types.push(...args[j].split(',').map(s => s.trim()));
+      }
+      if (types.length > 0) return types;
     }
   }
   return undefined;
