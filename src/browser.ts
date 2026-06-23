@@ -359,7 +359,7 @@ export function deleteSessionDiskMeta(name: string): void {
       const pages = ctx.pages();
       for (const p of pages) {
         const pUrl = p.url();
-        if (pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome://')) {
+        if (pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome://') && !pUrl.startsWith('chrome-untrusted://') && !pUrl.startsWith('chrome-error://')) {
           // Prefer the page matching the session's saved hostname
           if (targetHostname && pUrl.includes(targetHostname)) {
             page = p;
@@ -380,7 +380,7 @@ export function deleteSessionDiskMeta(name: string): void {
     if (!page) {
       const targets = await getCDPTargets(ep);
       const matchTarget = targets.find(t =>
-        t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://') &&
+        t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://') && !t.url.startsWith('chrome-untrusted://') && !t.url.startsWith('chrome-error://') &&
         (targetHostname ? t.url.includes(targetHostname) : true)
       );
       if (matchTarget && matchTarget.url) {
@@ -476,7 +476,7 @@ export async function createEphemeralContext(
     const allPages = ctx.pages();
     const existingPages = allPages.filter(p => {
       const url = p.url();
-      return url !== 'about:blank' && !url.startsWith('chrome://');
+      return url !== 'about:blank' && !url.startsWith('chrome://') && !url.startsWith('chrome-untrusted://') && !url.startsWith('chrome-error://');
     });
     const page = existingPages.length > 0
       ? existingPages[0]  // Reuse the user's existing tab
@@ -757,7 +757,7 @@ export async function createSession(
         const pages = ctx.pages();
         for (const p of pages) {
           const pUrl = p.url();
-          if (pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome://') && pUrl.includes(targetHostname)) {
+          if (pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome://') && !pUrl.startsWith('chrome-untrusted://') && !pUrl.startsWith('chrome-error://') && pUrl.includes(targetHostname)) {
             targetPage = p;
             break;
           }
@@ -772,7 +772,7 @@ export async function createSession(
         const pages = ctx.pages();
         for (const p of pages) {
           const pUrl = p.url();
-          if (pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome://')) {
+          if (pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome://') && !pUrl.startsWith('chrome-untrusted://') && !pUrl.startsWith('chrome-error://')) {
             targetPage = p;
             break;
           }
@@ -784,7 +784,7 @@ export async function createSession(
     if (!targetPage && options?.cdpEndpoint) {
       const targets = await getCDPTargets(options.cdpEndpoint);
       const matchTarget = targets.find(t =>
-        t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://') &&
+        t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://') && !t.url.startsWith('chrome-untrusted://') && !t.url.startsWith('chrome-error://') &&
         (url ? t.url.includes(new URL(url).hostname) : true)
       );
       if (matchTarget && matchTarget.url) {

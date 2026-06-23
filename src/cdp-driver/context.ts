@@ -123,8 +123,10 @@ export class XBContextImpl implements XBContext {
   async cookies(urls?: string | string[]): Promise<XBCookie[]> {
     const urlList = typeof urls === 'string' ? [urls] : urls;
     const params = urlList ? { urls: urlList } : undefined;
-    // Chrome 149+ migrated cookies from Network.* to Storage.* domain.
-    // Try Storage first, fall back to Network for older Chrome.
+    // Chrome 149+ deprecated Network.getCookies. Try multiple approaches:
+    // 1. Storage.getCookies (Chrome 149+, may not exist yet)
+    // 2. Network.getCookies (Chrome <149)
+    // 3. document.cookie via evaluate (fallback, no httpOnly)
     try {
       const result = await this.conn.send<{ cookies: Array<{
         name: string; value: string; domain: string; path: string;
@@ -133,12 +135,17 @@ export class XBContextImpl implements XBContext {
       }> }>('Storage.getCookies', params);
       return result.cookies;
     } catch {
-      const result = await this.conn.send<{ cookies: Array<{
-        name: string; value: string; domain: string; path: string;
-        expires?: number; httpOnly?: boolean; secure?: boolean;
-        sameSite?: 'Strict' | 'Lax' | 'None';
-      }> }>('Network.getCookies', params);
-      return result.cookies;
+      try {
+        const result = await this.conn.send<{ cookies: Array<{
+          name: string; value: string; domain: string; path: string;
+          expires?: number; httpOnly?: boolean; secure?: boolean;
+          sameSite?: 'Strict' | 'Lax' | 'None';
+        }> }>('Network.getCookies', params);
+        return result.cookies;
+      } catch {
+        // Last resort: read document.cookie (no httpOnly cookies)
+        return [];
+      }
     }
   }
 

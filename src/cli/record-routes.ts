@@ -407,18 +407,24 @@ export async function handleExtract(args: string[], _mode: string): Promise<void
   console.log(`\nSaved LLM summary: ${outputPath}`);
 }
 
-export async function handleFilter(args: string[], _mode: string): Promise<void> {
+export async function handleFilter(args: string[], _mode: string, options?: Record<string, unknown>): Promise<void> {
   const filePath = args[0];
   const outputPath = args[1];
 
   if (!filePath || !outputPath) {
-    console.error('Usage: xbrowser filter <input.yaml> <output.yaml> [--exclude-types=type1,type2]');
+    console.error('Usage: xbrowser filter <input.yaml> <output.yaml> [--exclude type1,type2]');
     process.exit(1);
   }
 
   const { filterRecording, parseExcludeTypes } = await import('../commands/filter.js');
 
-  const excludeTypes = parseExcludeTypes(args.slice(2));
+  // Build args list from both positional args and options for parseExcludeTypes
+  const excludeArgs = args.slice(2).concat(
+    Object.entries(options || {}).flatMap(([k, v]) =>
+      k.startsWith('exclude') ? [`--${k}${typeof v === 'string' ? '=' + v : ''}`] : []
+    )
+  );
+  const excludeTypes = parseExcludeTypes(excludeArgs);
   const result = filterRecording(filePath, outputPath, excludeTypes);
 
   console.log(`Filtered ${filePath} -> ${outputPath}`);

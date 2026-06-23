@@ -162,7 +162,10 @@ export async function handleBrowserCommand(
         if (!args[0]) outputError(`Usage: xbrowser ${command} <url>`);
         cmdName = 'goto';
         params = {
-          url: /^https?:\/\//i.test(args[0]) || /^wss?:\/\//i.test(args[0]) ? args[0] : 'https://' + args[0],
+          // Don't prefix if URL already has a scheme (http, file, about, data, etc.)
+          url: /^(https?|wss?|file|about|data|chrome|blob):/i.test(args[0])
+            ? args[0]
+            : (/^[\w-]+(\.[\w-]+)+/.test(args[0]) || args[0].startsWith('localhost') ? 'https://' + args[0] : args[0]),
           waitUntil: options.waitUntil as string | undefined,
           ...(options.timeout ? { timeout: Number(options.timeout) } : {}),
         };
@@ -227,11 +230,13 @@ export async function handleBrowserCommand(
       }
       case 'mouse': {
         // Supports: mouse move 100 200  OR  mouse click 50 50  OR  mouse --action move --x 100 --y 200
-        const action = (options.action as string) || args.find(a => ['move','click','dblclick','down','up'].includes(a));
-        const actionIdx = action ? args.indexOf(action) : -1;
-        const x = options.x !== undefined ? Number(options.x) : (actionIdx >= 0 && args[actionIdx+1] ? Number(args[actionIdx+1]) : undefined);
-        const y = options.y !== undefined ? Number(options.y) : (actionIdx >= 0 && args[actionIdx+2] ? Number(args[actionIdx+2]) : undefined);
-        if (!action || x === undefined || y === undefined) {
+        // Flatten args in case shell quoting merged them (e.g. "move 100 200")
+        const flatArgs = args.flatMap(a => a.split(/\s+/).filter(Boolean));
+        const action = (options.action as string) || flatArgs.find(a => ['move','click','dblclick','down','up'].includes(a));
+        const actionIdx = action ? flatArgs.indexOf(action) : -1;
+        const x = options.x !== undefined ? Number(options.x) : (actionIdx >= 0 && flatArgs[actionIdx+1] ? Number(flatArgs[actionIdx+1]) : undefined);
+        const y = options.y !== undefined ? Number(options.y) : (actionIdx >= 0 && flatArgs[actionIdx+2] ? Number(flatArgs[actionIdx+2]) : undefined);
+        if (!action || x === undefined || y === undefined || isNaN(x) || isNaN(y)) {
           outputError('Usage: xbrowser mouse <move|click|dblclick> <x> <y>\n       xbrowser mouse --action <action> --x <x> --y <y>');
         }
         cmdName = 'mouse';

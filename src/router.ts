@@ -415,7 +415,7 @@ export async function routeCommand(
         await handleExtract(cmdArgs, mode);
         break;
       case 'filter':
-        await handleFilter(cmdArgs, mode);
+        await handleFilter(cmdArgs, mode, options);
         break;
       case 'run':
         if (!cmdArgs[0]) {

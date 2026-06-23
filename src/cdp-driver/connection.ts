@@ -52,6 +52,9 @@ export class CDPConnection extends EventEmitter {
 
   constructor(wsOrUrl: WebSocket | string, sessionId?: string) {
     super();
+    // CDP connections legitimately need many event listeners (one per page/session
+    // subscription). Remove the default 10-listener limit to prevent false warnings.
+    this.setMaxListeners(0);
     this.defaultSessionId = sessionId;
 
     if (typeof wsOrUrl === 'string') {
