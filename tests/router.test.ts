@@ -261,7 +261,7 @@ describe('router', () => {
   it('routes filter subcommand to handleFilter', async () => {
     const { handleFilter } = await import('../src/cli/index.js');
     await routeCommand(['filter', 'data.json']);
-    expect(handleFilter).toHaveBeenCalledWith(['data.json'], 'text');
+    expect(handleFilter).toHaveBeenCalledWith(['data.json'], 'text', expect.any(Object));
   });
 
   it('routes help subcommand to showMainHelp', async () => {
