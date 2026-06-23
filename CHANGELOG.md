@@ -1,10 +1,15 @@
 # Changelog
 
-## [1.2.1] - 2026-06-23
+## [1.2.2] - 2026-06-23
 
 ### Fixed
-- `scrape` Element UI 表格列重复 2 次 — 提取前移除 fixed-column 副本 + `:scope >` 直接子元素选择器 (#52)
+- `record stop `--output` 现在写入指定路径 (#57)
+- `replay` 支持 YAML 文件（JSON.parse 失败后 fallback yaml.parse）(#57)
+- `setCookie` 数字值类型校验 — `z.coerce.string()` 自动转换 (#59)
+- daemon 插件缓存 — 新增 `plugins:reload` RPC + `resetPluginLoader()` (#58)
+- `plugin install` 后自动通知 daemon 重新扫描插件 (#58)
 
+## [1.2.1] - 2026-06-23
 ## [1.2.0] - 2026-06-23
 
 ### Fixed — 14 个 bug 修复（10 个 issue）
