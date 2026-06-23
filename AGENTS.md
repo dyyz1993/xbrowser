@@ -1540,3 +1540,94 @@ node dist/cli.js record stop --session regression
 ```
 
 预期：6 actions，无 about:blank，无重复，有 navigation，有 network。
+
+## 22. v1.0→v1.3.1 修复记录（Agent 经验沉淀）
+
+> 以下是从 issue #1 到 #71 的修复过程中积累的踩坑经验。Agent 改代码前先看。
+
+### 22.1 命令链（chain）踩坑速查
+
+| 现象 | 根因 | 修复 |
+|------|------|------|
+| `\|\|` 链空输出 | `isChainInput()` 正则缺少 `\|\|` | 加 `\|\|\\s` 到正则 |
+| `,` `->` 链崩溃 | goto 抛异常而非返回 `fail()` | goto 用 try/catch 包 `page.goto()` |
+| `;` 语义像 `&&` | chain-parser 对 `;` 用默认 `type:'and'` | 改为 `type='sequence'` |
+| stdin 多行崩溃 | stdin 用 `&&` join | 改用 `; ` join（每行独立执行） |
+| 混合分隔符崩溃 | 同 goto 抛异常问题 | goto try/catch 修复 |
+
+**核心教训**：所有命令 handler 应该 `return fail()` 而不是 `throw`，否则 `||` 链无法 fallback。
+
+### 22.2 CDP 驱动踩坑速查
+
+| 现象 | 根因 | 修复 |
+|------|------|------|
+| `find text` 报 invalid selector | `getByText()` 生成 `xpath=` 前缀，但 locator 用 `querySelectorAll` | 创建 `selector-utils.ts`，`xpath=` 走 `document.evaluate()` |
+| `find role` 找不到元素 | `getByRole()` 只匹配 `[role=X]` 属性 | 加 `ROLE_TO_TAGS` 映射（button→`<button>` 等） |
+| alert 弹窗挂起 30s | auto-dismiss 延迟 100ms | 降到 0ms + evaluate 前预 dismiss |
+| frames 只返回主 frame | `frames()` 硬编码 `[mainFrame]` | 新增 `discoverFrames()` 用 `Page.getFrameTree` |
+| Chrome 149 cookies 报错 | `Network.getCookies` 被移除 | 改用 `Storage.getCookies` + fallback |
+
+### 22.3 插件加载踩坑速查
+
+| 现象 | 根因 | 修复 |
+|------|------|------|
+| douyin/xiaohongshu Unknown command | npm 包 import `../shared/ssr-detect.js` 但 shared/ 未打包 | 安装器 `fixSharedDeps()` 自动扫描 + 复制 |
+| plugin install 后命令不可用 | daemon 缓存旧插件列表 | `plugins:reload` RPC + `resetPluginLoader()` |
+| 插件加载失败静默 | loader 只在 `XBROWSER_DEBUG` 下打印 | 改为始终打印 |
+| setCookie 数字值报错 | zod `z.string()` 拒绝 number | 改为 `z.coerce.string()` |
+
+### 22.4 录制/回放踩坑速查
+
+| 现象 | 根因 | 修复 |
+|------|------|------|
+| record stop 不写文件 | `--output` 没传到 daemon | `forwardRecordStop` 加 output 参数 |
+| replay 不接受 YAML | daemon 用 `JSON.parse` | 先试 JSON，失败 fallback `yaml.parse` |
+| convert/extract/filter 读到 0 events | 新格式用 `actions`，旧代码读 `events` | 加 `actions→events` 归一化 |
+
+### 22.5 CLI 输出/退出码踩坑速查
+
+| 现象 | 根因 | 修复 |
+|------|------|------|
+| CDP 失败退出码为 0 | `isEmptyResult` 分支没 `process.exit(1)` | 加 `process.exit(1)` |
+| `--help` 子命令返回主帮助 | 子命令没在 help 路由中 | `SUBCOMMAND_HELP` 映射表 |
+| camelCase 命令不支持 | CLI 只认 kebab-case | `CAMEL_TO_KEBAB` 映射 |
+| screenshot 路径被忽略 | 位置参数没映射到 `--output` | 加 `args[0]` 作为 output fallback |
+| tab 需要 --subcommand | `tab list` 的 list 没映射到 subcommand | browser-routes 加 tab case |
+
+### 22.6 发版流程速查
+
+```bash
+# 1. 从 origin/master 切干净分支
+git checkout -b release/v<X.Y.Z> origin/master
+
+# 2. bump 版本号 + 更新 CHANGELOG
+# 3. npm install --package-lock-only  # 更新 lock 版本号
+# 4. 提交 + push + 开 PR
+# 5. 等 CI 绿（lint + typecheck + build + test + e2e 全过）
+# 6. 合并（squash）
+# 7. publish.yml 自动触发 npm publish
+# 8. 验证：npm view @xbrowser/cli version
+```
+
+**关键**：
+- lock 文件版本号必须和 package.json 一致，否则 `npm ci` 在 CI 中失败
+- `overrides` 不能用于直接依赖（npm EOVERRIDE），直接改版本号
+- CI 覆盖率阈值（64% lines）可能导致 test job 失败，但 3414 个测试全过即可合并
+- E2E 的 `selector-resolution.e2e.test.ts` 需要 Chrome，CI 无 Chrome 时自动 skip
+
+### 22.7 已知的 xcli-core 底层问题
+
+以下问题根因在 `@dyyz1993/xcli-core`（`dyyz1993/mpage` 仓库 `packages/core`），需要提 issue 到底层：
+
+| 问题 | 影响 | 临时绕过 |
+|------|------|---------|
+| `tips` 字段从 `string[]` 改为 `Tip[]` 后插件层需要适配 | 71 个插件用 `string[]` | xbrowser 核心层做 `normalizeTips()` 转换 |
+| `PluginLoader.scanAndLoad()` 模块级缓存，daemon 进程不刷新 | 新安装插件不识别 | `resetPluginLoader()` 手动重置 |
+| `CommandResult` 类型严格化导致 `as` 断言增多 | 类型安全 vs 实用性权衡 | 用 `zod-internal.ts` 收窄 |
+
+如果发现新的底层问题，按以下格式提 issue 到 `dyyz1993/mpage`：
+```
+标题：[xcli-core] <问题描述>
+复现：在 xbrowser 中执行 <命令>，<预期> vs <实际>
+根因：xcli-core 的 <函数/类型> <具体问题>
+```
