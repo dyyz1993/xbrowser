@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.0] - 2026-06-24
+
+### Changed
+- 升级 `@dyyz1993/xcli-core` 0.15.0 → 0.16.0
+  - `ok()` 现在自动接受 `string[]` 和 `Tip[]` tips（向后兼容）
+  - `PluginLoader` 支持热重载
+  - 移除了 xbrowser 核心层手动 `normalizeTips()` 的必要性（保留用于安全）
+
 ## [1.3.1] - 2026-06-24
 
 ### Fixed — Critical regressions from 1.3.0
