@@ -386,6 +386,30 @@ export async function routeCommand(
       }
       return;
     }
+    // Check for subcommand help (session, plugin, record, daemon, etc.)
+    const SUBCOMMAND_HELP: Record<string, string> = {
+      session: 'session open|close|kill|list [--session <name>] [--cdp <endpoint>]',
+      plugin: 'plugin install|uninstall|list|reload|schema|search|info <name>',
+      record: 'record start|stop|status [--url <url>] [--name <flow>]',
+      daemon: 'daemon status [--port <port>]',
+      replay: 'replay <file> [--slow-mo <ms>] [--stop-on-error]',
+      create: 'create <name> [--template static|dynamic|login|api]',
+      run: 'run <file>',
+      serve: 'serve [--port <port>] [--token <token>]',
+      remote: 'remote <url> [command] [--token <token>]',
+      convert: 'convert <file> [--to js|py|sh]',
+      extract: 'extract <file> [--format json|yaml]',
+      filter: 'filter <file> [--include <type>] [--exclude <type>]',
+      test: 'test <name> [--cdp <endpoint>]',
+      viewer: 'viewer [--session <name>]',
+      kill: 'kill [--all]',
+      net: 'net [--cdp <endpoint>]',
+    };
+    const subHelp = SUBCOMMAND_HELP[command];
+    if (subHelp) {
+      console.log(`\n  Usage: xbrowser ${subHelp}\n`);
+      return;
+    }
     showMainHelp();
     return;
   }

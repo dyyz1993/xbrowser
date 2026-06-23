@@ -195,7 +195,7 @@ export async function handleBrowserCommand(
           type: options.type as string | undefined,
           selector: (options.selector || options.s) as string | undefined,
           base64: !!(options.base64),
-          output: (options.output || options.o) as string | undefined,
+          output: (options.output || options.o || args[0]) as string | undefined,
         };
         break;
       case 'eval':

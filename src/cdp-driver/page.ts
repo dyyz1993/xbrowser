@@ -314,6 +314,9 @@ export class XBPageImpl implements XBPage {
   ): Promise<R> {
     if (this._closed) throw new Error('Page is closed');
 
+    // Dismiss any pending dialog before evaluation (prevents hanging on stale alerts)
+    this.conn.send('Page.handleJavaScriptDialog', { accept: false }, this.sessionId).catch(() => {});
+
     let expression: string;
     if (typeof fn === 'string') {
       expression = fn;
@@ -899,12 +902,12 @@ export class XBPageImpl implements XBPage {
         };
         this._emit('dialog', dialog);
 
-        // Auto-dismiss dialog if no listener handled it (prevents page hang).
-        // Playwright auto-dismisses by default; we do the same after a short delay.
+        // Auto-dismiss dialog on next tick (prevents page hangs on alert/confirm/prompt).
+        // Playwright auto-dismisses by default; we do the same after the event is dispatched.
         setTimeout(() => {
           this.conn.send('Page.handleJavaScriptDialog', { accept: false }, this.sessionId)
             .catch(() => { /* dialog may already be handled */ });
-        }, 100);
+        }, 0);
       }),
     );
 
