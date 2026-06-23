@@ -32,7 +32,7 @@ export function parseCommandChain(input: string, options?: ParseOptions): Parsed
   let inQuote: "'" | '"' | null = null;
   let current = '';
   let parenDepth = 0;
-  let lastOperator: 'and' | 'or' = 'and';
+  let lastOperator: 'sequence' | 'and' | 'or' = 'and';
 
   const pushCommand = () => {
     if (current.trim()) currentPipeline.push(current.trim());
@@ -81,10 +81,11 @@ export function parseCommandChain(input: string, options?: ParseOptions): Parsed
         continue;
       }
 
-      if (char === ';') {
-        flushPipeline();
-        continue;
-      }
+	      if (char === ';') {
+	        lastOperator = 'sequence';
+	        flushPipeline();
+	        continue;
+	      }
 
       if (char === '-' && input[i + 1] === '>' && isSpaceAround(input, i, 2)) {
         pushCommand();
@@ -148,6 +149,7 @@ registerCommandDefinition('uncheck', ['selector']);
 registerCommandDefinition('hover', ['selector']);
 registerCommandDefinition('dblclick', ['selector']);
 registerCommandDefinition('wait', ['selector']);
+registerCommandDefinition('waitForTimeout', ['timeout']);
 registerCommandDefinition('screenshot', []);
 registerCommandDefinition('eval', ['expression']);
 registerCommandDefinition('scroll', ['direction']);

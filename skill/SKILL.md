@@ -35,7 +35,7 @@ CLI (bin/cli.ts)
 
 | What you change | Where |
 |----------------|-------|
-| Built-in commands | `src/commands/` (49 commands in 24 files) |
+| Built-in commands | `src/commands/` (50 commands in 24 files) |
 | CLI subcommands | `src/cli/` |
 | CDP driver | `src/cdp-driver/` |
 | New plugin | `.xcli/plugins/<name>/index.ts` |
@@ -217,7 +217,7 @@ See [references/lint-rules.md](references/lint-rules.md) for all 10 rules.
 | [plugin-development.md](references/plugin-development.md) | Full plugin guide: loginConfig, isLogin, result schema, helpers | Creating or modifying plugins |
 | [plugin-testing.md](references/plugin-testing.md) | Plugin test patterns, mock factories, coverage checklist | Writing plugin tests |
 | [plugin-publishing.md](references/plugin-publishing.md) | Marketplace publishing flow, versioning, registry | Publishing plugins |
-| [command-reference.md](references/command-reference.md) | All 49 commands with parameters, scope, options | Looking up command usage |
+| [command-reference.md](references/command-reference.md) | All 50 commands with parameters, scope, options | Looking up command usage |
 | [session-lifecycle.md](references/session-lifecycle.md) | Session management, CDP modes, viewer | Debugging session issues |
 | [cdp-pitfalls.md](references/cdp-pitfalls.md) | CDP driver pitfalls and solutions | CDP-related bugs |
 | [file-upload/SKILL.md](file-upload/SKILL.md) | File upload decision tree (5 patterns), CDP Firewall avoidance, `setInputFiles` 实战, `shared/file-upload.ts` helper | Writing plugin handlers that upload files (image / attachment / avatar) |
