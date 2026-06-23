@@ -11,6 +11,7 @@ export const gotoCommand = registerCommand({
   parameters: z.object({
     url: z.string(),
     waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle']).optional(),
+    timeout: z.number().optional(),
   }),
   result: z.object({
     url: z.string(),
@@ -32,6 +33,7 @@ export const gotoCommand = registerCommand({
 
     const response = await ctx.page.goto(url, {
       waitUntil: p.waitUntil || 'domcontentloaded',
+      ...(p.timeout ? { timeout: p.timeout } : {}),
     });
 
     const ssr = await detectSsr(ctx.page);

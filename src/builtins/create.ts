@@ -286,7 +286,7 @@ export const createBuiltin: BuiltinCommand = {
       process.exit(1);
     }
 
-    const targetDir = path.join(ctx.cwd, projectName);
+    const targetDir = path.isAbsolute(projectName) ? projectName : path.join(ctx.cwd, projectName);
 
     if (fs.existsSync(targetDir) && !options['force']) {
       console.error(`Directory "${projectName}" already exists. Use --force to overwrite.`);

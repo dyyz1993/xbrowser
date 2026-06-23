@@ -164,6 +164,7 @@ export async function handleBrowserCommand(
         params = {
           url: /^https?:\/\//i.test(args[0]) || /^wss?:\/\//i.test(args[0]) ? args[0] : 'https://' + args[0],
           waitUntil: options.waitUntil as string | undefined,
+          ...(options.timeout ? { timeout: Number(options.timeout) } : {}),
         };
         break;
       case 'screenshot':
@@ -429,5 +430,18 @@ export async function handleBrowserCommand(
     } else {
       outputResult(result.data, mode);
     }
+  }
+
+  // Write to file if --output is specified (e.g. scrape --output result.md)
+  const outputFile = options.output as string | undefined;
+  if (outputFile && result.success && result.data) {
+    const { writeFileSync } = await import('fs');
+    const content = typeof result.data === 'string'
+      ? result.data
+      : (result.data as Record<string, unknown>).content as string
+        || (result.data as Record<string, unknown>).text as string
+        || JSON.stringify(result.data, null, 2);
+    writeFileSync(outputFile, content, 'utf-8');
+    console.log(`\n  📄 Written to ${outputFile}`);
   }
 }
