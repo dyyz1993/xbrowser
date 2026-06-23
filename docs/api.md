@@ -278,24 +278,28 @@ await evaluateCommand.handler(
 // 返回: { ok: true, result: 'Example Page' }
 ```
 
-#### `evaluateFn`
+#### `eval`
 
-执行带参数的函数。
+执行 JavaScript 表达式。
 
 **参数：**
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `fn` | `string` | 函数体字符串 |
-| `args` | `unknown[]` | 函数参数 |
+| `expression` | `string` | 要执行的 JavaScript 表达式 |
 
 ```typescript
-await evaluateFnCommand.handler(
-  { fn: 'return args[0] + args[1]', args: [1, 2] },
+await evaluateCommand.handler(
+  { expression: 'document.title' },
   ctx
 );
-// 返回: { ok: true, result: 3 }
+// 返回: { ok: true, result: 'Example Page' }
 ```
+
+> 旧版文档中的 `evaluateFn` 命令已合并到 `eval` 命令。带参数的函数请使用模板字符串：
+> ```typescript
+> eval({ expression: \`(function() { return args[0] + args[1]; })(1, 2)\` })
+> ```
 
 ### 存储命令
 
