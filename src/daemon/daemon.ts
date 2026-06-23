@@ -2,6 +2,7 @@ import { spawn } from 'child_process';
 import { join, dirname } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
+import { writeFileSync, unlinkSync, mkdirSync } from 'fs';
 import { stopDaemon as xcliStopDaemon, isDaemonRunning, getDaemonStatus, killAllDaemon } from '@dyyz1993/xcli-core';
 import type { DaemonConfig } from '@dyyz1993/xcli-core';
 
@@ -51,6 +52,29 @@ export async function startDaemonProcess(port: number = 9224): Promise<DaemonInf
     await xcliStopDaemon(config);
   }
 
+  // ── File lock to prevent concurrent daemon startup races (#30) ──
+  const lockFile = join(CONFIG_DIR, 'daemon.lock');
+  try {
+    mkdirSync(CONFIG_DIR, { recursive: true });
+    // O_EXCL ensures only one process can create the file
+    writeFileSync(lockFile, String(process.pid), { flag: 'wx' });
+  } catch {
+    // Lock exists — another process is starting the daemon. Wait for it.
+    console.error('Another process is starting the daemon, waiting...');
+    for (let i = 0; i < 50; i++) {
+      await new Promise(r => setTimeout(r, 200));
+      if (isDaemonRunning(config)) {
+        const s = getDaemonStatus(config);
+        if (s.port === port && s.pid) {
+          return { pid: s.pid, port: s.port, startedAt: new Date().toISOString() };
+        }
+      }
+    }
+    // Lock stale (holder crashed) — remove and continue
+    try { unlinkSync(lockFile); } catch { /* ignore */ }
+    try { writeFileSync(lockFile, String(process.pid), { flag: 'wx' }); } catch { /* race lost */ }
+  }
+
   const child = spawn('node', [WORKER_PATH], {
     detached: true,
     stdio: 'ignore',
@@ -67,6 +91,8 @@ export async function startDaemonProcess(port: number = 9224): Promise<DaemonInf
     const timeout = setTimeout(() => {
       if (!resolved) {
         resolved = true;
+        // Clean up lock on timeout
+        try { unlinkSync(lockFile); } catch { /* ignore */ }
         reject(new Error('Daemon start timeout after 15s'));
       }
     }, 15000);
@@ -78,6 +104,8 @@ export async function startDaemonProcess(port: number = 9224): Promise<DaemonInf
           resolved = true;
           clearTimeout(timeout);
           clearInterval(checkInterval);
+          // Clean up lock
+          try { unlinkSync(lockFile); } catch { /* ignore */ }
           resolve({ pid: s.pid, port: s.port, startedAt: new Date().toISOString() });
         }
       }
@@ -88,6 +116,7 @@ export async function startDaemonProcess(port: number = 9224): Promise<DaemonInf
         resolved = true;
         clearTimeout(timeout);
         clearInterval(checkInterval);
+        try { unlinkSync(lockFile); } catch { /* ignore */ }
         reject(err);
       }
     });

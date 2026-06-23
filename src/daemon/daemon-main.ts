@@ -8,7 +8,7 @@
  * This file handles only: HTTP server setup, preview WS, daemon.json writing,
  * signal handling, and the keep-alive loop.
  */
-import { writeFileSync, mkdirSync, appendFileSync } from 'fs';
+import { writeFileSync, mkdirSync, appendFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import type { IncomingMessage, ServerResponse } from 'http';
@@ -53,6 +53,18 @@ async function main() {
         },
       },
     ],
+  });
+
+  // ── Handle EADDRINUSE: port already in use (another daemon won the race) ──
+  server.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      log(`Port ${daemonPort} already in use — another daemon instance likely won the startup race. Exiting gracefully.`);
+      // Clean up daemon.json so the parent process can detect the existing daemon
+      try { unlinkSync(join(CONFIG_DIR, 'daemon.json')); } catch { /* ignore */ }
+      process.exit(0);
+    }
+    log(`Server error: ${err.message}`);
+    process.exit(1);
   });
 
   // ── Preview viewer HTTP routing ──

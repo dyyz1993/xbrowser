@@ -25,6 +25,21 @@ vi.mock('os', () => ({
   homedir: vi.fn().mockReturnValue('/home/test'),
 }));
 
+// Mock fs to prevent real lock file creation in tests
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  return {
+    ...actual,
+    writeFileSync: vi.fn((file: string, data: string, opts?: unknown) => {
+      // For lock files (flag: 'wx'), always succeed (no lock contention in tests)
+      if (typeof opts === 'object' && opts !== null && 'flag' in opts) return;
+      return actual.writeFileSync(file, data, opts as Record<string, unknown> | undefined);
+    }),
+    unlinkSync: vi.fn(),
+    mkdirSync: vi.fn(),
+  };
+});
+
 vi.mock('url', () => ({
   fileURLToPath: vi.fn().mockReturnValue('/home/test/project/dist/daemon/daemon.js'),
 }));
