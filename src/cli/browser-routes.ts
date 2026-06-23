@@ -107,10 +107,14 @@ export async function handleBrowserCommand(
         break;
       }
       case 'press': {
-        const key = parsed.value || parsed.remaining[1];
-        if (!sel && !key) outputError('Usage: xbrowser press [selector] <key>');
+        // press can be used with or without a selector:
+        //   press Enter            → key=Enter, no selector
+        //   press "#btn" Enter     → selector=#btn, key=Enter
+        //   press -s "#btn" Enter  → selector=#btn, key=Enter
+        const key = parsed.value || (sel ? parsed.remaining[1] : parsed.remaining[0]);
+        if (!key) outputError('Usage: xbrowser press [selector] <key>');
         cmdName = 'press';
-        params = { ...(sel ? { selector: sel } : {}), key: key || sel };
+        params = { ...(sel ? { selector: sel } : {}), key };
         break;
       }
       case 'select': {
@@ -178,13 +182,27 @@ export async function handleBrowserCommand(
         params = { expression: args.join(' ') };
         break;
       case 'scroll': {
-        const direction = args[0] || 'down';
-        if (!['up', 'down', 'left', 'right'].includes(direction))
-          outputError('Direction must be: up, down, left, right');
+        // scroll supports:
+        //   scroll                → scroll down (default)
+        //   scroll up/down/...    → scroll in direction
+        //   scroll 500            → scroll down 500px (number = distance)
+        //   scroll down 500       → scroll down 500px
+        let direction = 'down';
+        let distance: number | undefined;
+        const firstArg = args[0];
+        if (firstArg && ['up', 'down', 'left', 'right'].includes(firstArg)) {
+          direction = firstArg;
+          if (args[1] && /^\d+$/.test(args[1])) distance = Number(args[1]);
+        } else if (firstArg && /^\d+$/.test(firstArg)) {
+          distance = Number(firstArg);
+        } else if (firstArg) {
+          outputError(`Invalid scroll argument: "${firstArg}". Use up/down/left/right or a pixel number.`);
+        }
+        distance = distance ?? (options.distance ? Number(options.distance) : options.amount ? Number(options.amount) : undefined);
         cmdName = 'scroll';
         params = {
           direction,
-          distance: options.distance ? Number(options.distance) : options.amount ? Number(options.amount) : undefined,
+          distance,
           selector: (options.selector || options.s) as string | undefined,
         };
         break;
@@ -197,6 +215,15 @@ export async function handleBrowserCommand(
         cmdName = 'url';
         params = {};
         break;
+      case 'set-viewport': {
+        // Supports: set-viewport 1280 720  OR  set-viewport --width 1280 --height 720
+        const width = options.width ? Number(options.width) : (args[0] ? Number(args[0]) : undefined);
+        const height = options.height ? Number(options.height) : (args[1] ? Number(args[1]) : undefined);
+        if (!width || !height) outputError('Usage: xbrowser set-viewport <width> <height>');
+        cmdName = 'set-viewport';
+        params = { width, height };
+        break;
+      }
       case 'html':
         cmdName = 'html';
         params = { selector: (options.selector || options.s) as string | undefined };

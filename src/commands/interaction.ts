@@ -117,7 +117,9 @@ export const fillCommand = registerCommand({
   handler: async (p, ctx: BrowserCommandContext) => {
     const page = ctx.page;
 
-    if (p.clear) {
+    // Default: clear the field before filling (unless explicitly disabled with --clear false)
+    const shouldClear = p.clear !== false;
+    if (shouldClear) {
       await page.fill(p.selector, '', { force: true, timeout: 10000 });
     }
 
@@ -146,7 +148,7 @@ export const fillCommand = registerCommand({
       await page.fill(p.selector, p.value, { force: true, timeout: 10000 });
     }
 
-    return ok({ selector: p.selector, value: p.value, cleared: p.clear || false, reactMode: !!isReact });
+    return ok({ selector: p.selector, value: p.value, cleared: shouldClear, reactMode: !!isReact });
   },
 });
 

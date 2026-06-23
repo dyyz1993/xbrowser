@@ -18,10 +18,16 @@ export const gotoCommand = registerCommand({
     ssr: z.boolean().optional(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
-    // Auto-prefix https:// if missing
+    // Auto-prefix https:// if missing — but don't touch special schemes
     let url = p.url;
-    if (!/^https?:\/\//i.test(url) && !/^wss?:\/\//i.test(url)) {
-      url = 'https://' + url;
+    const hasScheme = /^(https?|wss?|file|about|data|chrome|blob):/i.test(url);
+    if (!hasScheme) {
+      // Check if it looks like a domain (contains a dot or is localhost)
+      if (/^[\w-]+(\.[\w-]+)+/.test(url) || url.startsWith('localhost')) {
+        url = 'https://' + url;
+      } else {
+        throw new Error(`Invalid URL: "${url}". Expected http(s)://, file://, about:, data:, or a domain name.`);
+      }
     }
 
     const response = await ctx.page.goto(url, {
@@ -84,7 +90,8 @@ export const urlCommand = registerCommand({
   scope: 'page',
   result: z.object({ url: z.string() }),
   handler: async (_p, ctx: BrowserCommandContext) => {
-    return ok({ url: ctx.page.url() });
+    // page.url() may return undefined for about:blank or detached pages
+    return ok({ url: ctx.page.url() || 'about:blank' });
   },
 });
 

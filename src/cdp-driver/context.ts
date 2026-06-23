@@ -122,12 +122,24 @@ export class XBContextImpl implements XBContext {
 
   async cookies(urls?: string | string[]): Promise<XBCookie[]> {
     const urlList = typeof urls === 'string' ? [urls] : urls;
-    const result = await this.conn.send<{ cookies: Array<{
-      name: string; value: string; domain: string; path: string;
-      expires?: number; httpOnly?: boolean; secure?: boolean;
-      sameSite?: 'Strict' | 'Lax' | 'None';
-    }> }>('Network.getCookies', urlList ? { urls: urlList } : undefined);
-    return result.cookies;
+    const params = urlList ? { urls: urlList } : undefined;
+    // Chrome 149+ migrated cookies from Network.* to Storage.* domain.
+    // Try Storage first, fall back to Network for older Chrome.
+    try {
+      const result = await this.conn.send<{ cookies: Array<{
+        name: string; value: string; domain: string; path: string;
+        expires?: number; httpOnly?: boolean; secure?: boolean;
+        sameSite?: 'Strict' | 'Lax' | 'None';
+      }> }>('Storage.getCookies', params);
+      return result.cookies;
+    } catch {
+      const result = await this.conn.send<{ cookies: Array<{
+        name: string; value: string; domain: string; path: string;
+        expires?: number; httpOnly?: boolean; secure?: boolean;
+        sameSite?: 'Strict' | 'Lax' | 'None';
+      }> }>('Network.getCookies', params);
+      return result.cookies;
+    }
   }
 
   async addCookies(cookies: XBCookie[]): Promise<void> {
@@ -141,11 +153,21 @@ export class XBContextImpl implements XBContext {
       secure: c.secure,
       sameSite: c.sameSite,
     }));
-    await this.conn.send('Network.setCookies', { cookies: cdpCookies });
+    // Chrome 149+: Storage.setCookies; older: Network.setCookies
+    try {
+      await this.conn.send('Storage.setCookies', { cookies: cdpCookies });
+    } catch {
+      await this.conn.send('Network.setCookies', { cookies: cdpCookies });
+    }
   }
 
   async clearCookies(): Promise<void> {
-    await this.conn.send('Network.clearBrowserCookies');
+    // Chrome 149+: Storage.clearCookies; older: Network.clearBrowserCookies
+    try {
+      await this.conn.send('Storage.clearCookies');
+    } catch {
+      await this.conn.send('Network.clearBrowserCookies');
+    }
   }
 
   on(event: string, handler: (...args: unknown[]) => void): void {
