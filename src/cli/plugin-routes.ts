@@ -11,13 +11,6 @@ import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 import { getPluginLoader as getGlobalPluginLoader } from '../utils/plugin-singleton.js';
 import type { PluginCommandContract, PluginContract } from '../plugin/types.js';
 
-let pluginLoader: XBrowserPluginLoader | null = null;
-
-function getPluginLoader(): XBrowserPluginLoader {
-  if (!pluginLoader) pluginLoader = new XBrowserPluginLoader();
-  return pluginLoader;
-}
-
 interface PluginRuntimeInfo {
   commands: string[];
   hasLogin: boolean;
@@ -344,6 +337,8 @@ export async function handlePlugin(
       } else {
         result = await installer.installWithMarketplaceFallback(source, installOpts);
       }
+      // Reload the plugin into memory so it's available for immediate use
+      try { await (await getGlobalPluginLoader()).reloadPlugin(result.name); } catch { /* not critical */ }
       outputResult(
         { ok: true, name: result.name, source: result.source, path: result.path },
         mode
@@ -360,6 +355,11 @@ export async function handlePlugin(
         outputError(`Plugin "${name}" is not installed. Use 'xbrowser plugin list' to see installed plugins.`);
       }
       await installer.uninstall(name);
+      // Reload the plugin registry so the delisted plugin is removed from memory
+      try {
+        const loader = await getGlobalPluginLoader();
+        await loader.reloadPlugin(name);
+      } catch { /* plugin already removed */ }
       outputResult({ ok: true, name }, mode);
       break;
     }
@@ -415,7 +415,7 @@ export async function handlePlugin(
     case 'reload': {
       const name = subArgs[0];
       if (!name) outputError('Usage: xbrowser plugin reload <name>');
-      await getPluginLoader().reloadPlugin(name);
+      (await getGlobalPluginLoader()).reloadPlugin(name);
       outputResult({ ok: true, name }, mode);
       break;
     }
