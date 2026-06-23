@@ -172,11 +172,20 @@ describe('plugin-routes', () => {
   describe('handlePlugin - uninstall', () => {
     it('should uninstall a plugin by name', async () => {
       mockInstallerUninstall.mockResolvedValueOnce(undefined);
+      mockInstallerList.mockResolvedValueOnce([{ name: 'my-plugin', metadata: { name: 'my-plugin' } }]);
 
       await handlePlugin(['uninstall', 'my-plugin'], {}, 'text');
 
       expect(mockInstallerUninstall).toHaveBeenCalledWith('my-plugin');
       expect(mockOutputResult).toHaveBeenCalledWith({ ok: true, name: 'my-plugin' }, 'text');
+    });
+
+    it('should error when uninstalling a non-existent plugin', async () => {
+      mockInstallerList.mockResolvedValueOnce([{ name: 'other-plugin', metadata: {} }]);
+
+      await expect(
+        handlePlugin(['uninstall', 'notexist'], {}, 'text')
+      ).rejects.toThrow('not installed');
     });
 
     it('should output error when no name for uninstall', async () => {

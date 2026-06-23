@@ -153,6 +153,10 @@ function createTurndown(): TurndownService {
 }
 
 function postClean(md: string): string {
+  // Remove large residual HTML blocks that turndown failed to convert
+  // (e.g. Element UI / Ant Design virtual tables using div-based layout).
+  // Keep small inline tags (<br>, <sup>) but strip blocks > 200 chars.
+  md = md.replace(/<(?:table|div|tbody|thead|tr|td|th|span|colgroup|col)\b[^>]*(?:>[\s\S]{200,}?<\/(?:table|div|tbody|thead|tr|td|th|span|colgroup|col)>)/g, '\n[⚠️ HTML block removed — complex table/layout not converted to Markdown]\n');
   md = md.replace(/\n{3,}/g, '\n\n');
   md = md.replace(/!\[[^\]]*\]\(\s*\)/g, '');
   md = md.replace(/\[([^\]]*)\]\(\s*\)/g, '$1');
