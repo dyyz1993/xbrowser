@@ -16,231 +16,13 @@ import { homedir } from 'node:os';
 import type { BrowserContext, Frame, Page, Request, Response, Dialog } from '../browser-shim.js';
 import { getSelectorGeneratorScript } from './selector-utils.js';
 import { updateSiteKnowledge } from './site-knowledge.js';
-
-// ─── Types ───────────────────────────────────────────────────────
-
-export interface ClickContextItem {
-  text: string;
-  tag?: string;
-  disabled?: boolean;
-  href?: string;
-}
-
-export interface ClickContextElement {
-  tag: string;
-  selector?: string;
-  role?: string;
-  text: string;
-  rect?: { x: number; y: number; w: number; h: number };
-  items: ClickContextItem[];
-}
-
-export interface ClickContextStateChange {
-  tag: string;
-  text: string;
-  id?: string;
-  ariaExpanded?: string;
-  ariaSelected?: string;
-  disabled?: boolean;
-  dataState?: string;
-  changed?: boolean;
-}
-
-export interface ClickContext {
-  appeared: ClickContextElement[];
-  disappeared: unknown[];
-  stateChanges: ClickContextStateChange[];
-}
-
-export interface UserAction {
-  id: number;
-  type: 'click' | 'input' | 'change' | 'keydown' | 'submit' | 'scroll'
-    | 'navigation' | 'goto' | 'cdp-fill' | 'cdp-click' | 'cdp-eval' | 'filechooser'
-    | 'dblclick' | 'contextmenu' | 'hover' | 'drag' | 'resize' | 'clipboard'
-    | 'touch' | 'focus' | 'visibility';
-  timestamp: number;
-  url: string;
-  pageTitle: string;
-  element?: {
-    tag: string;
-    selector?: string;  // unique short CSS selector for replay
-    text: string;
-    /** Which strategy from generateUniqueSelector produced this selector */
-    strategy?: string;
-    /** Reliability rating from generateUniqueSelector: high / medium / low */
-    confidence?: 'high' | 'medium' | 'low';
-    /** Text-based fallback for low-confidence selectors (e.g. menu items) */
-    textFallback?: {
-      type: 'text';
-      value: string;
-      selector: string;  // e.g. "text=删除"
-    };
-    /** Popup/menu context when element is inside a dropdown */
-    popup?: {
-      containerSelector: string;
-      containerText: string;
-    };
-    role?: string;
-    type?: string;
-    placeholder?: string;
-    ariaLabel?: string;
-    href?: string;
-  };
-  value?: string;
-  key?: string;
-  x?: number;
-  y?: number;
-  scrollX?: number;
-  scrollY?: number;
-  /** Click context: popover/dropdown/menu items captured 200ms after click */
-  clickContext?: ClickContext;
-  /** File upload info (type=filechooser only) */
-  files?: {
-    names: string[];
-    count: number;
-    isMultiple: boolean;
-    fileData?: Array<{
-      name: string;
-      type: string;
-      size: number;
-      dataUrl: string | null;
-    }>;
-  };
-  /** Drag & drop info (type=drag only) */
-  drag?: {
-    fromX: number;
-    fromY: number;
-    toX: number;
-    toY: number;
-    /** Source element description */
-    source?: { tag: string; selector?: string; text: string };
-    /** Target (drop zone) element description */
-    target?: { tag: string; selector?: string; text: string };
-  };
-  /** Resize info (type=resize only) */
-  resize?: {
-    width: number;
-    height: number;
-  };
-  /** Clipboard info (type=clipboard only) */
-  clipboard?: {
-    operation: 'copy' | 'paste' | 'cut';
-    textPreview?: string;  // first 100 chars of clipboard text (if available)
-  };
-  /** Touch info (type=touch only) */
-  touch?: {
-    touchType: 'start' | 'move' | 'end';
-    touches: Array<{ x: number; y: number }>;
-  };
-  /** Focus info (type=focus only) */
-  focus?: {
-    focusType: 'focus' | 'blur';
-  };
-  /** Visibility info (type=visibility only) */
-  visibility?: {
-    state: 'visible' | 'hidden';
-  };
-  /** Mouse trajectory from previous action's position to this action's position.
-   *  Captured as simplified waypoints with relative timestamps for realistic replay. */
-  trajectory?: {
-    /** Waypoints: [x, y, deltaMs from previous point] */
-    points: Array<{ x: number; y: number; dt: number }>;
-    /** Total distance in pixels (approximate) */
-    distance: number;
-    /** Total duration in ms */
-    duration: number;
-  };
-}
-
-export interface NetworkEntry {
-  id: number;
-  timestamp: number;
-  method: string;
-  url: string;
-  path: string;
-  status: number;
-  resourceType: string;
-  contentType: string;
-  requestBody?: unknown;
-  responseBody?: unknown;
-  responseSize: number;
-}
-
-export interface ContextChange {
-  id: number;
-  timestamp: number;
-  type: 'navigate' | 'new_tab' | 'tab_closed';
-  url?: string;
-  detail?: string;
-}
-
-export interface ElementRef {
-  selector: string;
-  tag: string;
-  text: string;
-  role?: string;
-  type?: string;
-  placeholder?: string;
-  ariaLabel?: string;
-  href?: string;
-}
-
-export interface RecordingStep {
-  step: number;
-  ref: string;       // e.g. "e1", "e2" — reference into elements map
-  action: UserAction;
-  network: NetworkEntry[];
-  contextChanges: ContextChange[];
-  matchedInputs: Array<{
-    inputValue: string;
-    networkId: number;
-    paramName: string;
-  }>;
-}
-
-export interface RecordingSummary {
-  startUrl: string;
-  recordedAt: string;
-  durationMs: number;
-  totalActions: number;
-  totalNetworkRequests: number;
-  steps: RecordingStep[];
-  elements: Record<string, ElementRef>;
-  checkpoints: CheckpointEntry[];
-}
-
-export type CheckpointType = 'dialog' | 'captcha' | 'login' | 'iframe' | 'slider' | 'custom';
-
-export interface CheckpointEntry {
-  id: number;
-  type: CheckpointType;
-  timestamp: number;
-  url: string;
-  pageTitle: string;
-  hint: string;
-  selector?: string;
-  source: 'auto' | 'manual';
-  relatedActionId?: number;
-  context?: Record<string, unknown>;
-}
-
-export interface RecordingData {
-  startUrl: string;
-  sessionName: string;
-  startedAt: string;
-  actions: UserAction[];
-  network: NetworkEntry[];
-  contextChanges: ContextChange[];
-  checkpoints: CheckpointEntry[];
-}
-
-/** Written to disk so `record stop` (separate process) can signal the recorder. */
-export interface RecordingControlFile {
-  pid: number;
-  startedAt: string;
-  startUrl: string;
-  sessionName: string;
-}
+import type { UserAction, RecordingData, RecordingSummary, RecordingControlFile, NetworkEntry, CheckpointEntry, CheckpointType, RecordingStep, ContextChange, ClickContext, ElementRef } from './recording-types.js';
+export type {
+  ClickContextItem, ClickContextElement, ClickContextStateChange, ClickContext,
+  UserAction, NetworkEntry, ContextChange, ElementRef,
+  RecordingStep, RecordingSummary, CheckpointType, CheckpointEntry,
+  RecordingData, RecordingControlFile,
+} from './recording-types.js';
 
 // ─── Minimal frontend signal script ──────────────────────────────
 // Only captures action signals; all matching happens server-side.
@@ -2576,7 +2358,7 @@ export class SessionRecorder {
     if (allNetwork.length > 0) {
       lines.push('## Network Timeline');
       lines.push('');
-      allNetwork.forEach((n, i) => {
+      allNetwork.forEach((n: NetworkEntry, i: number) => {
         let line = `${i + 1}. ${n.method} ${n.path}`;
         if (n.status) line += ` → ${n.status}`;
         if (n.requestBody && typeof n.requestBody === 'object') {
@@ -2592,8 +2374,8 @@ export class SessionRecorder {
     }
 
     const orphanCheckpoints = summary.checkpoints.filter(
-      cp => cp.relatedActionId == null || !checkpointSteps.has(
-        summary.steps.find(s => s.action.id === cp.relatedActionId)?.step ?? -1,
+      (cp: CheckpointEntry) => cp.relatedActionId == null || !checkpointSteps.has(
+        summary.steps.find((s: RecordingStep) => s.action.id === cp.relatedActionId)?.step ?? -1,
       ),
     );
     if (orphanCheckpoints.length > 0) {
