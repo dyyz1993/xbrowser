@@ -9,7 +9,32 @@ npm install && npm run build && npm link        # 安装 & 链接
 npm run validate                                 # 全部验证：typecheck + lint + build + test
 npm run lint:plugin-contract                     # 插件契约快速检查（30 秒）
 npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
+gh issue list --repo dyyz1993/xbrowser --state open  # 检查未解决的 issue
 ```
+
+### 0.1 空闲时检查 Issue（维护循环）
+
+> **当手头没有明确任务时，Agent 应该主动检查 GitHub issue 并修复。**
+
+```bash
+# 1. 检查 open issue
+gh issue list --repo dyyz1993/xbrowser --state open
+
+# 2. 选择一个代码 bug（优先 HIGH/严重标记的）
+gh issue view <number> --repo dyyz1993/xbrowser
+
+# 3. 修复流程（每个 issue 一个 PR）:
+#    a. git checkout -b fix/issue<N>-<short-desc> origin/master
+#    b. 修复代码
+#    c. npm run typecheck && npm run lint && npm run build
+#    d. node dist/cli.js --version  (冒烟测试)
+#    e. git add + commit + push (pre-push 快速验证 ~30s)
+#    f. gh pr create + 等 CI 绿 + 合并
+#    g. bump 版本号 (PATCH for bug, MINOR for feature)
+#    h. gh issue comment + close
+```
+
+**发版流程**见 §12.2（npm 发版流程）。
 
 **关键路径** — 每次改代码后至少跑：`npm run typecheck && npm run lint`
 
