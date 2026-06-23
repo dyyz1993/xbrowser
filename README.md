@@ -64,6 +64,8 @@ xbrowser juejin publish --file article.md
 npm install -g @xbrowser/cli
 ```
 
+> ⚠️ **正确的包名是 `@xbrowser/cli`**（scoped package）。`xbrowser`（无 scope）和 `@dyyz1993/xbrowser` 都不是最新版本。
+
 ### 最低要求
 
 - Node.js >= 18
