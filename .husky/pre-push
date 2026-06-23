@@ -1,9 +1,20 @@
 set -e
 
-echo "🧪 [pre-push] Running full test suite..."
-npx vitest run --exclude='tests/e2e/**' --exclude='tests/human-interaction.test.ts' --exclude='tests/websocket-server.test.ts' --exclude='tests/screencast.test.ts' --exclude='tests/cli/daemon-session.test.ts'
-if [ $? -ne 0 ]; then
-  echo "❌ Tests failed. All tests must pass before pushing."
-  exit 1
-fi
-echo "✅ [pre-push] All tests passed!"
+echo "🧪 [pre-push] Quick validation (typecheck + lint + build + smoke test)..."
+echo "   Full test suite runs in CI (GitHub Actions)."
+
+# 1. Typecheck
+npm run typecheck || { echo "❌ Typecheck failed."; exit 1; }
+
+# 2. Lint
+npm run lint || { echo "❌ Lint failed."; exit 1; }
+
+# 3. Build
+npm run build || { echo "❌ Build failed."; exit 1; }
+
+# 4. Smoke test (stdin from /dev/null to prevent git push refs interference)
+node dist/cli.js --version < /dev/null > /dev/null || { echo "❌ Smoke test: CLI failed to start."; exit 1; }
+node -e "import('./dist/index.js').then(() => {}).catch(() => process.exit(1))" < /dev/null || { echo "❌ Smoke test: module import failed."; exit 1; }
+
+echo "✅ [pre-push] Quick validation passed! (typecheck + lint + build + smoke)"
+echo "   Full test suite will run in CI."
