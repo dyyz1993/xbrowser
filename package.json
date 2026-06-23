@@ -122,6 +122,6 @@
     ]
   },
   "optionalDependencies": {
-    "undici": "^7.25.0"
+    "undici": "^7.28.0"
   }
 }
