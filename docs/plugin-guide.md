@@ -1358,7 +1358,7 @@ xbrowser marketplace login --registry https://your-registry.com --token <key>
 | `xbrowser plugin search <keyword>` | 搜索 marketplace 上的插件 |
 | `xbrowser plugin install <name>` | 从 marketplace 安装插件 |
 | `xbrowser plugin uninstall <name>` | 卸载插件 |
-| `xbrowser plugin publish <name>` | 发布插件到 marketplace |
+| `xbrowser marketplace publish <name>` | 发布插件到 marketplace |
 | `xbrowser plugin whoami` | 查看当前登录状态 |
 | `xbrowser plugin reload` | 重新加载所有插件 |
 
@@ -1368,7 +1368,7 @@ xbrowser marketplace login --registry https://your-registry.com --token <key>
 2. 补全规范文件（README、CHANGELOG、MARKET_DESCRIPTION）
 3. 更新 `package.json` 版本号
 4. 设置代理环境变量
-5. 执行 `npx xbrowser plugin publish <name>`
+5. 执行 `npx xbrowser marketplace publish <name>`
 
 ---
 

@@ -29,6 +29,21 @@ const SELECTOR_COMMANDS = new Set([
   'check', 'uncheck', 'hover', 'dblclick', 'wait',
 ]);
 
+/**
+ * camelCase → kebab-case alias map for commands documented in README with
+ * camelCase names (e.g. getCookies → get-cookies). Users copying README
+ * examples get a helpful error instead of "Unknown command".
+ */
+const CAMEL_TO_KEBAB: Record<string, string> = {
+  getCookies: 'get-cookies',
+  setCookie: 'set-cookie',
+  clearCookies: 'clear-cookies',
+  getLocalStorage: 'get-local-storage',
+  setLocalStorage: 'set-local-storage',
+  clearLocalStorage: 'clear-local-storage',
+  setViewport: 'set-viewport',
+};
+
 export async function handleBrowserCommand(
   command: string,
   args: string[],
@@ -37,6 +52,9 @@ export async function handleBrowserCommand(
   mode: string,
   cdpEndpoint?: string
 ): Promise<void> {
+  // Normalize camelCase command names from README to kebab-case
+  command = CAMEL_TO_KEBAB[command] || command;
+
   // Auto-generate --help from Zod schema via HelpGenerator
   if (args.includes('--help') || args.includes('-h') || options.help || options.h) {
     const cmdDef = getCommand(command);

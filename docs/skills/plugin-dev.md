@@ -68,9 +68,9 @@ xbrowser plugin reload my-plugin
 ### 5. Publish to marketplace
 
 ```bash
-xbrowser plugin login --token <api-key>
-xbrowser plugin publish --dry-run   # validate first
-xbrowser plugin publish             # publish for real
+	xbrowser marketplace login --token <api-key>
+	xbrowser marketplace publish --dry-run   # validate first
+	xbrowser marketplace publish             # publish for real
 ```
 
 ## Plugin Structure
@@ -250,7 +250,7 @@ Registry 配置优先级：`--registry` 参数 > `XBROWSER_REGISTRY` 环境变�
 ### Validate Before Publishing
 
 ```bash
-xbrowser plugin publish --dry-run
+xbrowser marketplace publish --dry-run
 ```
 
 This validates:
@@ -262,7 +262,7 @@ This validates:
 ### Publish
 
 ```bash
-xbrowser plugin publish
+xbrowser marketplace publish
 ```
 
 The CLI will:
@@ -276,7 +276,7 @@ The CLI will:
 After updating your plugin:
 
 1. Update `version` in `package.json`
-2. Run `xbrowser plugin publish` again (auto-detects existing plugin)
+2. Run `xbrowser marketplace publish` again (auto-detects existing plugin)
 
 ### Check Status
 

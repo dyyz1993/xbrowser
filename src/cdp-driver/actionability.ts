@@ -13,6 +13,7 @@
  */
 
 import type { XBPageImpl } from './page.js';
+import { queryJS } from './selector-utils.js';
 
 export interface ActionabilityResult {
   ok: boolean;
@@ -74,7 +75,7 @@ export async function checkActionable(
     rect?: { x: number; y: number; width: number; height: number };
   }>(`
     (function() {
-      const el = document.querySelector(${JSON.stringify(selector)});
+      const el = ${queryJS(selector)};
       if (!el) return { ok: false, reason: 'not_found' };
 
       // Check attached to DOM
@@ -122,7 +123,7 @@ export async function checkActionable(
 export async function scrollIntoView(page: XBPageImpl, selector: string): Promise<void> {
   await page.evaluate(`
     (function() {
-      const el = document.querySelector(${JSON.stringify(selector)});
+      const el = ${queryJS(selector)};
       if (el) el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
     })()
   `);

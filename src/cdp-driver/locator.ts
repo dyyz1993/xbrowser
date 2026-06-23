@@ -18,6 +18,7 @@ import type {
 } from './types.js';
 import type { XBPageImpl } from './page.js';
 import { waitForActionable, scrollIntoView } from './actionability.js';
+import { queryJS, queryAllJS } from './selector-utils.js';
 
 export class XBLocatorImpl implements XBLocator {
   protected page: XBPageImpl;
@@ -27,6 +28,12 @@ export class XBLocatorImpl implements XBLocator {
     this.page = page;
     this.selector = selector;
   }
+
+  /** Resolve selector to a JS expression that finds a single element (CSS or xpath). */
+  protected _q(sel: string): string { return queryJS(sel); }
+
+  /** Resolve selector to a JS expression that finds all matching elements (CSS or xpath). */
+  protected _qa(sel: string): string { return queryAllJS(sel); }
 
   // ── Actions ─────────────────────────────────────────────────
 
@@ -39,7 +46,7 @@ export class XBLocatorImpl implements XBLocator {
     // Re-check position after scroll
     const updatedRect = await this.page.evaluate<{ x: number; y: number; width: number; height: number }>(`
       (function() {
-        const el = document.querySelector(${JSON.stringify(this.selector)});
+        const el = ${this._q(this.selector)};
         if (!el) return null;
         const rect = el.getBoundingClientRect();
         return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
@@ -65,7 +72,7 @@ export class XBLocatorImpl implements XBLocator {
     // Focus the element, clear existing content, then use insertText
     await this.page.evaluate(`
       (function() {
-        const el = document.querySelector(${JSON.stringify(this.selector)});
+        const el = ${this._q(this.selector)};
         if (!el) throw new Error('Element not found: ${this.selector.replace(/'/g, "\\'")}');
         el.focus();
         el.value = '';
@@ -79,7 +86,7 @@ export class XBLocatorImpl implements XBLocator {
     // Dispatch change event for React/Vue compatibility
     await this.page.evaluate(`
       (function() {
-        const el = document.querySelector(${JSON.stringify(this.selector)});
+        const el = ${this._q(this.selector)};
         if (el) {
           el.dispatchEvent(new Event('input', { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
@@ -95,7 +102,7 @@ export class XBLocatorImpl implements XBLocator {
     // Focus
     await this.page.evaluate(`
       (function() {
-        const el = document.querySelector(${JSON.stringify(this.selector)});
+        const el = ${this._q(this.selector)};
         if (el) el.focus();
       })()
     `);
@@ -110,7 +117,7 @@ export class XBLocatorImpl implements XBLocator {
     // Focus
     await this.page.evaluate(`
       (function() {
-        const el = document.querySelector(${JSON.stringify(this.selector)});
+        const el = ${this._q(this.selector)};
         if (el) el.focus();
       })()
     `);
@@ -130,7 +137,7 @@ export class XBLocatorImpl implements XBLocator {
       await scrollIntoView(this.page, this.selector);
       const rect = await this.page.evaluate<{ x: number; y: number; width: number; height: number }>(`
         (function() {
-          const el = document.querySelector(${JSON.stringify(this.selector)});
+          const el = ${this._q(this.selector)};
           if (!el) return { x: 0, y: 0, width: 0, height: 0 };
           const r = el.getBoundingClientRect();
           return { x: r.x, y: r.y, width: r.width, height: r.height };
@@ -150,7 +157,7 @@ export class XBLocatorImpl implements XBLocator {
     await waitForActionable(this.page, this.selector, { timeout: opts.timeout });
     const isChecked = await this.page.evaluate<boolean>(`
       (function() {
-        const el = document.querySelector(${JSON.stringify(this.selector)});
+        const el = ${this._q(this.selector)};
         return el?.checked === true;
       })()
     `);
@@ -163,7 +170,7 @@ export class XBLocatorImpl implements XBLocator {
     await waitForActionable(this.page, this.selector, { timeout: opts.timeout });
     const isChecked = await this.page.evaluate<boolean>(`
       (function() {
-        const el = document.querySelector(${JSON.stringify(this.selector)});
+        const el = ${this._q(this.selector)};
         return el?.checked === true;
       })()
     `);
@@ -182,7 +189,7 @@ export class XBLocatorImpl implements XBLocator {
     // Use evaluate to set the select value
     const selected = await this.page.evaluate<string[]>(`
       (function() {
-        const el = document.querySelector(${JSON.stringify(this.selector)});
+        const el = ${this._q(this.selector)};
         if (!el || el.tagName !== 'SELECT') throw new Error('Not a select element');
 
         const values = ${JSON.stringify(values)};
@@ -213,12 +220,16 @@ export class XBLocatorImpl implements XBLocator {
   async screenshot(opts: XBScreenshotOptions = {}): Promise<Buffer> {
     await waitForActionable(this.page, this.selector);
 
-    // Get element's bounding box
-    const nodeId = await this.page.querySelector(this.selector);
-    if (!nodeId) throw new Error(`Element not found: ${this.selector}`);
-
-    const box = await this.page.getBoxModel(nodeId);
-    if (!box) throw new Error('Element has no box');
+    // Get element's bounding box via evaluate (supports both CSS and xpath)
+    const box = await this.page.evaluate<{ x: number; y: number; width: number; height: number } | null>(`
+      (function() {
+        const el = ${this._q(this.selector)};
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      })()
+    `);
+    if (!box) throw new Error(`Element not found: ${this.selector}`);
 
     return this.page.screenshot({
       ...opts,
@@ -234,7 +245,7 @@ export class XBLocatorImpl implements XBLocator {
 
   async count(): Promise<number> {
     return this.page.evaluate<number>(`
-      document.querySelectorAll(${JSON.stringify(this.selector)}).length
+      ${this._qa(this.selector)}.length
     `);
   }
 
@@ -242,7 +253,7 @@ export class XBLocatorImpl implements XBLocator {
     try {
       const result = await this.page.evaluate(`
         (function() {
-          const el = document.querySelector(${JSON.stringify(this.selector)});
+          const el = ${this._q(this.selector)};
           if (!el) return false;
           if (!el.isConnected) return false;
           const style = window.getComputedStyle(el);
@@ -264,7 +275,7 @@ export class XBLocatorImpl implements XBLocator {
   async isEnabled(): Promise<boolean> {
     return this.page.evaluate(`
       (function() {
-        const el = document.querySelector(${JSON.stringify(this.selector)});
+        const el = ${this._q(this.selector)};
         if (!el) return false;
         return !el.disabled;
       })()
@@ -276,9 +287,14 @@ export class XBLocatorImpl implements XBLocator {
   }
 
   async boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null> {
-    const nodeId = await this.page.querySelector(this.selector);
-    if (!nodeId) return null;
-    return this.page.getBoxModel(nodeId);
+    return this.page.evaluate(`
+      (function() {
+        const el = ${this._q(this.selector)};
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      })()
+    `);
   }
 
   // ── Text/HTML ───────────────────────────────────────────────
@@ -286,7 +302,7 @@ export class XBLocatorImpl implements XBLocator {
   async textContent(): Promise<string | null> {
     return this.page.evaluate(`
       (function() {
-        const el = document.querySelector(${JSON.stringify(this.selector)});
+        const el = ${this._q(this.selector)};
         return el?.textContent ?? null;
       })()
     `);
@@ -295,7 +311,7 @@ export class XBLocatorImpl implements XBLocator {
   async innerText(): Promise<string> {
     return this.page.evaluate(`
       (function() {
-        const el = document.querySelector(${JSON.stringify(this.selector)});
+        const el = ${this._q(this.selector)};
         if (!el) throw new Error('Element not found');
         return el.innerText;
       })()
@@ -305,7 +321,7 @@ export class XBLocatorImpl implements XBLocator {
   async innerHTML(): Promise<string> {
     return this.page.evaluate(`
       (function() {
-        const el = document.querySelector(${JSON.stringify(this.selector)});
+        const el = ${this._q(this.selector)};
         if (!el) throw new Error('Element not found');
         return el.innerHTML;
       })()
@@ -315,7 +331,7 @@ export class XBLocatorImpl implements XBLocator {
   async getAttribute(name: string): Promise<string | null> {
     return this.page.evaluate(`
       (function() {
-        const el = document.querySelector(${JSON.stringify(this.selector)});
+        const el = ${this._q(this.selector)};
         return el?.getAttribute(${JSON.stringify(name)}) ?? null;
       })()
     `);
@@ -325,13 +341,17 @@ export class XBLocatorImpl implements XBLocator {
 
   async evaluate<R = unknown>(fn: string | Function, ...args: unknown[]): Promise<R> {
     const fnBody = typeof fn === 'function' ? fn.toString() : fn;
+    const sel = JSON.stringify(this.selector);
+    const xpathPrefix = this.selector.startsWith('xpath=') ? JSON.stringify(this.selector.slice(6)) : 'null';
     return this.page.evaluate<R>(
-      `(function(sel, fnStr, ...evalArgs) {
-        const el = document.querySelector(sel);
+      `(function(sel, xpathExpr, fnStr, ...evalArgs) {
+        const el = xpathExpr
+          ? document.evaluate(xpathExpr, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue
+          : document.querySelector(sel);
         if (!el) throw new Error('No element found for selector: ' + sel);
         const fn = new Function('return ' + fnStr)();
         return fn(el, ...evalArgs);
-      })(${JSON.stringify(this.selector)}, ${JSON.stringify(fnBody)}${args.length > 0 ? ', ' + args.map((a) => JSON.stringify(a)).join(', ') : ''})`,
+      })(${sel}, ${xpathPrefix}, ${JSON.stringify(fnBody)}${args.length > 0 ? ', ' + args.map((a) => JSON.stringify(a)).join(', ') : ''})`,
     );
   }
 
@@ -367,7 +387,7 @@ export class XBLocatorImpl implements XBLocator {
 
   async all(): Promise<XBLocator[]> {
     const n = await this.page.evaluate<number>(`
-      document.querySelectorAll(${JSON.stringify(this.selector)}).length
+      ${this._qa(this.selector)}.length
     `);
     const locators: XBLocator[] = [];
     for (let i = 0; i < n; i++) {
@@ -379,7 +399,7 @@ export class XBLocatorImpl implements XBLocator {
   async focus(): Promise<void> {
     await this.page.evaluate(`
       (function() {
-        const el = document.querySelector(${JSON.stringify(this.selector)});
+        const el = ${this._q(this.selector)};
         if (el) el.focus();
       })()
     `);
@@ -388,13 +408,41 @@ export class XBLocatorImpl implements XBLocator {
 
 /**
  * Locator with index filter — for .first(), .last(), .nth()
+ *
+ * For CSS selectors, uses `:last-of-type` / `:nth-of-type()` pseudo-classes.
+ * For xpath selectors, uses document.evaluate + snapshot indexing since
+ * CSS pseudo-classes don't work with xpath.
  */
 class FilteredLocator extends XBLocatorImpl {
+  protected index: number;
+
   constructor(page: XBPageImpl, selector: string, index: number) {
-    const indexedSelector = index === -1
-      ? `${selector}:last-of-type`
-      : `${selector}:nth-of-type(${index + 1})`;
+    // For CSS selectors, append pseudo-class; for xpath keep original (handled in _q/_qa)
+    const indexedSelector = selector.startsWith('xpath=')
+      ? selector
+      : index === -1
+        ? `${selector}:last-of-type`
+        : `${selector}:nth-of-type(${index + 1})`;
     super(page, indexedSelector);
+    this.index = index;
+    this._rawSelector = selector;
+  }
+
+  /** Original selector before index filtering */
+  private _rawSelector: string;
+
+  /** For xpath selectors, override _q to return the nth element from evaluate results */
+  protected override _q(sel: string): string {
+    if (!sel.startsWith('xpath=')) return super._q(sel);
+    const xpath = JSON.stringify(this._rawSelector.slice(6));
+    return `(() => { const it = document.evaluate(${xpath}, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); return ${this.index === -1 ? 'it.snapshotItem(it.snapshotLength - 1)' : `it.snapshotItem(${this.index})`}; })()`;
+  }
+
+  /** For xpath selectors, override _qa to return all matching elements from evaluate */
+  protected override _qa(sel: string): string {
+    if (!sel.startsWith('xpath=')) return super._qa(sel);
+    const xpath = JSON.stringify(this._rawSelector.slice(6));
+    return `(() => { const it = document.evaluate(${xpath}, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); const r=[]; for(let i=0;i<it.snapshotLength;i++) r.push(it.snapshotItem(i)); return r; })()`;
   }
 }
 
@@ -409,7 +457,7 @@ class VisibleFilteredLocator extends XBLocatorImpl {
     const tag = `data-xb-vt-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}`;
     const found = await this.page.evaluate<boolean>(`
       (function() {
-        const els = document.querySelectorAll(${JSON.stringify(this.selector)});
+        const els = ${this._qa(this.selector)};
         for (const el of els) {
           if (!el.isConnected) continue;
           const style = window.getComputedStyle(el);
@@ -427,7 +475,7 @@ class VisibleFilteredLocator extends XBLocatorImpl {
       return await fn(`[${tag}]`);
     } finally {
       await this.page.evaluate(`
-        document.querySelectorAll(${JSON.stringify(`[${tag}]`)}).forEach(el => el.removeAttribute(${JSON.stringify(tag)}))
+        ${this._qa(`[${tag}]`)}.forEach(el => el.removeAttribute(${JSON.stringify(tag)}))
       `);
     }
   }
@@ -452,7 +500,7 @@ class VisibleFilteredLocator extends XBLocatorImpl {
     return this.page.evaluate<number>(`
       (function() {
         let count = 0;
-        const els = document.querySelectorAll(${JSON.stringify(this.selector)});
+        const els = ${this._qa(this.selector)};
         for (const el of els) {
           if (!el.isConnected) continue;
           const style = window.getComputedStyle(el);
@@ -470,7 +518,7 @@ class VisibleFilteredLocator extends XBLocatorImpl {
     try {
       const result = await this.page.evaluate<boolean>(`
         (function() {
-          const els = document.querySelectorAll(${JSON.stringify(this.selector)});
+          const els = ${this._qa(this.selector)};
           for (const el of els) {
             if (!el.isConnected) continue;
             const style = window.getComputedStyle(el);

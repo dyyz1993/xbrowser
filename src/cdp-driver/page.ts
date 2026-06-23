@@ -29,6 +29,7 @@ import { XBMouseImpl } from './mouse.js';
 import { XBKeyboardImpl } from './keyboard.js';
 import { XBLocatorImpl } from './locator.js';
 import { XBElementHandleImpl } from './element-handle.js';
+import { queryJS } from './selector-utils.js';
 import {
   type FetchPausedParams,
   globToRegex, matchGlob,
@@ -236,7 +237,7 @@ export class XBPageImpl implements XBPage {
 
     while (Date.now() < deadline) {
       const exists = await this.evaluate<boolean>(
-        `(function() { const el = document.querySelector(${JSON.stringify(selector)}); return !!el; })()`,
+        `(function() { const el = ${queryJS(selector)}; return !!el; })()`,
       );
 
       if (state === 'attached' && exists) return;
@@ -244,7 +245,7 @@ export class XBPageImpl implements XBPage {
 
       if (state === 'visible' && exists) {
         const visible = await this.evaluate<boolean>(
-          `(function() { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; const rect = el.getBoundingClientRect(); const style = window.getComputedStyle(el); return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'; })()`,
+          `(function() { const el = ${queryJS(selector)}; if (!el) return false; const rect = el.getBoundingClientRect(); const style = window.getComputedStyle(el); return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'; })()`,
         );
         if (visible) return;
       }
@@ -252,7 +253,7 @@ export class XBPageImpl implements XBPage {
       if (state === 'hidden') {
         if (!exists) return;
         const visible = await this.evaluate<boolean>(
-          `(function() { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return false; const rect = el.getBoundingClientRect(); const style = window.getComputedStyle(el); return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'; })()`,
+          `(function() { const el = ${queryJS(selector)}; if (!el) return false; const rect = el.getBoundingClientRect(); const style = window.getComputedStyle(el); return rect.width > 0 && rect.height > 0 && style.visibility !== 'hidden' && style.display !== 'none'; })()`,
         );
         if (!visible) return;
       }
@@ -372,24 +373,32 @@ export class XBPageImpl implements XBPage {
 
   async $eval<R = unknown>(selector: string, fn: string | Function, ...args: unknown[]): Promise<R> {
     const fnBody = typeof fn === 'function' ? fn.toString() : fn;
+    const selJSON = JSON.stringify(selector);
+    const xpathPrefix = selector.startsWith('xpath=') ? JSON.stringify(selector.slice(6)) : 'null';
     return this.evaluate<R>(
-      `(function(sel, fnStr, ...evalArgs) {
-        const el = document.querySelector(sel);
+      `(function(sel, xpathExpr, fnStr, ...evalArgs) {
+        const el = xpathExpr
+          ? document.evaluate(xpathExpr, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue
+          : document.querySelector(sel);
         if (!el) throw new Error('No element found for selector: ' + sel);
         const fn = new Function('return ' + fnStr)();
         return fn(el, ...evalArgs);
-      })(${JSON.stringify(selector)}, ${JSON.stringify(fnBody)}${args.length > 0 ? ', ' + args.map((a) => JSON.stringify(a)).join(', ') : ''})`,
+      })(${selJSON}, ${xpathPrefix}, ${JSON.stringify(fnBody)}${args.length > 0 ? ', ' + args.map((a) => JSON.stringify(a)).join(', ') : ''})`,
     );
   }
 
   async $$eval<R = unknown>(selector: string, fn: string | Function, ...args: unknown[]): Promise<R> {
     const fnBody = typeof fn === 'function' ? fn.toString() : fn;
+    const selJSON = JSON.stringify(selector);
+    const xpathPrefix = selector.startsWith('xpath=') ? JSON.stringify(selector.slice(6)) : 'null';
     return this.evaluate<R>(
-      `(function(sel, fnStr, ...evalArgs) {
-        const els = Array.from(document.querySelectorAll(sel));
+      `(function(sel, xpathExpr, fnStr, ...evalArgs) {
+        const els = xpathExpr
+          ? (() => { const it = document.evaluate(xpathExpr, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); const r=[]; for(let i=0;i<it.snapshotLength;i++) r.push(it.snapshotItem(i)); return r; })()
+          : Array.from(document.querySelectorAll(sel));
         const fn = new Function('return ' + fnStr)();
         return fn(els, ...evalArgs);
-      })(${JSON.stringify(selector)}, ${JSON.stringify(fnBody)}${args.length > 0 ? ', ' + args.map((a) => JSON.stringify(a)).join(', ') : ''})`,
+      })(${selJSON}, ${xpathPrefix}, ${JSON.stringify(fnBody)}${args.length > 0 ? ', ' + args.map((a) => JSON.stringify(a)).join(', ') : ''})`,
     );
   }
 
@@ -490,25 +499,25 @@ export class XBPageImpl implements XBPage {
 
   async textContent(selector: string): Promise<string | null> {
     return this.evaluate<string | null>(
-      `(function() { const el = document.querySelector(${JSON.stringify(selector)}); return el?.textContent ?? null; })()`,
+      `(function() { const el = ${queryJS(selector)}; return el?.textContent ?? null; })()`,
     );
   }
 
   async innerText(selector: string): Promise<string> {
     return this.evaluate<string>(
-      `(function() { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('Element not found'); return el.innerText; })()`,
+      `(function() { const el = ${queryJS(selector)}; if (!el) throw new Error('Element not found'); return el.innerText; })()`,
     );
   }
 
   async innerHTML(selector: string): Promise<string> {
     return this.evaluate<string>(
-      `(function() { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('Element not found'); return el.innerHTML; })()`,
+      `(function() { const el = ${queryJS(selector)}; if (!el) throw new Error('Element not found'); return el.innerHTML; })()`,
     );
   }
 
   async getAttribute(selector: string, name: string): Promise<string | null> {
     return this.evaluate<string | null>(
-      `(function() { const el = document.querySelector(${JSON.stringify(selector)}); return el?.getAttribute(${JSON.stringify(name)}) ?? null; })()`,
+      `(function() { const el = ${queryJS(selector)}; return el?.getAttribute(${JSON.stringify(name)}) ?? null; })()`,
     );
   }
 
@@ -1300,7 +1309,7 @@ export class XBPageImpl implements XBPage {
     await this.evaluate(`
       (function() {
         var selector = ${JSON.stringify(selector)};
-        var input = document.querySelector(selector);
+        var input = ${queryJS(selector)};
         if (!input) throw new Error('Element not found: ' + selector);
 
         var fileList = ${JSON.stringify(fileList)};
@@ -1329,7 +1338,7 @@ export class XBPageImpl implements XBPage {
     // Get bounding boxes
     const sourceRect = await this.evaluate<{ x: number; y: number; width: number; height: number }>(`
       (function() {
-        const el = document.querySelector(${JSON.stringify(source)});
+        const el = ${queryJS(source)};
         if (!el) throw new Error('Source not found: ${source}');
         el.scrollIntoView({ behavior: 'instant', block: 'center' });
         const r = el.getBoundingClientRect();
@@ -1339,7 +1348,7 @@ export class XBPageImpl implements XBPage {
 
     const targetRect = await this.evaluate<{ x: number; y: number; width: number; height: number }>(`
       (function() {
-        const el = document.querySelector(${JSON.stringify(target)});
+        const el = ${queryJS(target)};
         if (!el) throw new Error('Target not found: ${target}');
         el.scrollIntoView({ behavior: 'instant', block: 'center' });
         const r = el.getBoundingClientRect();
