@@ -19,7 +19,7 @@ export const framesCommand = registerCommand({
     const rawFrames = discover ? await discover.call(ctx.page) : ctx.page.frames();
     const frameList = rawFrames.map((frame, index) => ({
       index,
-      name: frame.name() || null,
+      name: frame.name(),
       url: frame.url(),
     }));
     return ok({ frames: frameList });
