@@ -39,29 +39,77 @@ async function extractLinks(page: Page, origin: string): Promise<string[]> {
 }
 
 /**
- * Detect SPA routes from the current page by scanning script contents for
- * route path patterns (works for Vue Router, React Router, and other SPA frameworks).
+ * Detect SPA routes from the current page by:
+ * 1. Scanning inline <script> content for route path patterns
+ * 2. Fetching external JS files and scanning them
+ * 3. Trying Vue Router runtime detection ($router.options.routes) as fallback
  */
 async function detectSpaRoutes(page: Page, origin: string): Promise<string[]> {
-  return page.evaluate((evalOrigin: string) => {
-    const routeSet = new Set<string>();
+  const routeSet = new Set<string>();
+  const pathRegex = /['"`](\/[a-zA-Z0-9_\-/]+)['"`]/g;
+  const isParamRoute = (p: string) => p.includes(':') || p.includes('*');
 
+  /**
+   * Extract route paths from a JS source string.
+   */
+  function extractPaths(source: string): void {
+    let match: RegExpExecArray | null;
+    while ((match = pathRegex.exec(source)) !== null) {
+      const path = match[1];
+      if (!isParamRoute(path)) routeSet.add(path);
+    }
+  }
+
+  // 1. Scan inline scripts and collect external JS URLs
+  const scriptData = await page.evaluate<{ inlineContent: string; externalUrls: string[] }>(() => {
+    const scripts = Array.from(document.querySelectorAll('script'));
+    return {
+      inlineContent: scripts.map(s => s.textContent || '').join('\n'),
+      externalUrls: scripts
+        .map(s => s.src)
+        .filter(src => src && !src.includes('analytics') && !src.includes('google') && !src.includes('baidu')),
+    };
+  });
+  const { inlineContent, externalUrls } = scriptData;
+  extractPaths(inlineContent);
+
+  // 2. Fetch external JS files and scan them (SPA routes are often in /js/app.xxx.js)
+  for (const src of externalUrls) {
     try {
-      const scripts = document.querySelectorAll('script');
-      const allContent = Array.from(scripts).map(s => s.textContent || '').join('\n');
-
-      // Match SPA route path patterns: '/foo', "/bar", `/baz`
-      const pathRegex = /['"`](\/[a-zA-Z0-9_\-/]+)['"`]/g;
-      let match: RegExpExecArray | null;
-      while ((match = pathRegex.exec(allContent)) !== null) {
-        const path = match[1];
-        if (path.includes(':') || path.includes('*') || routeSet.has(path)) continue;
-        routeSet.add(path);
+      const absoluteSrc = src.startsWith('http') ? src : new URL(src, page.url()).href;
+      const resp = await fetch(absoluteSrc, { signal: AbortSignal.timeout(5000) });
+      if (resp.ok) {
+        const text = await resp.text();
+        extractPaths(text);
       }
-    } catch { /* script scan failed */ }
+    } catch { /* skip failed fetch */ }
+  }
 
-    return Array.from(routeSet).map(path => `${evalOrigin.replace(/\/$/, '')}${path}`);
-  }, origin);
+  // 3. Simple Vue Router runtime extraction via __vue_app__
+  // This catches routes defined in external JS that regex scanning may miss
+  try {
+    const vueRoutes = await page.evaluate<string[]>((evalOrigin: string) => {
+      const routes: string[] = [];
+      const win = window as unknown as Record<string, unknown>;
+      const vueApp = win.__vue_app__ as Record<string, unknown> | undefined;
+      const gp = ((vueApp?.config as Record<string, unknown> | undefined)?.globalProperties as Record<string, unknown> | undefined);
+      const router = gp?.$router as Record<string, unknown> | undefined;
+      const routeList = ((router as Record<string, unknown> | undefined)?.options as Record<string, unknown> | undefined)?.routes as Array<{ path: string }> | undefined;
+      if (routeList) {
+        for (const r of routeList) {
+          if (r.path && !r.path.includes(':') && r.path !== '/' && r.path !== '') {
+            routes.push(`${evalOrigin.replace(/\/$/, '')}/#${r.path}`);
+          }
+        }
+      }
+      return routes;
+    }, origin);
+    for (const r of vueRoutes) routeSet.add(r);
+  } catch { /* Vue runtime detection failed */ }
+
+  return Array.from(routeSet).map(p =>
+    p.startsWith('http') ? p : `${origin.replace(/\/$/, '')}${p.startsWith('/') ? '' : '/'}${p}`
+  );
 }
 
 export interface DisallowRule {
