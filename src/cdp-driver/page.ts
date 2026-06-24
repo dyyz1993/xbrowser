@@ -154,6 +154,17 @@ export class XBPageImpl implements XBPage {
       throw new Error(`Navigation failed: ${result.errorText}`);
     }
 
+    // 'commit' = return immediately after navigation without waiting for load
+    if (waitUntil === 'commit') {
+      this._url = url;
+      return {
+        status: () => 0,
+        ok: () => false,
+        url: () => url,
+        headers: () => ({}) as Record<string, string>,
+      };
+    }
+
     // Wait for the specified load state
     await this.waitForLoadState(waitUntil, timeout);
 

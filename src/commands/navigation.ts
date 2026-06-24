@@ -10,7 +10,7 @@ export const gotoCommand = registerCommand({
   scope: 'page',
   parameters: z.object({
     url: z.string(),
-    waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle']).optional(),
+    waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle', 'commit']).optional(),
     timeout: z.number().optional(),
   }),
   result: z.object({
