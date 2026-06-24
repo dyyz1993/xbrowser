@@ -232,7 +232,8 @@ async function handleEvalMode(argv: string[]): Promise<void> {
 
 async function handleChainInput(input: string, argv?: string[]): Promise<void> {
   const cdpEndpoint = argv ? extractCdpFromArgv(argv) : undefined;
-  const jsonMode = argv ? argv.includes('--json') || argv.includes('-j') : false;
+  // Check for --json/--yaml in argv (as element or substring of chain string)
+  const jsonMode = argv ? argv.some(a => a === '--json' || a.startsWith('--json=') || a.includes(' --json') || a.startsWith('--json')) || argv.includes('-j') : false;
   const chainResult = await executeChain(input, { cdpEndpoint });
   if (jsonMode) {
     const output = {
