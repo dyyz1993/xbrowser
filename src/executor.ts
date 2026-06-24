@@ -207,7 +207,17 @@ export async function executeCommand(
       .sort((a, b) => a.dist - b.dist)
       .slice(0, 3)
       .map(s => s.name);
-    const hint = suggestions.length > 0 ? ` Did you mean: ${suggestions.join(' or ')}?` : '';
+    let hint = suggestions.length > 0 ? ` Did you mean: ${suggestions.join(' or ')}?` : '';
+    // Check if the command name looks like a plugin (common plugin names)
+    const knownPlugins = ['douyin', 'xiaohongshu', 'zhihu', 'chatgpt', 'deepseek',
+      'baidu', 'bilibili', 'github', 'medium', 'juejin', 'devto', 'twitter',
+      'reddit', 'steam', 'doubao', 'qianwen', 'yuanbao', 'claude', 'gemini',
+      'suno', 'mureka', 'wanx', 'taobao', 'google', 'wordpress', 'csdn',
+      'quora', 'producthunt', 'hashnode', 'blogger', 'facebook', 'instagram',
+    ];
+    if (knownPlugins.includes(commandName)) {
+      hint = ` Plugin "${commandName}" may need to be installed. Try: xbrowser plugin install @xbrowser/${commandName}`;
+    }
     return errorResult(
       `Unknown command: ${commandName}.${hint} Available: ${available.join(', ')}`
     );

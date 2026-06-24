@@ -15,12 +15,31 @@ export function saveConfig(config: Record<string, unknown>): void {
 }
 
 export function getConfigValue(key: string): unknown {
-  return loadConfig()[key];
+  // Support nested keys: "browser.executablePath" → config.browser.executablePath
+  const parts = key.split('.');
+  let obj: unknown = loadConfig();
+  for (const part of parts) {
+    if (obj && typeof obj === 'object') {
+      obj = (obj as Record<string, unknown>)[part];
+    } else {
+      return undefined;
+    }
+  }
+  return obj;
 }
 
 export function setConfigValue(key: string, value: unknown): void {
   const config = loadConfig();
-  config[key] = value;
+  // Support nested keys: "browser.headless" → config.browser.headless
+  const parts = key.split('.');
+  let obj = config;
+  for (let i = 0; i < parts.length - 1; i++) {
+    if (!obj[parts[i]] || typeof obj[parts[i]] !== 'object') {
+      obj[parts[i]] = {};
+    }
+    obj = obj[parts[i]] as Record<string, unknown>;
+  }
+  obj[parts[parts.length - 1]] = value;
   saveConfig(config);
 }
 
