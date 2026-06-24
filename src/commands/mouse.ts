@@ -9,10 +9,10 @@ export const mouseCommand = registerCommand({
   scope: 'page',
   parameters: z.object({
     action: z.enum(['move', 'down', 'up', 'click', 'dblclick']),
-    x: z.number(),
-    y: z.number(),
+    x: z.coerce.number(),
+    y: z.coerce.number(),
     button: z.enum(['left', 'right', 'middle']).optional(),
-    steps: z.number().optional(),
+    steps: z.coerce.number().optional(),
   }),
   result: z.object({
     action: z.enum(['move', 'down', 'up', 'click', 'dblclick']),

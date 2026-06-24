@@ -291,10 +291,18 @@ export async function routeCommand(
 
     // Handle --json/--yaml before chain: parseArgs absorbs the chain string
     // as json's value. Detect this and re-route to handleChainInput.
+    // But only for chain inputs (contain && || ; , + ->) — single commands
+    // need argv splitting (handled later by the quoted arg block).
     const jsonBeforeChain = (argv[0] === '--json' || argv[0] === '--yaml') && argv[1] && isChainInput(argv[1]);
     if (jsonBeforeChain) {
       await handleChainInput(argv[1], argv);
       return;
+    }
+
+    // Handle --json/--yaml before single quoted command (e.g. --json "goto url")
+    // Strip --json/--yaml early so it doesn't confuse argv splitting below.
+    if (argv[0] === '--json' || argv[0] === '--yaml') {
+      argv = argv.slice(1); // Remove --json/--yaml from front
     }
 
     // Handle --session/--cdp before chain (similar flag absorption)
@@ -336,8 +344,17 @@ export async function routeCommand(
   const hasJsonFlag = argv.some(a => a === '--json' || a.startsWith('--json='));
   const hasYamlFlag = argv.some(a => a === '--yaml' || a.startsWith('--yaml='));
 
-  const parsed = parseArgs(argv);
+  // Pre-process: strip --json/--yaml from argv BEFORE parseArgs to prevent
+  // it from absorbing the next positional as the flag's value.
+  // This is a workaround for xcli-core treating --json as a string flag.
+  // TODO: remove when xcli-core adds booleanFlags support (mpage#46)
+  const cleanArgv = argv.filter(a => a !== '--json' && a !== '--yaml');
+
+  const parsed = parseArgs(cleanArgv);
   const { positional, options } = parsed;
+  // Re-add json/yaml as boolean options
+  if (hasJsonFlag) options.json = true;
+  if (hasYamlFlag) options.yaml = true;
   const command = positional[0];
   const cmdArgs = positional.slice(1);
 
