@@ -437,6 +437,24 @@ export async function handleBrowserCommand(
             timeout: args[0] ? Number(args[0]) : (options.timeout ? Number(options.timeout) : 1000),
           };
           break;
+        case 'set-cookie':
+          cmdName = 'set-cookie';
+          params = {
+            name: (options.name as string) || args[0],
+            value: (options.value || options.v) ?? args[1],
+            domain: options.domain as string | undefined,
+            path: options.path as string | undefined,
+            httpOnly: options.httpOnly ? Boolean(options.httpOnly) : undefined,
+            secure: options.secure ? Boolean(options.secure) : undefined,
+          };
+          break;
+        case 'set-local-storage':
+          cmdName = 'set-local-storage';
+          params = {
+            key: (options.key as string) || args[0],
+            value: (options.value || options.v) ?? args[1],
+          };
+          break;
         default:
          cmdName = command;
          params = { ...options };

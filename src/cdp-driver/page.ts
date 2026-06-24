@@ -171,18 +171,22 @@ export class XBPageImpl implements XBPage {
     };
   }
 
-  async goBack(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
+  async goBack(_opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
+    // Record previous URL before navigating
+    const prevUrl = await this.evaluate<string>('location.href').catch(() => '');
+    // Fire history.back()
     await this.evaluate('() => history.back()');
-    await this.waitForLoadState(opts.waitUntil ?? 'domcontentloaded', opts.timeout ?? 5000).catch(() => {});
-    // Update cached URL after navigation
-    try { this._url = await this.evaluate<string>('location.href'); } catch { /* page may be navigating */ }
+    // Wait for navigation to complete
+    await this.waitForTimeout(2000);
+    // Re-read URL from the (now navigated) page
+    this._url = await this.evaluate<string>('location.href').catch(() => prevUrl);
   }
 
-  async goForward(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
+  async goForward(_opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
+    const prevUrl = await this.evaluate<string>('location.href').catch(() => '');
     await this.evaluate('() => history.forward()');
-    await this.waitForLoadState(opts.waitUntil ?? 'domcontentloaded', opts.timeout ?? 5000).catch(() => {});
-    // Update cached URL after navigation
-    try { this._url = await this.evaluate<string>('location.href'); } catch { /* page may be navigating */ }
+    await this.waitForTimeout(2000);
+    this._url = await this.evaluate<string>('location.href').catch(() => prevUrl);
   }
 
   async reload(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
