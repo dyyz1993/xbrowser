@@ -96,10 +96,28 @@ async function detectSpaRoutes(page: Page, origin: string): Promise<string[]> {
       const vue3Router = ((vue3App?.config as Record<string, unknown> | undefined)?.globalProperties as Record<string, unknown> | undefined)?.$router as Record<string, unknown> | undefined;
       let router = vue3Router;
 
-      // Vue 2 fallback: __vue__ on root element
+      // Vue 2 fallback: __vue__ is a JS property, not an HTML attribute.
+      // Can't use querySelector('[__vue__]') — must traverse DOM.
       if (!router) {
-        const el = document.querySelector('#app') || document.querySelector('[__vue__]');
-        const vm: Record<string, unknown> | undefined = el ? (el as unknown as Record<string, unknown>).__vue__ as Record<string, unknown> : undefined;
+        let vm: Record<string, unknown> | undefined;
+        // Method 1: id=app (most common Vue 2 mount point)
+        const appById = document.getElementById('app');
+        if (appById) {
+          vm = (appById as unknown as Record<string, unknown>).__vue__ as Record<string, unknown> | undefined;
+        }
+        // Method 2: traverse body children for __vue__ property
+        if (!vm) {
+          function walkVue(node: Element): Record<string, unknown> | undefined {
+            const prop = (node as unknown as Record<string, unknown>).__vue__ as Record<string, unknown> | undefined;
+            if (prop) return prop;
+            for (let i = 0; i < node.children.length; i++) {
+              const found = walkVue(node.children[i]);
+              if (found) return found;
+            }
+            return undefined;
+          }
+          vm = walkVue(document.body);
+        }
         const vmRouter: Record<string, unknown> | undefined = vm?.$router as Record<string, unknown> | undefined;
         const vmRootRouter: Record<string, unknown> | undefined = (vm?.$root as Record<string, unknown> | undefined)?.$router as Record<string, unknown> | undefined;
         if (!router) router = vmRouter || vmRootRouter;
