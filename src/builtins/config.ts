@@ -49,9 +49,18 @@ export const configBuiltin: BuiltinCommand = {
 
     if (subcommand === 'set') {
       const [key, value] = rest;
-      if (!key || !value) {
+      if (!key || value === undefined) {
         console.error('Usage: xbrowser config set <key> <value>');
         process.exit(1);
+      }
+      // Validate key against known config schema
+      const knownKeys = new Set([
+        'browser.executablePath', 'browser.headless', 'browser.args',
+        'captcha.notifyUrl', 'captcha.autoOpen', 'captcha.timeout', 'captcha.strategy',
+        'preview.port', 'preview.quality', 'preview.fps',
+      ]);
+      if (!knownKeys.has(key) && !key.startsWith('browser.') && !key.startsWith('captcha.') && !key.startsWith('preview.')) {
+        console.warn(`⚠️ Unknown config key: "${key}". Known keys: browser.*, captcha.*, preview.*`);
       }
       setConfigValue(key, value);
       console.log(`Set ${key} = ${value}`);

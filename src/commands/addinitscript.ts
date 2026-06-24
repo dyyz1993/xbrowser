@@ -11,7 +11,7 @@ const InitScriptParams = z.object({
   stdin: z.boolean().optional(),
   name: z.string().optional(),
   list: z.boolean().optional(),
-  remove: z.string().optional(),
+  remove: z.union([z.string(), z.boolean()]).optional(),
   base64: z.string().optional(),
 });
 
@@ -75,9 +75,17 @@ export const addInitScriptCommand = registerCommand({
       return ok({ scripts });
     }
 
-    if (params.remove) {
+    if (params.remove && typeof params.remove === 'string') {
       const existed = registeredScripts.delete(params.remove);
       return ok({ removed: params.remove, existed });
+    }
+
+    // Also support: --remove (boolean) + --name <name>
+    const removeTarget = (typeof params.remove === 'string' ? params.remove : null) ||
+      (params.name && !resolveScriptContent(params) ? params.name : null);
+    if (removeTarget && !resolveScriptContent(params)) {
+      const existed = registeredScripts.delete(removeTarget);
+      return ok({ removed: removeTarget, existed });
     }
 
     let content = params.stdin ? await readStdin() : resolveScriptContent(params);
