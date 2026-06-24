@@ -38,7 +38,7 @@ export async function waitForActionable(
   const timeout = opts.timeout ?? 30_000;
 
   if (opts.force) {
-    // For xpath selectors, get bounding box via evaluate (CDP DOM.querySelector doesn't support xpath)
+    // For xpath selectors, get bounding box via evaluate
     if (selector.startsWith('xpath=')) {
       const rect = await page.evaluate<{ x: number; y: number; width: number; height: number } | null>(`
         (function() {
@@ -51,11 +51,20 @@ export async function waitForActionable(
       if (!rect) throw new Error(`Element not found: ${selector}`);
       return { nodeId: 0, rect };
     }
-    // Skip actionability, just find the element
-    const nodeId = await page.querySelector(selector);
-    if (!nodeId) throw new Error(`Element not found: ${selector}`);
-    const rect = await page.getBoxModel(nodeId);
-    if (!rect) throw new Error(`Element has no box: ${selector}`);
+    // Find element with retry (SPA animations may delay rendering)
+    const deadline = Date.now() + timeout;
+    let lastError: string | undefined;
+    let nodeId = 0;
+    let rect: { x: number; y: number; width: number; height: number } | null = null;
+    while (Date.now() < deadline) {
+      nodeId = await page.querySelector(selector);
+      if (!nodeId) { lastError = `Element not found: ${selector}`; await page.waitForTimeout(200); continue; }
+      rect = await page.getBoxModel(nodeId);
+      if (rect) break;
+      lastError = `Element has no box: ${selector}`;
+      await page.waitForTimeout(500); // Wait for SPA animation to render
+    }
+    if (!rect) throw new Error(lastError || `Element has no box: ${selector}`);
     return { nodeId, rect };
   }
 
