@@ -39,105 +39,33 @@ async function extractLinks(page: Page, origin: string): Promise<string[]> {
 }
 
 /**
- * Detect SPA routes from the current page by:
- * 1. Scanning inline <script> content for route path patterns
- * 2. Fetching external JS files and scanning them
- * 3. Trying Vue Router runtime detection ($router.options.routes) as fallback
+ * Lightweight SPA route hint detection.
+ * Scans inline <script> content for route-like path strings.
+ * No framework-specific runtime detection, no external JS fetch.
+ * The heavy lifting is done by extractLinks() — this only catches
+ * routes referenced in JS config that don't appear as <a> elements.
  */
 async function detectSpaRoutes(page: Page, origin: string): Promise<string[]> {
   const routeSet = new Set<string>();
   const pathRegex = /['"`](\/[a-zA-Z0-9_\-/]+)['"`]/g;
   const isParamRoute = (p: string) => p.includes(':') || p.includes('*');
 
-  /**
-   * Extract route paths from a JS source string.
-   */
-  function extractPaths(source: string): void {
+  try {
+    const inlineContent = await page.evaluate<string>(() => {
+      return Array.from(document.querySelectorAll('script'))
+        .map(s => s.textContent || '')
+        .join('\n');
+    });
+
     let match: RegExpExecArray | null;
-    while ((match = pathRegex.exec(source)) !== null) {
+    while ((match = pathRegex.exec(inlineContent)) !== null) {
       const path = match[1];
       if (!isParamRoute(path)) routeSet.add(path);
     }
-  }
-
-  // 1. Scan inline scripts and collect external JS URLs
-  const scriptData = await page.evaluate<{ inlineContent: string; externalUrls: string[] }>(() => {
-    const scripts = Array.from(document.querySelectorAll('script'));
-    return {
-      inlineContent: scripts.map(s => s.textContent || '').join('\n'),
-      externalUrls: scripts
-        .map(s => s.src)
-        .filter(src => src && !src.includes('analytics') && !src.includes('google') && !src.includes('baidu')),
-    };
-  });
-  const { inlineContent, externalUrls } = scriptData;
-  extractPaths(inlineContent);
-
-  // 2. Fetch external JS files and scan them (SPA routes are often in /js/app.xxx.js)
-  for (const src of externalUrls) {
-    try {
-      const absoluteSrc = src.startsWith('http') ? src : new URL(src, page.url()).href;
-      const resp = await fetch(absoluteSrc, { signal: AbortSignal.timeout(5000) });
-      if (resp.ok) {
-        const text = await resp.text();
-        extractPaths(text);
-      }
-    } catch { /* skip failed fetch */ }
-  }
-
-  // 3. Vue Router runtime extraction — supports Vue 3 (__vue_app__) and Vue 2 (__vue__)
-  try {
-    const vueRoutes = await page.evaluate<string[]>((evalOrigin: string) => {
-      const routes: string[] = [];
-      const win = window as unknown as Record<string, unknown>;
-
-      // Vue 3: __vue_app__ on root element
-      const vue3App = win.__vue_app__ as Record<string, unknown> | undefined;
-      const vue3Router = ((vue3App?.config as Record<string, unknown> | undefined)?.globalProperties as Record<string, unknown> | undefined)?.$router as Record<string, unknown> | undefined;
-      let router = vue3Router;
-
-      // Vue 2 fallback: __vue__ is a JS property, not an HTML attribute.
-      // Can't use querySelector('[__vue__]') — must traverse DOM.
-      if (!router) {
-        let vm: Record<string, unknown> | undefined;
-        // Method 1: id=app (most common Vue 2 mount point)
-        const appById = document.getElementById('app');
-        if (appById) {
-          vm = (appById as unknown as Record<string, unknown>).__vue__ as Record<string, unknown> | undefined;
-        }
-        // Method 2: traverse body children for __vue__ property
-        if (!vm) {
-          function walkVue(node: Element): Record<string, unknown> | undefined {
-            const prop = (node as unknown as Record<string, unknown>).__vue__ as Record<string, unknown> | undefined;
-            if (prop) return prop;
-            for (let i = 0; i < node.children.length; i++) {
-              const found = walkVue(node.children[i]);
-              if (found) return found;
-            }
-            return undefined;
-          }
-          vm = walkVue(document.body);
-        }
-        const vmRouter: Record<string, unknown> | undefined = vm?.$router as Record<string, unknown> | undefined;
-        const vmRootRouter: Record<string, unknown> | undefined = (vm?.$root as Record<string, unknown> | undefined)?.$router as Record<string, unknown> | undefined;
-        if (!router) router = vmRouter || vmRootRouter;
-      }
-
-      const routeList = ((router as Record<string, unknown> | undefined)?.options as Record<string, unknown> | undefined)?.routes as Array<{ path: string }> | undefined;
-      if (routeList) {
-        for (const r of routeList) {
-          if (r.path && !r.path.includes(':') && r.path !== '/' && r.path !== '') {
-            routes.push(`${evalOrigin.replace(/\/$/, '')}/#${r.path}`);
-          }
-        }
-      }
-      return routes;
-    }, origin);
-    for (const r of vueRoutes) routeSet.add(r);
-  } catch { /* Vue runtime detection failed */ }
+  } catch { /* inline script scan failed */ }
 
   return Array.from(routeSet).map(p =>
-    p.startsWith('http') ? p : `${origin.replace(/\/$/, '')}${p.startsWith('/') ? '' : '/'}${p}`
+    `${origin.replace(/\/$/, '')}${p.startsWith('/') ? '' : '/'}${p}`
   );
 }
 
