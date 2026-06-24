@@ -199,9 +199,9 @@ export async function handleBrowserCommand(
         };
         break;
       case 'eval':
-        if (!args[0]) outputError('Usage: xbrowser eval <expression>');
         cmdName = 'eval';
-        params = { expression: args.join(' ') };
+        params = { expression: args.join(' ') || (options.expression as string) || '' };
+        if (!params.expression) outputError('Usage: xbrowser eval <expression>');
         break;
       case 'scroll': {
         // scroll supports:
