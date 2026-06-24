@@ -427,7 +427,11 @@ export async function handlePlugin(
     case 'reload': {
       const name = subArgs[0];
       if (!name) outputError('Usage: xbrowser plugin reload <name>');
-      (await getGlobalPluginLoader()).reloadPlugin(name);
+      try {
+        await (await getGlobalPluginLoader()).reloadPlugin(name);
+      } catch {
+        outputError(`Plugin "${name}" not found. Use 'xbrowser plugin list' to see installed plugins.`);
+      }
       outputResult({ ok: true, name }, mode);
       break;
     }

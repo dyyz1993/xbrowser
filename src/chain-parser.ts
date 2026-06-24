@@ -95,8 +95,8 @@ export function parseCommandChain(input: string, options?: ParseOptions): Parsed
       }
 
       if (char === ',' && isSpaceAdjacent(input, i)) {
-        pushCommand();
-        lastOperator = 'and';
+        lastOperator = 'sequence';
+        flushPipeline();
         continue;
       }
 
