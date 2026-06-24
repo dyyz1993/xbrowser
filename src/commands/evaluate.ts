@@ -25,10 +25,8 @@ export const evaluateCommand = registerCommand({
     const result = await ctx.page.evaluate(p.expression);
     const response = ok({ result });
     if (decision && decision.severity === 'danger') {
-      response.tips = normalizeTips([
-        `⚠️ CDP Firewall: ${decision.reason}`,
-        `💡 Fix: ${decision.suggestion}`,
-      ]);
+      // Only show fix suggestion as tip (the full warning is verbose for batch execution)
+      response.tips = normalizeTips([`${decision.suggestion}`]);
     }
     return response;
   },
