@@ -291,12 +291,17 @@ export async function routeCommand(
       // Split if first word looks like a command name (alphanumeric/hyphen, no URL chars)
       if (/^[a-zA-Z][\w-]*$/.test(possibleCmd)) {
         const remainder = argv[0].substring(spaceIdx + 1);
-        // If remainder starts with a --flag, split on spaces so --key value pairs work.
-        // But if it's a URL or selector (starts with http://, /, #, etc.), keep as single arg.
-        if (remainder.startsWith('--') || (remainder.includes(' --') && !remainder.match(/^\w+:\/\//))) {
+        // Smart split: handle both "cmd --flag value" and "cmd <url/selector> --flag value"
+        // Strategy: split on spaces, but keep URL/selector values intact.
+        // A URL like https://example.com is a single token (no internal spaces).
+        // So splitting on spaces is safe for URLs — the URL itself has no spaces.
+        // Exception: quoted strings with spaces (handled by shell before argv).
+        if (remainder.includes('--')) {
+          // Has flags — split on spaces to separate --key value pairs
           const remainderParts = remainder.split(/\s+/).filter(Boolean);
           argv = [possibleCmd, ...remainderParts, ...argv.slice(1)];
         } else {
+          // No flags — keep remainder as single arg (e.g. "goto https://example.com")
           argv = [possibleCmd, remainder, ...argv.slice(1)];
         }
       }

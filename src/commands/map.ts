@@ -15,6 +15,7 @@ export function getRootDomain(hostname: string): string {
 interface MapOptions {
   sitemap?: 'include' | 'only';
   includeSubdomains?: boolean;
+  allowExternalLinks?: boolean;
   limit?: number;
   search?: string;
   verbose?: boolean;
@@ -165,8 +166,9 @@ export async function discoverUrls(
   const basePath = new URL(baseUrl).pathname;
 
   let filtered = Array.from(allUrls).filter((u) =>
-    isSameDomain(u, baseHostname, options.includeSubdomains ?? false) &&
-    isWithinPathScope(u, basePath),
+    options.allowExternalLinks ||
+    (isSameDomain(u, baseHostname, options.includeSubdomains ?? false) &&
+    isWithinPathScope(u, basePath)),
   );
 
   filtered = deduplicateUrls(filtered);
@@ -192,6 +194,7 @@ export const mapCommand = registerCommand({
     search: z.string().optional(),
     sitemap: z.enum(['include', 'only']).optional(),
     includeSubdomains: z.boolean().optional(),
+    allowExternalLinks: z.boolean().optional().describe('Include links to external domains'),
     limit: z.number().optional(),
     verbose: z.boolean().default(false).describe('Show progress feedback'),
   }),
@@ -202,6 +205,7 @@ export const mapCommand = registerCommand({
       const links = await discoverUrls(page, p.url, {
         sitemap: p.sitemap,
         includeSubdomains: p.includeSubdomains,
+        allowExternalLinks: p.allowExternalLinks,
         limit: p.limit,
         search: p.search,
         verbose: p.verbose,
