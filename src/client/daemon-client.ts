@@ -1,6 +1,7 @@
 import type { ExecutionResult } from '../executor.js';
 import { errMsg } from '../utils/error.js';
-import { startDaemonProcess } from '../daemon/daemon.js';
+import { startDaemonProcess, stopDaemonProcess } from '../daemon/daemon.js';
+import { version as cliVersion } from '../version.js';
 
 const DAEMON_PORT = 9224;
 const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`;
@@ -16,9 +17,23 @@ async function ensureDaemonRunning(): Promise<void> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const healthOk = await fetch(`${DAEMON_BASE}/health`, { signal: AbortSignal.timeout(2000) })
       .then(r => r.ok ? r.json() : null)
-      .then((d: { status?: string } | null) => d?.status === 'ok')
-      .catch(() => false);
-    if (healthOk) return;
+      .then((d: { status?: string; version?: string } | null) => {
+        if (d?.status === 'ok') {
+          // Version mismatch — force restart
+          if (d.version && d.version !== cliVersion) {
+            return { needsRestart: true };
+          }
+          return { needsRestart: false };
+        }
+        return null;
+      })
+      .catch(() => null);
+    if (healthOk?.needsRestart === false) return; // Same version, daemon is fine
+    if (healthOk?.needsRestart === true) {
+      console.error(`⚠️ Daemon version mismatch. Restarting...`);
+      await stopDaemonProcess().catch(() => {});
+      break; // Fall through to start logic below
+    }
     if (attempt < 2) await new Promise(r => setTimeout(r, 500));
   }
 
@@ -35,7 +50,7 @@ async function ensureDaemonRunning(): Promise<void> {
   for (let attempt = 0; attempt < 20; attempt++) {
     const ready = await fetch(`${DAEMON_BASE}/health`, { signal: AbortSignal.timeout(1000) })
       .then(r => r.ok ? r.json() : null)
-      .then((d: { status?: string } | null) => d?.status === 'ok')
+      .then((d: { status?: string; version?: string } | null) => d?.status === 'ok')
       .catch(() => false);
     if (ready) {
       console.error('✅ Daemon ready');
