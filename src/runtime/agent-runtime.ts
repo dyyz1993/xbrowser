@@ -442,8 +442,25 @@ export async function waitForPage(page: Page, input: AgentWaitInput): Promise<Ag
     }
 
     if (input.text) {
-      await page.getByText(input.text).first().waitFor({ state: 'visible', timeout });
-      return { success: true, matched: 'text', timeout, elapsed: Date.now() - startedAt };
+      // Use direct text search via evaluate instead of getByText (which generates
+      // xpath selectors that may not resolve correctly in all cases).
+      const textToFind = input.text;
+      const matched = await pollUntil(timeout, pollInterval, async () => {
+        return page.evaluate((text: string) => {
+          const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+          while (walker.nextNode()) {
+            if (walker.currentNode.textContent?.includes(text)) return true;
+          }
+          return false;
+        }, textToFind);
+      });
+      return {
+        success: matched,
+        matched: 'text',
+        timeout,
+        elapsed: Date.now() - startedAt,
+        ...(matched ? {} : { message: `Timed out waiting for text: ${input.text}` }),
+      };
     }
 
     if (input.url) {
