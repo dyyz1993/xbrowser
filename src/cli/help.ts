@@ -15,8 +15,13 @@ Commands:
   session close [--session <name>]  Close session
   session list                      List sessions
   session kill [--session <name>]   Kill session
+
   goto <url>                        Navigate to URL
   open <url>                        Navigate to URL (alias for goto)
+  back                              Go back in history
+  forward                           Go forward in history
+  refresh                           Reload page
+
   click <selector>                  Click element (-s <sel>)
   fill <selector> <value>           Fill input (-s <sel> -v <val>)
   type <selector> <text>            Type text (-s <sel> -v <text>)
@@ -26,21 +31,61 @@ Commands:
   dblclick <selector>               Double click (-s <sel>)
   check <selector>                  Check checkbox (-s <sel>)
   uncheck <selector>                Uncheck checkbox (-s <sel>)
-  screenshot [--full-page] [--base64]  Take screenshot (saves to ~/.xbrowser/screenshots/; use --base64 for inline data)
+  mouse <action> <x> <y>            Mouse move/click at coordinates
+  scroll <direction> [--distance N] Scroll page
+
+  screenshot [--full-page] [--base64]  Take screenshot
   eval <expression>                 Evaluate JS
   wait <selector> [--timeout <ms>]  Wait for element (-s <sel>)
-  scroll <direction> [--distance N] Scroll page
+  waitForTimeout <ms>               Wait for milliseconds
+  waitFor --text <t>                Wait for text/url/selector predicate
   title                             Get page title
   url                               Get current URL
   html [--selector <sel>]           Get HTML content
   text [--selector <sel>]           Get text content
+  find <strategy> <value> [--action click|fill|hover]  Find element by text/role/label
+
+  set-viewport <width> <height>     Set viewport size
+  frames                            List all frames
+  frame --index <n>                 Switch to frame
+  tab list                          List browser tabs
+  tab new <url>                     Open new tab
+  tab close --index <n>             Close tab
+  tab switch --index <n>            Switch to tab
+
+  get-cookies                       Get all cookies
+  set-cookie <name> <value>         Set cookie
+  clear-cookies                     Clear cookies
+  get-local-storage                 Get localStorage
+  set-local-storage <key> <value>   Set localStorage item
+  clear-local-storage               Clear localStorage
+
+  snapshot                          Get page snapshot with element refs
+  observe                           AI agent: observe page state
+  act                               AI agent: perform action
+  actions <url> --action "..."      Execute action sequence
+
+  console                           Get console messages
+  net-debug                         Get network debug info
+  perf                              Get performance metrics
+  health                            Run page health check (SEO/links/errors)
+  structure                         Get page DOM structure
+  network <url>                     Capture network traffic
+  addinitscript <script>            Add init script
+
+  scrape <url>                      Scrape page to markdown
+  crawl <url>                       Crawl website (multi-page)
+  search "query"                    Search the web (--engine, --limit, --full)
+  map <url>                         Discover all URLs on a website
+
   convert <rec.yaml> <out.{js,py,sh}> Convert recording to script
   extract <rec.yaml>                Extract LLM-ready summary
   filter <in.yaml> <out.yaml>       Filter recording events
-  scrape <url>                      Scrape a page and convert to markdown
-   crawl <url>                       Crawl a website and extract content from multiple pages
-   search "query"                    Search the web and extract results (--engine, --limit, --full)
-   map <url>                         Discover all URLs on a website
+  replay <file>                     Replay recording
+  record start --url <url>          Start recording
+  record stop                       Stop recording
+  record status                     Recording status
+
   config <get|set|list>             Manage config
   plugin search <query>             Search for plugins
   plugin install <source>           Install plugin
@@ -48,16 +93,12 @@ Commands:
   plugin list                       List plugins
   plugin reload <name>              Reload plugin
   create <name> --template <type>   Create plugin
-  serve [--port <port>] [--token <t>] Start HTTP server for remote access
-  remote <url> [command] [--token <t>] Execute command on remote server
-  record start --url <url>          Start recording
-  record stop                       Stop recording
-  record status                     Recording status
-  replay <file>                     Replay recording
+  serve [--port <port>] [--token <t>] Start HTTP server
+  remote <url> [command] [--token <t>] Execute on remote server
   run <file>                        Execute commands from file
-  viewer [--name <n>] [--selector <sel>] Generate viewer URL
+  viewer [--name <n>]               Generate viewer URL
   help                              Show this help
-  --version, -v                     Show version
+  --version                         Show version
 Plugin Commands:
   Installed plugins provide additional commands.
   Use 'xbrowser plugin list' to see installed plugins and their commands.
@@ -103,5 +144,5 @@ Global Flags:
   --session <name>                  Use specific session
   --cdp <endpoint>                  Connect via CDP (url, port, or 'auto')
   --help, -h                        Show help
-  `);
+`);
 }
