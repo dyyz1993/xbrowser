@@ -115,7 +115,7 @@ export const pluginSearchBuiltin: BuiltinCommand = {
 
     try {
       const searchOptions: SearchOptions = {
-        query,
+        query: query || (options['tag'] as string || ''),
         tag: options['tag'] as string | undefined,
         site: options['site'] as string | undefined,
         limit: options['limit'] ? Number.parseInt(String(options['limit'])) : 20,
