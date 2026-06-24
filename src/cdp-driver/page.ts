@@ -171,22 +171,55 @@ export class XBPageImpl implements XBPage {
     };
   }
 
-  async goBack(_opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
-    // Record previous URL before navigating
-    const prevUrl = await this.evaluate<string>('location.href').catch(() => '');
-    // Fire history.back()
+  async goBack(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
+    // Use CDP Page.getNavigationHistory to find the previous entry,
+    // then navigate directly via Page.navigate (reliable context refresh).
+    try {
+      const navHistory = await this.conn.send<{
+        entries: Array<{ url: string }>;
+        currentIndex: number;
+      }>('Page.getNavigationHistory', undefined, this.sessionId);
+
+      if (navHistory.currentIndex > 0) {
+        const prevUrl = navHistory.entries[navHistory.currentIndex - 1]?.url;
+        if (prevUrl && prevUrl !== 'about:blank') {
+          await this.conn.send('Page.navigate', { url: prevUrl }, this.sessionId);
+          await this.waitForLoadState(opts.waitUntil ?? 'domcontentloaded', opts.timeout ?? 10000).catch(() => {});
+          this._url = prevUrl;
+          return;
+        }
+      }
+    } catch {
+      // Page.getNavigationHistory not available — fall through
+    }
+    // Fallback: history.back() with long wait
     await this.evaluate('() => history.back()');
-    // Wait for navigation to complete
-    await this.waitForTimeout(2000);
-    // Re-read URL from the (now navigated) page
-    this._url = await this.evaluate<string>('location.href').catch(() => prevUrl);
+    await this.waitForTimeout(3000);
+    this._url = await this.evaluate<string>('location.href').catch(() => this._url);
   }
 
-  async goForward(_opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
-    const prevUrl = await this.evaluate<string>('location.href').catch(() => '');
+  async goForward(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
+    try {
+      const navHistory = await this.conn.send<{
+        entries: Array<{ url: string }>;
+        currentIndex: number;
+      }>('Page.getNavigationHistory', undefined, this.sessionId);
+
+      if (navHistory.currentIndex < navHistory.entries.length - 1) {
+        const nextUrl = navHistory.entries[navHistory.currentIndex + 1]?.url;
+        if (nextUrl && nextUrl !== 'about:blank') {
+          await this.conn.send('Page.navigate', { url: nextUrl }, this.sessionId);
+          await this.waitForLoadState(opts.waitUntil ?? 'domcontentloaded', opts.timeout ?? 10000).catch(() => {});
+          this._url = nextUrl;
+          return;
+        }
+      }
+    } catch {
+      // Page.getNavigationHistory not available — fall through
+    }
     await this.evaluate('() => history.forward()');
-    await this.waitForTimeout(2000);
-    this._url = await this.evaluate<string>('location.href').catch(() => prevUrl);
+    await this.waitForTimeout(3000);
+    this._url = await this.evaluate<string>('location.href').catch(() => this._url);
   }
 
   async reload(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
