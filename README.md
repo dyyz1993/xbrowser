@@ -9,7 +9,7 @@
 
 ## 特性
 
-- **50 浏览器命令** — 导航、交互、查询、存储、截图，覆盖常见自动化场景
+- **51 浏览器命令** — 导航、交互、查询、存储、截图，覆盖常见自动化场景
 - **命令链** — 用 `&&`、`,`、`+`、`->`、`;` 串联多个命令，一行搞定复杂流程
 - **管道 & Heredoc** — 支持 stdin 管道和 heredoc 批量执行
 - **录制 / 回放** — 录制浏览器操作为 YAML，随时回放，可转换为 JS/Python/Bash 脚本
@@ -854,7 +854,7 @@ npm run validate
 ```
 xbrowser/
 ├── src/
-│   ├── commands/        # 50 个浏览器命令定义
+│   ├── commands/        # 51 个浏览器命令定义
 │   ├── builtins/        # CLI 内置命令（config, plugin, session, create）
 │   ├── recorder/        # 录制引擎（录制器 + 回放器）
 │   ├── session/         # 会话管理
@@ -883,7 +883,7 @@ xbrowser/
 | **Setup** | `npm i -g` — 0 config | Install + browser download | Install + browser download | Install + WebDriver + drivers |
 | **Web Scraping** | Built-in (`scrape`, `crawl`, `map`) | Write custom scripts | Write custom scripts | Write custom scripts |
 | **Search** | Built-in multi-engine (`search`) | No | No | No |
-| **Plugin Ecosystem** | 69 plugins | Limited | Limited | No |
+| **Plugin Ecosystem** | 70+ plugins | Limited | Limited | No |
 | **No Code Required** | ✅ CLI commands | ❌ Must write JS/TS | ❌ Must write JS/TS | ❌ Must write code |
 | **Headless Mode** | ✅ Default | ✅ | ✅ | ✅ |
 | **Record/Replay** | ✅ Built-in (`record`/`replay`) | ✅ Codegen | ❌ | ❌ |
