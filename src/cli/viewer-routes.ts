@@ -10,14 +10,15 @@ export async function handleViewer(
 ): Promise<void> {
   const name = (options.name as string) || process.env.XBROWSER_SESSION || 'default';
   const selector = options.selector as string | undefined;
+  const userPort = options.port ? Number(options.port) : undefined;
 
   let status = getDaemonProcessStatus();
   if (!status.running) {
-    await startDaemonProcess();
+    await startDaemonProcess(userPort || 9224);
     status = getDaemonProcessStatus();
   }
 
-  const port = status.port || getDaemonConfig().basePort;
+  const port = userPort || status.port || getDaemonConfig().basePort;
   let url = `http://localhost:${port}/preview/${name}`;
 
   if (selector) {

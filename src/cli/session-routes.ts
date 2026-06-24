@@ -33,10 +33,22 @@ export async function handleSession(
 
   switch (sub) {
     case 'close': {
-      const name = (options.session as string) || (options.name as string) || process.env.XBROWSER_SESSION || 'default';
-      try { await forwardSessionClose(name); } catch { /* daemon may be down */ }
-      await closeSession(name);
-      outputResult({ ok: true, name }, mode);
+      if (options.all) {
+        // Close all sessions (like kill-all but without stopping daemon)
+        let count = 0;
+        try {
+          const sessions = await forwardSessionList();
+          for (const s of sessions) {
+            try { await forwardSessionClose(s.name); count++; } catch { /* ignore */ }
+          }
+        } catch { /* daemon may be down */ }
+        outputResult({ ok: true, closed: count, all: true }, mode);
+      } else {
+        const name = (options.session as string) || (options.name as string) || process.env.XBROWSER_SESSION || 'default';
+        try { await forwardSessionClose(name); } catch { /* daemon may be down */ }
+        await closeSession(name);
+        outputResult({ ok: true, name }, mode);
+      }
       break;
     }
     case 'list':
