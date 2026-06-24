@@ -179,3 +179,4 @@ registerCommandDefinition('actions', ['url']);
 registerCommandDefinition('find', ['strategy', 'value', 'operation']);
 registerCommandDefinition('addinitscript', ['script']);
 registerCommandDefinition('tab', ['subcommand']);
+registerCommandDefinition('mouse', ['action', 'x', 'y']);

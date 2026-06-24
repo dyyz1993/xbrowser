@@ -225,7 +225,12 @@ async function handleEvalMode(argv: string[]): Promise<void> {
   if (evalCommands.length === 0) return;
   const chain = evalCommands.join(' ; ');
   const cdpEndpoint = extractCdpFromArgv(argv);
-  const chainResult = await executeChain(chain, { cdpEndpoint });
+  // Extract --session from argv for eval mode (not handled by parseArgs)
+  const sessionArgIdx = argv.indexOf('--session');
+  const sessionName = sessionArgIdx >= 0 && argv[sessionArgIdx + 1]
+    ? argv[sessionArgIdx + 1]
+    : process.env.XBROWSER_SESSION || 'default';
+  const chainResult = await executeChain(chain, { cdpEndpoint, sessionName });
   printChainResult(chainResult);
   if (!chainResult.success) throw new Error("Command failed");
 }
@@ -307,16 +312,19 @@ export async function routeCommand(
       }
     }
 
-    if (chainArgIdx >= 0) {
-      const chainArg = argv[chainArgIdx];
-      const spaceIdx = chainArg.indexOf(' ');
-      const possibleCmd = chainArg.substring(0, spaceIdx);
-      if (/^[a-zA-Z][\w-]*$/.test(possibleCmd)) {
-        const remainder = chainArg.substring(spaceIdx + 1);
-        const remainderParts = remainder.split(/\s+/).filter(Boolean);
-        // Replace the chain arg with split parts, keep everything else
-        argv = [...argv.slice(0, chainArgIdx), possibleCmd, ...remainderParts, ...argv.slice(chainArgIdx + 1)];
-      }
+	    if (chainArgIdx >= 0) {
+	      const chainArg = argv[chainArgIdx];
+	      const spaceIdx = chainArg.indexOf(' ');
+	      const possibleCmd = chainArg.substring(0, spaceIdx);
+	      if (/^[a-zA-Z][\w-]*$/.test(possibleCmd)) {
+	        const remainder = chainArg.substring(spaceIdx + 1);
+	        let remainderParts = remainder.split(/\s+/).filter(Boolean);
+	        // Also split on ; (chain separator) for cases like "goto url;title"
+	        // where there's no space before the semicolon.
+	        remainderParts = remainderParts.flatMap(part => part.split(';').filter(Boolean));
+	        // Replace the chain arg with split parts, keep everything else
+	        argv = [...argv.slice(0, chainArgIdx), possibleCmd, ...remainderParts, ...argv.slice(chainArgIdx + 1)];
+	      }
     }
   } catch (e: unknown) {
     outputError(e instanceof Error ? e.message : String(e));
@@ -344,19 +352,19 @@ export async function routeCommand(
     return;
   }
   if (positional.length === 0) {
-    // --json before a chain string gets absorbed by parseArgs as json's value
-    // (parseArgs treats --json as a string flag, not boolean).
-    // Detect this: if we have json/yaml/session/cdp option values that look
-    // like chain input, treat them as positional args.
-    const chainHints = [options.json, options.yaml, options.session, options.cdp]
-      .filter(Boolean)
-      .find(v => typeof v === 'string' && (v as string).includes(' '));
-    if (chainHints) {
-      positional.push(chainHints as string);
-    } else {
-      showMainHelp();
-      return;
-    }
+	    // --json before a chain string gets absorbed by parseArgs as json's value
+	    // (parseArgs treats --json as a string flag, not boolean).
+	    // Detect this: if we have json/yaml values that look like commands,
+	    // treat them as positional args instead of flag values.
+	    const chainHints = [options.json, options.yaml, options.session, options.cdp]
+	      .filter(Boolean)
+	      .find(v => typeof v === 'string' && /^[a-zA-Z]/.test(v as string));
+	    if (chainHints) {
+	      positional.push(chainHints as string);
+	    } else {
+	      showMainHelp();
+	      return;
+	    }
   }
 
   if ((options.help || options.h) && positional.length > 0) {

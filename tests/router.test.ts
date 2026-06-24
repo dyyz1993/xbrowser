@@ -356,7 +356,7 @@ describe('router', () => {
 
     await routeCommand(['-e', 'title']);
 
-    expect(executeChain).toHaveBeenCalledWith('title', { cdpEndpoint: undefined });
+    expect(executeChain).toHaveBeenCalledWith('title', { cdpEndpoint: undefined, sessionName: 'default' });
     expect(printChainResult).toHaveBeenCalled();
   });
 
@@ -370,7 +370,7 @@ describe('router', () => {
 
     await routeCommand(['--eval', 'title']);
 
-    expect(executeChain).toHaveBeenCalledWith('title', { cdpEndpoint: undefined });
+    expect(executeChain).toHaveBeenCalledWith('title', { cdpEndpoint: undefined, sessionName: 'default' });
   });
 
   it('handles multiple -e flags', async () => {
@@ -383,7 +383,7 @@ describe('router', () => {
 
     await routeCommand(['-e', 'goto https://example.com', '-e', 'title']);
 
-    expect(executeChain).toHaveBeenCalledWith('goto https://example.com ; title', { cdpEndpoint: undefined });
+    expect(executeChain).toHaveBeenCalledWith('goto https://example.com ; title', { cdpEndpoint: undefined, sessionName: 'default' });
   });
 
   it('outputs error when eval chain fails', async () => {
@@ -703,7 +703,7 @@ describe('router', () => {
 
     await routeCommand(['-e', 'title', 'session', 'list']);
 
-    expect(executeChain).toHaveBeenCalledWith('title', { cdpEndpoint: undefined });
+    expect(executeChain).toHaveBeenCalledWith('title', { cdpEndpoint: undefined, sessionName: 'default' });
   });
 
   it('routes preview subcommand to builtin', async () => {
