@@ -283,6 +283,16 @@ export async function routeCommand(
       return;
     }
 
+    // Handle --json/--yaml before chain: parseArgs absorbs the chain string
+    // as json's value. Detect this and re-route to handleChainInput.
+    const jsonBeforeChain = (argv[0] === '--json' || argv[0] === '--yaml') && argv[1] && isChainInput(argv[1]);
+    if (jsonBeforeChain) {
+      await handleChainInput(argv[1], argv);
+      return;
+    }
+
+    // Handle --session/--cdp before chain (similar flag absorption)
+
     // Find the first quoted argument (contains space, starts with letter)
     // Skip global flags (--session, --cdp, --json, etc.) and their values
     const globalFlags = new Set(['--session', '--cdp', '--json', '--yaml', '--output', '--timeout', '--help', '-h', '--version']);
@@ -312,6 +322,11 @@ export async function routeCommand(
     return;
   }
 
+  // Detect --json/--yaml anywhere in argv (including chain commands)
+  // before parseArgs absorbs it as a flag value.
+  const hasJsonFlag = argv.some(a => a === '--json' || a.startsWith('--json='));
+  const hasYamlFlag = argv.some(a => a === '--yaml' || a.startsWith('--yaml='));
+
   const parsed = parseArgs(argv);
   const { positional, options } = parsed;
   const command = positional[0];
@@ -319,7 +334,7 @@ export async function routeCommand(
 
   // Built-in commands (search, etc.) may have their own options.
   // Typo detection is handled at the command level.
-  const mode = options.json ? 'json' : options.yaml ? 'yaml' : 'text';
+  const mode = (options.json || hasJsonFlag) ? 'json' : (options.yaml || hasYamlFlag) ? 'yaml' : 'text';
   const sessionName = (options.session as string) || process.env.XBROWSER_SESSION || 'default';
   const cdpEndpoint = (options.cdp as string) || process.env.XBROWSER_CDP;
 
@@ -328,8 +343,19 @@ export async function routeCommand(
     return;
   }
   if (positional.length === 0) {
-    showMainHelp();
-    return;
+    // --json before a chain string gets absorbed by parseArgs as json's value
+    // (parseArgs treats --json as a string flag, not boolean).
+    // Detect this: if we have json/yaml/session/cdp option values that look
+    // like chain input, treat them as positional args.
+    const chainHints = [options.json, options.yaml, options.session, options.cdp]
+      .filter(Boolean)
+      .find(v => typeof v === 'string' && (v as string).includes(' '));
+    if (chainHints) {
+      positional.push(chainHints as string);
+    } else {
+      showMainHelp();
+      return;
+    }
   }
 
   if ((options.help || options.h) && positional.length > 0) {
