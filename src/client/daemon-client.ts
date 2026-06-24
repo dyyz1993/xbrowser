@@ -22,6 +22,7 @@ async function ensureDaemonRunning(): Promise<void> {
     if (attempt < 2) await new Promise(r => setTimeout(r, 500));
   }
 
+  console.error('🔄 Starting daemon...');
   _ensurePromise = startDaemonProcess(DAEMON_PORT).then(() => {});
   _ensurePromise.catch(() => { _ensurePromise = null; });
   try {
@@ -36,7 +37,10 @@ async function ensureDaemonRunning(): Promise<void> {
       .then(r => r.ok ? r.json() : null)
       .then((d: { status?: string } | null) => d?.status === 'ok')
       .catch(() => false);
-    if (ready) return;
+    if (ready) {
+      console.error('✅ Daemon ready');
+      return;
+    }
     await new Promise(r => setTimeout(r, 200));
   }
   throw new Error('Daemon HTTP server not ready after 4s');

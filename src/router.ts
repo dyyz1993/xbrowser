@@ -323,7 +323,7 @@ export async function routeCommand(
   const sessionName = (options.session as string) || process.env.XBROWSER_SESSION || 'default';
   const cdpEndpoint = (options.cdp as string) || process.env.XBROWSER_CDP;
 
-  if (options.version) {
+  if (options.version || (options.v && positional.length === 0)) {
     console.log(`xbrowser v${version}`);
     return;
   }
@@ -523,6 +523,23 @@ export async function routeCommand(
           const fullInput = cleanParts.join(' ');
           if (isChainInput(fullInput)) {
             const chainResult = await executeChain(fullInput, { cdpEndpoint, sessionName });
+            // Output as JSON if --json flag was set globally
+            if (mode === 'json' || mode === 'yaml') {
+              const output = {
+                success: chainResult.success,
+                steps: chainResult.steps.map(s => ({
+                  command: s.raw,
+                  success: s.success,
+                  data: s.data,
+                  duration: s.duration,
+                })),
+                totalDuration: chainResult.totalDuration,
+                ...(chainResult.stoppedReason ? { stoppedReason: chainResult.stoppedReason } : {}),
+              };
+              outputResult(output, mode);
+              if (!chainResult.success) throw new Error('Command failed');
+              return;
+            }
             for (const step of chainResult.steps) {
               if (step.success) {
                 console.log(`[OK] ${step.raw}`);

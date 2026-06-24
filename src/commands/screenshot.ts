@@ -58,7 +58,7 @@ export const screenshotCommand = registerCommand({
 
     // --output: save to specified path
     if (p.output) {
-      writeFileSync(p.output, buffer);
+      writeFileSync(p.output, buffer, 'binary');
       return ok({
         output: p.output,
         format,
@@ -78,7 +78,7 @@ export const screenshotCommand = registerCommand({
     // Default: save to ~/.xbrowser/screenshots/ and return file path
     ensureScreenshotsDir();
     const screenshotPath = generateScreenshotPath(format);
-    writeFileSync(screenshotPath, buffer);
+    writeFileSync(screenshotPath, buffer, 'binary');
     return ok({
       output: screenshotPath,
       format,

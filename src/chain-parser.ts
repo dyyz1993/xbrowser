@@ -88,8 +88,8 @@ export function parseCommandChain(input: string, options?: ParseOptions): Parsed
 	      }
 
       if (char === '-' && input[i + 1] === '>' && isSpaceAround(input, i, 2)) {
-        pushCommand();
-        lastOperator = 'and';
+        lastOperator = 'sequence';
+        flushPipeline();
         i++;
         continue;
       }
@@ -101,8 +101,8 @@ export function parseCommandChain(input: string, options?: ParseOptions): Parsed
       }
 
       if (char === '+' && isSpaceAdjacent(input, i)) {
-        pushCommand();
-        lastOperator = 'and';
+        lastOperator = 'sequence';
+        flushPipeline();
         continue;
       }
 
