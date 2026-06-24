@@ -105,18 +105,22 @@ describe('parseCommandChain', () => {
     expect(result[2].pipeline).toEqual(['click btn']);
   });
 
-  it('parses commands separated by plus', () => {
+  it('parses commands separated by plus (sequence, continues on failure)', () => {
     const result = parseCommandChain('goto url + title + click btn');
-    expect(result).toHaveLength(1);
-    expect(result[0].pipeline).toEqual(['goto url', 'title', 'click btn']);
-    expect(result[0].type).toBe('and');
+    expect(result).toHaveLength(3);
+    expect(result[0].pipeline).toEqual(['goto url']);
+    expect(result[0].type).toBe('sequence');
+    expect(result[1].pipeline).toEqual(['title']);
+    expect(result[2].pipeline).toEqual(['click btn']);
   });
 
-  it('parses commands separated by arrow', () => {
+  it('parses commands separated by arrow (sequence, continues on failure)', () => {
     const result = parseCommandChain('goto url -> title -> click btn');
-    expect(result).toHaveLength(1);
-    expect(result[0].pipeline).toEqual(['goto url', 'title', 'click btn']);
-    expect(result[0].type).toBe('and');
+    expect(result).toHaveLength(3);
+    expect(result[0].pipeline).toEqual(['goto url']);
+    expect(result[0].type).toBe('sequence');
+    expect(result[1].pipeline).toEqual(['title']);
+    expect(result[2].pipeline).toEqual(['click btn']);
   });
 
   it('does not split comma without space (value comma)', () => {

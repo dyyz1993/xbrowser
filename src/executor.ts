@@ -32,6 +32,22 @@ import { getTipsManager } from './tips/index.js';
 import { resolveRefParams } from './utils/resolve-selector.js';
 import { loadHooks } from './hooks/loader.js';
 import { homedir } from 'os';
+
+/** Simple Levenshtein distance for "Did you mean?" suggestions */
+function levenshtein(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+  for (let i = 0; i <= m; i++) dp[i][0] = i;
+  for (let j = 0; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i-1] === b[j-1]
+        ? dp[i-1][j-1]
+        : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+    }
+  }
+  return dp[m][n];
+}
 import { join } from 'path';
 
 const NAVIGATION_COMMANDS = new Set(['goto', 'back', 'forward', 'refresh']);
@@ -184,8 +200,16 @@ export async function executeCommand(
   const command = getCommand(commandName);
   if (!command) {
     const available = getAllCommands().map((c) => c.name);
+    // Find closest match for "Did you mean?" suggestion
+    const suggestions = available
+      .map(name => ({ name, dist: levenshtein(commandName, name) }))
+      .filter(s => s.dist <= 3)
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 3)
+      .map(s => s.name);
+    const hint = suggestions.length > 0 ? ` Did you mean: ${suggestions.join(' or ')}?` : '';
     return errorResult(
-      `Unknown command: ${commandName}. Available: ${available.join(', ')}`
+      `Unknown command: ${commandName}.${hint} Available: ${available.join(', ')}`
     );
   }
 
