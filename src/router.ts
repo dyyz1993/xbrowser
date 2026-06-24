@@ -519,7 +519,8 @@ export async function routeCommand(
                 }
                 if (step.tips?.length) {
                   for (const tip of step.tips) {
-                    console.log(`  💡 ${tip}`);
+                    const text = typeof tip === 'string' ? tip : (tip as { message?: string }).message;
+                    if (text) console.log(`  💡 ${text}`);
                   }
                 }
               } else {
