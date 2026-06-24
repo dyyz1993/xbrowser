@@ -283,21 +283,28 @@ export async function routeCommand(
       return;
     }
 
-    // Single quoted argument like: xbrowser "goto https://example.com" --cdp xxx
-    // Shell passes "goto https://..." as one argv element. Split into command + args.
-    if (argv[0] && argv[0].includes(' ')) {
-      const spaceIdx = argv[0].indexOf(' ');
-      const possibleCmd = argv[0].substring(0, spaceIdx);
-      // Split if first word looks like a command name (alphanumeric/hyphen, no URL chars)
+    // Find the first quoted argument (contains space, starts with letter)
+    // Skip global flags (--session, --cdp, --json, etc.) and their values
+    const globalFlags = new Set(['--session', '--cdp', '--json', '--yaml', '--output', '--timeout', '--help', '-h', '--version']);
+    let chainArgIdx = -1;
+    for (let i = 0; i < argv.length; i++) {
+      if (globalFlags.has(argv[i])) continue; // skip flag
+      if (globalFlags.has(argv[i]) || (i > 0 && globalFlags.has(argv[i-1]) && !argv[i].startsWith('-'))) continue; // skip flag value
+      if (argv[i].includes(' ') && /^[a-zA-Z]/.test(argv[i])) {
+        chainArgIdx = i;
+        break;
+      }
+    }
+
+    if (chainArgIdx >= 0) {
+      const chainArg = argv[chainArgIdx];
+      const spaceIdx = chainArg.indexOf(' ');
+      const possibleCmd = chainArg.substring(0, spaceIdx);
       if (/^[a-zA-Z][\w-]*$/.test(possibleCmd)) {
-        const remainder = argv[0].substring(spaceIdx + 1);
-        // Always split on spaces — URLs have no internal spaces, selectors
-        // with spaces are quoted by the shell. This handles both:
-        //   "goto https://example.com --timeout 5000"
-        //   "set-viewport 1280 720"
-        //   "fill #input hello"
+        const remainder = chainArg.substring(spaceIdx + 1);
         const remainderParts = remainder.split(/\s+/).filter(Boolean);
-        argv = [possibleCmd, ...remainderParts, ...argv.slice(1)];
+        // Replace the chain arg with split parts, keep everything else
+        argv = [...argv.slice(0, chainArgIdx), possibleCmd, ...remainderParts, ...argv.slice(chainArgIdx + 1)];
       }
     }
   } catch (e: unknown) {
@@ -503,7 +510,17 @@ export async function routeCommand(
 
         // Only fall through to chain parsing if NOT a registered plugin site
         if (!site) {
-          const fullInput = argv.join(' ');
+          // Build chain input from non-global-flag args only
+          const globalFlagSet = new Set(['--session', '--cdp', '--json', '--yaml', '--help', '-h', '--version', '--output', '-o']);
+          const cleanParts: string[] = [];
+          for (let i = 0; i < argv.length; i++) {
+            if (globalFlagSet.has(argv[i])) continue;
+            // Skip the value of --session/--cdp/--output
+            if (i > 0 && globalFlagSet.has(argv[i-1]) && !argv[i].startsWith('-')) continue;
+            if (argv[i].startsWith('--session=') || argv[i].startsWith('--cdp=')) continue;
+            cleanParts.push(argv[i]);
+          }
+          const fullInput = cleanParts.join(' ');
           if (isChainInput(fullInput)) {
             const chainResult = await executeChain(fullInput, { cdpEndpoint, sessionName });
             for (const step of chainResult.steps) {

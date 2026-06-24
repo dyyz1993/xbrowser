@@ -532,7 +532,11 @@ export default function (xcli: XCLIAPI): void {
           return items;
         }, params.limit) as Array<{ title: string; excerpt: string; author: string; link: string; type: string }>;
 
-        return ok({ query: params.query, count: results.length, results }, [...tips, `找到 ${results.length} 条结果`]);
+        const searchTips = [...tips, `找到 ${results.length} 条结果`];
+        if (results.length === 0) {
+          searchTips.push('⚠️ 搜索结果为空。可能原因：1) 需要登录态（用 --cdp 连接已登录的 Chrome）2) 知乎反爬检测 3) 页面结构变化');
+        }
+        return ok({ query: params.query, count: results.length, results }, searchTips);
       } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }

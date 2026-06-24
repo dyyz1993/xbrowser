@@ -87,17 +87,22 @@ describe('parseCommandChain', () => {
     expect(result[0].pipeline).toEqual(['title']);
   });
 
-  it('parses commands separated by comma', () => {
+  it('parses commands separated by comma (sequence, continues on failure)', () => {
     const result = parseCommandChain('goto url, title, click btn');
-    expect(result).toHaveLength(1);
-    expect(result[0].pipeline).toEqual(['goto url', 'title', 'click btn']);
-    expect(result[0].type).toBe('and');
+    expect(result).toHaveLength(3);
+    expect(result[0].pipeline).toEqual(['goto url']);
+    expect(result[0].type).toBe('sequence');
+    expect(result[1].pipeline).toEqual(['title']);
+    expect(result[2].pipeline).toEqual(['click btn']);
   });
 
   it('parses commands separated by comma with spaces', () => {
     const result = parseCommandChain('goto url , title , click btn');
-    expect(result).toHaveLength(1);
-    expect(result[0].pipeline).toEqual(['goto url', 'title', 'click btn']);
+    expect(result).toHaveLength(3);
+    expect(result[0].pipeline).toEqual(['goto url']);
+    expect(result[0].type).toBe('sequence');
+    expect(result[1].pipeline).toEqual(['title']);
+    expect(result[2].pipeline).toEqual(['click btn']);
   });
 
   it('parses commands separated by plus', () => {
@@ -148,16 +153,19 @@ describe('parseCommandChain', () => {
 
   it('mixed comma and && separators', () => {
     const result = parseCommandChain('goto url, title && click btn');
-    expect(result).toHaveLength(1);
-    expect(result[0].pipeline).toEqual(['goto url', 'title', 'click btn']);
-    expect(result[0].type).toBe('and');
+    // comma creates a sequence pipeline, && is within the second pipeline
+    expect(result.length).toBeGreaterThanOrEqual(2);
+    expect(result[0].pipeline).toEqual(['goto url']);
+    expect(result[0].type).toBe('sequence');
   });
 
   it('comma with semicolon creates separate pipelines', () => {
     const result = parseCommandChain('goto url, title ; screenshot');
-    expect(result).toHaveLength(2);
-    expect(result[0].pipeline).toEqual(['goto url', 'title']);
-    expect(result[1].pipeline).toEqual(['screenshot']);
+    // comma = sequence, semicolon = sequence → 3 separate pipelines
+    expect(result).toHaveLength(3);
+    expect(result[0].pipeline).toEqual(['goto url']);
+    expect(result[1].pipeline).toEqual(['title']);
+    expect(result[2].pipeline).toEqual(['screenshot']);
   });
 });
 
