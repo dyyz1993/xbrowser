@@ -149,14 +149,59 @@ function createTurndown(): TurndownService {
     replacement: () => '',
   });
 
+  // Handle complex tables that turndown's GFM table rule can't convert.
+  // Fallback: extract text from raw HTML content and format as markdown.
+  turndown.addRule('complexTables' as string, {
+    filter: (node: unknown) => {
+      if (typeof node !== 'object' || node === null) return false;
+      const n = node as { nodeName?: string };
+      return n.nodeName?.toLowerCase() === 'table';
+    },
+    replacement: (_content: string, node: Node) => {
+      const html = (node as unknown as { outerHTML?: string }).outerHTML || '';
+      if (!html) return '';
+
+      // Extract rows and cells from HTML, handling colspan/rowspan by
+      // adding extra separator tokens for non-existent cells.
+      const rows: string[][] = [];
+      const rowRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+      let rowMatch: RegExpExecArray | null;
+      while ((rowMatch = rowRegex.exec(html)) !== null) {
+        const cells: string[] = [];
+        const cellRegex = /<t[dh][^>]*>([\s\S]*?)<\/t[dh]>/gi;
+        let cellMatch: RegExpExecArray | null;
+        while ((cellMatch = cellRegex.exec(rowMatch[1])) !== null) {
+          cells.push(cellMatch[1].replace(/<[^>]+>/g, '').trim().replace(/\n/g, ' '));
+        }
+        if (cells.length > 0) rows.push(cells);
+      }
+
+      if (rows.length === 0) return '';
+
+      const mdRows = rows.map((cells) => {
+        const escaped = cells.map(c => c.replace(/\|/g, '\\|') || '');
+        return `| ${escaped.join(' | ')} |`;
+      });
+
+      // Add separator after header (first row with `th` cells)
+      const hasHeader = /<th/i.test(html);
+      if (hasHeader && mdRows.length > 0) {
+        const colCount = rows[0].length;
+        const sep = `| ${Array(colCount).fill('---').join(' | ')} |`;
+        mdRows.splice(1, 0, sep);
+      }
+
+      return '\n\n' + mdRows.join('\n') + '\n\n';
+    },
+  });
+
   return turndown;
 }
 
 function postClean(md: string): string {
-  // Remove large residual HTML blocks that turndown failed to convert
-  // (e.g. Element UI / Ant Design virtual tables using div-based layout).
-  // Keep small inline tags (<br>, <sup>) but strip blocks > 200 chars.
-  md = md.replace(/<(?:table|div|tbody|thead|tr|td|th|span|colgroup|col)\b[^>]*(?:>[\s\S]{200,}?<\/(?:table|div|tbody|thead|tr|td|th|span|colgroup|col)>)/g, '\n[⚠️ HTML block removed — complex table/layout not converted to Markdown]\n');
+  // Try to extract text from residual HTML blocks that turndown failed to convert.
+  // Fallback: strip tags and keep text content.
+  md = md.replace(/<[^>]+>/g, '');
   md = md.replace(/\n{3,}/g, '\n\n');
   md = md.replace(/!\[[^\]]*\]\(\s*\)/g, '');
   md = md.replace(/\[([^\]]*)\]\(\s*\)/g, '$1');
