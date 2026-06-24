@@ -41,7 +41,7 @@ import {
 } from './cli/index.js';
 import { outputError, outputResult } from './cli/output.js';
 import { showMainHelp } from './cli/help.js';
-import { printChainResult, printChainResultBrief } from './cli/chain-output.js';
+import { printChainResult } from './cli/chain-output.js';
 import { getPluginLoader } from './utils/plugin-singleton.js';
 import { checkPluginLoginRequired } from './plugin/login-guard.js';
 import { findOrRestoreSession, createSession, saveSessionDiskMeta, type ManagedSession } from './browser.js';
@@ -223,10 +223,10 @@ function extractSessionNameFromArgv(argv: string[]): string {
 async function handleEvalMode(argv: string[]): Promise<void> {
   const evalCommands = parseEvalFlags(argv);
   if (evalCommands.length === 0) return;
-  const chain = evalCommands.join(' && ');
+  const chain = evalCommands.join(' ; ');
   const cdpEndpoint = extractCdpFromArgv(argv);
   const chainResult = await executeChain(chain, { cdpEndpoint });
-  printChainResultBrief(chainResult);
+  printChainResult(chainResult);
   if (!chainResult.success) throw new Error("Command failed");
 }
 
@@ -291,19 +291,13 @@ export async function routeCommand(
       // Split if first word looks like a command name (alphanumeric/hyphen, no URL chars)
       if (/^[a-zA-Z][\w-]*$/.test(possibleCmd)) {
         const remainder = argv[0].substring(spaceIdx + 1);
-        // Smart split: handle both "cmd --flag value" and "cmd <url/selector> --flag value"
-        // Strategy: split on spaces, but keep URL/selector values intact.
-        // A URL like https://example.com is a single token (no internal spaces).
-        // So splitting on spaces is safe for URLs — the URL itself has no spaces.
-        // Exception: quoted strings with spaces (handled by shell before argv).
-        if (remainder.includes('--')) {
-          // Has flags — split on spaces to separate --key value pairs
-          const remainderParts = remainder.split(/\s+/).filter(Boolean);
-          argv = [possibleCmd, ...remainderParts, ...argv.slice(1)];
-        } else {
-          // No flags — keep remainder as single arg (e.g. "goto https://example.com")
-          argv = [possibleCmd, remainder, ...argv.slice(1)];
-        }
+        // Always split on spaces — URLs have no internal spaces, selectors
+        // with spaces are quoted by the shell. This handles both:
+        //   "goto https://example.com --timeout 5000"
+        //   "set-viewport 1280 720"
+        //   "fill #input hello"
+        const remainderParts = remainder.split(/\s+/).filter(Boolean);
+        argv = [possibleCmd, ...remainderParts, ...argv.slice(1)];
       }
     }
   } catch (e: unknown) {

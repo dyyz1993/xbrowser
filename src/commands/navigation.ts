@@ -80,8 +80,13 @@ export const refreshCommand = registerCommand({
   scope: 'page',
   result: z.object({ url: z.string() }),
   handler: async (_p, ctx: BrowserCommandContext) => {
-    await ctx.page.reload();
-    return ok({ url: ctx.page.url() });
+    try {
+      await ctx.page.reload();
+    } catch (err) {
+      return fail(`Refresh failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    const url = await ctx.page.evaluate<string>('location.href').catch(() => ctx.page.url());
+    return ok({ url });
   },
 });
 
@@ -102,8 +107,9 @@ export const urlCommand = registerCommand({
   scope: 'page',
   result: z.object({ url: z.string() }),
   handler: async (_p, ctx: BrowserCommandContext) => {
-    // page.url() may return undefined for about:blank or detached pages
-    return ok({ url: ctx.page.url() || 'about:blank' });
+    // Always read live URL via evaluate — cached _url may be stale after navigation
+    const url = await ctx.page.evaluate<string>('location.href').catch(() => ctx.page.url() || 'about:blank');
+    return ok({ url });
   },
 });
 

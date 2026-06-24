@@ -347,7 +347,7 @@ describe('router', () => {
 
   it('handles eval mode with -e flag', async () => {
     const { executeChain } = await import('../src/executor.js');
-    const { printChainResultBrief } = await import('../src/cli/chain-output.js');
+    const { printChainResult } = await import('../src/cli/chain-output.js');
     vi.mocked(executeChain).mockResolvedValueOnce({
       success: true,
       steps: [],
@@ -357,7 +357,7 @@ describe('router', () => {
     await routeCommand(['-e', 'title']);
 
     expect(executeChain).toHaveBeenCalledWith('title', { cdpEndpoint: undefined });
-    expect(printChainResultBrief).toHaveBeenCalled();
+    expect(printChainResult).toHaveBeenCalled();
   });
 
   it('handles eval mode with --eval flag', async () => {
@@ -383,7 +383,7 @@ describe('router', () => {
 
     await routeCommand(['-e', 'goto https://example.com', '-e', 'title']);
 
-    expect(executeChain).toHaveBeenCalledWith('goto https://example.com && title', { cdpEndpoint: undefined });
+    expect(executeChain).toHaveBeenCalledWith('goto https://example.com ; title', { cdpEndpoint: undefined });
   });
 
   it('outputs error when eval chain fails', async () => {

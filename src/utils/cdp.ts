@@ -19,22 +19,29 @@ async function fetchNoProxy(url: string): Promise<globalThis.Response> {
 
 export async function resolveCDPEndpoint(raw: string): Promise<string> {
   if (raw === 'auto') {
-    const httpResp = await fetchNoProxy('http://localhost:9222/json/version');
-    if (!httpResp.ok) {
-      throw new Error(
-        `CDP port 9222 responded with ${httpResp.status} ${httpResp.statusText}. ` +
-        `可能原因：9222 被僵死的 Chrome 占用，或没有 Chrome 以 --remote-debugging-port 启动。\n` +
-        `解决方法：\n` +
-        `  1. 杀掉残留 Chrome: pkill -f "remote-debugging-port"\n` +
-        `  2. 重启 Chrome: npx cdp-tunnel setup\n` +
-        `  3. 或指定端口: --cdp <port>`,
-      );
+    // Try common CDP ports in order: 9222 (default), 9221 (cdp-tunnel), 9223, 9224
+    const ports = [9222, 9221, 9223, 9224];
+    for (const port of ports) {
+      try {
+        const httpResp = await fetchNoProxy(`http://localhost:${port}/json/version`);
+        if (httpResp.ok) {
+          const data = (await httpResp.json()) as { webSocketDebuggerUrl?: string };
+          if (data.webSocketDebuggerUrl) {
+            return data.webSocketDebuggerUrl;
+          }
+        }
+      } catch {
+        // Port not available, try next
+      }
     }
-    const data = (await httpResp.json()) as { webSocketDebuggerUrl?: string };
-    if (!data.webSocketDebuggerUrl) {
-      throw new Error('Could not auto-discover CDP endpoint from localhost:9222');
-    }
-    return data.webSocketDebuggerUrl;
+    throw new Error(
+      `Could not auto-discover CDP endpoint. Tried ports: ${ports.join(', ')}.\n` +
+      `可能原因：没有 Chrome 以 --remote-debugging-port 启动。\n` +
+      `解决方法：\n` +
+      `  1. 启动 Chrome: google-chrome --remote-debugging-port=9222\n` +
+      `  2. 或用 cdp-tunnel: npx cdp-tunnel setup\n` +
+      `  3. 或指定端口: --cdp <port>`,
+    );
   }
 
   if (/^\d+$/.test(raw)) {
