@@ -173,12 +173,16 @@ export class XBPageImpl implements XBPage {
 
   async goBack(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
     await this.evaluate('() => history.back()');
-    await this.waitForLoadState(opts.waitUntil ?? 'load', opts.timeout);
+    await this.waitForLoadState(opts.waitUntil ?? 'domcontentloaded', opts.timeout ?? 5000).catch(() => {});
+    // Update cached URL after navigation
+    try { this._url = await this.evaluate<string>('location.href'); } catch { /* page may be navigating */ }
   }
 
   async goForward(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
     await this.evaluate('() => history.forward()');
-    await this.waitForLoadState(opts.waitUntil ?? 'load', opts.timeout);
+    await this.waitForLoadState(opts.waitUntil ?? 'domcontentloaded', opts.timeout ?? 5000).catch(() => {});
+    // Update cached URL after navigation
+    try { this._url = await this.evaluate<string>('location.href'); } catch { /* page may be navigating */ }
   }
 
   async reload(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {

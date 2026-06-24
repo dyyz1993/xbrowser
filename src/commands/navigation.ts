@@ -56,7 +56,9 @@ export const backCommand = registerCommand({
   result: z.object({ url: z.string() }),
   handler: async (_p, ctx: BrowserCommandContext) => {
     await ctx.page.goBack();
-    return ok({ url: ctx.page.url() });
+    // Read live URL after navigation completes
+    const url = await ctx.page.evaluate<string>('location.href').catch(() => ctx.page.url());
+    return ok({ url });
   },
 });
 
@@ -67,7 +69,8 @@ export const forwardCommand = registerCommand({
   result: z.object({ url: z.string() }),
   handler: async (_p, ctx: BrowserCommandContext) => {
     await ctx.page.goForward();
-    return ok({ url: ctx.page.url() });
+    const url = await ctx.page.evaluate<string>('location.href').catch(() => ctx.page.url());
+    return ok({ url });
   },
 });
 

@@ -322,7 +322,7 @@ export async function routeCommand(
   const sessionName = (options.session as string) || process.env.XBROWSER_SESSION || 'default';
   const cdpEndpoint = (options.cdp as string) || process.env.XBROWSER_CDP;
 
-  if (options.version || options.v) {
+  if (options.version) {
     console.log(`xbrowser v${version}`);
     return;
   }

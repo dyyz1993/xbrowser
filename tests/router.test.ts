@@ -140,7 +140,7 @@ describe('router', () => {
     const exit = mockExit();
 
     try {
-      await routeCommand(['-v']);
+      await routeCommand(['--version']);
     } catch (e) {
       expect(String(e)).toContain('exit:0');
     }
