@@ -23,6 +23,9 @@ export const tabCommand = registerCommand({
     data: z.unknown(),
   }),
   handler: async (p: TabParamsType, ctx: BrowserCommandContext): Promise<unknown> => {
+    if (!ctx.browserContext) {
+      return fail('No browser context available. Use --cdp to connect to a browser first.');
+    }
     const pages = ctx.browserContext.pages();
 
     switch (p.subcommand) {
