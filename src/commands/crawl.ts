@@ -38,6 +38,32 @@ async function extractLinks(page: Page, origin: string): Promise<string[]> {
   }, origin);
 }
 
+/**
+ * Detect SPA routes from the current page by scanning script contents for
+ * route path patterns (works for Vue Router, React Router, and other SPA frameworks).
+ */
+async function detectSpaRoutes(page: Page, origin: string): Promise<string[]> {
+  return page.evaluate((evalOrigin: string) => {
+    const routeSet = new Set<string>();
+
+    try {
+      const scripts = document.querySelectorAll('script');
+      const allContent = Array.from(scripts).map(s => s.textContent || '').join('\n');
+
+      // Match SPA route path patterns: '/foo', "/bar", `/baz`
+      const pathRegex = /['"`](\/[a-zA-Z0-9_\-/]+)['"`]/g;
+      let match: RegExpExecArray | null;
+      while ((match = pathRegex.exec(allContent)) !== null) {
+        const path = match[1];
+        if (path.includes(':') || path.includes('*') || routeSet.has(path)) continue;
+        routeSet.add(path);
+      }
+    } catch { /* script scan failed */ }
+
+    return Array.from(routeSet).map(path => `${evalOrigin.replace(/\/$/, '')}${path}`);
+  }, origin);
+}
+
 export interface DisallowRule {
   pathPrefix: string;
 }
@@ -129,6 +155,7 @@ interface CrawlOptions {
   allowSubdomains: boolean;
   allowExternalLinks: boolean;
   allowBackwardCrawling: boolean;
+  enableSpa: boolean;
   format: 'markdown' | 'html';
   onlyMainContent: boolean;
   concurrency: number;
@@ -229,6 +256,7 @@ export const crawlCommand = registerCommand({
     allowSubdomains: z.boolean().default(false),
     allowExternalLinks: z.boolean().default(false),
     allowBackwardCrawling: z.boolean().default(false),
+    enableSpa: z.boolean().default(false).describe('Detect SPA (Vue/React) routes from router config'),
     format: z.enum(['markdown', 'html']).default('markdown'),
     onlyMainContent: z.boolean().default(true),
     concurrency: z.number().default(3),
@@ -245,6 +273,7 @@ export const crawlCommand = registerCommand({
       allowSubdomains: p.allowSubdomains,
       allowExternalLinks: p.allowExternalLinks,
       allowBackwardCrawling: p.allowBackwardCrawling,
+      enableSpa: p.enableSpa,
       format: p.format,
       onlyMainContent: p.onlyMainContent,
       concurrency: Math.min(Math.max(p.concurrency, 1), 10),
@@ -288,6 +317,21 @@ export const crawlCommand = registerCommand({
         results.push({ url: seedPage.url(), title, content });
 
         const firstLinks = await extractLinks(seedPage, startUrl.origin);
+        // If SPA mode enabled, also detect Vue/React routes and add to queue
+        if (options.enableSpa) {
+          const spaRoutes = await detectSpaRoutes(seedPage, startUrl.origin);
+          for (const route of spaRoutes) {
+            try {
+              const absNorm = normalizeUrl(stripHashAnchorQuery(route));
+              if (!visited.has(absNorm) && !shouldSkipUrl(route)) {
+                queue.push({ url: stripHashAnchorQuery(route), depth: 1 });
+              }
+            } catch { /* skip invalid */ }
+          }
+          if (options.verbose && spaRoutes.length > 0) {
+            process.stderr.write(`[SPA] Detected ${spaRoutes.length} SPA routes\n`);
+          }
+        }
         for (const link of firstLinks) {
           try {
             const absolute = new URL(link, seedPage.url()).href;
