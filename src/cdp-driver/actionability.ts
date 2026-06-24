@@ -38,6 +38,19 @@ export async function waitForActionable(
   const timeout = opts.timeout ?? 30_000;
 
   if (opts.force) {
+    // For xpath selectors, get bounding box via evaluate (CDP DOM.querySelector doesn't support xpath)
+    if (selector.startsWith('xpath=')) {
+      const rect = await page.evaluate<{ x: number; y: number; width: number; height: number } | null>(`
+        (function() {
+          const el = ${queryJS(selector)};
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { x: r.x, y: r.y, width: r.width, height: r.height };
+        })()
+      `);
+      if (!rect) throw new Error(`Element not found: ${selector}`);
+      return { nodeId: 0, rect };
+    }
     // Skip actionability, just find the element
     const nodeId = await page.querySelector(selector);
     if (!nodeId) throw new Error(`Element not found: ${selector}`);

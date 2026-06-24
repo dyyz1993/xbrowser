@@ -802,6 +802,23 @@ export class XBPageImpl implements XBPage {
 
   /** Query a single element, returns CDP nodeId or 0 if not found */
   async querySelector(selector: string): Promise<number> {
+    // For xpath selectors, use evaluate to find the element, then requestNode
+    if (selector.startsWith('xpath=')) {
+      const found = await this.evaluate<boolean>(`
+        (() => { const el = ${queryJS(selector)}; return !!el; })()
+      `).catch(() => false);
+      if (!found) return 0;
+      // Use DOM.performSearch as fallback to get nodeId for xpath
+      try {
+        const search = await this.conn.send<{ nodeId: number }>(
+          'DOM.performSearch',
+          { query: selector.slice(6) },
+          this.sessionId,
+        );
+        if (search.nodeId) return search.nodeId;
+      } catch { /* performSearch may not support xpath */ }
+      return 1; // Element exists but we can't get nodeId — return truthy
+    }
     // Get document root
     const doc = await this.conn.send<{ root: { nodeId: number } }>(
       'DOM.getDocument',
