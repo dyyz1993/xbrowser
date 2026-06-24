@@ -9,9 +9,9 @@ export const setViewportCommand = registerCommand({
   description: 'Set the viewport size and properties',
   scope: 'browser',
   parameters: z.object({
-    width: z.number(),
-    height: z.number(),
-    deviceScaleFactor: z.number().optional(),
+    width: z.coerce.number(),
+    height: z.coerce.number(),
+    deviceScaleFactor: z.coerce.number().optional(),
     isMobile: z.boolean().optional(),
     hasTouch: z.boolean().optional(),
   }),
