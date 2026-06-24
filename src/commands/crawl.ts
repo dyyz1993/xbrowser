@@ -85,15 +85,26 @@ async function detectSpaRoutes(page: Page, origin: string): Promise<string[]> {
     } catch { /* skip failed fetch */ }
   }
 
-  // 3. Simple Vue Router runtime extraction via __vue_app__
-  // This catches routes defined in external JS that regex scanning may miss
+  // 3. Vue Router runtime extraction — supports Vue 3 (__vue_app__) and Vue 2 (__vue__)
   try {
     const vueRoutes = await page.evaluate<string[]>((evalOrigin: string) => {
       const routes: string[] = [];
       const win = window as unknown as Record<string, unknown>;
-      const vueApp = win.__vue_app__ as Record<string, unknown> | undefined;
-      const gp = ((vueApp?.config as Record<string, unknown> | undefined)?.globalProperties as Record<string, unknown> | undefined);
-      const router = gp?.$router as Record<string, unknown> | undefined;
+
+      // Vue 3: __vue_app__ on root element
+      const vue3App = win.__vue_app__ as Record<string, unknown> | undefined;
+      const vue3Router = ((vue3App?.config as Record<string, unknown> | undefined)?.globalProperties as Record<string, unknown> | undefined)?.$router as Record<string, unknown> | undefined;
+      let router = vue3Router;
+
+      // Vue 2 fallback: __vue__ on root element
+      if (!router) {
+        const el = document.querySelector('#app') || document.querySelector('[__vue__]');
+        const vm: Record<string, unknown> | undefined = el ? (el as unknown as Record<string, unknown>).__vue__ as Record<string, unknown> : undefined;
+        const vmRouter: Record<string, unknown> | undefined = vm?.$router as Record<string, unknown> | undefined;
+        const vmRootRouter: Record<string, unknown> | undefined = (vm?.$root as Record<string, unknown> | undefined)?.$router as Record<string, unknown> | undefined;
+        if (!router) router = vmRouter || vmRootRouter;
+      }
+
       const routeList = ((router as Record<string, unknown> | undefined)?.options as Record<string, unknown> | undefined)?.routes as Array<{ path: string }> | undefined;
       if (routeList) {
         for (const r of routeList) {
