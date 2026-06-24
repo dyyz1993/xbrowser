@@ -256,7 +256,7 @@ export const crawlCommand = registerCommand({
     allowSubdomains: z.boolean().default(false),
     allowExternalLinks: z.boolean().default(false),
     allowBackwardCrawling: z.boolean().default(false),
-    enableSpa: z.boolean().default(false).describe('Detect SPA (Vue/React) routes from router config'),
+	    enableSpa: z.boolean().default(true).describe('Disable to skip SPA route detection'),
     format: z.enum(['markdown', 'html']).default('markdown'),
     onlyMainContent: z.boolean().default(true),
     concurrency: z.number().default(3),
