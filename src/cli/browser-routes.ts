@@ -431,6 +431,12 @@ export async function handleBrowserCommand(
             };
             break;
           }
+        case 'waitForTimeout':
+          cmdName = 'waitForTimeout';
+          params = {
+            timeout: args[0] ? Number(args[0]) : (options.timeout ? Number(options.timeout) : 1000),
+          };
+          break;
         default:
          cmdName = command;
          params = { ...options };
