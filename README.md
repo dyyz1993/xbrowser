@@ -1,6 +1,6 @@
 # xbrowser
 
-> **Browser automation CLI** for web scraping, headless browsing, SEO analysis, and AI agent workflows. 50 commands, 20+ plugins. A command-line alternative to Playwright, Puppeteer, and Selenium — **no code required**.
+> **Browser automation CLI** for web scraping, headless browsing, SEO analysis, and AI agent workflows. 51 commands, 70+ plugins. A command-line alternative to Playwright, Puppeteer, and Selenium — **no code required**.
 
 [![CI Status](https://github.com/dyyz1993/xbrowser/workflows/CI/badge.svg)](https://github.com/dyyz1993/xbrowser/actions)
 [![codecov](https://codecov.io/gh/dyyz1993/xbrowser/branch/master/graph/badge.svg)](https://codecov.io/gh/dyyz1993/xbrowser)
