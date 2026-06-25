@@ -1,3 +1,4 @@
+import { firstTip, tipsText } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import plugin from '../../.xcli/plugins/seo/index.ts';
 
@@ -107,7 +108,7 @@ describe('seo plugin', () => {
 
       expect(result.data.engines[0].ok).toBe(true);
       expect(result.data.engines[1].ok).toBe(false);
-      expect(result.tips.join('\n')).toContain('部分引擎通知失败');
+      expect(tipsText(result.tips)).toContain('部分引擎通知失败');
     });
 
     it('should include success tip when all pass', async () => {
@@ -116,7 +117,7 @@ describe('seo plugin', () => {
 
       const result = await handler({ sitemap: 'https://mysite.com/sitemap.xml' });
 
-      expect(result.tips.join('\n')).toContain('所有引擎已收到通知');
+      expect(tipsText(result.tips)).toContain('所有引擎已收到通知');
     });
 
     it('should construct correct ping URLs', async () => {
@@ -159,7 +160,7 @@ describe('seo plugin', () => {
       expect(result.data.url).toBe('https://mysite.com/page');
       expect(result.data.host).toBe('mysite.com');
       expect(result.data.indexnow.ok).toBe(true);
-      expect(result.tips[0]).toContain('✅');
+      expect(firstTip(result.tips)).toContain('✅');
     });
 
     it('should extract host from url when host not provided', async () => {
@@ -198,7 +199,7 @@ describe('seo plugin', () => {
 
       expect(result.data.indexnow.ok).toBe(false);
       expect(result.data.indexnow.status).toContain('请求失败');
-      expect(result.tips[0]).toContain('❌');
+      expect(firstTip(result.tips)).toContain('❌');
     });
 
     it('should handle non-200 HTTP status', async () => {
@@ -211,7 +212,7 @@ describe('seo plugin', () => {
       });
 
       expect(result.data.indexnow.ok).toBe(false);
-      expect(result.tips[0]).toContain('❌');
+      expect(firstTip(result.tips)).toContain('❌');
     });
 
     it('should send POST to indexnow api with correct body', async () => {
@@ -255,7 +256,7 @@ describe('seo plugin', () => {
 
       expect(result.data.submitted).toBe(3);
       expect(result.data.ok).toBe(true);
-      expect(result.tips.join('\n')).toContain('提交 URL 数: 3');
+      expect(tipsText(result.tips)).toContain('提交 URL 数: 3');
     });
 
     it('should return error for empty urls', async () => {
@@ -265,7 +266,7 @@ describe('seo plugin', () => {
       const result = await handler({ urls: '  ,  ,  ', key: 'testkey' });
 
       expect(result.data).toBeNull();
-      expect(result.tips[0]).toContain('未提供有效 URL');
+      expect(firstTip(result.tips)).toContain('未提供有效 URL');
     });
 
     it('should reject invalid URLs', async () => {
@@ -275,7 +276,7 @@ describe('seo plugin', () => {
       const result = await handler({ urls: 'not-a-url', key: 'testkey' });
 
       expect(result.data).toBeNull();
-      expect(result.tips[0]).toContain('无效 URL');
+      expect(firstTip(result.tips)).toContain('无效 URL');
     });
 
     it('should extract host from first URL when not provided', async () => {
@@ -308,7 +309,7 @@ describe('seo plugin', () => {
       const result = await handler({ urls: 'https://mysite.com/a', key: 'k' });
 
       expect(result.data).toBeNull();
-      expect(result.tips[0]).toContain('批量提交失败');
+      expect(firstTip(result.tips)).toContain('批量提交失败');
     });
 
     it('should handle non-200 response', async () => {
@@ -318,7 +319,7 @@ describe('seo plugin', () => {
       const result = await handler({ urls: 'https://mysite.com/a', key: 'k' });
 
       expect(result.data.ok).toBe(false);
-      expect(result.tips[0]).toContain('❌');
+      expect(firstTip(result.tips)).toContain('❌');
     });
   });
 
@@ -686,7 +687,7 @@ describe('seo plugin', () => {
       const result = await handler({ url: 'https://mysite.com/page', html: htmlNoAlt });
 
       expect(result.data.images.withoutAlt).toBe(2);
-      expect(result.tips.join('\n')).toContain('缺少 alt 属性');
+      expect(tipsText(result.tips)).toContain('缺少 alt 属性');
     });
 
     it('should classify internal and external links', async () => {
@@ -714,7 +715,7 @@ describe('seo plugin', () => {
 
       expect(result.data.score.passed).toBe(5);
       expect(result.data.score.total).toBe(6);
-      expect(result.tips.join('\n')).toContain('SEO 评分');
+      expect(tipsText(result.tips)).toContain('SEO 评分');
     });
 
     it('should report warnings for minimal HTML', async () => {
@@ -726,10 +727,10 @@ describe('seo plugin', () => {
       expect(result.data.score.percentage).toBeLessThan(100);
       expect(result.data.title).toBe('');
       expect(result.data.description).toBe('');
-      expect(result.tips.join('\n')).toContain('缺少 <title>');
-      expect(result.tips.join('\n')).toContain('meta description');
-      expect(result.tips.join('\n')).toContain('<h1>');
-      expect(result.tips.join('\n')).toContain('canonical');
+      expect(tipsText(result.tips)).toContain('缺少 <title>');
+      expect(tipsText(result.tips)).toContain('meta description');
+      expect(tipsText(result.tips)).toContain('<h1>');
+      expect(tipsText(result.tips)).toContain('canonical');
     });
 
     it('should warn about multiple h1 tags', async () => {
@@ -739,7 +740,7 @@ describe('seo plugin', () => {
       const result = await handler({ url: 'https://x.com', html });
 
       expect(result.data.headings.h1Count).toBe(2);
-      expect(result.tips.join('\n')).toContain('2 个 <h1>');
+      expect(tipsText(result.tips)).toContain('2 个 <h1>');
     });
 
     it('should handle fetch failure gracefully', async () => {
@@ -749,7 +750,7 @@ describe('seo plugin', () => {
       const result = await handler({ url: 'https://mysite.com/page' });
 
       expect(result.data).toBeNull();
-      expect(result.tips[0]).toContain('页面获取失败');
+      expect(firstTip(result.tips)).toContain('页面获取失败');
     });
 
     it('should handle non-200 HTTP response', async () => {
@@ -759,7 +760,7 @@ describe('seo plugin', () => {
       const result = await handler({ url: 'https://mysite.com/page' });
 
       expect(result.data).toBeNull();
-      expect(result.tips[0]).toContain('页面请求失败');
+      expect(firstTip(result.tips)).toContain('页面请求失败');
     });
   });
 
@@ -777,7 +778,7 @@ describe('seo plugin', () => {
 
       const result = await handler({ domain: 'mysite.com' });
 
-      const tips = result.tips.join('\n');
+      const tips = tipsText(result.tips);
       expect(tips).toContain('Step 1');
       expect(tips).toContain('Step 2');
       expect(tips).toContain('Step 3');
@@ -789,7 +790,7 @@ describe('seo plugin', () => {
 
       const result = await handler({ domain: 'mysite.com' });
 
-      expect(result.tips.join('\n')).toContain('search.google.com/search-console');
+      expect(tipsText(result.tips)).toContain('search.google.com/search-console');
     });
 
     it('should reference Bing Webmaster Tools', async () => {
@@ -797,7 +798,7 @@ describe('seo plugin', () => {
 
       const result = await handler({ domain: 'mysite.com' });
 
-      expect(result.tips.join('\n')).toContain('bing.com/webmasters');
+      expect(tipsText(result.tips)).toContain('bing.com/webmasters');
     });
 
     it('should reference IndexNow setup', async () => {
@@ -805,7 +806,7 @@ describe('seo plugin', () => {
 
       const result = await handler({ domain: 'mysite.com' });
 
-      expect(result.tips.join('\n')).toContain('setup-indexnow');
+      expect(tipsText(result.tips)).toContain('setup-indexnow');
     });
 
     it('should reference ping command', async () => {
@@ -813,7 +814,7 @@ describe('seo plugin', () => {
 
       const result = await handler({ domain: 'mysite.com' });
 
-      expect(result.tips.join('\n')).toContain('xbrowser seo ping');
+      expect(tipsText(result.tips)).toContain('xbrowser seo ping');
     });
 
     it('should include domain in sitemap URL', async () => {
@@ -821,7 +822,7 @@ describe('seo plugin', () => {
 
       const result = await handler({ domain: 'mysite.com' });
 
-      expect(result.tips.join('\n')).toContain('https://mysite.com/sitemap.xml');
+      expect(tipsText(result.tips)).toContain('https://mysite.com/sitemap.xml');
     });
 
     it('should include submit example with domain', async () => {
@@ -829,7 +830,7 @@ describe('seo plugin', () => {
 
       const result = await handler({ domain: 'mysite.com' });
 
-      expect(result.tips.join('\n')).toContain('https://mysite.com/page');
+      expect(tipsText(result.tips)).toContain('https://mysite.com/page');
     });
   });
 
@@ -877,7 +878,7 @@ describe('seo plugin', () => {
       const handler = getHandler('submit-backlink');
       const result = await handler({ platform: 'linkedin' }, {});
       expect(result.data).toBeNull();
-      expect(result.tips[0]).toBe('需要浏览器页面');
+      expect(firstTip(result.tips)).toBe('需要浏览器页面');
     });
 
     it('should return error for unknown platform with suggestions', async () => {
