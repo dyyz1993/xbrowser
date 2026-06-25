@@ -1189,6 +1189,18 @@ export class SessionRecorder {
     await this.page.addInitScript(ACTION_SIGNAL_SCRIPT);
     await this.page.addInitScript(CHECKPOINT_OVERLAY_SCRIPT);
 
+    // Register event listeners BEFORE goto to capture the initial navigation.
+    this.context.on('request', this.handleRequest);
+    this.context.on('response', this.handleResponse);
+    this.context.on('page', this.handleNewPage);
+    for (const p of this.context.pages()) {
+      p.on('request', this.handleRequest);
+      p.on('response', this.handleResponse);
+    }
+    this.page.on('framenavigated', this.handleFrameNavigated);
+    this.page.on('dialog', this.handleDialog);
+    this.page.on('filechooser', this.handleFileChooser);
+
     // Navigate if URL provided
     if (url) {
       await this.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -1212,35 +1224,13 @@ export class SessionRecorder {
     // 1. Inject action signal script (minimal frontend footprint) — also handles already-loaded page
     await this.injectActionScript(this.page);
 
-    // 2. Network capture at context level (covers all pages/tabs)
-    this.context.on('request', this.handleRequest);
-    this.context.on('response', this.handleResponse);
-
     // 3. Track new tabs/popups
     this.context.on('page', this.handleNewPage);
 
-    // Also listen on each existing page directly (CDP mode: context forwarding may miss pre-existing pages)
-    for (const p of this.context.pages()) {
-      p.on('request', this.handleRequest);
-      p.on('response', this.handleResponse);
-    }
-
-    // 3. Track new pages (tabs/popups)
-    this.context.on('page', this.handleNewPage);
-
-    // 4. Track navigation on main page
-    this.page.on('framenavigated', this.handleFrameNavigated);
-
-    // 5. Detect dialog/alert/confirm/prompt as checkpoints
-    this.page.on('dialog', this.handleDialog);
-
-    // 6. Detect file upload
-    this.page.on('filechooser', this.handleFileChooser);
-
-    // 6. Poll for frontend action signals
+    // 4. Poll for frontend action signals
     this.pollTimer = setInterval(() => void this.pollActions(), 200);
 
-    // 7. Periodic flush to disk (so data survives if process crashes)
+    // 5. Periodic flush to disk (so data survives if process crashes)
     this.flushTimer = setInterval(() => this.flushToDisk(), 5000);
   }
 
@@ -1596,7 +1586,9 @@ export class SessionRecorder {
     // Wait for page to have a real URL before considering it ready
     // (handles the case where new tab opens with about:blank then navigates)
     page.on('framenavigated', async (frame: Frame) => {
-      if (frame !== frame.page().mainFrame()) return;
+      // Check if this is the main frame navigation by URL comparison
+    // (mainFrame() creates a new object each call, so identity check won't work)
+    if (frame.isDetached()) return;
       const url = frame.url();
       if (url && url !== 'about:blank' && !url.startsWith('chrome')) {
         try { await this.injectActionScript(page); } catch { /* ignore */ }
@@ -1605,7 +1597,9 @@ export class SessionRecorder {
   };
 
   private handleFrameNavigated = (frame: Frame): void => {
-    if (frame !== frame.page().mainFrame()) return;
+    // Check if this is the main frame navigation by URL comparison
+    // (mainFrame() creates a new object each call, so identity check won't work)
+    if (frame.isDetached()) return;
     const newUrl = frame.url();
     this.contextCounter++;
     this.contextChanges.push({
