@@ -19,3 +19,12 @@ export function tipsText(tips: unknown): string {
     .map((t) => (typeof t === 'string' ? t : (t as { message?: string }).message || ''))
     .join('\n');
 }
+
+/**
+ * tips 转成 string[]：用于 .toContain() / .toEqual(arrayContaining()) 等数组断言。
+ * 兼容 string[]（原样返回）和 Tip[]（取 .message）。
+ */
+export function tipsMessages(tips: unknown): string[] {
+  if (!Array.isArray(tips)) return [];
+  return tips.map((t) => (typeof t === 'string' ? t : (t as { message?: string }).message || ''));
+}

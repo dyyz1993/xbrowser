@@ -1,3 +1,4 @@
+import { tipsMessages } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/juejin/index.ts';
 
@@ -146,7 +147,7 @@ describe('juejin plugin', () => {
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx);
       expect(result.data.loggedIn).toBe(true);
-      const tips = result.tips as string[];
+      const tips = tipsMessages(result.tips);
       expect(tips.some((t: string) => t.includes('掘金登录成功'))).toBe(true);
     });
 

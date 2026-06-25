@@ -1,4 +1,4 @@
-import { firstTip, tipsText } from './_tips-helper.js';
+import { firstTip, tipsText, tipsMessages } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import plugin from '../../.xcli/plugins/seo/index.ts';
 
@@ -355,7 +355,7 @@ describe('seo plugin', () => {
 
       const result = await handler({ domain: 'mysite.com' });
 
-      expect(result.tips).toEqual(
+      expect(tipsMessages(result.tips)).toEqual(
         expect.arrayContaining([
           expect.stringContaining('IndexNow Key:'),
           expect.stringContaining('配置步骤'),
