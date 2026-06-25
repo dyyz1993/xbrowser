@@ -51,6 +51,7 @@ vi.mock('../../src/client/daemon-client.js', () => ({
 }));
 
 vi.mock('../../src/cli/output.js', () => ({
+  outputEnvelope: vi.fn(),
   outputResult: mockOutputResult,
   outputError: mockOutputError,
 }));

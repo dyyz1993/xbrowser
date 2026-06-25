@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockSearchHandler = vi.fn().mockResolvedValue({ data: { items: [] } });
 
-const { mockOutputResult, mockOutputError, mockInstallerInstall, mockInstallerInstallFromMarketplace, mockInstallerInstallWithMarketplaceFallback, mockInstallerUninstall, mockInstallerList, mockReloadPlugin, mockGetPluginContract, mockGetPluginLoader } = vi.hoisted(() => ({
-  mockOutputResult: vi.fn(),
+const { mockOutputEnvelope, mockOutputError, mockInstallerInstall, mockInstallerInstallFromMarketplace, mockInstallerInstallWithMarketplaceFallback, mockInstallerUninstall, mockInstallerList, mockReloadPlugin, mockGetPluginContract, mockGetPluginLoader } = vi.hoisted(() => ({
+  mockOutputEnvelope: vi.fn(),
   mockOutputError: vi.fn(),
   mockInstallerInstall: vi.fn(),
   mockInstallerInstallFromMarketplace: vi.fn(),
@@ -24,7 +24,8 @@ const { mockOutputResult, mockOutputError, mockInstallerInstall, mockInstallerIn
 }));
 
 vi.mock('../../src/cli/output.js', () => ({
-  outputResult: mockOutputResult,
+  outputEnvelope: mockOutputEnvelope,
+  outputResult: vi.fn(),
   outputError: mockOutputError,
 }));
 
@@ -127,8 +128,9 @@ describe('plugin-routes', () => {
       await handlePlugin(['install', 'my-plugin'], {}, 'text');
 
       expect(mockInstallerInstallWithMarketplaceFallback).toHaveBeenCalledWith('my-plugin', { name: undefined, force: false });
-      expect(mockOutputResult).toHaveBeenCalledWith(
-        { ok: true, name: 'my-plugin', source: 'npm', path: '/tmp/my-plugin' },
+      expect(mockOutputEnvelope).toHaveBeenCalledWith(
+        { success: true, data: { name: 'my-plugin', source: 'npm', path: '/tmp/my-plugin' } },
+        { command: 'plugin install' },
         'text'
       );
     });
@@ -179,7 +181,7 @@ describe('plugin-routes', () => {
       await handlePlugin(['uninstall', 'my-plugin'], {}, 'text');
 
       expect(mockInstallerUninstall).toHaveBeenCalledWith('my-plugin');
-      expect(mockOutputResult).toHaveBeenCalledWith({ ok: true, name: 'my-plugin' }, 'text');
+      expect(mockOutputEnvelope).toHaveBeenCalledWith({ success: true, data: { name: 'my-plugin' } }, { command: 'plugin uninstall' }, 'text');
     });
 
     it('should error when uninstalling a non-existent plugin', async () => {
@@ -206,11 +208,13 @@ describe('plugin-routes', () => {
 
       await handlePlugin(['list'], {}, 'json');
 
-      expect(mockOutputResult).toHaveBeenCalledWith(
-        { plugins: [
+      expect(mockOutputEnvelope).toHaveBeenCalledWith(
+        { success: true, data: {
+          plugins: [
           { name: 'plugin-a', path: '/tmp/a', commands: undefined, version: undefined, description: undefined, hasLogin: false, loggedIn: null, requiresLoginCommands: [] },
           { name: 'plugin-b', path: '/tmp/b', commands: undefined, version: undefined, description: undefined, hasLogin: false, loggedIn: null, requiresLoginCommands: [] },
-        ] },
+        ] } },
+        { command: 'plugin list' },
         'json'
       );
     });
@@ -220,7 +224,7 @@ describe('plugin-routes', () => {
 
       await handlePlugin(['list'], {}, 'json');
 
-      expect(mockOutputResult).toHaveBeenCalledWith({ plugins: [] }, 'json');
+      expect(mockOutputEnvelope).toHaveBeenCalledWith({ success: true, data: { plugins: [] } }, { command: 'plugin list' }, 'json');
     });
   });
 
@@ -231,7 +235,7 @@ describe('plugin-routes', () => {
       await handlePlugin(['reload', 'my-plugin'], {}, 'text');
 
       expect(mockReloadPlugin).toHaveBeenCalledWith('my-plugin');
-      expect(mockOutputResult).toHaveBeenCalledWith({ ok: true, name: 'my-plugin' }, 'text');
+      expect(mockOutputEnvelope).toHaveBeenCalledWith({ success: true, data: { name: 'my-plugin' } }, { command: 'plugin reload' }, 'text');
     });
 
     it('should output error when no name for reload', async () => {
@@ -278,7 +282,7 @@ describe('plugin-routes', () => {
       await handlePlugin(['schema', 'demo'], {}, 'json');
 
       expect(mockGetPluginContract).toHaveBeenCalledWith('demo', undefined);
-      expect(mockOutputResult).toHaveBeenCalledWith(contract, 'json');
+      expect(mockOutputEnvelope).toHaveBeenCalledWith({ success: true, data: contract }, { command: 'plugin schema' }, 'json');
     });
 
     it('should output command contract as JSON', async () => {
@@ -296,7 +300,7 @@ describe('plugin-routes', () => {
       await handlePlugin(['schema', 'demo', 'search'], {}, 'json');
 
       expect(mockGetPluginContract).toHaveBeenCalledWith('demo', 'search');
-      expect(mockOutputResult).toHaveBeenCalledWith(command, 'json');
+      expect(mockOutputEnvelope).toHaveBeenCalledWith({ success: true, data: command }, { command: 'plugin schema' }, 'json');
     });
 
     it('should error when plugin contract is missing', async () => {
@@ -319,10 +323,13 @@ describe('plugin-routes', () => {
 
       await handlePlugin(['search', 'test'], {}, 'json');
 
-      expect(mockOutputResult).toHaveBeenCalled();
-      const callArgs = mockOutputResult.mock.calls[0][0] as Record<string, unknown>;
-      expect(callArgs.results.length).toBe(1);
-      expect(callArgs.results[0].name).toBe('found-plugin');
+      expect(mockOutputEnvelope).toHaveBeenCalled();
+      const callArgs = mockOutputEnvelope.mock.calls[0][0] as Record<string, unknown>;
+      const resultData = callArgs.data as Record<string, unknown> | undefined;
+      expect(resultData).toBeDefined();
+      const results = resultData!.results as Array<Record<string, unknown>> | undefined;
+      expect(results?.length).toBe(1);
+      expect(results![0].name).toBe('found-plugin');
     });
   });
 
@@ -362,8 +369,9 @@ describe('plugin-routes', () => {
       });
 
       handleDaemon(['status'], {}, 'json');
-      expect(mockOutputResult).toHaveBeenCalledWith(
-        { running: true, pid: 12345, port: 9224 },
+      expect(mockOutputEnvelope).toHaveBeenCalledWith(
+        { success: true, data: { running: true, pid: 12345, port: 9224 } },
+        { command: 'daemon status' },
         'json'
       );
     });
@@ -436,8 +444,9 @@ describe('plugin-routes', () => {
       await handlePlugin(['search', 'test'], {}, 'json');
 
       expect(NPMSearcher.search).toHaveBeenCalled();
-      expect(mockOutputResult).toHaveBeenCalledWith(
-        expect.objectContaining({ total: 1 }),
+      expect(mockOutputEnvelope).toHaveBeenCalledWith(
+        expect.objectContaining({ success: true, data: expect.objectContaining({ total: 1 }) }),
+        { command: 'plugin search' },
         'json'
       );
     });
@@ -495,8 +504,9 @@ describe('plugin-routes', () => {
       handleDaemon(['start'], { port: 9222 }, 'json');
 
       await vi.waitFor(() => {
-        expect(mockOutputResult).toHaveBeenCalledWith(
-          { ok: true, pid: 1234, port: 9222 },
+        expect(mockOutputEnvelope).toHaveBeenCalledWith(
+          { success: true, data: { pid: 1234, port: 9222 } },
+          { command: 'daemon start' },
           'json'
         );
       });
@@ -520,7 +530,7 @@ describe('plugin-routes', () => {
       handleDaemon(['stop'], {}, 'json');
 
       await vi.waitFor(() => {
-        expect(mockOutputResult).toHaveBeenCalledWith({ ok: true }, 'json');
+        expect(mockOutputEnvelope).toHaveBeenCalledWith({ success: true, data: {} }, { command: 'daemon stop' }, 'json');
       });
     });
   });

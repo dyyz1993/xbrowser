@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const {
-  mockOutputResult,
+  mockOutputEnvelope,
   mockOutputError,
   mockOpenSession,
   mockCloseSession,
@@ -14,7 +14,7 @@ const {
   mockStartDaemonProcess,
   mockStopDaemonProcess,
 } = vi.hoisted(() => ({
-  mockOutputResult: vi.fn(),
+  mockOutputEnvelope: vi.fn(),
   mockOutputError: vi.fn(),
   mockOpenSession: vi.fn(),
   mockCloseSession: vi.fn(),
@@ -29,7 +29,7 @@ const {
 }));
 
 vi.mock('../../src/cli/output.js', () => ({
-  outputResult: mockOutputResult,
+  outputEnvelope: mockOutputEnvelope,
   outputError: mockOutputError,
 }));
 
@@ -74,7 +74,11 @@ describe('session-routes', () => {
     await handleSession(['close'], {}, 'json');
     expect(mockForwardSessionClose).toHaveBeenCalledWith('default');
     expect(mockCloseSession).toHaveBeenCalledWith('default');
-    expect(mockOutputResult).toHaveBeenCalledWith({ ok: true, name: 'default' }, 'json');
+    expect(mockOutputEnvelope).toHaveBeenCalledWith(
+      { success: true, data: { name: 'default' } },
+      { command: 'session close' },
+      'json'
+    );
   });
 
   it('should close a session with custom name', async () => {
@@ -82,7 +86,11 @@ describe('session-routes', () => {
     await handleSession(['close'], { name: 'my-session' }, 'text');
     expect(mockForwardSessionClose).toHaveBeenCalledWith('my-session');
     expect(mockCloseSession).toHaveBeenCalledWith('my-session');
-    expect(mockOutputResult).toHaveBeenCalledWith({ ok: true, name: 'my-session' }, 'text');
+    expect(mockOutputEnvelope).toHaveBeenCalledWith(
+      { success: true, data: { name: 'my-session' } },
+      { command: 'session close' },
+      'text'
+    );
   });
 
   // ── list ──
@@ -91,8 +99,9 @@ describe('session-routes', () => {
     mockForwardSessionList.mockResolvedValue([{ id: '1', name: 'default', url: 'https://example.com' }]);
     await handleSession(['list'], {}, 'json');
     expect(mockForwardSessionList).toHaveBeenCalled();
-    expect(mockOutputResult).toHaveBeenCalledWith(
-      { sessions: [{ id: '1', name: 'default', url: 'https://example.com' }] },
+    expect(mockOutputEnvelope).toHaveBeenCalledWith(
+      { success: true, data: { sessions: [{ id: '1', name: 'default', url: 'https://example.com' }] } },
+      { command: 'session list' },
       'json'
     );
   });
@@ -118,8 +127,9 @@ describe('session-routes', () => {
     expect(mockForwardSessionClose).toHaveBeenCalledWith('test');
     expect(mockCloseSession).toHaveBeenCalledWith('test');
     expect(mockStopDaemonProcess).toHaveBeenCalled();
-    expect(mockOutputResult).toHaveBeenCalledWith(
-      { ok: true, name: 'test', killed: true, daemon: 'stopped' },
+    expect(mockOutputEnvelope).toHaveBeenCalledWith(
+      { success: true, data: { name: 'test', killed: true, daemon: 'stopped' } },
+      { command: 'session kill' },
       'json'
     );
   });

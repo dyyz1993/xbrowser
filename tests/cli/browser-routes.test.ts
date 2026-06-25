@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockOutputResult, mockOutputError, mockExecuteCommand, mockNormalizeSelector } = vi.hoisted(
+const { mockOutputEnvelope, mockOutputResult, mockOutputError, mockExecuteCommand, mockNormalizeSelector } = vi.hoisted(
   () => ({
+    mockOutputEnvelope: vi.fn(),
     mockOutputResult: vi.fn(),
     mockOutputError: vi.fn(),
     mockExecuteCommand: vi.fn(),
@@ -10,6 +11,7 @@ const { mockOutputResult, mockOutputError, mockExecuteCommand, mockNormalizeSele
 );
 
 vi.mock('../../src/cli/output.js', () => ({
+  outputEnvelope: mockOutputEnvelope,
   outputResult: mockOutputResult,
   outputError: mockOutputError,
 }));
@@ -376,13 +378,13 @@ describe('browser-routes', () => {
     it('should use json mode output', async () => {
       mockExecuteCommand.mockResolvedValueOnce({ success: true, data: 'ok' });
       await handleBrowserCommand('title', [], {}, 'sess', 'json');
-      expect(mockOutputResult).toHaveBeenCalledWith({ success: true, data: 'ok' }, 'json');
+      expect(mockOutputEnvelope).toHaveBeenCalledWith({ success: true, data: 'ok' }, { command: 'title' }, 'json');
     });
 
     it('should use yaml mode output', async () => {
       mockExecuteCommand.mockResolvedValueOnce({ success: true, data: 'ok' });
       await handleBrowserCommand('title', [], {}, 'sess', 'yaml');
-      expect(mockOutputResult).toHaveBeenCalledWith({ success: true, data: 'ok' }, 'yaml');
+      expect(mockOutputEnvelope).toHaveBeenCalledWith({ success: true, data: 'ok' }, { command: 'title' }, 'yaml');
     });
 
     it('should output error on failure in text mode', async () => {

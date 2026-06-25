@@ -21,6 +21,7 @@ const KNOWN_GLOBAL_OPTIONS = new Set([
   'token',
   'timeout',
   'headless',
+  'tab',
 ]);
 
 import {
@@ -39,7 +40,7 @@ import {
   handleNetCommand,
   handleTest,
 } from './cli/index.js';
-import { outputError, outputResult } from './cli/output.js';
+import { outputEnvelope, outputError, outputResult } from './cli/output.js';
 import { showMainHelp } from './cli/help.js';
 import { printChainResult } from './cli/chain-output.js';
 import { getPluginLoader } from './utils/plugin-singleton.js';
@@ -237,21 +238,29 @@ async function handleEvalMode(argv: string[]): Promise<void> {
 
 async function handleChainInput(input: string, argv?: string[]): Promise<void> {
   const cdpEndpoint = argv ? extractCdpFromArgv(argv) : undefined;
-  // Check for --json/--yaml in argv (as element or substring of chain string)
-  const jsonMode = argv ? argv.some(a => a === '--json' || a.startsWith('--json=') || a.includes(' --json') || a.startsWith('--json')) || argv.includes('-j') : false;
+  // Detect --json/--yaml from argv
+  const hasJson = argv ? argv.some(a => a === '--json' || a.startsWith('--json=') || a.includes(' --json') || a.startsWith('--json')) || argv.includes('-j') : false;
+  const hasYaml = argv ? argv.some(a => a === '--yaml' || a.startsWith('--yaml=')) : false;
+  const mode = hasJson ? 'json' : hasYaml ? 'yaml' : 'text';
   const chainResult = await executeChain(input, { cdpEndpoint });
-  if (jsonMode) {
-    const output = {
-      success: chainResult.success,
-      steps: chainResult.steps.map(s => ({
-        command: s.raw,
-        success: s.success,
-        data: s.data,
-        duration: s.duration,
-        ...(s.hookOutputs?.length ? { hooks: s.hookOutputs } : {}),
-      })),
-    };
-    console.log(JSON.stringify(output, null, 2));
+  if (mode === 'json' || mode === 'yaml') {
+    outputEnvelope(
+      {
+        success: chainResult.success,
+        data: {
+          steps: chainResult.steps.map(s => ({
+            command: s.raw,
+            success: s.success,
+            data: s.data,
+            duration: s.duration,
+            ...(s.hookOutputs?.length ? { hooks: s.hookOutputs } : {}),
+          })),
+        },
+        duration: chainResult.totalDuration,
+      },
+      { command: 'chain', totalSteps: chainResult.steps.length },
+      mode,
+    );
   } else {
     printChainResult(chainResult);
   }
@@ -361,7 +370,15 @@ export async function routeCommand(
   const cdpEndpoint = (options.cdp as string) || process.env.XBROWSER_CDP;
 
   if (options.version || (options.v && positional.length === 0)) {
-    console.log(`xbrowser v${version}`);
+    if (mode === 'json') {
+      outputEnvelope(
+        { success: true, data: { version, name: '@xbrowser/cli' } },
+        { command: 'version' },
+        mode,
+      );
+    } else {
+      console.log(`xbrowser v${version}`);
+    }
     return;
   }
   if (positional.length === 0) {
@@ -573,18 +590,23 @@ export async function routeCommand(
             const chainResult = await executeChain(fullInput, { cdpEndpoint, sessionName });
             // Output as JSON if --json flag was set globally
             if (mode === 'json' || mode === 'yaml') {
-              const output = {
-                success: chainResult.success,
-                steps: chainResult.steps.map(s => ({
-                  command: s.raw,
-                  success: s.success,
-                  data: s.data,
-                  duration: s.duration,
-                })),
-                totalDuration: chainResult.totalDuration,
-                ...(chainResult.stoppedReason ? { stoppedReason: chainResult.stoppedReason } : {}),
-              };
-              outputResult(output, mode);
+              outputEnvelope(
+                {
+                  success: chainResult.success,
+                  data: {
+                    steps: chainResult.steps.map(s => ({
+                      command: s.raw,
+                      success: s.success,
+                      data: s.data,
+                      duration: s.duration,
+                    })),
+                    ...(chainResult.stoppedReason ? { stoppedReason: chainResult.stoppedReason } : {}),
+                  },
+                  duration: chainResult.totalDuration,
+                },
+                { command: 'chain', totalSteps: chainResult.steps.length },
+                mode,
+              );
               if (!chainResult.success) throw new Error('Command failed');
               return;
             }
@@ -741,6 +763,18 @@ export async function routeCommand(
             }
           }
 
+          // --tab <index>: switch to the specified tab for plugin commands
+          const cmdTabIndex = options.tab !== undefined ? Number(options.tab) : undefined;
+          if (cmdTabIndex !== undefined && session?.context) {
+            const pages = session.context.pages();
+            if (cmdTabIndex >= 0 && cmdTabIndex < pages.length) {
+              const targetPage = pages[cmdTabIndex];
+              await targetPage.bringToFront().catch(() => {});
+              const { setActivePage } = await import('./browser.js');
+              setActivePage(session, targetPage);
+            }
+          }
+
           const ctx = {
             args: cmdArgsForPlugin,
             options,
@@ -826,22 +860,17 @@ export async function routeCommand(
             const tips = isCommandResult(result) ? result.tips : ((result && typeof result === 'object') ? (result as Record<string, unknown>).tips as import('@dyyz1993/xcli-core').Tip[] | undefined : undefined);
 
             if (mode === 'json' || mode === 'yaml') {
-              const finalOutput: Record<string, unknown> = {
-                data: outputData,
-              };
-              if (injectedViewerUrl) {
-                finalOutput.viewerUrl = injectedViewerUrl;
-              }
-              if (tips?.length) {
-                finalOutput.tips = tips;
-              }
-              if (hookOutputs.length > 0) {
-                finalOutput.hooks = hookOutputs;
-              }
-              console.log(outputFormatter.format(finalOutput, { mode: mode as 'json' | 'yaml', color: false, emoji: false }));
-              if (tips?.length) {
-                for (const tip of tips) console.error(`\u{1F4A1} ${typeof tip === 'string' ? tip : tip.message}`);
-              }
+              const resultSuccess = isCommandResult(result) ? result.success !== false : true;
+              const resultMsg = isCommandResult(result) ? result.message : undefined;
+              const duration = Date.now() - cmdStart;
+              const envelopeMeta: Record<string, unknown> = { command: `${command} ${subCommand}` };
+              if (injectedViewerUrl) envelopeMeta.viewerUrl = injectedViewerUrl;
+              if (hookOutputs.length > 0) envelopeMeta.hooks = hookOutputs;
+              outputEnvelope(
+                { success: resultSuccess, data: outputData, message: resultMsg, tips, duration },
+                envelopeMeta as { command: string; [key: string]: unknown },
+                mode,
+              );
             } else {
               console.log(outputFormatter.format(outputData, { mode: 'text', color: true, emoji: true }));
               if (tips?.length) {

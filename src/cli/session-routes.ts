@@ -3,7 +3,7 @@ import {
   listSessions,
 } from '../session/session-client.js';
 import { handleSessionHelp } from '../builtins/index.js';
-import { outputResult } from './output.js';
+import { outputEnvelope } from './output.js';
 import { forwardSessionClose, forwardSessionList } from '../client/daemon-client.js';
 import { stopDaemonProcess, killAllDaemonProcesses } from '../daemon/daemon.js';
 import { homedir } from 'os';
@@ -42,12 +42,12 @@ export async function handleSession(
             try { await forwardSessionClose(s.name); count++; } catch { /* ignore */ }
           }
         } catch { /* daemon may be down */ }
-        outputResult({ ok: true, closed: count, all: true }, mode);
+        outputEnvelope({ success: true, data: { closed: count, all: true } }, { command: 'session close' }, mode);
       } else {
         const name = (options.session as string) || (options.name as string) || process.env.XBROWSER_SESSION || 'default';
         try { await forwardSessionClose(name); } catch { /* daemon may be down */ }
         await closeSession(name);
-        outputResult({ ok: true, name }, mode);
+        outputEnvelope({ success: true, data: { name } }, { command: 'session close' }, mode);
       }
       break;
     }
@@ -55,10 +55,10 @@ export async function handleSession(
     case 'ls': {
       try {
         const sessions = await forwardSessionList();
-        outputResult({ sessions }, mode);
+        outputEnvelope({ success: true, data: { sessions } }, { command: 'session list' }, mode);
       } catch {
         const sessions = await listSessions();
-        outputResult({ sessions }, mode);
+        outputEnvelope({ success: true, data: { sessions } }, { command: 'session list' }, mode);
       }
       break;
     }
@@ -67,7 +67,7 @@ export async function handleSession(
       try { await forwardSessionClose(name); } catch { /* ignore */ }
       await closeSession(name);
       try { await stopDaemonProcess(); } catch { /* ignore */ }
-      outputResult({ ok: true, name, killed: true, daemon: 'stopped' }, mode);
+      outputEnvelope({ success: true, data: { name, killed: true, daemon: 'stopped' } }, { command: 'session kill' }, mode);
       break;
     }
     case 'kill-all': {
@@ -79,7 +79,7 @@ export async function handleSession(
       } catch { /* daemon may be down */ }
       try { await killAllDaemonProcesses(); } catch { /* ignore */ }
       const cleaned = cleanSessionFiles();
-      outputResult({ ok: true, sessionsCleaned: cleaned, daemon: 'killed' }, mode);
+      outputEnvelope({ success: true, data: { sessionsCleaned: cleaned, daemon: 'killed' } }, { command: 'session kill-all' }, mode);
       break;
     }
     default:

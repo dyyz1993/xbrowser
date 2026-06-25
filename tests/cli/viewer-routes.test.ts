@@ -17,6 +17,7 @@ const {
 }));
 
 vi.mock('../../src/cli/output.js', () => ({
+  outputEnvelope: vi.fn(),
   outputResult: mockOutputResult,
   outputError: mockOutputError,
 }));
