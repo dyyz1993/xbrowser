@@ -58,6 +58,9 @@ export interface OutputEnvelopeMeta {
 /**
  * 统一 JSON 信封输出——所有 --json / --yaml 输出的唯一入口。
  *
+ * 委托给 xcli-core 0.19.0 的 `OutputFormatter.formatEnvelope()`（底层 issue #47），
+ * 保证所有基于 xcli-core 的 CLI 工具信封格式一致。
+ *
  * 产生一致的信封格式：
  * ```json
  * {
@@ -95,20 +98,27 @@ export function outputEnvelope(
     return;
   }
 
-  // JSON/YAML mode: wrap in envelope
+  // JSON/YAML mode: delegate to xcli-core 0.19.0 formatEnvelope
+  // xbrowser's ExecutionResult has top-level `duration`, but CommandResult.meta
+  // expects it under `meta`. Map it here.
   const { command, ...extraMeta } = meta;
-  const envelope = {
+  const commandResult = {
     success: result.success,
-    command,
-    data: result.data ?? null,
-    error: result.success ? null : (result.message || 'Unknown error'),
+    data: result.data,
+    message: result.message,
+    tips: [],
     meta: {
       duration: result.duration ?? 0,
       ...extraMeta,
     },
   };
 
-  outputResult(envelope, mode);
+  const formatted = outputFormatter.formatEnvelope(commandResult, {
+    command,
+    extraMeta,
+    mode: mode as 'json' | 'yaml',
+  });
+  console.log(formatted);
 
   // Tips always go to stderr in JSON/YAML mode
   if (result.tips?.length) {
