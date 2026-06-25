@@ -193,18 +193,16 @@ describe('agent runtime', () => {
   });
 
   it('waitForPage waits for text', async () => {
-    const waitFor = vi.fn().mockResolvedValue(undefined);
+    // waitForPage uses page.evaluate + TreeWalker for text matching
     const page = {
-      getByText: vi.fn().mockReturnValue({
-        first: vi.fn().mockReturnValue({ waitFor }),
-      }),
+      evaluate: vi.fn().mockResolvedValue(true),
     } as unknown as Page;
 
     const result = await waitForPage(page, { text: 'Success', timeout: 100 });
 
     expect(result.success).toBe(true);
     expect(result.matched).toBe('text');
-    expect(page.getByText).toHaveBeenCalledWith('Success');
+    expect(page.evaluate).toHaveBeenCalled();
   });
 
   it('waitForPage waits for a URL glob', async () => {

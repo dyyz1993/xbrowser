@@ -23,15 +23,28 @@ export const configBuiltin: BuiltinCommand = {
 
     if (!subcommand || subcommand === 'list') {
       const config = loadConfig();
-      const keys = Object.keys(config);
-      if (keys.length === 0) {
+      // Flatten nested config to dot-notation keys for display
+      function flatten(obj: Record<string, unknown>, prefix = ''): Array<{ key: string; value: unknown }> {
+        const entries: Array<{ key: string; value: unknown }> = [];
+        for (const [k, v] of Object.entries(obj)) {
+          const fullKey = prefix ? `${prefix}.${k}` : k;
+          if (v && typeof v === 'object' && !Array.isArray(v)) {
+            entries.push(...flatten(v as Record<string, unknown>, fullKey));
+          } else {
+            entries.push({ key: fullKey, value: v });
+          }
+        }
+        return entries;
+      }
+      const entries = flatten(config);
+      if (entries.length === 0) {
         console.log('Configuration is empty');
         return;
       }
       console.log('Configuration:');
       console.log('');
-      for (const k of keys) {
-        console.log(`  ${k} = ${config[k]}`);
+      for (const { key, value } of entries) {
+        console.log(`  ${key} = ${value}`);
       }
       return;
     }

@@ -67,7 +67,7 @@ describe('config persistence', () => {
     const file = join(TMP, '.xbrowser', 'config.json');
     expect(existsSync(file)).toBe(true);
     const data = JSON.parse(readFileSync(file, 'utf-8'));
-    expect(data['daemon.port']).toBe(8080);
+    expect(data.daemon?.port).toBe(8080);
   });
 
   it('preserves existing keys when setting new ones', () => {
