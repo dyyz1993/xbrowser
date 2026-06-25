@@ -887,7 +887,7 @@ describe('seo plugin', () => {
       const result = await handler({ platform: 'facb' }, { page });
       expect(result.data).toBeNull();
       expect(result.message).toBe('平台');
-      expect(result.tips.some((t: string) => t.includes('Facebook'))).toBe(true);
+      expect(tipsMessages(result.tips).some((t: string) => t.includes('Facebook'))).toBe(true);
     });
 
     it('should return error for unknown platform without suggestions', async () => {
@@ -896,7 +896,7 @@ describe('seo plugin', () => {
       const result = await handler({ platform: 'zzzunknown' }, { page });
       expect(result.data).toBeNull();
       expect(result.message).toBe('平台');
-      expect(result.tips.some((t: string) => t.includes('相近平台'))).toBe(false);
+      expect(tipsMessages(result.tips).some((t: string) => t.includes('相近平台'))).toBe(false);
     });
 
     it('should navigate to correct entryUrl for a known platform', async () => {
