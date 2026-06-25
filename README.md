@@ -1,6 +1,6 @@
 # xbrowser
 
-> **Browser automation CLI** for web scraping, headless browsing, SEO analysis, and AI agent workflows. 51 commands, 70+ plugins. A command-line alternative to Playwright, Puppeteer, and Selenium — **no code required**.
+> **Browser automation CLI** for web scraping, headless browsing, SEO analysis, and AI agent workflows. 51 commands, 75 plugins. A command-line alternative to Playwright, Puppeteer, and Selenium — **no code required**.
 
 [![CI Status](https://github.com/dyyz1993/xbrowser/workflows/CI/badge.svg)](https://github.com/dyyz1993/xbrowser/actions)
 [![codecov](https://codecov.io/gh/dyyz1993/xbrowser/branch/master/graph/badge.svg)](https://codecov.io/gh/dyyz1993/xbrowser)
@@ -883,7 +883,7 @@ xbrowser/
 | **Setup** | `npm i -g` — 0 config | Install + browser download | Install + browser download | Install + WebDriver + drivers |
 | **Web Scraping** | Built-in (`scrape`, `crawl`, `map`) | Write custom scripts | Write custom scripts | Write custom scripts |
 | **Search** | Built-in multi-engine (`search`) | No | No | No |
-| **Plugin Ecosystem** | 70+ plugins | Limited | Limited | No |
+| **Plugin Ecosystem** | 75 plugins | Limited | Limited | No |
 | **No Code Required** | ✅ CLI commands | ❌ Must write JS/TS | ❌ Must write JS/TS | ❌ Must write code |
 | **Headless Mode** | ✅ Default | ✅ | ✅ | ✅ |
 | **Record/Replay** | ✅ Built-in (`record`/`replay`) | ✅ Codegen | ❌ | ❌ |

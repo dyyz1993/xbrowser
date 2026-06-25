@@ -6,6 +6,7 @@ import {
   copyFileSync,
   cpSync,
   readFileSync,
+  writeFileSync,
 } from 'fs';
 import { resolve, basename, dirname } from 'path';
 import { homedir } from 'os';
@@ -63,13 +64,13 @@ export class PluginInstaller {
 
     switch (type) {
       case 'local':
-        return await installFromLocal(source, name, targetDir).then(r => { this.fixSharedDeps(targetDir); ensurePluginDependencies(this.pluginsDir); return r; });
+        return await installFromLocal(source, name, targetDir).then(async r => { await this.fixSharedDeps(targetDir); ensurePluginDependencies(this.pluginsDir); return r; });
       case 'npm':
-        return await installFromNpm(resolvedSource, name, targetDir).then(r => { this.fixSharedDeps(targetDir); ensurePluginDependencies(this.pluginsDir); return r; });
+        return await installFromNpm(resolvedSource, name, targetDir).then(async r => { await this.fixSharedDeps(targetDir); ensurePluginDependencies(this.pluginsDir); return r; });
       case 'git':
-        return await installFromGit(source, name, targetDir).then(r => { this.fixSharedDeps(targetDir); ensurePluginDependencies(this.pluginsDir); return r; });
+        return await installFromGit(source, name, targetDir).then(async r => { await this.fixSharedDeps(targetDir); ensurePluginDependencies(this.pluginsDir); return r; });
       case 'url':
-        return await installFromUrl(source, name, targetDir).then(r => { this.fixSharedDeps(targetDir); ensurePluginDependencies(this.pluginsDir); return r; });
+        return await installFromUrl(source, name, targetDir).then(async r => { await this.fixSharedDeps(targetDir); ensurePluginDependencies(this.pluginsDir); return r; });
     }
   }
 
@@ -82,7 +83,7 @@ export class PluginInstaller {
    * copies the missing files from the local repository's `.xcli/plugins/shared/`
    * directory (if available).
    */
-  private fixSharedDeps(pluginDir: string): void {
+  private async fixSharedDeps(pluginDir: string): Promise<void> {
     const indexPath = resolve(pluginDir, 'index.ts');
     if (!existsSync(indexPath)) return;
 
@@ -130,8 +131,34 @@ export class PluginInstaller {
     }
 
     if (!sourceSharedDir) {
-      console.warn(`⚠️  Plugin "${basename(pluginDir)}" imports shared files but they are missing: ${toCopy.join(', ')}`);
-      console.warn(`   To fix: install the "shared" plugin or copy .xcli/plugins/shared/ to ~/.xbrowser/plugins/shared/`);
+      // Fallback: try downloading from GitHub raw
+      const GITHUB_RAW = 'https://raw.githubusercontent.com/dyyz1993/xbrowser/master/.xcli/plugins/shared';
+      mkdirSync(sharedDir, { recursive: true });
+      let allDownloaded = true;
+      for (const file of toCopy) {
+        try {
+          const url = `${GITHUB_RAW}/${file}`;
+          const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+          if (resp.ok) {
+            const content = await resp.text();
+            const dst = resolve(sharedDir, file);
+            const dstDir = dirname(dst);
+            if (!existsSync(dstDir)) mkdirSync(dstDir, { recursive: true });
+            writeFileSync(dst, content, 'utf-8');
+            console.log(`✅ Downloaded shared/${file} from GitHub`);
+          } else {
+            allDownloaded = false;
+            break;
+          }
+        } catch {
+          allDownloaded = false;
+          break;
+        }
+      }
+      if (!allDownloaded) {
+        console.warn(`⚠️  Plugin "${basename(pluginDir)}" imports shared files but they are missing: ${toCopy.join(', ')}`);
+        console.warn(`   Could not download from GitHub. Try: git clone https://github.com/dyyz1993/xbrowser.git && cp -r xbrowser/.xcli/plugins/shared/ ~/.xbrowser/plugins/shared/`);
+      }
       return;
     }
 
