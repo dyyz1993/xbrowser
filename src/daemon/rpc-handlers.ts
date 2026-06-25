@@ -100,8 +100,9 @@ async function injectRecording(page: Page): Promise<void> {
     // page may be navigating
   }
   try {
-    const cdp = await page.context().newCDPSession(page);
-    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: RECORDING_INJECT_JS });
+    // Use addInitScript for auto-injection on every new document
+    // (CDP Page.addScriptToEvaluateOnNewDocument directly)
+    await page.addInitScript(RECORDING_INJECT_JS);
   } catch {
     // CDP auto-reinject not available
   }
