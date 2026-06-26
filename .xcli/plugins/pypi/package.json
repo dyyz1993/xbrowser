@@ -1,0 +1,26 @@
+{
+  "name": "xbrowser-plugin-pypi",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "pypi",
+    "slug": "pypi",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "PyPI package search and info",
+    "site": "https://pypi.org",
+    "requiresLogin": false,
+    "commands": [
+      "search",
+      "package",
+      "downloads"
+    ]
+  }
+}

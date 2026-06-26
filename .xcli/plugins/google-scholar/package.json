@@ -1,0 +1,24 @@
+{
+  "name": "xbrowser-plugin-google-scholar",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "google-scholar",
+    "slug": "google-scholar",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "Google Scholar search and profile lookup",
+    "site": "https://scholar.google.com",
+    "requiresLogin": false,
+    "commands": [
+      "search"
+    ]
+  }
+}

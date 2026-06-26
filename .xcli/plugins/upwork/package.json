@@ -1,0 +1,22 @@
+{
+  "name": "xbrowser-plugin-upwork",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "upwork",
+    "slug": "upwork",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "Upwork - 自由职业平台",
+    "site": "https://www.upwork.com",
+    "requiresLogin": true,
+    "commands": []
+  }
+}

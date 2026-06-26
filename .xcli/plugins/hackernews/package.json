@@ -1,0 +1,31 @@
+{
+  "name": "xbrowser-plugin-hackernews",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "hackernews",
+    "slug": "hackernews",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "Hacker News stories, comments, and user info",
+    "site": "https://news.ycombinator.com",
+    "requiresLogin": false,
+    "commands": [
+      "top",
+      "new",
+      "best",
+      "ask",
+      "show",
+      "jobs",
+      "search",
+      "read"
+    ]
+  }
+}

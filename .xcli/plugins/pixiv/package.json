@@ -1,0 +1,22 @@
+{
+  "name": "xbrowser-plugin-pixiv",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "pixiv",
+    "slug": "pixiv",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "Pixiv - 插画社区",
+    "site": "https://www.pixiv.net",
+    "requiresLogin": false,
+    "commands": []
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "xbrowser-plugin-indeed",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "indeed",
+    "slug": "indeed",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "Indeed - 职位搜索",
+    "site": "https://www.indeed.com",
+    "requiresLogin": false,
+    "commands": []
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "xbrowser-plugin-dictionary",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "dictionary",
+    "slug": "dictionary",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "Dictionary definitions, synonyms, and examples",
+    "site": "https://api.dictionaryapi.dev",
+    "requiresLogin": false,
+    "commands": [
+      "search",
+      "synonyms",
+      "examples"
+    ]
+  }
+}

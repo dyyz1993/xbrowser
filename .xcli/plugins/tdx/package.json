@@ -1,0 +1,22 @@
+{
+  "name": "xbrowser-plugin-tdx",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "tdx",
+    "slug": "tdx",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "通达信 - 股票行情数据",
+    "site": "https://www.tdx.com.cn",
+    "requiresLogin": false,
+    "commands": []
+  }
+}

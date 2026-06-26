@@ -1,0 +1,22 @@
+{
+  "name": "xbrowser-plugin-v2ex",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "v2ex",
+    "slug": "v2ex",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "V2EX - 创意工作者社区",
+    "site": "https://www.v2ex.com",
+    "requiresLogin": false,
+    "commands": []
+  }
+}

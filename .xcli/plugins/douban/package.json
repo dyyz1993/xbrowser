@@ -1,0 +1,24 @@
+{
+  "name": "xbrowser-plugin-douban",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "douban",
+    "slug": "douban",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "豆瓣 - 电影、图书、音乐搜索",
+    "site": "https://www.douban.com",
+    "requiresLogin": false,
+    "commands": [
+      "search"
+    ]
+  }
+}

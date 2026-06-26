@@ -1,0 +1,24 @@
+{
+  "name": "xbrowser-plugin-pubmed",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "pubmed",
+    "slug": "pubmed",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "PubMed - 生物医学文献搜索",
+    "site": "https://pubmed.ncbi.nlm.nih.gov",
+    "requiresLogin": false,
+    "commands": [
+      "search"
+    ]
+  }
+}

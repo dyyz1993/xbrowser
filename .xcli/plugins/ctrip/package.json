@@ -1,0 +1,22 @@
+{
+  "name": "xbrowser-plugin-ctrip",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "ctrip",
+    "slug": "ctrip",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "携程 - 酒店、机票、旅游",
+    "site": "https://www.ctrip.com",
+    "requiresLogin": false,
+    "commands": []
+  }
+}

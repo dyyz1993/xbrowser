@@ -1,0 +1,24 @@
+{
+  "name": "xbrowser-plugin-semanticscholar",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "semanticscholar",
+    "slug": "semanticscholar",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "Semantic Scholar - 学术论文搜索引擎",
+    "site": "https://www.semanticscholar.org",
+    "requiresLogin": false,
+    "commands": [
+      "search"
+    ]
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "xbrowser-plugin-spotify",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "spotify",
+    "slug": "spotify",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "Spotify - 音乐搜索、专辑信息",
+    "site": "https://open.spotify.com",
+    "requiresLogin": false,
+    "commands": []
+  }
+}

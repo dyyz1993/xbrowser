@@ -1,0 +1,24 @@
+{
+  "name": "xbrowser-plugin-github-trending",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "github-trending",
+    "slug": "github-trending",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "GitHub trending repositories",
+    "site": "https://github.com/trending",
+    "requiresLogin": false,
+    "commands": [
+      "repos"
+    ]
+  }
+}

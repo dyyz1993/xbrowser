@@ -1,0 +1,24 @@
+{
+  "name": "xbrowser-plugin-tieba",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "tieba",
+    "slug": "tieba",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "百度贴吧 - 搜索、热帖",
+    "site": "https://tieba.baidu.com",
+    "requiresLogin": false,
+    "commands": [
+      "hot"
+    ]
+  }
+}

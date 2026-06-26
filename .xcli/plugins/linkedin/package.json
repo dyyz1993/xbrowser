@@ -1,0 +1,22 @@
+{
+  "name": "xbrowser-plugin-linkedin",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "linkedin",
+    "slug": "linkedin",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "LinkedIn - 职业社交网络",
+    "site": "https://www.linkedin.com",
+    "requiresLogin": true,
+    "commands": []
+  }
+}

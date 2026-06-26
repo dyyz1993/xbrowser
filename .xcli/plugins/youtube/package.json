@@ -1,0 +1,22 @@
+{
+  "name": "xbrowser-plugin-youtube",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "youtube",
+    "slug": "youtube",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "YouTube - 视频搜索、频道数据",
+    "site": "https://www.youtube.com",
+    "requiresLogin": false,
+    "commands": []
+  }
+}

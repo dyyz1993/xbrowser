@@ -1,0 +1,24 @@
+{
+  "name": "xbrowser-plugin-rubygems",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "rubygems",
+    "slug": "rubygems",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "RubyGems - Ruby 包搜索",
+    "site": "https://rubygems.org",
+    "requiresLogin": false,
+    "commands": [
+      "search"
+    ]
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "xbrowser-plugin-ths",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "ths",
+    "slug": "ths",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "同花顺 - 热股榜、行情数据",
+    "site": "https://www.10jqka.com.cn",
+    "requiresLogin": false,
+    "commands": [
+      "hot-rank"
+    ]
+  }
+}

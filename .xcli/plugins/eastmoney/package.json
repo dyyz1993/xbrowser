@@ -1,0 +1,22 @@
+{
+  "name": "xbrowser-plugin-eastmoney",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "eastmoney",
+    "slug": "eastmoney",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "东方财富 - 股票行情、财经数据",
+    "site": "https://www.eastmoney.com",
+    "requiresLogin": false,
+    "commands": []
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "xbrowser-plugin-linkedin-learning",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "linkedin-learning",
+    "slug": "linkedin-learning",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "LinkedIn Learning - 在线课程",
+    "site": "https://www.linkedin.com/learning",
+    "requiresLogin": true,
+    "commands": []
+  }
+}

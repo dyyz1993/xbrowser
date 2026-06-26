@@ -1,0 +1,24 @@
+{
+  "name": "xbrowser-plugin-packagist",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "packagist",
+    "slug": "packagist",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "Packagist - PHP 包搜索",
+    "site": "https://packagist.org",
+    "requiresLogin": false,
+    "commands": [
+      "search"
+    ]
+  }
+}

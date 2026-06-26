@@ -1,0 +1,26 @@
+{
+  "name": "xbrowser-plugin-arxiv",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "arxiv",
+    "slug": "arxiv",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "arXiv - 学术论文预印本搜索和查询",
+    "site": "https://arxiv.org",
+    "requiresLogin": false,
+    "commands": [
+      "search",
+      "paper",
+      "recent"
+    ]
+  }
+}

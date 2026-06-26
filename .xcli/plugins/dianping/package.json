@@ -1,0 +1,24 @@
+{
+  "name": "xbrowser-plugin-dianping",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "dianping",
+    "slug": "dianping",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "大众点评 - 商户搜索和评价",
+    "site": "https://www.dianping.com",
+    "requiresLogin": false,
+    "commands": [
+      "search"
+    ]
+  }
+}

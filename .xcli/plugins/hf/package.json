@@ -1,0 +1,25 @@
+{
+  "name": "xbrowser-plugin-hf",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "hf",
+    "slug": "hf",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "Hugging Face - ML 模型、数据集、Spaces",
+    "site": "https://huggingface.co",
+    "requiresLogin": false,
+    "commands": [
+      "models",
+      "datasets"
+    ]
+  }
+}
