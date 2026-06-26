@@ -4,11 +4,8 @@
  * Each method is a separate handler function, grouped by domain.
  * This replaces the giant switch/case in the old daemon-worker.ts.
  */
-import type { Page } from '../browser-shim.js';
 import { errMsg } from '../utils/error.js';
-import { writeFileSync, mkdirSync, readFileSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
+import { readFileSync } from 'fs';
 
 import type { RPCHandler } from '@dyyz1993/xcli-core';
 import {
@@ -41,72 +38,6 @@ import { resolveCDPEndpoint } from '../utils/cdp.js';
 
 const activeRecorders = new Map<string, SessionRecorder>();
 const replayResumeResolvers = new Map<string, () => void>();
-
-const CONFIG_DIR = join(homedir(), '.xbrowser');
-
-// ─── Recording injection JS (injected on every session creation) ──
-
-const RECORDING_INJECT_JS = `
-(function(){
-  if(window.__xb_rec) return;
-  window.__xb_rec = true;
-  window.__xb_evts = [];
-  window.__xb_t0 = Date.now();
-  function d(el){
-    if(!el||!el.tagName) return {tag:'unknown'};
-    var o={tag:el.tagName.toLowerCase(),text:(el.textContent||'').trim().substring(0,80)};
-    if(el.getAttribute('role')) o.role=el.getAttribute('role');
-    if(el.id) o.id=el.id;
-    if(el.getAttribute('type')) o.type=el.getAttribute('type');
-    if(el.getAttribute('placeholder')) o.placeholder=el.getAttribute('placeholder');
-    if(el.getAttribute('aria-label')) o.ariaLabel=el.getAttribute('aria-label');
-    if(el.contentEditable==='true') o.contentEditable=true;
-    return o;
-  }
-  function p(t,det){
-    var e={type:t,ts:Date.now()-window.__xb_t0,url:location.href};
-    for(var k in det) e[k]=det[k];
-    window.__xb_evts.push(e);
-  }
-  document.addEventListener('click',function(e){p('click',{target:d(e.target),x:e.clientX,y:e.clientY})},true);
-  document.addEventListener('dblclick',function(e){p('dblclick',{target:d(e.target),x:e.clientX,y:e.clientY})},true);
-  document.addEventListener('input',function(e){var el=e.target;p('input',{target:d(el),value:(el.value||el.textContent||'').substring(0,200)})},true);
-  document.addEventListener('change',function(e){p('change',{target:d(e.target),value:(e.target.value||'').substring(0,100)})},true);
-  document.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key==='Tab'||e.key==='Escape'||e.key.startsWith('Arrow'))p('keydown',{key:e.key,target:d(e.target)})},true);
-  document.addEventListener('submit',function(e){p('submit',{target:d(e.target)})},true);
-  var __xb_last_focus=null;document.addEventListener('focus',function(e){var t=e.target.tagName;if(t==='INPUT'||t==='TEXTAREA'||e.target.contentEditable==='true'){var sel=e.target.id||e.target.name||e.target.placeholder;if(sel===__xb_last_focus)return;__xb_last_focus=sel;p('input_focused',{target:d(e.target)})}},true);
-  var obs=new MutationObserver(function(mutations){
-    for(var m of mutations){
-      for(var node of m.addedNodes){
-        if(node.nodeType===1&&node.tagName){
-          var text=(node.textContent||'').trim().substring(0,60);
-          if(text&&text.length>1) p('dom_added',{tag:node.tagName.toLowerCase(),role:node.getAttribute&&node.getAttribute('role'),text:text});
-        }
-      }
-    }
-  });
-  if(document.body) obs.observe(document.body,{childList:true,subtree:true});
-  p('recording_started',{url:location.href});
-})();
-`;
-
-/**
- * Injects recording JS into a page and registers auto-reinject on navigation.
- */
-async function injectRecording(page: Page): Promise<void> {
-  try {
-    await page.evaluate(RECORDING_INJECT_JS);
-  } catch {
-    // page may be navigating
-  }
-  try {
-    // Use addInitScript for auto-injection on every new document
-    // (CDP Page.addScriptToEvaluateOnNewDocument directly)
-    await page.addInitScript(RECORDING_INJECT_JS);
-  } catch {
-    // CDP auto-reinject not available
-  }
-}
 
 export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) => void } {
   let previewWS: WSServer | null = null;
@@ -168,16 +99,6 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
           return handleNetworkFeedback(params);
         case 'network:export':
           return handleNetworkExport(params);
-
-        // ── Recording ──
-        case 'recording:status':
-          return handleRecordingStatus(params);
-        case 'recording:events':
-          return handleRecordingEvents(params);
-        case 'recording:clear':
-          return handleRecordingClear(params);
-        case 'recording:save':
-          return handleRecordingSave(params);
 
         // ── Command log ──
         case 'command:log':
@@ -256,7 +177,6 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
         session = await createSession(name, url);
       }
     }
-    await injectRecording(session.page);
     if (previewWS) previewWS.registerSession(session.name, session.page);
     saveSessionDiskMeta(name, {
       id: session.id,
@@ -494,65 +414,6 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     return exportEntry(entry.capture, lang);
   }
 
-  async function handleRecordingStatus(params: Record<string, unknown>) {
-    const sess = findSession((params.session as string) || 'default');
-    if (!sess) return { recording: false, error: 'No session' };
-    try {
-      const result = await sess.page.evaluate<{ active: boolean; events: number; url: string }>(() => ({
-        active: !!window.__xb_rec,
-        events: window.__xb_evts?.length || 0,
-        url: location.href,
-      }));
-      return { recording: true, ...result };
-    } catch {
-      return { recording: false, error: 'Page unreachable' };
-    }
-  }
-
-  async function handleRecordingEvents(params: Record<string, unknown>) {
-    const sess = findSession((params.session as string) || 'default');
-    if (!sess) return { events: [], error: 'No session' };
-    try {
-      const events = await sess.page.evaluate(() => window.__xb_evts || []);
-      return { events, url: sess.page.url() };
-    } catch {
-      return { events: [], error: 'Page unreachable' };
-    }
-  }
-
-  async function handleRecordingClear(params: Record<string, unknown>) {
-    const sess = findSession((params.session as string) || 'default');
-    if (!sess) return { ok: false, error: 'No session' };
-    try {
-      await sess.page.evaluate(() => {
-        window.__xb_evts = [];
-        window.__xb_t0 = Date.now();
-      });
-      return { ok: true };
-    } catch {
-      return { ok: false, error: 'Page unreachable' };
-    }
-  }
-
-  async function handleRecordingSave(params: Record<string, unknown>) {
-    const sess = findSession((params.session as string) || 'default');
-    if (!sess) return { ok: false, error: 'No session' };
-    try {
-      const events: Record<string, unknown>[] = await sess.page.evaluate(() => window.__xb_evts || []);
-      const recordingsDir = join(CONFIG_DIR, 'recordings');
-      mkdirSync(recordingsDir, { recursive: true });
-      const outPath = (params.path as string) || join(recordingsDir, `recording-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
-      writeFileSync(outPath, JSON.stringify({
-        startUrl: sess.page.url(),
-        recordedAt: new Date().toISOString(),
-        events,
-      }, null, 2));
-      return { ok: true, path: outPath, events: events.length };
-    } catch (e) {
-      return { ok: false, error: errMsg(e) };
-    }
-  }
-
   function handleCommandLog(params: Record<string, unknown>) {
     const sessionName = (params.session as string) || 'default';
     const limit = (params.limit as number) || 50;
@@ -599,13 +460,13 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       } catch { /* page may have navigated or closed */ }
     }
 
-    recorder.recordCommandAction({
-      type: actionType,
-      selector,
-      value,
-      url: currentUrl,
-      element: element as UserAction['element'],
-    });
+	    await recorder.recordCommandAction({
+	      type: actionType,
+	      selector,
+	      value,
+	      url: currentUrl,
+	      element: element as UserAction['element'],
+	    });
   }
 
   // ─── Session recording handlers (daemon-managed) ─────────────────
@@ -628,7 +489,6 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
         // Use CDP endpoint if provided, otherwise self-launch Chromium
         const sessionOpts = cdpEndpoint ? { cdpEndpoint } : undefined;
         session = await createSession(sessionName, url, sessionOpts);
-        await injectRecording(session.page);
         if (previewWS) previewWS.registerSession(session.name, session.page);
         saveSessionDiskMeta(sessionName, {
           id: session.id,
