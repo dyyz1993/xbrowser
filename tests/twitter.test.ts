@@ -1,3 +1,4 @@
+import { tipsMessages } from './plugins/_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../.xcli/plugins/twitter/index.ts';
 
@@ -156,7 +157,7 @@ describe('Twitter Plugin', () => {
 
       const result = await handler({ query: 'x', limit: 10 }, { page, sessionId: 'my-session' });
 
-      expect(result.tips).toContain('Session: my-session');
+      expect(tipsMessages(result.tips)).toContain('Session: my-session');
     });
 
     it('should throw when no page provided', async () => {
@@ -247,7 +248,7 @@ describe('Twitter Plugin', () => {
 
       const result = await handler({ username: 'testuser' }, { page, sessionId: 's1' });
 
-      expect(result.tips).toEqual(expect.arrayContaining([expect.stringContaining('用户: TestUser')]));
+      expect(tipsMessages(result.tips)).toEqual(expect.arrayContaining([expect.stringContaining('用户: TestUser')]));
     });
 
     it('should throw when no page provided', async () => {
@@ -420,7 +421,7 @@ describe('Twitter Plugin', () => {
 
       const result = await handler({ id: '123', limit: 5 }, { page, sessionId: 's1' });
 
-      expect(result.tips).toContain('找到 1 条回复');
+      expect(tipsMessages(result.tips)).toContain('找到 1 条回复');
     });
 
     it('should throw when no page provided', async () => {
@@ -500,7 +501,7 @@ describe('Twitter Plugin', () => {
 
       const result = await handler({ query: 'x', limit: 10 }, { page, sessionId: 's1' });
 
-      expect(result.tips).toContain('建议使用 --cdp 9221 连接到已登录的浏览器');
+      expect(tipsMessages(result.tips)).toContain('建议使用 --cdp 9221 连接到已登录的浏览器');
     });
 
     it('should not include cdp tip when cdpEndpoint is provided', async () => {
@@ -513,7 +514,7 @@ describe('Twitter Plugin', () => {
         { page, sessionId: 's1', cdpEndpoint: 'ws://localhost:9222' },
       );
 
-      expect(result.tips).not.toContain('建议使用 --cdp 9221 连接到已登录的浏览器');
+      expect(tipsMessages(result.tips)).not.toContain('建议使用 --cdp 9221 连接到已登录的浏览器');
     });
   });
 

@@ -1,3 +1,4 @@
+import { tipsText } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import plugin from '../../.xcli/plugins/xiaohongshu/index.ts';
 
@@ -172,7 +173,7 @@ describe('xiaohongshu plugin', () => {
       const ctx = makePageCtx();
       const result = await runWithFakeTimers(() => handler({ noteId: '67abc123' }, ctx));
       expect(result.data).toBeNull();
-      expect(result.tips.join('\n')).toContain('未获取到笔记数据');
+      expect(tipsText(result.tips)).toContain('未获取到笔记数据');
     });
 
     it('should parse note data from intercepted API response', async () => {
@@ -484,7 +485,7 @@ describe('xiaohongshu plugin', () => {
 
       const result = await handler({ maxPages: 1 }, ctx);
       expect(result.data.total).toBe(2);
-      expect(result.tips.join('\n')).toContain('2 条推荐');
+      expect(tipsText(result.tips)).toContain('2 条推荐');
     });
   });
 
@@ -545,7 +546,7 @@ describe('xiaohongshu plugin', () => {
       const ctx = makePageCtx();
       ctx.page.url = vi.fn(() => 'https://www.xiaohongshu.com/explore/123');
       const result = await handler({ url: 'https://xhslink.com/abc' }, ctx);
-      expect(result.tips.join('\n')).toContain('最终 URL');
+      expect(tipsText(result.tips)).toContain('最终 URL');
     });
 
     it('should include noteId in tips when present', async () => {
@@ -553,7 +554,7 @@ describe('xiaohongshu plugin', () => {
       const ctx = makePageCtx();
       ctx.page.url = vi.fn(() => 'https://www.xiaohongshu.com/explore/67xyz');
       const result = await handler({ url: 'https://xhslink.com/abc' }, ctx);
-      expect(result.tips.join('\n')).toContain('笔记 ID');
+      expect(tipsText(result.tips)).toContain('笔记 ID');
     });
 
     it('should handle error gracefully', async () => {

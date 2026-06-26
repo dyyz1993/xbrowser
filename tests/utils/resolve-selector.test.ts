@@ -1,3 +1,4 @@
+import { firstTip } from '../plugins/_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { extractRefs, resolveRefParams, clearRefCache } from '../../src/utils/resolve-selector.js';
 import { clearAllRefs, replaceRefs } from '../../src/runtime/ref-store.js';
@@ -86,8 +87,8 @@ describe('resolveRefParams', () => {
     const page = { locator: vi.fn().mockReturnValue(mockLocator) } as unknown as Page;
     const result = await resolveRefParams(page, { selector: 'e1' }, ['selector']);
     expect(result.tips).toHaveLength(1);
-    expect(result.tips[0]).toContain('e1');
-    expect(result.tips[0]).toContain('#submit-btn');
+    expect(firstTip(result.tips)).toContain('e1');
+    expect(firstTip(result.tips)).toContain('#submit-btn');
     expect(result.params.selector).toBe('#submit-btn');
   });
 
@@ -119,7 +120,7 @@ describe('resolveRefParams', () => {
     const page = { locator: vi.fn() } as unknown as Page;
     const result = await resolveRefParams(page, { selector: '@e1' }, ['selector'], undefined, 'session-1');
     expect(result.params.selector).toBe('#runtime-submit');
-    expect(result.tips[0]).toContain('(observe)');
+    expect(firstTip(result.tips)).toContain('(observe)');
     expect(page.locator).not.toHaveBeenCalled();
   });
 
@@ -131,8 +132,8 @@ describe('resolveRefParams', () => {
     const page = { locator: vi.fn().mockReturnValue(mockLocator) } as unknown as Page;
     const result = await resolveRefParams(page, { selector: 'e99' }, ['selector']);
     expect(result.tips).toHaveLength(1);
-    expect(result.tips[0]).toContain('⚠️');
-    expect(result.tips[0]).toContain('e99');
+    expect(firstTip(result.tips)).toContain('⚠️');
+    expect(firstTip(result.tips)).toContain('e99');
     expect(result.params.selector).toBe('e99');
   });
 
@@ -150,7 +151,7 @@ describe('resolveRefParams', () => {
 
     const second = await resolveRefParams(page, { selector: 'e1' }, ['selector'], cache);
     expect(page.locator).toHaveBeenCalledTimes(1);
-    expect(second.tips[0]).toContain('cached');
+    expect(firstTip(second.tips)).toContain('cached');
     expect(second.params.selector).toBe('#submit-btn');
   });
 

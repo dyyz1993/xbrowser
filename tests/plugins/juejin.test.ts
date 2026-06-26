@@ -1,3 +1,4 @@
+import { tipsMessages } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/juejin/index.ts';
 
@@ -130,7 +131,7 @@ describe('juejin plugin', () => {
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx);
       expect(result.data.loggedIn).toBe(false);
-      expect(result.tips.some((t: string) => t.includes('登录可能未完成'))).toBe(true);
+      expect(tipsMessages(result.tips).some((t: string) => t.includes('登录可能未完成'))).toBe(true);
     });
 
     it('should return success tip when logged in', async () => {
@@ -146,7 +147,7 @@ describe('juejin plugin', () => {
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx);
       expect(result.data.loggedIn).toBe(true);
-      const tips = result.tips as string[];
+      const tips = tipsMessages(result.tips);
       expect(tips.some((t: string) => t.includes('掘金登录成功'))).toBe(true);
     });
 
@@ -203,7 +204,7 @@ describe('juejin plugin', () => {
       const ctx = createMockCtx(page);
       const result = await handler({ title: 'Test', content: 'body' }, ctx);
       if (result.success) {
-        expect(result.tips.some((t: string) => t.includes('Test') && t.includes('掘金'))).toBe(true);
+        expect(tipsMessages(result.tips).some((t: string) => t.includes('Test') && t.includes('掘金'))).toBe(true);
       }
     }, 15000);
 
@@ -262,7 +263,7 @@ describe('juejin plugin', () => {
       const ctx = createMockCtx(page);
       const result = await handler({ title: 'Draft Title', content: 'c' }, ctx);
       if (result.success) {
-        expect(result.tips.some((t: string) => t.includes('Draft Title') && t.includes('草稿'))).toBe(true);
+        expect(tipsMessages(result.tips).some((t: string) => t.includes('Draft Title') && t.includes('草稿'))).toBe(true);
       }
     }, 15000);
   });
@@ -298,7 +299,7 @@ describe('juejin plugin', () => {
       const page = createMockPage();
       const ctx = createMockCtx(page);
       const result = await handler({ url: 'https://example.com' }, ctx);
-      expect(result.tips.some((t: string) => t.includes('Profile'))).toBe(true);
+      expect(tipsMessages(result.tips).some((t: string) => t.includes('Profile'))).toBe(true);
     }, 15000);
 
     it('should handle bio parameter', async () => {
@@ -345,7 +346,7 @@ describe('juejin plugin', () => {
       page.evaluate = vi.fn(() => Promise.resolve([{ title: 'P1', url: '/1', views: '10', likes: '1', comments: '0', date: '2026-01-01' }]));
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx);
-      expect(result.tips.some((t: string) => t.includes('1 篇'))).toBe(true);
+      expect(tipsMessages(result.tips).some((t: string) => t.includes('1 篇'))).toBe(true);
     }, 15000);
   });
 

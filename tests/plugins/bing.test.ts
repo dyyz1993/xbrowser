@@ -1,3 +1,4 @@
+import { tipsMessages } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/bing/index.ts';
 
@@ -142,7 +143,7 @@ describe('bing plugin', () => {
         { title: 'Cat', thumbnailUrl: 'https://t.com/img.jpg', sourceUrl: '', originalUrl: '', width: 100, height: 100, format: 'jpg', fileSize: '' },
       ]);
       const result = await handler({ query: 'cats', limit: 10 }, { page }) as Record<string, unknown>;
-      const tips = result.tips as string[];
+      const tips = tipsMessages(result.tips);
       expect(tips.some((t) => t.includes('1 张'))).toBe(true);
     });
 

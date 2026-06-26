@@ -1,3 +1,4 @@
+import { tipsMessages } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/csdn/index.ts';
 
@@ -129,7 +130,7 @@ describe('csdn plugin', () => {
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx);
       expect(result.data.loggedIn).toBe(false);
-      const tips = result.tips as string[];
+      const tips = tipsMessages(result.tips);
       expect(tips.some((t: string) => t.includes('登录可能未完成'))).toBe(true);
     });
 
@@ -146,7 +147,7 @@ describe('csdn plugin', () => {
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx);
       expect(result.data.loggedIn).toBe(true);
-      const tips = result.tips as string[];
+      const tips = tipsMessages(result.tips);
       expect(tips.some((t: string) => t.includes('CSDN 登录成功'))).toBe(true);
     });
 
@@ -200,7 +201,7 @@ describe('csdn plugin', () => {
       const page = createMockPage();
       const ctx = createMockCtx(page);
       const result = await handler({ title: 'Test', content: 'body' }, ctx);
-      const tips = result.tips as string[];
+      const tips = tipsMessages(result.tips);
       expect(tips.some((t: string) => t.includes('Test') && t.includes('CSDN'))).toBe(true);
     });
 
@@ -262,7 +263,7 @@ describe('csdn plugin', () => {
       const page = createMockPage();
       const ctx = createMockCtx(page);
       const result = await handler({ title: 'Draft Title', content: 'c' }, ctx);
-      const tips = result.tips as string[];
+      const tips = tipsMessages(result.tips);
       expect(tips.some((t: string) => t.includes('Draft Title') && t.includes('草稿'))).toBe(true);
     });
   });
@@ -298,7 +299,7 @@ describe('csdn plugin', () => {
       const page = createMockPage();
       const ctx = createMockCtx(page);
       const result = await handler({ url: 'https://example.com' }, ctx);
-      const tips = result.tips as string[];
+      const tips = tipsMessages(result.tips);
       expect(tips.some((t: string) => t.includes('Profile'))).toBe(true);
     });
 
@@ -368,7 +369,7 @@ describe('csdn plugin', () => {
       page.evaluate = vi.fn(() => Promise.resolve([{ title: 'A1', link: '/1', views: '10', date: '2026-01-01' }]));
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx);
-      const tips = result.tips as string[];
+      const tips = tipsMessages(result.tips);
       expect(tips.some((t: string) => t.includes('1 篇'))).toBe(true);
     });
   });

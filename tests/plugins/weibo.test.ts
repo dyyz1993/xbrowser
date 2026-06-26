@@ -1,3 +1,4 @@
+import { tipsMessages } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/weibo/index.ts';
 
@@ -143,7 +144,7 @@ describe('weibo plugin', () => {
         { title: 'Cat', thumbnailUrl: 'https://img.sinaimg.cn/cat.jpg', sourceUrl: '', width: 100, height: 100 },
       ]);
       const result = await handler({ query: 'cats', limit: 10 }, { page }) as Record<string, unknown>;
-      const tips = result.tips as string[];
+      const tips = tipsMessages(result.tips);
       expect(tips.some((t) => t.includes('1 张'))).toBe(true);
     });
 
