@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ok } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 import { createEphemeralContext, closeEphemeralContext, resolveLaunchOpts } from '../browser.js';
@@ -190,7 +190,7 @@ export const mapCommand = registerCommand({
   description: 'Discover all URLs on a website via sitemap and page link extraction',
   scope: 'project',
   parameters: z.object({
-    url: z.string(),
+    url: z.string().optional(),
     search: z.string().optional(),
     sitemap: z.enum(['include', 'only']).optional(),
     includeSubdomains: z.boolean().optional(),
@@ -202,7 +202,13 @@ export const mapCommand = registerCommand({
     const { context, page } = await createEphemeralContext(resolveLaunchOpts(ctx));
 
     try {
-      const links = await discoverUrls(page, p.url, {
+      // Resolve target URL: use provided or current page URL (when connected to a browser via --cdp)
+      const targetUrl = p.url || page.url();
+      if (!targetUrl || targetUrl === 'about:blank') {
+        return fail('URL is required. Provide a URL or connect to a browser (--cdp) with a non-blank page.');
+      }
+
+      const links = await discoverUrls(page, targetUrl, {
         sitemap: p.sitemap,
         includeSubdomains: p.includeSubdomains,
         allowExternalLinks: p.allowExternalLinks,
