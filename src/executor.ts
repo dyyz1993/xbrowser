@@ -19,7 +19,7 @@ import { errMsg } from './utils/error.js';
 import { NoopSiteInstance } from './utils/stub-context.js';
 import { getCommand, getAllCommands } from './commands/index.js';
 import type { BrowserCommandContext } from './context.js';
-import { findOrRestoreSession, createSession, saveSessionDiskMeta, closeSessionByName, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
+import { findOrRestoreSession, createSession, saveSessionDiskMeta, closeSessionByName, setActivePage, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
 import {
   parseCommandChain,
   splitCommand,
@@ -190,7 +190,7 @@ export async function executeCommand(
   commandName: string,
   params: Record<string, unknown>,
   sessionName: string = 'default',
-  extraOpts?: { cdpEndpoint?: string; skipCleanup?: boolean }
+  extraOpts?: { cdpEndpoint?: string; skipCleanup?: boolean; timeout?: number }
 ): Promise<ExecutionResult> {
   const guardResult = await guardCheck(commandName);
   if (guardResult?.blocked) {
@@ -229,6 +229,14 @@ export async function executeCommand(
   if (_target) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { _target: _u, ...rest } = params;
+    params = rest;
+  }
+
+  // --tab: extract and store before Zod validation
+  const _tabIndex = params._tabIndex as number | undefined;
+  if (_tabIndex !== undefined) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { _tabIndex: _u, ...rest } = params;
     params = rest;
   }
 
@@ -319,6 +327,18 @@ export async function executeCommand(
     tips: new TipCollector(),
   };
 
+  // --tab <index>: switch to the specified tab before executing the command
+  if (_tabIndex !== undefined && session?.context) {
+    const pages = session.context.pages();
+    if (_tabIndex >= 0 && _tabIndex < pages.length) {
+      const targetPage = pages[_tabIndex];
+      await targetPage.bringToFront().catch(() => {});
+      setActivePage(session, targetPage);
+      ctx.page = targetPage;
+    }
+    // Silently ignore invalid tab index — command will run on current tab
+  }
+
   const start = Date.now();
 
   if (session) {
@@ -352,7 +372,18 @@ export async function executeCommand(
       await Promise.all(hooks.map(h => h.onBeforeCommand?.({ page: session.page!, command: commandName, params })));
     }
 
-    const raw = await command.handler(params, ctx);
+    // Wrap handler with global timeout if specified
+    let raw: unknown;
+    const handlerPromise = command.handler(params, ctx);
+    if (extraOpts?.timeout && extraOpts.timeout > 0) {
+      const timeoutMs = extraOpts.timeout;
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Command timed out after ${timeoutMs}ms`)), timeoutMs)
+      );
+      raw = await Promise.race([handlerPromise, timeoutPromise]);
+    } else {
+      raw = await handlerPromise;
+    }
     const end = Date.now();
     const duration = end - start;
 

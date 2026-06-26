@@ -5,7 +5,7 @@ import { XBrowserPluginLoader } from '../plugin/loader.js';
 import { PluginInstaller } from '../plugin/installer.js';
 import { NPMSearcher } from '../plugin/npm-search.js';
 import { startDaemonProcess, stopDaemonProcess, getDaemonProcessStatus } from '../daemon/daemon.js';
-import { outputResult, outputError } from './output.js';
+import { outputEnvelope, outputError } from './output.js';
 import { NPM_REGISTRY_URL, resolveNpmPackageWithFallback } from '../config.js';
 import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 import { getPluginLoader as getGlobalPluginLoader } from '../utils/plugin-singleton.js';
@@ -164,7 +164,7 @@ async function handleSearch(
   }
 
   if (mode === 'json') {
-    outputResult({ results, total: results.length }, mode);
+    outputEnvelope({ success: true, data: { results, total: results.length } }, { command: 'plugin search' }, mode);
   } else {
     if (results.length === 0) {
       console.log('No plugins found');
@@ -201,7 +201,7 @@ async function handlePluginInfo(
     if (pluginInfo) {
       const d = pluginInfo;
       if (mode === 'json') {
-        outputResult({ source: 'marketplace', ...d }, mode);
+        outputEnvelope({ success: true, data: { source: 'marketplace', ...d } }, { command: 'plugin info' }, mode);
         return;
       }
       console.log(`名称: ${d.name || ''}`);
@@ -229,7 +229,7 @@ async function handlePluginInfo(
       const pkg = latest && versions?.[latest];
       if (pkg) {
         if (mode === 'json') {
-          outputResult({ source: 'npm', name: pkg.name, version: latest, description: pkg.description }, mode);
+          outputEnvelope({ success: true, data: { source: 'npm', name: pkg.name, version: latest, description: pkg.description } }, { command: 'plugin info' }, mode);
           return;
         }
         console.log(`名称: ${pkg.name || ''}`);
@@ -266,7 +266,7 @@ async function handlePluginSchema(
   }
 
   if (mode === 'json') {
-    outputResult(contract, mode);
+    outputEnvelope({ success: true, data: contract }, { command: 'plugin schema' }, mode);
     return;
   }
 
@@ -351,8 +351,9 @@ export async function handlePlugin(
           });
         }
       } catch { /* daemon not running — skip */ }
-      outputResult(
-        { ok: true, name: result.name, source: result.source, path: result.path },
+      outputEnvelope(
+        { success: true, data: { name: result.name, source: result.source, path: result.path } },
+        { command: 'plugin install' },
         mode
       );
       break;
@@ -372,7 +373,7 @@ export async function handlePlugin(
         const loader = await getGlobalPluginLoader();
         await loader.reloadPlugin(name);
       } catch { /* plugin already removed */ }
-      outputResult({ ok: true, name }, mode);
+      outputEnvelope({ success: true, data: { name } }, { command: 'plugin uninstall' }, mode);
       break;
     }
     case 'list': {
@@ -397,7 +398,7 @@ export async function handlePlugin(
       });
 
       if (mode === 'json') {
-        outputResult({ plugins: enrichedPlugins }, mode);
+        outputEnvelope({ success: true, data: { plugins: enrichedPlugins } }, { command: 'plugin list' }, mode);
       } else {
         if (enrichedPlugins.length === 0) {
           console.log('No plugins installed');
@@ -432,7 +433,7 @@ export async function handlePlugin(
       } catch {
         outputError(`Plugin "${name}" not found. Use 'xbrowser plugin list' to see installed plugins.`);
       }
-      outputResult({ ok: true, name }, mode);
+      outputEnvelope({ success: true, data: { name } }, { command: 'plugin reload' }, mode);
       break;
     }
     case 'search':
@@ -474,7 +475,7 @@ export function handleDaemon(
       const port = options.port ? Number(options.port) : 9224;
       startDaemonProcess(port)
         .then((config) =>
-          outputResult({ ok: true, pid: config.pid, port: config.port }, mode)
+          outputEnvelope({ success: true, data: { pid: config.pid, port: config.port } }, { command: 'daemon start' }, mode)
         )
         .catch((e: unknown) =>
           outputError(e instanceof Error ? e.message : String(e))
@@ -483,7 +484,7 @@ export function handleDaemon(
     }
     case 'stop': {
       stopDaemonProcess()
-        .then(() => outputResult({ ok: true }, mode))
+        .then(() => outputEnvelope({ success: true, data: {} }, { command: 'daemon stop' }, mode))
         .catch((e: unknown) =>
           outputError(e instanceof Error ? e.message : String(e))
         );
@@ -491,10 +492,8 @@ export function handleDaemon(
     }
     case 'status': {
       const status = getDaemonProcessStatus();
-      outputResult(
-        status.running ? { running: true, pid: status.pid, port: status.port } : { running: false },
-        mode
-      );
+      const statusData = status.running ? { running: true, pid: status.pid, port: status.port } : { running: false };
+      outputEnvelope({ success: true, data: statusData }, { command: 'daemon status' }, mode);
       break;
     }
     default:

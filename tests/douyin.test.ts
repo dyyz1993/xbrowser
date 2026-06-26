@@ -1,3 +1,4 @@
+import { tipsMessages } from './plugins/_tips-helper.js';
 import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 
 vi.mock('../src/cdp-driver/index.js', () => {
@@ -278,7 +279,7 @@ describe('Douyin Plugin', () => {
 
       expect(result.data.total).toBe(0);
       expect(result.data.videos).toEqual([]);
-      expect(result.tips).toContain('采集到 0 个作品');
+      expect(tipsMessages(result.tips)).toContain('采集到 0 个作品');
     });
   });
 
@@ -308,7 +309,7 @@ describe('Douyin Plugin', () => {
         { page: mockPage }
       );
 
-      expect(result.tips).toContain('建议使用 --cdp 9221 参数连接到 Chrome 浏览器');
+      expect(tipsMessages(result.tips)).toContain('建议使用 --cdp 9221 参数连接到 Chrome 浏览器');
     });
 
     it('should collect comments from response', async () => {
@@ -444,8 +445,8 @@ describe('Douyin Plugin', () => {
         { page: mockPage, cdpEndpoint: 'ws://localhost:9222', sessionId: 'session-2' }
       );
 
-      expect(result1.tips).toContain('Session: session-1');
-      expect(result2.tips).toContain('Session: session-2');
+      expect(tipsMessages(result1.tips)).toContain('Session: session-1');
+      expect(tipsMessages(result2.tips)).toContain('Session: session-2');
     });
   });
 

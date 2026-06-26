@@ -1,3 +1,4 @@
+import { firstTip } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/wordpress/index.ts';
 
@@ -110,7 +111,7 @@ describe('wordpress plugin', () => {
       const ctx = makeCtx();
       const result = await handler({}, ctx);
       expect(result.data.loggedIn).toBe(false);
-      expect(result.tips[0]).toContain('登录可能未完成');
+      expect(firstTip(result.tips)).toContain('登录可能未完成');
     });
 
     it('should return loggedIn true when me element visible', async () => {
@@ -124,7 +125,7 @@ describe('wordpress plugin', () => {
       }));
       const result = await handler({}, ctx);
       expect(result.data.loggedIn).toBe(true);
-      expect(result.tips[0]).toContain('登录成功');
+      expect(firstTip(result.tips)).toContain('登录成功');
     });
 
     it('should navigate to home after login', async () => {
@@ -167,7 +168,7 @@ describe('wordpress plugin', () => {
       const handler = getHandler('publish');
       const ctx = makeCtx();
       const result = await handler({ title: 'Test Post', content: 'c' }, ctx);
-      expect(result.tips[0]).toContain('Test Post');
+      expect(firstTip(result.tips)).toContain('Test Post');
     });
 
     it('should call waitForHuman for review', async () => {
@@ -207,8 +208,8 @@ describe('wordpress plugin', () => {
       const handler = getHandler('draft');
       const ctx = makeCtx();
       const result = await handler({ title: 'My Draft', content: 'content' }, ctx);
-      expect(result.tips[0]).toContain('My Draft');
-      expect(result.tips[0]).toContain('草稿');
+      expect(firstTip(result.tips)).toContain('My Draft');
+      expect(firstTip(result.tips)).toContain('草稿');
     });
 
     it('should call waitForLoadState', async () => {
@@ -248,7 +249,7 @@ describe('wordpress plugin', () => {
       const handler = getHandler('update-profile');
       const ctx = makeCtx();
       const result = await handler({ url: 'https://example.com' }, ctx);
-      expect(result.tips[0]).toContain('外链');
+      expect(firstTip(result.tips)).toContain('外链');
     });
   });
 
@@ -280,8 +281,8 @@ describe('wordpress plugin', () => {
       const handler = getHandler('create-page');
       const ctx = makeCtx();
       const result = await handler({ title: 'Contact', content: 'info' }, ctx);
-      expect(result.tips[0]).toContain('Contact');
-      expect(result.tips[0]).toContain('页面');
+      expect(firstTip(result.tips)).toContain('Contact');
+      expect(firstTip(result.tips)).toContain('页面');
     });
 
     it('should call waitForHuman for review', async () => {

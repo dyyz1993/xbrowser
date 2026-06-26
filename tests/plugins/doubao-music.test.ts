@@ -1,3 +1,4 @@
+import { tipsMessages } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockSite = {
@@ -253,7 +254,7 @@ describe('doubao music command', () => {
       const result = await handler({ lyric: longLyric, timeout: 0 }, ctx);
 
       expect(result.success).toBe(true);
-      const tips = result.tips as string[];
+      const tips = tipsMessages(result.tips);
       const truncationTip = tips.find((t: string) => t.includes('截断'));
       expect(truncationTip).toBeDefined();
     });
@@ -292,7 +293,7 @@ describe('doubao music command', () => {
       const requestListeners = registeredHandlers.filter(h => h.event === 'request');
       expect(requestListeners.length).toBeGreaterThanOrEqual(2);
 
-      const tips = result.tips as string[];
+      const tips = tipsMessages(result.tips);
       const debugTip = tips.find((t: string) => t.includes('Debug'));
       expect(debugTip).toBeDefined();
       expect(result.success).toBe(true);

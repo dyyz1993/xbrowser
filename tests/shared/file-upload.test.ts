@@ -1,3 +1,4 @@
+import { firstTip } from '../plugins/_tips-helper.js';
 /**
  * file-upload helper 的单元测试
  * 验证决策树、5 种 pattern 顺序、超时/失败处理
@@ -42,7 +43,7 @@ describe('uploadFile helper (CDP safe)', () => {
     const result = await uploadFile(mockPage as never, '/tmp/nonexistent-file-xxx.png');
     expect(result.ok).toBe(false);
     expect(result.method).toBe('none');
-    expect(result.tips[0]).toContain('文件不存在');
+    expect(firstTip(result.tips)).toContain('文件不存在');
   });
 
   it('should try filechooser first when triggerButton is provided', async () => {

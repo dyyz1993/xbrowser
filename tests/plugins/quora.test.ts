@@ -1,3 +1,4 @@
+import { firstTip } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/quora/index.ts';
 
@@ -119,7 +120,7 @@ describe('quora plugin', () => {
       }));
       const result = await handler({}, ctx);
       expect(result.data.loggedIn).toBe(true);
-      expect(result.tips[0]).toContain('登录成功');
+      expect(firstTip(result.tips)).toContain('登录成功');
     });
 
     it('should navigate to home after login', async () => {
@@ -161,7 +162,7 @@ describe('quora plugin', () => {
       const handler = getHandler('answer');
       const ctx = makeCtx();
       const result = await handler({ questionUrl: 'https://www.quora.com/What-is-X', content: 'answer' }, ctx);
-      expect(result.tips[0]).toContain('https://www.quora.com/What-is-X');
+      expect(firstTip(result.tips)).toContain('https://www.quora.com/What-is-X');
     });
 
     it('should call waitForHuman for review', async () => {
@@ -200,7 +201,7 @@ describe('quora plugin', () => {
       const handler = getHandler('publish-article');
       const ctx = makeCtx();
       const result = await handler({ title: 'Test Article', content: 'content' }, ctx);
-      expect(result.tips[0]).toContain('Test Article');
+      expect(firstTip(result.tips)).toContain('Test Article');
     });
 
     it('should call waitForHuman for review', async () => {
@@ -242,7 +243,7 @@ describe('quora plugin', () => {
       const handler = getHandler('update-profile');
       const ctx = makeCtx();
       const result = await handler({ url: 'https://example.com' }, ctx);
-      expect(result.tips[0]).toContain('外链');
+      expect(firstTip(result.tips)).toContain('外链');
     });
 
     it('should call waitForLoadState', async () => {

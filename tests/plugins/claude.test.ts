@@ -1,3 +1,4 @@
+import { tipsMessages } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/claude/index.ts';
 
@@ -140,7 +141,7 @@ describe('claude plugin', () => {
       ]));
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx) as Record<string, unknown>;
-      const tips = result.tips as string[];
+      const tips = tipsMessages(result.tips);
       expect(tips.some((t) => t.includes('1 个会话'))).toBe(true);
     });
 
@@ -188,7 +189,7 @@ describe('claude plugin', () => {
       page.evaluate = vi.fn(() => Promise.resolve('clicked'));
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx) as Record<string, unknown>;
-      const tips = result.tips as string[];
+      const tips = tipsMessages(result.tips);
       expect(tips.some((t) => t.includes('已创建新对话'))).toBe(true);
     });
   });

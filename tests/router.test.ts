@@ -55,6 +55,7 @@ vi.mock('../src/cli/index.js', () => ({
 }));
 
 vi.mock('../src/cli/output.js', () => ({
+  outputEnvelope: vi.fn(),
   outputError: vi.fn(),
   outputResult: vi.fn(),
 }));

@@ -1,3 +1,4 @@
+import { firstTip } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/blogger/index.ts';
 
@@ -165,7 +166,7 @@ describe('blogger plugin', () => {
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx);
       expect(result.data.loggedIn).toBe(true);
-      expect(result.tips[0]).toContain('Blogger 登录成功');
+      expect(firstTip(result.tips)).toContain('Blogger 登录成功');
     });
 
     it('should navigate to blogger home after waitForHuman', async () => {
@@ -248,8 +249,8 @@ describe('blogger plugin', () => {
       const page = createMockPage();
       const ctx = createMockCtx(page);
       const result = await handler({ title: 'My Post', content: 'body' }, ctx);
-      expect(result.tips[0]).toContain('My Post');
-      expect(result.tips[0]).toContain('Blogger');
+      expect(firstTip(result.tips)).toContain('My Post');
+      expect(firstTip(result.tips)).toContain('Blogger');
     });
 
     it('should call waitForHuman before publish', async () => {
@@ -293,7 +294,7 @@ describe('blogger plugin', () => {
       const page = createMockPage();
       const ctx = createMockCtx(page);
       const result = await handler({ url: 'https://example.com' }, ctx);
-      expect(result.tips[0]).toContain('Profile');
+      expect(firstTip(result.tips)).toContain('Profile');
     });
 
     it('should handle about parameter', async () => {

@@ -1,5 +1,5 @@
 import { executeCommand } from '../executor.js';
-import { outputResult, outputError } from './output.js';
+import { outputEnvelope, outputResult, outputError } from './output.js';
 import { normalizeSelector } from '../utils/selector.js';
 import { asZodSchema } from '../utils/zod-internal.js';
 import { getCommand } from '../commands/command-registry.js';
@@ -467,11 +467,16 @@ export async function handleBrowserCommand(
     params = { ...params, _target: target };
   }
 
-  const result = cdpEndpoint
-    ? await executeCommand(cmdName, params, sessionName, { cdpEndpoint })
-    : await executeCommand(cmdName, params, sessionName);
+	  const tabIndex = options.tab as string | undefined;
+	  if (tabIndex !== undefined) {
+	    params = { ...params, _tabIndex: Number(tabIndex) };
+	  }
+
+	  const result = cdpEndpoint
+	    ? await executeCommand(cmdName, params, sessionName, { cdpEndpoint })
+	    : await executeCommand(cmdName, params, sessionName);
   if (mode === 'json' || mode === 'yaml') {
-    outputResult(result, mode);
+    outputEnvelope(result, { command: cmdName }, mode);
   } else if (!result.success) {
     outputError(result.message || 'Command failed');
   } else {

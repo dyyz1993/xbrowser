@@ -1,3 +1,4 @@
+import { firstTip } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/hashnode/index.ts';
 
@@ -142,7 +143,7 @@ describe('hashnode plugin', () => {
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx);
       expect(result.data.loggedIn).toBe(false);
-      expect(result.tips[0]).toContain('登录可能未完成');
+      expect(firstTip(result.tips)).toContain('登录可能未完成');
     });
 
     it('should return success tip when logged in', async () => {
@@ -162,7 +163,7 @@ describe('hashnode plugin', () => {
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx);
       expect(result.data.loggedIn).toBe(true);
-      expect(result.tips[0]).toContain('Hashnode 登录成功');
+      expect(firstTip(result.tips)).toContain('Hashnode 登录成功');
     });
 
     it('should navigate to hashnode home after login attempt', async () => {
@@ -207,8 +208,8 @@ describe('hashnode plugin', () => {
       const page = createMockPage();
       const ctx = createMockCtx(page);
       const result = await handler({ title: 'Test Post', content: 'body' }, ctx);
-      expect(result.tips[0]).toContain('Test Post');
-      expect(result.tips[0]).toContain('Hashnode');
+      expect(firstTip(result.tips)).toContain('Test Post');
+      expect(firstTip(result.tips)).toContain('Hashnode');
     });
 
     it('should call waitForHuman before publish', async () => {
@@ -273,8 +274,8 @@ describe('hashnode plugin', () => {
       const page = createMockPage();
       const ctx = createMockCtx(page);
       const result = await handler({ title: 'Draft Title', content: 'c' }, ctx);
-      expect(result.tips[0]).toContain('Draft Title');
-      expect(result.tips[0]).toContain('草稿');
+      expect(firstTip(result.tips)).toContain('Draft Title');
+      expect(firstTip(result.tips)).toContain('草稿');
     });
   });
 
@@ -310,7 +311,7 @@ describe('hashnode plugin', () => {
       const page = createMockPage();
       const ctx = createMockCtx(page);
       const result = await handler({ url: 'https://example.com' }, ctx);
-      expect(result.tips[0]).toContain('Profile');
+      expect(firstTip(result.tips)).toContain('Profile');
     });
 
     it('should handle bio parameter', async () => {
