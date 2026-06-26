@@ -12,7 +12,7 @@ export const scrapeCommand = registerCommand({
   scope: 'project',
   selectorParams: ['selector'],
   parameters: z.object({
-    url: z.string(),
+    url: z.string().optional(),
     selector: z.string().optional(),
     timeout: z.number().default(30000),
     format: z.enum(['markdown', 'html', 'text']).default('markdown'),
@@ -26,11 +26,17 @@ export const scrapeCommand = registerCommand({
     const maxAttempts = p.retries + 1;
 
     try {
+      // Resolve target URL: use provided or current page URL (when connected to a browser via --cdp)
+      const targetUrl = p.url || page.url();
+      if (!targetUrl || targetUrl === 'about:blank') {
+        return fail('URL is required. Provide a URL or connect to a browser (--cdp) with a non-blank page.');
+      }
+
       let lastError: Error | undefined;
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-          await page.goto(p.url, { waitUntil: 'commit', timeout: p.timeout });
+          await page.goto(targetUrl, { waitUntil: 'commit', timeout: p.timeout });
           // For SPA pages, 'domcontentloaded' may hang. Use 'commit' + wait for body.
           await page.waitForSelector('body', { timeout: p.timeout }).catch(() => {});
           // Wait for network to settle (with fallback — some SPAs never fully idle)
@@ -109,7 +115,7 @@ export const scrapeCommand = registerCommand({
               return { url: location.href, title: document.title, navigation, tables, forms: forms.slice(0, 20), links: links.slice(0, 30), mainText };
             });
 
-            try { persistFromScrape(p.url, structured); } catch { /* knowledge persist failure is non-critical */ }
+            try { persistFromScrape(targetUrl, structured); } catch { /* knowledge persist failure is non-critical */ }
 
             // smart: 和 clean 相同的结构化输出，但明确告知 agent 这是可增强的数据
             // agent (pi) 拿到后可自行理解语义，回写到 ~/.xbrowser/site-knowledge/
