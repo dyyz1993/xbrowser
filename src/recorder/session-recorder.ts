@@ -1380,19 +1380,45 @@ export class SessionRecorder {
   // ==================== Private ====================
 
   private async injectActionScript(page: Page): Promise<void> {
-    try {
-      // Inject the 13-strategy unique selector generator FIRST so action script can use it
-      await page.evaluate(getSelectorGeneratorScript());
-      await page.evaluate(ACTION_SIGNAL_SCRIPT);
-      // Store script source so pollActions can inject into dynamic iframes
-      await page.evaluate(`window.__xb_action_script_src = ${JSON.stringify(ACTION_SIGNAL_SCRIPT)};`);
-    } catch {
-      // page may not be ready — action script already injected is OK
+    let success = false;
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        // Inject the 13-strategy unique selector generator FIRST so action script can use it
+        await page.evaluate(getSelectorGeneratorScript());
+        await page.evaluate(ACTION_SIGNAL_SCRIPT);
+        // Store script source so pollActions can inject into dynamic iframes
+        await page.evaluate(`window.__xb_action_script_src = ${JSON.stringify(ACTION_SIGNAL_SCRIPT)};`);
+
+        // Verify injection was successful — check that the action signal flag is set
+        const injected = await page.evaluate(`(function() {
+          try { return !!window.__xb_action_signal; } catch(e) { return false; }
+        })()`).catch(() => false);
+        if (injected) {
+          success = true;
+          break;  // Injection successful, stop retrying
+        }
+        console.error(`[recorder] Action signal injection verification failed (attempt ${attempt}/${maxAttempts})`);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        console.error(`[recorder] Action signal injection error (attempt ${attempt}/${maxAttempts}): ${msg}`);
+      }
+      // Wait before retrying
+      if (attempt < maxAttempts) {
+        await new Promise(r => setTimeout(r, 1000));
+      }
     }
+    if (!success) {
+      console.error(`[recorder] WARNING: Action signal injection FAILED after ${maxAttempts} attempts. User actions will NOT be recorded. Check that the page supports Runtime.evaluate.`);
+    }
+
+    // Checkpoint overlay — best-effort, non-critical
     try {
       await page.evaluate(CHECKPOINT_OVERLAY_SCRIPT);
-    } catch {
-      // page may not be ready
+    } catch (e) {
+      // Checkpoint overlay is non-critical
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error(`[recorder] Checkpoint overlay injection failed (non-fatal): ${msg}`);
     }
 
     // Inject into same-origin iframes — both existing and dynamically created ones
@@ -1569,7 +1595,12 @@ export class SessionRecorder {
             await this.injectActionScript(page);
             return;
           }
-        } catch { /* page not ready */ }
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (attempt < 4) {
+            console.error(`[recorder] injectActionScript retry ${attempt + 1}/5 failed: ${msg}`);
+          }
+        }
         await new Promise(r => setTimeout(r, 1000));
       }
     };
@@ -1591,7 +1622,10 @@ export class SessionRecorder {
     if (frame.isDetached()) return;
       const url = frame.url();
       if (url && url !== 'about:blank' && !url.startsWith('chrome')) {
-        try { await this.injectActionScript(page); } catch { /* ignore */ }
+        try { await this.injectActionScript(page); } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.error(`[recorder] injectActionScript after navigation failed: ${msg}`);
+        }
       }
     });
   };
