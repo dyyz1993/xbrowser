@@ -9,10 +9,7 @@ export {};
 
 declare global {
   interface Window {
-    // Recording state (injected by RECORDING_INJECT_JS in rpc-handlers.ts)
-    __xb_rec?: boolean;
-    __xb_evts?: unknown[];
-    __xb_t0?: number;
+    // Element descriptor (injected by ACTION_SIGNAL_SCRIPT in session-recorder.ts)
     __xb_describe?: (el: Element) => Record<string, unknown>;
     // Element focus tracking (injected by element-monitor.ts)
     __xb_last_focused?: unknown;

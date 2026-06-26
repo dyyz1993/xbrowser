@@ -342,7 +342,7 @@ process.on('message', (msg) => { ... }); // IPC 握手
 **将来实施时**：
 - 创建 `xbrowser-worker.ts` 实现 `WorkerEntryPoint`
 - `network:list/clear/top/analyze/curl/replay/like/dislike/export` → worker.execute()
-- `recording:status/events/clear/save` → worker.execute()
+- `record:start/status/stop/summary` → worker.execute()
 - daemon-main.ts 的 RPC handler 只做 session 管理和命令路由
 
 ---

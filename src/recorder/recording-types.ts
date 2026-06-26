@@ -105,6 +105,8 @@ export interface UserAction {
     distance: number;
     duration: number;
   };
+  /** Base64-encoded PNG screenshot of the target element (captured on key actions) */
+  elementScreenshot?: string;
 }
 
 export interface NetworkEntry {
