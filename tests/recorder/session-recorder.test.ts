@@ -18,6 +18,12 @@ const TEST_DIR = resolve(tmpdir(), 'xbrowser-session-recorder-test');
 // Minimal mock Page
 function createMockPage(url = 'https://example.com') {
   let currentUrl = url;
+  const mockLocator = {
+    first: vi.fn(() => mockLocator),
+    screenshot: vi.fn(async () => Buffer.from('fake-screenshot')),
+    fill: vi.fn(async () => {}),
+    click: vi.fn(async () => {}),
+  };
   return {
     url: vi.fn(() => currentUrl),
     goto: vi.fn(async () => { currentUrl = url; }),
@@ -29,6 +35,7 @@ function createMockPage(url = 'https://example.com') {
     on: vi.fn(),
     off: vi.fn(),
     waitForTimeout: vi.fn(async () => {}),
+    locator: vi.fn(() => mockLocator),
     _setUrl: (u: string) => { currentUrl = u; },
   };
 }
@@ -70,7 +77,7 @@ describe('SessionRecorder', () => {
     it('should record a cdp-fill action with element metadata', async () => {
       await startRecording('https://example.com');
 
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'cdp-fill',
         selector: '#username',
         value: 'testuser',
@@ -96,7 +103,7 @@ describe('SessionRecorder', () => {
     it('should record a goto action with target URL', async () => {
       await startRecording('https://example.com');
 
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'goto',
         url: 'https://example.com',
       });
@@ -110,7 +117,7 @@ describe('SessionRecorder', () => {
     it('should deduplicate identical cdp-fill within dedup window', async () => {
       await startRecording('https://example.com');
 
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'cdp-fill',
         selector: '#username',
         value: 'testuser',
@@ -118,7 +125,7 @@ describe('SessionRecorder', () => {
       });
 
       // Same action within 1.5s — should be deduped
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'cdp-fill',
         selector: '#username',
         value: 'testuser',
@@ -131,7 +138,7 @@ describe('SessionRecorder', () => {
     it('should NOT deduplicate actions after dedup window expires', async () => {
       await startRecording('https://example.com');
 
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'cdp-click',
         selector: '#btn',
         element: { tag: 'button', selector: '#btn', text: 'Click', strategy: 'id', confidence: 'high' },
@@ -142,7 +149,7 @@ describe('SessionRecorder', () => {
       // Also age the last action's timestamp so reverse dedup doesn't match
       (recorder as any).actions[0].timestamp = Date.now() - 2000;
 
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'cdp-click',
         selector: '#btn',
       });
@@ -167,7 +174,7 @@ describe('SessionRecorder', () => {
       }];
 
       // Now cdp-click with same selector arrives — should be deduped
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'cdp-click',
         selector: '#btn',
       });
@@ -182,7 +189,7 @@ describe('SessionRecorder', () => {
     it('should fallback to lastKnownUrl when action url is about:blank', async () => {
       await startRecording('https://example.com');
 
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'cdp-click',
         selector: '#link',
         url: 'about:blank',
@@ -196,7 +203,7 @@ describe('SessionRecorder', () => {
     it('should use action url when it is valid', async () => {
       await startRecording('https://example.com');
 
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'goto',
         url: 'https://other.com',
       });
@@ -208,13 +215,13 @@ describe('SessionRecorder', () => {
     it('should update lastKnownUrl after goto', async () => {
       await startRecording('https://example.com');
 
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'goto',
         url: 'https://newsite.com',
       });
 
       // Now a click with about:blank should fallback to newsite.com
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'cdp-click',
         selector: '#btn',
         url: 'about:blank',
@@ -229,7 +236,7 @@ describe('SessionRecorder', () => {
     it('should return valid recording data', async () => {
       await startRecording('https://example.com');
 
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'cdp-fill',
         selector: '#input',
         value: 'hello',
@@ -252,7 +259,7 @@ describe('SessionRecorder', () => {
     it('should include element strategy and confidence in recording data', async () => {
       await startRecording('https://example.com');
 
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'cdp-click',
         selector: '.submit-btn',
         element: {
@@ -280,14 +287,14 @@ describe('SessionRecorder', () => {
     it('should generate summary with steps and elements', async () => {
       await startRecording('https://example.com');
 
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'cdp-fill',
         selector: '#email',
         value: 'test@test.com',
         element: { tag: 'input', selector: '#email', text: '', strategy: 'id', confidence: 'high' },
       });
 
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'cdp-click',
         selector: '#submit',
         element: { tag: 'button', selector: '#submit', text: 'Submit', strategy: 'id', confidence: 'high' },
@@ -313,7 +320,7 @@ describe('SessionRecorder', () => {
     it('should handle action without element', async () => {
       await startRecording('https://example.com');
 
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'goto',
         url: 'https://example.com',
       });
@@ -325,7 +332,7 @@ describe('SessionRecorder', () => {
     it('should handle action without selector (cdp-eval)', async () => {
       await startRecording('https://example.com');
 
-      recorder.recordCommandAction({
+      await recorder.recordCommandAction({
         type: 'cdp-eval',
         value: 'document.title',
       });
@@ -339,8 +346,8 @@ describe('SessionRecorder', () => {
       await startRecording('https://example.com');
 
       // Multiple actions with about:blank should all fallback to lastKnownUrl
-      recorder.recordCommandAction({ type: 'cdp-click', selector: '#a', url: 'about:blank' });
-      recorder.recordCommandAction({ type: 'cdp-fill', selector: '#b', value: 'x', url: 'about:blank' });
+      await recorder.recordCommandAction({ type: 'cdp-click', selector: '#a', url: 'about:blank' });
+      await recorder.recordCommandAction({ type: 'cdp-fill', selector: '#b', value: 'x', url: 'about:blank' });
 
       const { data } = await recorder.stop();
       for (const action of data.actions) {

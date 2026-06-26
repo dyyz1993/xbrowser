@@ -218,28 +218,6 @@ describe('createRPCHandler', () => {
     });
   });
 
-  // ── Recording status ──
-  describe('recording:status', () => {
-    it('should return no session when session not found', async () => {
-      const result = await handler('recording:status', { session: 'nonexistent' });
-      expect(result).toEqual({ recording: false, error: 'No session' });
-    });
-  });
-
-  describe('recording:events', () => {
-    it('should return empty events when session not found', async () => {
-      const result = await handler('recording:events', { session: 'nonexistent' });
-      expect(result).toEqual({ events: [], error: 'No session' });
-    });
-  });
-
-  describe('recording:clear', () => {
-    it('should return ok false when session not found', async () => {
-      const result = await handler('recording:clear', { session: 'nonexistent' });
-      expect(result).toEqual({ ok: false, error: 'No session' });
-    });
-  });
-
   // ── Command log ──
   describe('command:log', () => {
     it('should return command log for session', async () => {

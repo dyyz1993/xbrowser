@@ -1075,7 +1075,7 @@ export class SessionRecorder {
   }
 
   /** Record an action triggered by a CDP command (e.g. xbrowser fill/click/goto) */
-  recordCommandAction(action: { type: string; selector?: string; value?: string; url?: string; element?: UserAction['element'] }): void {
+  async recordCommandAction(action: { type: string; selector?: string; value?: string; url?: string; element?: UserAction['element'] }): Promise<void> {
     // Reverse dedup: if a matching action signal was recently recorded, skip this CDP command
     const normalizedType = action.type === 'cdp-fill' ? 'input' : action.type === 'cdp-click' ? 'click' : action.type;
     const recent = this.actions[this.actions.length - 1];
@@ -1099,7 +1099,7 @@ export class SessionRecorder {
     const actionUrl = action.url && action.url !== 'about:blank'
       ? action.url
       : (this.lastKnownUrl || this.page.url());
-    this.actions.push({
+    const actionToPush: UserAction = {
       id: this.actionCounter,
       type: action.type as UserAction['type'],
       timestamp: ts,
@@ -1107,7 +1107,15 @@ export class SessionRecorder {
       pageTitle: '',
       element: action.element || (action.selector ? { tag: '', selector: action.selector, text: '' } : undefined),
       value: action.value,
+    };
+    this.actions.push(actionToPush);
+
+    // Capture element screenshot for key action types (non-critical)
+    actionToPush.elementScreenshot = await this.captureElementScreenshot(this.page, {
+      type: action.type,
+      element: actionToPush.element,
     });
+
     // Update lastActionTs so flush will skip stale action signals
     this.lastActionTs = ts;
     // Set dedup window: ignore matching action signals for 1.5s
@@ -1889,6 +1897,11 @@ export class SessionRecorder {
         clickContext,
         files: raw.files,
       });
+
+      // Capture element screenshot for key action types (non-critical)
+      const pushed = this.actions[this.actions.length - 1];
+      pushed.elementScreenshot = await this.captureElementScreenshot(page, raw);
+
       this.lastActionTs = raw.ts;
 
       if (raw.type === 'click' || raw.type === 'navigate' || raw.type === 'submit') {
@@ -1898,6 +1911,32 @@ export class SessionRecorder {
           this.checkpoints.push(cp);
         }
       }
+    }
+  }
+
+  /**
+   * Capture a screenshot of the target element for key action types.
+   * Returns a base64-encoded PNG string, or undefined if the element has no
+   * selector or the screenshot fails (non-critical — never blocks recording).
+   *
+   * Only captures for: click, input, change, dblclick, and their CDP counterparts.
+   */
+  private async captureElementScreenshot(
+    page: Page,
+    action: { type: string; element?: { selector?: string } }
+  ): Promise<string | undefined> {
+    const keyTypes = ['click', 'input', 'change', 'dblclick', 'cdp-click', 'cdp-fill', 'filechooser'];
+    if (!keyTypes.includes(action.type)) return;
+    if (!action.element?.selector) return;
+
+    try {
+      const buffer = await page.locator(action.element.selector).first().screenshot({
+        type: 'png',
+        timeout: 2000,
+      });
+      return buffer.toString('base64');
+    } catch {
+      return; // Non-critical — never break recording flow
     }
   }
 
