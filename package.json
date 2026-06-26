@@ -1,6 +1,6 @@
 {
   "name": "@xbrowser/cli",
-  "version": "1.8.7",
+  "version": "1.9.0",
   "description": "Browser automation CLI for web scraping, headless browsing, SEO analysis, and AI agent workflows. A command-line alternative to Playwright, Puppeteer, and Selenium.",
   "type": "module",
   "bin": {

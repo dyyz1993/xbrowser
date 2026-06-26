@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.9.0] - 2026-06-26
+
+### Added
+- **#185**: 录制时自动截取元素截图 — 关键操作（click/input/change/dblclick + CDP 变体 + filechooser）后自动截取目标元素，base64 PNG 存入 `action.elementScreenshot`，供 Browser Agent 工作台渲染可视化操作时间线
+
+### Changed
+- 移除死代码 `RECORDING_INJECT_JS` 注入路径（无 client 消费）
+  - 删除 `RECORDING_INJECT_JS` 脚本 + `injectRecording()` + 2 处调用
+  - 删除 4 个 legacy `recording:status/events/clear/save` RPC handler + dispatch
+  - 移除 `__xb_rec`/`__xb_evts`/`__xb_t0` window 类型声明（保留 `__xb_describe`）
+  - 每个录制页面减少一个 MutationObserver + 6 个 capture-phase 事件监听的开销
+- `recordCommandAction()` 改为 async 以支持截图
+
 ## [1.4.0] - 2026-06-24
 
 ### Changed
