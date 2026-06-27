@@ -22,7 +22,7 @@ async function main() {
       // so the process can exit cleanly.
       const { ensureProcessCanExit } = await import('../src/browser.js');
       await ensureProcessCanExit().catch(() => {});
-      process.exit(exitCode);
+      process.exit(process.exitCode || exitCode);
     }
   }
 }

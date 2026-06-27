@@ -31,7 +31,12 @@ export function outputResult(result: unknown, mode: string = 'text'): void {
 export function outputError(message: string): void {
   const formatted = formatter.formatError(message, { color: true, emoji: false });
   console.error(formatted);
-  process.exit(1);
+  // Use process.exitCode instead of process.exit(1): process.exit() doesn't
+  // halt synchronous execution — cli.ts's finally block still runs and would
+  // override the exit code to 0 with its own process.exit(). process.exitCode
+  // communicates the intent without exiting, so cli.ts can pick it up in its
+  // final cleanup via process.exit(process.exitCode || exitCode).
+  process.exitCode = 1;
 }
 
 /**
