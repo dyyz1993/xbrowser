@@ -1,6 +1,8 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import type { JsonObject } from '../shared/json-types.js';
+import { asJsonArray } from '../shared/json-types.js';
 
 
 export default function (xcli: XCLIAPI): void {
@@ -17,21 +19,21 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       word: z.string().describe('Word to look up')
     }),
-    handler: async (p, ctx) => {
-      const data = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(p.word)}`).then(r => r.json()) as any;
-            if (data.title === 'No Definitions Found') return fail(`No definitions found for "${p.word}"`);
-            const entry = Array.isArray(data) ? data[0] : data;
-            const meanings = (entry.meanings ?? []).map((m: any) => ({
-              partOfSpeech: m.partOfSpeech ?? '',
-              definitions: (m.definitions ?? []).slice(0, 3).map((d: any) => d.definition ?? '').join('; '),
-              synonyms: (m.synonyms ?? []).slice(0, 5).join(', '),
+    handler: async (p, _ctx) => {
+      const data = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(p.word)}`).then(r => r.json()) as JsonObject | JsonObject[];
+            if (typeof data === 'object' && !Array.isArray(data) && data.title === 'No Definitions Found') return fail(`No definitions found for "${p.word}"`);
+            const entry: JsonObject = Array.isArray(data) ? data[0] : data;
+            const meanings = asJsonArray(entry.meanings).map((m) => ({
+              partOfSpeech: String(m.partOfSpeech ?? ''),
+              definitions: asJsonArray(m.definitions).slice(0, 3).map((d) => String(d.definition ?? '')).join('; '),
+              synonyms: asJsonArray(m.synonyms).slice(0, 5).map((s) => String(s)).join(', '),
             }));
             return ok({
-              word: entry.word ?? p.word,
-              phonetic: entry.phonetic ?? '',
+              word: String(entry.word ?? p.word),
+              phonetic: String(entry.phonetic ?? ''),
               meanings,
-              audio: (entry.phonetics ?? []).find((ph: any) => ph.audio)?.audio ?? '',
-              sourceUrls: (entry.sourceUrls ?? []).join(', '),
+              audio: asJsonArray(entry.phonetics).find((ph) => ph.audio)?.audio ? String(asJsonArray(entry.phonetics).find((ph) => ph.audio)?.audio) : '',
+              sourceUrls: asJsonArray(entry.sourceUrls).map((s) => String(s)).join(', '),
             });
     },
   });
@@ -42,13 +44,13 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       word: z.string().describe('Word to find synonyms for')
     }),
-    handler: async (p, ctx) => {
-      const data = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(p.word)}`).then(r => r.json()) as any;
-            if (data.title === 'No Definitions Found') return fail(`No results for "${p.word}"`);
-            const entry = Array.isArray(data) ? data[0] : data;
+    handler: async (p, _ctx) => {
+      const data = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(p.word)}`).then(r => r.json()) as JsonObject | JsonObject[];
+            if (typeof data === 'object' && !Array.isArray(data) && data.title === 'No Definitions Found') return fail(`No results for "${p.word}"`);
+            const entry: JsonObject = Array.isArray(data) ? data[0] : data;
             const allSynonyms = new Set<string>();
-            (entry.meanings ?? []).forEach((m: any) => (m.synonyms ?? []).forEach((s: string) => allSynonyms.add(s)));
-            (entry.meanings ?? []).forEach((m: any) => (m.definitions ?? []).forEach((d: any) => (d.synonyms ?? []).forEach((s: string) => allSynonyms.add(s))));
+            asJsonArray(entry.meanings).forEach((m) => asJsonArray(m.synonyms).forEach((s) => allSynonyms.add(String(s))));
+            asJsonArray(entry.meanings).forEach((m) => asJsonArray(m.definitions).forEach((d) => asJsonArray(d.synonyms).forEach((s) => allSynonyms.add(String(s)))));
             const synonyms = [...allSynonyms];
             if (synonyms.length === 0) return fail(`No synonyms found for "${p.word}"`);
             return ok({ word: p.word, synonyms, count: synonyms.length });
@@ -62,13 +64,13 @@ export default function (xcli: XCLIAPI): void {
       word: z.string().describe('Word to find examples for'),
             limit: z.coerce.number().optional().default(10).describe('Max examples')
     }),
-    handler: async (p, ctx) => {
-      const data = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(p.word)}`).then(r => r.json()) as any;
-            if (data.title === 'No Definitions Found') return fail(`No results for "${p.word}"`);
-            const entry = Array.isArray(data) ? data[0] : data;
+    handler: async (p, _ctx) => {
+      const data = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(p.word)}`).then(r => r.json()) as JsonObject | JsonObject[];
+            if (typeof data === 'object' && !Array.isArray(data) && data.title === 'No Definitions Found') return fail(`No results for "${p.word}"`);
+            const entry: JsonObject = Array.isArray(data) ? data[0] : data;
             const examples: string[] = [];
-            (entry.meanings ?? []).forEach((m: any) => (m.definitions ?? []).forEach((d: any) => {
-              if (d.example) examples.push(d.example);
+            asJsonArray(entry.meanings).forEach((m) => asJsonArray(m.definitions).forEach((d) => {
+              if (d.example) examples.push(String(d.example));
             }));
             if (examples.length === 0) return fail(`No examples found for "${p.word}"`);
             return ok({ word: p.word, examples: examples.slice(0, p.limit || 10), count: Math.min(examples.length, p.limit || 10) });

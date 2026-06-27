@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 
 
@@ -18,7 +18,7 @@ export default function (xcli: XCLIAPI): void {
       query: z.string().describe('Search query'),
             limit: z.coerce.number().optional().default(20).describe('Max results')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(p.query)}&max_results=${p.limit || 20}&sortBy=relevance&sortOrder=descending`;
             const xml = await fetch(url).then(r => r.text());
             const results: any[] = [];
@@ -45,12 +45,11 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       id: z.string().describe('arXiv paper ID (e.g. "2101.00001")')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://export.arxiv.org/api/query?id_list=${p.id}`;
             const xml = await fetch(url).then(r => r.text());
             const entry = xml.match(/<entry>[\s\S]*?<\/entry>/)?.[0];
             if (!entry) return fail(`Paper "${p.id}" not found`);
-            const id = entry.match(/<id>([^<]*)<\/id>/)?.[1] || '';
             const title = entry.match(/<title>([^<]*)<\/title>/)?.[1]?.replace(/\s+/g, ' ').trim() || '';
             const summary = entry.match(/<summary>([\s\S]*?)<\/summary>/)?.[1]?.replace(/\s+/g, ' ').trim() || '';
             const published = entry.match(/<published>([^<]*)<\/published>/)?.[1]?.slice(0, 10) || '';
@@ -70,7 +69,7 @@ export default function (xcli: XCLIAPI): void {
       category: z.string().optional().default('cs.AI').describe('arXiv category (e.g. cs.AI, math.ST, physics)'),
             limit: z.coerce.number().optional().default(20).describe('Max results')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const cat = p.category || 'cs.AI';
             const url = `https://export.arxiv.org/api/query?search_query=cat:${cat}&max_results=${p.limit || 20}&sortBy=submittedDate&sortOrder=descending`;
             const xml = await fetch(url).then(r => r.text());

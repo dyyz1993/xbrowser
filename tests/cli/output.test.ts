@@ -4,20 +4,16 @@ import { outputResult, outputError } from '../../src/cli/output.js';
 describe('outputResult', () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
-  let exitSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    process.exitCode = 0;
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    exitSpy = vi.spyOn(process, 'exit').mockImplementation((code) => {
-      throw new Error(`exit:${code}`);
-    });
   });
 
   afterEach(() => {
     logSpy.mockRestore();
     errorSpy.mockRestore();
-    exitSpy.mockRestore();
   });
 
   it('should output JSON stringified for json mode', () => {
@@ -31,19 +27,20 @@ describe('outputResult', () => {
   });
 
   it('should exit with error when success is false', () => {
-    expect(() => outputResult({ success: false, message: 'bad' }, 'text')).toThrow('exit:1');
+    outputResult({ success: false, message: 'bad' }, 'text');
+    expect(process.exitCode).toBe(1);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('bad'));
   });
 
   it('should exit with unknown error when success is false and no message', () => {
-    expect(() => outputResult({ success: false }, 'text')).toThrow('exit:1');
+    outputResult({ success: false }, 'text');
+    expect(process.exitCode).toBe(1);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Unknown error'));
   });
 
   it('should exit with error when data.ok is false', () => {
-    expect(() =>
-      outputResult({ ok: false, error: 'fail' }, 'text'),
-    ).toThrow('exit:1');
+    outputResult({ ok: false, error: 'fail' }, 'text');
+    expect(process.exitCode).toBe(1);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('fail'));
   });
 
@@ -83,22 +80,19 @@ describe('outputResult', () => {
 
 describe('outputError', () => {
   let errorSpy: ReturnType<typeof vi.spyOn>;
-  let exitSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    process.exitCode = 0;
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    exitSpy = vi.spyOn(process, 'exit').mockImplementation((code) => {
-      throw new Error(`exit:${code}`);
-    });
   });
 
   afterEach(() => {
     errorSpy.mockRestore();
-    exitSpy.mockRestore();
   });
 
-  it('should print error and exit with code 1', () => {
-    expect(() => outputError('Something went wrong')).toThrow('exit:1');
+  it('should print error and set exitCode to 1', () => {
+    outputError('Something went wrong');
+    expect(process.exitCode).toBe(1);
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('Something went wrong'));
   });
 });

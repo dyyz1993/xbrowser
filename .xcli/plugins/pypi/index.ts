@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import type { JsonObject } from '../shared/json-types.js';
 
 
 export default function (xcli: XCLIAPI): void {
@@ -18,7 +19,7 @@ export default function (xcli: XCLIAPI): void {
       query: z.string().describe('Search keyword'),
             limit: z.coerce.number().optional().default(20).describe('Max results')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://pypi.org/search/?q=${encodeURIComponent(p.query)}&page=1`;
             const html = await fetch(url).then(r => r.text());
             // Parse HTML for package list
@@ -49,12 +50,11 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       name: z.string().describe('Package name')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://pypi.org/pypi/${encodeURIComponent(p.name)}/json`;
-            const data = await fetch(url).then(r => r.json()) as any;
+            const data = await fetch(url).then(r => r.json()) as JsonObject;
             if (data.message && data.message.includes('Not Found')) return fail(`Package "${p.name}" not found`);
             const info = data.info ?? {};
-            const urls = data.urls ?? [];
             return ok({
               name: info.name ?? p.name,
               version: info.version ?? '',
@@ -80,9 +80,9 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       name: z.string().describe('Package name')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://pypistats.org/api/packages/${p.name.toLowerCase()}/recent`;
-            const data = await fetch(url).then(r => r.json()) as any;
+            const data = await fetch(url).then(r => r.json()) as JsonObject;
             if (data.error) return fail(`Error: ${data.error}`);
             return ok({
               package: p.name,

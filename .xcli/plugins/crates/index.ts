@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import type { JsonObject } from '../shared/json-types.js';
 
 
 export default function (xcli: XCLIAPI): void {
@@ -18,9 +19,9 @@ export default function (xcli: XCLIAPI): void {
       query: z.string().describe('Search keyword'),
             limit: z.coerce.number().optional().default(20).describe('Max results')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://crates.io/api/v1/crates?q=${encodeURIComponent(p.query)}&per_page=${Math.min(p.limit || 20, 100)}`;
-            const data = await fetch(url, { headers: { 'User-Agent': 'xbrowser/1.0' } }).then(r => r.json()) as any;
+            const data = await fetch(url, { headers: { 'User-Agent': 'xbrowser/1.0' } }).then(r => r.json()) as JsonObject;
             const crates = data.crates ?? [];
             if (crates.length === 0) return fail(`No crates matched "${p.query}"`);
             const results = crates.slice(0, p.limit).map((c: any, i: number) => ({
@@ -44,9 +45,9 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       name: z.string().describe('Crate name')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://crates.io/api/v1/crates/${encodeURIComponent(p.name)}`;
-            const data = await fetch(url, { headers: { 'User-Agent': 'xbrowser/1.0' } }).then(r => r.json()) as any;
+            const data = await fetch(url, { headers: { 'User-Agent': 'xbrowser/1.0' } }).then(r => r.json()) as JsonObject;
             const cr = data.crate ?? {};
             if (!cr.name) return fail(`Crate "${p.name}" not found`);
             const ver = data.versions?.[0] ?? {};

@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 
 
@@ -19,7 +19,7 @@ export default function (xcli: XCLIAPI): void {
             since: z.string().optional().default('daily').describe('Time range: daily, weekly, monthly'),
             limit: z.coerce.number().optional().default(25).describe('Max results')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const lang = p.language ? `/${encodeURIComponent(p.language)}` : '';
             const since = p.since || 'daily';
             const url = `https://github.com/trending${lang}?since=${since}`;
@@ -27,7 +27,6 @@ export default function (xcli: XCLIAPI): void {
             const results: any[] = [];
             const repoRegex = /<h2[^>]*class="[^"]*h3 lh-condensed[^"]*">[\s\S]*?<a[^>]*href="\/([^"]+)"[^>]*>/g;
             const descRegex = /<p[^>]*class="[^"]*col-9 color-fg-muted[^"]*"[^>]*>([\s\S]*?)<\/p>/g;
-            const starRegex = /<span[^>]*id="repo-stars-counter-star"[^>]*>([^<]*)<\/span>/g;
             const langRegex = /<span[^>]*itemprop="programmingLanguage"[^>]*>([^<]*)<\/span>/g;
             const repos: string[] = [];
             let m;

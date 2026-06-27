@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import type { JsonObject } from '../shared/json-types.js';
 
 
 export default function (xcli: XCLIAPI): void {
@@ -18,9 +19,9 @@ export default function (xcli: XCLIAPI): void {
       query: z.string().describe('Search query'),
             limit: z.coerce.number().optional().default(20).describe('Max results')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(p.query)}&language=en&format=json&limit=${p.limit || 20}`;
-            const data = await fetch(url).then(r => r.json()) as any;
+            const data = await fetch(url).then(r => r.json()) as JsonObject;
             const results = (data.search ?? []).map((r: any, i: number) => ({
               rank: i + 1,
               id: r.id ?? '',
@@ -39,9 +40,9 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       id: z.string().describe('Wikidata entity ID (e.g. "Q42" for Douglas Adams)')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://www.wikidata.org/wiki/Special:EntityData/${p.id}.json`;
-            const data = await fetch(url).then(r => r.json()) as any;
+            const data = await fetch(url).then(r => r.json()) as JsonObject;
             const entity = data?.entities?.[p.id];
             if (!entity) return fail(`Entity "${p.id}" not found`);
             const labels = entity.labels ?? {};

@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import type { JsonObject } from '../shared/json-types.js';
 
 
 export default function (xcli: XCLIAPI): void {
@@ -18,9 +19,9 @@ export default function (xcli: XCLIAPI): void {
       query: z.string().describe('Search query'),
             limit: z.coerce.number().optional().default(20).describe('Max results')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(p.query)}&limit=${p.limit || 20}&fields=title,authors,year,externalIds,citationCount,openAccessPdf`;
-            const data = await fetch(url).then(r => r.json()) as any;
+            const data = await fetch(url).then(r => r.json()) as JsonObject;
             const papers = data?.data ?? [];
             if (papers.length === 0) return fail(`No papers matched "${p.query}"`);
             return ok(papers.slice(0, p.limit).map((paper: any, i: number) => ({

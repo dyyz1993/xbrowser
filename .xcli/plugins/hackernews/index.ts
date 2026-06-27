@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import type { JsonObject } from '../shared/json-types.js';
 
 
 export default function (xcli: XCLIAPI): void {
@@ -17,7 +18,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       limit: z.coerce.number().optional().default(20).describe('Number of stories')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const topIds = await fetch('https://hacker-news.firebaseio.com/v0/topstories.json').then(r => r.json());
             const ids = (topIds as number[]).slice(0, Math.min((p.limit || 20) + 10, 50));
             const items = await Promise.all(
@@ -45,7 +46,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       limit: z.coerce.number().optional().default(20).describe('Number of stories')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const newIds = await fetch('https://hacker-news.firebaseio.com/v0/newstories.json').then(r => r.json());
             const ids = (newIds as number[]).slice(0, Math.min((p.limit || 20) + 10, 50));
             const items = await Promise.all(
@@ -73,7 +74,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       limit: z.coerce.number().optional().default(20).describe('Number of stories')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const bestIds = await fetch('https://hacker-news.firebaseio.com/v0/beststories.json').then(r => r.json());
             const ids = (bestIds as number[]).slice(0, Math.min((p.limit || 20) + 10, 50));
             const items = await Promise.all(
@@ -101,7 +102,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       limit: z.coerce.number().optional().default(20).describe('Number of stories')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const topIds = await fetch('https://hacker-news.firebaseio.com/v0/askstories.json').then(r => r.json());
             const ids = (topIds as number[]).slice(0, Math.min((p.limit || 20) + 10, 50));
             const items = await Promise.all(
@@ -129,7 +130,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       limit: z.coerce.number().optional().default(20).describe('Number of stories')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const topIds = await fetch('https://hacker-news.firebaseio.com/v0/showstories.json').then(r => r.json());
             const ids = (topIds as number[]).slice(0, Math.min((p.limit || 20) + 10, 50));
             const items = await Promise.all(
@@ -157,7 +158,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       limit: z.coerce.number().optional().default(20).describe('Number of stories')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const topIds = await fetch('https://hacker-news.firebaseio.com/v0/jobstories.json').then(r => r.json());
             const ids = (topIds as number[]).slice(0, Math.min((p.limit || 20) + 10, 50));
             const items = await Promise.all(
@@ -186,9 +187,9 @@ export default function (xcli: XCLIAPI): void {
       query: z.string().describe('Search keyword'),
             limit: z.coerce.number().optional().default(20).describe('Number of results')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(p.query)}&hitsPerPage=${p.limit || 20}`;
-            const data = await fetch(url).then(r => r.json()) as any;
+            const data = await fetch(url).then(r => r.json()) as JsonObject;
             const hits = data.hits || [];
             const results = hits.map((hit: any, i: number) => ({
               rank: i + 1,
@@ -209,8 +210,8 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       id: z.coerce.number().describe('Item ID')
     }),
-    handler: async (p, ctx) => {
-      const item = await fetch(`https://hacker-news.firebaseio.com/v0/item/${p.id}.json`).then(r => r.json()) as any;
+    handler: async (p, _ctx) => {
+      const item = await fetch(`https://hacker-news.firebaseio.com/v0/item/${p.id}.json`).then(r => r.json()) as JsonObject;
             if (!item) return fail(`Item ${p.id} not found`);
             return ok({
               id: item.id,

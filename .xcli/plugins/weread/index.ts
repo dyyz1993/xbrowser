@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import type { JsonObject } from '../shared/json-types.js';
 
 
 export default function (xcli: XCLIAPI): void {
@@ -18,9 +19,9 @@ export default function (xcli: XCLIAPI): void {
       query: z.string().describe('搜索关键词'),
             limit: z.coerce.number().optional().default(20).describe('返回数量')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://weread.qq.com/web/search?q=${encodeURIComponent(p.query)}`;
-            const data = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://weread.qq.com/' } }).then(r => r.json()) as any;
+            const data = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://weread.qq.com/' } }).then(r => r.json()) as JsonObject;
             const books = data?.books ?? data?.data?.books ?? [];
             if (books.length === 0) return fail(`未找到 "${p.query}" 的相关图书`);
             return ok(books.slice(0, p.limit || 20).map((b: any, i: number) => ({
