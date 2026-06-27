@@ -43,6 +43,7 @@ vi.mock('../../src/plugin/loader.js', () => ({
   XBrowserPluginLoader: vi.fn().mockImplementation(() => ({
     reloadPlugin: mockReloadPlugin,
   })),
+  setSilentPluginWarnings: vi.fn(),
 }));
 
 vi.mock('../../src/utils/plugin-singleton.js', () => ({
@@ -465,34 +466,37 @@ describe('plugin-routes', () => {
   });
 
   describe('handlePlugin - publish/register/login/whoami/logout', () => {
-    it('should output redirect error for publish', async () => {
+    // Marketplace publisher was removed in 216f151; these subcommands must
+    // report the removal honestly instead of redirecting to a non-existent
+    // `xbrowser marketplace` command.
+    it('should report removal for publish', async () => {
       await expect(
         handlePlugin(['publish'], {}, 'json')
-      ).rejects.toThrow('"publish" has moved to the marketplace plugin');
+      ).rejects.toThrow('"plugin publish" is no longer available');
     });
 
-    it('should output redirect error for register', async () => {
+    it('should report removal for register', async () => {
       await expect(
         handlePlugin(['register'], {}, 'text')
-      ).rejects.toThrow('"register" has moved to the marketplace plugin');
+      ).rejects.toThrow('"plugin register" is no longer available');
     });
 
-    it('should output redirect error for login', async () => {
+    it('should report removal for login', async () => {
       await expect(
         handlePlugin(['login'], {}, 'text')
-      ).rejects.toThrow('"login" has moved to the marketplace plugin');
+      ).rejects.toThrow('"plugin login" is no longer available');
     });
 
-    it('should output redirect error for whoami', async () => {
+    it('should report removal for whoami', async () => {
       await expect(
         handlePlugin(['whoami'], {}, 'json')
-      ).rejects.toThrow('"whoami" has moved to the marketplace plugin');
+      ).rejects.toThrow('"plugin whoami" is no longer available');
     });
 
-    it('should output redirect error for logout', async () => {
+    it('should report removal for logout', async () => {
       await expect(
         handlePlugin(['logout'], {}, 'text')
-      ).rejects.toThrow('"logout" has moved to the marketplace plugin');
+      ).rejects.toThrow('"plugin logout" is no longer available');
     });
   });
 

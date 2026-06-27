@@ -66,14 +66,22 @@ export const configBuiltin: BuiltinCommand = {
         console.error('Usage: xbrowser config set <key> <value>');
         process.exit(1);
       }
-      // Validate key against known config schema
+      // Validate key against known config schema. Keys under a known namespace
+      // (browser.* / captcha.* / preview.*) are accepted even if not enumerated,
+      // since plugins may register their own keys under those namespaces.
       const knownKeys = new Set([
         'browser.executablePath', 'browser.headless', 'browser.args',
         'captcha.notifyUrl', 'captcha.autoOpen', 'captcha.timeout', 'captcha.strategy',
         'preview.port', 'preview.quality', 'preview.fps',
       ]);
-      if (!knownKeys.has(key) && !key.startsWith('browser.') && !key.startsWith('captcha.') && !key.startsWith('preview.')) {
-        console.warn(`⚠️ Unknown config key: "${key}". Known keys: browser.*, captcha.*, preview.*`);
+      const isKnownNamespace = key.startsWith('browser.') || key.startsWith('captcha.') || key.startsWith('preview.');
+      if (!knownKeys.has(key) && !isKnownNamespace) {
+        console.error(
+          `Unknown config key: "${key}".\n` +
+          `Known namespaces: browser.*, captcha.*, preview.*\n` +
+          `Run "xbrowser config list" to see current keys.`
+        );
+        process.exit(1);
       }
       setConfigValue(key, value);
       console.log(`Set ${key} = ${value}`);

@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, rmSync, existsSync, readFileSync } from 'fs';
+import { join } from 'path';
+import { tmpdir } from 'os';
 import type { BrowserCommandContext } from '../../src/context.js';
 
 function createMockContext(): BrowserCommandContext {
@@ -86,6 +89,30 @@ describe('Screenshot Commands', () => {
       const { screenshotCommand } = await import('../../src/commands/screenshot.js');
       const result = await screenshotCommand.handler({}, ctx);
       expect((result as any).data.size).toBeGreaterThan(0);
+    });
+
+    it('should create nested parent dirs for --output automatically', async () => {
+      const { screenshotCommand } = await import('../../src/commands/screenshot.js');
+      const tmp = mkdtempSync(join(tmpdir(), 'xb-shot-'));
+      // Deeply nested path whose dirs do not exist yet
+      const out = join(tmp, 'a/b/c/shot.png');
+      try {
+        const result = await screenshotCommand.handler({ output: out }, ctx);
+        expect(result.success).toBe(true);
+        expect(existsSync(out)).toBe(true);
+        expect(readFileSync(out, 'utf-8')).toBe('screenshot-data');
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('should return fail (not throw) when --output path is unwritable', async () => {
+      const { screenshotCommand } = await import('../../src/commands/screenshot.js');
+      // Root path is not writable as a file under it — ensureParentDir skips it
+      // and writeFileSync throws EACCES/EISDIR. Must come back as fail, not throw.
+      const result = await screenshotCommand.handler({ output: '/' }, ctx);
+      expect(result.success).toBe(false);
+      expect((result as any).message).toMatch(/Failed to write screenshot|Cannot create directory/);
     });
   });
 });

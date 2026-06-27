@@ -20,7 +20,11 @@ export async function handleRun(
     return;
   }
 
-  const chain = commands.join(' && ');
+  // Join with `;` (sequence, non-short-circuiting) — NOT `&&`.
+  // Each line in the file should execute independently; using `&&` would stop
+  // the whole run as soon as one line fails. This mirrors how stdin multi-line
+  // input is joined (see AGENTS.md §22.1 — the same bug was fixed there).
+  const chain = commands.join(' ; ');
   const chainResult = await executeChain(chain, {
     cdpEndpoint: options?.cdpEndpoint,
     sessionName: options?.sessionName,

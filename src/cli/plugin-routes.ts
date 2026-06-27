@@ -447,7 +447,14 @@ export async function handlePlugin(
     case 'login':
     case 'whoami':
     case 'logout':
-      outputError(`"${sub}" has moved to the marketplace plugin. Use: xbrowser marketplace ${sub}`);
+      // Marketplace publisher was removed in 216f151 but these redirects were
+      // left behind, pointing at an `xbrowser marketplace` command that does not
+      // exist. Report honestly instead of sending the user into a dead end.
+      outputError(
+        `"plugin ${sub}" is no longer available: the built-in marketplace publisher was removed.\n` +
+        `To publish a plugin, use npm directly: \`npm publish\` from the plugin directory.\n` +
+        `See docs/plugin-guide.md for the publishing workflow.`
+      );
       break;
     default:
       console.log(handlePluginHelp());
