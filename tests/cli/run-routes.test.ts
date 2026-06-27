@@ -50,7 +50,9 @@ describe('run-routes', () => {
     });
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     await handleRun('commands.txt');
-    expect(mockExecuteChain).toHaveBeenCalledWith('goto https://example.com && title', {
+    // Joined with `;` (sequence) so each line runs independently — NOT `&&`
+    // which would short-circuit on the first failure.
+    expect(mockExecuteChain).toHaveBeenCalledWith('goto https://example.com ; title', {
       cdpEndpoint: undefined,
       sessionName: undefined,
       fileMode: true,

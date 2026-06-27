@@ -110,15 +110,45 @@ describe('config builtin', () => {
     const logs: string[] = [];
     const origLog = console.log;
     console.log = (...args: unknown[]) => logs.push(args.join(' '));
-    await configBuiltin.execute(['set', 'test.key', 'test-value'], {}, { cwd: process.cwd() });
+    await configBuiltin.execute(['set', 'browser.testKey', 'test-value'], {}, { cwd: process.cwd() });
     console.log = origLog;
-    expect(logs[0]).toContain('test.key = test-value');
+    expect(logs[0]).toContain('browser.testKey = test-value');
 
     const getLogs: string[] = [];
     console.log = (...args: unknown[]) => getLogs.push(args.join(' '));
-    await configBuiltin.execute(['get', 'test.key'], {}, { cwd: process.cwd() });
+    await configBuiltin.execute(['get', 'browser.testKey'], {}, { cwd: process.cwd() });
     console.log = origLog;
     expect(getLogs[0]).toContain('test-value');
+  });
+
+  it('config set rejects unknown key outside known namespaces', async () => {
+    const { configBuiltin } = await import('../../src/builtins/config.js');
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => { throw new Error('exit'); }) as never);
+    const errors: string[] = [];
+    const origErr = console.error;
+    console.error = (...args: unknown[]) => errors.push(args.join(' '));
+
+    await expect(
+      configBuiltin.execute(['set', 'hello', 'world'], {}, { cwd: process.cwd() })
+    ).rejects.toThrow('exit');
+
+    console.error = origErr;
+    exitSpy.mockRestore();
+    expect(errors.some(e => e.includes('Unknown config key: "hello"'))).toBe(true);
+
+    // Must NOT be persisted
+    const { getConfigValue } = await import('../../src/config.js');
+    expect(getConfigValue('hello')).toBeUndefined();
+  });
+
+  it('config set accepts unknown key under known namespace (browser.*)', async () => {
+    const { configBuiltin } = await import('../../src/builtins/config.js');
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...args: unknown[]) => logs.push(args.join(' '));
+    await configBuiltin.execute(['set', 'browser.customArg', '--foo'], {}, { cwd: process.cwd() });
+    console.log = origLog;
+    expect(logs[0]).toContain('browser.customArg = --foo');
   });
 
   it('config get shows (not set) for missing key', async () => {
