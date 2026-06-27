@@ -1,6 +1,23 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+
+/** npm registry JSON 响应的宽松类型（动态 JSON，字段可能缺失） */
+type NpmJson = Record<string, unknown> & {
+  objects?: Array<{ package?: Record<string, unknown>; downloads?: Record<string, unknown>; dependents?: number; updated?: unknown }>;
+  error?: string;
+  'dist-tags'?: Record<string, string>;
+  versions?: Record<string, Record<string, unknown>>;
+  name?: string;
+  description?: string;
+  keywords?: string[];
+  maintainers?: Array<{ name?: string }>;
+  readme?: string;
+  package?: string;
+  startDate?: string;
+  endDate?: string;
+  downloads?: number;
+};
 
 
 export default function (xcli: XCLIAPI): void {
@@ -18,12 +35,12 @@ export default function (xcli: XCLIAPI): void {
       query: z.string().describe('Search keyword (e.g. "react", "graphql client")'),
             limit: z.coerce.number().optional().default(20).describe('Max results (1-250)')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://registry.npmjs.org/-/v1/search?text=${encodeURIComponent(p.query)}&size=${Math.min(p.limit || 20, 250)}`;
-            const body = await fetch(url).then(r => r.json()) as any;
+            const body = await fetch(url).then(r => r.json()) as NpmJson;
             const objects = body?.objects ?? [];
             if (objects.length === 0) return fail(`No npm packages matched "${p.query}"`);
-            const results = objects.slice(0, p.limit).map((obj: any, i: number) => {
+            const results = objects.slice(0, p.limit).map((obj, i) => {
               const pkg = obj.package ?? {};
               const dl = obj.downloads ?? {};
               return {
@@ -49,13 +66,13 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       name: z.string().describe('Package name (e.g. "react", "lodash")')
     }),
-    handler: async (p, ctx) => {
-      const pkg = await fetch(`https://registry.npmjs.org/${encodeURIComponent(p.name)}`).then(r => r.json()) as any;
+    handler: async (p, _ctx) => {
+      const pkg = await fetch(`https://registry.npmjs.org/${encodeURIComponent(p.name)}`).then(r => r.json()) as NpmJson;
             if (pkg.error) return fail(`Package "${p.name}" not found: ${pkg.error}`);
             const latest = pkg['dist-tags']?.latest ?? '';
             const ver = pkg.versions?.[latest] ?? {};
             const dlUrl = `https://api.npmjs.org/downloads/point/last-month/${encodeURIComponent(p.name)}`;
-            const dlData = await fetch(dlUrl).then(r => r.json()) as any;
+            const dlData = await fetch(dlUrl).then(r => r.json()) as NpmJson;
             return ok({
               name: pkg.name ?? p.name,
               version: latest,
@@ -66,7 +83,7 @@ export default function (xcli: XCLIAPI): void {
               repository: ver.repository?.url ?? '',
               keywords: (pkg.keywords ?? []).join(', '),
               monthlyDownloads: dlData.downloads ?? 0,
-              maintainers: (pkg.maintainers ?? []).map((m: any) => m.name).join(', '),
+              maintainers: (pkg.maintainers ?? []).map(m => m.name ?? '').join(', '),
               readme: pkg.readme ? (pkg.readme.length > 200 ? pkg.readme.slice(0, 200) + '...' : pkg.readme) : '(no readme)',
             });
     },
@@ -79,12 +96,12 @@ export default function (xcli: XCLIAPI): void {
       name: z.string().describe('Package name'),
             period: z.string().optional().default('last-month').describe('Period: last-day, last-week, last-month')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const period = p.period || 'last-month';
             const validPeriods = ['last-day', 'last-week', 'last-month'];
             if (!validPeriods.includes(period)) return fail(`Invalid period: ${period}. Use: ${validPeriods.join(', ')}`);
             const url = `https://api.npmjs.org/downloads/point/${period}/${encodeURIComponent(p.name)}`;
-            const data = await fetch(url).then(r => r.json()) as any;
+            const data = await fetch(url).then(r => r.json()) as NpmJson;
             if (data.error) return fail(`Error: ${data.error}`);
             return ok({
               package: data.package ?? p.name,

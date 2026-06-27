@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import type { JsonObject } from '../shared/json-types.js';
 
 
 export default function (xcli: XCLIAPI): void {
@@ -18,9 +19,9 @@ export default function (xcli: XCLIAPI): void {
       query: z.string().describe('Search query'),
             limit: z.coerce.number().optional().default(20).describe('Max results')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(p.query)}&format=json&srlimit=${p.limit || 20}`;
-            const data = await fetch(url).then(r => r.json()) as any;
+            const data = await fetch(url).then(r => r.json()) as JsonObject;
             const results = (data.query?.search ?? []).map((r: any, i: number) => ({
               rank: i + 1,
               title: r.title ?? '',
@@ -40,9 +41,9 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       title: z.string().describe('Page title')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(p.title)}`;
-            const data = await fetch(url).then(r => r.json()) as any;
+            const data = await fetch(url).then(r => r.json()) as JsonObject;
             if (data.type === 'https://mediawiki.org/wiki/HyperSwitch/errors/not_found') return fail(`Page "${p.title}" not found`);
             return ok({
               title: data.title ?? p.title,
@@ -61,9 +62,9 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       title: z.string().describe('Page title')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(p.title)}&format=json&prop=text&section=0`;
-            const data = await fetch(url).then(r => r.json()) as any;
+            const data = await fetch(url).then(r => r.json()) as JsonObject;
             if (data.error) return fail(`Error: ${data.error.info}`);
             const text = (data.parse?.text?.['*'] ?? '').replace(/<[^>]+>/g, '').trim();
             return ok({
@@ -79,8 +80,8 @@ export default function (xcli: XCLIAPI): void {
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({}),
-    handler: async (p, ctx) => {
-      const data = await fetch('https://en.wikipedia.org/api/rest_v1/page/random/summary').then(r => r.json()) as any;
+    handler: async (_p, _ctx) => {
+      const data = await fetch('https://en.wikipedia.org/api/rest_v1/page/random/summary').then(r => r.json()) as JsonObject;
             return ok({
               title: data.title ?? '',
               extract: data.extract ?? '',
@@ -101,13 +102,13 @@ export default function (xcli: XCLIAPI): void {
             day: z.coerce.number().optional().describe('Day 1-31 (default: today)'),
             limit: z.coerce.number().optional().default(20).describe('Max results')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const today = new Date();
             const year = p.year ?? today.getFullYear();
             const month = String(p.month ?? (today.getMonth() + 1)).padStart(2, '0');
             const day = String(p.day ?? today.getDate()).padStart(2, '0');
             const url = `https://wikimedia.org/api/rest_v1/metrics/pageviews/top/en.wikipedia.org/all-access/${year}/${month}/${day}`;
-            const data = await fetch(url).then(r => r.json()) as any;
+            const data = await fetch(url).then(r => r.json()) as JsonObject;
             const articles = data.items?.[0]?.articles ?? [];
             const results = articles.slice(0, p.limit || 20).map((a: any, i: number) => ({
               rank: i + 1,

@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import type { JsonObject } from '../shared/json-types.js';
 
 
 export default function (xcli: XCLIAPI): void {
@@ -17,9 +18,9 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       symbol: z.string().describe('Stock symbol (e.g. "AAPL", "GOOGL", "TSLA")')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(p.symbol)}?range=1d&interval=1d`;
-            const data = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }).then(r => r.json()) as any;
+            const data = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }).then(r => r.json()) as JsonObject;
             const result = data?.chart?.result?.[0];
             const meta = result?.meta ?? {};
             const quote = result?.indicators?.quote?.[0] ?? {};

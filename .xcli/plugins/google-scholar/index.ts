@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 
 
@@ -18,7 +18,7 @@ export default function (xcli: XCLIAPI): void {
       query: z.string().describe('Search query'),
             limit: z.coerce.number().optional().default(20).describe('Max results')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://scholar.google.com/scholar?q=${encodeURIComponent(p.query)}&hl=en&as_sdt=0%2C5`;
             const html = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }).then(r => r.text());
             const results: any[] = [];

@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import type { JsonObject } from '../shared/json-types.js';
 
 
 export default function (xcli: XCLIAPI): void {
@@ -18,9 +19,9 @@ export default function (xcli: XCLIAPI): void {
       query: z.string().describe('Search keyword'),
             limit: z.coerce.number().optional().default(20).describe('Max results')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = `https://itunes.apple.com/search?term=${encodeURIComponent(p.query)}&media=podcast&limit=${p.limit || 20}&entity=podcast`;
-            const data = await fetch(url).then(r => r.json()) as any;
+            const data = await fetch(url).then(r => r.json()) as JsonObject;
             const results = data?.results ?? [];
             if (results.length === 0) return fail(`No podcasts matched "${p.query}"`);
             return ok(results.slice(0, p.limit).map((r: any, i: number) => ({
@@ -44,10 +45,10 @@ export default function (xcli: XCLIAPI): void {
             genre: z.string().optional().default('0').describe('Genre ID (0=all)'),
             limit: z.coerce.number().optional().default(20).describe('Max results')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const genre = p.genre || '0';
             const url = `https://itunes.apple.com/${p.country || 'us'}/rss/toppodcasts/limit=${p.limit || 20}/genre=${genre}/json`;
-            const data = await fetch(url).then(r => r.json()) as any;
+            const data = await fetch(url).then(r => r.json()) as JsonObject;
             const feed = data?.feed;
             const results = (feed?.entry ?? feed?.results ?? []).slice(0, p.limit).map((r: any, i: number) => ({
               rank: i + 1,

@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import type { JsonObject } from '../shared/json-types.js';
 
 
 export default function (xcli: XCLIAPI): void {
@@ -17,9 +18,9 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       limit: z.coerce.number().optional().default(20).describe('Max results')
     }),
-    handler: async (p, ctx) => {
+    handler: async (p, _ctx) => {
       const url = 'https://newsapi.org/v2/top-headlines?sources=bbc-news&apiKey=' + (process.env.NEWSAPI_KEY || '');
-            const data = await fetch(url).then(r => r.json()) as any;
+            const data = await fetch(url).then(r => r.json()) as JsonObject;
             if (data.status !== 'ok') return fail('Failed to fetch BBC news. Set NEWSAPI_KEY env var.');
             const results = (data.articles ?? []).slice(0, p.limit || 20).map((a: any, i: number) => ({
               rank: i + 1,

@@ -68,7 +68,9 @@ output/
 
 # ── docs/ 下的临时/规划文档 ──────────────────────────
 docs/debug-*
-docs/plans/
+docs/plans/*
+# 例外：长期追踪的 SPEC 文档必须入库
+!docs/plans/*-spec.md
 
 # ── scripts/ 下的历史/一次性脚本（保留 publish 相关） ─
 /scripts/debug-*
