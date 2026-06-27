@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { ok } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
 import { writeFileSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { homedir } from 'os';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
@@ -10,6 +10,22 @@ const SCREENSHOTS_DIR = join(homedir(), '.xbrowser', 'screenshots');
 
 function ensureScreenshotsDir(): void {
   mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+}
+
+/**
+ * Ensure the parent directory of `filePath` exists (created recursively).
+ * Lets users pass `--output output/sub/shot.png` without pre-creating the dir.
+ * Returns an error message on failure instead of throwing.
+ */
+function ensureParentDir(filePath: string): string | null {
+  const dir = dirname(filePath);
+  if (dir === '.' || dir === '/') return null; // current dir / root — nothing to do
+  try {
+    mkdirSync(dir, { recursive: true });
+    return null;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
 }
 
 function generateScreenshotPath(format: string): string {
@@ -56,9 +72,17 @@ export const screenshotCommand = registerCommand({
       buffer = await ctx.page.screenshot(options);
     }
 
-    // --output: save to specified path
+    // --output: save to specified path (creates parent dirs as needed)
     if (p.output) {
-      writeFileSync(p.output, buffer, 'binary');
+      const dirErr = ensureParentDir(p.output);
+      if (dirErr) {
+        return fail(`Cannot create directory for --output "${p.output}": ${dirErr}`);
+      }
+      try {
+        writeFileSync(p.output, buffer, 'binary');
+      } catch (err) {
+        return fail(`Failed to write screenshot to "${p.output}": ${err instanceof Error ? err.message : String(err)}`);
+      }
       return ok({
         output: p.output,
         format,

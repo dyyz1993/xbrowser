@@ -340,7 +340,8 @@ export async function handleBrowserCommand(
           break;
         }
         case 'scrape':
-          if (!args[0]) outputError('Usage: xbrowser scrape <url> [--format markdown|html|text] [--mode raw|clean|compact] [--selector <sel>] [--timeout <ms>]');
+          // URL is optional here — when omitted, the handler auto-detects the
+          // current page from --cdp. Missing URL is reported by the handler.
           cmdName = 'scrape';
           params = {
             url: args[0],
@@ -352,7 +353,8 @@ export async function handleBrowserCommand(
           };
           break;
         case 'map':
-          if (!args[0]) outputError('Usage: xbrowser map <url> [--search <query>] [--sitemap include|only] [--include-subdomains] [--limit <n>]');
+          // URL is optional here — when omitted, the handler auto-detects the
+          // current page from --cdp. Missing URL is reported by the handler.
           cmdName = 'map';
           params = {
             url: args[0],
@@ -497,16 +499,28 @@ export async function handleBrowserCommand(
     }
   }
 
-  // Write to file if --output is specified (e.g. scrape --output result.md)
+  // Write to file if --output is specified (e.g. scrape --output result.md).
+  // Skip when the handler already wrote the file itself — detected by an
+  // `output` field in the result data (e.g. screenshot returns {output, ...}
+  // after writing the image). Without this guard, the generic writer would
+  // JSON-stringify the handler's return value and overwrite the real file.
   const outputFile = options.output as string | undefined;
-  if (outputFile && result.success && result.data) {
-    const { writeFileSync } = await import('fs');
+  const dataObj = result.data as Record<string, unknown> | null;
+  const handlerAlreadyWrote = !!dataObj && typeof dataObj.output === 'string';
+  if (outputFile && result.success && result.data && !handlerAlreadyWrote) {
+    const { writeFileSync, mkdirSync } = await import('fs');
+    const { dirname } = await import('path');
     const content = typeof result.data === 'string'
       ? result.data
-      : (result.data as Record<string, unknown>).content as string
-        || (result.data as Record<string, unknown>).text as string
+      : (dataObj as Record<string, unknown>).content as string
+        || (dataObj as Record<string, unknown>).text as string
         || JSON.stringify(result.data, null, 2);
-    writeFileSync(outputFile, content, 'utf-8');
-    console.log(`\n  📄 Written to ${outputFile}`);
+    try {
+      mkdirSync(dirname(outputFile), { recursive: true });
+      writeFileSync(outputFile, content, 'utf-8');
+      console.log(`\n  📄 Written to ${outputFile}`);
+    } catch (err) {
+      outputError(`Failed to write --output "${outputFile}": ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 }
