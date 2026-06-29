@@ -26,6 +26,9 @@ export const tabCommand = registerCommand({
     if (!ctx.browserContext) {
       return fail('No browser context available. Use --cdp to connect to a browser first.');
     }
+
+    // Refresh pages snapshot right before each operation so concurrent tab
+    // changes don't cause stale-index bugs (e.g. closing the wrong tab).
     const pages = ctx.browserContext.pages();
 
     switch (p.subcommand) {
@@ -47,31 +50,23 @@ export const tabCommand = registerCommand({
   },
 });
 
-function handleList(
+async function handleList(
   pages: Page[],
   ctx: BrowserCommandContext,
-): unknown {
-  const currentIndex = pages.indexOf(ctx.page);
-  const tabs = pages.map((page, i) => {
-    const url = page.url();
-    let title = '';
-    try {
-      const t = page.title();
-      if (t instanceof Promise) {
-        void t.then((v: string) => { title = v; });
-      }
-    } catch {
-      title = '';
-    }
-    return {
-      index: i,
-      url,
-      title,
-      active: i === currentIndex,
-    };
-  });
+): Promise<unknown> {
+  const tabs: Array<{ index: number; url: string; title: string; active: boolean }> = [];
+  let activeIndex = -1;
 
-  return ok({ tabs, total: tabs.length, activeIndex: currentIndex });
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i];
+    const url = page.url();
+    const title = await page.title().catch(() => '');
+    const isActive = page === ctx.page;
+    if (isActive) activeIndex = i;
+    tabs.push({ index: i, url, title, active: isActive });
+  }
+
+  return ok({ tabs, total: tabs.length, activeIndex });
 }
 
 async function handleNew(
@@ -80,16 +75,26 @@ async function handleNew(
   ctx: BrowserCommandContext,
 ): Promise<unknown> {
   const newPage = await ctx.browserContext.newPage();
+  const warnings: string[] = [];
 
   if (p.url) {
     let url = p.url;
-    if (!/^https?:\/\//i.test(url)) {
+    // Only prepend https:// when there is no scheme at all
+    if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(url)) {
       url = 'https://' + url;
     }
-    await newPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+    try {
+      await newPage.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+    } catch (err) {
+      warnings.push(`Navigation to "${url}" failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
-  await newPage.waitForLoadState('domcontentloaded').catch(() => {});
+  try {
+    await newPage.waitForLoadState('domcontentloaded');
+  } catch {
+    // non-blocking wait can time out if page is still blank — not a hard failure
+  }
 
   const session = ctx.sessionId ? getSessionById(ctx.sessionId) : undefined;
   if (session) {
@@ -106,6 +111,7 @@ async function handleNew(
     url: newPage.url(),
     title,
     total: allPages.length,
+    ...(warnings.length > 0 ? { warning: warnings.join('; ') } : {}),
   });
 }
 
@@ -145,7 +151,7 @@ async function handleClose(
     total: remainingPages.length,
     activeIndex: isActivePage
       ? (closeIndex < remainingPages.length ? closeIndex : remainingPages.length - 1)
-      : pages.indexOf(ctx.page),
+      : remainingPages.indexOf(ctx.page),
   });
 }
 

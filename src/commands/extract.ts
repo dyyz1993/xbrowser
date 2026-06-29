@@ -24,10 +24,35 @@ interface ExtractSummary {
  * @returns A summary with start URL, event counts, type statistics, and key operations.
  */
 export function extractRecording(filePath: string): ExtractSummary {
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const recording = yaml.parse(content) as Record<string, unknown>;
-  // Normalize: new recorder uses "actions" field, old format uses "events"
-  const events = (recording.actions || recording.events || []) as RecordingEvent[];
+  let recording: Record<string, unknown>;
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    recording = yaml.parse(content) as Record<string, unknown>;
+  } catch (e) {
+    throw new Error(`Failed to read "${filePath}": ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`);
+  }
+  if (recording === null || typeof recording !== 'object' || Array.isArray(recording)) {
+    throw new Error(`"${filePath}" does not contain a valid recording (expected a YAML object with events or actions).`);
+  }
+
+  // Normalize: new recorder uses "actions" (selector in element.selector), old uses "events" (selector at top level)
+  let rawEvents: unknown[] = (recording.events as unknown[]) ?? [];
+  const rawActions = recording.actions as unknown[];
+  if (Array.isArray(rawActions) && rawEvents.length === 0) {
+    rawEvents = rawActions.map((a) => {
+      const action = a as Record<string, unknown>;
+      const element = (action.element as Record<string, unknown> | undefined) ?? {};
+      return {
+        type: action.type,
+        selector: element.selector ?? action.selector,
+        tagName: element.tag ?? action.tagName,
+        data: { ...(action.data as Record<string, unknown> | undefined), value: action.value, key: action.key },
+        timestamp: action.timestamp,
+        pageState: action.pageState,
+      };
+    });
+  }
+  const events = rawEvents as RecordingEvent[];
   const keyEvents: RecordingEvent[] = [];
   const eventTypes: Record<string, number> = {};
 
