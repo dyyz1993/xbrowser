@@ -1,7 +1,6 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { fail } from '@dyyz1993/xcli-core';
-import { detectAntiBot } from '../shared/anti-bot-detect.js';
 import { searchImageResultSchema, baseSearchParams, scrollPage, buildResult } from '../shared/image-search.js';
 
 export default function (xcli: XCLIAPI): void {
@@ -25,8 +24,8 @@ export default function (xcli: XCLIAPI): void {
         await page.goto(url, { waitUntil: 'networkidle', timeout: params.timeout });
         await page.waitForTimeout(6000);
 
-        const antiBotResult = await detectAntiBot(page);
-        if (antiBotResult.detected) {
+        const antiBotResult = await ctx.detectAntiBot?.(page);
+        if (antiBotResult?.detected) {
           return fail(`${antiBotResult.message}。请使用 --cdp http://localhost:9221 连接真实浏览器重试`);
         }
 

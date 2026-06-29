@@ -5,7 +5,7 @@
  */
 
 import type { Page } from '../browser-shim.js';
-import { detectAntiBot, formatDetectionMessage, type DetectionConfig, type DetectionResult } from '../anti-bot-detection.js';
+import { detectAntiBot, formatDetectionMessage, type DetectionConfig, type DetectionResult } from '../lib/anti-bot.js';
 
 /**
  * 检测命令处理器

@@ -1,7 +1,6 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import { detectAntiBot } from '../shared/anti-bot-detect.js';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -56,8 +55,8 @@ export default function (xcli: XCLIAPI): void {
         await page.goto(`https://www.pinterest.com/search/pins/?q=${encodeURIComponent(params.query)}`, { waitUntil: 'networkidle', timeout: params.timeout });
         await page.waitForTimeout(3000);
 
-        const antiBotResult = await detectAntiBot(page);
-        if (antiBotResult.detected) {
+        const antiBotResult = await ctx.detectAntiBot?.(page);
+        if (antiBotResult?.detected) {
           return fail(`${antiBotResult.message}。请使用 --cdp http://localhost:9221 连接真实浏览器重试`);
         }
 

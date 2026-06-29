@@ -18,7 +18,7 @@ import { parsePluginParams } from './utils/plugin-params.js';
 import { errMsg } from './utils/error.js';
 import { NoopSiteInstance } from './utils/stub-context.js';
 import { getCommand, getAllCommands } from './commands/index.js';
-import type { BrowserCommandContext } from './context.js';
+import { attachDetectAntiBot, type BrowserCommandContext } from './context.js';
 import { findOrRestoreSession, createSession, saveSessionDiskMeta, closeSessionByName, setActivePage, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
 import {
   parseCommandChain,
@@ -326,6 +326,10 @@ export async function executeCommand(
     cliName: 'xbrowser',
     tips: new TipCollector(),
   };
+
+  // Inject anti-bot detection capability (ctx.detectAntiBot) so commands/plugins
+  // can call ctx.detectAntiBot(page) without importing src/ directly.
+  attachDetectAntiBot(ctx);
 
   // --tab <index>: switch to the specified tab before executing the command
   if (_tabIndex !== undefined && session?.context) {
