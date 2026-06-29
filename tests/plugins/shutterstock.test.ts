@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-vi.mock('../../src/anti-bot-detection.js', () => ({
+vi.mock('../../.xcli/plugins/shared/anti-bot-detect.js', () => ({
   detectAntiBot: vi.fn(() => Promise.resolve({ detected: false })),
 }));
 import plugin from '../../.xcli/plugins/shutterstock/index.ts';
