@@ -376,6 +376,31 @@ describe('record-routes', () => {
       expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Converted'));
       logSpy.mockRestore();
     });
+
+    it('should map new-format actions (element.selector) to flat events before converting', async () => {
+      // New recorder format: selector lives under action.element.selector, not top-level.
+      // Without the mapping, converters see selector=undefined and fall back to 'body'.
+      mockFsReadFileSync.mockReturnValue('{"actions":[]}');
+      mockYamlParse.mockReturnValue({
+        startUrl: 'https://example.com',
+        actions: [
+          { type: 'click', element: { selector: '#btn' } },
+          { type: 'input', element: { selector: '#input' }, value: 'hello' },
+        ],
+      });
+
+      // Use the REAL convert module (undo the doMock from the previous test)
+      vi.doMock('../../src/commands/convert.js', async () => {
+        return await import('../../src/commands/convert.js');
+      });
+
+      await handleConvert(['rec.json', 'out.js'], 'text');
+      const written = mockFsWriteFileSync.mock.calls[0]?.[1] as string;
+      expect(written).toContain("page.click('#btn')");
+      expect(written).toContain("page.fill('#input', 'hello')");
+      // Must NOT fall back to body
+      expect(written).not.toContain("page.click('body')");
+    });
   });
 
   describe('handleExtract', () => {
