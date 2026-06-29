@@ -2,7 +2,7 @@ import { z } from 'zod/v4';
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
-import { detectAntiBot } from '../../../src/anti-bot-detection.js';
+import { detectAntiBot } from '../shared/anti-bot-detect.js';
 
 type SearchResult = {
   title: string;

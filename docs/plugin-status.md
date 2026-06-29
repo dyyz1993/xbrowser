@@ -1,7 +1,7 @@
 # 插件完成度看板
 
 > **自动生成，请勿手改** · 由 `lint-scripts/check-plugin-status.mjs` 生成
-> 生成时间：2026-06-26 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
+> 生成时间：2026-06-29 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
 
 ## 汇总
 
@@ -19,63 +19,63 @@
 
 | 插件 | 行数 | URL |
 |------|------|-----|
-| amazon | 23 | https://www.amazon.com |
-| bloomberg | 23 | https://www.bloomberg.com |
-| booking | 23 | https://www.booking.com |
-| boss | 23 | https://www.zhipin.com |
-| confluence | 23 | https://xxx.atlassian.net/wiki |
-| ctrip | 23 | https://www.ctrip.com |
-| eastmoney | 23 | https://www.eastmoney.com |
-| grok | 23 | https://grok.com |
-| imdb | 23 | https://www.imdb.com |
-| indeed | 23 | https://www.indeed.com |
-| jira | 23 | https://xxx.atlassian.net |
-| kimi | 23 | https://kimi.moonshot.cn |
-| linkedin | 23 | https://www.linkedin.com |
-| linkedin-learning | 23 | https://www.linkedin.com/learning |
-| notebooklm | 23 | https://notebooklm.google.com |
-| pixiv | 23 | https://www.pixiv.net |
-| reuters | 23 | https://www.reuters.com |
-| spotify | 23 | https://open.spotify.com |
-| substack | 23 | https://substack.com |
-| tdx | 23 | https://www.tdx.com.cn |
-| tiktok | 23 | https://www.tiktok.com |
-| upwork | 23 | https://www.upwork.com |
-| v2ex | 23 | https://www.v2ex.com |
-| youtube | 23 | https://www.youtube.com |
+| amazon | 14 | https://www.amazon.com |
+| bloomberg | 14 | https://www.bloomberg.com |
+| booking | 14 | https://www.booking.com |
+| boss | 14 | https://www.zhipin.com |
+| confluence | 14 | https://xxx.atlassian.net/wiki |
+| ctrip | 14 | https://www.ctrip.com |
+| eastmoney | 14 | https://www.eastmoney.com |
+| grok | 14 | https://grok.com |
+| imdb | 14 | https://www.imdb.com |
+| indeed | 14 | https://www.indeed.com |
+| jira | 14 | https://xxx.atlassian.net |
+| kimi | 14 | https://kimi.moonshot.cn |
+| linkedin | 14 | https://www.linkedin.com |
+| linkedin-learning | 14 | https://www.linkedin.com/learning |
+| notebooklm | 14 | https://notebooklm.google.com |
+| pixiv | 14 | https://www.pixiv.net |
+| reuters | 14 | https://www.reuters.com |
+| spotify | 14 | https://open.spotify.com |
+| substack | 14 | https://substack.com |
+| tdx | 14 | https://www.tdx.com.cn |
+| tiktok | 14 | https://www.tiktok.com |
+| upwork | 14 | https://www.upwork.com |
+| v2ex | 14 | https://www.v2ex.com |
+| youtube | 14 | https://www.youtube.com |
 
 ## 🟡 有实现无测试（28） — P1 优先
 
 | 插件 | 行数 | 命令数 | scope |
 |------|------|--------|-------|
-| apple-podcasts | 66 | 2 | `project` |
-| arxiv | 93 | 3 | `project` |
-| bbc | 38 | 1 | `project` |
-| crates | 73 | 2 | `project` |
-| dictionary | 78 | 3 | `project` |
+| apple-podcasts | 67 | 2 | `project` |
+| arxiv | 92 | 3 | `project` |
+| bbc | 39 | 1 | `project` |
+| crates | 74 | 2 | `project` |
+| dictionary | 80 | 3 | `project` |
 | douban | 59 | 1 | `page` |
-| github-trending | 54 | 1 | `project` |
+| github-trending | 53 | 1 | `project` |
 | google-scholar | 47 | 1 | `project` |
-| hackernews | 228 | 8 | `project` |
-| hf | 61 | 2 | `project` |
-| homebrew | 69 | 2 | `project` |
-| maven | 38 | 1 | `project` |
-| nuget | 39 | 1 | `project` |
-| packagist | 37 | 1 | `project` |
+| hackernews | 229 | 8 | `project` |
+| hf | 62 | 2 | `project` |
+| homebrew | 70 | 2 | `project` |
+| maven | 39 | 1 | `project` |
+| nuget | 40 | 1 | `project` |
+| packagist | 38 | 1 | `project` |
 | producthunt | 286 | 4 | `browser`, `page` |
-| pubmed | 46 | 1 | `project` |
+| pubmed | 47 | 1 | `project` |
 | pypi | 96 | 3 | `project` |
-| rubygems | 38 | 1 | `project` |
-| semanticscholar | 38 | 1 | `project` |
+| rubygems | 39 | 1 | `project` |
+| semanticscholar | 39 | 1 | `project` |
 | smzdm | 56 | 1 | `page` |
-| stackoverflow | 42 | 1 | `project` |
+| stackoverflow | 43 | 1 | `project` |
 | ths | 60 | 1 | `page` |
 | tieba | 51 | 1 | `page` |
-| weread | 39 | 1 | `project` |
-| wikidata | 64 | 2 | `project` |
-| wikipedia | 123 | 5 | `project` |
-| xueqiu | 63 | 2 | `project` |
-| yahoo-finance | 45 | 1 | `project` |
+| weread | 40 | 1 | `project` |
+| wikidata | 65 | 2 | `project` |
+| wikipedia | 124 | 5 | `project` |
+| xueqiu | 64 | 2 | `project` |
+| yahoo-finance | 46 | 1 | `project` |
 
 ## ✅ 已完成（71）
 

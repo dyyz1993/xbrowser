@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { fail } from '@dyyz1993/xcli-core';
-import { detectAntiBot } from '../../../src/anti-bot-detection.js';
+import { detectAntiBot } from '../shared/anti-bot-detect.js';
 import { searchImageResultSchema, baseSearchParams, scrollPage, buildResult } from '../shared/image-search.js';
 
 export default function (xcli: XCLIAPI): void {

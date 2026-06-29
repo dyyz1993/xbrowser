@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import { detectAntiBot } from '../../../src/anti-bot-detection.js';
+import { detectAntiBot } from '../shared/anti-bot-detect.js';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
