@@ -718,8 +718,21 @@ export default createSite({
     url: '${data.startUrl}',
     detect: async (ctx: CommandContext) => {
       const page = ensurePage(ctx);
-      // TODO: Add login detection logic
-      return false;
+      // Best-effort login detection: check for common logged-in indicators.
+      // Customize these selectors for your site's specific login state.
+      try {
+        const loggedIn = await page.evaluate(() => {
+          const el = document.querySelector(
+            '[class*="avatar"], [class*="user-info"], [class*="logged-in"], ' +
+            '[data-testid*="user"], [data-testid*="avatar"], ' +
+            'a[href*="logout"], button[class*="logout"]'
+          );
+          return !!el;
+        });
+        return loggedIn;
+      } catch {
+        return false;
+      }
     },
   },
 

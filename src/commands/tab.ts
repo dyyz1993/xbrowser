@@ -39,7 +39,7 @@ export const tabCommand = registerCommand({
         return handleNew(p, pages, ctx);
 
       case 'close':
-        return handleClose(p, pages, ctx);
+        return handleClose(p, ctx);
 
       case 'switch':
         return handleSwitch(p, pages, ctx);
@@ -117,19 +117,21 @@ async function handleNew(
 
 async function handleClose(
   p: TabParamsType,
-  pages: Page[],
   ctx: BrowserCommandContext,
 ): Promise<unknown> {
-  if (pages.length <= 1) {
+  // Refresh pages right before close so concurrent tab changes don't cause
+  // closing the wrong tab (stale index from the handler-entry snapshot).
+  const currentPages = ctx.browserContext.pages();
+  if (currentPages.length <= 1) {
     return fail('Cannot close the last remaining tab');
   }
 
-  const closeIndex = p.index ?? pages.indexOf(ctx.page);
-  if (closeIndex < 0 || closeIndex >= pages.length) {
-    return fail(`Invalid tab index: ${closeIndex}. Valid range: 0-${pages.length - 1}`);
+  const closeIndex = p.index ?? currentPages.findIndex(pg => pg === ctx.page);
+  if (closeIndex < 0 || closeIndex >= currentPages.length) {
+    return fail(`Invalid tab index: ${closeIndex}. Valid range: 0-${currentPages.length - 1}`);
   }
 
-  const pageToClose = pages[closeIndex];
+  const pageToClose = currentPages[closeIndex];
   const isActivePage = pageToClose === ctx.page;
 
   await pageToClose.close();
@@ -151,7 +153,7 @@ async function handleClose(
     total: remainingPages.length,
     activeIndex: isActivePage
       ? (closeIndex < remainingPages.length ? closeIndex : remainingPages.length - 1)
-      : remainingPages.indexOf(ctx.page),
+      : remainingPages.findIndex(pg => pg === ctx.page),
   });
 }
 

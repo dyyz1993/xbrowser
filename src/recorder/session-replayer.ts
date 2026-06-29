@@ -7,7 +7,7 @@
  *   await replayer.run();
  */
 
-import type { UserAction } from './session-recorder.js';
+import type { UserAction, RecordingData } from './session-recorder.js';
 import type { XBPage, XBFilePayload } from '../cdp-driver/types.js';
 
 export interface ReplayOptions {
@@ -22,16 +22,6 @@ export interface ReplayOptions {
   onStep?: (action: UserAction, index: number, total: number) => void;
   /** Called on step error */
   onError?: (action: UserAction, error: Error) => void;
-}
-
-interface RecordingData {
-  actions: UserAction[];
-  network?: unknown[];
-  contextChanges?: unknown[];
-  meta?: {
-    startUrl?: string;
-    sessionName?: string;
-  };
 }
 
 export class SessionReplayer {
