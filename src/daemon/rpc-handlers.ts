@@ -657,15 +657,9 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Missing file parameter' }] };
     }
 
-    const session = findSession(sessionName);
-    if (!session) {
-      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Session not found: ' + sessionName }] };
-    }
-    if (!session.page) {
-      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Session has no page: ' + sessionName }] };
-    }
-
-    // Detect new session-recorder format (has 'actions' array) vs old format (has 'events' array)
+    // Parse and validate the recording file BEFORE requiring a browser session.
+    // Failing fast on a bad file avoids the confusing "Session not found" error
+    // when the real problem is an unreadable/corrupt/empty file.
     let rawContent: string;
     let parsed: Record<string, unknown>;
     try {
@@ -677,8 +671,22 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
         const yaml = (await import('yaml')).default;
         parsed = yaml.parse(rawContent);
       }
+      // yaml.parse("") returns null; guard against null/non-object before field access
+      if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: `File "${file}" does not contain a valid recording. Expected a JSON/YAML object with an "actions" or "events" array, got ${parsed === null ? 'empty content' : typeof parsed}.` }] };
+      }
     } catch (e) {
-      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Failed to read/parse file: ' + String(e) }] };
+      const msg = e instanceof Error ? e.message : String(e);
+      // YAML/JSON parse errors contain raw file content + caret pointers; keep it concise
+      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: `Failed to parse "${file}" as JSON or YAML: ${msg.split('\n')[0]}` }] };
+    }
+
+    const session = findSession(sessionName);
+    if (!session) {
+      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: `Session not found: ${sessionName}. Open a browser first: xbrowser goto <url> --session ${sessionName}` }] };
+    }
+    if (!session.page) {
+      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Session has no page: ' + sessionName }] };
     }
     const isNewFormat = Array.isArray(parsed.actions);
 
