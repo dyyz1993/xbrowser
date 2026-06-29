@@ -1,5 +1,6 @@
 import { SessionRecorder } from '../recorder/session-recorder.js';
 import type { RecordingSummary } from '../recorder/session-recorder.js';
+import type { Recording } from '../commands/definitions.js';
 import { outputResult, outputError } from './output.js';
 import { existsSync } from 'node:fs';
 import {
@@ -395,28 +396,61 @@ export async function handleConvert(args: string[], _mode: string): Promise<void
 
   const { generateJSScript, generatePythonScript, generateBashScript } = await import('../commands/convert.js');
 
-  const content = fs.readFileSync(filePath, 'utf-8');
-  const recording = yaml.parse(content);
-  // Normalize: new recorder uses "actions" field, old format uses "events"
-  if (recording.actions && !recording.events) recording.events = recording.actions;
+  let recording: Record<string, unknown>;
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    recording = yaml.parse(content);
+  } catch (e) {
+    console.error(`Error: Failed to read "${filePath}": ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`);
+    process.exit(1);
+  }
+
+  // yaml.parse("") returns null; guard before field access
+  if (recording === null || typeof recording !== 'object' || Array.isArray(recording)) {
+    console.error(`Error: "${filePath}" does not contain a valid recording (expected a YAML/JSON object with events or actions).`);
+    process.exit(1);
+  }
+
+  // Normalize: new recorder uses "actions" field (selector under .element.selector),
+  // old format uses "events" (selector at top level). Map actions → events so the
+  // converters see the flat shape they expect.
+  const rawActions = (recording as Record<string, unknown>).actions;
+  if (Array.isArray(rawActions) && !Array.isArray((recording as Record<string, unknown>).events)) {
+    (recording as Record<string, unknown>).events = rawActions.map((a) => {
+      const action = a as Record<string, unknown>;
+      const element = (action.element as Record<string, unknown> | undefined) ?? {};
+      return {
+        type: action.type,
+        selector: (element.selector as string | undefined) ?? action.selector,
+        data: {
+          ...(action.data as Record<string, unknown> | undefined),
+          value: (action.value as string | undefined) ?? (action.data as Record<string, unknown> | undefined)?.value,
+          key: (action.key as string | undefined) ?? (action.data as Record<string, unknown> | undefined)?.key,
+          x: action.scrollX ?? (action.data as Record<string, unknown> | undefined)?.x,
+          y: action.scrollY ?? (action.data as Record<string, unknown> | undefined)?.y,
+        },
+      };
+    });
+  }
 
   const ext = path.extname(outputPath).toLowerCase();
+  const recordingTyped = recording as unknown as Recording;
   let script: string;
 
   if (ext === '.py') {
-    script = generatePythonScript(recording);
+    script = generatePythonScript(recordingTyped);
   } else if (ext === '.sh') {
-    script = generateBashScript(recording);
+    script = generateBashScript(recordingTyped);
   } else {
-    script = generateJSScript(recording);
+    script = generateJSScript(recordingTyped);
   }
 
   fs.writeFileSync(outputPath, script);
   fs.chmodSync(outputPath, 0o755);
 
-  const eventCount = (recording.events || recording.actions || []).length;
+  const eventCount = (recordingTyped.events || []).length;
   console.log(`Converted ${filePath} -> ${outputPath}`);
-  console.log(`  Events: ${eventCount}, Start URL: ${recording.startUrl}`);
+  console.log(`  Events: ${eventCount}, Start URL: ${recordingTyped.startUrl}`);
   console.log(`  Run: ${ext === '.py' ? 'python' : ext === '.sh' ? './' : 'node'} ${outputPath}`);
 }
 
