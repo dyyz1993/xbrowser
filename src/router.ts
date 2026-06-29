@@ -282,6 +282,13 @@ export async function routeCommand(
   stdinCommands?: string[]
 ): Promise<void> {
   let argv = argvIn;
+  // exitCode is set via process.exitCode so that cli.ts can read it after
+  // routeCommand returns, without having to thread a return value through
+  // every early-exit path. process.exitCode does NOT kill the process — it
+  // only tells the runtime what code to use when the event loop drains.
+  // cli.ts's finally block reads this and passes it to process.exit() after
+  // running its own cleanup.
+  process.exitCode = 0;
   try {
     if (stdinCommands && stdinCommands.length > 0) {
       await handleStdinMode(stdinCommands, argv);
@@ -734,6 +741,7 @@ export async function routeCommand(
             const result = await forwardExec(`${command}.${subCommand}`, params, sessionName, cdpEndpoint, userTimeout);
             const resultData = result && typeof result === 'object' && 'data' in result ? (result.data as Record<string, unknown> | undefined) : undefined;
             if (result && result.success === false && resultData?.code === 'LOGIN_REQUIRED') {
+              process.exitCode = 1;
               outputLoginRequired(result, mode);
               return;
             }
@@ -807,6 +815,7 @@ export async function routeCommand(
               sessionName,
             });
             if (!loginGuard.ok) {
+              process.exitCode = 1;
               const result = {
                 success: false,
                 data: loginGuard.data ?? null,
@@ -858,9 +867,10 @@ export async function routeCommand(
 
             const outputData = isCommandResult(result) ? result.data : (result && typeof result === 'object' ? ((result as Record<string, unknown>).data ?? result) : result);
             const tips = isCommandResult(result) ? result.tips : ((result && typeof result === 'object') ? (result as Record<string, unknown>).tips as import('@dyyz1993/xcli-core').Tip[] | undefined : undefined);
+            const resultSuccess = isCommandResult(result) ? result.success !== false : true;
+            if (!resultSuccess) process.exitCode = 1;
 
             if (mode === 'json' || mode === 'yaml') {
-              const resultSuccess = isCommandResult(result) ? result.success !== false : true;
               const resultMsg = isCommandResult(result) ? result.message : undefined;
               const duration = Date.now() - cmdStart;
               const envelopeMeta: Record<string, unknown> = { command: `${command} ${subCommand}` };
