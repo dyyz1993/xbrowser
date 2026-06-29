@@ -1,7 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-vi.mock('../../.xcli/plugins/shared/anti-bot-detect.js', () => ({
-  detectAntiBot: vi.fn(() => Promise.resolve({ detected: false })),
-}));
 import plugin from '../../.xcli/plugins/pinterest/index.ts';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
@@ -23,6 +20,7 @@ function makeCtx(overrides: Record<string, unknown> = {}) {
       ]),
       url: vi.fn(() => 'https://www.pinterest.com/search/pins/?q=cats'),
     },
+    detectAntiBot: vi.fn(() => Promise.resolve({ detected: false })),
     ...overrides,
   };
 }

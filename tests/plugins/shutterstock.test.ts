@@ -1,7 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-vi.mock('../../.xcli/plugins/shared/anti-bot-detect.js', () => ({
-  detectAntiBot: vi.fn(() => Promise.resolve({ detected: false })),
-}));
 import plugin from '../../.xcli/plugins/shutterstock/index.ts';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
@@ -14,6 +11,7 @@ function makeCtx() {
       waitForTimeout: vi.fn(),
       evaluate: vi.fn(() => []),
     },
+    detectAntiBot: vi.fn(() => Promise.resolve({ detected: false })),
   };
 }
 

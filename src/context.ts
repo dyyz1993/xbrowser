@@ -1,13 +1,15 @@
 import type { CommandContext, CommandScope } from '@dyyz1993/xcli-core';
 import type { Page, Browser, BrowserContext } from './browser-shim.js';
 import type { WaitForHumanOptions, WaitForHumanResult } from './human-interaction.js';
+import type { DetectionConfig, DetectionResult } from './lib/anti-bot.js';
 import type { WSServer } from './websocket-server.js';
 
 /**
  * Extended command context for browser automation commands.
  *
  * Provides Playwright Page, Browser, and BrowserContext instances,
- * along with an optional `waitForHuman` function for CAPTCHA handling.
+ * along with optional `waitForHuman` (CAPTCHA handling) and
+ * `detectAntiBot` (anti-bot detection) capabilities.
  */
 export interface BrowserCommandContext extends CommandContext {
   page: Page;
@@ -16,6 +18,7 @@ export interface BrowserCommandContext extends CommandContext {
   sessionId?: string;
   cdpEndpoint?: string;
   waitForHuman?: (options?: WaitForHumanOptions) => Promise<WaitForHumanResult>;
+  detectAntiBot?: (page: Page, config?: DetectionConfig) => Promise<DetectionResult>;
 }
 
 /**
@@ -79,6 +82,28 @@ export function attachWaitForHuman(
     const wsServer = await getOrCreateWSServer(ctx.browserContext);
     const manager = new HumanInteractionManager(wsServer, ctx.page);
     return manager.waitForHuman(options);
+  };
+}
+
+/**
+ * Attach a `detectAntiBot` function to the browser command context.
+ *
+ * Lazily imports the anti-bot detection module and exposes it as a
+ * context capability so plugins can call `ctx.detectAntiBot(page)`
+ * without importing from `src/` (which would break global/npm installs).
+ *
+ * Two overloads: one for the strictly-typed {@link BrowserCommandContext}
+ * (executor), one for loosely-typed context literals with an index
+ * signature (router).
+ *
+ * @param ctx - The context object to augment.
+ */
+export function attachDetectAntiBot(ctx: BrowserCommandContext): void;
+export function attachDetectAntiBot(ctx: { detectAntiBot?: (page: Page, config?: DetectionConfig) => Promise<DetectionResult>; [key: string]: unknown }): void;
+export function attachDetectAntiBot(ctx: { detectAntiBot?: (page: Page, config?: DetectionConfig) => Promise<DetectionResult> }): void {
+  ctx.detectAntiBot = async (page: Page, config?: DetectionConfig): Promise<DetectionResult> => {
+    const { detectAntiBot } = await import('./lib/anti-bot.js');
+    return detectAntiBot(page, config);
   };
 }
 

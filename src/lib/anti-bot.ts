@@ -1,19 +1,10 @@
 /**
- * xbrowser — Anti-Bot Detection (shared 副本，供插件引用)
+ * xbrowser — Anti-Bot Detection
  *
  * 主动检测页面的反机器人检测机制，在执行自动化动作前拦截可疑情况。
- *
- * 注意：本文件是 `src/anti-bot-detection.ts` 的独立副本，供站点插件
- * 通过 `../shared/anti-bot-detect.js` 引用。installer 的 fixSharedDeps
- * 会自动把它复制到全局 `~/.xbrowser/plugins/shared/`，避免插件用仓库
- * 内部相对路径 `../../../src/...` 导致全局安装时加载失败。
  */
 
-/**
- * Page 类型沿用插件目录的 `../types` 约定（与 shared/ssr-detect.ts 一致），
- * 不依赖仓库 src/ 的 browser-shim，保证独立可加载。
- */
-type Page = import('../types').Page;
+import type { Page } from '../browser-shim.js';
 
 /**
  * 检测结果类型

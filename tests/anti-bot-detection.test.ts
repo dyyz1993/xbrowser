@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { formatDetectionMessage } from '../src/anti-bot-detection.js';
-import type { DetectionResult } from '../src/anti-bot-detection.js';
+import { formatDetectionMessage } from '../src/lib/anti-bot.js';
+import type { DetectionResult } from '../src/lib/anti-bot.js';
 
 describe('formatDetectionMessage', () => {
   it('should format not-detected result', () => {

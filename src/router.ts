@@ -49,6 +49,7 @@ import { findOrRestoreSession, createSession, saveSessionDiskMeta, type ManagedS
 import { HTTPServer } from './server/http-server.js';
 import { getCommand } from './commands/command-registry.js';
 import { buildViewerUrl } from './utils/viewer-url.js';
+import { attachDetectAntiBot } from './context.js';
 
 function showCommandHelp(siteName: string, cmd: unknown, siteConfig: { description?: string; name: string; url: string }, mode: string): void {
   const c = cmd as { name: string; description: string; scope: string; parameters?: unknown; examples?: Array<{ cmd: string; description: string }>; loginRequired?: 'required' | 'optional' | 'none' };
@@ -803,6 +804,11 @@ export async function routeCommand(
             },
             tips: new TipCollector(),
           };
+
+          // Inject anti-bot detection capability (ctx.detectAntiBot) for plugins.
+          // Plugins call ctx.detectAntiBot(page) instead of importing src/ directly
+          // (which would break under global/npm installs).
+          attachDetectAntiBot(ctx);
 
           try {
             const cmdStart = Date.now()

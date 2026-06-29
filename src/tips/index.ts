@@ -3,7 +3,7 @@ import type { SmartTip, Snapshot } from './types.js';
 import { DomWatcher } from './dom-watcher.js';
 import { ContextTracker } from './context-tracker.js';
 import { TipGenerator, buildSnapshot } from './tip-generator.js';
-import { detectAntiBot, formatDetectionMessage, type DetectionConfig } from '../anti-bot-detection.js';
+import { detectAntiBot, formatDetectionMessage, type DetectionConfig } from '../lib/anti-bot.js';
 
 const DEBOUNCE_MS = 500;
 

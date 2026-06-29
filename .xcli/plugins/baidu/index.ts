@@ -2,7 +2,6 @@ import { z } from 'zod/v4';
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
-import { detectAntiBot } from '../shared/anti-bot-detect.js';
 
 type SearchResult = {
   title: string;
@@ -96,7 +95,7 @@ export default function (xcli: XCLIAPI): void {
         });
         await page.waitForSelector('h3', { timeout: 5000 }).catch(() => {});
 
-        const antiBot = await detectAntiBot(page).catch(() => ({ detected: false } as const));
+        const antiBot = await ctx.detectAntiBot?.(page)?.catch(() => ({ detected: false } as const)) ?? { detected: false } as const;
         if (antiBot.detected) {
           return fail(`Baidu blocked the request (detected anti-bot: ${antiBot.type})`, [
             ...cdpTips,
@@ -214,7 +213,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForLoadState('networkidle');
         await page.waitForTimeout(2000);
 
-        const antiBot = await detectAntiBot(page).catch(() => ({ detected: false } as const));
+        const antiBot = await ctx.detectAntiBot?.(page)?.catch(() => ({ detected: false } as const)) ?? { detected: false } as const;
         if (antiBot.detected) {
           return fail(`Baidu hotsearch blocked (detected anti-bot: ${antiBot.type})`, [
             ...cdpTips,
@@ -321,7 +320,7 @@ export default function (xcli: XCLIAPI): void {
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForLoadState('networkidle');
 
-        const antiBot = await detectAntiBot(page).catch(() => ({ detected: false } as const));
+        const antiBot = await ctx.detectAntiBot?.(page)?.catch(() => ({ detected: false } as const)) ?? { detected: false } as const;
         if (antiBot.detected) {
           return fail(`Baidu news blocked (detected anti-bot: ${antiBot.type})`, [
             ...cdpTips,
@@ -415,7 +414,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(3000);
         await dismissBaiduDialogs(page);
 
-        const antiBot = await detectAntiBot(page).catch(() => ({ detected: false } as const));
+        const antiBot = await ctx.detectAntiBot?.(page)?.catch(() => ({ detected: false } as const)) ?? { detected: false } as const;
         if (antiBot.detected) {
           return fail(`Baidu SEO rank blocked (detected anti-bot: ${antiBot.type})`, [
             ...cdpTips,

@@ -88,6 +88,11 @@ declare module '@dyyz1993/xcli-core' {
     cdpEndpoint?: string;
     /** Wait for human interaction (CAPTCHA, login, etc.) */
     waitForHuman?: (options?: Record<string, unknown>) => Promise<{ solved: boolean; timedOut: boolean }>;
+    /** Detect anti-bot mechanisms on the page (injected by xbrowser router) */
+    detectAntiBot?: (
+      page: import('../../src/cdp-driver/types.js').XBPage,
+      config?: import('../../src/lib/anti-bot.js').DetectionConfig
+    ) => Promise<import('../../src/lib/anti-bot.js').DetectionResult>;
   }
 
   /**
