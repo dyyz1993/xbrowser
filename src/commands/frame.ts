@@ -28,10 +28,10 @@ export const framesCommand = registerCommand({
 
 export const frameCommand = registerCommand({
   name: 'frame',
-  description: 'Switch to a frame by index or name',
+  description: 'Get frame info by index or name',
   scope: 'page',
   parameters: z.object({
-    index: z.number().optional(),
+    index: z.number().int().min(0).optional(),
     name: z.string().optional(),
   }),
   result: z.object({

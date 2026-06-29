@@ -464,9 +464,14 @@ export async function handleExtract(args: string[], _mode: string): Promise<void
 
   const { extractAndSave, printExtractSummary } = await import('../commands/extract.js');
 
-  const { summary, outputPath } = extractAndSave(filePath);
-  printExtractSummary(summary);
-  console.log(`\nSaved LLM summary: ${outputPath}`);
+  try {
+    const { summary, outputPath } = extractAndSave(filePath);
+    printExtractSummary(summary);
+    console.log(`\nSaved LLM summary: ${outputPath}`);
+  } catch (e) {
+    console.error(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    process.exit(1);
+  }
 }
 
 export async function handleFilter(args: string[], _mode: string, options?: Record<string, unknown>): Promise<void> {
@@ -487,10 +492,15 @@ export async function handleFilter(args: string[], _mode: string, options?: Reco
     )
   );
   const excludeTypes = parseExcludeTypes(excludeArgs);
-  const result = filterRecording(filePath, outputPath, excludeTypes);
+  try {
+    const result = filterRecording(filePath, outputPath, excludeTypes);
 
-  console.log(`Filtered ${filePath} -> ${outputPath}`);
-  console.log(`  Original: ${result.originalCount}, After: ${result.filteredCount}, Removed: ${result.removed} (${result.percentage}%)`);
+    console.log(`Filtered ${filePath} -> ${outputPath}`);
+    console.log(`  Original: ${result.originalCount}, After: ${result.filteredCount}, Removed: ${result.removed} (${result.percentage}%)`);
+  } catch (e) {
+    console.error(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    process.exit(1);
+  }
 }
 
 // ─── generate-plugin: create a plugin from recording + knowledge ───
