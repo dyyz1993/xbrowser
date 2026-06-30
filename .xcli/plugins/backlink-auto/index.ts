@@ -544,6 +544,20 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://omnivideo.net',
     requiresLogin: true,
     description: '自动注册+提交外链（CDP安全模式，逐站执行）',
+    isLogin: async (ctx) => {
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | null;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/login') || url.includes('/signin') || url.includes('/register')) return false;
+        const loggedIn = await page.evaluate(() =>
+          !!document.querySelector('[class*="avatar"],[class*="user"],[class*="logged-in"]')
+        );
+        return loggedIn;
+      } catch {
+        return true;
+      }
+    },
   });
 
   site.command('run', {
