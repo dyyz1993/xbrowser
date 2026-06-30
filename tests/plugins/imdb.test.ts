@@ -1,0 +1,174 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import plugin from '../../.xcli/plugins/imdb/index.ts';
+
+const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
+const mockXCLI = { createSite: vi.fn(() => mockSite) };
+
+function getHandler(name: string): (...args: unknown[]) => Promise<unknown> {
+  const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === name);
+  if (!call) throw new Error(`Command "${name}" not found`);
+  return call[1].handler;
+}
+
+function createMockPage(evaluateResult: unknown = []) {
+  return {
+    url: vi.fn(() => 'https://www.imdb.com'),
+    goto: vi.fn(() => Promise.resolve()),
+    waitForTimeout: vi.fn(() => Promise.resolve()),
+    waitForLoadState: vi.fn(() => Promise.resolve()),
+    evaluate: vi.fn(() => Promise.resolve(evaluateResult)),
+    locator: vi.fn(() => ({
+      first: vi.fn(() => ({
+        isVisible: vi.fn(() => Promise.resolve(false)),
+        click: vi.fn(() => Promise.resolve()),
+        fill: vi.fn(() => Promise.resolve()),
+        count: vi.fn(() => Promise.resolve(0)),
+        waitFor: vi.fn(() => Promise.resolve()),
+      })),
+      count: vi.fn(() => Promise.resolve(0)),
+    })),
+    keyboard: { type: vi.fn(() => Promise.resolve()), press: vi.fn(() => Promise.resolve()) },
+    mouse: { wheel: vi.fn(() => Promise.resolve()), move: vi.fn() },
+    close: vi.fn(),
+  };
+}
+
+function createMockCtx(page?: ReturnType<typeof createMockPage>) {
+  return {
+    page,
+    cdpEndpoint: 'http://localhost:9221',
+    sessionId: 'test-session',
+    storage: { set: vi.fn(), get: vi.fn(() => null), delete: vi.fn(), keys: vi.fn(() => []), clear: vi.fn() },
+    waitForHuman: vi.fn(() => Promise.resolve({ solved: true })),
+  };
+}
+
+const ALL_COMMANDS = ['search', 'detail'];
+
+describe('imdb plugin', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    plugin(mockXCLI as unknown as Parameters<typeof plugin>[0]);
+  });
+
+  // ─── 注册测试 ───
+  it('should create site with name imdb', () => {
+    expect(mockXCLI.createSite).toHaveBeenCalledWith(expect.objectContaining({ name: 'imdb' }));
+  });
+
+  it('should create site with correct url', () => {
+    expect(mockXCLI.createSite).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://www.imdb.com' }));
+  });
+
+  it('should create site with requiresLogin false', () => {
+    expect(mockXCLI.createSite).toHaveBeenCalledWith(expect.objectContaining({ requiresLogin: false }));
+  });
+
+  it('should register 2 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(2);
+  });
+
+  it('should register expected command names', () => {
+    const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
+    expect(names).toEqual(ALL_COMMANDS);
+  });
+
+  it('each command should have description, scope, parameters, and handler', () => {
+    for (const call of mockSite.command.mock.calls) {
+      const config = call[1] as Record<string, unknown>;
+      expect(config).toHaveProperty('description');
+      expect(config).toHaveProperty('scope');
+      expect(config).toHaveProperty('parameters');
+      expect(config).toHaveProperty('handler');
+      expect(typeof config.handler).toBe('function');
+    }
+  });
+
+  it('should NOT register login/logout handlers (requiresLogin=false)', () => {
+    expect(mockSite.login).not.toHaveBeenCalled();
+    expect(mockSite.logout).not.toHaveBeenCalled();
+  });
+
+  // ─── search command ───
+  describe('search command', () => {
+    it('should have browser scope', () => {
+      const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'search');
+      expect((cmd![1] as Record<string, unknown>).scope).toBe('browser');
+    });
+
+    it('should throw when no page', async () => {
+      const handler = getHandler('search');
+      const ctx = createMockCtx(undefined);
+      await expect(handler({ query: 'Inception', limit: 10 }, ctx)).rejects.toThrow('需要浏览器页面');
+    });
+
+    it('should return results from evaluate', async () => {
+      const handler = getHandler('search');
+      const page = createMockPage([
+        { title: 'Inception', year: '2010', rating: '8.8', cast: 'Leonardo DiCaprio', link: 'https://www.imdb.com/title/tt1375666/', image: '' },
+        { title: 'Interstellar', year: '2014', rating: '8.7', cast: 'Matthew McConaughey', link: 'https://www.imdb.com/title/tt0816692/', image: '' },
+      ]);
+      const ctx = createMockCtx(page);
+      const result = await handler({ query: 'Inception', limit: 10 }, ctx) as Record<string, unknown>;
+      const data = result.data as Record<string, unknown>;
+      expect(data.query).toBe('Inception');
+      expect((data.results as unknown[])).toHaveLength(2);
+      expect(page.goto).toHaveBeenCalled();
+    });
+
+    it('should return fail on error', async () => {
+      const handler = getHandler('search');
+      const page = createMockPage();
+      page.goto = vi.fn(() => Promise.reject(new Error('navigate failed')));
+      const ctx = createMockCtx(page);
+      const result = await handler({ query: 'test', limit: 10 }, ctx) as Record<string, unknown>;
+      expect(result.success).toBe(false);
+    });
+  });
+
+  // ─── detail command ───
+  describe('detail command', () => {
+    it('should have browser scope', () => {
+      const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'detail');
+      expect((cmd![1] as Record<string, unknown>).scope).toBe('browser');
+    });
+
+    it('should throw when no page', async () => {
+      const handler = getHandler('detail');
+      const ctx = createMockCtx(undefined);
+      await expect(handler({ url: 'https://www.imdb.com/title/tt1375666/' }, ctx)).rejects.toThrow('需要浏览器页面');
+    });
+
+    it('should return movie detail from evaluate', async () => {
+      const handler = getHandler('detail');
+      const mockDetail = {
+        title: 'Inception',
+        year: '2010',
+        rating: '8.8',
+        ratingCount: '2.5M',
+        genres: 'Action, Sci-Fi',
+        plot: 'A thief who steals corporate secrets...',
+        director: 'Christopher Nolan',
+        cast: ['Leonardo DiCaprio', 'Joseph Gordon-Levitt'],
+        image: 'https://m.media-amazon.com/images/1.jpg',
+      };
+      const page = createMockPage(mockDetail);
+      const ctx = createMockCtx(page);
+      const result = await handler({ url: 'https://www.imdb.com/title/tt1375666/' }, ctx) as Record<string, unknown>;
+      const data = result.data as Record<string, unknown>;
+      expect(data.title).toBe('Inception');
+      expect(data.rating).toBe('8.8');
+      expect((data.cast as string[])).toHaveLength(2);
+      expect(page.goto).toHaveBeenCalledWith('https://www.imdb.com/title/tt1375666/', expect.anything());
+    });
+
+    it('should return fail on error', async () => {
+      const handler = getHandler('detail');
+      const page = createMockPage();
+      page.goto = vi.fn(() => Promise.reject(new Error('navigate failed')));
+      const ctx = createMockCtx(page);
+      const result = await handler({ url: 'https://www.imdb.com/title/tt1375666/' }, ctx) as Record<string, unknown>;
+      expect(result.success).toBe(false);
+    });
+  });
+});
