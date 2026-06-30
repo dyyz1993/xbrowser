@@ -42,6 +42,23 @@ export default function (api: XCLIAPI): void {
     url: 'https://you.ctrip.com',
     description: '携程景点评论爬取',
     requiresLogin: true,
+    isLogin: async (ctx) => {
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | null;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/login') || url.includes('/signin')) return false;
+        const loggedIn = await page.evaluate(() =>
+          !!document.querySelector(
+            '[class*="avatar"],[class*="user-info"],[class*="member"],' +
+            '.login-info,.account-info'
+          )
+        );
+        return loggedIn;
+      } catch {
+        return true;
+      }
+    },
   });
 
   site.command('reviews', {
