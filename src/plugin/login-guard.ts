@@ -39,6 +39,7 @@ interface SiteLike {
 interface CommandLike {
   name?: string;
   requiresLogin?: boolean;
+  loginRequired?: 'required' | 'optional' | 'none';
 }
 
 export async function checkPluginLoginRequired(options: {
@@ -55,7 +56,8 @@ export async function checkPluginLoginRequired(options: {
   const loginConfig = site.config?.loginConfig;
   const requiresLogin = command.requiresLogin === true
     || site.config?.requiresLogin === true
-    || loginConfig?.requiresLogin === true;
+    || loginConfig?.requiresLogin === true
+    || command.loginRequired === 'required';
   if (!requiresLogin) return { ok: true };
 
   const pluginName = site.name || 'plugin';

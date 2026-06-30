@@ -9,6 +9,23 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://weibo.com',
     description: '微博 - 社交媒体发布与图片搜索',
     requiresLogin: true,
+    isLogin: async (ctx) => {
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | null;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/login') || url.includes('/signin')) return false;
+        const loggedIn = await page.evaluate(() =>
+          !!document.querySelector(
+            '[class*="avtar"],[class*="member"],[class*="user-info"],' +
+            '.gn_name,.gn_nickname,.W_face_radius'
+          )
+        );
+        return loggedIn;
+      } catch {
+        return true;
+      }
+    },
   });
 
   weibo.command('post', {

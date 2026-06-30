@@ -9,6 +9,21 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.bilibili.com',
     description: 'B站 - 视频搜索、动态发布、评论、点赞与图片搜索',
     requiresLogin: true,
+    isLogin: async (ctx) => {
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | null;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/login') || url.includes('/signin')) return false;
+        const loggedIn = await page.evaluate(() =>
+          !!document.querySelector('[class*="avatar"],[class*="user-info"],[class*="logged-in"],' +
+            '.header-info__user,.bili-avatar')
+        );
+        return loggedIn;
+      } catch {
+        return true;
+      }
+    },
   });
 
   // ─── 工具函数 ──────────────────────────────────

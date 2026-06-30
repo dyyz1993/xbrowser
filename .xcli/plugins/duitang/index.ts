@@ -8,7 +8,24 @@ export default function (xcli: XCLIAPI): void {
     name: 'duitang',
     url: 'https://www.duitang.com',
     description: '堆糖 - 美好生活研究所',
-    requiresLogin: false,
+    requiresLogin: true,
+    isLogin: async (ctx) => {
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | null;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/login') || url.includes('/signin')) return false;
+        const loggedIn = await page.evaluate(() =>
+          !!document.querySelector(
+            '[class*="user"],[class*="avatar"],[class*="member"],' +
+            'a[href*="my"],a[href*="u/"]'
+          )
+        );
+        return loggedIn;
+      } catch {
+        return true;
+      }
+    },
   });
 
   duitang.command('search-image', {

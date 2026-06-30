@@ -467,6 +467,23 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.zhihu.com',
     description: '知乎 - 知识问答与内容采集 (DA 93)',
     requiresLogin: true,
+    isLogin: async (ctx) => {
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | null;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/login') || url.includes('/signin')) return false;
+        const loggedIn = await page.evaluate(() =>
+          !!document.querySelector(
+            'button[class*="profile"],[class*="Avatar"],[class*="user"],' +
+            'a[href*="/people/"],.AppHeader-profile'
+          )
+        );
+        return loggedIn;
+      } catch {
+        return true;
+      }
+    },
   });
 
   site.command('search', {

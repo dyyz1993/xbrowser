@@ -274,6 +274,23 @@ export default function (xcli: XCLIAPI): void {
     url: 'https://www.1688.com',
     description: '1688阿里巴巴 - 店铺信息、商品列表、商品详情、搜索采集',
     requiresLogin: true,
+    isLogin: async (ctx) => {
+      const page = (ctx as Record<string, unknown>).page as import('../types').Page | null;
+      if (!page) return true;
+      try {
+        const url = page.url();
+        if (url.includes('/login') || url.includes('/signin')) return false;
+        const loggedIn = await page.evaluate(() =>
+          !!document.querySelector(
+            '[class*="user"],[class*="avatar"],[class*="member"],' +
+            '.login-header,.username'
+          )
+        );
+        return loggedIn;
+      } catch {
+        return true;
+      }
+    },
   });
 
   site.command('shop', {
