@@ -62,6 +62,29 @@ export async function checkPluginLoginRequired(options: {
 
   const pluginName = site.name || 'plugin';
 
+  // First priority: use config.isLogin directly with the full context (which
+  // includes page, browserContext, etc.). xcli-core's isLoggedIn() ignores the
+  // ctx parameter and builds its own stripped-down context without page, which
+  // breaks browser-dependent login detection (the isLogin callback always gets
+  // page=null and falls back to "logged in").
+  const siteConfig = site.config as Record<string, unknown> | undefined;
+  const configIsLogin = siteConfig?.isLogin as ((ctx: unknown) => boolean | Promise<boolean>) | undefined;
+  if (configIsLogin) {
+    try {
+      const loggedIn = await configIsLogin(ctx);
+      if (loggedIn) return { ok: true };
+      return buildLoginRequired({
+        plugin: pluginName,
+        command: commandName,
+        reason: 'config.isLogin returned false',
+        sessionName,
+        loginConfig,
+      });
+    } catch {
+      // Fall through to xcli-core isLoggedIn fallback.
+    }
+  }
+
   if (typeof site.isLoggedIn === 'function') {
     try {
       const loggedIn = await site.isLoggedIn(ctx);

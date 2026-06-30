@@ -28,7 +28,7 @@
     ],
     "description": "堆糖 - 美好生活研究所",
     "name": "duitang",
-    "requiresLogin": false,
+    "requiresLogin": true,
     "site": "https://www.duitang.com",
     "sites": [],
     "slug": "duitang",
