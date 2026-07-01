@@ -8,8 +8,8 @@
 - `new` — 创建新的空白对话
 - `open` — 通过标题打开指定会话（模糊匹配）
 - `chat` — 发送消息并等待 AI 回复，支持文件上传和搜索来源提取
-- `image` — 文生图（Text-to-Image）
-- `image-edit` — 图片编辑：重绘/扩图/擦除/增强
+- `image` — 文生图（Text-to-Image，支持 `--ref` 参考图）
+- `extract-images` — 从已有对话提取全部图片（HD 优先）
 - `image-cutout` — AI 抠图（背景移除）
 - `image-vary` — 以图生图（Variation），基于参考图生成变体
 - `my-creations` — 查看创作历史（图片/视频/全部）

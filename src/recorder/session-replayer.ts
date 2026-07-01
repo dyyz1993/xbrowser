@@ -90,16 +90,24 @@ export class SessionReplayer {
           await this.replayTrajectory(action.trajectory);
         }
         await this.replayAction(action);
+
+        // X3: After each non-informational action, stabilize the page
+        // so the next step doesn't race with async rendering.
+        if (action.type !== 'resize' && action.type !== 'clipboard' && action.type !== 'visibility') {
+          try {
+            await this.page!.waitForLoadState('domcontentloaded', this.opts.stepTimeout);
+          } catch {
+            // Non-critical — best-effort stabilization
+          }
+        }
+
         success++;
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
         this.opts.onError?.(action, err);
-        if (action.type === 'navigation') {
-          // Navigation failures are non-fatal
-          skipped++;
-        } else {
-          failed++;
-        }
+        // X6: Navigation failures are fatals (like any other failure).
+        // A page that fails to load makes all subsequent actions invalid.
+        failed++;
       }
 
       // Delay between steps
@@ -118,39 +126,38 @@ export class SessionReplayer {
 
     switch (action.type) {
       case 'navigation':
-        await page.goto(action.url, { waitUntil: 'domcontentloaded', timeout });
+        // X3: waitUntil: 'load' ensures the page is fully loaded
+        // before subsequent actions try to interact with elements.
+        await page.goto(action.url, { waitUntil: 'load', timeout });
         break;
 
       case 'goto':
-        await page.goto(action.url, { waitUntil: 'domcontentloaded', timeout });
+        await page.goto(action.url, { waitUntil: 'load', timeout });
         break;
 
       case 'click':
       case 'cdp-click': {
-        const selector = this.resolveSelector(action);
-        await page.waitForSelector(selector, { state: 'visible', timeout });
+        // X2: resolveAndWait tries primary selector → textFallback → tag
+        const selector = await this.resolveAndWait(action);
         await page.click(selector, { timeout });
         break;
       }
 
       case 'input': {
-        const selector = this.resolveSelector(action);
-        await page.waitForSelector(selector, { state: 'visible', timeout });
+        const selector = await this.resolveAndWait(action);
         await page.fill(selector, action.value ?? '', { timeout });
         break;
       }
 
       case 'cdp-fill': {
-        const selector = this.resolveSelector(action);
-        await page.waitForSelector(selector, { state: 'visible', timeout });
+        const selector = await this.resolveAndWait(action);
         await page.fill(selector, action.value ?? '', { timeout });
         break;
       }
 
       case 'change': {
         // select element change
-        const selector = this.resolveSelector(action);
-        await page.waitForSelector(selector, { state: 'visible', timeout });
+        const selector = await this.resolveAndWait(action);
         if (action.value) {
           await page.selectOption(selector, action.value);
         }
@@ -158,8 +165,7 @@ export class SessionReplayer {
       }
 
       case 'filechooser': {
-        const selector = this.resolveSelector(action);
-        await page.waitForSelector(selector, { state: 'visible', timeout });
+        const selector = await this.resolveAndWait(action);
         const files = this.resolveFiles(action);
         if (files.length > 0) {
           await page.setInputFiles(selector, files);
@@ -208,11 +214,8 @@ export class SessionReplayer {
       }
 
       case 'hover': {
-        const selector = this.resolveSelector(action);
-        if (selector) {
-          await page.waitForSelector(selector, { state: 'visible', timeout });
-          await page.hover(selector);
-        }
+        const selector = await this.resolveAndWait(action);
+        await page.hover(selector);
         break;
       }
 
@@ -261,11 +264,11 @@ export class SessionReplayer {
       }
 
       case 'focus': {
-        const selector = this.resolveSelector(action);
-        if (selector && action.focus?.focusType === 'focus') {
-          await page.waitForSelector(selector, { state: 'visible', timeout });
-          // Use click to focus (XBPage doesn't have focus method)
-          await page.click(selector, { timeout });
+        const selector = await this.resolveAndWait(action);
+        if (action.focus?.focusType === 'focus') {
+          // X4: Use locator.focus() instead of page.click() to avoid
+          // unintended duplicate clicks. XBLocator supports focus().
+          await page.locator(selector).focus();
         }
         break;
       }
@@ -276,10 +279,20 @@ export class SessionReplayer {
       }
 
       case 'submit': {
-        const selector = this.resolveSelector(action);
-        if (selector) {
-          await page.click(selector, { timeout });
-        }
+        // X5: Use form.requestSubmit() instead of page.click() to trigger
+        // the proper submit event. The selector points to the <form> element
+        // recorded during the submit action. If the form doesn't have
+        // requestSubmit, fall back to dispatching a submit event.
+        const selector = await this.resolveAndWait(action);
+        await page.evaluate((sel: string) => {
+          const form = document.querySelector<HTMLFormElement>(sel);
+          if (!form) return;
+          if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+          } else {
+            form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+          }
+        }, selector);
         break;
       }
 
@@ -316,28 +329,65 @@ export class SessionReplayer {
     }
   }
 
-  /** Resolve the best selector for an action */
+  /** Resolve the best selector for an action (primary selector only) */
   private resolveSelector(action: UserAction): string {
     const el = action.element;
     if (!el) return '';
 
-    // Prefer textFallback for low-confidence selectors
-    if (el.textFallback) {
-      // Use the original CSS selector with text matching
-      // For replay, we use the CSS selector directly
-    }
-
-    // Use selector if available and not a low-confidence nth-of-type
     if (el.selector) {
       return el.selector;
     }
 
-    // Fallback to tag-based
     if (el.tag) {
       return el.tag;
     }
 
     return '';
+  }
+
+  /**
+   * X2: Wait for an element using the best available selector, with
+   * confidence-based fallback support.
+   *
+   * Returns the first matching selector, or throws if none match.
+   * Fallback order:
+   *   1. Primary CSS selector (always tried first)
+   *   2. textFallback selector (for low-confidence selectors when primary fails)
+   *   3. Tag-based fallback (last resort)
+   */
+  private async resolveAndWait(action: UserAction): Promise<string> {
+    const el = action.element;
+    if (!el) throw new Error('No element metadata');
+
+    const page = this.page!;
+    const timeout = this.opts.stepTimeout;
+
+    // Build ordered candidate list
+    const candidates: string[] = [];
+    if (el.selector) candidates.push(el.selector);
+    // For low-confidence selectors, fall back to textFallback
+    if (el.confidence === 'low' && el.textFallback?.selector) {
+      if (!candidates.includes(el.textFallback.selector)) {
+        candidates.push(el.textFallback.selector);
+      }
+    }
+    if (el.tag && !candidates.includes(el.tag)) {
+      candidates.push(el.tag);
+    }
+
+    if (candidates.length === 0) throw new Error('No selector available for element');
+
+    // Try each candidate in order
+    for (const sel of candidates) {
+      try {
+        await page.waitForSelector(sel, { state: 'visible', timeout });
+        return sel;
+      } catch {
+        // Try next fallback
+      }
+    }
+
+    throw new Error(`Element not found, tried: ${candidates.join(', ')}`);
   }
 
   /** Resolve file payloads from a filechooser action */

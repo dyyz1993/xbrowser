@@ -690,36 +690,39 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     }
     const isNewFormat = Array.isArray(parsed.actions);
 
-    if (isNewFormat) {
-      // Use SessionReplayer for new format
-      try {
-        const { SessionReplayer } = await import('../recorder/session-replayer.js');
-        const replayer = new SessionReplayer({
-          page: session.page,
-          stepDelay: slowMo * 500,
-          onStep: (action, index, total) => {
-            console.log(`[replay] Step ${index + 1}/${total}: ${action.type} ${action.element?.selector || action.url || ''}`);
-          },
-          onError: (action, error) => {
-            console.error(`[replay] Error at step ${action.type}: ${error.message}`);
-          },
-        });
-        // Validate parsed JSON has the required RecordingData fields before loading
-        if (!Array.isArray(parsed.actions) || typeof parsed.startUrl !== 'string') {
-          return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Invalid recording format: missing actions or startUrl' }] };
-        }
-        await replayer.load(parsed);
-        const startTime = Date.now();
-        const result = await replayer.run();
-        const duration = Date.now() - startTime;
-        return {
-          ok: result.failed === 0,
-          success: result.failed === 0,
-          duration,
-          eventsPlayed: result.success,
-          totalEvents: result.success + result.failed + result.skipped,
-          errors: [],
-        };
+	    if (isNewFormat) {
+	      // Use SessionReplayer for new format
+	      try {
+	        const replayErrors: { eventIndex: number; error: string }[] = [];
+	        const { SessionReplayer } = await import('../recorder/session-replayer.js');
+	        const replayer = new SessionReplayer({
+	          page: session.page,
+	          stepDelay: slowMo * 500,
+	          onStep: (action, index, total) => {
+	            console.log(`[replay] Step ${index + 1}/${total}: ${action.type} ${action.element?.selector || action.url || ''}`);
+	          },
+	          onError: (action, error) => {
+	            const msg = `[${action?.type || 'unknown'}] ${error?.message || String(error)}`;
+	            console.error('[replay] Error at step:', msg);
+	            replayErrors.push({ eventIndex: -1, error: msg });
+	          },
+	        });
+	        // Validate parsed JSON has the required RecordingData fields before loading
+	        if (!Array.isArray(parsed.actions) || typeof parsed.startUrl !== 'string') {
+	          return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Invalid recording format: missing actions or startUrl' }] };
+	        }
+	        await replayer.load(parsed);
+	        const startTime = Date.now();
+	        const result = await replayer.run();
+	        const duration = Date.now() - startTime;
+	        return {
+	          ok: result.failed === 0,
+	          success: result.failed === 0,
+	          duration,
+	          eventsPlayed: result.success,
+	          totalEvents: result.success + result.failed + result.skipped,
+	          errors: replayErrors,
+	        };
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error('[replay] SessionReplayer error:', msg);

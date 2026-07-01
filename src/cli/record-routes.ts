@@ -369,14 +369,26 @@ export async function handleReplay(
 
   const absPath = await import('node:path').then((p) => p.resolve(filePath));
 
-  const result = await forwardReplay(absPath, sessionName, slowMo) as Record<string, unknown>;
+	const result = await forwardReplay(absPath, sessionName, slowMo) as Record<string, unknown>;
 
-  if (!result.ok) {
-    outputError(String(result.errors
-      ? (result.errors as Array<{ error: string }>).map((e) => e.error).join('; ')
-      : result.error || 'Replay failed'));
-    return;
-  }
+	if (!result.ok) {
+	    if (mode === 'json' || mode === 'yaml') {
+	        // JSON/YAML 模式：即使失败也输出结构化结果（含 errors 列表），
+	        // 而不是只打 Error: 到 stderr。让调用方能解析具体失败原因。
+	        outputResult({
+	            ...result,
+	            success: false,
+	            message: result.errors
+	                ? (result.errors as Array<{ error: string }>).map((e) => e.error).join('; ')
+	                : result.error || 'Replay failed',
+	        }, mode);
+	    } else {
+	        outputError(String(result.errors
+	          ? (result.errors as Array<{ error: string }>).map((e) => e.error).join('; ')
+	          : result.error || 'Replay failed'));
+	    }
+	    return;
+	}
 
   outputResult(result, mode);
 }
