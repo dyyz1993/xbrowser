@@ -331,7 +331,7 @@ describe('record-routes', () => {
       );
     });
 
-    it('should output error when daemon returns failure', async () => {
+    it('should output structured JSON when daemon returns failure in JSON mode', async () => {
       mockForwardReplay.mockResolvedValue({
         ok: false,
         success: false,
@@ -341,8 +341,17 @@ describe('record-routes', () => {
         errors: [{ error: 'Session not found: missing' }],
       });
 
-      await expect(handleReplay(['rec.yaml'], { session: 'missing' }, 'json')).rejects.toThrow('EXIT');
-      expect(mockOutputError).toHaveBeenCalledWith('Session not found: missing');
+      // In JSON mode, failure goes to outputResult as structured JSON (not stderr)
+      await handleReplay(['rec.yaml'], { session: 'missing' }, 'json');
+      expect(mockOutputResult).toHaveBeenCalledWith(
+        expect.objectContaining({
+          success: false,
+          errors: [{ error: 'Session not found: missing' }],
+        }),
+        'json',
+      );
+      // outputError should NOT be called — structured JSON replaces stderr in JSON mode
+      expect(mockOutputError).not.toHaveBeenCalled();
     });
   });
 

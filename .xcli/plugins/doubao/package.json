@@ -26,16 +26,16 @@
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
   "type": "module",
-  "version": "3.3.0",
+  "version": "3.3.1",
   "xbrowser": {
-    "author": "Unknown",
+    "author": "dyyz1993",
     "commands": [
       "list",
       "new",
       "open",
       "chat",
       "image",
-      "image-edit",
+      "extract-images",
       "image-cutout",
       "image-vary",
       "my-creations",
@@ -61,6 +61,6 @@
     "tags": [
       "doubao"
     ],
-    "version": "3.3.0"
+    "version": "3.3.1"
   }
 }

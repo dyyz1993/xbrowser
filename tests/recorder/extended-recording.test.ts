@@ -39,6 +39,11 @@ function createMockPage() {
     wheel: vi.fn(async () => {}),
   };
 
+  const locatorFn = vi.fn(() => ({
+    focus: vi.fn(async () => {}),
+    waitFor: vi.fn(async () => {}),
+  }));
+
   return {
     url: vi.fn(() => 'https://example.com'),
     goto: gotoFn,
@@ -50,11 +55,13 @@ function createMockPage() {
     selectOption: selectOptionFn,
     waitForSelector: waitForSelectorFn,
     setInputFiles: setInputFilesFn,
+    locator: locatorFn,
     keyboard,
     mouse,
     _mocks: {
       clickFn, dblclickFn, hoverFn, fillFn, selectOptionFn,
       waitForSelectorFn, setInputFilesFn, evaluateFn, gotoFn,
+      locatorFn,
       keyboard, mouse,
     },
   };
@@ -283,7 +290,7 @@ describe('SessionReplayer — new action types', () => {
 
   // ── focus ──
 
-  it('should replay focus via click on selector', async () => {
+  it('should replay focus via locator.focus() on selector', async () => {
     const result = await replayActions([
       makeAction({
         type: 'focus',
@@ -292,7 +299,9 @@ describe('SessionReplayer — new action types', () => {
       }),
     ]);
     expect(result.success).toBe(1);
-    expect(mockPage._mocks.clickFn).toHaveBeenCalledWith('#search', { timeout: 1000 });
+    // X4: focus uses locator().focus() instead of page.click() to avoid unintended clicks
+    expect(mockPage._mocks.locatorFn).toHaveBeenCalledWith('#search');
+    expect(mockPage._mocks.clickFn).not.toHaveBeenCalled();
   });
 
   it('should skip blur events', async () => {
@@ -305,6 +314,7 @@ describe('SessionReplayer — new action types', () => {
     ]);
     expect(result.success).toBe(1);
     expect(mockPage._mocks.clickFn).not.toHaveBeenCalled();
+    expect(mockPage._mocks.locatorFn).not.toHaveBeenCalled();
   });
 
   // ── visibility ──

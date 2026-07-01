@@ -9,8 +9,8 @@ const formatter = new OutputFormatter();
  * 应用层不需要感知默认值，也不应该自己实现格式化逻辑。
  */
 export function outputResult(result: unknown, mode: string = 'text'): void {
-  // 错误结果统一走 outputError
-  if (typeof result === 'object' && result !== null) {
+  // 错误结果走 outputError（仅 text 模式，JSON/YAML 模式输出结构化结果到 stdout）
+  if (mode !== 'json' && mode !== 'yaml' && typeof result === 'object' && result !== null) {
     const r = result as Record<string, unknown>;
     if (r.success === false) {
       outputError(r.message ? String(r.message) : 'Unknown error');
