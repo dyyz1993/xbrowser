@@ -153,6 +153,14 @@ export interface RecordingStep {
     networkId: number;
     paramName: string;
   }>;
+  signals: ActionSignal[];
+}
+
+/** Success / verification signal attached to a recording step */
+export interface ActionSignal {
+  type: 'network_success' | 'url_change' | 'dialog' | 'dom_change';
+  value?: string;
+  label: string;
 }
 
 export interface RecordingSummary {

@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.6] - 2026-07-04
+
+### Fixed
+- **#225**: 重复 click/fill 事件去重 — `dedupMap` 替代 `cdpActionDedup` 单条目，双向去重覆盖 race condition
+- **#226**: 更稳定的 selector 策略 — 删除无效的 `:has-text`，新增 `data-*` / `[role][name]` / `[role][aria-label]` / `tag[aria-label]` 策略
+- **#227**: 录制源头降噪 — 默认过滤 hover/focus/scroll 等 ambient 动作，支持 `--stream raw` 保留全部
+- **#228**: 成功信号 — `verifyAction()` 在 click/submit/input 后收集 URL change / 2xx-3xx network / dialog 信号，写入 `RecordingStep.signals`
+
 ## [1.9.0] - 2026-06-26
 
 ### Added

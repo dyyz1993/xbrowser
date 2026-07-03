@@ -2,8 +2,9 @@
  * selector-utils — Generate shortest unique CSS selector for any DOM element.
  *
  * Strategy chain (highest priority first):
- *   #id → [data-testid] → [name] → [aria-label] → [placeholder]
- *   → [role + name] → [alt] → [title]
+ *   #id → [data-testid] → [data-*] → [name] → [aria-label]
+ *   → [role+name] → [role+aria-label] → [role] → [placeholder]
+ *   → [alt] → [title]
  *   → tag + unique attribute
  *   → .class combos → tag.class
  *   → parent scope → :nth-of-type chain
@@ -116,6 +117,23 @@ export function generateUniqueSelector(
     }
   }
 
+  // ─── Strategy 2a: [data-*] attributes (beyond known testids) ──
+  for (const attr of el.attributes) {
+    if (!attr.name.startsWith('data-')) continue;
+    // Skip known testid attrs (already handled by Strategy 2)
+    if (cfg.stableAttributes.includes(attr.name)) continue;
+    // Skip URL-like or very long values
+    if (!attr.value || attr.value.length > 60 || attr.value.startsWith('http')) continue;
+    const sel = `[${attr.name}="${CSS.escape(attr.value)}"]`;
+    if (isUnique(sel)) {
+      return { selector: sel, strategy: 'data-attr', confidence: 'high' };
+    }
+    const tagged = tag + sel;
+    if (isUnique(tagged)) {
+      return { selector: tagged, strategy: 'data-attr+tag', confidence: 'high' };
+    }
+  }
+
   // ─── Strategy 3: [name] (form elements) ────────────────────
   const name = el.getAttribute('name');
   if (name) {
@@ -138,11 +156,29 @@ export function generateUniqueSelector(
     }
   }
 
-  // ─── Strategy 5: [role] + text content ─────────────────────
+  // ─── Strategy 4a: [role][name] combo ────────────────────────
   const role = el.getAttribute('role');
+  if (role) {
+    const nameAttr = el.getAttribute('name');
+    if (nameAttr) {
+      const sel = '[role="' + role + '"][name="' + CSS.escape(nameAttr) + '"]';
+      if (isUnique(sel)) {
+        return { selector: sel, strategy: 'role+name', confidence: 'high' };
+      }
+    }
+
+    // ─── Strategy 4b: [role][aria-label] combo ──────────────────
+    if (ariaLabel) {
+      const sel = '[role="' + role + '"][aria-label="' + CSS.escape(ariaLabel.substring(0, 80)) + '"]';
+      if (isUnique(sel)) {
+        return { selector: sel, strategy: 'role+aria-label', confidence: 'high' };
+      }
+    }
+  }
+
+  // ─── Strategy 5: [role] alone ──────────────────────────────
   if (role && el.textContent?.trim()) {
     const sel = '[role="' + role + '"]';
-    // Try to narrow with text if possible
     if (isUnique(sel)) {
       return { selector: sel, strategy: 'role', confidence: 'high' };
     }
@@ -239,14 +275,12 @@ export function generateUniqueSelector(
     }
   }
 
-  // ─── Strategy 11: Text content (limited use) ───────────────
-  // Only for leaf elements with short, unique text
-  const text = (el.textContent || '').trim();
-  if (text && text.length <= 30 && text.length >= 1 && el.children.length === 0) {
-    // Use with tag for safety
-    const sel = tag + ':has-text("' + CSS.escape(text.substring(0, 30)) + '")';
+  // ─── Strategy 11: tag[aria-label] fallback ──────────────────
+  // When aria-label exists but wasn't globally unique, try with tag prefix
+  if (ariaLabel) {
+    const sel = tag + '[aria-label="' + CSS.escape(ariaLabel.substring(0, 80)) + '"]';
     if (isUnique(sel)) {
-      return { selector: sel, strategy: 'text', confidence: 'low' };
+      return { selector: sel, strategy: 'tag+aria-label', confidence: 'medium' };
     }
   }
 
@@ -389,16 +423,28 @@ export function getSelectorGeneratorScript(): string {
       if (isUnique(root, s)) return { selector: s, strategy: 'id+tag', confidence: 'high' };
     }
 
-    // [data-testid]
-    for (var si = 0; si < STABLE_ATTRS.length; si++) {
-      var v = el.getAttribute(STABLE_ATTRS[si]);
-      if (v) {
-        var s = '[' + STABLE_ATTRS[si] + '="' + esc(v) + '"]';
-        if (isUnique(root, s)) return { selector: s, strategy: 'testid', confidence: 'high' };
-        s = tag + s;
-        if (isUnique(root, s)) return { selector: s, strategy: 'testid+tag', confidence: 'high' };
-      }
-    }
+	    // [data-testid]
+	    for (var si = 0; si < STABLE_ATTRS.length; si++) {
+	      var v = el.getAttribute(STABLE_ATTRS[si]);
+	      if (v) {
+	        var s = '[' + STABLE_ATTRS[si] + '="' + esc(v) + '"]';
+	        if (isUnique(root, s)) return { selector: s, strategy: 'testid', confidence: 'high' };
+	        s = tag + s;
+	        if (isUnique(root, s)) return { selector: s, strategy: 'testid+tag', confidence: 'high' };
+	      }
+	    }
+
+	    // [data-*] — other data attributes beyond known testids
+	    for (var ai = 0; ai < el.attributes.length; ai++) {
+	      var a = el.attributes[ai];
+	      if (!a.name.startsWith('data-')) continue;
+	      if (STABLE_ATTRS.indexOf(a.name) !== -1) continue;
+	      if (!a.value || a.value.length > 60 || a.value.indexOf('http') === 0) continue;
+	      var s = '[' + a.name + '="' + esc(a.value) + '"]';
+	      if (isUnique(root, s)) return { selector: s, strategy: 'data-attr', confidence: 'high' };
+	      s = tag + s;
+	      if (isUnique(root, s)) return { selector: s, strategy: 'data-attr+tag', confidence: 'high' };
+	    }
 
     // [name]
     var name = el.getAttribute('name');
@@ -407,14 +453,35 @@ export function getSelectorGeneratorScript(): string {
       if (isUnique(root, s)) return { selector: s, strategy: 'name', confidence: 'high' };
     }
 
-    // [aria-label]
-    var aria = el.getAttribute('aria-label');
-    if (aria) {
-      var s = '[aria-label="' + esc(aria.substring(0, 60)) + '"]';
-      if (isUnique(root, s)) return { selector: s, strategy: 'aria-label', confidence: 'high' };
-      s = tag + s;
-      if (isUnique(root, s)) return { selector: s, strategy: 'aria-label+tag', confidence: 'high' };
-    }
+	    // [aria-label]
+	    var aria = el.getAttribute('aria-label');
+	    if (aria) {
+	      var s = '[aria-label="' + esc(aria.substring(0, 60)) + '"]';
+	      if (isUnique(root, s)) return { selector: s, strategy: 'aria-label', confidence: 'high' };
+	      s = tag + s;
+	      if (isUnique(root, s)) return { selector: s, strategy: 'aria-label+tag', confidence: 'high' };
+	    }
+
+	    // [role][name] combo
+	    var role = el.getAttribute('role');
+	    if (role) {
+	      var name2 = el.getAttribute('name');
+	      if (name2) {
+	        var s = '[role="' + role + '"][name="' + esc(name2) + '"]';
+	        if (isUnique(root, s)) return { selector: s, strategy: 'role+name', confidence: 'high' };
+	      }
+	      // [role][aria-label] combo
+	      if (aria) {
+	        var s = '[role="' + role + '"][aria-label="' + esc(aria.substring(0, 60)) + '"]';
+	        if (isUnique(root, s)) return { selector: s, strategy: 'role+aria-label', confidence: 'high' };
+	      }
+	      // [role] alone
+	      var text2 = (el.textContent || '').trim();
+	      if (text2) {
+	        var s = '[role="' + role + '"]';
+	        if (isUnique(root, s)) return { selector: s, strategy: 'role', confidence: 'high' };
+	      }
+	    }
 
     // [placeholder]
     var ph = el.getAttribute('placeholder');
@@ -437,11 +504,12 @@ export function getSelectorGeneratorScript(): string {
       if (isUnique(root, s)) return { selector: s, strategy: 'title', confidence: 'high' };
     }
 
-    // Unique attribute (skip URL-like, long)
-    var skipAttr = {class:1,style:1,id:1,name:1,'aria-label':1,placeholder:1,alt:1,title:1,role:1,src:1,href:1,action:1,'data-src':1,'data-href':1};
-    for (var ai = 0; ai < el.attributes.length; ai++) {
-      var a = el.attributes[ai];
-      if (skipAttr[a.name] || a.name.startsWith('data-') || a.name.startsWith('aria-')) continue;
+	    // Unique attribute (skip URL-like, long, and common attrs handled above)
+	    // Note: non-testid data-* attrs are already tried in [data-*] section above
+	    var skipAttr = {class:1,style:1,id:1,name:1,'aria-label':1,placeholder:1,alt:1,title:1,role:1,src:1,href:1,action:1,'data-src':1,'data-href':1};
+	    for (var ai = 0; ai < el.attributes.length; ai++) {
+	      var a = el.attributes[ai];
+	      if (skipAttr[a.name] || a.name.startsWith('data-') || a.name.startsWith('aria-')) continue;
       if (a.value && a.value.length > 2 && a.value.length <= 60) {
         var s = tag + '[' + a.name + '="' + esc(a.value) + '"]';
         if (isUnique(root, s)) return { selector: s, strategy: 'attribute', confidence: 'medium' };
@@ -478,10 +546,16 @@ export function getSelectorGeneratorScript(): string {
           var s = tag + '.' + esc(cls[i]) + '.' + esc(cls[j]);
           if (isUnique(root, s)) return { selector: s, strategy: 'tag+class-combo', confidence: 'medium' };
         }
-      }
-    }
+	      }
+	    }
 
-    // Parent scope
+	    // tag[aria-label] fallback — aria-label exists but wasn't globally unique
+	    if (aria) {
+	      var s = tag + '[aria-label="' + esc(aria.substring(0, 60)) + '"]';
+	      if (isUnique(root, s)) return { selector: s, strategy: 'tag+aria-label', confidence: 'medium' };
+	    }
+
+	    // Parent scope
     var parent = el.parentElement;
     if (parent && parent !== root) {
       if (parent.id) {
