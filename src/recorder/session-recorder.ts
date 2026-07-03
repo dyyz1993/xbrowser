@@ -16,12 +16,12 @@ import { homedir } from 'node:os';
 import type { BrowserContext, Frame, Page, Request, Response, Dialog } from '../browser-shim.js';
 import { getSelectorGeneratorScript } from './selector-utils.js';
 import { updateSiteKnowledge } from './site-knowledge.js';
-import type { UserAction, RecordingData, RecordingSummary, RecordingControlFile, NetworkEntry, CheckpointEntry, CheckpointType, RecordingStep, ContextChange, ClickContext, ElementRef } from './recording-types.js';
+import type { UserAction, RecordingData, RecordingSummary, RecordingControlFile, NetworkEntry, CheckpointEntry, CheckpointType, RecordingStep, ContextChange, ClickContext, ElementRef, ActionSignal } from './recording-types.js';
 export type {
   ClickContextItem, ClickContextElement, ClickContextStateChange, ClickContext,
   UserAction, NetworkEntry, ContextChange, ElementRef,
   RecordingStep, RecordingSummary, CheckpointType, CheckpointEntry,
-  RecordingData, RecordingControlFile,
+  RecordingData, RecordingControlFile, ActionSignal,
 } from './recording-types.js';
 
 // ─── Minimal frontend signal script ──────────────────────────────
@@ -1051,14 +1051,22 @@ export class SessionRecorder {
   private activePages = new Set<Page>();
   private lastKnownUrl = '';  // Track URL to detect real navigation changes
 
-  /** Dedup window: after a CDP command action, ignore matching action signals within this window */
-  private cdpActionDedup: { type: string; value?: string; selector?: string; until: number } | null = null;
+  /** Dedup map: key = normalizedType|tag|value → expiration timestamp.
+   *  Replaces old single-entry cdpActionDedup for bidirectional dedup. */
+  private dedupMap = new Map<string, number>();
+  private dedupActionCount = 0; // counter for periodic cleanup
 
   /** Network dedup: last request key for short-window dedup */
   private _lastRequestKey = '';
   private _lastRequestTs = 0;
 
   private _isRecording = false;
+  private streamMode: 'clean' | 'raw' = 'clean';
+
+  /** Ambient action types: filtered out in clean mode */
+  private static readonly AMBIENT_TYPES = new Set([
+    'hover', 'focus', 'scroll', 'visibility', 'resize', 'clipboard', 'touch', 'contextmenu', 'drag',
+  ]);
 
   constructor(context: BrowserContext, page: Page, sessionName: string) {
     this.context = context;
@@ -1076,20 +1084,12 @@ export class SessionRecorder {
 
   /** Record an action triggered by a CDP command (e.g. xbrowser fill/click/goto) */
   async recordCommandAction(action: { type: string; selector?: string; value?: string; url?: string; element?: UserAction['element'] }): Promise<void> {
-    // Reverse dedup: if a matching action signal was recently recorded, skip this CDP command
-    const normalizedType = action.type === 'cdp-fill' ? 'input' : action.type === 'cdp-click' ? 'click' : action.type;
-    const recent = this.actions[this.actions.length - 1];
-    if (recent && Date.now() - recent.timestamp < 1500) {
-      // Match against either the raw type (cdp-fill/cdp-click) or normalized type (input/click)
-      const typeMatch = recent.type === action.type || recent.type === normalizedType;
-      const valueMatch = !action.value || recent.value === action.value;
-      const selectorMatch = !action.selector || (recent.element?.selector &&
-        (recent.element.selector === action.selector ||
-         recent.element.selector.endsWith(' ' + action.selector) ||
-         action.selector.endsWith(' ' + recent.element.selector)));
-      if (typeMatch && valueMatch && selectorMatch) {
-        // Skip duplicate CDP command — action signal already captured it
-        return;
+    // Reverse dedup: check dedupMap before recording
+    const dedupFromAction = this.dedupKey(action.type, action.selector, action.element?.tag, action.value);
+    if (dedupFromAction) {
+      const expires = this.dedupMap.get(dedupFromAction);
+      if (expires && Date.now() < expires) {
+        return; // Skip duplicate — action signal already captured it
       }
     }
 
@@ -1116,15 +1116,18 @@ export class SessionRecorder {
       element: actionToPush.element,
     });
 
-    // Update lastActionTs so flush will skip stale action signals
+    // Update lastActionTs and set dedup window (2s) for matching action signals
     this.lastActionTs = ts;
-    // Set dedup window: ignore matching action signals for 1.5s
-    this.cdpActionDedup = {
-      type: normalizedType,
-      value: action.value,
-      selector: action.selector,
-      until: Date.now() + 1500,
-    };
+    this.dedupMap.set(dedupFromAction, Date.now() + 2000);
+    this.dedupActionCount++;
+
+    // Periodic cleanup: purge expired entries every 200 actions
+    if (this.dedupActionCount % 200 === 0) {
+      const now = Date.now();
+      for (const [k, v] of this.dedupMap) {
+        if (now >= v) this.dedupMap.delete(k);
+      }
+    }
 
     // Update URL tracking for goto/navigation commands
     if (action.url && action.url !== 'about:blank') {
@@ -1132,6 +1135,15 @@ export class SessionRecorder {
     } else if (action.type === 'goto' && action.value && action.value !== 'about:blank') {
       this.lastKnownUrl = action.value;
     }
+  }
+
+  /** Generate dedup key for an action (normalized type + selector/tag + value). */
+  private dedupKey(type: string, selector?: string, tag?: string, value?: string): string {
+    const normType = type === 'cdp-click' ? 'click'
+      : type === 'cdp-fill' ? 'input'
+      : type === 'cdp-eval' ? 'eval' : type;
+    const selOrTag = selector || tag || '';
+    return `${normType}|${selOrTag}|${value || ''}`;
   }
 
   get networkCount(): number {
@@ -1179,7 +1191,7 @@ export class SessionRecorder {
 
   // ─── Start ──────────────────────────────────────────────────────
 
-  async start(url?: string): Promise<void> {
+  async start(url?: string, options?: { stream?: 'clean' | 'raw' }): Promise<void> {
     if (this._isRecording) throw new Error('Already recording');
 
     this._isRecording = true;
@@ -1189,6 +1201,7 @@ export class SessionRecorder {
     this.contextChanges = [];
     this.checkpoints = [];
     this.checkpointCounter = 0;
+    this.streamMode = options?.stream ?? 'clean';
     this.lastKnownUrl = this.page.url();  // Initialize URL tracking
 
     // Register init scripts BEFORE goto so they execute on the freshly loaded page.
@@ -1859,18 +1872,18 @@ export class SessionRecorder {
     for (const raw of pending) {
       if (raw.ts <= this.lastActionTs) continue;
 
-      // Dedup: skip action signals that match a recent CDP command action
-      if (this.cdpActionDedup && Date.now() < this.cdpActionDedup.until) {
-        const dedup = this.cdpActionDedup;
-        const typeMatch = raw.type === dedup.type;
-        const valueMatch = !dedup.value || raw.value === dedup.value;
-        const selectorMatch = !dedup.selector || (raw.element?.selector &&
-          (raw.element.selector === dedup.selector ||
-           raw.element.selector.endsWith(' ' + dedup.selector) ||
-           dedup.selector.endsWith(' ' + raw.element.selector)));
-        if (typeMatch && valueMatch && selectorMatch) {
+      // Dedup: check dedupMap for matching recent CDP command action
+      const dedupFromSignal = this.dedupKey(raw.type, raw.element?.selector, raw.element?.tag, raw.value);
+      if (dedupFromSignal) {
+        const expires = this.dedupMap.get(dedupFromSignal);
+        if (expires && Date.now() < expires) {
           continue; // Skip duplicate action signal
         }
+      }
+
+      // Denoise: filter ambient actions in clean mode
+      if (this.streamMode === 'clean' && SessionRecorder.AMBIENT_TYPES.has(raw.type as string)) {
+        continue; // Skip ambient action
       }
 
       this.actionCounter++;
@@ -1903,8 +1916,23 @@ export class SessionRecorder {
       pushed.elementScreenshot = await this.captureElementScreenshot(page, raw);
 
       this.lastActionTs = raw.ts;
+      // Set dedupMap entry for reverse dedup (action signal → CDP command dedup)
+	      const dedupKey = this.dedupKey(raw.type, raw.element?.selector, raw.element?.tag, raw.value);
+	      if (dedupKey) {
+	        this.dedupMap.set(dedupKey, Date.now() + 2000);
+	        this.dedupActionCount++;
+	      }
 
-      if (raw.type === 'click' || raw.type === 'navigate' || raw.type === 'submit') {
+	      // Verify: collect success signals for key action types
+	      const verifyTypes = new Set(['click', 'submit', 'input', 'change', 'cdp-click', 'cdp-fill']);
+		      if (verifyTypes.has(raw.type as string)) {
+		        const signals = await this.verifyAction(page, pushed).catch(() => [] as ActionSignal[]);
+		        if (signals.length > 0) {
+		          (pushed as unknown as { __signals?: ActionSignal[] }).__signals = signals;
+		        }
+		      }
+
+		      if (raw.type === 'click' || raw.type === 'navigate' || raw.type === 'submit') {
         const detected = await this.detectCheckpoints(page);
         for (const cp of detected) {
           cp.relatedActionId = this.actionCounter;
@@ -2099,6 +2127,52 @@ export class SessionRecorder {
     }
   }
 
+  // ─── Verification: collect success signals after key actions ──────
+
+  /**
+   * After a key action (click/submit/input), check for success signals:
+   * URL changes, recent successful network responses, dialog appearances.
+   */
+  private async verifyAction(page: Page, action: UserAction): Promise<ActionSignal[]> {
+    const signals: ActionSignal[] = [];
+
+    // 1. URL change detection
+    try {
+      const currentUrl = page.url();
+      if (currentUrl && currentUrl !== 'about:blank' && currentUrl !== action.url) {
+        signals.push({ type: 'url_change', value: currentUrl, label: `URL changed to ${currentUrl}` });
+      }
+    } catch { /* page may be closed */ }
+
+    // 2. Recent successful network responses (3s window after action)
+    try {
+      const recentNetwork = this.network.filter(n =>
+        n.timestamp > action.timestamp - 100 &&
+        n.timestamp < action.timestamp + 5000 &&
+        n.status >= 200 && n.status < 400
+      );
+      for (const net of recentNetwork.slice(0, 3)) {
+        signals.push({
+          type: 'network_success',
+          value: `${net.status}`,
+          label: `${net.method} ${net.path} → ${net.status}`,
+        });
+      }
+    } catch { /* ignore */ }
+
+    // 3. Dialog checkpoint near this action
+    try {
+      const recentDialog = [...this.checkpoints].reverse().find(cp =>
+        cp.type === 'dialog' && Math.abs(cp.timestamp - action.timestamp) < 3000
+      );
+      if (recentDialog) {
+        signals.push({ type: 'dialog', value: recentDialog.type, label: recentDialog.hint });
+      }
+    } catch { /* ignore */ }
+
+    return signals;
+  }
+
   // ─── Periodic disk flush ────────────────────────────────────────
 
   private flushToDisk(): void {
@@ -2180,7 +2254,7 @@ export class SessionRecorder {
 
     const meaningfulNetwork = data.network.filter(n => !isNoiseNetwork(n));
 
-    const filtered = data.actions.filter(a => a.type !== 'scroll');
+    const filtered = data.actions;
 
     type ActionGroup = { actions: UserAction[]; primary: UserAction };
     const groups: ActionGroup[] = [];
@@ -2221,6 +2295,8 @@ export class SessionRecorder {
         ? this.matchActionToNetwork(primary, nearbyNetwork)
         : [];
 
+      const signals: ActionSignal[] = (primary as unknown as { __signals?: ActionSignal[] }).__signals || [];
+
       steps.push({
         step: steps.length + 1,
         ref: getRef(primary),
@@ -2233,6 +2309,7 @@ export class SessionRecorder {
         })),
         contextChanges: nearbyContext,
         matchedInputs: [...matchedInputs, ...clickMatches],
+        signals,
       });
     }
 

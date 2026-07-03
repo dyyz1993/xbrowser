@@ -117,7 +117,7 @@ describe('record-routes', () => {
 
       await handleRecord(['start'], { url: 'https://example.com' }, 'json');
 
-      expect(mockForwardRecordStart).toHaveBeenCalledWith('default', 'https://example.com', undefined);
+	      expect(mockForwardRecordStart).toHaveBeenCalledWith('default', 'https://example.com', undefined, 'clean');
       expect(mockOutputResult).toHaveBeenCalledWith(
         expect.objectContaining({
           ok: true,

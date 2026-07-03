@@ -144,10 +144,9 @@ describe('SessionRecorder', () => {
         element: { tag: 'button', selector: '#btn', text: 'Click', strategy: 'id', confidence: 'high' },
       });
 
-      // Expire both dedup mechanisms
-      (recorder as any).cdpActionDedup.until = Date.now() - 100;
-      // Also age the last action's timestamp so reverse dedup doesn't match
-      (recorder as any).actions[0].timestamp = Date.now() - 2000;
+      // Expire dedupMap entry so second call is not deduped
+      const key = (recorder as any).dedupKey('cdp-click', '#btn', 'button', undefined);
+      (recorder as any).dedupMap.set(key, Date.now() - 100);
 
       await recorder.recordCommandAction({
         type: 'cdp-click',
@@ -172,6 +171,9 @@ describe('SessionRecorder', () => {
         pageTitle: '',
         element: { tag: 'button', selector: '#btn', text: 'Click', strategy: 'id', confidence: 'high' },
       }];
+      // Set dedupMap entry to match (simulating what flushPendingActions would do)
+      const key = (recorder as any).dedupKey('click', '#btn', 'button', undefined);
+      (recorder as any).dedupMap.set(key, Date.now() + 2000);
 
       // Now cdp-click with same selector arrives — should be deduped
       await recorder.recordCommandAction({

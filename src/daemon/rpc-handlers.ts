@@ -475,6 +475,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const sessionName = (params.session as string) || 'default';
     const url = params.url as string | undefined;
     const cdpEndpoint = params.cdpEndpoint as string | undefined;
+    const stream = (params.stream as string) || 'clean';
 
     if (activeRecorders.has(sessionName)) {
       return { ok: false, error: 'Recording already in progress for session: ' + sessionName };
@@ -510,7 +511,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
 
     try {
       const recorder = new SessionRecorder(session.context, session.page, sessionName);
-      await recorder.start(url);
+      await recorder.start(url, { stream: stream as 'clean' | 'raw' });
       activeRecorders.set(sessionName, recorder);
       return { ok: true, session: sessionName, startUrl: url || session.page.url() };
     } catch (e) {

@@ -26,8 +26,9 @@ export async function handleRecord(
       const url = options.url as string;
       const sessionName = (options.session as string) || 'default';
       const cdpEndpoint = options.cdp as string | undefined;
+      const stream = (options.stream as string) || 'clean';
 
-      const result = await forwardRecordStart(sessionName, url, cdpEndpoint) as Record<string, unknown>;
+      const result = await forwardRecordStart(sessionName, url, cdpEndpoint, stream) as Record<string, unknown>;
 
       if (!result.ok) {
         outputError(String(result.error || 'Failed to start recording'));
