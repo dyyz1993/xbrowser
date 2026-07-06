@@ -134,6 +134,72 @@ async function infoFromMarketplacePlugin(
   return null;
 }
 
+/**
+ * Normalize a plugin name for matching: strip scope/prefix and lowercase.
+ * Examples:
+ *   "@xbrowser/p500px"        → "p500px"
+ *   "xbrowser-plugin-500px"   → "500px"
+ *   "p500px"                   → "p500px"
+ *   "500px"                    → "500px"
+ */
+function normalizePluginName(name: string): string {
+  return name
+    .replace(/^@[^/]+\//, '')        // strip @scope/
+    .replace(/^xbrowser-plugin-/, '') // strip xbrowser-plugin-
+    .toLowerCase();
+}
+
+/**
+ * Search locally installed plugins by normalized name.
+ * Returns matches sorted by relevance (exact > prefix > substring).
+ */
+async function searchLocalPlugins(
+  query: string,
+): Promise<Array<Record<string, unknown>>> {
+  let installed;
+  try {
+    installed = await new PluginInstaller().list();
+  } catch {
+    return [];
+  }
+  if (!installed || installed.length === 0) return [];
+
+  const q = normalizePluginName(query);
+  if (!q) return [];
+
+  const results: Array<{ plugin: Record<string, unknown>; rank: number }> = [];
+  for (const p of installed) {
+    const plugin = p as unknown as Record<string, unknown>;
+    const name = String(plugin.name ?? '');
+    const norm = normalizePluginName(name);
+    if (norm === q) {
+      results.push({ plugin, rank: 0 });
+    } else if (norm.startsWith(q) || q.startsWith(norm)) {
+      results.push({ plugin, rank: 1 });
+    } else if (norm.includes(q) || q.includes(norm)) {
+      results.push({ plugin, rank: 2 });
+    }
+  }
+
+  results.sort((a, b) => a.rank - b.rank);
+  const runtimeInfo = await buildRuntimePluginInfo().catch(() => new Map());
+  return results.map(({ plugin }) => {
+    const name = String(plugin.name ?? '');
+    const metadata = plugin.metadata as Record<string, unknown> | undefined;
+    const staticCommands = metadata?.commands as string[] | undefined;
+    const rt = runtimeInfo.get(name);
+    const commands = rt?.commands || staticCommands;
+    return {
+      name: '@xbrowser/' + name,
+      slug: name,
+      description: metadata?.description as string | undefined,
+      version: metadata?.version as string | undefined,
+      commands,
+      source: 'local',
+    } as Record<string, unknown>;
+  });
+}
+
 async function handleSearch(
   args: string[],
   options: Record<string, unknown>,
@@ -148,6 +214,11 @@ async function handleSearch(
 
   const results: Array<Record<string, unknown>> = [];
 
+  // 1. Always search local installed plugins first (fast, deterministic)
+  const localResults = await searchLocalPlugins(query);
+  results.push(...localResults);
+
+  // 2. Then search marketplace (or npm fallback)
   const loader = await getGlobalPluginLoader();
   const pluginResults = await searchFromMarketplacePlugin(searchOpts, loader);
   results.push(...pluginResults);
@@ -163,15 +234,26 @@ async function handleSearch(
     }
   }
 
+  // Dedupe by normalized name (local may overlap with marketplace/npm)
+  const seen = new Set<string>();
+  const deduped: Array<Record<string, unknown>> = [];
+  for (const r of results) {
+    const key = normalizePluginName(String(r.name ?? ''));
+    if (key && !seen.has(key)) {
+      seen.add(key);
+      deduped.push(r);
+    }
+  }
+
   if (mode === 'json') {
-    outputEnvelope({ success: true, data: { results, total: results.length } }, { command: 'plugin search' }, mode);
+    outputEnvelope({ success: true, data: { results: deduped, total: deduped.length } }, { command: 'plugin search' }, mode);
   } else {
-    if (results.length === 0) {
+    if (deduped.length === 0) {
       console.log('No plugins found');
       return;
     }
-    for (const r of results) {
-      const src = r.source === 'marketplace' ? '[marketplace]' : '[npm]';
+    for (const r of deduped) {
+      const src = r.source === 'marketplace' ? '[marketplace]' : r.source === 'local' ? '[local]' : '[npm]';
       const slug = r.slug ? ` (${r.slug})` : '';
       console.log(`  ${src} ${r.name}${slug}`);
       if (r.description) console.log(`    ${r.description}`);
@@ -179,7 +261,7 @@ async function handleSearch(
       if (r.downloads) console.log(`    Downloads: ${r.downloads}`);
       console.log('');
     }
-    console.log(`Total: ${results.length} plugins`);
+    console.log(`Total: ${deduped.length} plugins`);
   }
 }
 
