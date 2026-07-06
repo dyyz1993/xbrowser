@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.9.7] - 2026-07-07
+
+### Fixed
+- **#231**: `plugin search` 命名归一化 — 新增本地已安装插件搜索（`normalizePluginName` 去 `@xbrowser/` / `xbrowser-plugin-` 前缀），按 exact > prefix > substring 排序，结果去重
+
 ## [1.9.6] - 2026-07-04
 
 ### Fixed
