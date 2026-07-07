@@ -21,7 +21,7 @@ export interface ReplayOptions {
   /** Called before each step */
   onStep?: (action: UserAction, index: number, total: number) => void;
   /** Called on step error */
-  onError?: (action: UserAction, error: Error) => void;
+  onError?: (action: UserAction, error: Error, index: number) => void;
 }
 
 export class SessionReplayer {
@@ -104,7 +104,7 @@ export class SessionReplayer {
         success++;
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
-        this.opts.onError?.(action, err);
+        this.opts.onError?.(action, err, i);
         // X6: Navigation failures are fatals (like any other failure).
         // A page that fails to load makes all subsequent actions invalid.
         failed++;

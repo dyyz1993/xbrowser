@@ -655,7 +655,7 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const slowMo = (params.slowMo as number) || 1;
 
     if (!file) {
-      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Missing file parameter' }] };
+      return normalizeReplayResult({ ok: false, errors: [{ eventIndex: -1, error: 'Missing file parameter' }] });
     }
 
     // Parse and validate the recording file BEFORE requiring a browser session.
@@ -674,60 +674,59 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       }
       // yaml.parse("") returns null; guard against null/non-object before field access
       if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: `File "${file}" does not contain a valid recording. Expected a JSON/YAML object with an "actions" or "events" array, got ${parsed === null ? 'empty content' : typeof parsed}.` }] };
+        return normalizeReplayResult({ ok: false, errors: [{ eventIndex: -1, error: `File "${file}" does not contain a valid recording. Expected a JSON/YAML object with an "actions" or "events" array, got ${parsed === null ? 'empty content' : typeof parsed}.` }] });
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       // YAML/JSON parse errors contain raw file content + caret pointers; keep it concise
-      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: `Failed to parse "${file}" as JSON or YAML: ${msg.split('\n')[0]}` }] };
+      return normalizeReplayResult({ ok: false, errors: [{ eventIndex: -1, error: `Failed to parse "${file}" as JSON or YAML: ${msg.split('\n')[0]}` }] });
     }
 
     const session = findSession(sessionName);
     if (!session) {
-      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: `Session not found: ${sessionName}. Open a browser first: xbrowser goto <url> --session ${sessionName}` }] };
+      return normalizeReplayResult({ ok: false, errors: [{ eventIndex: -1, error: `Session not found: ${sessionName}. Open a browser first: xbrowser goto <url> --session ${sessionName}` }] });
     }
     if (!session.page) {
-      return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Session has no page: ' + sessionName }] };
+      return normalizeReplayResult({ ok: false, errors: [{ eventIndex: -1, error: 'Session has no page: ' + sessionName }] });
     }
     const isNewFormat = Array.isArray(parsed.actions);
 
-	    if (isNewFormat) {
-	      // Use SessionReplayer for new format
-	      try {
-	        const replayErrors: { eventIndex: number; error: string }[] = [];
-	        const { SessionReplayer } = await import('../recorder/session-replayer.js');
-	        const replayer = new SessionReplayer({
-	          page: session.page,
-	          stepDelay: slowMo * 500,
-	          onStep: (action, index, total) => {
-	            console.log(`[replay] Step ${index + 1}/${total}: ${action.type} ${action.element?.selector || action.url || ''}`);
-	          },
-	          onError: (action, error) => {
-	            const msg = `[${action?.type || 'unknown'}] ${error?.message || String(error)}`;
-	            console.error('[replay] Error at step:', msg);
-	            replayErrors.push({ eventIndex: -1, error: msg });
-	          },
-	        });
-	        // Validate parsed JSON has the required RecordingData fields before loading
-	        if (!Array.isArray(parsed.actions) || typeof parsed.startUrl !== 'string') {
-	          return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Invalid recording format: missing actions or startUrl' }] };
-	        }
-	        await replayer.load(parsed);
-	        const startTime = Date.now();
-	        const result = await replayer.run();
-	        const duration = Date.now() - startTime;
-	        return {
-	          ok: result.failed === 0,
-	          success: result.failed === 0,
-	          duration,
-	          eventsPlayed: result.success,
-	          totalEvents: result.success + result.failed + result.skipped,
-	          errors: replayErrors,
-	        };
+    if (isNewFormat) {
+      // Use SessionReplayer for new format
+      try {
+        const replayErrors: { eventIndex: number; error: string }[] = [];
+        const { SessionReplayer } = await import('../recorder/session-replayer.js');
+        const replayer = new SessionReplayer({
+          page: session.page,
+          stepDelay: slowMo * 500,
+          onStep: (action, index, total) => {
+            console.log(`[replay] Step ${index + 1}/${total}: ${action.type} ${action.element?.selector || action.url || ''}`);
+          },
+          onError: (action, error, index) => {
+            const msg = `[${action?.type || 'unknown'}] ${error?.message || String(error)}`;
+            console.error('[replay] Error at step:', msg);
+            replayErrors.push({ eventIndex: index, error: msg });
+          },
+        });
+        // Validate parsed JSON has the required RecordingData fields before loading
+        if (!Array.isArray(parsed.actions) || typeof parsed.startUrl !== 'string') {
+          return normalizeReplayResult({ ok: false, errors: [{ eventIndex: -1, error: 'Invalid recording format: missing actions or startUrl' }] });
+        }
+        await replayer.load(parsed);
+        const startTime = Date.now();
+        const result = await replayer.run();
+        const duration = Date.now() - startTime;
+        return normalizeReplayResult({
+          ok: result.failed === 0,
+          duration,
+          eventsPlayed: result.success,
+          totalEvents: result.success + result.failed + result.skipped,
+          errors: replayErrors,
+        });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         console.error('[replay] SessionReplayer error:', msg);
-        return { ok: false, success: false, duration: 0, eventsPlayed: 0, totalEvents: 0, errors: [{ eventIndex: -1, error: 'Replay failed: ' + msg }] };
+        return normalizeReplayResult({ ok: false, errors: [{ eventIndex: -1, error: 'Replay failed: ' + msg }] });
       }
     }
 
@@ -743,7 +742,26 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
         });
       },
     });
-    return { ok: result.success, ...result };
+    return normalizeReplayResult({ ok: result.success, ...result });
+  }
+
+  /**
+   * Normalize replay result to a stable shape.
+   * Ensures all fields exist with sensible defaults so callers/tests can rely on the contract.
+   */
+  function normalizeReplayResult(input: Partial<PlaybackResult & { ok: boolean }>): PlaybackResult & { ok: boolean } {
+    const errors = Array.isArray(input.errors) ? input.errors : [];
+    const eventsPlayed = typeof input.eventsPlayed === 'number' ? input.eventsPlayed : 0;
+    const totalEvents = typeof input.totalEvents === 'number' ? input.totalEvents : eventsPlayed + errors.length;
+    const ok = input.ok ?? (errors.length === 0);
+    return {
+      ok,
+      success: ok,
+      duration: typeof input.duration === 'number' ? input.duration : 0,
+      eventsPlayed,
+      totalEvents,
+      errors,
+    };
   }
 
   async function handleViewerCheckSelector(params: Record<string, unknown>): Promise<{ found: boolean; box?: { x: number; y: number; width: number; height: number } }> {

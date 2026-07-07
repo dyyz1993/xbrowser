@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.8] - 2026-07-07
+
+### Fixed
+- **#233**: `title` 命令在 cdp-tunnel/extension 模式返回空 — `page.title()` 加 polling 重试（最多 1s）+ `Target.getTargetInfo` 兜底
+- **#234**: `elementScreenshot` 经常缺失 — 超时 2s→3s + waitForSelector 重试 + viewport 截图兜底
+- **#235**: replay result shape 不稳定 — 新增 `normalizeReplayResult` 统一所有返回路径，修 `eventIndex` 硬编码 `-1` 问题
+
 ## [1.9.7] - 2026-07-07
 
 ### Fixed
