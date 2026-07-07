@@ -350,7 +350,27 @@ export class XBPageImpl implements XBPage {
   }
 
   async title(): Promise<string> {
-    this._title = await this.evaluate<string>('document.title');
+    // Poll for non-empty title — at domcontentloaded time, <title> may not
+    // be parsed yet. Wait up to 1s (20 × 50ms) for it to become available.
+    for (let i = 0; i < 20; i++) {
+      try {
+        this._title = await this.evaluate<string>('document.title');
+        if (this._title) return this._title;
+      } catch {
+        // execution context not ready — retry
+      }
+      await new Promise(r => setTimeout(r, 50));
+    }
+    // Fallback to Target.getTargetInfo if evaluate didn't yield a title
+    try {
+      const info = await this._cdpSend<{ title?: string }>('Target.getTargetInfo', { targetId: this._targetId });
+      if (info?.title) {
+        this._title = info.title;
+        return this._title;
+      }
+    } catch {
+      // best-effort
+    }
     return this._title;
   }
 

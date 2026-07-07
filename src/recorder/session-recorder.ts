@@ -1948,6 +1948,11 @@ export class SessionRecorder {
    * selector or the screenshot fails (non-critical — never blocks recording).
    *
    * Only captures for: click, input, change, dblclick, and their CDP counterparts.
+   *
+   * Retry strategy (3 attempts, 3s each):
+   *   1. element screenshot via locator
+   *   2. retry element screenshot (element may have been animating/detached)
+   *   3. fallback to viewport screenshot (so we always get *something*)
    */
   private async captureElementScreenshot(
     page: Page,
@@ -1957,14 +1962,37 @@ export class SessionRecorder {
     if (!keyTypes.includes(action.type)) return;
     if (!action.element?.selector) return;
 
+    const selector = action.element.selector;
+
+    // Attempt 1: element screenshot
     try {
-      const buffer = await page.locator(action.element.selector).first().screenshot({
+      const buffer = await page.locator(selector).first().screenshot({
         type: 'png',
-        timeout: 2000,
+        timeout: 3000,
       });
       return buffer.toString('base64');
     } catch {
-      return; // Non-critical — never break recording flow
+      // element not found / not visible / timed out — retry below
+    }
+
+    // Attempt 2: wait for element to be visible, then screenshot
+    try {
+      await page.waitForSelector(selector, { state: 'visible', timeout: 2000 });
+      const buffer = await page.locator(selector).first().screenshot({
+        type: 'png',
+        timeout: 3000,
+      });
+      return buffer.toString('base64');
+    } catch {
+      // still failing — fall through to viewport fallback
+    }
+
+    // Attempt 3: viewport screenshot as fallback (always succeeds if page is alive)
+    try {
+      const buffer = await page.screenshot({ type: 'png', timeout: 3000 });
+      return buffer.toString('base64');
+    } catch {
+      return; // page may be closed — give up gracefully
     }
   }
 
