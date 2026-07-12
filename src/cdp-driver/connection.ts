@@ -58,12 +58,34 @@ export class CDPConnection extends EventEmitter {
     this.defaultSessionId = sessionId;
 
     if (typeof wsOrUrl === 'string') {
-      this.ws = new WebSocket(wsOrUrl);
+      // For wss:// connections to raw IPs (e.g. self-signed certs), skip TLS
+      // certificate verification so direct-IP connections work without DNS.
+      const wsOptions = /^wss:\/\/\d+\.\d+\.\d+\.\d+/.test(wsOrUrl)
+        ? { rejectUnauthorized: false }
+        : undefined;
+      this.ws = new WebSocket(wsOrUrl, wsOptions);
     } else {
       this.ws = wsOrUrl;
     }
 
     this.bindWebSocket();
+    this.startKeepalive();
+  }
+
+  /** Send periodic WS pings to prevent idle-timeout disconnects (e.g. CF's 100s). */
+  private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+  private startKeepalive(): void {
+    // Send a ping every 30s. The ws library handles PONG automatically.
+    // This keeps the connection alive through Cloudflare's 100s idle timeout.
+    this.keepaliveTimer = setInterval(() => {
+      if (this.ws.readyState === WebSocket.OPEN) {
+        // ws v8+: ping the underlying socket
+        (this.ws as unknown as { ping?: () => void }).ping?.();
+      } else if (this.closed) {
+        if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
+        this.keepaliveTimer = null;
+      }
+    }, 30000);
   }
 
   /** Wait for the connection to be fully open */
@@ -192,6 +214,12 @@ export class CDPConnection extends EventEmitter {
     this.closed = true;
     this.closeReason = 'closed by caller';
 
+    // Stop keepalive timer
+    if (this.keepaliveTimer) {
+      clearInterval(this.keepaliveTimer);
+      this.keepaliveTimer = null;
+    }
+
     // Reject all pending
     for (const [id, pending] of this.pending) {
       clearTimeout(pending.timeout);
@@ -244,6 +272,12 @@ export class CDPConnection extends EventEmitter {
       if (this.closed) return;
       this.closed = true;
       this.closeReason = `WebSocket closed: ${code} ${reason?.toString() ?? ''}`.trim();
+
+      // Stop keepalive timer on close
+      if (this.keepaliveTimer) {
+        clearInterval(this.keepaliveTimer);
+        this.keepaliveTimer = null;
+      }
 
       for (const [id, pending] of this.pending) {
         clearTimeout(pending.timeout);

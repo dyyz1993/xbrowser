@@ -204,8 +204,10 @@ export class WSServer extends EventEmitter {
     }
     this.sessionManager.incrementClientCount(sessionId);
 
-    // Replay last frame for newly connected client
-    if (this.streamCoordinator.getLastFrameViewport() && this.sessionManager.isCapturerActive(sessionId)) {
+    // Replay last frame for newly connected client — even if screencast is
+    // still starting up, the cached frame from the previous connection gives
+    // the viewer something to render immediately.
+    if (this.streamCoordinator.getLastFrameViewport()) {
       this.streamCoordinator.replayLastFrame(sessionId).catch(() => {});
     }
   }
@@ -215,7 +217,9 @@ export class WSServer extends EventEmitter {
     if (count === 0 && this.sessionManager.isCapturerActive(sessionId)) {
       this.sessionManager.stopCapturer(sessionId).then(() => {
         this.streamCoordinator.resetFrameRate();
-        this.streamCoordinator.clearLastFrame();
+        // Keep lastFrame cached so a quick viewer reconnect (e.g. page refresh)
+        // can replay it immediately instead of showing a blank screen.
+        // The frame is cleared on full session teardown, not on client disconnect.
         this.emit('screencast-stopped', sessionId);
       }).catch(() => {
         this.emit('screencast-stopped', sessionId);

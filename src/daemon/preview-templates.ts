@@ -8,7 +8,7 @@ export function alignHTML(sessionId: string, _host: string): string {
 html,body{height:100%;overflow:hidden;background:#000}
 .viewport{position:absolute;top:0;left:0;right:0;bottom:0;overflow:hidden}
 .viewport img#screen{display:block;width:100%;height:100%;object-fit:contain;background:#111}
-.crosshair{position:fixed;pointer-events:none;z-index:9999;width:16px;height:16px;border-radius:50%;background:rgba(255,0,0,0.8);border:2px solid #fff;transform:translate(-50%,-50%);display:none;box-shadow:0 0 6px rgba(255,0,0,0.6);transition:left 0.03s,top 0.03s}
+.crosshair{position:fixed;pointer-events:none;z-index:9999;width:16px;height:16px;border-radius:50%;background:rgba(255,0,0,0.8);border:2px solid #fff;transform:translate(-50%,-50%);display:none;box-shadow:0 0 6px rgba(255,0,0,0.6)}
 .coord{position:fixed;top:8px;left:8px;z-index:10000;font:12px/1.6 monospace;color:#0f0;background:rgba(0,0,0,0.7);padding:4px 8px;border-radius:4px;pointer-events:none;white-space:pre}
 .grid{position:fixed;pointer-events:none;z-index:9998;top:0;left:0;right:0;bottom:0;display:none}
 </style></head><body>
@@ -98,9 +98,17 @@ viewportEl.addEventListener('mousemove',function(e){
   var r=viewerToRemote(e.clientX,e.clientY);
   var rx=Math.max(0,Math.min(remoteViewport.width,r.x));
   var ry=Math.max(0,Math.min(remoteViewport.height,r.y));
+  // 本地光标立即更新（零延迟反馈）
   setCrosshair(rx,ry);
-  if(e.buttons>0&&ws&&ws.readyState===1)ws.send(JSON.stringify({type:'input_mouse',action:'move',x:rx,y:ry}));
+  // 节流：最多每 30ms 发一次 move，避免 WS 消息洪泛
+  if(!moveThrottled&&ws&&ws.readyState===1){
+    moveThrottled=true;
+    var action=e.buttons>0?'move':'hover';
+    ws.send(JSON.stringify({type:'input_mouse',action:action,x:rx,y:ry}));
+    setTimeout(function(){moveThrottled=false;},30);
+  }
 });
+var moveThrottled=false;
 viewportEl.addEventListener('mousedown',function(e){var r=viewerToRemote(e.clientX,e.clientY);setCrosshair(r.x,r.y);if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'input_mouse',action:'down',x:r.x,y:r.y}));});
 viewportEl.addEventListener('mouseup',function(e){var r=viewerToRemote(e.clientX,e.clientY);setCrosshair(r.x,r.y);if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'input_mouse',action:'up',x:r.x,y:r.y}));});
 viewportEl.addEventListener('wheel',function(e){e.preventDefault();if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'scroll',deltaX:e.deltaX,deltaY:e.deltaY}));},{passive:false});
