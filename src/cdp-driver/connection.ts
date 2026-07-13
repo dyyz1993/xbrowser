@@ -72,14 +72,39 @@ export class CDPConnection extends EventEmitter {
     this.startKeepalive();
   }
 
-  /** Send periodic WS pings to prevent idle-timeout disconnects (e.g. CF's 100s). */
+  /** Send periodic WS pings to prevent idle-timeout disconnects (e.g. CF's 100s).
+   *  Also detects dead connections: if a pong isn't received within 10s of a
+   *  ping, the connection is considered dead and forcibly closed. */
   private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+  private pongTimer: ReturnType<typeof setTimeout> | null = null;
   private startKeepalive(): void {
-    // Send a ping every 30s. The ws library handles PONG automatically.
-    // This keeps the connection alive through Cloudflare's 100s idle timeout.
+    // Listen for pong to confirm the connection is alive
+    this.ws.on('pong', () => {
+      if (this.pongTimer) {
+        clearTimeout(this.pongTimer);
+        this.pongTimer = null;
+      }
+    });
+
     this.keepaliveTimer = setInterval(() => {
       if (this.ws.readyState === WebSocket.OPEN) {
-        // ws v8+: ping the underlying socket
+        // Set a pong timeout: if no pong in 10s, the connection is dead
+        if (!this.pongTimer) {
+          this.pongTimer = setTimeout(() => {
+            // No pong received — connection is dead (half-open TCP)
+            if (!this.closed) {
+              this.closed = true;
+              this.closeReason = 'keepalive timeout (no pong in 10s)';
+              try { this.ws.terminate(); } catch { /* ignore */ }
+              for (const [, pending] of this.pending) {
+                clearTimeout(pending.timeout);
+                pending.reject(new Error('Connection dead: keepalive timeout'));
+              }
+              this.pending.clear();
+              this.emit('disconnect');
+            }
+          }, 10000);
+        }
         (this.ws as unknown as { ping?: () => void }).ping?.();
       } else if (this.closed) {
         if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
@@ -218,6 +243,10 @@ export class CDPConnection extends EventEmitter {
     if (this.keepaliveTimer) {
       clearInterval(this.keepaliveTimer);
       this.keepaliveTimer = null;
+    }
+    if (this.pongTimer) {
+      clearTimeout(this.pongTimer);
+      this.pongTimer = null;
     }
 
     // Reject all pending

@@ -110,10 +110,10 @@ export class SessionManager extends EventEmitter {
     this.screencasts.set(sessionId, {
       capturer: new ScreencastCapturer({
         interval: options?.interval ?? 100,
-        quality: options?.quality ?? 60,
+        quality: options?.quality ?? 40,
         type: options?.type ?? 'jpeg',
-        width: options?.width ?? 1280,
-        height: options?.height ?? 720,
+        width: options?.width ?? 1024,
+        height: options?.height ?? 576,
       }),
       page,
       clientCount: 0,

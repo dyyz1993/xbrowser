@@ -19,6 +19,7 @@ import { createRPCHandler } from './rpc-handlers.js';
 import { version } from '../version.js';
 import { WSServer } from '../websocket-server.js';
 import { previewHTML, alignHTML } from './preview-templates.js';
+import { getPluginLoader } from '../utils/plugin-singleton.js';
 
 const CONFIG_DIR = join(homedir(), '.xbrowser');
 const LOG_FILE = join(CONFIG_DIR, 'daemon.log');
@@ -103,16 +104,37 @@ async function main() {
   previewWS.on('screencast-started', (sid: string) => log(`Preview screencast started: ${sid}`));
   previewWS.on('screencast-stopped', (sid: string) => log(`Preview screencast stopped: ${sid}`));
 
-  // ── Write daemon.json for startDaemon() health polling ──
-  mkdirSync(CONFIG_DIR, { recursive: true });
-  writeFileSync(join(CONFIG_DIR, 'daemon.json'), JSON.stringify({
-    port: daemonPort,
-    pid: process.pid,
-    startedAt: Date.now(),
-  }, null, 2));
+  // Handle reconnect request from viewer (when CDP connection is dead)
+  previewWS.on('reconnect-request', ({ sessionId }: { sessionId: string | null }) => {
+    if (!sessionId) return;
+    log(`Reconnect request from viewer for session: ${sessionId}`);
+    // Force restart screencast — stop then start
+    rpcHandler.handleReconnect(sessionId).catch((e: unknown) => {
+      log(`Reconnect failed: ${e instanceof Error ? e.message : String(e)}`);
+    });
+  });
 
-  console.log(`xbrowser daemon started (pid: ${process.pid}, port: ${daemonPort})`);
-  log('Daemon main started successfully');
+  // ── Write daemon.json for startDaemon() health polling ──
+ mkdirSync(CONFIG_DIR, { recursive: true });
+ writeFileSync(join(CONFIG_DIR, 'daemon.json'), JSON.stringify({
+   port: daemonPort,
+   pid: process.pid,
+   startedAt: Date.now(),
+ }, null, 2));
+
+ console.log(`xbrowser daemon started (pid: ${process.pid}, port: ${daemonPort})`);
+ log('Daemon main started successfully');
+
+  // ── Plugin Loading ──
+  // getPluginLoader() internally calls scanAndLoad() — all .xcli/plugins/
+  // are loaded so plugin commands can run inside the daemon and share sessions.
+  const loader = await getPluginLoader();
+  const sites = loader.getCore().loader.getSites() as Array<{ name?: string }>;
+  log(`Loaded ${sites.length} plugins`);
+  if (sites.length > 0) {
+    const names = sites.map(s => s.name || 'unknown').join(', ');
+    log(`Plugins: ${names}`);
+  }
 
   // ── Signal handling ──
   const shutdown = () => {

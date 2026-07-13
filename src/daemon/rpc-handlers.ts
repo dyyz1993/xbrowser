@@ -35,6 +35,11 @@ import type { RecordingSummary, CheckpointEntry, UserAction } from '../recorder/
 import { PlaybackEngine } from '../recorder/player.js';
 import type { PlaybackResult } from '../recorder/player.js';
 import { resolveCDPEndpoint } from '../utils/cdp.js';
+import { getPluginStorage } from '../executor.js';
+import { attachDetectAntiBot } from '../context.js';
+import { checkPluginLoginRequired } from '../plugin/login-guard.js';
+import { TipCollector } from '@dyyz1993/xcli-core';
+import { getPluginLoader as getPluginLoaderSingleton } from '../utils/plugin-singleton.js';
 
 const activeRecorders = new Map<string, SessionRecorder>();
 const replayResumeResolvers = new Map<string, () => void>();
@@ -59,6 +64,8 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
         // ── Command execution ──
         case 'exec':
           return handleExec(params);
+        case 'plugin:exec':
+          return handlePluginExec(params);
         case 'chain':
           return handleChain(params);
         case 'agent:observe':
@@ -134,10 +141,120 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       setPreviewWS(ws: WSServer) {
         previewWS = ws;
       },
+      async handleReconnect(sessionId: string) {
+        if (previewWS) {
+          await previewWS.reconnectSession(sessionId);
+        }
+      },
     },
   );
 
   return handler;
+
+  async function handlePluginExec(params: Record<string, unknown>) {
+    // params.command = "devto.draft" (site.command format)
+    const command = params.command as string;
+    const cmdParams = (params.params || {}) as Record<string, unknown>;
+    const sessionName = (params.session as string) || 'default';
+    const cdp = params.cdpEndpoint as string | undefined;
+
+    // Split "devto.draft" → plugin name "devto", sub-command "draft"
+    const dotIdx = command.indexOf('.');
+    if (dotIdx < 0) {
+      return { success: false, data: null, message: `Invalid plugin command format: ${command}` };
+    }
+    const pluginName = command.substring(0, dotIdx);
+    const subCommand = command.substring(dotIdx + 1);
+
+    // Find plugin and command
+    const loader = await getPluginLoaderSingleton();
+    const site = loader.getCore().loader.getSite(pluginName);
+    if (!site) {
+      return { success: false, data: null, message: `Plugin "${pluginName}" not found` };
+    }
+    const cmdEntry = site.getCommand(subCommand);
+    if (!cmdEntry) {
+      return { success: false, data: null, message: `Unknown command "${subCommand}" for plugin "${pluginName}"` };
+    }
+
+    const needsBrowser = cmdEntry.scope === 'page' || cmdEntry.scope === 'browser';
+
+    // Find or create session in the daemon (same as built-in commands)
+    let session: import('../browser.js').ManagedSession | undefined;
+    if (needsBrowser) {
+      session = findSession(sessionName);
+      if (!session) {
+        let endpoint: string | undefined;
+        if (cdp) {
+          try { endpoint = await resolveCDPEndpoint(cdp); } catch { endpoint = cdp; }
+        } else {
+          try { endpoint = await resolveCDPEndpoint('auto'); } catch { endpoint = undefined; }
+        }
+        session = await createSession(sessionName, undefined, endpoint ? { cdpEndpoint: endpoint } : {});
+        console.log(`[PLUGIN] Created session "${sessionName}" for plugin "${pluginName}.${subCommand}"`);
+      }
+    }
+
+    // Build plugin context (mirrors router.ts plugin context construction)
+    const ctx = {
+      args: [],
+      options: {},
+      cwd: process.cwd(),
+      page: needsBrowser ? session!.page : null,
+      browser: needsBrowser ? session!.context.browser()! : null,
+      browserContext: needsBrowser ? session!.context : null,
+      sessionId: needsBrowser ? session!.id : '',
+      cdpEndpoint: cdp || (needsBrowser ? session?.cdpEndpoint : undefined),
+      storage: getPluginStorage(pluginName),
+      output: { mode: 'text' as const, showTips: true, color: true, emoji: true },
+      error: (msg: string) => { throw new Error(msg); },
+      config: {},
+      site,
+      cliName: 'xbrowser',
+      waitForHuman: async () => { return { solved: false, timedOut: true }; },
+      tips: new TipCollector(),
+    };
+
+    attachDetectAntiBot(ctx);
+
+    // Check login requirement
+    const loginGuard = await checkPluginLoginRequired({
+      site,
+      command: cmdEntry,
+      commandName: subCommand,
+      ctx,
+      page: needsBrowser ? session?.page : null,
+      sessionName,
+    });
+    if (!loginGuard.ok) {
+      return { success: false, data: loginGuard.data ?? null, message: loginGuard.message };
+    }
+
+    // Execute plugin handler
+    try {
+      const result = await cmdEntry.handler(cmdParams, ctx);
+      return result;
+    } catch (err) {
+      const errorMessage = errMsg(err);
+      const { attemptRecovery } = await import('../recovery.js');
+      const recovery = await attemptRecovery(
+        session?.page,
+        sessionName,
+        `${pluginName}.${subCommand}`,
+        errorMessage,
+        previewWS,
+      );
+      if (recovery.recovered) {
+        try {
+          const retryResult = await cmdEntry.handler(cmdParams, ctx);
+          return retryResult;
+        } catch (retryErr) {
+          return { success: false, data: null, message: `Retry failed: ${errMsg(retryErr)}` };
+        }
+      }
+      return { success: false, data: null, message: errorMessage };
+    }
+  }
 
   // ─── Handler implementations ─────────────────────────────────
 
