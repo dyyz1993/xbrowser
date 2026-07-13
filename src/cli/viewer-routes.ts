@@ -8,7 +8,9 @@ export async function handleViewer(
   mode: string,
   _cdpEndpoint?: string,
 ): Promise<void> {
-  const name = (options.name as string) || process.env.XBROWSER_SESSION || 'default';
+  // --session is parsed by parseArgs into options.session (see router.ts).
+  // Previously read options.name which was always undefined.
+  const name = (options.session as string) || process.env.XBROWSER_SESSION || 'default';
   const selector = options.selector as string | undefined;
   const userPort = options.port ? Number(options.port) : undefined;
 

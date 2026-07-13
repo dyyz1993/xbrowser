@@ -10,10 +10,56 @@ export interface StreamStateConfig {
 }
 
 export const STATE_CONFIGS: Record<StreamState, StreamStateConfig> = {
-  user_interacting: { format: 'jpeg', quality: 85, maxFps: 60, scale: 0.8 },
-  screen_moving: { format: 'jpeg', quality: 85, maxFps: 8, scale: 0.8 },
-  static: { format: 'jpeg', quality: 95, maxFps: 2, scale: 1 },
+  // Full-screen: aggressive compression for speed
+  // user_interacting: low quality + downscale — prioritize FPS over clarity
+  user_interacting: { format: 'jpeg', quality: 40, maxFps: 30, scale: 0.6 },
+  // screen_moving: page is animating but user is NOT operating.
+  // Keep quality close to interacting to avoid visible flicker on state change.
+  screen_moving: { format: 'jpeg', quality: 45, maxFps: 2, scale: 0.7 },
+  // static: highest quality — user is reading, bandwidth is not a concern
+  static: { format: 'jpeg', quality: 95, maxFps: 1, scale: 1 },
 };
+
+/**
+ * Adjust compression config based on the actual frame dimensions.
+ * Small frames (e.g. cropped popup, dialog) don't need aggressive compression
+ * because their KB size is already small — compressing harder only hurts clarity.
+ *
+ * Threshold: if cropped area < 30% of full viewport, treat as "small frame"
+ * and boost quality/scale so the user can read the content clearly.
+ */
+export function adjustConfigForSize(
+  config: StreamStateConfig,
+  frameWidth: number,
+  frameHeight: number,
+  fullViewportWidth: number,
+  fullViewportHeight: number,
+): StreamStateConfig {
+  const framePixels = frameWidth * frameHeight;
+  const fullPixels = fullViewportWidth * fullViewportHeight;
+  const ratio = fullPixels > 0 ? framePixels / fullPixels : 1;
+
+  // Small frame (popup/dialog/crop): use gentler compression
+  if (ratio < 0.3) {
+    return {
+      ...config,
+      quality: Math.min(config.quality + 40, 90),  // boost quality
+      scale: Math.max(config.scale, 0.9),           // don't downscale
+    };
+  }
+
+  // Medium frame (half screen): moderate boost
+  if (ratio < 0.6) {
+    return {
+      ...config,
+      quality: Math.min(config.quality + 20, 80),
+      scale: Math.max(config.scale, 0.7),
+    };
+  }
+
+  // Full screen: use config as-is (aggressive compression when moving)
+  return config;
+}
 
 export type StateChangeCallback = (newState: StreamState, previousState: StreamState) => void;
 
@@ -26,9 +72,9 @@ export class StreamStateManager {
   private onStateChange: StateChangeCallback | null = null;
   private staticTimer: ReturnType<typeof setTimeout> | null = null;
 
-  private readonly USER_INTERACTION_TIMEOUT_MS = 1000;
+  private readonly USER_INTERACTION_TIMEOUT_MS = 2000;   // 1s → 2s: linger in interacting longer
   private readonly SCREEN_MOVING_THRESHOLD_MS = 1000;
-  private readonly STATIC_TIMEOUT_MS = 1500;
+  private readonly STATIC_TIMEOUT_MS = 3000;              // 1.5s → 3s: don't rush to static
 
   setStateChangeCallback(callback: StateChangeCallback | null): void {
     this.onStateChange = callback;
@@ -179,12 +225,31 @@ export class FrameProcessor {
     let processed: sharp.Sharp = sharp(buffer);
 
     if (cropConfig) {
-      processed = processed.extract({
-        left: Math.round(cropConfig.x),
-        top: Math.round(cropConfig.y),
-        width: Math.round(cropConfig.width),
-        height: Math.round(cropConfig.height),
-      });
+      // The crop coordinates are in remote viewport space (e.g. 1280x800),
+      // but the frame data may be scaled by CDP screencast (e.g. 1024x576).
+      // We need to scale crop coordinates to match the actual frame pixels.
+      const meta = await processed.metadata();
+      const actualW = meta.width ?? viewportWidth ?? 1;
+      const actualH = meta.height ?? viewportHeight ?? 1;
+      // viewportWidth/Height here is the remote viewport (pre-screencast-scale)
+      const refW = viewportWidth ?? actualW;
+      const refH = viewportHeight ?? actualH;
+      const scaleX = actualW / refW;
+      const scaleY = actualH / refH;
+
+      const cropLeft = Math.round(cropConfig.x * scaleX);
+      const cropTop = Math.round(cropConfig.y * scaleY);
+      const cropW = Math.min(Math.round(cropConfig.width * scaleX), actualW - cropLeft);
+      const cropH = Math.min(Math.round(cropConfig.height * scaleY), actualH - cropTop);
+
+      if (cropW > 0 && cropH > 0 && cropLeft >= 0 && cropTop >= 0) {
+        processed = processed.extract({
+          left: cropLeft,
+          top: cropTop,
+          width: cropW,
+          height: cropH,
+        });
+      }
     }
 
     if (needsResize) {

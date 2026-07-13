@@ -1,4 +1,4 @@
-import { StreamStateManager, FrameRateController, FrameProcessor } from '../stream/index.js';
+import { StreamStateManager, FrameRateController, FrameProcessor, adjustConfigForSize } from '../stream/index.js';
 import type { StreamState, CropConfig } from '../stream/index.js';
 import type { Page } from '../browser-shim.js';
 import type { ScreencastFrame } from '../screencast.js';
@@ -189,11 +189,24 @@ export class StreamCoordinator {
     const effectiveViewport = crop
       ? { width: crop.box.width, height: crop.box.height }
       : frameViewport;
-    const processedBuffer = await this.frameProcessor.process(
-      frameData,
+
+    // Adjust compression based on actual frame size vs full viewport.
+    // Small frames (popups, dialogs, cropped views) get gentler compression
+    // so the user can read them clearly.
+    const adjustedConfig = adjustConfigForSize(
       config,
       effectiveViewport.width,
       effectiveViewport.height,
+      frameViewport.width,
+      frameViewport.height,
+    );
+    const processedBuffer = await this.frameProcessor.process(
+      frameData,
+      adjustedConfig,
+      // Pass the ORIGINAL viewport (not cropped) so crop coordinates
+      // can be scaled correctly from viewport space to frame pixel space.
+      crop ? frameViewport.width : effectiveViewport.width,
+      crop ? frameViewport.height : effectiveViewport.height,
       cropConfig,
     );
     const header = Buffer.from(JSON.stringify({
