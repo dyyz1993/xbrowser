@@ -196,6 +196,75 @@ pageState:
   title: "Results"
 ```
 
+### hover
+
+Mouse hover on an interactive element. Includes the element descriptor and
+optionally a `hoverContext` field capturing any popup/dropdown/tooltip that
+appeared after the hover.
+
+```yaml
+type: hover
+element:
+  selector: ".sort-trigger"
+  text: "新发布"
+  strategy: "class"
+  confidence: "medium"
+x: 311
+y: 196
+# Optional: only present when a popup appeared after the hover
+hoverContext:
+  appeared:
+    - tag: "div"
+      selector: "div:nth-of-type(2) > ..."
+      text: "最新 1天内 3天内 7天内 14天内"
+      rect: { x: 271, y: 224, w: 120, h: 208 }
+      items:
+        - { text: "最新",   selector: "..." }
+        - { text: "1天内",  selector: "..." }
+        - { text: "3天内",  selector: "..." }
+        - { text: "7天内",  selector: "..." }
+        - { text: "14天内", selector: "..." }
+  disappeared: []
+  stateChanges: []
+```
+
+**How hover popups are captured**:
+
+1. When `mouseover` fires on an interactive element (link, button, or `<span>`
+   with `cursor:pointer` / `class*="select|trigger|tab|menu"`), the recorder
+   pushes a `hover` action.
+2. Over the next 1200ms, it samples the page at 200ms / 500ms / 1000ms for
+   `POPOVER_SELECTORS` matches (`[role=menu]`, `[class*="dropdown"]`,
+   `[class*="items-container"]`, etc.) near the hover coordinates.
+3. A short-lived `MutationObserver` (1.2s) catches popups that appear on their
+   own schedule (CSS transitions, async JS rendering).
+4. Any popup found is attached to the hover action as `hoverContext.appeared`,
+   with each menu item's `text` + `selector` recorded for replay targeting.
+
+**Replay**: `xbrowser replay` performs `page.hover(selector)` then waits up to
+1s for the first popup in `hoverContext.appeared` to become visible, so that
+a subsequent click on a popup item resolves reliably.
+
+**Clean mode filtering**: In `clean` stream mode (default), hover actions
+without a `hoverContext` are dropped as ambient noise. Hover actions **with**
+a `hoverContext` are always kept — they are semantically meaningful (the user
+intentionally opened a popup).
+
+## Other action types
+
+The recorder also captures (mostly informational, see `src/recorder/recording-types.ts`
+for the full list):
+
+- `change`, `submit` — form events
+- `dblclick`, `contextmenu` — alternative mouse events
+- `drag` — drag-and-drop with from/to coordinates
+- `resize`, `visibility` — viewport / tab visibility changes
+- `clipboard` — copy / paste / cut
+- `touch`, `focus` — mobile / focus events
+- `goto`, `cdp-fill`, `cdp-click`, `cdp-eval` — actions injected by xbrowser
+  CDP commands (when running automation while recording)
+- `filechooser` — file input dialog
+
 ## Playback
 
 ### Basic Playback

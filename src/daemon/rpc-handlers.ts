@@ -44,13 +44,19 @@ import { getPluginLoader as getPluginLoaderSingleton } from '../utils/plugin-sin
 const activeRecorders = new Map<string, SessionRecorder>();
 const replayResumeResolvers = new Map<string, () => void>();
 
-export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) => void } {
+export function createRPCHandler(): RPCHandler & {
+  setPreviewWS: (ws: WSServer) => void;
+  handleReconnect: (sessionId: string) => Promise<void>;
+} {
   let previewWS: WSServer | null = null;
   const INTERACTION_COMMANDS = new Set([
     'click', 'fill', 'type', 'press', 'select', 'check', 'hover', 'dblclick', 'scroll',
   ]);
 
-  const handler: RPCHandler & { setPreviewWS: (ws: WSServer) => void } = Object.assign(
+  const handler: RPCHandler & {
+    setPreviewWS: (ws: WSServer) => void;
+    handleReconnect: (sessionId: string) => Promise<void>;
+  } = Object.assign(
     async (method: string, params: Record<string, unknown>): Promise<unknown> => {
       switch (method) {
         // ── Session management ──
@@ -628,7 +634,34 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
 
     try {
       const recorder = new SessionRecorder(session.context, session.page, sessionName);
+      // If the caller explicitly passed --url, navigate to it FIRST. This
+      // ensures the recorded page is in the expected state (e.g. fresh
+      // search results) rather than whatever the existing tab happens to
+      // show — otherwise recording silently captures the wrong tab.
+      if (url) {
+        try {
+          await session.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        } catch {
+          // Navigation may fail for legit reasons (e.g. cross-origin redirect);
+          // continue anyway — injection will still happen.
+        }
+        // Give the page a moment to settle before injecting the recorder
+        // script, otherwise the SPA may not have rendered the target UI.
+        await new Promise(r => setTimeout(r, 1500));
+      }
       await recorder.start(url, { stream: stream as 'clean' | 'raw' });
+      // Surface injection failure as a hard error — otherwise the user sees
+      // "Recording started" while no actions are actually being captured,
+      // which is the worst kind of silent failure.
+      if (recorder.injectionFailed) {
+        await recorder.stop();
+        activeRecorders.delete(sessionName);
+        return {
+          ok: false,
+          error: 'Action signal script injection failed — user actions will NOT be recorded. This usually means the page sandbox blocked Runtime.evaluate, or the injected script has a syntax error. Check the daemon log for details.',
+          hint: 'Try: 1) reload the target page in Chrome, 2) restart daemon, 3) check daemon log for the specific error.',
+        };
+      }
       activeRecorders.set(sessionName, recorder);
       return { ok: true, session: sessionName, startUrl: url || session.page.url() };
     } catch (e) {

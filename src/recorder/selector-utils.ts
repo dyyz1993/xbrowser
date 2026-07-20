@@ -21,6 +21,16 @@ export interface SelectorConfig {
   maxDepth?: number;
   /** Attributes considered "stable" (prefer these over class). */
   stableAttributes?: string[];
+  /**
+   * Attributes that look like good selectors but are actually dynamic
+   * (change on every page load). These are skipped even if unique.
+   */
+  unstableAttributes?: string[];
+  /**
+   * Attribute name patterns that indicate a dynamic value. Default catches
+   * spm-anchor-id (Alibaba), react-track, data-reactid, etc.
+   */
+  unstableAttributePatterns?: RegExp[];
 }
 
 const DEFAULT_CONFIG: Required<SelectorConfig> = {
@@ -41,6 +51,28 @@ const DEFAULT_CONFIG: Required<SelectorConfig> = {
   ],
   maxDepth: 5,
   stableAttributes: ['data-testid', 'data-test-id', 'data-cy', 'data-qa', 'data-el'],
+  // Attributes known to be dynamic (value changes every page load)
+  unstableAttributes: [
+    'data-spm-anchor-id',   // Alibaba SPM tracking (changes per session)
+    'data-reactid',          // Legacy React internal id
+    'data-reactroot',        // Legacy React
+    'data-v-0a1b2c3d',       // Vue scoped style hashes (example pattern)
+    'data-n-head',           // Nuxt.js SSR
+    'data-server-rendered',  // SSR marker
+  ],
+  // Patterns that catch other dynamic attrs by value shape
+  unstableAttributePatterns: [
+    // spm-anchor-id values contain random hashes like "60ca4406ncHsK2"
+    /^data-spm/,
+    // data-pflog, data-track-* etc — analytics, change per session
+    /^data-track/,
+    /^data-log/,
+    /^data-pf/,
+    // data-key with random hash values
+    /^data-key$/,
+    // react-data-id with random values
+    /^data-rbd/,
+  ],
 };
 
 // ─── Types ────────────────────────────────────────────────────────
@@ -122,6 +154,9 @@ export function generateUniqueSelector(
     if (!attr.name.startsWith('data-')) continue;
     // Skip known testid attrs (already handled by Strategy 2)
     if (cfg.stableAttributes.includes(attr.name)) continue;
+    // Skip dynamic attrs (e.g. data-spm-anchor-id changes per page load)
+    if (cfg.unstableAttributes.includes(attr.name)) continue;
+    if (cfg.unstableAttributePatterns.some(p => p.test(attr.name))) continue;
     // Skip URL-like or very long values
     if (!attr.value || attr.value.length > 60 || attr.value.startsWith('http')) continue;
     const sel = `[${attr.name}="${CSS.escape(attr.value)}"]`;
@@ -392,6 +427,22 @@ export function getSelectorGeneratorScript(): string {
     /^semi-[a-z]{4,}/
   ];
   var STABLE_ATTRS = ['data-testid', 'data-test-id', 'data-cy', 'data-qa', 'data-el'];
+  // Dynamic attrs known to change per page load (skip even if unique)
+  var UNSTABLE_ATTRS = [
+    'data-spm-anchor-id', 'data-reactid', 'data-reactroot',
+    'data-n-head', 'data-server-rendered',
+  ];
+  // Patterns catching other dynamic attrs by name shape
+  var UNSTABLE_ATTR_PATTERNS = [
+    /^data-spm/, /^data-track/, /^data-log/, /^data-pf/, /^data-key$/, /^data-rbd/,
+  ];
+  function isUnstableAttr(name) {
+    if (UNSTABLE_ATTRS.indexOf(name) !== -1) return true;
+    for (var i = 0; i < UNSTABLE_ATTR_PATTERNS.length; i++) {
+      if (UNSTABLE_ATTR_PATTERNS[i].test(name)) return true;
+    }
+    return false;
+  }
   var MAX_DEPTH = 5;
 
   function isStableClass(cls) {
@@ -439,6 +490,8 @@ export function getSelectorGeneratorScript(): string {
 	      var a = el.attributes[ai];
 	      if (!a.name.startsWith('data-')) continue;
 	      if (STABLE_ATTRS.indexOf(a.name) !== -1) continue;
+	      // Skip dynamic attrs (e.g. data-spm-anchor-id changes per page load)
+	      if (isUnstableAttr(a.name)) continue;
 	      if (!a.value || a.value.length > 60 || a.value.indexOf('http') === 0) continue;
 	      var s = '[' + a.name + '="' + esc(a.value) + '"]';
 	      if (isUnique(root, s)) return { selector: s, strategy: 'data-attr', confidence: 'high' };

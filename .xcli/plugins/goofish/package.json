@@ -1,0 +1,22 @@
+{
+  "name": "xbrowser-plugin-goofish",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "xbrowser": {
+    "name": "goofish",
+    "slug": "goofish",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "闲鱼（goofish.com）搜索与下单自动化",
+    "site": "https://www.goofish.com",
+    "requiresLogin": true,
+    "commands": ["search", "detail", "order"]
+  }
+}

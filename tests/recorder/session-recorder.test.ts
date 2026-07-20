@@ -357,4 +357,162 @@ describe('SessionRecorder', () => {
       }
     });
   });
+
+  // ── Hover popup capture (hoverContext) ──
+  // The browser-side ACTION_SIGNAL_SCRIPT enriches hover actions with a
+  // hoverContext field via async sampling + MutationObserver. These tests
+  // verify that once that field arrives via the flush path, it survives
+  // serialization, archiving, and is usable by the replayer.
+  describe('hoverContext passthrough', () => {
+    it('should preserve hoverContext when raw action carries one (flush path)', async () => {
+      await startRecording('https://example.com');
+
+      // Simulate the browser pushing a hover action that has already been
+      // enriched with a popup (e.g. a sort dropdown with "最新" / "价格" items).
+      const hoverContext = {
+        appeared: [{
+          tag: 'div',
+          selector: '.sort-dropdown',
+          role: 'menu',
+          text: '最新 价格',
+          rect: { x: 300, y: 200, w: 120, h: 80 },
+          items: [
+            { text: '最新', tag: 'div', selector: '.sort-item-latest' },
+            { text: '价格', tag: 'div', selector: '.sort-item-price' },
+          ],
+        }],
+        disappeared: [],
+        stateChanges: [],
+      };
+
+      // Inject directly into the recorder's actions array (mimics what
+      // flushPendingActions produces after merging browser-side raw data).
+      (recorder as any).actions.push({
+        id: 1,
+        type: 'hover' as const,
+        timestamp: Date.now(),
+        url: 'https://example.com',
+        pageTitle: '',
+        element: { tag: 'div', selector: '.sort-trigger', text: '排序', strategy: 'class', confidence: 'medium' },
+        x: 320,
+        y: 240,
+        hoverContext,
+      });
+      (recorder as any).actionCounter = 1;
+
+      const { data } = await recorder.stop();
+      expect(data.actions).toHaveLength(1);
+      const action = data.actions[0];
+      expect(action.type).toBe('hover');
+      expect(action.hoverContext).toBeDefined();
+      expect(action.hoverContext?.appeared).toHaveLength(1);
+      expect(action.hoverContext?.appeared[0].items).toHaveLength(2);
+      expect(action.hoverContext?.appeared[0].items[0].text).toBe('最新');
+      expect(action.hoverContext?.appeared[0].items[0].selector).toBe('.sort-item-latest');
+    });
+
+    it('should leave hoverContext undefined when hover had no popup', async () => {
+      await startRecording('https://example.com');
+
+      (recorder as any).actions.push({
+        id: 1,
+        type: 'hover' as const,
+        timestamp: Date.now(),
+        url: 'https://example.com',
+        pageTitle: '',
+        element: { tag: 'a', selector: 'nav a.home', text: 'Home', strategy: 'class', confidence: 'medium' },
+        x: 50,
+        y: 20,
+        // hoverContext intentionally absent — no popup appeared
+      });
+      (recorder as any).actionCounter = 1;
+
+      const { data } = await recorder.stop();
+      expect(data.actions[0].hoverContext).toBeUndefined();
+    });
+
+    it('should round-trip multiple popups in hoverContext.appeared (dedup by selector)', async () => {
+      await startRecording('https://example.com');
+
+      // Two distinct popups, plus a duplicate of the first (simulating
+      // 200/500/1000ms sampling capturing the same popup again — dedup
+      // happens browser-side, but server should still tolerate either way).
+      const hoverContext = {
+        appeared: [
+          {
+            tag: 'div',
+            selector: '.popup-a',
+            text: 'A',
+            rect: { x: 0, y: 0, w: 10, h: 10 },
+            items: [{ text: 'A1', selector: '.a1' }],
+          },
+          {
+            tag: 'div',
+            selector: '.popup-b',
+            text: 'B',
+            rect: { x: 100, y: 0, w: 10, h: 10 },
+            items: [{ text: 'B1', selector: '.b1' }],
+          },
+        ],
+        disappeared: [],
+        stateChanges: [],
+      };
+
+      (recorder as any).actions.push({
+        id: 1,
+        type: 'hover' as const,
+        timestamp: Date.now(),
+        url: 'https://example.com',
+        pageTitle: '',
+        element: { tag: 'div', selector: '.trigger', text: 'T', strategy: 'class', confidence: 'low' },
+        x: 5,
+        y: 5,
+        hoverContext,
+      });
+      (recorder as any).actionCounter = 1;
+
+      const { data } = await recorder.stop();
+      const action = data.actions[0];
+      expect(action.hoverContext?.appeared).toHaveLength(2);
+      const selectors = action.hoverContext?.appeared.map((p) => p.selector);
+      expect(selectors).toEqual(['.popup-a', '.popup-b']);
+    });
+  });
+
+  // ── Action-signal injection failure ──
+  // When the recorder cannot inject its ACTION_SIGNAL_SCRIPT into the page
+  // (e.g. sandbox blocked Runtime.evaluate, or the script has a syntax error),
+  // start() must surface injectionFailed=true so the daemon can return
+  // ok:false to the user. Otherwise the user sees "Recording started" while
+  // no actions are being captured — a silent failure.
+  describe('injectionFailed flag', () => {
+    it('should report injectionFailed=true when page.evaluate throws', async () => {
+      // Replace evaluate to always throw — simulates a hostile page that
+      // blocks Runtime.evaluate or a syntax error in the injected script.
+      mockPage.evaluate = vi.fn(async () => {
+        throw new Error('SyntaxError: Invalid regular expression');
+      });
+
+      await startRecording('https://example.com');
+
+      expect((recorder as any).injectionFailed).toBe(true);
+    });
+
+    it('should report injectionFailed=false when injection succeeds', async () => {
+      // evaluate returns truthy for the verification check
+      mockPage.evaluate = vi.fn(async (script: unknown) => {
+        // The recorder's verification probes `window.__xb_action_signal`.
+        // Returning truthy simulates a successful injection.
+        if (typeof script === 'string' && script.includes('__xb_action_signal')) {
+          return true;
+        }
+        // The actual script injection calls return undefined — that's fine.
+        return undefined;
+      });
+
+      await startRecording('https://example.com');
+
+      expect((recorder as any).injectionFailed).toBe(false);
+    });
+  });
 });

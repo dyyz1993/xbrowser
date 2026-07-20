@@ -8,6 +8,8 @@ export interface ClickContextItem {
   tag?: string;
   disabled?: boolean;
   href?: string;
+  /** Selector of this item, used for replay and AI-driven clicks. */
+  selector?: string;
 }
 
 export interface ClickContextElement {
@@ -33,6 +35,33 @@ export interface ClickContextStateChange {
 export interface ClickContext {
   appeared: ClickContextElement[];
   disappeared: unknown[];
+  stateChanges: ClickContextStateChange[];
+}
+
+/**
+ * Popup/tooltip/dropdown that appears after a hover action.
+ *
+ * Captured via async sampling (200/500/1000ms after `mouseover`) plus a
+ * short-lived MutationObserver. Each entry records the container that popped
+ * up and the visible menu items inside it, so that replay and AI inspection
+ * can correlate the hover trigger with the options that became available.
+ */
+export interface HoverPopupInfo {
+  tag: string;
+  selector: string;
+  role?: string;
+  text: string;
+  rect: { x: number; y: number; w: number; h: number };
+  /** Visible menu items (up to 20) — text + selector for replay targeting. */
+  items: ClickContextItem[];
+}
+
+export interface HoverContext {
+  /** Popups that appeared after the hover trigger. */
+  appeared: HoverPopupInfo[];
+  /** Popups that disappeared while the hover was active. */
+  disappeared: Array<{ selector: string; reason: string }>;
+  /** Trigger element's aria-expanded / aria-haspopup state changes. */
   stateChanges: ClickContextStateChange[];
 }
 
@@ -73,6 +102,8 @@ export interface UserAction {
   scrollX?: number;
   scrollY?: number;
   clickContext?: ClickContext;
+  /** Popups/tooltip/dropdown observed after a `hover` action (analog of clickContext). */
+  hoverContext?: HoverContext;
   files?: {
     names: string[];
     count: number;

@@ -153,8 +153,11 @@ const ACTION_SIGNAL_SCRIPT = `
       selector = uniqueSelector(el);
     }
 
-    // For low-confidence selectors (nth-of-type), generate a text-based fallback
-    // when the element has short, unique text (e.g. menu items "删除", "确认")
+    // For low-confidence selectors (nth-of-type) OR selectors from dynamic
+    // attributes (which may not survive page reload), generate a text-based
+    // fallback when the element has short, unique text (e.g. menu items
+    // "删除", "确认", "最新"). This lets replay fall back to text matching
+    // when the primary selector can't be found.
     var textFallback;
     var popupContext;
 
@@ -164,7 +167,18 @@ const ACTION_SIGNAL_SCRIPT = `
       popupEl = el.closest('[role="menu"], [role="listbox"], [role="dialog"], [role="tooltip"], [role="list"], [class*="popover"], [class*="popup"], [class*="dropdown"], [class*="menu"], [class*="modal"], [id*="menu"], [id*="dropdown"], [id*="popup"], [id*="modal"]');
     } catch(e) {}
 
-    if (confidence === 'low') {
+    // Determine if primary selector is "fragile" — won't survive page reload
+    // because it comes from a dynamic attribute (e.g. data-spm-anchor-id).
+    var selectorIsFragile = false;
+    if (selector && confidence === 'high' && strategy === 'data-attr') {
+      // Fragile if the selector references a known dynamic attribute
+      selectorIsFragile = selector.indexOf('[data-spm-anchor-id') !== -1
+        || selector.indexOf('[data-reactid') !== -1
+        || selector.indexOf('[data-track') !== -1
+        || selector.indexOf('[data-log') !== -1;
+    }
+
+    if (confidence === 'low' || selectorIsFragile) {
       var rawText = (el.textContent || '').trim();
       if (rawText && rawText.length >= 1 && rawText.length <= 30 && el.children.length === 0) {
         try {
@@ -406,6 +420,10 @@ const ACTION_SIGNAL_SCRIPT = `
     '.popover','.popup','.dropdown','.menu','.modal','.tooltip','.panel',
     '[class*="popover"]','[class*="popup"]','[class*="dropdown"]','[class*="menu"]','[class*="tooltip"]',
     '[class*="modal"]','[class*="panel"]','[class*="overlay"]','[class*="sheet"]',
+    // Modern SPA conventions: many libraries expose the open menu via class
+    // fragments like "items-container", "options", "list", "select-popup".
+    '[class*="items-container"]','[class*="options"]','[class*="select-popup"]',
+    '[class*="select-items"]','[class*="menu-items"]','[class*="list-box"]',
     '[data-popup]','[data-dropdown]','[data-menu]','[data-popover]',
     '.semi-dropdown','.semi-popover','.semi-modal','.semi-select-option',
     '.ant-dropdown','.ant-popover','.ant-modal','.ant-select-dropdown',
@@ -447,6 +465,11 @@ const ACTION_SIGNAL_SCRIPT = `
               if (child.getAttribute('aria-disabled') === 'true') childInfo.disabled = true;
               if (child.tagName) childInfo.tag = child.tagName.toLowerCase();
               if (child.href) childInfo.href = child.href.substring(0, 80);
+              // Attach a selector so replay / AI can target this item precisely.
+              try {
+                var childSel = uniqueSelector(child);
+                if (childSel) childInfo.selector = childSel;
+              } catch(e) {}
               items.push(childInfo);
             }
             result.appeared.push({
@@ -646,12 +669,102 @@ const ACTION_SIGNAL_SCRIPT = `
   }, true);
 
   // ── Hover (throttled to 800ms) ──
+  // After a hover we asynchronously sample for popups/dropdowns that appear
+  // (200/500/1000ms) and run a short-lived MutationObserver. Any popup that
+  // surfaces is recorded on the hover action as hoverContext, mirroring the
+  // clickContext flow used after clicks.
   var __xb_last_hover = 0;
+  var __xb_hover_observer = null;         // current hover's MutationObserver
+  var __xb_hover_observer_timer = null;   // auto-disconnect timer
+  var __xb_hover_action_ref = null;       // ref to the hover action being enriched
+  var __xb_hover_seen_popups = {};        // dedup popup selectors for current hover
+  var __xb_hover_cx = 0, __xb_hover_cy = 0;
+
+  function __xb_merge_hover_context(ctx) {
+    if (!__xb_hover_action_ref || !ctx) return;
+    if (ctx.appeared.length === 0 && ctx.stateChanges.length === 0) return;
+    if (!__xb_hover_action_ref.hoverContext) {
+      __xb_hover_action_ref.hoverContext = { appeared: [], disappeared: [], stateChanges: [] };
+    }
+    var hc = __xb_hover_action_ref.hoverContext;
+    ctx.appeared.forEach(function(p) {
+      var key = p.selector || p.text;
+      if (!key || __xb_hover_seen_popups[key]) return;
+      __xb_hover_seen_popups[key] = true;
+      hc.appeared.push(p);
+    });
+    ctx.stateChanges.forEach(function(s) {
+      hc.stateChanges.push(s);
+    });
+  }
+
+  function __xb_capture_hover_popups() {
+    if (!__xb_hover_action_ref) return;
+    try {
+      var ctx = captureVisibleContext(__xb_hover_cx, __xb_hover_cy);
+      __xb_merge_hover_context(ctx);
+    } catch(e) {}
+  }
+  // Expose for flush-time sweep (server-side flushPendingActions calls this
+  // before draining the pending queue so any in-flight hover enrichment lands).
+  window.__xb_capture_hover_popups = __xb_capture_hover_popups;
+
+  function __xb_start_hover_observer() {
+    if (!('MutationObserver' in window)) return;
+    if (__xb_hover_observer) {
+      __xb_hover_observer.disconnect();
+      __xb_hover_observer = null;
+    }
+    if (__xb_hover_observer_timer) {
+      clearTimeout(__xb_hover_observer_timer);
+      __xb_hover_observer_timer = null;
+    }
+    __xb_hover_observer = new MutationObserver(function(mutations) {
+      if (!__xb_hover_action_ref) return;
+      for (var i = 0; i < mutations.length; i++) {
+        var added = mutations[i].addedNodes;
+        for (var j = 0; j < added.length; j++) {
+          var node = added[j];
+          if (node.nodeType !== 1) continue;
+          var matches = false;
+          // Is the added node itself a popover?
+          for (var k = 0; k < POPOVER_SELECTORS.length; k++) {
+            try { if (node.matches && node.matches(POPOVER_SELECTORS[k])) { matches = true; break; } } catch(e) {}
+          }
+          // Or does it contain a popover?
+          if (!matches && node.querySelector) {
+            for (var k2 = 0; k2 < POPOVER_SELECTORS.length; k2++) {
+              try { if (node.querySelector(POPOVER_SELECTORS[k2])) { matches = true; break; } } catch(e) {}
+            }
+          }
+          if (matches) {
+            __xb_capture_hover_popups();
+            break;
+          }
+        }
+      }
+    });
+    try {
+      __xb_hover_observer.observe(document.body, { childList: true, subtree: true });
+    } catch(e) {}
+    // Auto-disconnect after 1.2s — hover popups rarely appear later than this.
+    __xb_hover_observer_timer = setTimeout(function() {
+      if (__xb_hover_observer) {
+        __xb_hover_observer.disconnect();
+        __xb_hover_observer = null;
+      }
+      __xb_hover_observer_timer = null;
+    }, 1200);
+  }
+
   document.addEventListener('mouseover', function(e) {
     if (Date.now() - __xb_last_hover < 800) return;
-    __xb_last_hover = Date.now();
     var target = resolveMeaningful(e);
-    // Only record hover on interactive elements
+    // Only record hover on interactive elements. Modern SPAs often implement
+    // clickable items as <span>/<div> with onClick handlers and no semantic
+    // role, so we also accept elements whose computed style suggests they are
+    // meant to be interacted with (pointer cursor, or a class name that looks
+    // like a UI control).
     var tag = target.tagName && target.tagName.toLowerCase();
     var isInteractive = tag === 'a' || tag === 'button' || tag === 'input'
       || tag === 'select' || tag === 'textarea' || tag === 'summary'
@@ -661,12 +774,67 @@ const ACTION_SIGNAL_SCRIPT = `
       || target.getAttribute('role') === 'tab'
       || target.getAttribute('role') === 'option'
       || !!target.closest('[role="menu"], [role="menubar"], [role="tablist"], [role="listbox"], [role="tree"], nav, menu');
+    // Heuristic fallback for span/div/li that look interactive (onClick,
+    // pointer cursor, or class names hinting at a UI control like
+    // "select", "trigger", "tab", "sort", "menu", "item").
+    if (!isInteractive && (tag === 'span' || tag === 'div' || tag === 'li')) {
+      try {
+        if (target.onclick) isInteractive = true;
+      } catch(e2) {}
+      if (!isInteractive) {
+        try {
+          var cs = window.getComputedStyle(target);
+          if (cs.cursor === 'pointer') isInteractive = true;
+        } catch(e3) {}
+      }
+      if (!isInteractive) {
+        try {
+          var cls = (target.className && typeof target.className === 'string')
+            ? target.className.toLowerCase() : '';
+          if (/(?:^|[-_])(select|trigger|tab|sort|menu|item|dropdown|popover|title|toggle|action|btn)(?:[-_]|$)/.test(cls)) {
+            // But only if an ancestor looks like a toolbar/menu/sort bar —
+            // otherwise this would match almost every list item on the web.
+            if (target.closest('[class*="select"], [class*="sort"], [class*="tab"], [class*="menu"], [class*="toolbar"], [class*="filter"], [class*="dropdown"]')) {
+              isInteractive = true;
+            }
+          }
+        } catch(e4) {}
+      }
+    }
     if (isInteractive) {
+      // Reset state for the new hover target
+      if (__xb_hover_observer) {
+        __xb_hover_observer.disconnect();
+        __xb_hover_observer = null;
+      }
+      if (__xb_hover_observer_timer) {
+        clearTimeout(__xb_hover_observer_timer);
+        __xb_hover_observer_timer = null;
+      }
+      __xb_hover_seen_popups = {};
+
+      var cx = e.clientX, cy = e.clientY;
+      __xb_hover_cx = cx;
+      __xb_hover_cy = cy;
+
       pushAction('hover', {
         element: describe(target),
-        x: e.clientX,
-        y: e.clientY,
+        x: cx,
+        y: cy,
       });
+      __xb_last_hover = Date.now();
+
+      // Grab a reference to the just-pushed action so we can enrich it async.
+      var pending = window.__xb_pending_actions;
+      __xb_hover_action_ref = pending.length > 0 ? pending[pending.length - 1] : null;
+
+      // 1. Async sampling: 200/500/1000ms covers CSS transitions + JS render delays.
+      setTimeout(__xb_capture_hover_popups, 200);
+      setTimeout(__xb_capture_hover_popups, 500);
+      setTimeout(__xb_capture_hover_popups, 1000);
+
+      // 2. Short-lived MutationObserver for popups that appear on their own schedule.
+      __xb_start_hover_observer();
     }
   }, true);
 
@@ -1067,7 +1235,6 @@ export class SessionRecorder {
   private static readonly AMBIENT_TYPES = new Set([
     'hover', 'focus', 'scroll', 'visibility', 'resize', 'clipboard', 'touch', 'contextmenu', 'drag',
   ]);
-
   constructor(context: BrowserContext, page: Page, sessionName: string) {
     this.context = context;
     this.page = page;
@@ -1400,9 +1567,17 @@ export class SessionRecorder {
 
   // ==================== Private ====================
 
+  /** Whether the initial action-signal script injection succeeded. Check this
+   * after start() returns — if false, user actions will NOT be recorded and
+   * the caller should surface a clear error to the user instead of silently
+   * pretending recording is working. */
+  private _injectionFailed = false;
+  get injectionFailed(): boolean { return this._injectionFailed; }
+
   private async injectActionScript(page: Page): Promise<void> {
     let success = false;
     const maxAttempts = 3;
+    let lastError = '';
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         // Inject the 13-strategy unique selector generator FIRST so action script can use it
@@ -1419,10 +1594,12 @@ export class SessionRecorder {
           success = true;
           break;  // Injection successful, stop retrying
         }
+        lastError = 'verification failed (script did not set __xb_action_signal flag)';
         console.error(`[recorder] Action signal injection verification failed (attempt ${attempt}/${maxAttempts})`);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        console.error(`[recorder] Action signal injection error (attempt ${attempt}/${maxAttempts}): ${msg}`);
+        const err = e instanceof Error ? e : new Error(typeof e === 'string' ? e : 'unknown error');
+        lastError = err.message;
+        console.error(`[recorder] Action signal injection error (attempt ${attempt}/${maxAttempts}): ${err.message}`);
       }
       // Wait before retrying
       if (attempt < maxAttempts) {
@@ -1430,7 +1607,8 @@ export class SessionRecorder {
       }
     }
     if (!success) {
-      console.error(`[recorder] WARNING: Action signal injection FAILED after ${maxAttempts} attempts. User actions will NOT be recorded. Check that the page supports Runtime.evaluate.`);
+      this._injectionFailed = true;
+      console.error(`[recorder] WARNING: Action signal injection FAILED after ${maxAttempts} attempts. User actions will NOT be recorded. Last error: ${lastError}`);
     }
 
     // Checkpoint overlay — best-effort, non-critical
@@ -1617,9 +1795,9 @@ export class SessionRecorder {
             return;
           }
         } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
+          const err = e instanceof Error ? e : new Error(typeof e === 'string' ? e : 'unknown error');
           if (attempt < 4) {
-            console.error(`[recorder] injectActionScript retry ${attempt + 1}/5 failed: ${msg}`);
+            console.error(`[recorder] injectActionScript retry ${attempt + 1}/5 failed: ${err.message}`);
           }
         }
         await new Promise(r => setTimeout(r, 1000));
@@ -1644,8 +1822,8 @@ export class SessionRecorder {
       const url = frame.url();
       if (url && url !== 'about:blank' && !url.startsWith('chrome')) {
         try { await this.injectActionScript(page); } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          console.error(`[recorder] injectActionScript after navigation failed: ${msg}`);
+          const err = e instanceof Error ? e : new Error(typeof e === 'string' ? e : 'unknown error');
+          console.error(`[recorder] injectActionScript after navigation failed: ${err.message}`);
         }
       }
     });
@@ -1792,12 +1970,22 @@ export class SessionRecorder {
       scrollX?: number;
       scrollY?: number;
       files?: UserAction['files'];
+      /** Browser-side hover enrichment (async-sampled popups). */
+      hoverContext?: UserAction['hoverContext'];
     }
 
     let pending: PendingAction[] = [];
     try {
       pending = await page.evaluate(`(function() {
         var w = window;
+        // Flush-time sweep: if there is a hover action still being enriched
+        // by async samplers, force one last capture so its hoverContext lands
+        // before the action is drained from the pending queue.
+        try {
+          if (typeof w.__xb_capture_hover_popups === 'function') {
+            w.__xb_capture_hover_popups();
+          }
+        } catch(e) {}
         var actions = w.__xb_pending_actions || [];
         w.__xb_pending_actions = [];
 
@@ -1881,8 +2069,13 @@ export class SessionRecorder {
         }
       }
 
-      // Denoise: filter ambient actions in clean mode
-      if (this.streamMode === 'clean' && SessionRecorder.AMBIENT_TYPES.has(raw.type as string)) {
+      // Denoise: filter ambient actions in clean mode.
+      // Hover is the exception: even in clean mode we keep it when it produced
+      // a hoverContext (i.e. a popup appeared). Those are meaningful and should
+      // not be dropped as ambient noise.
+      if (this.streamMode === 'clean'
+          && SessionRecorder.AMBIENT_TYPES.has(raw.type as string)
+          && !(raw.type === 'hover' && raw.hoverContext)) {
         continue; // Skip ambient action
       }
 
@@ -1908,6 +2101,11 @@ export class SessionRecorder {
         scrollX: raw.scrollX,
         scrollY: raw.scrollY,
         clickContext,
+        // Browser-side hover enrichment writes hoverContext onto the pending
+        // action asynchronously (200/500/1000ms after mouseover). Flush may
+        // run before the last sample lands — passthrough keeps whatever has
+        // been collected so far.
+        hoverContext: raw.hoverContext,
         files: raw.files,
       });
 
