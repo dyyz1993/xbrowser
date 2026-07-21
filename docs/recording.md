@@ -250,6 +250,104 @@ without a `hoverContext` are dropped as ambient noise. Hover actions **with**
 a `hoverContext` are always kept — they are semantically meaningful (the user
 intentionally opened a popup).
 
+## Proactive Sensing (主动感知)
+
+In addition to capturing user actions, the recorder proactively scans the
+page to discover interactive regions **even if the user never touches them**.
+This lets AI/automation answer "what can I do on this page?" without requiring
+the user to demo every option.
+
+### `RecordingData.discoveredFilters`
+
+A list of filter/sort/tab/menu/navigation regions found on the page. Each
+entry describes one container and the triggers inside it.
+
+```yaml
+discoveredFilters:
+  - containerSelector: ".search-filter-select-container"
+    category: "filter"
+    containerText: "综合 新发布 价格 ..."
+    triggers:
+      - text: "综合"
+        selector: ".trigger-zonghe"
+        category: "filter"
+        hasPopup: false         # updated when a popup is observed for this trigger
+        userInteracted: false   # set true when user actually clicks/hovers it
+        explored: false         # set true when mouse lingers on it
+      - text: "新发布"
+        ...
+      - text: "价格"
+        ...
+  - containerSelector: ".search-filter-checkbox-container"
+    category: "filter"
+    triggers:
+      - text: "包邮"
+      - text: "全新"
+      ...
+```
+
+**Key fields**:
+- `category` — sort / filter / tab / menu / navigation / unknown
+- `triggers[].userInteracted` — true if user actually clicked or hovered this trigger
+- `triggers[].hasPopup` — true if a popup was observed appearing from this trigger
+- `triggers[].explored` — true if mouse lingered >800ms without clicking
+
+**Why only triggers (not options) are recorded**: Triggers are stable anchors.
+Options are recorded separately when a popup actually appears (see below) —
+this avoids capturing template/placeholder text from hidden DOM.
+
+### `popup_appear` action
+
+When any popover/dropdown/menu becomes visible (via user hover, click, or
+auto-shown), a `popup_appear` action is pushed to the actions stream. This
+preserves temporal ordering with user actions so AI can correlate "this click
+caused this popup" or "this popup appeared automatically".
+
+```yaml
+type: popup_appear
+popupAppear:
+  trigger:
+    selector: ".sort-trigger-xinfabu"
+    text: "新发布"
+  popup:
+    selector: ".sort-dropdown"
+    text: "最新 1天内 3天内 7天内 14天内"
+    rect: { x: 271, y: 224, w: 120, h: 208 }
+    items:
+      - { text: "最新", selector: ".item-latest" }
+      - { text: "1天内", selector: ".item-1d" }
+      - ...
+  cause: "user-hover"    # user-hover / user-click / auto / script
+  userTriggered: true    # false for auto-shown popups
+```
+
+**Replay behavior**: `popup_appear` is an observation, not a user action —
+`xbrowser replay` skips these by default. Use them for AI analysis only.
+
+### Three-layer sensing architecture
+
+1. **Baseline scan** (`__xb_scanFilters`) — runs on start and after every
+   navigation. Finds all `[role="tablist"]`, `[class*="filter"]`,
+   `[class*="sort"]`, etc. and records their triggers.
+2. **Long-lived MutationObserver** — runs for the whole recording session.
+   Watches all `POPOVER_SELECTORS` containers for `hidden → visible`
+   transitions and pushes a `popup_appear` action on each.
+3. **mousemove throttled diff** — 300ms throttle + 800ms "stop" detection.
+   When the mouse lingers near a trigger, marks it as `explored` and scans
+   for nearby popups.
+
+### Limitations
+
+- **No options for un-interacted triggers** — by design, only triggers are
+  recorded from the baseline scan. Full option lists require the popup to
+  actually appear (layer 2/3 or user action).
+- **Dedup is heuristic** — overlapping containers may still produce some
+  duplicate triggers in rare cases. Server-side flush merges by container
+  selector to mitigate.
+- **Performance** — long-lived MutationObserver + mousemove listener add
+  overhead. For heavy SPAs with frequent DOM churn, consider `stream: 'raw'`
+  mode (which keeps ambient noise but bypasses some filtering).
+
 ## Other action types
 
 The recorder also captures (mostly informational, see `src/recorder/recording-types.ts`

@@ -70,7 +70,9 @@ export interface UserAction {
   type: 'click' | 'input' | 'change' | 'keydown' | 'submit' | 'scroll'
     | 'navigation' | 'goto' | 'cdp-fill' | 'cdp-click' | 'cdp-eval' | 'filechooser'
     | 'dblclick' | 'contextmenu' | 'hover' | 'drag' | 'resize' | 'clipboard'
-    | 'touch' | 'focus' | 'visibility';
+    | 'touch' | 'focus' | 'visibility'
+    // Proactive sensing actions (not user-initiated, but observed by recorder)
+    | 'popup_appear' | 'discovered_filters';
   timestamp: number;
   url: string;
   pageTitle: string;
@@ -138,6 +140,29 @@ export interface UserAction {
   };
   /** Base64-encoded PNG screenshot of the target element (captured on key actions) */
   elementScreenshot?: string;
+
+  /** For type='popup_appear' — proactive sensing of a popover/dropdown/menu
+   * becoming visible (whether triggered by user hover/click, or auto-shown). */
+  popupAppear?: {
+    /** The trigger element that caused the popup (if known) */
+    trigger?: { selector: string; text: string };
+    /** The popup container */
+    popup: {
+      selector: string;
+      text: string;
+      rect: { x: number; y: number; w: number; h: number };
+      /** Menu items inside the popup */
+      items: Array<{ text: string; selector: string; disabled?: boolean }>;
+    };
+    /** What caused the popup to appear */
+    cause: 'user-hover' | 'user-click' | 'auto' | 'script';
+    /** True if a real user action triggered it (false for auto-shown popups) */
+    userTriggered: boolean;
+  };
+
+  /** For type='discovered_filters' — proactive baseline scan of the page.
+   * Pushed on start and after navigation; merged into RecordingData.discoveredFilters. */
+  discoveredFilters?: DiscoveredFilter[];
 }
 
 export interface NetworkEntry {
@@ -220,6 +245,34 @@ export interface CheckpointEntry {
   context?: Record<string, unknown>;
 }
 
+export interface DiscoveredTrigger {
+  /** Selector for replay/AI targeting */
+  selector: string;
+  /** Text label (e.g. "新发布", "综合", "价格") */
+  text: string;
+  /** Semantic role, if any */
+  role?: string;
+  /** Category — helps AI understand what this trigger does */
+  category: 'sort' | 'filter' | 'tab' | 'menu' | 'navigation' | 'unknown';
+  /** Set to true once we observe a popup appearing for this trigger */
+  hasPopup: boolean;
+  /** Set to true when the user actually clicks or hovers it */
+  userInteracted: boolean;
+  /** Set to true when the mouse lingered on it (>800ms) without clicking */
+  explored: boolean;
+}
+
+export interface DiscoveredFilter {
+  /** Container element selector (the surrounding bar/region) */
+  containerSelector: string;
+  /** Container category */
+  category: 'sort' | 'filter' | 'tab' | 'menu' | 'navigation';
+  /** Container text (first 60 chars, for AI context) */
+  containerText: string;
+  /** Triggers found inside this container */
+  triggers: DiscoveredTrigger[];
+}
+
 export interface RecordingData {
   startUrl: string;
   sessionName: string;
@@ -228,6 +281,9 @@ export interface RecordingData {
   network: NetworkEntry[];
   contextChanges: ContextChange[];
   checkpoints: CheckpointEntry[];
+  /** Proactive baseline scan of filter/sort/tab/menu regions on the page.
+   * Populated on start and after navigation; updated as popups are observed. */
+  discoveredFilters?: DiscoveredFilter[];
 }
 
 export interface RecordingControlFile {

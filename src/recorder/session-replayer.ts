@@ -125,6 +125,12 @@ export class SessionReplayer {
     const timeout = this.opts.stepTimeout;
 
     switch (action.type) {
+      // Proactive sensing actions are observations, not user actions — skip
+      // them during replay (they don't represent anything the user did).
+      case 'popup_appear':
+      case 'discovered_filters':
+        return;
+
       case 'navigation':
         // X3: waitUntil: 'load' ensures the page is fully loaded
         // before subsequent actions try to interact with elements.

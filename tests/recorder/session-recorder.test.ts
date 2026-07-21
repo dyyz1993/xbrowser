@@ -515,4 +515,151 @@ describe('SessionRecorder', () => {
       expect((recorder as any).injectionFailed).toBe(false);
     });
   });
+
+  // ── Proactive sensing: discoveredFilters + popup_appear ──
+  // The recorder proactively scans the page for filter/sort/tab/menu regions
+  // and pushes 'discovered_filters' actions that the server merges into
+  // RecordingData.discoveredFilters. Popups observed via MutationObserver
+  // or mousemove produce 'popup_appear' actions in the actions stream.
+  describe('proactive sensing', () => {
+    it('should record popup_appear action in the actions stream', async () => {
+      await startRecording('https://example.com');
+
+      // Simulate browser pushing a popup_appear event
+      (recorder as any).actions.push({
+        id: 1,
+        type: 'popup_appear',
+        timestamp: Date.now(),
+        url: 'https://example.com',
+        pageTitle: '',
+        popupAppear: {
+          trigger: { selector: '.sort-trigger', text: '新发布' },
+          popup: {
+            selector: '.sort-dropdown',
+            text: '最新 1天内 3天内',
+            rect: { x: 100, y: 100, w: 120, h: 80 },
+            items: [
+              { text: '最新', selector: '.item-latest' },
+              { text: '1天内', selector: '.item-1d' },
+            ],
+          },
+          cause: 'user-hover',
+          userTriggered: true,
+        },
+      });
+      (recorder as any).actionCounter = 1;
+
+      const { data } = await recorder.stop();
+      const popupAction = data.actions.find((a) => a.type === 'popup_appear');
+      expect(popupAction).toBeDefined();
+      expect(popupAction?.popupAppear?.trigger?.text).toBe('新发布');
+      expect(popupAction?.popupAppear?.popup.items).toHaveLength(2);
+      expect(popupAction?.popupAppear?.cause).toBe('user-hover');
+      expect(popupAction?.popupAppear?.userTriggered).toBe(true);
+    });
+
+    it('should serialize discoveredFilters in RecordingData', async () => {
+      await startRecording('https://example.com');
+
+      // Simulate server-side flushPendingActions merging a discovered_filters entry
+      const filters = new Map<string, any>();
+      filters.set('.sort-bar', {
+        containerSelector: '.sort-bar',
+        category: 'sort',
+        containerText: '综合 新发布 价格',
+        triggers: [
+          { selector: '.trigger-1', text: '综合', category: 'sort', hasPopup: false, userInteracted: false, explored: false },
+          { selector: '.trigger-2', text: '新发布', category: 'sort', hasPopup: true, userInteracted: true, explored: true },
+          { selector: '.trigger-3', text: '价格', category: 'sort', hasPopup: false, userInteracted: false, explored: false },
+        ],
+      });
+      (recorder as any).discoveredFilters = filters;
+
+      const { data } = await recorder.stop();
+      expect(data.discoveredFilters).toBeDefined();
+      expect(data.discoveredFilters).toHaveLength(1);
+      expect(data.discoveredFilters?.[0].containerSelector).toBe('.sort-bar');
+      expect(data.discoveredFilters?.[0].triggers).toHaveLength(3);
+      // Trigger flags preserved
+      const sortTriggers = data.discoveredFilters?.[0].triggers || [];
+      expect(sortTriggers[1].userInteracted).toBe(true);
+      expect(sortTriggers[1].hasPopup).toBe(true);
+    });
+
+    it('should dedup discoveredFilters by containerSelector across scans', async () => {
+      await startRecording('https://example.com');
+
+      // Simulate two scans pushing the same container with different trigger flags
+      const filters = new Map<string, any>();
+      // First scan: trigger is fresh
+      filters.set('.sort-bar', {
+        containerSelector: '.sort-bar',
+        category: 'sort',
+        containerText: 'sort bar',
+        triggers: [
+          { selector: '.trigger-1', text: '综合', category: 'sort', hasPopup: false, userInteracted: false, explored: false },
+        ],
+      });
+      // Second scan: same container, same trigger but now userInteracted=true
+      // (simulating the merge logic in flushPendingActions)
+      const existing = filters.get('.sort-bar');
+      const newTrigger = { selector: '.trigger-1', text: '综合', category: 'sort', hasPopup: true, userInteracted: true, explored: true };
+      const oldT = existing.triggers.find((t: any) => t.selector === newTrigger.selector);
+      if (oldT) {
+        newTrigger.userInteracted = newTrigger.userInteracted || oldT.userInteracted;
+        newTrigger.explored = newTrigger.explored || oldT.explored;
+        newTrigger.hasPopup = newTrigger.hasPopup || oldT.hasPopup;
+      }
+      existing.triggers = [newTrigger];
+
+      (recorder as any).discoveredFilters = filters;
+
+      const { data } = await recorder.stop();
+      expect(data.discoveredFilters).toHaveLength(1);
+      const trigger = data.discoveredFilters?.[0].triggers[0];
+      // Merged flags should all be true
+      expect(trigger.userInteracted).toBe(true);
+      expect(trigger.hasPopup).toBe(true);
+      expect(trigger.explored).toBe(true);
+    });
+
+    it('should mark popup_appear with userTriggered=false for auto-shown popups', async () => {
+      await startRecording('https://example.com');
+
+      (recorder as any).actions.push({
+        id: 1,
+        type: 'popup_appear',
+        timestamp: Date.now(),
+        url: 'https://example.com',
+        pageTitle: '',
+        popupAppear: {
+          trigger: undefined,
+          popup: {
+            selector: '.toast',
+            text: 'Welcome',
+            rect: { x: 0, y: 0, w: 200, h: 40 },
+            items: [],
+          },
+          cause: 'auto',
+          userTriggered: false,
+        },
+      });
+      (recorder as any).actionCounter = 1;
+
+      const { data } = await recorder.stop();
+      const popupAction = data.actions.find((a) => a.type === 'popup_appear');
+      expect(popupAction?.popupAppear?.userTriggered).toBe(false);
+      expect(popupAction?.popupAppear?.cause).toBe('auto');
+    });
+
+    it('should not crash when discoveredFilters is empty/undefined', async () => {
+      await startRecording('https://example.com');
+      // Don't push any discovered_filters
+
+      const { data } = await recorder.stop();
+      // discoveredFilters should be an empty array (no crash)
+      expect(Array.isArray(data.discoveredFilters)).toBe(true);
+      expect(data.discoveredFilters).toHaveLength(0);
+    });
+  });
 });

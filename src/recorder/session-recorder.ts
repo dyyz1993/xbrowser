@@ -16,7 +16,7 @@ import { homedir } from 'node:os';
 import type { BrowserContext, Frame, Page, Request, Response, Dialog } from '../browser-shim.js';
 import { getSelectorGeneratorScript } from './selector-utils.js';
 import { updateSiteKnowledge } from './site-knowledge.js';
-import type { UserAction, RecordingData, RecordingSummary, RecordingControlFile, NetworkEntry, CheckpointEntry, CheckpointType, RecordingStep, ContextChange, ClickContext, ElementRef, ActionSignal } from './recording-types.js';
+import type { UserAction, RecordingData, RecordingSummary, RecordingControlFile, NetworkEntry, CheckpointEntry, CheckpointType, RecordingStep, ContextChange, ClickContext, ElementRef, ActionSignal, DiscoveredFilter } from './recording-types.js';
 export type {
   ClickContextItem, ClickContextElement, ClickContextStateChange, ClickContext,
   UserAction, NetworkEntry, ContextChange, ElementRef,
@@ -531,6 +531,9 @@ const ACTION_SIGNAL_SCRIPT = `
 
     pushAction('click', { element: describe(resolveMeaningful(e)), x: cx, y: cy });
 
+    // Mark this element as user-interacted in discovered_filters (proactive sensing)
+    try { __xb_markTriggerInteracted(e.target); } catch(_) {}
+
     // After 200ms, capture what changed
     setTimeout(function() {
       try {
@@ -822,6 +825,8 @@ const ACTION_SIGNAL_SCRIPT = `
         x: cx,
         y: cy,
       });
+      // Mark this element as user-interacted in discovered_filters
+      try { __xb_markTriggerInteracted(target); } catch(_) {}
       __xb_last_hover = Date.now();
 
       // Grab a reference to the just-pushed action so we can enrich it async.
@@ -943,6 +948,511 @@ const ACTION_SIGNAL_SCRIPT = `
       visibility: { state: document.hidden ? 'hidden' : 'visible' },
     });
   }, true);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // PROACTIVE SENSING — discover interactive regions without user action.
+  //
+  // Three layers:
+  //   1. __xb_scanFilters() — baseline scan, called on start/navigation
+  //   2. Long-lived MutationObserver — watches popover visible transitions
+  //   3. mousemove throttled diff — senses triggers near the cursor
+  //
+  // Results:
+  //   - 'discovered_filters' action → merged into RecordingData.discoveredFilters
+  //   - 'popup_appear' action → added to actions stream (with cause tag)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  var FILTER_CONTAINER_SELECTORS = [
+    '[role="tablist"]', '[role="menu"]', '[role="menubar"]', '[role="toolbar"]',
+    '[role="navigation"]', '[role="listbox"]',
+    '[class*="filter"]', '[class*="sort"]', '[class*="toolbar"]',
+    '[class*="select-bar"]', '[class*="tabs"]', '[class*="nav-bar"]',
+    '[class*="sidebar"]', '[class*="menu-bar"]', '[class*="select-container"]',
+    'fieldset',
+  ];
+
+  var TRIGGER_SELECTORS = [
+    '[role="tab"]', '[role="menuitem"]', '[role="menuitemcheckbox"]',
+    '[role="menuitemradio"]', '[role="option"]', '[role="button"]',
+    '[role="link"]', '[role="switch"]', '[role="checkbox"]',
+    'button', 'a', 'select',
+    // Modern SPA span/div triggers (cursor:pointer is a strong signal)
+    'span[class*="title"]', 'div[class*="title"]',
+    'div[class*="trigger"]', 'span[class*="trigger"]',
+    'div[class*="item"]', 'li',
+  ];
+
+  /** Categorize a container/trigger by class name + role heuristics. */
+  function categorizeElement(el) {
+    try {
+      var cls = ((el.className && typeof el.className === 'string') ? el.className : '').toLowerCase();
+      var role = (el.getAttribute && el.getAttribute('role')) || '';
+      if (role === 'tab' || /(^|[-_])tab(s|list)?([-_]|$)/.test(cls)) return 'tab';
+      if (role === 'menuitem' || role === 'menu' || /menu/.test(cls)) return 'menu';
+      if (/sort/.test(cls)) return 'sort';
+      if (/filter/.test(cls)) return 'filter';
+      if (role === 'navigation' || /nav([-_]|$)/.test(cls)) return 'navigation';
+      // Common compound patterns
+      if (/search-filter|search-select|filter-up|filter-select|filter-checkbox/.test(cls)) return 'filter';
+      if (/sort-bar|sort-container|sort-trigger/.test(cls)) return 'sort';
+      if (/checkbox-group|radio-group/.test(cls)) return 'filter';
+      if (/sidebar/.test(cls)) return 'navigation';
+    } catch(e) {}
+    return 'unknown';
+  }
+
+  /** Build a DiscoveredTrigger from an element. */
+  function buildTrigger(el) {
+    var text = (el.textContent || '').trim();
+    var trigger = {
+      selector: uniqueSelector(el),
+      text: text.substring(0, 40),
+      role: el.getAttribute ? (el.getAttribute('role') || undefined) : undefined,
+      category: categorizeElement(el),
+      hasPopup: false,
+      userInteracted: false,
+      explored: false,
+    };
+    return trigger;
+  }
+
+  /** All DiscoveredFilters found so far. Keyed by containerSelector for dedup. */
+  var __xb_discovered_filters = {};
+  /** True if a 'discovered_filters' push is pending (debounced). */
+  var __xb_scan_scheduled = false;
+  /** Track which DOM nodes we've already scanned (by identity, not selector). */
+  var __xb_scanned_nodes = (typeof WeakSet !== 'undefined') ? new WeakSet() : null;
+
+  /** Scan the page for filter/sort/tab/menu containers + their triggers.
+   * Dedup by DOM node identity (WeakSet) so the same element reached via
+   * different selectors is recorded once. Nested containers are skipped —
+   * the outermost container wins. */
+  function __xb_scanFilters() {
+    try {
+      // First pass: collect all candidate container nodes (dedup by identity)
+      var candidates = [];
+      var seenNodes = new Set();  // fallback if WeakSet unavailable
+      for (var ci = 0; ci < FILTER_CONTAINER_SELECTORS.length; ci++) {
+        var containers;
+        try { containers = document.querySelectorAll(FILTER_CONTAINER_SELECTORS[ci]); } catch(e) { continue; }
+        for (var cj = 0; cj < containers.length; cj++) {
+          var c = containers[cj];
+          // Dedup by identity
+          if (__xb_scanned_nodes) {
+            if (__xb_scanned_nodes.has(c)) continue;
+          } else {
+            if (seenNodes.has(c)) continue;
+            seenNodes.add(c);
+          }
+          // Skip non-visible containers
+          if (!c.offsetParent && c.tagName.toLowerCase() !== 'body') continue;
+          // Skip if an ancestor is already a candidate (avoid nested dup)
+          var isNested = false;
+          for (var ck = 0; ck < candidates.length; ck++) {
+            if (candidates[ck].contains(c)) { isNested = true; break; }
+          }
+          if (isNested) continue;
+          // If this candidate contains existing ones, remove them
+          candidates = candidates.filter(function(p) { return !c.contains(p); });
+          candidates.push(c);
+        }
+      }
+
+      // Second pass: for each candidate, mark as scanned + extract triggers
+      for (var ck2 = 0; ck2 < candidates.length; ck2++) {
+        var c2 = candidates[ck2];
+        if (__xb_scanned_nodes) __xb_scanned_nodes.add(c2);
+
+        var containerSel = uniqueSelector(c2);
+        // If we already have this in discovered map (by selector), skip
+        if (__xb_discovered_filters[containerSel]) continue;
+
+        // Extract triggers: prefer leaf-ish elements with short text
+        var triggers = [];
+        var seenTrigSels = {};
+        // Use a single querySelectorAll with comma-joined selectors for speed
+        var allCandidates = c2.querySelectorAll(TRIGGER_SELECTORS.join(', '));
+        for (var ti = 0; ti < allCandidates.length; ti++) {
+          var el = allCandidates[ti];
+          if (!el.offsetParent) continue;
+          // Skip elements whose nearest ancestor in the container is also a
+          // candidate (would create nested triggers).
+          var skip = false;
+          var p = el.parentElement;
+          while (p && p !== c2) {
+            if (seenTrigSels[uniqueSelector(p)]) { skip = true; break; }
+            p = p.parentElement;
+          }
+          if (skip) continue;
+          var txt = (el.textContent || '').trim();
+          if (!txt || txt.length === 0 || txt.length > 40) continue;
+          // Skip if this looks like a full item card (long combined text)
+          if (el.children.length > 3) continue;
+          var sel = uniqueSelector(el);
+          if (seenTrigSels[sel]) continue;
+          seenTrigSels[sel] = true;
+          triggers.push(buildTrigger(el));
+          if (triggers.length >= 30) break;
+        }
+        if (triggers.length === 0) continue;
+
+        __xb_discovered_filters[containerSel] = {
+          containerSelector: containerSel,
+          category: categorizeElement(c2),
+          containerText: (c2.textContent || '').trim().substring(0, 60),
+          triggers: triggers,
+        };
+      }
+      // Third pass: dedup containers whose trigger set is a subset of another.
+      // This handles the case where two overlapping containers (e.g. outer
+      // ".filter-up-container" and inner ".filter-select-container") share
+      // triggers — keep the larger one, drop the redundant subset.
+      var newFilters = [];
+      var addedKeys = [];
+      for (var key in __xb_discovered_filters) {
+        var f = __xb_discovered_filters[key];
+        var isSubset = false;
+        for (var otherKey in __xb_discovered_filters) {
+          if (otherKey === key) continue;
+          var other = __xb_discovered_filters[otherKey];
+          if (f.triggers.length > other.triggers.length) continue;
+          // Check if every trigger in f is also in other (by selector)
+          var allInOther = true;
+          for (var ti2 = 0; ti2 < f.triggers.length; ti2++) {
+            var found = false;
+            for (var to2 = 0; to2 < other.triggers.length; to2++) {
+              if (other.triggers[to2].selector === f.triggers[ti2].selector) { found = true; break; }
+            }
+            if (!found) { allInOther = false; break; }
+          }
+          if (allInOther && f.triggers.length < other.triggers.length) {
+            isSubset = true;
+            break;
+          }
+          // Same size + same triggers — keep the one with a more "container-y" selector
+          if (allInOther && f.triggers.length === other.triggers.length && key > otherKey) {
+            isSubset = true;
+            break;
+          }
+        }
+        if (!isSubset) {
+          newFilters.push(f);
+          addedKeys.push(key);
+        }
+      }
+      // Rebuild the discovered map with deduped entries
+      __xb_discovered_filters = {};
+      for (var ni = 0; ni < newFilters.length; ni++) {
+        __xb_discovered_filters[addedKeys[ni]] = newFilters[ni];
+      }
+
+      // Push a discovered_filters action so the server picks it up.
+      __xb_pushDiscovered();
+    } catch(e) { /* scan failed, don't crash recorder */ }
+  }
+
+  /** Push current discovered_filters snapshot to pending actions (debounced). */
+  function __xb_pushDiscovered() {
+    if (__xb_scan_scheduled) return;
+    __xb_scan_scheduled = true;
+    setTimeout(function() {
+      __xb_scan_scheduled = false;
+      var list = Object.keys(__xb_discovered_filters).map(function(k) {
+        return __xb_discovered_filters[k];
+      });
+      window.__xb_pending_actions.push({
+        type: 'discovered_filters',
+        ts: Date.now(),
+        url: location.href,
+        title: document.title,
+        discoveredFilters: list,
+      });
+    }, 200);
+  }
+
+  /** Mark a trigger as user-interacted (called from click/hover handlers). */
+  function __xb_markTriggerInteracted(target) {
+    try {
+      var sel = uniqueSelector(target);
+      for (var k in __xb_discovered_filters) {
+        var f = __xb_discovered_filters[k];
+        for (var i = 0; i < f.triggers.length; i++) {
+          if (f.triggers[i].selector === sel) {
+            f.triggers[i].userInteracted = true;
+            // Schedule a push so server gets the updated state
+            __xb_pushDiscovered();
+            return;
+          }
+          // Also accept ancestor match (target may be a child of the trigger)
+          var triggerEl = document.querySelector(f.triggers[i].selector);
+          if (triggerEl && triggerEl.contains(target)) {
+            f.triggers[i].userInteracted = true;
+            __xb_pushDiscovered();
+            return;
+          }
+        }
+      }
+    } catch(e) {}
+  }
+
+  /** Expose scan + capture for server-side triggers (post-navigation, flush-time). */
+  window.__xb_scanFilters = __xb_scanFilters;
+  window.__xb_capture_discovered_filters = function() {
+    return Object.keys(__xb_discovered_filters).map(function(k) {
+      return __xb_discovered_filters[k];
+    });
+  };
+
+  /** Find the nearest trigger element for a popup (looking up the DOM). */
+  function findTriggerForPopup(popupEl) {
+    try {
+      // Walk up looking for known container types, then pick the trigger
+      // nearest to the popup's top.
+      var popupRect = popupEl.getBoundingClientRect();
+      var ancestor = popupEl;
+      for (var depth = 0; depth < 8 && ancestor; depth++) {
+        ancestor = ancestor.parentElement;
+        if (!ancestor) break;
+        var triggersInAncestor = ancestor.querySelectorAll(
+          '[role="tab"], [role="menuitem"], [role="option"], [role="button"], button, a, [class*="title"]'
+        );
+        // Pick the trigger whose x-center is closest to the popup's x-center
+        // and is above the popup.
+        var best = null, bestDist = Infinity;
+        for (var i = 0; i < triggersInAncestor.length; i++) {
+          var t = triggersInAncestor[i];
+          if (!t.offsetParent) continue;
+          var r = t.getBoundingClientRect();
+          if (r.y + r.height > popupRect.y + 5) continue;  // must be above popup
+          var dist = Math.abs((r.x + r.width / 2) - (popupRect.x + popupRect.width / 2));
+          if (dist < bestDist) {
+            bestDist = dist;
+            best = t;
+          }
+        }
+        if (best) {
+          // Mark the trigger as hasPopup in our discovered map
+          var bestSel = uniqueSelector(best);
+          for (var k in __xb_discovered_filters) {
+            var f = __xb_discovered_filters[k];
+            for (var j = 0; j < f.triggers.length; j++) {
+              if (f.triggers[j].selector === bestSel) {
+                f.triggers[j].hasPopup = true;
+              }
+            }
+          }
+          return {
+            selector: bestSel,
+            text: (best.textContent || '').trim().substring(0, 40),
+          };
+        }
+      }
+    } catch(e) {}
+    return undefined;
+  }
+
+  /** Extract popup items (reuses the same item-extraction logic as captureVisibleContext). */
+  function extractPopupItems(popupEl) {
+    var items = [];
+    try {
+      var children = popupEl.querySelectorAll(
+        'a,button,[role="menuitem"],[role="option"],[role="treeitem"],li,div[class*="item"],span[class*="item"]'
+      );
+      for (var k = 0; k < Math.min(children.length, 20); k++) {
+        var child = children[k];
+        var childText = (child.textContent || '').trim();
+        if (!childText || childText.length > 60) continue;
+        var info = { text: childText.substring(0, 60) };
+        if (child.disabled) info.disabled = true;
+        try { info.selector = uniqueSelector(child); } catch(e) {}
+        items.push(info);
+      }
+    } catch(e) {}
+    return items;
+  }
+
+  /** Check whether an element is currently visible (has layout box). */
+  function isVisibleEl(el) {
+    try {
+      var r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) return false;
+      var cs = window.getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
+      return true;
+    } catch(e) { return false; }
+  }
+
+  /** Push a 'popup_appear' sensing action. */
+  function __xb_pushPopupAppear(popupEl, cause) {
+    try {
+      if (!popupEl || !isVisibleEl(popupEl)) return;
+      var r = popupEl.getBoundingClientRect();
+      // Heuristic: a real popup/menu should be relatively small (not a full
+      // page banner) and have menu-like children. Page banners / hero sections
+      // often match [class*="popup"] / [class*="modal"] but aren't real menus.
+      var MAX_POPUP_AREA = 600 * 600;  // 360,000 px²
+      if (r.width * r.height > MAX_POPUP_AREA) return;
+      // Must have at least 1 child that looks like an item (link/button/li/div with class*="item")
+      var itemChildren = popupEl.querySelectorAll(
+        'a, button, [role="menuitem"], [role="option"], li, [class*="item"]'
+      );
+      if (itemChildren.length === 0) return;
+      // Dedup against recent popup_appear actions (same selector within 500ms)
+      var popupSel = uniqueSelector(popupEl);
+      var now = Date.now();
+      var recent = window.__xb_pending_actions.filter(function(a) {
+        return a.type === 'popup_appear' && (now - a.ts) < 500;
+      });
+      for (var i = 0; i < recent.length; i++) {
+        if (recent[i].popupAppear && recent[i].popupAppear.popup.selector === popupSel) return;
+      }
+
+      var triggerInfo = findTriggerForPopup(popupEl);
+      window.__xb_pending_actions.push({
+        type: 'popup_appear',
+        ts: now,
+        url: location.href,
+        title: document.title,
+        popupAppear: {
+          trigger: triggerInfo,
+          popup: {
+            selector: popupSel,
+            text: (popupEl.textContent || '').trim().substring(0, 100),
+            rect: {
+              x: Math.round(r.x), y: Math.round(r.y),
+              w: Math.round(r.width), h: Math.round(r.height),
+            },
+            items: extractPopupItems(popupEl),
+          },
+          cause: cause || 'auto',
+          userTriggered: cause === 'user-hover' || cause === 'user-click',
+        },
+      });
+      // Also schedule a discovered_filters push (hasPopup flags may have updated)
+      __xb_pushDiscovered();
+    } catch(e) {}
+  }
+
+  // Expose for the hover handler to call when it observes a popup (avoid double-record)
+  window.__xb_pushPopupAppear = __xb_pushPopupAppear;
+
+  // ── Layer 2: long-lived MutationObserver for popover visible transitions ──
+  var __xb_long_observer = null;
+  var __xb_observer_debounce = null;
+  // Set of selectors we've already recorded as popups (avoid re-pushing)
+  var __xb_seen_popups = {};
+
+  function __xb_startLongObserver() {
+    if (!('MutationObserver' in window)) return;
+    if (__xb_long_observer) __xb_long_observer.disconnect();
+
+    __xb_long_observer = new MutationObserver(function(mutations) {
+      // Debounce — collect then process once
+      if (__xb_observer_debounce) clearTimeout(__xb_observer_debounce);
+      __xb_observer_debounce = setTimeout(function() {
+        __xb_observer_debounce = null;
+        // Scan all known popover containers; any newly visible one → push
+        for (var i = 0; i < POPOVER_SELECTORS.length; i++) {
+          var els;
+          try { els = document.querySelectorAll(POPOVER_SELECTORS[i]); } catch(e) { continue; }
+          for (var j = 0; j < els.length; j++) {
+            var el = els[j];
+            var sel = uniqueSelector(el);
+            if (__xb_seen_popups[sel]) continue;
+            if (!isVisibleEl(el)) continue;
+            __xb_seen_popups[sel] = Date.now();
+            __xb_pushPopupAppear(el, 'auto');
+          }
+        }
+      }, 100);
+    });
+    try {
+      __xb_long_observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['class', 'style', 'hidden'],
+      });
+    } catch(e) {}
+  }
+
+  // Auto-cleanup seen_popups every 5s so transient popups can re-trigger
+  setInterval(function() {
+    var now = Date.now();
+    for (var k in __xb_seen_popups) {
+      if (now - __xb_seen_popups[k] > 5000) delete __xb_seen_popups[k];
+    }
+  }, 5000);
+
+  // ── Layer 3: mousemove throttled diff (senses triggers near cursor) ──
+  var __xb_last_scan_move = 0;
+  var __xb_move_stop_timer = null;
+  var __xb_last_pos = { x: 0, y: 0 };
+
+  document.addEventListener('mousemove', function(e) {
+    __xb_last_pos = { x: e.clientX, y: e.clientY };
+    var now = Date.now();
+    if (now - __xb_last_scan_move < 300) return;
+    __xb_last_scan_move = now;
+
+    // Reset the "stop" timer — when mouse stops moving for 800ms, we scan
+    if (__xb_move_stop_timer) clearTimeout(__xb_move_stop_timer);
+    __xb_move_stop_timer = setTimeout(function() {
+      __xb_move_stop_timer = null;
+      __xb_scanNearCursor(__xb_last_pos.x, __xb_last_pos.y, 'user-hover');
+    }, 800);
+  }, true);
+
+  /** Scan popups near the cursor; mark nearby triggers as explored. */
+  function __xb_scanNearCursor(cx, cy, cause) {
+    try {
+      // 1. Check for any visible popover near cursor
+      for (var i = 0; i < POPOVER_SELECTORS.length; i++) {
+        var els;
+        try { els = document.querySelectorAll(POPOVER_SELECTORS[i]); } catch(e) { continue; }
+        for (var j = 0; j < els.length; j++) {
+          var el = els[j];
+          if (!isVisibleEl(el)) continue;
+          var r = el.getBoundingClientRect();
+          // Near = within 400px of cursor
+          if (Math.abs((r.x + r.width / 2) - cx) > 400) continue;
+          if (Math.abs((r.y + r.height / 2) - cy) > 400) continue;
+          var sel = uniqueSelector(el);
+          var now = Date.now();
+          if (__xb_seen_popups[sel] && now - __xb_seen_popups[sel] < 2000) continue;
+          __xb_seen_popups[sel] = now;
+          __xb_pushPopupAppear(el, cause);
+        }
+      }
+
+      // 2. Mark nearby triggers as explored (mouse lingered without click)
+      var near = document.elementsFromPoint(cx, cy);
+      for (var k = 0; k < near.length && k < 5; k++) {
+        var t = near[k];
+        var tSel = uniqueSelector(t);
+        for (var fk in __xb_discovered_filters) {
+          var f = __xb_discovered_filters[fk];
+          for (var ti = 0; ti < f.triggers.length; ti++) {
+            if (f.triggers[ti].selector === tSel) {
+              f.triggers[ti].explored = true;
+            }
+          }
+        }
+      }
+      __xb_pushDiscovered();
+    } catch(e) {}
+  }
+
+  // ── Trigger initial baseline scan (after DOM is ready) ──
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    setTimeout(__xb_scanFilters, 500);
+    setTimeout(__xb_startLongObserver, 800);
+  } else {
+    window.addEventListener('DOMContentLoaded', function() {
+      setTimeout(__xb_scanFilters, 500);
+      setTimeout(__xb_startLongObserver, 800);
+    });
+  }
 })();
 `;
 
@@ -1207,6 +1717,9 @@ export class SessionRecorder {
   private network: NetworkEntry[] = [];
   private contextChanges: ContextChange[] = [];
   private checkpoints: CheckpointEntry[] = [];
+  /** Proactive baseline scan of filter/sort/tab/menu regions. Keyed by
+   * containerSelector so re-scans after navigation replace rather than dup. */
+  private discoveredFilters: Map<string, DiscoveredFilter> = new Map();
 
   private actionCounter = 0;
   private networkCounter = 0;
@@ -1620,6 +2133,22 @@ export class SessionRecorder {
       console.error(`[recorder] Checkpoint overlay injection failed (non-fatal): ${msg}`);
     }
 
+    // Trigger a proactive baseline scan now that the action script is in.
+    // The browser-side script also auto-runs on DOMContentLoaded, but this
+    // call covers the case where injection happened after DOM ready (very
+    // common with CDP attach to existing tabs).
+    if (success) {
+      try {
+        await page.evaluate(`(function() {
+          if (typeof window.__xb_scanFilters === 'function') {
+            setTimeout(window.__xb_scanFilters, 100);
+          }
+        })()`);
+      } catch {
+        // Non-critical — scan will run on next navigation anyway.
+      }
+    }
+
     // Inject into same-origin iframes — both existing and dynamically created ones
     try {
       await page.evaluate(`
@@ -1972,6 +2501,10 @@ export class SessionRecorder {
       files?: UserAction['files'];
       /** Browser-side hover enrichment (async-sampled popups). */
       hoverContext?: UserAction['hoverContext'];
+      /** For type='popup_appear' — proactive sensing payload. */
+      popupAppear?: UserAction['popupAppear'];
+      /** For type='discovered_filters' — proactive baseline scan. */
+      discoveredFilters?: DiscoveredFilter[];
     }
 
     let pending: PendingAction[] = [];
@@ -2054,11 +2587,64 @@ export class SessionRecorder {
           });
         }
         this.lastKnownUrl = currentUrl;
+        // SPA route change: trigger proactive baseline scan so the new page's
+        // filter/sort regions are discovered without user action.
+        try {
+          page.evaluate(`(function() {
+            if (typeof window.__xb_scanFilters === 'function') {
+              setTimeout(window.__xb_scanFilters, 500);
+            }
+          })()`).catch(() => {});
+        } catch { /* non-critical */ }
       }
     } catch { /* page may have closed */ }
 
     for (const raw of pending) {
       if (raw.ts <= this.lastActionTs) continue;
+
+      // ── Proactive sensing actions: handle separately, not as user actions ──
+      if (raw.type === 'discovered_filters') {
+        // Merge into this.discoveredFilters (keyed by containerSelector for dedup).
+        // Replaces any prior entry for the same container so re-scans update state.
+        if (Array.isArray(raw.discoveredFilters)) {
+          for (const f of raw.discoveredFilters) {
+            if (f && f.containerSelector) {
+              // Merge trigger-level updates: preserve userInteracted/explored
+              // flags from previous scans (the browser-side map is the source
+              // of truth, but if it reset we don't want to lose flags).
+              const existing = this.discoveredFilters.get(f.containerSelector);
+              if (existing) {
+                for (const newT of f.triggers) {
+                  const oldT = existing.triggers.find(t => t.selector === newT.selector);
+                  if (oldT) {
+                    newT.userInteracted = newT.userInteracted || oldT.userInteracted;
+                    newT.explored = newT.explored || oldT.explored;
+                    newT.hasPopup = newT.hasPopup || oldT.hasPopup;
+                  }
+                }
+              }
+              this.discoveredFilters.set(f.containerSelector, f);
+            }
+          }
+        }
+        continue;  // Don't add to actions stream
+      }
+
+      if (raw.type === 'popup_appear') {
+        // Push as a UserAction (with popupAppear payload) — keeps temporal
+        // ordering with user actions so AI can correlate popups with clicks.
+        this.actionCounter++;
+        this.actions.push({
+          id: this.actionCounter,
+          type: 'popup_appear',
+          timestamp: raw.ts,
+          url: raw.url || page.url(),
+          pageTitle: raw.title || '',
+          popupAppear: raw.popupAppear,
+        });
+        this.lastActionTs = raw.ts;
+        continue;
+      }
 
       // Dedup: check dedupMap for matching recent CDP command action
       const dedupFromSignal = this.dedupKey(raw.type, raw.element?.selector, raw.element?.tag, raw.value);
@@ -2428,6 +3014,7 @@ export class SessionRecorder {
       network: [...this.network],
       contextChanges: [...this.contextChanges],
       checkpoints: [...this.checkpoints],
+      discoveredFilters: [...this.discoveredFilters.values()],
     };
   }
 
