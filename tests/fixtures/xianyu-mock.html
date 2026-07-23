@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>iPhone_闲鱼</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    .page-banner { padding: 10px; background: #ffe; border-bottom: 1px solid #eeb; font-size: 12px; }
+    .search-bar { padding: 10px; border-bottom: 1px solid #eee; }
+    .search-bar input { width: 300px; padding: 6px; }
+    /* 筛选区 — 模拟闲鱼真实的 class 命名 */
+    .search-filter-up-container { display: flex; padding: 10px; gap: 16px; background: #f8f8f8; }
+    .search-filter-select-container { display: inline-flex; align-items: center; position: relative; cursor: pointer; }
+    .search-select-title-container { padding: 8px 12px; }
+    .search-select-title { font-size: 14px; }
+    .search-select-arrow { font-size: 10px; color: #999; }
+    .search-select-items-container {
+      display: none;  /* 默认隐藏 */
+      position: absolute; top: 40px; left: 0;
+      background: white; border: 1px solid #ddd;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      padding: 4px 0; min-width: 120px; z-index: 100;
+    }
+    .search-select-items-container.visible { display: block; }
+    .search-select-item { padding: 8px 16px; cursor: pointer; font-size: 14px; }
+    .search-select-item:hover { background: #f0f7ff; }
+
+    /* 复选框筛选 */
+    .search-filter-checkbox-container { display: flex; gap: 12px; padding: 10px; flex-wrap: wrap; }
+    .search-filter-checkbox-wrap { display: inline-flex; align-items: center; cursor: pointer; }
+    .checkbox-item { padding: 4px 10px; border: 1px solid #ddd; border-radius: 12px; font-size: 12px; }
+
+    /* 商品列表 */
+    .searchFeedList { padding: 10px; }
+    .feed-item { display: inline-block; width: 200px; margin: 8px; vertical-align: top; }
+    .feed-item a { text-decoration: none; color: inherit; display: block; border: 1px solid #eee; padding: 8px; }
+    .feed-item .title { font-size: 13px; height: 40px; overflow: hidden; }
+    .feed-item .price { color: #ff4400; font-weight: bold; }
+
+    /* 侧边栏 */
+    .sidebar-item-container { position: fixed; right: 20px; bottom: 100px; display: flex; flex-direction: column; gap: 8px; }
+    .sidebar-item-wrap { padding: 8px; background: white; border: 1px solid #eee; cursor: pointer; font-size: 12px; text-align: center; }
+
+    /* 顶部横幅 — 应该被 popup_appear 过滤掉（太大，无 menu items） */
+    .announcement-banner {
+      padding: 20px; background: linear-gradient(90deg, #ff8, #fcc);
+      font-size: 14px; text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <!-- 顶部横幅 — 不应被当 popover -->
+  <div class="announcement-banner popup-class">网页版发闲置功能又升级啦！综合排序等更多新功能</div>
+
+  <!-- 搜索框 -->
+  <div class="search-bar">
+    <input type="text" maxlength="100" value="iPhone" placeholder="搜索" />
+  </div>
+
+  <!-- 筛选区 - 综合/新发布/降价/价格（每个是 select-container，hover 显示 items-container） -->
+  <div class="search-filter-up-container">
+    <!-- 综合 -->
+    <div class="search-filter-select-container" data-filter="zonghe">
+      <div class="search-select-title-container">
+        <span class="search-select-title">综合</span>
+        <span class="search-select-arrow">▾</span>
+      </div>
+      <div class="search-select-items-container">
+        <div class="search-select-item">综合</div>
+        <div class="search-select-item">最近活跃</div>
+        <div class="search-select-item">距离最近</div>
+        <div class="search-select-item">信用排序</div>
+      </div>
+    </div>
+    <!-- 新发布 -->
+    <div class="search-filter-select-container" data-filter="xinfabu">
+      <div class="search-select-title-container">
+        <span class="search-select-title">新发布</span>
+        <span class="search-select-arrow">▾</span>
+      </div>
+      <div class="search-select-items-container">
+        <div class="search-select-item">最新</div>
+        <div class="search-select-item">1天内</div>
+        <div class="search-select-item">3天内</div>
+        <div class="search-select-item">7天内</div>
+        <div class="search-select-item">14天内</div>
+      </div>
+    </div>
+    <!-- 新降价 -->
+    <div class="search-filter-select-container" data-filter="xinjiangjia">
+      <div class="search-select-title-container">
+        <span class="search-select-title">新降价</span>
+      </div>
+    </div>
+    <!-- 价格 -->
+    <div class="search-filter-select-container" data-filter="jiage">
+      <div class="search-select-title-container">
+        <span class="search-select-title">价格</span>
+        <span class="search-select-arrow">▾</span>
+      </div>
+      <div class="search-select-items-container">
+        <div class="search-select-item">价格从低到高</div>
+        <div class="search-select-item">价格从高到低</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 复选框筛选区 -->
+  <div class="search-filter-checkbox-container">
+    <div class="search-filter-checkbox-wrap"><span class="checkbox-item">个人闲置</span></div>
+    <div class="search-filter-checkbox-wrap"><span class="checkbox-item">验货宝</span></div>
+    <div class="search-filter-checkbox-wrap"><span class="checkbox-item">验号担保</span></div>
+    <div class="search-filter-checkbox-wrap"><span class="checkbox-item">包邮</span></div>
+    <div class="search-filter-checkbox-wrap"><span class="checkbox-item">超赞鱼小铺</span></div>
+    <div class="search-filter-checkbox-wrap"><span class="checkbox-item">全新</span></div>
+    <div class="search-filter-checkbox-wrap"><span class="checkbox-item">严选</span></div>
+    <div class="search-filter-checkbox-wrap"><span class="checkbox-item">转卖</span></div>
+  </div>
+
+  <!-- 商品列表 -->
+  <div class="searchFeedList">
+    <div class="feed-item">
+      <a href="/item?id=1069367912345&categoryId=126862528">
+        <div class="title">D3级 iPhone 15 128GB 中国大陆版 蓝色 国行</div>
+        <div class="price">¥3699</div>
+      </a>
+    </div>
+    <div class="feed-item">
+      <a href="/item?id=1069367912346&categoryId=126862528">
+        <div class="title">苹果 iPhone 14 Pro 256G 暗紫色 国行无锁</div>
+        <div class="price">¥4299</div>
+      </a>
+    </div>
+  </div>
+
+  <!-- 侧边栏 -->
+  <div class="sidebar-item-container">
+    <div class="sidebar-item-wrap">发闲置</div>
+    <a href="/im" class="sidebar-item-wrap">消息</a>
+    <div class="sidebar-item-wrap">反馈</div>
+    <div class="sidebar-item-wrap">客服</div>
+    <div class="sidebar-item-wrap">回顶部</div>
+  </div>
+
+  <!-- 交互脚本：模拟 hover 显示弹窗 -->
+  <script>
+    document.querySelectorAll('.search-filter-select-container').forEach(function(container) {
+      var popup = container.querySelector('.search-select-items-container');
+      if (!popup) return;
+      container.addEventListener('mouseenter', function() {
+        popup.classList.add('visible');
+      });
+      container.addEventListener('mouseleave', function() {
+        popup.classList.remove('visible');
+      });
+    });
+  </script>
+</body>
+</html>
