@@ -277,6 +277,28 @@ export function createRPCHandler(): RPCHandler & {
     const cdp = params.cdpEndpoint as string;
     const url = params.url as string | undefined;
     let session;
+
+    // Reuse existing session with the same name — don't create a new page/tab.
+    // Each CLI command used to create a fresh session, which opened a new tab
+    // in the user's browser every time. Now we find and return the existing
+    // session so the same tab is reused across commands.
+    const existing = findSession(name);
+    if (existing) {
+      // Navigate to URL if provided (only if different from current)
+      if (url && existing.page.url() !== url) {
+        await existing.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+      }
+      saveSessionDiskMeta(name, {
+        id: existing.id,
+        name: existing.name,
+        url: existing.page.url(),
+        createdAt: existing.createdAt,
+        cdpEndpoint: existing.cdpEndpoint,
+      });
+      if (previewWS) previewWS.registerSession(existing.name, existing.page);
+      return existing.id;
+    }
+
     if (cdp) {
       const endpoint = await resolveCDPEndpoint(cdp);
       session = await createSession(name, url, { cdpEndpoint: endpoint });

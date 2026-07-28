@@ -1297,11 +1297,11 @@ const ACTION_SIGNAL_SCRIPT = `
         'a, button, [role="menuitem"], [role="option"], li, [class*="item"]'
       );
       if (itemChildren.length === 0) return;
-      // Dedup against recent popup_appear actions (same selector within 500ms)
+      // Dedup against recent popup_appear actions (same selector within 3s)
       var popupSel = uniqueSelector(popupEl);
       var now = Date.now();
       var recent = window.__xb_pending_actions.filter(function(a) {
-        return a.type === 'popup_appear' && (now - a.ts) < 500;
+        return a.type === 'popup_appear' && (now - a.ts) < 3000;
       });
       for (var i = 0; i < recent.length; i++) {
         if (recent[i].popupAppear && recent[i].popupAppear.popup.selector === popupSel) return;
@@ -1376,13 +1376,13 @@ const ACTION_SIGNAL_SCRIPT = `
     } catch(e) {}
   }
 
-  // Auto-cleanup seen_popups every 5s so transient popups can re-trigger
+  // Auto-cleanup seen_popups every 10s so transient popups can re-trigger
   setInterval(function() {
     var now = Date.now();
     for (var k in __xb_seen_popups) {
-      if (now - __xb_seen_popups[k] > 5000) delete __xb_seen_popups[k];
+      if (now - __xb_seen_popups[k] > 10000) delete __xb_seen_popups[k];
     }
-  }, 5000);
+  }, 10000);
 
   // ── Layer 3: mousemove throttled diff (senses triggers near cursor) ──
   var __xb_last_scan_move = 0;
@@ -1744,6 +1744,10 @@ export class SessionRecorder {
   private _isRecording = false;
   private streamMode: 'clean' | 'raw' = 'clean';
 
+  /** Snapshot throttle: prevents too many screenshots during rapid inputs.
+   *  Keyed by 'type|elementSelector', value = last snapshot timestamp. */
+  private snapshotThrottle = new Map<string, number>();
+
   /** Ambient action types: filtered out in clean mode */
   private static readonly AMBIENT_TYPES = new Set([
     'hover', 'focus', 'scroll', 'visibility', 'resize', 'clipboard', 'touch', 'contextmenu', 'drag',
@@ -1788,15 +1792,18 @@ export class SessionRecorder {
       element: action.element || (action.selector ? { tag: '', selector: action.selector, text: '' } : undefined),
       value: action.value,
     };
-    this.actions.push(actionToPush);
+	    this.actions.push(actionToPush);
 
-    // Capture element screenshot for key action types (non-critical)
-    actionToPush.elementScreenshot = await this.captureElementScreenshot(this.page, {
-      type: action.type,
-      element: actionToPush.element,
-    });
+	    // Capture element screenshot for key action types (non-critical)
+	    actionToPush.elementScreenshot = await this.captureElementScreenshot(this.page, {
+	      type: action.type,
+	      element: actionToPush.element,
+	    });
 
-    // Update lastActionTs and set dedup window (2s) for matching action signals
+	    // Capture auto-snapshot (viewport + accessibility tree) after key actions
+	    await this.captureAutoSnapshot(this.page, actionToPush, 'after').catch(() => {});
+
+	    // Update lastActionTs and set dedup window (2s) for matching action signals
     this.lastActionTs = ts;
     this.dedupMap.set(dedupFromAction, Date.now() + 2000);
     this.dedupActionCount++;
@@ -1853,6 +1860,11 @@ export class SessionRecorder {
   /** Directory for this session's recordings. */
   get recordingsDir(): string {
     return SessionRecorder.getRecordingsDir(this.sessionName);
+  }
+
+  /** Directory for auto-captured snapshots (PNG screenshots, stored in .tmp for easy cleanup). */
+  get snapshotsDir(): string {
+    return join(this.recordingsDir, '.tmp', 'snapshots');
   }
 
   static getRecordingsDir(sessionName: string): string {
@@ -2630,21 +2642,29 @@ export class SessionRecorder {
         continue;  // Don't add to actions stream
       }
 
-      if (raw.type === 'popup_appear') {
-        // Push as a UserAction (with popupAppear payload) — keeps temporal
-        // ordering with user actions so AI can correlate popups with clicks.
-        this.actionCounter++;
-        this.actions.push({
-          id: this.actionCounter,
-          type: 'popup_appear',
-          timestamp: raw.ts,
-          url: raw.url || page.url(),
-          pageTitle: raw.title || '',
-          popupAppear: raw.popupAppear,
-        });
-        this.lastActionTs = raw.ts;
-        continue;
-      }
+	      if (raw.type === 'popup_appear') {
+	        // Only keep user-triggered popups (hover/click), filter auto-detected
+	        if (!raw.popupAppear?.userTriggered) continue;
+
+	        // Push as a UserAction (with popupAppear payload) — keeps temporal
+	        // ordering with user actions so AI can correlate popups with clicks.
+	        this.actionCounter++;
+	        const pushed: UserAction = {
+	          id: this.actionCounter,
+	          type: 'popup_appear',
+	          timestamp: raw.ts,
+	          url: raw.url || page.url(),
+	          pageTitle: raw.title || '',
+	          popupAppear: raw.popupAppear,
+	        };
+	        this.actions.push(pushed);
+
+	        // Capture snapshot of the popup state
+	        await this.captureAutoSnapshot(page, pushed, 'after').catch(() => {});
+
+	        this.lastActionTs = raw.ts;
+	        continue;
+	      }
 
       // Dedup: check dedupMap for matching recent CDP command action
       const dedupFromSignal = this.dedupKey(raw.type, raw.element?.selector, raw.element?.tag, raw.value);
@@ -2655,15 +2675,29 @@ export class SessionRecorder {
         }
       }
 
-      // Denoise: filter ambient actions in clean mode.
-      // Hover is the exception: even in clean mode we keep it when it produced
-      // a hoverContext (i.e. a popup appeared). Those are meaningful and should
-      // not be dropped as ambient noise.
-      if (this.streamMode === 'clean'
-          && SessionRecorder.AMBIENT_TYPES.has(raw.type as string)
-          && !(raw.type === 'hover' && raw.hoverContext)) {
-        continue; // Skip ambient action
-      }
+	      // Denoise: filter ambient actions in clean mode.
+	      // - Hover: only keep if it triggered a substantial popup (has items)
+	      //   or the same element was clicked within 1.5s (handled below).
+	      // - Scroll: skip micro-scrolls (< 50px).
+	      if (this.streamMode === 'clean'
+	          && SessionRecorder.AMBIENT_TYPES.has(raw.type as string)) {
+	        if (raw.type === 'hover') {
+	          const hc = raw.hoverContext;
+	          if (!hc || hc.appeared.length === 0) continue;
+	          // Only keep hover if the popup has at least one interactive menu item
+	          // (dialog/menu with items → meaningful; tooltip without items → noise)
+	          const hasSubstantialPopup = hc.appeared.some(p => p.items && p.items.length > 0);
+	          if (!hasSubstantialPopup) continue;
+	        } else if (raw.type === 'scroll') {
+	          // Skip micro-scrolls (< 50px total distance)
+	          const dx = raw.scrollX || 0;
+	          const dy = raw.scrollY || 0;
+	          const dist = Math.sqrt(dx * dx + dy * dy);
+	          if (dist < 50) continue;
+	        } else {
+	          continue; // Other ambient types → skip
+	        }
+	      }
 
       this.actionCounter++;
 
@@ -2695,11 +2729,14 @@ export class SessionRecorder {
         files: raw.files,
       });
 
-      // Capture element screenshot for key action types (non-critical)
-      const pushed = this.actions[this.actions.length - 1];
-      pushed.elementScreenshot = await this.captureElementScreenshot(page, raw);
+	      // Capture element screenshot for key action types (non-critical)
+	      const pushed = this.actions[this.actions.length - 1];
+	      pushed.elementScreenshot = await this.captureElementScreenshot(page, raw);
 
-      this.lastActionTs = raw.ts;
+	      // Capture auto-snapshot (viewport + accessibility tree) after key actions
+	      await this.captureAutoSnapshot(page, pushed, 'after').catch(() => {});
+
+	      this.lastActionTs = raw.ts;
       // Set dedupMap entry for reverse dedup (action signal → CDP command dedup)
 	      const dedupKey = this.dedupKey(raw.type, raw.element?.selector, raw.element?.tag, raw.value);
 	      if (dedupKey) {
@@ -2777,6 +2814,95 @@ export class SessionRecorder {
       return buffer.toString('base64');
     } catch {
       return; // page may be closed — give up gracefully
+    }
+  }
+
+  /**
+   * Action types that trigger auto-snapshot capture.
+   * Hover is excluded — it's too noisy and rarely changes the page visually.
+   * Popup_appear captures the popup state (after only).
+   */
+  private static readonly SNAPSHOT_TYPES = new Set([
+    'click', 'dblclick', 'navigation', 'goto', 'submit',
+    'cdp-click', 'cdp-fill', 'input', 'change', 'filechooser',
+    'popup_appear',
+  ]);
+
+  /**
+   * Throttle key for snapshot capture to avoid too many during rapid inputs.
+   * Returns true if this action should be throttled (skip snapshot).
+   */
+  private isSnapshotThrottled(type: string, selector?: string): boolean {
+    // For input/change on the same element, throttle to 1 snapshot per 2 seconds
+    if (type === 'input' || type === 'change' || type === 'cdp-fill') {
+      const key = `${type}|${selector || ''}`;
+      const last = this.snapshotThrottle.get(key);
+      const now = Date.now();
+      if (last && now - last < 2000) return true;
+      this.snapshotThrottle.set(key, now);
+    }
+    return false;
+  }
+
+  /**
+   * Capture a viewport screenshot + compact accessibility tree for a key action.
+   * - PNG stored in .tmp/snapshots/ (temporary, easy to clean up)
+   * - aria tree stored inline as compact text on the action (searchable via grep)
+   *
+   * Non-blocking (errors silently caught). Throttled for rapid inputs.
+   */
+  private async captureAutoSnapshot(
+    page: Page,
+    action: UserAction,
+    suffix: 'after' | 'before' = 'after',
+  ): Promise<void> {
+    if (!SessionRecorder.SNAPSHOT_TYPES.has(action.type)) return;
+    if (this.isSnapshotThrottled(action.type, action.element?.selector)) return;
+
+    // Ensure .tmp/snapshots directory exists
+    const snapDir = this.snapshotsDir;
+    mkdirSync(snapDir, { recursive: true });
+
+    const stepId = String(action.id).padStart(3, '0');
+    const snapshot: NonNullable<UserAction['snapshots']> = {};
+
+    // Capture viewport screenshot (PNG → .tmp/snapshots/)
+    try {
+      const pngPath = join(snapDir, `step-${stepId}-${suffix}.png`);
+      const buffer = await page.screenshot({ type: 'png', timeout: 5000 });
+      writeFileSync(pngPath, buffer);
+      snapshot.png = `.tmp/snapshots/step-${stepId}-${suffix}.png`;
+    } catch {
+      // Non-critical
+    }
+
+    // Capture compact accessibility tree (inline text, no extra file)
+    try {
+      snapshot.aria = await page.evaluate<string>(`
+        (function() {
+          try {
+            var parts = [];
+            var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT, null, false);
+            var node;
+            while (node = walker.nextNode()) {
+              var tag = node.tagName.toLowerCase();
+              var role = node.getAttribute('role') || '';
+              var text = (node.textContent || '').trim().substring(0, 60);
+              var ariaLabel = node.getAttribute('aria-label') || '';
+              if (role || tag === 'button' || tag === 'a' || tag === 'input' || tag === 'select' || tag === 'textarea') {
+                parts.push((role || tag) + ': ' + (ariaLabel || text).substring(0, 40));
+              }
+            }
+            return parts.slice(0, 100).join(' | ');
+          } catch(e) { return ''; }
+        })()
+      `);
+    } catch {
+      // Non-critical
+    }
+
+    if (snapshot.png || snapshot.aria) {
+      action.snapshots = snapshot;
     }
   }
 
@@ -2995,12 +3121,20 @@ export class SessionRecorder {
         JSON.stringify(data, null, 2),
         'utf-8',
       );
+      // Append-only JSONL: one action per line, easy to grep / sed
+      const jsonlPath = join(this.recordingsDir, 'recording.jsonl');
+      const lines = data.actions.map(a => JSON.stringify(a)).join('\n') + '\n';
+      writeFileSync(jsonlPath, lines, 'utf-8');
     } catch { /* best effort */ }
   }
 
   private writeFinalOutput(data: RecordingData, summary: RecordingSummary): void {
     mkdirSync(this.recordingsDir, { recursive: true });
     writeFileSync(join(this.recordingsDir, 'recording.json'), JSON.stringify(data, null, 2), 'utf-8');
+    // Write final JSONL (one action per line)
+    const jsonlPath = join(this.recordingsDir, 'recording.jsonl');
+    const lines = data.actions.map(a => JSON.stringify(a)).join('\n') + '\n';
+    writeFileSync(jsonlPath, lines, 'utf-8');
     writeFileSync(join(this.recordingsDir, 'summary.json'), JSON.stringify(summary, null, 2), 'utf-8');
     writeFileSync(join(this.recordingsDir, 'summary.md'), this.buildMarkdownSummary(data, summary), 'utf-8');
   }

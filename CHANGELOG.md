@@ -1,5 +1,34 @@
 # Changelog
 
+## [1.9.9] - 2026-07-24
+
+### Added
+- **录制器自动快照**：关键动作（click / navigation / input / submit / popup_appear）后自动捕获 viewport 截图 + 紧凑 accessibility tree
+  - 截图存到 `.tmp/snapshots/step-N.png`（独立目录，`rm -rf .tmp/` 即可清理，不影响核心数据）
+  - accessibility tree 以文本字符串 inline 到 action 上（`snapshots.aria`），可 `grep` / `jq` 搜索
+  - 新增 `recording.jsonl` — 每行一个 action，便于流式搜索和按行清理
+  - 数据结构：`UserAction.snapshots = { png?: string; aria?: string }`
+- **`snapshotsDir` getter** — 统一管理 `.tmp/snapshots/` 路径
+
+### Changed
+- **录制器降噪**（用户反馈"hover 全是噪音"）：
+  - Hover 过滤增强：仅保留触发了**实质弹窗**（有菜单项）的 hover；tooltip 类小弹窗不再记录
+  - `popup_appear` 去重窗口 500ms → **3s**，且只保留 `userTriggered`（hover/click 触发），过滤掉 `auto` 检测的
+  - `__xb_seen_popups` 过期时间 5s → 10s，减少同弹窗重复触发
+  - 微调滚动过滤：`< 50px` 的滚动不再记录
+- **输出格式**：`recording.json` 之外新增 `recording.jsonl`（每行一个 action，便于流式搜索）
+
+### Fixed
+- **#daemon-kill-browser**：CDP 模式（连接外部浏览器）下，daemon 重启/进程退出不再误杀用户的浏览器进程
+  - `cdp-driver/browser.ts` 的 `close()` 现在根据 `childProcess` 区分：自启动 → 杀进程清理；外部 CDP → 仅断开 WebSocket
+  - `src/browser.ts` 的 `process.on('exit')` / `destroyBrowser` / `ensureProcessCanExit` 不再调用 `browser.close()`，只清理引用
+  - CDP 模式 `closeSessionByName` / `closeAllSessions` 不关用户页面，仅断开连接
+- **#session-new-tab**：每次 CLI 命令不再新开浏览器 tab
+  - `rpc-handlers.ts` 的 `handleSessionCreate` 优先复用同名 session（不再无条件 `createSession`）
+- **#anti-bot-false-positive**：验证码检测误判 — 页面上隐藏的（off-screen / display:none）captcha 容器不再被误判为"检测到验证码"并阻止 click
+  - `lib/anti-bot.ts` 现在检查 `isVisible()` + off-screen 位置（`y < -1000` 或 `x < -1000`）才报告检测到验证码
+  - 修复了腾讯防水墙（tencent-captcha-dy）等"DOM 常驻但隐藏"型验证码容器的误判
+
 ## [1.9.8] - 2026-07-07
 
 ### Fixed

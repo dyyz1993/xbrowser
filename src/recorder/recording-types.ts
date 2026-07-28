@@ -141,6 +141,18 @@ export interface UserAction {
   /** Base64-encoded PNG screenshot of the target element (captured on key actions) */
   elementScreenshot?: string;
 
+  /**
+   * Auto-captured snapshot for this action (key types only).
+   * PNG stored in .tmp/snapshots/ (easy to clean up);
+   * aria tree stored inline as compact text (searchable via grep).
+   */
+  snapshots?: {
+    /** Viewport screenshot path (relative, under .tmp/snapshots/) */
+    png?: string;
+    /** Compact accessibility tree text (inline, grep-able) */
+    aria?: string;
+  };
+
   /** For type='popup_appear' — proactive sensing of a popover/dropdown/menu
    * becoming visible (whether triggered by user hover/click, or auto-shown). */
   popupAppear?: {

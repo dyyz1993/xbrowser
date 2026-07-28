@@ -167,6 +167,19 @@ async function detectCaptcha(page: Page): Promise<DetectionResult> {
     for (const selector of captchaSelectors) {
       const element = await page.$(selector).catch(() => null);
       if (element) {
+        // Must verify visibility — many sites keep CAPTCHA containers in the
+        // DOM but hidden off-screen (e.g. position:absolute; top:-1000000px)
+        // until the user actually triggers a challenge. Without this check,
+        // every click on such a page would be falsely blocked.
+        const visible = await element.isVisible().catch(() => false);
+        if (!visible) continue;
+        // Additionally, reject elements that have been moved far off-screen
+        // (some sites hide via transform/position rather than display:none).
+        try {
+          const box = await element.boundingBox();
+          if (box && (box.y < -1000 || box.x < -1000)) continue;
+        } catch { /* ignore bounding box errors */ }
+
         return {
           detected: true,
           type: 'captcha',
