@@ -190,7 +190,7 @@ export async function executeCommand(
   commandName: string,
   params: Record<string, unknown>,
   sessionName: string = 'default',
-  extraOpts?: { cdpEndpoint?: string; skipCleanup?: boolean; timeout?: number }
+  extraOpts?: { cdpEndpoint?: string; skipCleanup?: boolean; timeout?: number; _recoveryAttempted?: boolean }
 ): Promise<ExecutionResult> {
   const guardResult = await guardCheck(commandName);
   if (guardResult?.blocked) {
@@ -480,6 +480,33 @@ export async function executeCommand(
     const end = Date.now();
     const duration = end - start;
     const errorMessage = errMsg(err);
+
+    // Attempt recovery if enabled (XBROWSER_RECOVERY=true).
+    // Guard against infinite recursion: only attempt recovery once per
+    // original invocation. The retried command carries _recoveryAttempted=true
+    // so a second failure short-circuits to the normal error path.
+    if (session?.page && process.env.XBROWSER_RECOVERY && !extraOpts?._recoveryAttempted) {
+      try {
+        const { attemptRecovery } = await import('./recovery.js');
+        const recovery = await attemptRecovery(
+          session.page,
+          sessionName,
+          commandName,
+          errorMessage,
+        );
+        if (recovery.recovered) {
+          // User fixed the issue — retry the whole command exactly once
+          const retry = await executeCommand(commandName, params, sessionName, {
+            ...extraOpts,
+            skipCleanup: true,
+            _recoveryAttempted: true,
+          });
+          return retry;
+        }
+      } catch {
+        // Recovery failed — fall through to normal error
+      }
+    }
 
     if (session) {
       streamCommandEvent(session.id, {
