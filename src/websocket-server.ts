@@ -31,6 +31,8 @@ export type WSMessage =
   | { type: 'file_list_result'; path: string; files: Array<{ name: string; isDir: boolean; size: number; modified: string }>; error?: string }
   | { type: 'file_download_result'; fileName: string; mimeType: string; data: string; error?: string }
   | { type: 'views_update'; views: ViewInfo[] }
+  | { type: 'health_pong'; ts: number }
+  | { type: 'snapshot_result'; data: { data: string; format: string } | null; error?: string }
   | { type: 'error'; data: { code: string; message: string; availableSessions?: string[] } };
 
 export interface ViewInfo {

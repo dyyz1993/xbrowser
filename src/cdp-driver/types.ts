@@ -316,7 +316,7 @@ export interface XBFillOptions {
 }
 
 export interface XBScreenshotOptions {
-  type?: 'png' | 'jpeg';
+  type?: 'png' | 'jpeg' | 'webp';
   quality?: number;
   fullPage?: boolean;
   clip?: { x: number; y: number; width: number; height: number };

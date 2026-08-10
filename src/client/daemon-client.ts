@@ -155,6 +155,22 @@ export async function forwardExec(
   }
 }
 
+export async function forwardPluginExec(
+  command: string,
+  params: Record<string, unknown>,
+  session: string = 'default',
+  cdpEndpoint?: string,
+  timeoutMs: number = 120000,
+): Promise<ExecutionResult> {
+  const rpcParams: Record<string, unknown> = { command, params, session };
+  if (cdpEndpoint) rpcParams.cdpEndpoint = cdpEndpoint;
+  try {
+    return await rpcCall<ExecutionResult>('plugin:exec', rpcParams, timeoutMs);
+  } catch (e) {
+    return { success: false, data: null, message: errMsg(e), duration: 0 };
+  }
+}
+
 export async function forwardChain(
   input: string,
   session: string = 'default',
