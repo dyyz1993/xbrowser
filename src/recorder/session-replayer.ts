@@ -125,6 +125,12 @@ export class SessionReplayer {
     const timeout = this.opts.stepTimeout;
 
     switch (action.type) {
+      // Proactive sensing actions are observations, not user actions — skip
+      // them during replay (they don't represent anything the user did).
+      case 'popup_appear':
+      case 'discovered_filters':
+        return;
+
       case 'navigation':
         // X3: waitUntil: 'load' ensures the page is fully loaded
         // before subsequent actions try to interact with elements.
@@ -215,7 +221,24 @@ export class SessionReplayer {
 
       case 'hover': {
         const selector = await this.resolveAndWait(action);
-        await page.hover(selector);
+        if (selector) {
+          await page.hover(selector);
+        }
+        // If the recording captured popups that appeared after this hover,
+        // wait briefly for the first one to become visible so a subsequent
+        // click on an item inside it can resolve reliably.
+        const firstPopup = action.hoverContext?.appeared?.[0];
+        if (firstPopup?.selector) {
+          try {
+            await page.waitForSelector(firstPopup.selector, {
+              state: 'visible',
+              timeout: 1000,
+            });
+          } catch {
+            // Popup may legitimately not reappear (e.g. timing differs on replay);
+            // fall through and let the next action attempt its own resolution.
+          }
+        }
         break;
       }
 
@@ -352,7 +375,9 @@ export class SessionReplayer {
    * Returns the first matching selector, or throws if none match.
    * Fallback order:
    *   1. Primary CSS selector (always tried first)
-   *   2. textFallback selector (for low-confidence selectors when primary fails)
+   *   2. textFallback selector (used when primary fails — not just for low
+   *      confidence, since high-confidence selectors from dynamic attributes
+   *      like data-spm-anchor-id can also fail on replay)
    *   3. Tag-based fallback (last resort)
    */
   private async resolveAndWait(action: UserAction): Promise<string> {
@@ -365,11 +390,10 @@ export class SessionReplayer {
     // Build ordered candidate list
     const candidates: string[] = [];
     if (el.selector) candidates.push(el.selector);
-    // For low-confidence selectors, fall back to textFallback
-    if (el.confidence === 'low' && el.textFallback?.selector) {
-      if (!candidates.includes(el.textFallback.selector)) {
-        candidates.push(el.textFallback.selector);
-      }
+    // Fall back to textFallback whenever primary may fail (low confidence OR
+    // dynamic attribute source) — replay will try each in order.
+    if (el.textFallback?.selector && !candidates.includes(el.textFallback.selector)) {
+      candidates.push(el.textFallback.selector);
     }
     if (el.tag && !candidates.includes(el.tag)) {
       candidates.push(el.tag);

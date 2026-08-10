@@ -16,6 +16,10 @@ function createMockPage(evaluateResult: unknown = []) {
     goto: vi.fn(() => Promise.resolve()),
     waitForTimeout: vi.fn(() => Promise.resolve()),
     waitForLoadState: vi.fn(() => Promise.resolve()),
+    // Source handlers call page.waitForFunction(...) before evaluate; resolve it
+    // so the success path is taken. `.catch(() => {})` in source makes this safe.
+    waitForFunction: vi.fn(() => Promise.resolve()),
+    // evaluate may be called with (fn, arg) or (fn); return the fixture either way.
     evaluate: vi.fn(() => Promise.resolve(evaluateResult)),
     locator: vi.fn(() => ({
       first: vi.fn(() => ({
@@ -60,8 +64,8 @@ describe('bilibili plugin', () => {
     expect(mockXCLI.createSite).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://www.bilibili.com' }));
   });
 
-  it('should create site with requiresLogin true', () => {
-    expect(mockXCLI.createSite).toHaveBeenCalledWith(expect.objectContaining({ requiresLogin: true }));
+  it('should create site with requiresLogin false (search works without login)', () => {
+    expect(mockXCLI.createSite).toHaveBeenCalledWith(expect.objectContaining({ requiresLogin: false }));
   });
 
   it('should register 5 commands', () => {

@@ -101,8 +101,8 @@ async function submitMessage(page: Page): Promise<{ found: boolean; clicked: boo
 }
 
 async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
-  const currentUrl = page.url();
-  if (!currentUrl.startsWith(DB_URL)) {
+  const currentUrl: string | undefined = page.url();
+  if (!currentUrl?.startsWith(DB_URL)) {
     await page.goto(DB_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(2000);
   }
@@ -616,6 +616,7 @@ export default function (xcli: XCLIAPI): void {
         const page = ctx.page;
         if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
+        const tips = buildTips(ctx);
         try {
           await page.goto('https://www.doubao.com/chat/create-image', { waitUntil: 'domcontentloaded', timeout: 30000 });
         } catch (e: unknown) {
@@ -648,7 +649,6 @@ export default function (xcli: XCLIAPI): void {
         }).catch(() => {});
         await page.waitForTimeout(2000);
         await page.waitForSelector('[role="textbox"], [contenteditable="true"], textarea', { timeout: 15000 }).catch(() => {});
-        const tips = buildTips(ctx);
 
         if (params.ref) {
           const absPath = path.resolve(params.ref);

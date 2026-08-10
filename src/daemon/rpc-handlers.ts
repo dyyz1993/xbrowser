@@ -35,17 +35,28 @@ import type { RecordingSummary, CheckpointEntry, UserAction } from '../recorder/
 import { PlaybackEngine } from '../recorder/player.js';
 import type { PlaybackResult } from '../recorder/player.js';
 import { resolveCDPEndpoint } from '../utils/cdp.js';
+import { getPluginStorage } from '../executor.js';
+import { attachDetectAntiBot } from '../context.js';
+import { checkPluginLoginRequired } from '../plugin/login-guard.js';
+import { TipCollector } from '@dyyz1993/xcli-core';
+import { getPluginLoader as getPluginLoaderSingleton } from '../utils/plugin-singleton.js';
 
 const activeRecorders = new Map<string, SessionRecorder>();
 const replayResumeResolvers = new Map<string, () => void>();
 
-export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) => void } {
+export function createRPCHandler(): RPCHandler & {
+  setPreviewWS: (ws: WSServer) => void;
+  handleReconnect: (sessionId: string) => Promise<void>;
+} {
   let previewWS: WSServer | null = null;
   const INTERACTION_COMMANDS = new Set([
     'click', 'fill', 'type', 'press', 'select', 'check', 'hover', 'dblclick', 'scroll',
   ]);
 
-  const handler: RPCHandler & { setPreviewWS: (ws: WSServer) => void } = Object.assign(
+  const handler: RPCHandler & {
+    setPreviewWS: (ws: WSServer) => void;
+    handleReconnect: (sessionId: string) => Promise<void>;
+  } = Object.assign(
     async (method: string, params: Record<string, unknown>): Promise<unknown> => {
       switch (method) {
         // ── Session management ──
@@ -59,6 +70,8 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
         // ── Command execution ──
         case 'exec':
           return handleExec(params);
+        case 'plugin:exec':
+          return handlePluginExec(params);
         case 'chain':
           return handleChain(params);
         case 'agent:observe':
@@ -134,10 +147,120 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
       setPreviewWS(ws: WSServer) {
         previewWS = ws;
       },
+      async handleReconnect(sessionId: string) {
+        if (previewWS) {
+          await previewWS.reconnectSession(sessionId);
+        }
+      },
     },
   );
 
   return handler;
+
+  async function handlePluginExec(params: Record<string, unknown>) {
+    // params.command = "devto.draft" (site.command format)
+    const command = params.command as string;
+    const cmdParams = (params.params || {}) as Record<string, unknown>;
+    const sessionName = (params.session as string) || 'default';
+    const cdp = params.cdpEndpoint as string | undefined;
+
+    // Split "devto.draft" → plugin name "devto", sub-command "draft"
+    const dotIdx = command.indexOf('.');
+    if (dotIdx < 0) {
+      return { success: false, data: null, message: `Invalid plugin command format: ${command}` };
+    }
+    const pluginName = command.substring(0, dotIdx);
+    const subCommand = command.substring(dotIdx + 1);
+
+    // Find plugin and command
+    const loader = await getPluginLoaderSingleton();
+    const site = loader.getCore().loader.getSite(pluginName);
+    if (!site) {
+      return { success: false, data: null, message: `Plugin "${pluginName}" not found` };
+    }
+    const cmdEntry = site.getCommand(subCommand);
+    if (!cmdEntry) {
+      return { success: false, data: null, message: `Unknown command "${subCommand}" for plugin "${pluginName}"` };
+    }
+
+    const needsBrowser = cmdEntry.scope === 'page' || cmdEntry.scope === 'browser';
+
+    // Find or create session in the daemon (same as built-in commands)
+    let session: import('../browser.js').ManagedSession | undefined;
+    if (needsBrowser) {
+      session = findSession(sessionName);
+      if (!session) {
+        let endpoint: string | undefined;
+        if (cdp) {
+          try { endpoint = await resolveCDPEndpoint(cdp); } catch { endpoint = cdp; }
+        } else {
+          try { endpoint = await resolveCDPEndpoint('auto'); } catch { endpoint = undefined; }
+        }
+        session = await createSession(sessionName, undefined, endpoint ? { cdpEndpoint: endpoint } : {});
+        console.log(`[PLUGIN] Created session "${sessionName}" for plugin "${pluginName}.${subCommand}"`);
+      }
+    }
+
+    // Build plugin context (mirrors router.ts plugin context construction)
+    const ctx = {
+      args: [],
+      options: {},
+      cwd: process.cwd(),
+      page: needsBrowser ? session!.page : null,
+      browser: needsBrowser ? session!.context.browser()! : null,
+      browserContext: needsBrowser ? session!.context : null,
+      sessionId: needsBrowser ? session!.id : '',
+      cdpEndpoint: cdp || (needsBrowser ? session?.cdpEndpoint : undefined),
+      storage: getPluginStorage(pluginName),
+      output: { mode: 'text' as const, showTips: true, color: true, emoji: true },
+      error: (msg: string) => { throw new Error(msg); },
+      config: {},
+      site,
+      cliName: 'xbrowser',
+      waitForHuman: async () => { return { solved: false, timedOut: true }; },
+      tips: new TipCollector(),
+    };
+
+    attachDetectAntiBot(ctx);
+
+    // Check login requirement
+    const loginGuard = await checkPluginLoginRequired({
+      site,
+      command: cmdEntry,
+      commandName: subCommand,
+      ctx,
+      page: needsBrowser ? session?.page : null,
+      sessionName,
+    });
+    if (!loginGuard.ok) {
+      return { success: false, data: loginGuard.data ?? null, message: loginGuard.message };
+    }
+
+    // Execute plugin handler
+    try {
+      const result = await cmdEntry.handler(cmdParams, ctx);
+      return result;
+    } catch (err) {
+      const errorMessage = errMsg(err);
+      const { attemptRecovery } = await import('../recovery.js');
+      const recovery = await attemptRecovery(
+        session?.page,
+        sessionName,
+        `${pluginName}.${subCommand}`,
+        errorMessage,
+        previewWS,
+      );
+      if (recovery.recovered) {
+        try {
+          const retryResult = await cmdEntry.handler(cmdParams, ctx);
+          return retryResult;
+        } catch (retryErr) {
+          return { success: false, data: null, message: `Retry failed: ${errMsg(retryErr)}` };
+        }
+      }
+      return { success: false, data: null, message: errorMessage };
+    }
+  }
 
   // ─── Handler implementations ─────────────────────────────────
 
@@ -154,6 +277,28 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
     const cdp = params.cdpEndpoint as string;
     const url = params.url as string | undefined;
     let session;
+
+    // Reuse existing session with the same name — don't create a new page/tab.
+    // Each CLI command used to create a fresh session, which opened a new tab
+    // in the user's browser every time. Now we find and return the existing
+    // session so the same tab is reused across commands.
+    const existing = findSession(name);
+    if (existing) {
+      // Navigate to URL if provided (only if different from current)
+      if (url && existing.page.url() !== url) {
+        await existing.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+      }
+      saveSessionDiskMeta(name, {
+        id: existing.id,
+        name: existing.name,
+        url: existing.page.url(),
+        createdAt: existing.createdAt,
+        cdpEndpoint: existing.cdpEndpoint,
+      });
+      if (previewWS) previewWS.registerSession(existing.name, existing.page);
+      return existing.id;
+    }
+
     if (cdp) {
       const endpoint = await resolveCDPEndpoint(cdp);
       session = await createSession(name, url, { cdpEndpoint: endpoint });
@@ -511,7 +656,34 @@ export function createRPCHandler(): RPCHandler & { setPreviewWS: (ws: WSServer) 
 
     try {
       const recorder = new SessionRecorder(session.context, session.page, sessionName);
+      // If the caller explicitly passed --url, navigate to it FIRST. This
+      // ensures the recorded page is in the expected state (e.g. fresh
+      // search results) rather than whatever the existing tab happens to
+      // show — otherwise recording silently captures the wrong tab.
+      if (url) {
+        try {
+          await session.page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        } catch {
+          // Navigation may fail for legit reasons (e.g. cross-origin redirect);
+          // continue anyway — injection will still happen.
+        }
+        // Give the page a moment to settle before injecting the recorder
+        // script, otherwise the SPA may not have rendered the target UI.
+        await new Promise(r => setTimeout(r, 1500));
+      }
       await recorder.start(url, { stream: stream as 'clean' | 'raw' });
+      // Surface injection failure as a hard error — otherwise the user sees
+      // "Recording started" while no actions are actually being captured,
+      // which is the worst kind of silent failure.
+      if (recorder.injectionFailed) {
+        await recorder.stop();
+        activeRecorders.delete(sessionName);
+        return {
+          ok: false,
+          error: 'Action signal script injection failed — user actions will NOT be recorded. This usually means the page sandbox blocked Runtime.evaluate, or the injected script has a syntax error. Check the daemon log for details.',
+          hint: 'Try: 1) reload the target page in Chrome, 2) restart daemon, 3) check daemon log for the specific error.',
+        };
+      }
       activeRecorders.set(sessionName, recorder);
       return { ok: true, session: sessionName, startUrl: url || session.page.url() };
     } catch (e) {

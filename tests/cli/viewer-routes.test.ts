@@ -51,8 +51,8 @@ describe('viewer-routes', () => {
     );
   });
 
-  it('should generate viewer URL with custom name', async () => {
-    await handleViewer([], { name: 'baidu' }, 'json');
+  it('should generate viewer URL with custom session name', async () => {
+    await handleViewer([], { session: 'baidu' }, 'json');
     expect(mockOutputResult).toHaveBeenCalledWith(
       expect.objectContaining({ url: 'http://localhost:9224/preview/baidu', name: 'baidu' }),
       'json',
@@ -69,9 +69,9 @@ describe('viewer-routes', () => {
     delete process.env.XBROWSER_SESSION;
   });
 
-  it('should prefer --name over XBROWSER_SESSION', async () => {
+  it('should prefer --session over XBROWSER_SESSION', async () => {
     process.env.XBROWSER_SESSION = 'env-session';
-    await handleViewer([], { name: 'flag-session' }, 'json');
+    await handleViewer([], { session: 'flag-session' }, 'json');
     expect(mockOutputResult).toHaveBeenCalledWith(
       expect.objectContaining({ url: 'http://localhost:9224/preview/flag-session', name: 'flag-session' }),
       'json',
@@ -92,7 +92,7 @@ describe('viewer-routes', () => {
   it('should append #focus= selector when element exists via RPC', async () => {
     mockForwardViewerCheckSelector.mockResolvedValue({ found: true, box: { x: 10, y: 20, width: 300, height: 200 } });
 
-    await handleViewer([], { name: 'baidu', selector: '#captcha' }, 'json');
+    await handleViewer([], { session: 'baidu', selector: '#captcha' }, 'json');
     expect(mockForwardViewerCheckSelector).toHaveBeenCalledWith('baidu', '#captcha');
     expect(mockOutputResult).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -107,7 +107,7 @@ describe('viewer-routes', () => {
   it('should not append hash when element not found via RPC', async () => {
     mockForwardViewerCheckSelector.mockResolvedValue({ found: false });
 
-    await handleViewer([], { name: 'baidu', selector: '#not-exist' }, 'json');
+    await handleViewer([], { session: 'baidu', selector: '#not-exist' }, 'json');
     expect(mockOutputResult).toHaveBeenCalledWith(
       expect.objectContaining({
         url: 'http://localhost:9224/preview/baidu',
@@ -120,7 +120,7 @@ describe('viewer-routes', () => {
   it('should fallback to full view when RPC throws', async () => {
     mockForwardViewerCheckSelector.mockRejectedValue(new Error('daemon error'));
 
-    await handleViewer([], { name: 'baidu', selector: '#something' }, 'json');
+    await handleViewer([], { session: 'baidu', selector: '#something' }, 'json');
     expect(mockOutputResult).toHaveBeenCalledWith(
       expect.objectContaining({
         url: 'http://localhost:9224/preview/baidu',
@@ -133,7 +133,7 @@ describe('viewer-routes', () => {
   it('should fallback to full view when found but no bounding box', async () => {
     mockForwardViewerCheckSelector.mockResolvedValue({ found: true, box: { x: 0, y: 0, width: 0, height: 0 } });
 
-    await handleViewer([], { name: 'baidu', selector: '#hidden' }, 'json');
+    await handleViewer([], { session: 'baidu', selector: '#hidden' }, 'json');
     expect(mockOutputResult).toHaveBeenCalledWith(
       expect.objectContaining({
         url: 'http://localhost:9224/preview/baidu#focus=%23hidden',
@@ -146,7 +146,7 @@ describe('viewer-routes', () => {
 
   it('should use daemon port from status', async () => {
     mockGetDaemonProcessStatus.mockReturnValue({ running: true, pid: 456, port: 8080, info: null });
-    await handleViewer([], { name: 'test' }, 'json');
+    await handleViewer([], { session: 'test' }, 'json');
     expect(mockOutputResult).toHaveBeenCalledWith(
       expect.objectContaining({ url: 'http://localhost:8080/preview/test' }),
       'json',

@@ -31,6 +31,8 @@ export type WSMessage =
   | { type: 'file_list_result'; path: string; files: Array<{ name: string; isDir: boolean; size: number; modified: string }>; error?: string }
   | { type: 'file_download_result'; fileName: string; mimeType: string; data: string; error?: string }
   | { type: 'views_update'; views: ViewInfo[] }
+  | { type: 'health_pong'; ts: number }
+  | { type: 'snapshot_result'; data: { data: string; format: string } | null; error?: string }
   | { type: 'error'; data: { code: string; message: string; availableSessions?: string[] } };
 
 export interface ViewInfo {
@@ -48,6 +50,9 @@ export type WSInboundMessage =
   | { type: 'keypress'; key: string }
   | { type: 'scroll'; deltaX: number; deltaY: number }
   | { type: 'solved' }
+  | { type: 'reconnect' }
+  | { type: 'health_ping'; ts: number }
+  | { type: 'snapshot_request'; format?: string; quality?: number }
   | { type: 'bind'; sessionId: string }
   | { type: 'input_mouse'; action: 'move' | 'down' | 'up' | 'click'; x: number; y: number; button?: 'left' | 'middle' | 'right' }
   | { type: 'input_keyboard'; action: 'down' | 'up'; key: string; modifiers?: number }
@@ -177,6 +182,15 @@ export class WSServer extends EventEmitter {
     this.sessionManager.registerSession(sessionId, page, options);
   }
 
+  /** Restart screencast for a session — used by viewer reconnect button. */
+  async reconnectSession(sessionId: string): Promise<void> {
+    try {
+      await this.sessionManager.stopCapturer(sessionId);
+      await new Promise(r => setTimeout(r, 500));
+      await this.sessionManager.startCapturer(sessionId);
+    } catch { /* best effort */ }
+  }
+
   unregisterSession(sessionId: string): void {
     this.sessionManager.unregisterSession(sessionId);
   }
@@ -204,8 +218,10 @@ export class WSServer extends EventEmitter {
     }
     this.sessionManager.incrementClientCount(sessionId);
 
-    // Replay last frame for newly connected client
-    if (this.streamCoordinator.getLastFrameViewport() && this.sessionManager.isCapturerActive(sessionId)) {
+    // Replay last frame for newly connected client — even if screencast is
+    // still starting up, the cached frame from the previous connection gives
+    // the viewer something to render immediately.
+    if (this.streamCoordinator.getLastFrameViewport()) {
       this.streamCoordinator.replayLastFrame(sessionId).catch(() => {});
     }
   }
@@ -215,7 +231,9 @@ export class WSServer extends EventEmitter {
     if (count === 0 && this.sessionManager.isCapturerActive(sessionId)) {
       this.sessionManager.stopCapturer(sessionId).then(() => {
         this.streamCoordinator.resetFrameRate();
-        this.streamCoordinator.clearLastFrame();
+        // Keep lastFrame cached so a quick viewer reconnect (e.g. page refresh)
+        // can replay it immediately instead of showing a blank screen.
+        // The frame is cleared on full session teardown, not on client disconnect.
         this.emit('screencast-stopped', sessionId);
       }).catch(() => {
         this.emit('screencast-stopped', sessionId);
@@ -430,6 +448,39 @@ export class WSServer extends EventEmitter {
     // 'solved' is special — emits on WSServer itself
     if (msg.type === 'solved') {
       this.emit('human-solved', { sessionId: sessionId ?? null, clientId });
+      return;
+    }
+
+    // 'reconnect' — viewer requests CDP session reconnection
+    if (msg.type === 'reconnect') {
+      this.emit('reconnect-request', { sessionId: sessionId ?? null, clientId });
+      return;
+    }
+
+    // 'health_ping' — viewer health check, reply with pong
+    if (msg.type === 'health_ping') {
+      this.sendToClient(clientId, { type: 'health_pong', ts: msg.ts });
+      return;
+    }
+
+    // 'snapshot_request' — viewer requests a high-quality screenshot
+    if (msg.type === 'snapshot_request') {
+      const page = sessionId ? this.sessionManager.getPageForSession(sessionId) : undefined;
+      if (!page) {
+        this.sendToClient(clientId, { type: 'snapshot_result', data: null, error: 'no page' });
+        return;
+      }
+      const fmt = (msg.format === 'webp') ? 'webp' : 'png';
+      page.screenshot({ type: fmt, quality: fmt === 'webp' ? (msg.quality ?? 90) : undefined })
+        .then((buf: Buffer) => {
+          this.sendToClient(clientId, {
+            type: 'snapshot_result',
+            data: { data: buf.toString('base64'), format: fmt },
+          });
+        })
+        .catch(() => {
+          this.sendToClient(clientId, { type: 'snapshot_result', data: null, error: 'screenshot failed' });
+        });
       return;
     }
 

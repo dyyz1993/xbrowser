@@ -8,6 +8,8 @@ export interface ClickContextItem {
   tag?: string;
   disabled?: boolean;
   href?: string;
+  /** Selector of this item, used for replay and AI-driven clicks. */
+  selector?: string;
 }
 
 export interface ClickContextElement {
@@ -36,12 +38,41 @@ export interface ClickContext {
   stateChanges: ClickContextStateChange[];
 }
 
+/**
+ * Popup/tooltip/dropdown that appears after a hover action.
+ *
+ * Captured via async sampling (200/500/1000ms after `mouseover`) plus a
+ * short-lived MutationObserver. Each entry records the container that popped
+ * up and the visible menu items inside it, so that replay and AI inspection
+ * can correlate the hover trigger with the options that became available.
+ */
+export interface HoverPopupInfo {
+  tag: string;
+  selector: string;
+  role?: string;
+  text: string;
+  rect: { x: number; y: number; w: number; h: number };
+  /** Visible menu items (up to 20) — text + selector for replay targeting. */
+  items: ClickContextItem[];
+}
+
+export interface HoverContext {
+  /** Popups that appeared after the hover trigger. */
+  appeared: HoverPopupInfo[];
+  /** Popups that disappeared while the hover was active. */
+  disappeared: Array<{ selector: string; reason: string }>;
+  /** Trigger element's aria-expanded / aria-haspopup state changes. */
+  stateChanges: ClickContextStateChange[];
+}
+
 export interface UserAction {
   id: number;
   type: 'click' | 'input' | 'change' | 'keydown' | 'submit' | 'scroll'
     | 'navigation' | 'goto' | 'cdp-fill' | 'cdp-click' | 'cdp-eval' | 'filechooser'
     | 'dblclick' | 'contextmenu' | 'hover' | 'drag' | 'resize' | 'clipboard'
-    | 'touch' | 'focus' | 'visibility';
+    | 'touch' | 'focus' | 'visibility'
+    // Proactive sensing actions (not user-initiated, but observed by recorder)
+    | 'popup_appear' | 'discovered_filters';
   timestamp: number;
   url: string;
   pageTitle: string;
@@ -73,6 +104,8 @@ export interface UserAction {
   scrollX?: number;
   scrollY?: number;
   clickContext?: ClickContext;
+  /** Popups/tooltip/dropdown observed after a `hover` action (analog of clickContext). */
+  hoverContext?: HoverContext;
   files?: {
     names: string[];
     count: number;
@@ -107,6 +140,41 @@ export interface UserAction {
   };
   /** Base64-encoded PNG screenshot of the target element (captured on key actions) */
   elementScreenshot?: string;
+
+  /**
+   * Auto-captured snapshot for this action (key types only).
+   * PNG stored in .tmp/snapshots/ (easy to clean up);
+   * aria tree stored inline as compact text (searchable via grep).
+   */
+  snapshots?: {
+    /** Viewport screenshot path (relative, under .tmp/snapshots/) */
+    png?: string;
+    /** Compact accessibility tree text (inline, grep-able) */
+    aria?: string;
+  };
+
+  /** For type='popup_appear' — proactive sensing of a popover/dropdown/menu
+   * becoming visible (whether triggered by user hover/click, or auto-shown). */
+  popupAppear?: {
+    /** The trigger element that caused the popup (if known) */
+    trigger?: { selector: string; text: string };
+    /** The popup container */
+    popup: {
+      selector: string;
+      text: string;
+      rect: { x: number; y: number; w: number; h: number };
+      /** Menu items inside the popup */
+      items: Array<{ text: string; selector: string; disabled?: boolean }>;
+    };
+    /** What caused the popup to appear */
+    cause: 'user-hover' | 'user-click' | 'auto' | 'script';
+    /** True if a real user action triggered it (false for auto-shown popups) */
+    userTriggered: boolean;
+  };
+
+  /** For type='discovered_filters' — proactive baseline scan of the page.
+   * Pushed on start and after navigation; merged into RecordingData.discoveredFilters. */
+  discoveredFilters?: DiscoveredFilter[];
 }
 
 export interface NetworkEntry {
@@ -189,6 +257,34 @@ export interface CheckpointEntry {
   context?: Record<string, unknown>;
 }
 
+export interface DiscoveredTrigger {
+  /** Selector for replay/AI targeting */
+  selector: string;
+  /** Text label (e.g. "新发布", "综合", "价格") */
+  text: string;
+  /** Semantic role, if any */
+  role?: string;
+  /** Category — helps AI understand what this trigger does */
+  category: 'sort' | 'filter' | 'tab' | 'menu' | 'navigation' | 'unknown';
+  /** Set to true once we observe a popup appearing for this trigger */
+  hasPopup: boolean;
+  /** Set to true when the user actually clicks or hovers it */
+  userInteracted: boolean;
+  /** Set to true when the mouse lingered on it (>800ms) without clicking */
+  explored: boolean;
+}
+
+export interface DiscoveredFilter {
+  /** Container element selector (the surrounding bar/region) */
+  containerSelector: string;
+  /** Container category */
+  category: 'sort' | 'filter' | 'tab' | 'menu' | 'navigation';
+  /** Container text (first 60 chars, for AI context) */
+  containerText: string;
+  /** Triggers found inside this container */
+  triggers: DiscoveredTrigger[];
+}
+
 export interface RecordingData {
   startUrl: string;
   sessionName: string;
@@ -197,6 +293,9 @@ export interface RecordingData {
   network: NetworkEntry[];
   contextChanges: ContextChange[];
   checkpoints: CheckpointEntry[];
+  /** Proactive baseline scan of filter/sort/tab/menu regions on the page.
+   * Populated on start and after navigation; updated as popups are observed. */
+  discoveredFilters?: DiscoveredFilter[];
 }
 
 export interface RecordingControlFile {

@@ -113,12 +113,12 @@ process.on('exit', () => {
     if (session.isCDP) {
       logSessionEvent('process_exit', `Session "${session.name}": CDP connection (not closing external browser).`);
     } else {
-      logSessionEvent('process_exit', `Session "${session.name}": Closing browser.`);
+      logSessionEvent('process_exit', `Session "${session.name}": Closing self-launched browser.`);
       try { session.browser?.close(); } catch { /* force cleanup on exit */ }
     }
   }
   if (_sharedBrowser) {
-    logSessionEvent('process_exit', 'Closing shared browser.');
+    logSessionEvent('process_exit', 'Closing shared browser (self-launched only, external CDP is safe).');
     try { _sharedBrowser.close(); } catch { /* force cleanup on exit */ }
     _sharedBrowser = null;
   }
@@ -844,15 +844,19 @@ export async function closeSessionByName(name: string): Promise<boolean> {
     if (session.name === name || session.id === name) {
       logSessionEvent('close_session', `name="${session.name}" id="${session.id}" url="${session.page.url()}"`);
       if (session.isCDP) {
-        // CDP mode: close the page/tab we created (not the whole browser).
-        // This only affects the tab xbrowser opened, not other user tabs.
-        try { await session.page.close(); } catch { /* page may already be closed */ }
-        // Disconnect the CDP WebSocket connection
+        // CDP mode (external browser): do NOT close the page/tab or context.
+        // The page belongs to the user's browser — closing it would destroy
+        // their current tab and force them to re-navigate.
+        // We only disconnect the WebSocket and remove the session reference.
+        // The browser process, all tabs, and login state are preserved.
         if (session.browser) {
+          // browser.close() on external CDP has no childProcess,
+          // so it only disconnects the WebSocket — safe to call.
           await session.browser.close().catch(() => {});
         }
       } else {
-        // Non-CDP mode: close the context (and its pages), then the browser
+        // Non-CDP mode (self-launched browser): close context + browser.
+        // browser.close() kills the self-launched Chrome process.
         await session.context.close();
         if (session.browser) {
           await session.browser.close().catch(() => {});
@@ -899,11 +903,18 @@ export async function closeAllSessions(): Promise<void> {
   if (names) logSessionEvent('close_all_sessions', `Closing ${sessions.size} sessions: ${names}`);
   for (const session of sessions.list()) {
     try {
-      if (!session.isCDP) {
+      if (session.isCDP) {
+        // CDP mode: do NOT close page or context. Only disconnect WebSocket.
+        // The user's tabs and login state must be preserved.
+        if (session.browser) {
+          await session.browser.close().catch(() => {});
+        }
+      } else {
+        // Non-CDP (self-launched): close context + browser (killChrome if owned).
         await session.context.close();
-      }
-      if (session.browser) {
-        await session.browser.close().catch(() => {});
+        if (session.browser) {
+          await session.browser.close().catch(() => {});
+        }
       }
       sessions.removeById(session.id);
     } catch {
@@ -919,13 +930,16 @@ export async function closeAllSessions(): Promise<void> {
  * {@link getBrowser} will create a new instance on next call.
  */
 export async function destroyBrowser(): Promise<void> {
-  logSessionEvent('destroy_browser', `Sessions count: ${sessions.size}. Clearing idle timer and closing all browsers.`);
+  logSessionEvent('destroy_browser', `Sessions count: ${sessions.size}. Clearing idle timer and closing all sessions.`);
   if (idleTimer) {
     clearTimeout(idleTimer);
     idleTimer = null;
   }
   await closeAllSessions();
   if (_sharedBrowser) {
+    // close() internally checks childProcess:
+    //   - self-launched → kills Chrome (cleanup)
+    //   - external CDP   → only disconnects WebSocket
     await _sharedBrowser.close().catch(() => {});
     _sharedBrowser = null;
   }
@@ -962,17 +976,15 @@ export async function ensureProcessCanExit(): Promise<void> {
     idleTimer = null;
   }
 
-  // Close each session's own browser connection.
-  // For CDP sessions: browser.close() only disconnects the WebSocket,
-  // it does NOT close the remote browser or its pages.
-  // The next CLI invocation will reconnect via findOrRestoreSession().
+  // Close self-launched browsers; external CDP connections are left alone.
   for (const session of sessions.list()) {
     if (session.browser) {
       if (session.isCDP) {
-        // CDP: just disconnect, remote browser keeps running
-        await session.browser.close().catch(() => {});
+        // External CDP: just disconnect (browser keeps running).
+        // In CDP mode, browser.close() on XBBrowserImpl has no childProcess,
+        // so it only closes the WebSocket. Explicit skip for clarity.
       } else {
-        // Non-CDP: close the browser we launched
+        // Self-launched: close browser (calls killChrome internally).
         await session.browser.close().catch(() => {});
       }
     }
@@ -981,6 +993,9 @@ export async function ensureProcessCanExit(): Promise<void> {
   sessions.clear();
 
   if (_sharedBrowser) {
+    // close() internally checks childProcess:
+    //   - self-launched → kills Chrome (cleanup)
+    //   - external CDP   → only disconnects WebSocket
     await _sharedBrowser.close().catch(() => {});
     _sharedBrowser = null;
   }

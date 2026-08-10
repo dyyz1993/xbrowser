@@ -8,7 +8,7 @@ export function alignHTML(sessionId: string, _host: string): string {
 html,body{height:100%;overflow:hidden;background:#000}
 .viewport{position:absolute;top:0;left:0;right:0;bottom:0;overflow:hidden}
 .viewport img#screen{display:block;width:100%;height:100%;object-fit:contain;background:#111}
-.crosshair{position:fixed;pointer-events:none;z-index:9999;width:16px;height:16px;border-radius:50%;background:rgba(255,0,0,0.8);border:2px solid #fff;transform:translate(-50%,-50%);display:none;box-shadow:0 0 6px rgba(255,0,0,0.6);transition:left 0.03s,top 0.03s}
+.crosshair{position:fixed;pointer-events:none;z-index:9999;width:16px;height:16px;border-radius:50%;background:rgba(255,0,0,0.8);border:2px solid #fff;transform:translate(-50%,-50%);display:none;box-shadow:0 0 6px rgba(255,0,0,0.6)}
 .coord{position:fixed;top:8px;left:8px;z-index:10000;font:12px/1.6 monospace;color:#0f0;background:rgba(0,0,0,0.7);padding:4px 8px;border-radius:4px;pointer-events:none;white-space:pre}
 .grid{position:fixed;pointer-events:none;z-index:9998;top:0;left:0;right:0;bottom:0;display:none}
 </style></head><body>
@@ -98,9 +98,17 @@ viewportEl.addEventListener('mousemove',function(e){
   var r=viewerToRemote(e.clientX,e.clientY);
   var rx=Math.max(0,Math.min(remoteViewport.width,r.x));
   var ry=Math.max(0,Math.min(remoteViewport.height,r.y));
+  // 本地光标立即更新（零延迟反馈）
   setCrosshair(rx,ry);
-  if(e.buttons>0&&ws&&ws.readyState===1)ws.send(JSON.stringify({type:'input_mouse',action:'move',x:rx,y:ry}));
+  // 节流：最多每 30ms 发一次 move，避免 WS 消息洪泛
+  if(!moveThrottled&&ws&&ws.readyState===1){
+    moveThrottled=true;
+    var action=e.buttons>0?'move':'hover';
+    ws.send(JSON.stringify({type:'input_mouse',action:action,x:rx,y:ry}));
+    setTimeout(function(){moveThrottled=false;},30);
+  }
 });
+var moveThrottled=false;
 viewportEl.addEventListener('mousedown',function(e){var r=viewerToRemote(e.clientX,e.clientY);setCrosshair(r.x,r.y);if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'input_mouse',action:'down',x:r.x,y:r.y}));});
 viewportEl.addEventListener('mouseup',function(e){var r=viewerToRemote(e.clientX,e.clientY);setCrosshair(r.x,r.y);if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'input_mouse',action:'up',x:r.x,y:r.y}));});
 viewportEl.addEventListener('wheel',function(e){e.preventDefault();if(ws&&ws.readyState===1)ws.send(JSON.stringify({type:'scroll',deltaX:e.deltaX,deltaY:e.deltaY}));},{passive:false});
@@ -129,7 +137,7 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
 .bar .dot.ok{background:#2ecc71}
 .bar .url{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8899aa;font-size:12px}
 .bar .conn{color:#556;font-size:11px;flex-shrink:0}
-.viewport{flex-shrink:0;display:flex;align-items:flex-start;justify-content:center;overflow:hidden;background:#1a1a2e;position:relative}
+.viewport{flex:1 1 0;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#1a1a2e;position:relative;min-height:0}
 .viewport canvas#screen{display:none;user-select:none;-webkit-user-drag:none}
 .waiting{color:#556;font-size:14px;text-align:center}
 .toolbar{flex-shrink:0;background:#16213e;border-top:1px solid #0f3460;display:none;flex-direction:row;z-index:90;padding:4px 6px;gap:4px;overflow-x:auto;-webkit-overflow-scrolling:touch}
@@ -192,6 +200,33 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
   <span class="conn" id="conn"></span>
   <button class="mode-btn" id="mode-btn" title="Switch mode (Mobile/Tablet/PC)">📱</button>
   <div id="qualityBadge" class="quality-badge quality-static" style="font-size:10px;padding:2px 8px;border-radius:10px;background:#556;color:#eee;white-space:nowrap;flex-shrink:0">static</div>
+  <button id="stats-btn" style="font-size:11px;padding:2px 8px;border-radius:10px;background:#0f3460;color:#8af;border:none;cursor:pointer;flex-shrink:0">📊</button>
+  <button id="reconnect-btn" style="font-size:11px;padding:2px 8px;border-radius:10px;background:#0f3460;color:#f39c12;border:none;cursor:pointer;flex-shrink:0" title="重连远程浏览器">🔄</button>
+  <button id="snapshot-btn" style="font-size:11px;padding:2px 8px;border-radius:10px;background:#0f3460;color:#8af;border:none;cursor:pointer;flex-shrink:0" title="截取高清截图">📷</button>
+</div>
+<div id="snapshot-preview" style="display:none;position:fixed;bottom:8px;right:8px;z-index:10000;width:200px;background:rgba(10,15,30,0.95);border:1px solid #0f3460;border-radius:8px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.5);cursor:pointer">
+  <img id="snapshot-img" style="display:block;width:100%;height:auto" />
+  <div style="padding:4px 8px;font:10px/1.4 monospace;color:#8af;display:flex;justify-content:space-between;align-items:center">
+    <span>📷 高清截图 · 点击放大</span>
+    <span id="snapshot-countdown" style="color:#f39c12"></span>
+  </div>
+  <div id="snapshot-progress" style="height:2px;background:#0f3460;width:100%"></div>
+</div>
+<div id="snapshot-fullscreen" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:99999;background:rgba(0,0,0,0.92);align-items:center;justify-content:center;cursor:zoom-out;overflow:auto;padding:20px">
+  <img id="snapshot-full-img" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:4px;box-shadow:0 8px 40px rgba(0,0,0,0.8)" />
+</div>
+</div>
+<div id="stats-panel" style="display:none;position:fixed;top:40px;right:8px;z-index:10001;background:rgba(10,15,30,0.95);border:1px solid #0f3460;border-radius:8px;padding:8px 12px;font:11px/1.7 monospace;color:#8af;min-width:200px;backdrop-filter:blur(8px)">
+  <div style="font-weight:bold;color:#cef;margin-bottom:4px;border-bottom:1px solid #0f3460;padding-bottom:4px">📊 Live Monitor</div>
+  <div>FPS: <span id="stat-fps" style="color:#2ecc71">0</span></div>
+  <div>Frame size: <span id="stat-frame-size" style="color:#2ecc71">0KB</span></div>
+  <div>Latency: <span id="stat-latency" style="color:#2ecc71">0ms</span></div>
+  <div>Bandwidth: <span id="stat-bandwidth" style="color:#2ecc71">0KB/s</span></div>
+  <div>Frames: <span id="stat-frames" style="color:#8af">0</span></div>
+  <div>Sent: <span id="stat-sent" style="color:#8af">0</span></div>
+  <div>WS: <span id="stat-ws" style="color:#e74c3c">disconnected</span></div>
+  <div>Viewport: <span id="stat-viewport" style="color:#8af">0x0</span></div>
+  <div>Uptime: <span id="stat-uptime" style="color:#8af">0s</span></div>
 </div>
 <div class="view-tabs" id="view-tabs"></div>
 <div class="viewport" id="viewport">
@@ -260,6 +295,14 @@ let currentFocusedSelector='';
 let currentFocusedValue='';
 let suppressFocus=false;
 let deviceMode='desktop';
+
+// === Live Monitor stats ===
+const startTime=Date.now();
+let statFrames=0,statSent=0,statBytesRcvd=0,statBytesSent=0;
+let statLastFrameTime=0,statLatency=0,statFrameSize=0,statFps=0;
+let statFpsFrames=0,statFpsTimer=Date.now();
+let statEl=null;
+
 let lastHoverSent=0;
 
 const $=id=>document.getElementById(id);
@@ -268,13 +311,136 @@ const viewportEl=$('viewport'),cursorEl=$('cursor'),cursorLabelEl=$('cursor-labe
 const touchpadEl=$('touchpad'),toolbarEl=$('toolbar');
 const inputPanel=$('input-panel'),inputField=$('input-field'),inputLabel=$('input-label');
 
+// Init monitor elements after $ is defined
+statEl={
+  fps:$('stat-fps'),frameSize:$('stat-frame-size'),latency:$('stat-latency'),
+  bandwidth:$('stat-bandwidth'),frames:$('stat-frames'),sent:$('stat-sent'),
+  ws:$('stat-ws'),viewport:$('stat-viewport'),uptime:$('stat-uptime'),
+};
+$('stats-btn').addEventListener('click',()=>{
+  const panel=$('stats-panel');
+  panel.style.display=panel.style.display==='none'?'block':'none';
+});
+$('reconnect-btn').addEventListener('click',()=>{
+  const btn=$('reconnect-btn');
+  btn.textContent='⏳';
+  btn.style.background='#e74c3c';
+  // Tell daemon to reconnect the remote CDP session
+  sendMsg({type:'reconnect'});
+  // Also reload the page after 2s to re-establish viewer WS
+  setTimeout(()=>{location.reload();},2000);
+});
+
+// === Snapshot feature ===
+// Click 📷 → daemon sends CDP captureScreenshot → returns high-quality image
+// Preview shows in bottom-right for 5s with countdown → click to fullscreen
+var snapshotDataUrl=null;
+var snapshotCountdownTimer=null;
+$('snapshot-btn').addEventListener('click',function(){
+  var btn=$('snapshot-btn');
+  btn.textContent='⏳';
+  // Request high-quality screenshot from daemon
+  sendMsg({type:'snapshot_request',format:'webp',quality:90});
+});
+// Handle snapshot response
+// (added to ws.onmessage handler below)
+var snapshotPendingHandler=function(msg){
+  if(msg.type==='snapshot_result'&&msg.data){
+    var data=msg.data;
+    snapshotDataUrl='data:image/'+(data.format||'png')+';base64,'+data.data;
+    var img=$('snapshot-img');
+    img.src=snapshotDataUrl;
+    var preview=$('snapshot-preview');
+    preview.style.display='block';
+    $('snapshot-btn').textContent='📷';
+    // Start 5s countdown
+    var remaining=5;
+    var progress=$('snapshot-progress');
+    var countdownEl=$('snapshot-countdown');
+    if(snapshotCountdownTimer) clearInterval(snapshotCountdownTimer);
+    progress.style.width='100%';
+    progress.style.background='#2ecc71';
+    countdownEl.textContent=remaining+'s';
+    snapshotCountdownTimer=setInterval(function(){
+      remaining--;
+      countdownEl.textContent=remaining+'s';
+      progress.style.width=(remaining/5*100)+'%';
+      if(remaining<=0){
+        clearInterval(snapshotCountdownTimer);
+        preview.style.display='none';
+      }
+    },1000);
+    // Hover to pause countdown
+    preview.onmouseenter=function(){if(snapshotCountdownTimer){clearInterval(snapshotCountdownTimer);countdownEl.textContent='⏸';}};
+    preview.onmouseleave=function(){
+      if(snapshotCountdownTimer) clearInterval(snapshotCountdownTimer);
+      progress.style.width=(remaining/5*100)+'%';
+      snapshotCountdownTimer=setInterval(function(){
+        remaining--;
+        countdownEl.textContent=remaining+'s';
+        progress.style.width=(remaining/5*100)+'%';
+        if(remaining<=0){clearInterval(snapshotCountdownTimer);preview.style.display='none';}
+      },1000);
+    };
+  }
+};
+// Click preview → fullscreen
+$('snapshot-preview').addEventListener('click',function(){
+  if(!snapshotDataUrl) return;
+  $('snapshot-full-img').src=snapshotDataUrl;
+  $('snapshot-fullscreen').style.display='flex';
+  if(snapshotCountdownTimer){clearInterval(snapshotCountdownTimer);}
+});
+// Click fullscreen → close
+$('snapshot-fullscreen').addEventListener('click',function(){
+  this.style.display='none';
+});
+// Auto-detect dead connection: if no frames for 30s, show warning
+let lastFrameAt=Date.now();
+setInterval(()=>{
+  if(connected && Date.now()-lastFrameAt>30000 && statFrames>0){
+    const btn=$('reconnect-btn');
+    btn.style.background='#e74c3c';
+    btn.textContent='🔄!';
+    btn.title='连接可能已断开，点击重连';
+  }
+},5000);
+setInterval(()=>{
+  const now=Date.now();
+  const elapsed=now-statFpsTimer;
+  if(elapsed>=1000){
+    statFps=Math.round(statFpsFrames*1000/elapsed);
+    statFpsFrames=0;
+    statFpsTimer=now;
+    const bw=Math.round((statBytesRcvd+statBytesSent)/1024);
+    statEl.fps.textContent=statFps;
+    statEl.fps.style.color=statFps>=15?'#2ecc71':statFps>=5?'#f39c12':'#e74c3c';
+    statEl.frameSize.textContent=Math.round(statFrameSize/1024)+'KB';
+    statEl.latency.textContent=statLatency+'ms';
+    statEl.latency.style.color=statLatency<100?'#2ecc71':statLatency<300?'#f39c12':'#e74c3c';
+    statEl.bandwidth.textContent=bw+'KB/s';
+    statEl.frames.textContent=statFrames;
+    statEl.sent.textContent=statSent;
+    statEl.ws.textContent=connected?'connected':'disconnected';
+    statEl.ws.style.color=connected?'#2ecc71':'#e74c3c';
+    statEl.viewport.textContent=remoteViewport.width+'x'+remoteViewport.height;
+    statEl.uptime.textContent=Math.round((now-startTime)/1000)+'s';
+    statBytesRcvd=0;statBytesSent=0;
+  }
+},200);
+
 function resizeCanvas(){
   const box=viewportEl.getBoundingClientRect();
-  const bw=box.width;
-  if(!bw||!remoteViewport.width||!remoteViewport.height) return;
+  const bw=box.width,bh=box.height;
+  if(!bw||!bh||!remoteViewport.width||!remoteViewport.height) return;
   const vpAspect=remoteViewport.width/remoteViewport.height;
-  const cw=bw;
-  const ch=bw/vpAspect;
+  // Fit the remote viewport inside the available box without cropping:
+  // pick the scale that keeps both dimensions within bounds.
+  const scaleByWidth=bw/remoteViewport.width;
+  const scaleByHeight=bh/remoteViewport.height;
+  const scale=Math.min(scaleByWidth,scaleByHeight);
+  const cw=remoteViewport.width*scale;
+  const ch=remoteViewport.height*scale;
   if(canvas.width!==Math.round(cw)||canvas.height!==Math.round(ch)){
     canvas.width=Math.round(cw);
     canvas.height=Math.round(ch);
@@ -307,6 +473,10 @@ function connectWS(){
     connEl.textContent='WS';
     if(deviceMode==='desktop') createPCKeyboard();
     checkFocus();
+    // Apply crop from URL params (?crop=x,y,w,h or ?selector=.cls)
+    setTimeout(applyUrlCrop,500);
+    // Start connection health check — auto-reconnect on failure
+    startHealthCheck();
   };
   ws.binaryType='arraybuffer';
   ws.onmessage=(e)=>{
@@ -317,13 +487,31 @@ function connectWS(){
           updateViewTabs(_m.views);
           return;
         }
+        if(_m.type==='health_pong'){
+          healthCheckPending=false;
+          var btn=$('reconnect-btn');
+          if(btn.textContent!=='🔄'){btn.style.background='#0f3460';btn.textContent='🔄';}
+          return;
+        }
+        if(_m.type==='snapshot_result'){
+          if(snapshotPendingHandler) snapshotPendingHandler(_m);
+          return;
+        }
       }
       if(e.data instanceof ArrayBuffer){
         const buf=new Uint8Array(e.data);
+        statBytesRcvd+=buf.length;
         const headerLen=(buf[0]<<24)|(buf[1]<<16)|(buf[2]<<8)|buf[3];
         const header=JSON.parse(new TextDecoder().decode(buf.slice(4,4+headerLen)));
         const jpegData=buf.slice(4+headerLen);
         if(header.type==='screenshot'){
+          // === Monitor: track frame stats ===
+          statFrames++;statFpsFrames++;
+          lastFrameAt=Date.now();
+          statFrameSize=jpegData.length;
+          if(header.data.timestamp){
+            statLatency=Math.max(0,Date.now()-header.data.timestamp);
+          }
           const blob=new Blob([jpegData],{type:'image/jpeg'});
           createImageBitmap(blob).then(function(bmp){
             drawFrame(bmp);
@@ -465,6 +653,8 @@ function updateViewTabs(views){
     selectView('main');
   }
   renderViewTabs();
+  // Auto-select view matching ?selector= param
+  if(pendingSelector) trySelectBySelector();
 }
 function renderViewTabs(){
   if(detectedViews.length===0){
@@ -553,7 +743,12 @@ function selectView(vid){
  }
 
 function sendMsg(obj){
-  if(ws&&ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify(obj));
+  if(ws&&ws.readyState===WebSocket.OPEN){
+    const data=JSON.stringify(obj);
+    ws.send(data);
+    statSent++;
+    statBytesSent+=data.length;
+  }
 }
 
 function parseFocusHash(){
@@ -561,6 +756,107 @@ function parseFocusHash(){
   if(!h) return null;
   var m=h.match(/^#focus=(.+)$/);
   return m?decodeURIComponent(m[1]):null;
+}
+
+// Parse crop/view parameters from URL query string.
+// Supports:
+//   ?selector=.login-modal        — crop to element matching CSS selector
+//   ?crop=100,200,500,400         — crop to x,y,width,height (remote viewport coords)
+function parseUrlCrop(){
+  var params=new URLSearchParams(location.search);
+
+  // ?crop=x,y,w,h
+  var cropParam=params.get('crop');
+  if(cropParam){
+    var parts=cropParam.split(',').map(function(s){return parseInt(s.trim(),10)});
+    if(parts.length===4&&parts.every(function(n){return!isNaN(n)})){
+      return {type:'rect',rect:{x:parts[0],y:parts[1],width:parts[2],height:parts[3]}};
+    }
+  }
+
+  // ?selector=.login-modal
+  var selParam=params.get('selector')||params.get('sel');
+  if(selParam){
+    return {type:'selector',selector:selParam};
+  }
+
+  return null;
+}
+
+// Apply URL crop on connect — sends select_view immediately after WS opens
+function applyUrlCrop(){
+  var cropSpec=parseUrlCrop();
+  if(!cropSpec) return;
+
+  if(cropSpec.type==='rect'){
+    // Direct rect — send select_view immediately
+    sendMsg({type:'select_view',rect:cropSpec.rect});
+    if(!originalViewport) originalViewport={width:remoteViewport.width,height:remoteViewport.height};
+    remoteViewport={width:cropSpec.rect.width,height:cropSpec.rect.height};
+    viewportLocked=true;
+    resizeCanvas();
+    return;
+  }
+
+  // Selector — wait for views_update from element-monitor, then auto-select matching view
+  if(cropSpec.type==='selector'){
+    pendingSelector=cropSpec.selector;
+    // Try match immediately in case views already arrived
+    trySelectBySelector();
+  }
+}
+// Connection health check — send a ping every 15s.
+// If no response in 5s, auto-reconnect the session.
+var healthCheckTimer=null;
+var healthCheckPending=false;
+var autoReconnecting=false;
+function startHealthCheck(){
+  if(healthCheckTimer) clearInterval(healthCheckTimer);
+  healthCheckTimer=setInterval(function(){
+    if(!connected) return;
+    if(healthCheckPending){
+      // Previous ping never got a response → connection is dead → auto-reconnect
+      if(!autoReconnecting){
+        autoReconnecting=true;
+        var btn=$('reconnect-btn');
+        btn.style.background='#e74c3c';
+        btn.textContent='🔄!';
+        btn.title='连接已断开，正在自动重连...';
+        // Auto-reconnect: send reconnect then reload after 2s
+        sendMsg({type:'reconnect'});
+        setTimeout(function(){location.reload();},2000);
+      }
+      return;
+    }
+    healthCheckPending=true;
+    sendMsg({type:'health_ping',ts:Date.now()});
+    setTimeout(function(){
+      if(healthCheckPending){
+        // Still pending after 5s = dead
+        healthCheckPending=false;
+        var btn2=$('reconnect-btn');
+        btn2.style.background='#e74c3c';
+        btn2.textContent='🔄!';
+      }
+    },5000);
+  },15000);
+}
+function trySelectBySelector(){
+  if(!pendingSelector||!detectedViews||detectedViews.length===0) return;
+  // Match by label containing selector text, or id/class match
+  var target=detectedViews.find(function(v){
+    var label=(v.label||'').toLowerCase();
+    var id=(v.id||'').toLowerCase();
+    return label.indexOf(pendingSelector.toLowerCase())>=0||id.indexOf(pendingSelector.toLowerCase())>=0;
+  });
+  if(target){
+    sendMsg({type:'select_view',rect:target.rect});
+    if(!originalViewport) originalViewport={width:remoteViewport.width,height:remoteViewport.height};
+    remoteViewport={width:target.rect.width,height:target.rect.height};
+    viewportLocked=true;
+    resizeCanvas();
+    pendingSelector=null; // matched, stop looking
+  }
 }
 
 function checkFocus(){
@@ -662,10 +958,16 @@ function createPCKeyboard(){
   document.addEventListener('keydown',function(e){
     if(deviceMode!=='desktop') return;
     if(e.isComposing||_pcComposing) return;
-    var tag=e.target&&e.target.tagName;
-    if(tag==='INPUT'||tag==='TEXTAREA') return;
     var key=e.key;
     if(!key) return;
+
+    // Control keys (Backspace, Delete, Enter, Tab, arrows, etc.) must always
+    // be forwarded even when focus is in an input/textarea — otherwise the user
+    // can't edit text in the remote browser's input fields.
+    var isControlKey=key.length>1; // Backspace, Delete, Enter, Tab, ArrowX, etc.
+    var tag=e.target&&e.target.tagName;
+    if(!isControlKey&&(tag==='INPUT'||tag==='TEXTAREA')) return;
+
     e.preventDefault();
     sendMsg({type:'input_keyboard',action:'down',key:key});
     if(key.length===1){
@@ -676,10 +978,13 @@ function createPCKeyboard(){
   document.addEventListener('keyup',function(e){
     if(deviceMode!=='desktop') return;
     if(e.isComposing||_pcComposing) return;
-    var tag=e.target&&e.target.tagName;
-    if(tag==='INPUT'||tag==='TEXTAREA') return;
     var key=e.key;
     if(!key) return;
+
+    var isControlKey=key.length>1;
+    var tag=e.target&&e.target.tagName;
+    if(!isControlKey&&(tag==='INPUT'||tag==='TEXTAREA')) return;
+
     e.preventDefault();
     sendMsg({type:'input_keyboard',action:'up',key:key});
     sendUserActivity();
@@ -732,9 +1037,20 @@ viewportEl.addEventListener('mouseleave',()=>{
 viewportEl.addEventListener('wheel',(e)=>{
   if(deviceMode!=='desktop') return;
   e.preventDefault();
-  sendMsg({type:'scroll',deltaX:e.deltaX,deltaY:e.deltaY});
-  sendUserActivity();
+  // Accumulate wheel deltas and send at most every 50ms to avoid flooding
+  // the remote with hundreds of scroll commands during a single swipe.
+  pendingScrollX+=e.deltaX;
+  pendingScrollY+=e.deltaY;
+  if(!scrollThrottled){
+    scrollThrottled=true;
+    sendMsg({type:'scroll',deltaX:Math.round(pendingScrollX),deltaY:Math.round(pendingScrollY)});
+    sendUserActivity();
+    pendingScrollX=0;
+    pendingScrollY=0;
+    setTimeout(function(){scrollThrottled=false;},50);
+  }
 },{passive:false});
+var scrollThrottled=false,pendingScrollX=0,pendingScrollY=0;
 
 // --- Mobile Touchpad (incremental, smooth) ---
 let tpStartPos=null;

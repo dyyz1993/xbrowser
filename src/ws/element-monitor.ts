@@ -174,7 +174,32 @@ export class ElementMonitor {
         }
         return results;
       });
-      const views = elements.map((e, i) => ({
+
+      // Deduplicate nested elements with the same (or near-identical) dimensions.
+      // Multi-layer divs (overlay > modal > content) often render at the same size.
+      // Keep only the innermost (smallest area) of each group.
+      const TOLERANCE_PX = 10; // treat dims within 10px as "same size"
+      const deduped: typeof elements = [];
+      const isSameSize = (a: { width: number; height: number }, b: { width: number; height: number }) =>
+        Math.abs(a.width - b.width) <= TOLERANCE_PX && Math.abs(a.height - b.height) <= TOLERANCE_PX;
+
+      // Sort by area ascending so innermost (smallest) comes first in each group
+      const sorted = [...elements].sort((a, b) => a.rect.width * a.rect.height - b.rect.width * b.rect.height);
+
+      for (const el of sorted) {
+        // Check if an existing deduped element has the same size AND overlaps
+        const dupe = deduped.some(d =>
+          isSameSize(d.rect, el.rect) &&
+          Math.abs(d.rect.x - el.rect.x) <= TOLERANCE_PX &&
+          Math.abs(d.rect.y - el.rect.y) <= TOLERANCE_PX
+        );
+        if (!dupe) deduped.push(el);
+      }
+
+      // Sort deduped result by area descending (largest first = most relevant)
+      deduped.sort((a, b) => b.rect.width * b.rect.height - a.rect.width * a.rect.height);
+
+      const views = deduped.map((e, i) => ({
         id: 'el-' + i + '-' + (e.id || e.tag),
         label: e.id || e.cls || e.tag,
         rect: e.rect,

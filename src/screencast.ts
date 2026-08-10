@@ -90,21 +90,23 @@ export class ScreencastCapturer {
         metadata: { deviceWidth?: number; deviceHeight?: number; pageX?: number; pageY?: number; timestamp?: number };
         sessionId: number;
       }) => {
-        if (!this.frameCallback) return;
+        // Capture callback in a local var to avoid race with stopCapture()
+        // setting this.frameCallback = null between the check and the call.
+        const cb = this.frameCallback;
+        if (!cb) return;
 
-        try {
-          // Acknowledge the frame so Chrome sends the next one
-          await cdp.send('Page.screencastFrameAck', { sessionId: params.sessionId });
-        } catch {
-          // Frame ack may fail if we stopped — ignore
-        }
+        // Fire-and-forget the Ack: the screencast protocol requires us to ack
+        // each frame before Chrome sends the next one, but we don't need to
+        // await it. Sending the Ack synchronously (without awaiting) unblocks
+        // the next frame immediately, raising the effective FPS ceiling.
+        cdp.send('Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => {});
 
         const viewport = {
           width: params.metadata?.deviceWidth || this.maxWidth,
           height: params.metadata?.deviceHeight || this.maxHeight,
         };
 
-        this.frameCallback({
+        cb({
           id: crypto.randomUUID(),
           sessionId: this.sessionId,
           timestamp: Date.now(),

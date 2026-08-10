@@ -737,9 +737,9 @@ export async function routeCommand(
 
           const needsBrowser = cmdEntry.scope === 'page' || cmdEntry.scope === 'browser';
           if (needsBrowser && !process.env.XBROWSER_DAEMON_WORKER) {
-            const { forwardExec } = await import('./client/daemon-client.js');
+            const { forwardPluginExec } = await import('./client/daemon-client.js');
             const userTimeout = typeof params.timeout === 'number' && params.timeout > 0 ? params.timeout * 1000 + 30000 : undefined;
-            const result = await forwardExec(`${command}.${subCommand}`, params, sessionName, cdpEndpoint, userTimeout);
+            const result = await forwardPluginExec(`${command}.${subCommand}`, params, sessionName, cdpEndpoint, userTimeout);
             const resultData = result && typeof result === 'object' && 'data' in result ? (result.data as Record<string, unknown> | undefined) : undefined;
             if (result && result.success === false && resultData?.code === 'LOGIN_REQUIRED') {
               process.exitCode = 1;

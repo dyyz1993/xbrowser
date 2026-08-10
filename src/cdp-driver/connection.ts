@@ -58,12 +58,59 @@ export class CDPConnection extends EventEmitter {
     this.defaultSessionId = sessionId;
 
     if (typeof wsOrUrl === 'string') {
-      this.ws = new WebSocket(wsOrUrl);
+      // For wss:// connections to raw IPs (e.g. self-signed certs), skip TLS
+      // certificate verification so direct-IP connections work without DNS.
+      const wsOptions = /^wss:\/\/\d+\.\d+\.\d+\.\d+/.test(wsOrUrl)
+        ? { rejectUnauthorized: false }
+        : undefined;
+      this.ws = new WebSocket(wsOrUrl, wsOptions);
     } else {
       this.ws = wsOrUrl;
     }
 
     this.bindWebSocket();
+    this.startKeepalive();
+  }
+
+  /** Send periodic WS pings to prevent idle-timeout disconnects (e.g. CF's 100s).
+   *  Also detects dead connections: if a pong isn't received within 10s of a
+   *  ping, the connection is considered dead and forcibly closed. */
+  private keepaliveTimer: ReturnType<typeof setInterval> | null = null;
+  private pongTimer: ReturnType<typeof setTimeout> | null = null;
+  private startKeepalive(): void {
+    // Listen for pong to confirm the connection is alive
+    this.ws.on('pong', () => {
+      if (this.pongTimer) {
+        clearTimeout(this.pongTimer);
+        this.pongTimer = null;
+      }
+    });
+
+    this.keepaliveTimer = setInterval(() => {
+      if (this.ws.readyState === WebSocket.OPEN) {
+        // Set a pong timeout: if no pong in 10s, the connection is dead
+        if (!this.pongTimer) {
+          this.pongTimer = setTimeout(() => {
+            // No pong received — connection is dead (half-open TCP)
+            if (!this.closed) {
+              this.closed = true;
+              this.closeReason = 'keepalive timeout (no pong in 10s)';
+              try { this.ws.terminate(); } catch { /* ignore */ }
+              for (const [, pending] of this.pending) {
+                clearTimeout(pending.timeout);
+                pending.reject(new Error('Connection dead: keepalive timeout'));
+              }
+              this.pending.clear();
+              this.emit('disconnect');
+            }
+          }, 10000);
+        }
+        (this.ws as unknown as { ping?: () => void }).ping?.();
+      } else if (this.closed) {
+        if (this.keepaliveTimer) clearInterval(this.keepaliveTimer);
+        this.keepaliveTimer = null;
+      }
+    }, 30000);
   }
 
   /** Wait for the connection to be fully open */
@@ -192,6 +239,16 @@ export class CDPConnection extends EventEmitter {
     this.closed = true;
     this.closeReason = 'closed by caller';
 
+    // Stop keepalive timer
+    if (this.keepaliveTimer) {
+      clearInterval(this.keepaliveTimer);
+      this.keepaliveTimer = null;
+    }
+    if (this.pongTimer) {
+      clearTimeout(this.pongTimer);
+      this.pongTimer = null;
+    }
+
     // Reject all pending
     for (const [id, pending] of this.pending) {
       clearTimeout(pending.timeout);
@@ -244,6 +301,12 @@ export class CDPConnection extends EventEmitter {
       if (this.closed) return;
       this.closed = true;
       this.closeReason = `WebSocket closed: ${code} ${reason?.toString() ?? ''}`.trim();
+
+      // Stop keepalive timer on close
+      if (this.keepaliveTimer) {
+        clearInterval(this.keepaliveTimer);
+        this.keepaliveTimer = null;
+      }
 
       for (const [id, pending] of this.pending) {
         clearTimeout(pending.timeout);

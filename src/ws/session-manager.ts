@@ -110,10 +110,10 @@ export class SessionManager extends EventEmitter {
     this.screencasts.set(sessionId, {
       capturer: new ScreencastCapturer({
         interval: options?.interval ?? 100,
-        quality: options?.quality ?? 80,
+        quality: options?.quality ?? 40,
         type: options?.type ?? 'jpeg',
-        width: options?.width ?? 1920,
-        height: options?.height ?? 1080,
+        width: options?.width ?? 1024,
+        height: options?.height ?? 576,
       }),
       page,
       clientCount: 0,
@@ -285,6 +285,11 @@ export class SessionManager extends EventEmitter {
       this.resetStaticSnapshotTimer(sessionId);
     });
     await sc.capturer.startCapture(sc.page, sessionId, onFrame);
+
+    // CDP screencast only sends frames on page repaint. If the page is static
+    // (no animation, no hover), a newly connected viewer sees a blank screen.
+    // Force-capture one frame immediately so the viewer has something to show.
+    this.streamCoordinator.takeStaticSnapshot(sessionId, sc.page, sc.clientCount).catch(() => {});
   }
 
   async stopCapturer(sessionId: string): Promise<void> {

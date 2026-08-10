@@ -283,11 +283,14 @@ describe('WSServer', () => {
         '',
       );
 
+      // process() receives the ORIGINAL viewport (1920×1080), not the crop
+      // size, so crop coordinates can be scaled from viewport to pixel space.
+      // The 2nd arg is the adjusted compression config object.
       expect(processSpy).toHaveBeenCalledWith(
         'base64data',
         expect.anything(),
-        400,
-        300,
+        1920,
+        1080,
         { x: 50, y: 50, width: 400, height: 300 },
       );
 

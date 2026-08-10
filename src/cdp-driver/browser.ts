@@ -87,19 +87,24 @@ export class XBBrowserImpl implements XBBrowser {
     if (this._disconnected) return;
     this._disconnected = true;
 
-    // Close all contexts
+    // Close all contexts (this does NOT close the browser; contexts are
+    // browser-side isolation scopes — closing them only disposes incognito).
     for (const [, info] of this._contexts) {
       await info.context.close().catch(() => {});
     }
     this._contexts.clear();
 
-    // Remove exit handler before intentional kill
+    // Remove exit handler before intentional cleanup
     if (this._exitHandler) {
       process.removeListener('exit', this._exitHandler);
       this._exitHandler = null;
     }
 
-    // If we own the process, kill it and clean up temp dir
+    // Distinguish two modes:
+    //   1. Self-launched browser (childProcess exists): kill Chrome process
+    //      because xbrowser owns it and should clean up.
+    //   2. External CDP connection (no childProcess): only disconnect the
+    //      WebSocket — the user's browser keeps running with all tabs/login.
     if (this.childProcess) {
       const { killChrome } = await import('./launcher.js');
       await killChrome(this.childProcess, this.tmpDir);

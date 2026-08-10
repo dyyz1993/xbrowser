@@ -196,6 +196,173 @@ pageState:
   title: "Results"
 ```
 
+### hover
+
+Mouse hover on an interactive element. Includes the element descriptor and
+optionally a `hoverContext` field capturing any popup/dropdown/tooltip that
+appeared after the hover.
+
+```yaml
+type: hover
+element:
+  selector: ".sort-trigger"
+  text: "新发布"
+  strategy: "class"
+  confidence: "medium"
+x: 311
+y: 196
+# Optional: only present when a popup appeared after the hover
+hoverContext:
+  appeared:
+    - tag: "div"
+      selector: "div:nth-of-type(2) > ..."
+      text: "最新 1天内 3天内 7天内 14天内"
+      rect: { x: 271, y: 224, w: 120, h: 208 }
+      items:
+        - { text: "最新",   selector: "..." }
+        - { text: "1天内",  selector: "..." }
+        - { text: "3天内",  selector: "..." }
+        - { text: "7天内",  selector: "..." }
+        - { text: "14天内", selector: "..." }
+  disappeared: []
+  stateChanges: []
+```
+
+**How hover popups are captured**:
+
+1. When `mouseover` fires on an interactive element (link, button, or `<span>`
+   with `cursor:pointer` / `class*="select|trigger|tab|menu"`), the recorder
+   pushes a `hover` action.
+2. Over the next 1200ms, it samples the page at 200ms / 500ms / 1000ms for
+   `POPOVER_SELECTORS` matches (`[role=menu]`, `[class*="dropdown"]`,
+   `[class*="items-container"]`, etc.) near the hover coordinates.
+3. A short-lived `MutationObserver` (1.2s) catches popups that appear on their
+   own schedule (CSS transitions, async JS rendering).
+4. Any popup found is attached to the hover action as `hoverContext.appeared`,
+   with each menu item's `text` + `selector` recorded for replay targeting.
+
+**Replay**: `xbrowser replay` performs `page.hover(selector)` then waits up to
+1s for the first popup in `hoverContext.appeared` to become visible, so that
+a subsequent click on a popup item resolves reliably.
+
+**Clean mode filtering**: In `clean` stream mode (default), hover actions
+without a `hoverContext` are dropped as ambient noise. Hover actions **with**
+a `hoverContext` are always kept — they are semantically meaningful (the user
+intentionally opened a popup).
+
+## Proactive Sensing (主动感知)
+
+In addition to capturing user actions, the recorder proactively scans the
+page to discover interactive regions **even if the user never touches them**.
+This lets AI/automation answer "what can I do on this page?" without requiring
+the user to demo every option.
+
+### `RecordingData.discoveredFilters`
+
+A list of filter/sort/tab/menu/navigation regions found on the page. Each
+entry describes one container and the triggers inside it.
+
+```yaml
+discoveredFilters:
+  - containerSelector: ".search-filter-select-container"
+    category: "filter"
+    containerText: "综合 新发布 价格 ..."
+    triggers:
+      - text: "综合"
+        selector: ".trigger-zonghe"
+        category: "filter"
+        hasPopup: false         # updated when a popup is observed for this trigger
+        userInteracted: false   # set true when user actually clicks/hovers it
+        explored: false         # set true when mouse lingers on it
+      - text: "新发布"
+        ...
+      - text: "价格"
+        ...
+  - containerSelector: ".search-filter-checkbox-container"
+    category: "filter"
+    triggers:
+      - text: "包邮"
+      - text: "全新"
+      ...
+```
+
+**Key fields**:
+- `category` — sort / filter / tab / menu / navigation / unknown
+- `triggers[].userInteracted` — true if user actually clicked or hovered this trigger
+- `triggers[].hasPopup` — true if a popup was observed appearing from this trigger
+- `triggers[].explored` — true if mouse lingered >800ms without clicking
+
+**Why only triggers (not options) are recorded**: Triggers are stable anchors.
+Options are recorded separately when a popup actually appears (see below) —
+this avoids capturing template/placeholder text from hidden DOM.
+
+### `popup_appear` action
+
+When any popover/dropdown/menu becomes visible (via user hover, click, or
+auto-shown), a `popup_appear` action is pushed to the actions stream. This
+preserves temporal ordering with user actions so AI can correlate "this click
+caused this popup" or "this popup appeared automatically".
+
+```yaml
+type: popup_appear
+popupAppear:
+  trigger:
+    selector: ".sort-trigger-xinfabu"
+    text: "新发布"
+  popup:
+    selector: ".sort-dropdown"
+    text: "最新 1天内 3天内 7天内 14天内"
+    rect: { x: 271, y: 224, w: 120, h: 208 }
+    items:
+      - { text: "最新", selector: ".item-latest" }
+      - { text: "1天内", selector: ".item-1d" }
+      - ...
+  cause: "user-hover"    # user-hover / user-click / auto / script
+  userTriggered: true    # false for auto-shown popups
+```
+
+**Replay behavior**: `popup_appear` is an observation, not a user action —
+`xbrowser replay` skips these by default. Use them for AI analysis only.
+
+### Three-layer sensing architecture
+
+1. **Baseline scan** (`__xb_scanFilters`) — runs on start and after every
+   navigation. Finds all `[role="tablist"]`, `[class*="filter"]`,
+   `[class*="sort"]`, etc. and records their triggers.
+2. **Long-lived MutationObserver** — runs for the whole recording session.
+   Watches all `POPOVER_SELECTORS` containers for `hidden → visible`
+   transitions and pushes a `popup_appear` action on each.
+3. **mousemove throttled diff** — 300ms throttle + 800ms "stop" detection.
+   When the mouse lingers near a trigger, marks it as `explored` and scans
+   for nearby popups.
+
+### Limitations
+
+- **No options for un-interacted triggers** — by design, only triggers are
+  recorded from the baseline scan. Full option lists require the popup to
+  actually appear (layer 2/3 or user action).
+- **Dedup is heuristic** — overlapping containers may still produce some
+  duplicate triggers in rare cases. Server-side flush merges by container
+  selector to mitigate.
+- **Performance** — long-lived MutationObserver + mousemove listener add
+  overhead. For heavy SPAs with frequent DOM churn, consider `stream: 'raw'`
+  mode (which keeps ambient noise but bypasses some filtering).
+
+## Other action types
+
+The recorder also captures (mostly informational, see `src/recorder/recording-types.ts`
+for the full list):
+
+- `change`, `submit` — form events
+- `dblclick`, `contextmenu` — alternative mouse events
+- `drag` — drag-and-drop with from/to coordinates
+- `resize`, `visibility` — viewport / tab visibility changes
+- `clipboard` — copy / paste / cut
+- `touch`, `focus` — mobile / focus events
+- `goto`, `cdp-fill`, `cdp-click`, `cdp-eval` — actions injected by xbrowser
+  CDP commands (when running automation while recording)
+- `filechooser` — file input dialog
+
 ## Playback
 
 ### Basic Playback
