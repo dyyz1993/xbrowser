@@ -8,10 +8,10 @@ export default function (xcli: XCLIAPI): void {
     name: 'bilibili',
     url: 'https://www.bilibili.com',
     description: 'B站 - 视频搜索、动态发布、评论、点赞与图片搜索',
-    requiresLogin: true,
+    requiresLogin: false,
     isLogin: async (ctx) => {
       const page = (ctx as Record<string, unknown>).page as import('../types').Page | null;
-      if (!page) return true;
+      if (!page) return false;
       try {
         const url = page.url();
         if (url.includes('/login') || url.includes('/signin')) return false;
@@ -21,7 +21,7 @@ export default function (xcli: XCLIAPI): void {
         );
         return loggedIn;
       } catch {
-        return true;
+        return false;
       }
     },
   });
@@ -68,35 +68,37 @@ export default function (xcli: XCLIAPI): void {
       try {
         const searchUrl = `https://search.bilibili.com/all?keyword=${encodeURIComponent(params.query)}`;
         await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await page.waitForTimeout(4000);
+        // Smart wait: wait for search results to render
+        await page.waitForFunction(
+          () => document.querySelectorAll('.bili-video-card__info--tit').length > 0,
+          { timeout: 12000 }
+        ).catch(() => {});
+        await page.waitForTimeout(3000);
 
         const videos = await page.evaluate((limit) => {
-          const items: Array<{
-            title: string; author: string; playCount: string;
-            duration: string; link: string; cover: string;
-          }> = [];
-          const cards = document.querySelectorAll('.bili-video-card, .video-list-item, .video-card');
-          cards.forEach((card, i) => {
-            if (i >= limit) return;
-            const titleEl = card.querySelector('a[title], h3 a, .bili-video-card__info--tit a, [class*="title"] a');
-            const authorEl = card.querySelector('[class*="author"], [class*="up-name"], .bili-video-card__info--author');
-            const playEl = card.querySelector('[class*="play"], [class*="play-text"]');
-            const durationEl = card.querySelector('[class*="duration"], [class*="time"]');
-            const coverEl = card.querySelector('img');
+          var items = [];
+          var cards = document.querySelectorAll('.bili-video-card, .video-list-item, .video-card');
+          cards.forEach(function(card) {
+            if (items.length >= limit) return;
+            var titleEl = card.querySelector('.bili-video-card__info--tit');
+            var titleText = titleEl ? (titleEl.textContent || '').trim() : '';
+            if (!titleText) return;
+            var videoLink = card.querySelector('a[href*="bilibili.com/video"]');
+            var authorEl = card.querySelector('.bili-video-card__info--author, [class*="author"], [class*="up-name"]');
+            var playEl = card.querySelector('.bili-video-card__stats--item, [class*="stats--item"]');
+            var durationEl = card.querySelector('.bili-video-card__stats__duration, [class*="duration"], [class*="time"]');
+            var coverEl = card.querySelector('img');
             items.push({
-              title: titleEl?.textContent?.trim() || titleEl?.getAttribute('title') || '',
-              author: authorEl?.textContent?.trim() || '',
-              playCount: playEl?.textContent?.trim() || '',
-              duration: durationEl?.textContent?.trim() || '',
-              link: titleEl instanceof HTMLAnchorElement ? titleEl.href : '',
-              cover: coverEl instanceof HTMLImageElement ? coverEl.src : '',
+              title: titleText,
+              author: authorEl ? (authorEl.textContent || '').trim() : '',
+              playCount: playEl ? (playEl.textContent || '').trim() : '',
+              duration: durationEl ? (durationEl.textContent || '').trim() : '',
+              link: videoLink ? videoLink.href : '',
+              cover: coverEl ? coverEl.src : '',
             });
           });
           return items;
-        }, params.limit) as Array<{
-          title: string; author: string; playCount: string;
-          duration: string; link: string; cover: string;
-        }>;
+        }, params.limit || 10);
 
         return ok(
           { query: params.query, count: videos.length, videos },
@@ -273,6 +275,23 @@ export default function (xcli: XCLIAPI): void {
         await page.goto(params.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForTimeout(4000);
 
+        // 先检查登录态：B 站未登录时点赞会弹登录框
+        const isLoggedIn = await page.evaluate(() => {
+          var loginModal = document.querySelector('.bili-mini-login-wrapper, [class*="login-modal"], [class*="login-mask"]');
+          if (loginModal && loginModal.offsetParent !== null) return false;
+          return !!document.querySelector('[class*="avatar"],[class*="user-info"],[class*="logged-in"],.header-info__user,.bili-avatar');
+        });
+        if (!isLoggedIn) {
+          return fail('LOGIN_REQUIRED: 未登录 B站，请先登录后再点赞', [...tips, '⚠️ 未检测到登录态']);
+        }
+
+        // 记录点击前的点赞状态
+        const wasActive = await page.evaluate(() => {
+          var btn = document.querySelector('.video-toolbar-left .like, .like-icon, [class*="video-like"]');
+          if (!btn) return false;
+          return btn.classList.contains('active') || btn.classList.contains('on');
+        });
+
         // 点赞按钮
         const likeBtn = page.locator(
           '.video-toolbar-left .like, .video-toolbar-left .like-icon, [class*="toolbar-left"] [class*="like"], .like-icon, [class*="video-like"]'
@@ -283,28 +302,39 @@ export default function (xcli: XCLIAPI): void {
           await page.waitForTimeout(2000);
           tips.push('✓ 已点击点赞按钮');
         } else {
-          // 备选：用 evaluate 查找点赞按钮
           const clicked = await page.evaluate(() => {
-            const btns = Array.from(document.querySelectorAll('[class*="like"], [class*="点赞"]'));
-            for (const btn of btns) {
+            var btns = Array.from(document.querySelectorAll('[class*="like"], [class*="点赞"]'));
+            for (var i = 0; i < btns.length; i++) {
+              var btn = btns[i];
               if (btn.classList.contains('active') || btn.classList.contains('on')) continue;
-              const parent = btn.closest('button, [class*="toolbar"]');
-              if (parent && (parent as HTMLElement).offsetParent !== null) {
-                (parent as HTMLElement).click();
-                return true;
-              }
+              var parent = btn.closest('button, [class*="toolbar"]');
+              if (parent && parent.offsetParent !== null) { parent.click(); return true; }
             }
             return false;
-          }) as boolean;
-
-          if (clicked) {
-            tips.push('✓ 已点击点赞按钮（evaluate）');
-          } else {
-            return fail('未找到点赞按钮，请确认已登录 B站', tips);
-          }
+          });
+          if (clicked) { tips.push('✓ 已点击点赞按钮（evaluate）'); }
+          else { return fail('未找到点赞按钮，请确认已登录 B站', tips); }
         }
 
-        return ok({ liked: true }, [...tips, '点赞成功']);
+        // 点击后验证：检查是否弹出了登录框
+        const loginPopup = await page.evaluate(() => {
+          var modal = document.querySelector('.bili-mini-login-wrapper, [class*="login-modal"], [class*="login-mask"], [class*="login-dialog"]');
+          return modal && modal.offsetParent !== null;
+        });
+        if (loginPopup) {
+          return fail('LOGIN_REQUIRED: 点击点赞后弹出登录框，请先登录 B站', tips);
+        }
+
+        // 验证点赞是否生效
+        const nowActive = await page.evaluate(() => {
+          var btn = document.querySelector('.video-toolbar-left .like, .like-icon, [class*="video-like"]');
+          if (!btn) return false;
+          return btn.classList.contains('active') || btn.classList.contains('on');
+        });
+        const finalLiked = (nowActive && !wasActive) || (wasActive && nowActive);
+        if (!finalLiked) { tips.push('⚠️ 点击后点赞按钮未变为 active，可能未生效'); }
+
+        return ok({ liked: finalLiked, wasAlreadyLiked: wasActive }, [...tips, finalLiked ? '点赞成功' : '点赞状态不确定']);
       } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', tips);
       }
@@ -325,56 +355,51 @@ export default function (xcli: XCLIAPI): void {
       try {
         const url = `https://search.bilibili.com/all?keyword=${encodeURIComponent(params.query)}`;
         await page.goto(url, { waitUntil: 'domcontentloaded', timeout: params.timeout });
-        await page.waitForTimeout(3000);
+        await page.waitForFunction(
+          () => document.querySelectorAll('.bili-video-card__info--tit').length > 0,
+          { timeout: 12000 }
+        ).catch(() => {});
+        await page.waitForTimeout(2000);
         await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2));
         await page.waitForTimeout(1000);
 
         const results = await page.evaluate((limit) => {
-          const images: Array<{
-            title: string; thumbnailUrl: string; sourceUrl: string;
-            width: number; height: number;
-          }> = [];
+          var images = [];
 
-          // B站搜索结果的封面图
-          document.querySelectorAll('img[src*="hdslb"], img[src*="bilivideo"], img[src*="hdslb.com"]').forEach((img, idx) => {
+          document.querySelectorAll('img[src*="hdslb"], img[src*="bilivideo"], img[src*="hdslb.com"]').forEach(function(img, idx) {
             if (idx >= limit) return;
-            const el = img as HTMLImageElement;
-            if (el.naturalWidth < 80) return;
-            const src = el.src || '';
-            if (src.includes('avatar') || src.includes('icon') || src.includes('logo')) return;
+            if (img.naturalWidth < 80) return;
+            var src = img.src || '';
+            if (src.indexOf('avatar') > -1 || src.indexOf('icon') > -1 || src.indexOf('logo') > -1) return;
+            var closestA = img.closest('a');
             images.push({
-              title: el.alt || '',
+              title: img.alt || '',
               thumbnailUrl: src,
-              sourceUrl: el.closest('a')?.getAttribute('href') || '',
-              width: el.naturalWidth,
-              height: el.naturalHeight,
+              sourceUrl: closestA ? closestA.getAttribute('href') : '',
+              width: img.naturalWidth,
+              height: img.naturalHeight,
             });
           });
 
-          // 如果没找到，降级到所有图片
           if (images.length === 0) {
-            document.querySelectorAll('.bili-video-card img, .video-card img').forEach((img, idx) => {
+            document.querySelectorAll('.bili-video-card img, .video-card img').forEach(function(img, idx) {
               if (idx >= limit) return;
-              const el = img as HTMLImageElement;
-              if (el.naturalWidth < 80) return;
-              const src = el.src || '';
-              if (src.includes('avatar') || src.includes('icon') || src.includes('logo')) return;
+              if (img.naturalWidth < 80) return;
+              var src = img.src || '';
+              if (src.indexOf('avatar') > -1 || src.indexOf('icon') > -1 || src.indexOf('logo') > -1) return;
+              var closestA = img.closest('a');
               images.push({
-                title: el.alt || '',
+                title: img.alt || '',
                 thumbnailUrl: src,
-                sourceUrl: el.closest('a')?.getAttribute('href') || '',
-                width: el.naturalWidth,
-                height: el.naturalHeight,
+                sourceUrl: closestA ? closestA.getAttribute('href') : '',
+                width: img.naturalWidth,
+                height: img.naturalHeight,
               });
             });
           }
 
           return images;
-        }, params.limit) as Array<{
-          title: string; thumbnailUrl: string; sourceUrl: string;
-          width: number; height: number;
-        }>;
-
+        }, params.limit || 10);
         return buildResult(params.query, 'bilibili', results.map(r => ({ ...r, sourceSite: 'bilibili' })));
       } catch (error) {
         return buildFail(error, 'bilibili');
