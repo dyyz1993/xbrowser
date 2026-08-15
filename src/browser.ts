@@ -322,13 +322,41 @@ export function deleteSessionDiskMeta(name: string): void {
  * @param cdpEndpoint - CDP endpoint to use when restoring from disk.
  * @returns A managed session (possibly restored), or `undefined`.
  */
+/**
+ * 便宜存活探针：一次 evaluate 往返即可判断 page 背后的 CDP 连接是否还活着。
+ * 浏览器在同一端口被杀重拉后，内存会话的 page 对象仍存在但 WS 已死——
+ * 不探一下就返回，首个命令必失败（"Cannot read properties of undefined" /
+ * WS 404），要等人工重试才恢复。
+ */
+async function isSessionPageAlive(session: ManagedSession): Promise<boolean> {
+  const page = session.page as unknown as { evaluate?: (expr: string) => Promise<unknown> } | undefined;
+  if (!page || typeof page.evaluate !== 'function') return false;
+  try {
+    await Promise.race([
+      page.evaluate('1'),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('liveness probe timeout')), 1500)),
+    ]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
  export async function findOrRestoreSession(
   name: string,
   cdpEndpoint?: string,
 ): Promise<ManagedSession | undefined> {
-  // 1. Try in-memory first (same-process sessions are always valid)
+  // 1. Try in-memory first — 但必须探活。
+  //    Defense (2026-08-15 F3, browser-agent-product 冷启动 404)：
+  //    原「same-process sessions are always valid」在浏览器于同端口重启后为假——
+  //    内存会话持死 page，首个命令失败、人工重试才恢复（冒烟 3 个数据点）。
+  //    探针失败 → 关闭僵尸条目，落入下方磁盘/CDP 重建路径，同一次调用内自愈。
   const inMem = findSession(name);
-  if (inMem) return inMem;
+  if (inMem) {
+    if (await isSessionPageAlive(inMem)) return inMem;
+    logSessionEvent('stale_session', `name="${name}" — page 探针失败（浏览器可能已重启），就地重建`);
+    try { await closeSessionByName(name); } catch { /* 已死，忽略关闭错误 */ }
+  }
 
   // 2. Try disk recovery if we have CDP
   const meta = readSessionDiskMeta(name);
