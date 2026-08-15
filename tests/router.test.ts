@@ -922,4 +922,55 @@ describe('router', () => {
       delete process.env.XBROWSER_CDP;
     }
   });
+  // ── Defense (2026-08-15 real-sites smoke): fill 值含空格不得被拆分 ──
+  // 攻击复现：fill "#kw" "a b c" 曾被 quoted-arg 启发式误拆成 ['a','b','c']，
+  // fill 实际只写入 'a'。防守：命令串启发式仅作用于首个非旗标参数。
+  it('keeps fill value with spaces as a single argument', async () => {
+    const { handleBrowserCommand } = await import('../src/cli/index.js');
+    const { isChainInput } = await import('../src/executor.js');
+    vi.mocked(isChainInput).mockReturnValue(false);
+
+    await routeCommand(['fill', '#kw', 'a b c']);
+    expect(handleBrowserCommand).toHaveBeenCalledWith(
+      'fill',
+      ['#kw', 'a b c'],
+      expect.any(Object),
+      'default',
+      'text',
+      undefined
+    );
+  });
+
+  it('still expands single command-string form (xbrowser "goto url")', async () => {
+    const { handleBrowserCommand } = await import('../src/cli/index.js');
+    const { isChainInput } = await import('../src/executor.js');
+    vi.mocked(isChainInput).mockReturnValue(false);
+
+    await routeCommand(['goto https://example.com/page']);
+    expect(handleBrowserCommand).toHaveBeenCalledWith(
+      'goto',
+      ['https://example.com/page'],
+      expect.any(Object),
+      'default',
+      'text',
+      undefined
+    );
+  });
+
+  it('keeps eval script with spaces intact after command word', async () => {
+    const { handleBrowserCommand } = await import('../src/cli/index.js');
+    const { isChainInput } = await import('../src/executor.js');
+    vi.mocked(isChainInput).mockReturnValue(false);
+
+    await routeCommand(['eval', 'JSON.stringify({a: 1, b: 2})']);
+    expect(handleBrowserCommand).toHaveBeenCalledWith(
+      'eval',
+      ['JSON.stringify({a: 1, b: 2})'],
+      expect.any(Object),
+      'default',
+      'text',
+      undefined
+    );
+  });
 });
+
