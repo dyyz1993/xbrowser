@@ -326,14 +326,22 @@ export async function routeCommand(
 
     // Find the first quoted argument (contains space, starts with letter)
     // Skip global flags (--session, --cdp, --json, etc.) and their values
+    // Defense (2026-08-15 real-sites smoke): the command-string heuristic must only
+    // apply to the FIRST non-flag argument (xbrowser "goto url" style). A
+    // space-containing arg that comes AFTER a command word (fill "#kw" "a b c")
+    // is a VALUE — re-splitting it truncated fill values to the first word.
     const globalFlags = new Set(['--session', '--cdp', '--json', '--yaml', '--output', '--timeout', '--help', '-h', '--version']);
     let chainArgIdx = -1;
+    let seenCommandWord = false;
     for (let i = 0; i < argv.length; i++) {
       if (globalFlags.has(argv[i])) continue; // skip flag
       if (globalFlags.has(argv[i]) || (i > 0 && globalFlags.has(argv[i-1]) && !argv[i].startsWith('-'))) continue; // skip flag value
-      if (argv[i].includes(' ') && /^[a-zA-Z]/.test(argv[i])) {
-        chainArgIdx = i;
-        break;
+      if (!seenCommandWord) {
+        if (argv[i].includes(' ') && /^[a-zA-Z]/.test(argv[i])) {
+          chainArgIdx = i;
+          break;
+        }
+        seenCommandWord = true;
       }
     }
 

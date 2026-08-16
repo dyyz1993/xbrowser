@@ -1,4 +1,22 @@
-import sharp from 'sharp';
+// sharp 懒加载（2026-08-15）：直播流帧压缩才需要这个原生模块。
+// 顶层静态 import 会让 daemon 启动即加载——不用直播的环境（如 CentOS 7
+// 服务器直部署，系统 libstdc++ 过旧加载失败）整个 daemon 起不来。
+// 用到直播功能时才加载，加载失败给出明确错误而不是炸掉 daemon。
+let _sharp: typeof import('sharp') | null = null;
+async function loadSharp(): Promise<typeof import('sharp')> {
+	if (!_sharp) {
+		try {
+			_sharp = (await import('sharp')).default;
+		} catch (err) {
+			throw new Error(
+				'直播流帧处理需要 sharp 原生模块，当前环境加载失败：' +
+				(err instanceof Error ? err.message : String(err)) +
+				'。不用直播流功能可忽略；需要直播请在兼容环境运行或安装对应平台依赖。'
+			);
+		}
+	}
+	return _sharp;
+}
 
 export type StreamState = 'user_interacting' | 'screen_moving' | 'static';
 
@@ -222,7 +240,8 @@ export class FrameProcessor {
       return buffer;
     }
 
-    let processed: sharp.Sharp = sharp(buffer);
+    const sharp = await loadSharp();
+    let processed = sharp(buffer);
 
     if (cropConfig) {
       // The crop coordinates are in remote viewport space (e.g. 1280x800),
@@ -282,6 +301,7 @@ export async function cropFrameForElement(
   let h = Math.round(box.height);
 
   if (meta?.deviceWidth && meta?.deviceHeight) {
+    const sharp = await loadSharp();
     const imgInfo = await sharp(frameData).metadata();
     const actualW = imgInfo.width ?? meta.deviceWidth;
     const actualH = imgInfo.height ?? meta.deviceHeight;
@@ -305,6 +325,7 @@ export async function cropFrameForElement(
     return frameData;
   }
 
+  const sharp = await loadSharp();
   return sharp(frameData)
     .extract({ left, top, width: w, height: h })
     .resize(box.width, box.height)
