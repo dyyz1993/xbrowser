@@ -51,7 +51,11 @@ const WARNING_TEXTS = [
   { text: 'unusual traffic', severity: 'high' as const },
   { text: 'please verify you are human', severity: 'medium' as const },
   { text: 'access denied', severity: 'high' as const },
-  { text: 'blocked', severity: 'high' as const },
+  // 裸词 "blocked" 会误伤大量正常页面（"unblocked"、adblock 检测脚本文本、
+  // CSS-in-JS 字符串等，实测 doubao.com），只匹配完整阻断短语
+  { text: 'you have been blocked', severity: 'high' as const },
+  { text: 'your access has been blocked', severity: 'high' as const },
+  { text: 'access blocked', severity: 'high' as const },
   { text: 'rate limit', severity: 'medium' as const },
   { text: 'too many requests', severity: 'medium' as const },
   { text: '验证', severity: 'low' as const },
@@ -202,7 +206,12 @@ async function detectCaptcha(page: Page): Promise<DetectionResult> {
  */
 async function detectWarningText(page: Page): Promise<DetectionResult> {
   try {
-    const pageText = await page.textContent('body').catch(() => '') || '';
+    // 只扫可见文本（innerText）：textContent('body') 会把 <script>/<style>
+    // 和隐藏元素的文本也算进来，正常页面里的脚本文本（如 adblock 检测脚本）
+    // 会造成大面积误判（实测 doubao.com 因脚本文本含 "blocked" 被 fill 拒绝）
+    const pageText = ((await page
+      .evaluate(() => document.body?.innerText || '')
+      .catch(() => '')) as string) || '';
     const lowerText = pageText.toLowerCase();
 
     for (const { text, severity } of WARNING_TEXTS) {
