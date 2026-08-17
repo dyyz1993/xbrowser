@@ -57,19 +57,22 @@ export class XBLocatorImpl implements XBLocator {
     const cx = finalRect.x + finalRect.width / 2;
     const cy = finalRect.y + finalRect.height / 2;
 
-    // Execute click via mouse
+    // Stealth click with element dimensions
     await this.page.mouse.click(cx, cy, {
-      button: opts.button ?? 'left',
-      clickCount: opts.clickCount ?? 1,
-      delay: opts.delay,
-    });
+      stealth: true, elementWidth: finalRect.width, elementHeight: finalRect.height,
+      ...({ button: opts.button ?? 'left', clickCount: opts.clickCount ?? 1, delay: opts.delay } as Record<string, unknown>),
+    } as never);
   }
 
   async fill(value: string, opts: XBFillOptions = {}): Promise<void> {
     await waitForActionable(this.page, this.selector, opts);
     await scrollIntoView(this.page, this.selector);
 
-    // Focus the element, clear existing content, then use insertText
+    // Stealth fill: click focus + keyboard type
+    await this.click({ ...opts });
+    await this.page.keyboard.type(value, { stealth: true });
+    return;
+    // Legacy path (unreachable but kept for reference):
     await this.page.evaluate(`
       (function() {
         const el = ${this._q(this.selector)};

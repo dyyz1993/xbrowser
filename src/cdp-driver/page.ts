@@ -26,6 +26,7 @@ import type {
 import type { XBContextImpl } from './context.js';
 import type { XBBrowserImpl } from './browser.js';
 import { XBMouseImpl } from './mouse.js';
+import { buildStealthInitScript } from './stealth.js';
 import { XBKeyboardImpl } from './keyboard.js';
 import { XBLocatorImpl } from './locator.js';
 import { XBElementHandleImpl } from './element-handle.js';
@@ -142,6 +143,14 @@ export class XBPageImpl implements XBPage {
 
     // Reset load state
     this._loadState = { loadFired: false, domContentFired: false, networkIdle: false };
+
+    // Inject stealth hooks BEFORE navigation
+    if (process.env.XBROWSER_STEALTH !== 'off') {
+      try {
+        await this.conn.send('Page.addScriptToEvaluateOnNewDocument',
+          { source: buildStealthInitScript() }, this.sessionId);
+      } catch { /* best-effort */ }
+    }
 
     // Navigate
     const result = await this.conn.send<{ errorText?: string; frameId?: string }>(

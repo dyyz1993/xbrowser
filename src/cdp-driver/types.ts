@@ -239,7 +239,7 @@ export interface XBElementHandle {
 // ── Mouse ──────────────────────────────────────────────────────
 
 export interface XBMouse {
-  click(x: number, y: number, opts?: { button?: 'left' | 'right' | 'middle'; clickCount?: number; delay?: number }): Promise<void>;
+  click(x: number, y: number, opts?: { button?: 'left' | 'right' | 'middle'; clickCount?: number; delay?: number; stealth?: boolean }): Promise<void>;
   dblclick(x: number, y: number, opts?: { button?: 'left' | 'right' | 'middle' }): Promise<void>;
   down(opts?: { button?: 'left' | 'right' | 'middle' }): Promise<void>;
   up(opts?: { button?: 'left' | 'right' | 'middle' }): Promise<void>;
@@ -253,7 +253,7 @@ export interface XBKeyboard {
   press(key: string, opts?: { delay?: number }): Promise<void>;
   down(key: string): Promise<void>;
   up(key: string): Promise<void>;
-  type(text: string, opts?: { delay?: number }): Promise<void>;
+  type(text: string, opts?: { delay?: number; stealth?: boolean }): Promise<void>;
   insertText(text: string): Promise<void>;
 }
 

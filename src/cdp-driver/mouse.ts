@@ -6,6 +6,7 @@
 
 import type { XBMouse } from './types.js';
 import type { CDPConnection } from './connection.js';
+import { bezierTrajectory, landingOffset, rand as sRand, DEFAULT_STEALTH_CONFIG as CFG } from './stealth.js';
 
 export class XBMouseImpl implements XBMouse {
   private conn: CDPConnection;
@@ -29,30 +30,34 @@ export class XBMouseImpl implements XBMouse {
     return this._y;
   }
 
-  async click(
-    x: number,
-    y: number,
-    opts: { button?: 'left' | 'right' | 'middle'; clickCount?: number; delay?: number } = {},
-  ): Promise<void> {
+  async click(x: number, y: number, opts: { button?: 'left' | 'right' | 'middle'; clickCount?: number; delay?: number; stealth?: boolean; elementWidth?: number; elementHeight?: number } = {}): Promise<void> {
     const button = opts.button ?? 'left';
-    const clickCount = opts.clickCount ?? 1;
-    const delay = opts.delay ?? 0;
-
-    await this.move(x, y);
-    await this.down({ button });
-
-    if (delay > 0) {
-      await sleep(delay);
+    const stealth = opts.stealth ?? true;
+    let tx = x, ty = y;
+    if (stealth && opts.elementWidth !== undefined && opts.elementHeight !== undefined) {
+      const off = landingOffset(opts.elementWidth, opts.elementHeight);
+      tx += off.dx; ty += off.dy;
     }
-
-    await this.up({ button });
-
-    // Additional clicks for clickCount > 1
-    for (let i = 1; i < clickCount; i++) {
-      if (delay > 0) await sleep(delay);
-      await this.down({ button });
-      if (delay > 0) await sleep(delay);
-      await this.up({ button });
+    if (stealth) {
+      const traj = bezierTrajectory(this._x, this._y, tx, ty);
+      for (const p of traj) {
+        await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y, button: this._button });
+        this._x = p.x; this._y = p.y;
+        await sleep(p.delay);
+      }
+      await sleep(sRand(...CFG.aimPause));
+    } else {
+      await this.move(tx, ty);
+    }
+    await this.down({ button });
+    await sleep(stealth ? sRand(...CFG.pressDuration) : (opts.delay ?? 0));
+    const rx = stealth ? this._x + sRand(...CFG.releaseDrift) * (Math.random() < .5 ? -1 : 1) : this._x;
+    const ry = stealth ? this._y + sRand(...CFG.releaseDrift) * (Math.random() < .5 ? -1 : 1) : this._y;
+    this._x = rx; this._y = ry;
+    await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rx, y: ry, button, clickCount: opts.clickCount ?? 1 });
+    for (let i = 1; i < (opts.clickCount ?? 1); i++) {
+      if (opts.delay) await sleep(opts.delay);
+      await this.down({ button }); await this.up({ button });
     }
   }
 
