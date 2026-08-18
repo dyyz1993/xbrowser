@@ -13,6 +13,41 @@
  *   - (no prefix) — treated as CSS selector
  */
 export function queryJS(selector: string): string {
+  return `(${deepQueryIIFE})( ${JSON.stringify(queryMainJS(selector))} )`;
+}
+
+/**
+ * IIFE body for deep (same-origin iframe) element search. Takes the raw
+ * main-document query expression as a string argument, then:
+ *   1. runs it against the top document;
+ *   2. on miss, recursively runs it inside every reachable same-origin iframe
+ *      document (shadowing the global `document` via a Function parameter).
+ * Cross-origin iframes throw on contentDocument access and are skipped.
+ */
+const deepQueryIIFE = `(function(mainExpr) {
+  const run = (doc) => {
+    try { return new Function('document', 'return (' + mainExpr + ')')(doc); }
+    catch (e) { return null; }
+  };
+  const hit = run(document);
+  if (hit) return hit;
+  const walk = (doc) => {
+    let frames;
+    try { frames = doc.querySelectorAll('iframe'); } catch (e) { return null; }
+    for (const f of frames) {
+      let inner = null;
+      try { inner = f.contentDocument; } catch (e) { /* cross-origin */ }
+      if (!inner) continue;
+      const r = run(inner) || walk(inner);
+      if (r) return r;
+    }
+    return null;
+  };
+  return walk(document);
+})`;
+
+/** Main-document-only query (previous queryJS behavior). */
+function queryMainJS(selector: string): string {
   if (selector.startsWith('xpath=')) {
     const xpath = JSON.stringify(selector.slice(6));
     return `document.evaluate(${xpath}, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue`;

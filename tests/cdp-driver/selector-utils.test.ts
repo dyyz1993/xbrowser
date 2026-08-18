@@ -30,7 +30,7 @@ describe('cdp-driver selector-utils', () => {
       // (which would be invalid CSS). Instead it should iterate elements.
       expect(js).not.toContain('document.querySelector("text=');
       expect(js).toContain('querySelectorAll');
-      expect(js).toContain('"最新"');
+      expect(js).toContain('最新'); // quotes JSON-escaped inside deep-query wrapper
       expect(js).toContain('includes');
       expect(js).toContain('children.length');
     });
@@ -38,7 +38,7 @@ describe('cdp-driver selector-utils', () => {
     it('translates text="Foo" (quoted) to exact match', () => {
       const js = queryJS('text="最新"');
       expect(js).not.toContain('document.querySelector("text=');
-      expect(js).toContain('"最新"');
+      expect(js).toContain('最新'); // quotes JSON-escaped inside deep-query wrapper
       expect(js).toContain('exact = true');
       // Both branches are present (exact uses ===, non-exact uses includes)
       expect(js).toContain('===');
@@ -47,7 +47,7 @@ describe('cdp-driver selector-utils', () => {
     it('translates popup-text=Foo', () => {
       const js = queryJS('popup-text=删除');
       expect(js).not.toContain('document.querySelector("popup-text=');
-      expect(js).toContain('"删除"');
+      expect(js).toContain('删除'); // quotes JSON-escaped inside deep-query wrapper
       expect(js).toContain('children.length');
     });
 
@@ -77,7 +77,7 @@ describe('cdp-driver selector-utils', () => {
       expect(js).toContain('[');
       expect(js).toContain(']');
       // Should reuse queryJS logic internally
-      expect(js).toContain('"最新"');
+      expect(js).toContain('最新'); // quotes JSON-escaped inside deep-query wrapper
     });
   });
 
@@ -119,7 +119,7 @@ describe('cdp-driver selector-utils', () => {
     it('falls back to queryJS for text= selectors (text is inherently unique)', () => {
       const js = nthQueryJS('text=最新', 0);
       // Should just delegate to queryJS — text match returns single element
-      expect(js).toContain('"最新"');
+      expect(js).toContain('最新'); // quotes JSON-escaped inside deep-query wrapper
       expect(js).not.toContain('nth-of-type');
     });
   });
@@ -136,12 +136,12 @@ describe('cdp-driver selector-utils', () => {
       // The generated JS must be syntactically valid and find leaf elements
       expect(js).toContain('children.length > 0');  // skip non-leaf
       expect(js).toContain('offsetParent === null'); // skip hidden
-      expect(js).toContain('"最新"');
+      expect(js).toContain('最新'); // quotes JSON-escaped inside deep-query wrapper
     });
 
     it('text=Submit handles ASCII too', () => {
       const js = queryJS('text=Submit');
-      expect(js).toContain('"Submit"');
+      expect(js).toContain('Submit'); // quotes JSON-escaped inside deep-query wrapper
       expect(js).toContain('toLowerCase'); // case-insensitive for substring
     });
   });

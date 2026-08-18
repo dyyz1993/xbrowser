@@ -382,16 +382,28 @@ export function createRPCHandler(): RPCHandler & {
 
     // Capture URL BEFORE executing command (page may navigate during click)
     let urlBeforeCommand: string | undefined;
+    // Describe the target element BEFORE executing: for pages that mutate the DOM
+    // on click (rebirth pattern), a post-execution describe resolves to the
+    // replacement element, producing wrong selectors and broken dedup (rec-duel d03).
+    let preElement: Record<string, unknown> | undefined;
     try {
       const session = findSession(sessionName);
       urlBeforeCommand = session?.page?.url();
+      const sel = (cmdParams.selector as string) || (cmdParams.css as string);
+      if (session?.page && sel && INTERACTION_COMMANDS.has(command)) {
+        preElement = await session.page.evaluate((s: string) => {
+          const el = document.querySelector(s);
+          if (!el || typeof window.__xb_describe !== 'function') return null;
+          return window.__xb_describe(el);
+        }, sel) as Record<string, unknown> | undefined;
+      }
     } catch { /* ignore */ }
 
     try {
       const result = await executeCommand(command, cmdParams, sessionName, { cdpEndpoint: endpoint });
       registerSessionIfNew(sessionName);
       // Inject CDP command into active recorder if recording
-      await injectCommandToRecorder(sessionName, command, cmdParams, urlBeforeCommand);
+      await injectCommandToRecorder(sessionName, command, cmdParams, urlBeforeCommand, preElement);
       return result;
     } finally {
       if (needsPause) await previewWS!.resumeScreencast(sessionName).catch(() => { });
@@ -566,7 +578,7 @@ export function createRPCHandler(): RPCHandler & {
   }
 
   /** Inject CDP command execution into active recorder as a synthetic action */
-  async function injectCommandToRecorder(sessionName: string, command: string, params: Record<string, unknown>, urlBeforeCommand?: string): Promise<void> {
+  async function injectCommandToRecorder(sessionName: string, command: string, params: Record<string, unknown>, urlBeforeCommand?: string, preElement?: Record<string, unknown>): Promise<void> {
     const recorder = activeRecorders.get(sessionName);
     if (!recorder) return;
 
@@ -590,9 +602,10 @@ export function createRPCHandler(): RPCHandler & {
       currentUrl = urlBeforeCommand;
     }
 
-    // Try to get element metadata from the page via describe()
-    let element: Record<string, unknown> | undefined;
-    if (selector) {
+    // Element metadata: prefer pre-execution describe (correct target even if the
+    // click mutates the DOM); fall back to post-execution describe
+    let element: Record<string, unknown> | undefined = preElement;
+    if (!element && selector) {
       try {
         const session = findSession(sessionName);
         if (session?.page) {
@@ -607,7 +620,11 @@ export function createRPCHandler(): RPCHandler & {
 
 	    await recorder.recordCommandAction({
 	      type: actionType,
-	      selector,
+	      // Prefer the described unique selector so the dedup key matches the
+	      // real action signal's key (which uses element.selector). The raw
+	      // command selector (e.g. "button") never equals the generated unique
+	      // selector, so dedup silently failed before (rec-duel d02/d03).
+	      selector: (element?.selector as string | undefined) || selector,
 	      value,
 	      url: currentUrl,
 	      element: element as UserAction['element'],

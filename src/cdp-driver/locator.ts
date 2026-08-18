@@ -43,13 +43,38 @@ export class XBLocatorImpl implements XBLocator {
     // Scroll into view if needed
     await scrollIntoView(this.page, this.selector);
 
-    // Re-check position after scroll
+    // Re-check position after scroll. Deep-aware: if the element lives inside a
+    // same-origin iframe, its getBoundingClientRect is iframe-relative — walk the
+    // iframe chain and accumulate host offsets to get top-page coordinates.
     const updatedRect = await this.page.evaluate<{ x: number; y: number; width: number; height: number }>(`
       (function() {
         const el = ${this._q(this.selector)};
         if (!el) return null;
         const rect = el.getBoundingClientRect();
-        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        let x = rect.x, y = rect.y;
+        let doc = el.ownerDocument;
+        while (doc !== document) {
+          let host = null;
+          const scan = (d) => {
+            let frames;
+            try { frames = d.querySelectorAll('iframe'); } catch (e) { return null; }
+            for (const f of frames) {
+              let inner = null;
+              try { inner = f.contentDocument; } catch (e) { continue; }
+              if (!inner) continue;
+              if (inner === doc) return f;
+              const r = scan(inner);
+              if (r) return r;
+            }
+            return null;
+          };
+          host = scan(document);
+          if (!host) break;
+          const hr = host.getBoundingClientRect();
+          x += hr.x; y += hr.y;
+          doc = host.ownerDocument;
+        }
+        return { x, y, width: rect.width, height: rect.height };
       })()
     `);
 

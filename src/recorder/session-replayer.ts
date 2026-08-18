@@ -75,7 +75,7 @@ export class SessionReplayer {
 
     if (!this.page) throw new Error('No page available. Provide cdpUrl or page.');
 
-    const actions = this.recording.actions;
+    const actions = this.dedupAdjacentActions(this.recording.actions);
     let success = 0;
     let failed = 0;
     let skipped = 0;
@@ -120,8 +120,34 @@ export class SessionReplayer {
   }
 
   /** Replay a single action */
-  private async replayAction(action: UserAction): Promise<void> {
-    const page = this.page!;
+  /**
+   * Replay-time adjacent dedup (rec-duel d02/d03).
+   *
+   * The recorder can emit both the real action signal AND the injected cdp
+   * command action for a single interaction when the signal flush lags behind
+   * the recorder-side dedup window (heavy snapshot capture slows polling).
+   * Replaying both executes the interaction twice. Filter here: an action is
+   * skipped when a nearby (≤15s apart) earlier action shares the same
+   * normalized key (type-normalized + selector + text).
+   */
+  private dedupAdjacentActions(actions: UserAction[]): UserAction[] {
+    const normType = (t: string): string =>
+      t === 'cdp-click' ? 'click' : t === 'cdp-fill' ? 'input' : t;
+    const keyOf = (a: UserAction): string =>
+      `${normType(a.type)}|${a.element?.selector || ''}|${a.element?.text || ''}`;
+    const lastKept = new Map<string, number>();
+    return actions.filter((a) => {
+      const key = keyOf(a);
+      const prevTs = lastKept.get(key);
+      if (prevTs !== undefined && Math.abs(a.timestamp - prevTs) <= 15000) {
+        return false; // duplicate of a nearby identical interaction
+      }
+      lastKept.set(key, a.timestamp);
+      return true;
+    });
+  }
+
+  private async replayAction(action: UserAction): Promise<void> {    const page = this.page!;
     const timeout = this.opts.stepTimeout;
 
     switch (action.type) {

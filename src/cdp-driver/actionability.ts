@@ -38,34 +38,47 @@ export async function waitForActionable(
   const timeout = opts.timeout ?? 30_000;
 
   if (opts.force) {
-    // For xpath selectors, get bounding box via evaluate
-    if (selector.startsWith('xpath=')) {
+    // Deep-aware evaluate for all selector kinds: resolves same-origin iframe
+    // elements too, and accumulates iframe-chain offsets into top-page coords.
+    const deadline = Date.now() + timeout;
+    let lastError: string | undefined;
+    while (Date.now() < deadline) {
       const rect = await page.evaluate<{ x: number; y: number; width: number; height: number } | null>(`
         (function() {
           const el = ${queryJS(selector)};
           if (!el) return null;
           const r = el.getBoundingClientRect();
-          return { x: r.x, y: r.y, width: r.width, height: r.height };
+          let x = r.x, y = r.y;
+          let doc = el.ownerDocument;
+          while (doc !== document) {
+            let host = null;
+            const scan = (d) => {
+              let frames;
+              try { frames = d.querySelectorAll('iframe'); } catch (e) { return null; }
+              for (const f of frames) {
+                let inner = null;
+                try { inner = f.contentDocument; } catch (e) { continue; }
+                if (!inner) continue;
+                if (inner === doc) return f;
+                const rr = scan(inner);
+                if (rr) return rr;
+              }
+              return null;
+            };
+            host = scan(document);
+            if (!host) break;
+            const hr = host.getBoundingClientRect();
+            x += hr.x; y += hr.y;
+            doc = host.ownerDocument;
+          }
+          return { x, y, width: r.width, height: r.height };
         })()
-      `);
-      if (!rect) throw new Error(`Element not found: ${selector}`);
-      return { nodeId: 0, rect };
+      `).catch(() => null);
+      if (rect) return { nodeId: 0, rect };
+      lastError = `Element not found: ${selector}`;
+      await page.waitForTimeout(200);
     }
-    // Find element with retry (SPA animations may delay rendering)
-    const deadline = Date.now() + timeout;
-    let lastError: string | undefined;
-    let nodeId = 0;
-    let rect: { x: number; y: number; width: number; height: number } | null = null;
-    while (Date.now() < deadline) {
-      nodeId = await page.querySelector(selector);
-      if (!nodeId) { lastError = `Element not found: ${selector}`; await page.waitForTimeout(200); continue; }
-      rect = await page.getBoxModel(nodeId);
-      if (rect) break;
-      lastError = `Element has no box: ${selector}`;
-      await page.waitForTimeout(500); // Wait for SPA animation to render
-    }
-    if (!rect) throw new Error(lastError || `Element has no box: ${selector}`);
-    return { nodeId, rect };
+    throw new Error(lastError || `Element not found: ${selector}`);
   }
 
   const deadline = Date.now() + timeout;
@@ -73,9 +86,11 @@ export async function waitForActionable(
   while (Date.now() < deadline) {
     const result = await checkActionable(page, selector);
     if (result.ok && result.rect) {
-      // Find the nodeId
-      const nodeId = await page.querySelector(selector);
-      if (nodeId) return { nodeId, rect: result.rect };
+      // Find the nodeId. Elements inside same-origin iframes are found by the
+      // deep query above but not by the main-frame CDP querySelector — return
+      // nodeId 0 there (callers only need the rect for mouse interactions).
+      const nodeId = (await page.querySelector(selector)) ?? 0;
+      return { nodeId, rect: result.rect };
     }
     await page.waitForTimeout(50);
   }
@@ -121,10 +136,13 @@ export async function checkActionable(
         return { ok: false, reason: 'parent_disabled' };
       }
 
-      // Check not covered by another element at center
+      // Check not covered by another element at center.
+      // elementFromPoint must run in the element's OWN document: for iframe-
+      // internal elements the main-document hit-test returns the <iframe>
+      // host itself, which falsely reports "covered" (rec-duel d01).
       const cx = rect.x + rect.width / 2;
       const cy = rect.y + rect.height / 2;
-      const topEl = document.elementFromPoint(cx, cy);
+      const topEl = el.ownerDocument.elementFromPoint(cx, cy);
       if (topEl && topEl !== el && !el.contains(topEl) && !topEl.contains(el)) {
         return { ok: false, reason: 'covered', rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } };
       }

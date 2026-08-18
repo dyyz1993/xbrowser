@@ -1794,18 +1794,31 @@ export class SessionRecorder {
     };
 	    this.actions.push(actionToPush);
 
-	    // Capture element screenshot for key action types (non-critical)
-	    actionToPush.elementScreenshot = await this.captureElementScreenshot(this.page, {
-	      type: action.type,
-	      element: actionToPush.element,
-	    });
+	    // Capture element screenshot for key action types (non-critical).
+	    // Hard 3s budget: the internal fallback chain (locator.screenshot →
+	    // waitForSelector) can burn 2×30s on iframe-internal elements because
+	    // waitForActionable's default timeout is not threaded through — a
+	    // decoration must never stall command execution (rec-duel d01: +60s/click).
+	    actionToPush.elementScreenshot = await Promise.race([
+	      this.captureElementScreenshot(this.page, {
+	        type: action.type,
+	        element: actionToPush.element,
+	      }).catch(() => undefined),
+	      new Promise<undefined>(r => setTimeout(r, 3000)),
+	    ]);
 
 	    // Capture auto-snapshot (viewport + accessibility tree) after key actions
-	    await this.captureAutoSnapshot(this.page, actionToPush, 'after').catch(() => {});
+	    await Promise.race([
+	      this.captureAutoSnapshot(this.page, actionToPush, 'after').catch(() => {}),
+	      new Promise<void>(r => setTimeout(r, 6000)),
+	    ]);
 
-	    // Update lastActionTs and set dedup window (2s) for matching action signals
+	    // Update lastActionTs and set dedup window (4s) for matching action signals.
+    // 4s covers stealth-mode click duration: bezier trajectory (10-28 mouseMoved
+    // events with sleeps) delays the real click event ~2-3s after the injected
+    // cdp-click command, which previously escaped the old 2s window (rec-duel d02/d03).
     this.lastActionTs = ts;
-    this.dedupMap.set(dedupFromAction, Date.now() + 2000);
+    this.dedupMap.set(dedupFromAction, Date.now() + 4000);
     this.dedupActionCount++;
 
     // Periodic cleanup: purge expired entries every 200 actions
@@ -2740,7 +2753,7 @@ export class SessionRecorder {
       // Set dedupMap entry for reverse dedup (action signal → CDP command dedup)
 	      const dedupKey = this.dedupKey(raw.type, raw.element?.selector, raw.element?.tag, raw.value);
 	      if (dedupKey) {
-	        this.dedupMap.set(dedupKey, Date.now() + 2000);
+	        this.dedupMap.set(dedupKey, Date.now() + 4000); // 4s window: match command-side, stealth click delays ~3s
 	        this.dedupActionCount++;
 	      }
 
