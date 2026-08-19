@@ -331,15 +331,21 @@ export function deleteSessionDiskMeta(name: string): void {
 async function isSessionPageAlive(session: ManagedSession): Promise<boolean> {
   const page = session.page as unknown as { evaluate?: (expr: string) => Promise<unknown> } | undefined;
   if (!page || typeof page.evaluate !== 'function') return false;
-  try {
-    await Promise.race([
-      page.evaluate('1'),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('liveness probe timeout')), 1500)),
-    ]);
-    return true;
-  } catch {
-    return false;
+  // Probe up to 3 times: freshly-switched tabs (target=_blank wrappers) can
+  // transiently fail evaluate while their CDP session settles — one blip must
+  // not kill the session and rebuild it onto the WRONG (original) tab (d07).
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await Promise.race([
+        page.evaluate('1'),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('liveness probe timeout')), 1500)),
+      ]);
+      return true;
+    } catch {
+      await new Promise(r => setTimeout(r, 400));
+    }
   }
+  return false;
 }
 
  export async function findOrRestoreSession(

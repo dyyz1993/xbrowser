@@ -172,6 +172,14 @@ async function handleSwitch(
 
   const targetPage = pages[p.index];
   await targetPage.bringToFront().catch(() => {});
+  // Warm up the wrapper before rebinding the session: freshly-created tabs
+  // (target=_blank) can transiently fail evaluate, and a failed liveness
+  // probe on the next command would rebuild the session onto the OLD tab (d07).
+  for (let i = 0; i < 5; i++) {
+    const okProbe = await targetPage.evaluate('1').then(() => true, () => false);
+    if (okProbe) break;
+    await new Promise(r => setTimeout(r, 300));
+  }
 
   const session = ctx.sessionId ? getSessionById(ctx.sessionId) : undefined;
   if (session) {

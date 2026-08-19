@@ -85,6 +85,11 @@ export class SessionReplayer {
       const action = actions[i];
       this.opts.onStep?.(action, i, actions.length);
 
+      // Tab-following: a click may open a new tab (target=_blank). Track the
+      // context's page count; when it grows, follow the newest page so the
+      // next action (recorded in that tab) replays against the right target (d07).
+      const pagesBefore = this.listContextPages();
+
       try {
         // Replay mouse trajectory before the action (if present)
         if (action.trajectory) {
@@ -103,6 +108,16 @@ export class SessionReplayer {
         }
 
         success++;
+
+        // Follow newly-opened tabs after clicks
+        if (action.type === 'click' || action.type === 'cdp-click') {
+          const pagesAfter = this.listContextPages();
+          if (pagesAfter && pagesBefore && pagesAfter.length > pagesBefore.length) {
+            const newest = pagesAfter[pagesAfter.length - 1];
+            await newest.bringToFront().catch(() => {});
+            this.page = newest as unknown as NonNullable<typeof this.page>;
+          }
+        }
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
         this.opts.onError?.(action, err, i);
@@ -121,6 +136,17 @@ export class SessionReplayer {
   }
 
   /** Replay a single action */
+  /** Pages of the replayer page's context (best-effort; null if unavailable). */
+  private listContextPages(): Array<{ bringToFront: () => Promise<void> }> | null {
+    try {
+      const ctx = (this.page as unknown as { context?: () => { pages?: () => unknown[] } }).context?.();
+      const pages = ctx?.pages?.();
+      return Array.isArray(pages) ? (pages as Array<{ bringToFront: () => Promise<void> }>) : null;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Replay-time adjacent dedup (rec-duel d02/d03/d05).
    *
