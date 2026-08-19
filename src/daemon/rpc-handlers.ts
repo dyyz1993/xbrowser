@@ -21,6 +21,7 @@ import {
   saveSessionDiskMeta,
 } from '../browser.js';
 import { executeCommand, executeChain } from '../executor.js';
+import { queryJS } from '../cdp-driver/selector-utils.js';
 import { networkStore, commandLogStore } from './network-store.js';
 import { scoreEntries } from './network-scorer.js';
 import { enrichEntries } from './api-analyzer.js';
@@ -385,17 +386,22 @@ export function createRPCHandler(): RPCHandler & {
     // Describe the target element BEFORE executing: for pages that mutate the DOM
     // on click (rebirth pattern), a post-execution describe resolves to the
     // replacement element, producing wrong selectors and broken dedup (rec-duel d03).
+    // Deep describe (iframe + shadow piercing) so the command-side selector
+    // CONVERGES with the signal-side __xb_describe selector — mismatched keys
+    // broke dedup and double-executed on replay (rec-duel d04/d06).
     let preElement: Record<string, unknown> | undefined;
     try {
       const session = findSession(sessionName);
       urlBeforeCommand = session?.page?.url();
       const sel = (cmdParams.selector as string) || (cmdParams.css as string);
       if (session?.page && sel && INTERACTION_COMMANDS.has(command)) {
-        preElement = await session.page.evaluate((s: string) => {
-          const el = document.querySelector(s);
-          if (!el || typeof window.__xb_describe !== 'function') return null;
-          return window.__xb_describe(el);
-        }, sel) as Record<string, unknown> | undefined;
+        preElement = await session.page.evaluate(`
+          (function() {
+            const el = ${queryJS(sel)};
+            if (!el || typeof window.__xb_describe !== 'function') return null;
+            return window.__xb_describe(el);
+          })()
+        `) as Record<string, unknown> | undefined;
       }
     } catch { /* ignore */ }
 
@@ -588,12 +594,19 @@ export function createRPCHandler(): RPCHandler & {
       click: 'cdp-click',
       type: 'input',
       select: 'change',
+      scroll: 'scroll',
     };
     const actionType = COMMAND_ACTION_MAP[command];
     if (!actionType) return;
 
     const selector = (params.selector as string) || (params.css as string);
-    const value = (params.value as string) || (params.expression as string);
+    let value = (params.value as string) || (params.expression as string);
+    // scroll 命令：把方向+距离编码进 value，回放端解码执行
+    if (command === 'scroll') {
+      const dir = (params.direction as string) || 'down';
+      const dist = (params.distance as number) ?? 300;
+      value = `${dir}:${dist}`;
+    }
 
     // Capture currentUrl: for goto use params.url (target), for others use page URL before command
     let currentUrl = (params.url as string | undefined) || urlBeforeCommand;
@@ -603,17 +616,19 @@ export function createRPCHandler(): RPCHandler & {
     }
 
     // Element metadata: prefer pre-execution describe (correct target even if the
-    // click mutates the DOM); fall back to post-execution describe
+    // click mutates the DOM); fall back to post-execution deep describe
     let element: Record<string, unknown> | undefined = preElement;
     if (!element && selector) {
       try {
         const session = findSession(sessionName);
         if (session?.page) {
-          element = await session.page.evaluate((sel: string) => {
-            const el = document.querySelector(sel);
-            if (!el || typeof window.__xb_describe !== 'function') return null;
-            return window.__xb_describe(el);
-          }, selector);
+          element = await session.page.evaluate(`
+            (function() {
+              const el = ${queryJS(selector)};
+              if (!el || typeof window.__xb_describe !== 'function') return null;
+              return window.__xb_describe(el);
+            })()
+          `) as Record<string, unknown> | undefined;
         }
       } catch { /* page may have navigated or closed */ }
     }

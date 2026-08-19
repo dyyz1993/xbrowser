@@ -17,33 +17,40 @@ export function queryJS(selector: string): string {
 }
 
 /**
- * IIFE body for deep (same-origin iframe) element search. Takes the raw
- * main-document query expression as a string argument, then:
- *   1. runs it against the top document;
- *   2. on miss, recursively runs it inside every reachable same-origin iframe
- *      document (shadowing the global `document` via a Function parameter).
- * Cross-origin iframes throw on contentDocument access and are skipped.
+ * IIFE body for deep element search (same-origin iframes + open shadow roots).
+ * Takes the raw main-document query expression as a string argument, then
+ * scans: top document → every element's open shadowRoot → every same-origin
+ * iframe document (recursively), shadowing the global `document` via a
+ * Function parameter. Cross-origin iframes throw on contentDocument access
+ * and are skipped; closed shadow roots are unreachable by design.
  */
 const deepQueryIIFE = `(function(mainExpr) {
-  const run = (doc) => {
-    try { return new Function('document', 'return (' + mainExpr + ')')(doc); }
+  const run = (root) => {
+    try { return new Function('document', 'return (' + mainExpr + ')')(root); }
     catch (e) { return null; }
   };
-  const hit = run(document);
-  if (hit) return hit;
-  const walk = (doc) => {
-    let frames;
-    try { frames = doc.querySelectorAll('iframe'); } catch (e) { return null; }
-    for (const f of frames) {
-      let inner = null;
-      try { inner = f.contentDocument; } catch (e) { /* cross-origin */ }
-      if (!inner) continue;
-      const r = run(inner) || walk(inner);
-      if (r) return r;
+  const scanRoot = (root) => {
+    const direct = run(root);
+    if (direct) return direct;
+    let all;
+    try { all = root.querySelectorAll('*'); } catch (e) { return null; }
+    for (const el of all) {
+      if (el.shadowRoot) {
+        const r = scanRoot(el.shadowRoot);
+        if (r) return r;
+      }
+      if (el.tagName === 'IFRAME') {
+        let inner = null;
+        try { inner = el.contentDocument; } catch (e) { /* cross-origin */ }
+        if (inner) {
+          const r = scanRoot(inner);
+          if (r) return r;
+        }
+      }
     }
     return null;
   };
-  return walk(document);
+  return scanRoot(document);
 })`;
 
 /** Main-document-only query (previous queryJS behavior). */
@@ -68,6 +75,23 @@ function queryMainJS(selector: string): string {
         const t = (e.textContent || '').trim();
         if (!t) return false;
         return exact ? t === target : t.toLowerCase().includes(target.toLowerCase());
+      });
+      // Rank instead of raw DOM order: exact text beats substring, interactive
+      // elements (button/a/[onclick]/inputs) beat prose. Prevents matching a
+      // description paragraph that merely MENTIONS the target label
+      // (rec-duel d06: header text "目标项「第 87 号」" hijacked text=第 87 号).
+      const isInteractive = (e) => {
+        const tag = e.tagName;
+        return tag === 'BUTTON' || tag === 'A' || tag === 'INPUT' || tag === 'SELECT'
+          || e.hasAttribute('onclick') || e.getAttribute('role') === 'button';
+      };
+      els.sort((a, b) => {
+        const ta = (a.textContent || '').trim(), tb = (b.textContent || '').trim();
+        const ea = ta === target ? 0 : 1, eb = tb === target ? 0 : 1;
+        if (ea !== eb) return ea - eb;
+        const ia = isInteractive(a) ? 0 : 1, ib = isInteractive(b) ? 0 : 1;
+        if (ia !== ib) return ia - ib;
+        return 0; // stable — preserve DOM order
       });
       return els[0] || null;
     })()`;

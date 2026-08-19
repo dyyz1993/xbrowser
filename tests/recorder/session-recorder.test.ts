@@ -114,7 +114,7 @@ describe('SessionRecorder', () => {
       expect(data.actions[0].url).toBe('https://example.com');
     });
 
-    it('should deduplicate identical cdp-fill within dedup window', async () => {
+    it('should NOT deduplicate identical consecutive commands (commands are ground truth)', async () => {
       await startRecording('https://example.com');
 
       await recorder.recordCommandAction({
@@ -124,7 +124,9 @@ describe('SessionRecorder', () => {
         element: { tag: 'input', selector: '#username', text: '', strategy: 'id', confidence: 'high' },
       });
 
-      // Same action within 1.5s — should be deduped
+      // Same command again within the window — both are real commands, keep both.
+      // Origin-split dedup (rec-duel d05): commands only dedup against the
+      // real action SIGNAL that echoes them, never against each other.
       await recorder.recordCommandAction({
         type: 'cdp-fill',
         selector: '#username',
@@ -132,7 +134,7 @@ describe('SessionRecorder', () => {
       });
 
       const { data } = await recorder.stop();
-      expect(data.actions).toHaveLength(1);
+      expect(data.actions).toHaveLength(2);
     });
 
     it('should NOT deduplicate actions after dedup window expires', async () => {
@@ -171,9 +173,10 @@ describe('SessionRecorder', () => {
         pageTitle: '',
         element: { tag: 'button', selector: '#btn', text: 'Click', strategy: 'id', confidence: 'high' },
       }];
-      // Set dedupMap entry to match (simulating what flushPendingActions would do)
+      // Set dedupMap entry to match (simulating what flushPendingActions would do).
+      // Origin must be 'signal' — command-origin entries never dedup a command.
       const key = (recorder as any).dedupKey('click', '#btn', 'button', undefined);
-      (recorder as any).dedupMap.set(key, Date.now() + 2000);
+      (recorder as any).dedupMap.set(key, { expires: Date.now() + 4000, origin: 'signal' });
 
       // Now cdp-click with same selector arrives — should be deduped
       await recorder.recordCommandAction({

@@ -1734,7 +1734,7 @@ export class SessionRecorder {
 
   /** Dedup map: key = normalizedType|tag|value → expiration timestamp.
    *  Replaces old single-entry cdpActionDedup for bidirectional dedup. */
-  private dedupMap = new Map<string, number>();
+  private dedupMap = new Map<string, { expires: number; origin: 'signal' | 'command' }>();
   private dedupActionCount = 0; // counter for periodic cleanup
 
   /** Network dedup: last request key for short-window dedup */
@@ -1768,11 +1768,13 @@ export class SessionRecorder {
 
   /** Record an action triggered by a CDP command (e.g. xbrowser fill/click/goto) */
   async recordCommandAction(action: { type: string; selector?: string; value?: string; url?: string; element?: UserAction['element'] }): Promise<void> {
-    // Reverse dedup: check dedupMap before recording
+    // Reverse dedup: skip only when the matching entry was set by a real
+    // action SIGNAL (the command is a duplicate of an already-captured event).
+    // Entries set by other commands never match a command twice here.
     const dedupFromAction = this.dedupKey(action.type, action.selector, action.element?.tag, action.value);
     if (dedupFromAction) {
-      const expires = this.dedupMap.get(dedupFromAction);
-      if (expires && Date.now() < expires) {
+      const entry = this.dedupMap.get(dedupFromAction);
+      if (entry && entry.origin === 'signal' && Date.now() < entry.expires) {
         return; // Skip duplicate — action signal already captured it
       }
     }
@@ -1818,14 +1820,14 @@ export class SessionRecorder {
     // events with sleeps) delays the real click event ~2-3s after the injected
     // cdp-click command, which previously escaped the old 2s window (rec-duel d02/d03).
     this.lastActionTs = ts;
-    this.dedupMap.set(dedupFromAction, Date.now() + 4000);
+    this.dedupMap.set(dedupFromAction, { expires: Date.now() + 4000, origin: 'command' });
     this.dedupActionCount++;
 
     // Periodic cleanup: purge expired entries every 200 actions
     if (this.dedupActionCount % 200 === 0) {
       const now = Date.now();
       for (const [k, v] of this.dedupMap) {
-        if (now >= v) this.dedupMap.delete(k);
+        if (now >= v.expires) this.dedupMap.delete(k);
       }
     }
 
@@ -2679,11 +2681,14 @@ export class SessionRecorder {
 	        continue;
 	      }
 
-      // Dedup: check dedupMap for matching recent CDP command action
+      // Dedup: skip only when the matching entry was set by an injected CDP
+      // COMMAND (the signal is the real-event echo of that command).
+      // Signal-vs-signal entries never dedup: two real clicks on the same
+      // element (e.g. canvas buttons) are distinct interactions (rec-duel d05).
       const dedupFromSignal = this.dedupKey(raw.type, raw.element?.selector, raw.element?.tag, raw.value);
       if (dedupFromSignal) {
-        const expires = this.dedupMap.get(dedupFromSignal);
-        if (expires && Date.now() < expires) {
+        const entry = this.dedupMap.get(dedupFromSignal);
+        if (entry && entry.origin === 'command' && Date.now() < entry.expires) {
           continue; // Skip duplicate action signal
         }
       }
@@ -2753,7 +2758,7 @@ export class SessionRecorder {
       // Set dedupMap entry for reverse dedup (action signal → CDP command dedup)
 	      const dedupKey = this.dedupKey(raw.type, raw.element?.selector, raw.element?.tag, raw.value);
 	      if (dedupKey) {
-	        this.dedupMap.set(dedupKey, Date.now() + 4000); // 4s window: match command-side, stealth click delays ~3s
+	        this.dedupMap.set(dedupKey, { expires: Date.now() + 4000, origin: 'signal' }); // 4s: stealth click delays event ~3s
 	        this.dedupActionCount++;
 	      }
 

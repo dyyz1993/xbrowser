@@ -88,8 +88,9 @@ export async function waitForActionable(
     if (result.ok && result.rect) {
       // Find the nodeId. Elements inside same-origin iframes are found by the
       // deep query above but not by the main-frame CDP querySelector — return
-      // nodeId 0 there (callers only need the rect for mouse interactions).
-      const nodeId = (await page.querySelector(selector)) ?? 0;
+      // nodeId 0 there. Non-CSS selectors (text=/popup-text=) make the CDP
+      // call THROW rather than return 0, so guard with a catch.
+      const nodeId = await page.querySelector(selector).catch(() => 0) ?? 0;
       return { nodeId, rect: result.rect };
     }
     await page.waitForTimeout(50);
@@ -140,11 +141,21 @@ export async function checkActionable(
       // elementFromPoint must run in the element's OWN document: for iframe-
       // internal elements the main-document hit-test returns the <iframe>
       // host itself, which falsely reports "covered" (rec-duel d01).
+      // For shadow-internal elements the hit-test retargets to the shadow
+      // HOST — walk the host chain before declaring coverage (rec-duel d04).
       const cx = rect.x + rect.width / 2;
       const cy = rect.y + rect.height / 2;
       const topEl = el.ownerDocument.elementFromPoint(cx, cy);
       if (topEl && topEl !== el && !el.contains(topEl) && !topEl.contains(el)) {
-        return { ok: false, reason: 'covered', rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } };
+        let hostChain = [];
+        let rootNode = el.getRootNode();
+        while (rootNode && rootNode.host) {
+          hostChain.push(rootNode.host);
+          rootNode = rootNode.host.getRootNode();
+        }
+        if (!hostChain.includes(topEl)) {
+          return { ok: false, reason: 'covered', rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } };
+        }
       }
 
       return {

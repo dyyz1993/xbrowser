@@ -9,6 +9,7 @@
 
 import type { UserAction, RecordingData } from './session-recorder.js';
 import type { XBPage, XBFilePayload } from '../cdp-driver/types.js';
+import { queryJS } from '../cdp-driver/selector-utils.js';
 
 export interface ReplayOptions {
   cdpUrl?: string;
@@ -121,28 +122,36 @@ export class SessionReplayer {
 
   /** Replay a single action */
   /**
-   * Replay-time adjacent dedup (rec-duel d02/d03).
+   * Replay-time adjacent dedup (rec-duel d02/d03/d05).
    *
    * The recorder can emit both the real action signal AND the injected cdp
    * command action for a single interaction when the signal flush lags behind
    * the recorder-side dedup window (heavy snapshot capture slows polling).
    * Replaying both executes the interaction twice. Filter here: an action is
-   * skipped when a nearby (≤15s apart) earlier action shares the same
-   * normalized key (type-normalized + selector + text).
+   * skipped when a nearby (≤15s apart) earlier action matches on
+   * type-normalized key (selector + text) AND coordinates agree — either side
+   * lacks coords (cdp actions carry none) or both are within 30px. Two real
+   * clicks on the same element at different spots (canvas buttons) survive.
    */
   private dedupAdjacentActions(actions: UserAction[]): UserAction[] {
     const normType = (t: string): string =>
       t === 'cdp-click' ? 'click' : t === 'cdp-fill' ? 'input' : t;
     const keyOf = (a: UserAction): string =>
       `${normType(a.type)}|${a.element?.selector || ''}|${a.element?.text || ''}`;
-    const lastKept = new Map<string, number>();
+    const coordsOf = (a: UserAction): { x: number; y: number } | null =>
+      typeof a.x === 'number' && typeof a.y === 'number' ? { x: a.x, y: a.y } : null;
+    const near = (p: { x: number; y: number }, q: { x: number; y: number }): boolean =>
+      Math.abs(p.x - q.x) <= 30 && Math.abs(p.y - q.y) <= 30;
+    const lastKept = new Map<string, Array<{ ts: number; c: { x: number; y: number } | null }>>();
     return actions.filter((a) => {
       const key = keyOf(a);
-      const prevTs = lastKept.get(key);
-      if (prevTs !== undefined && Math.abs(a.timestamp - prevTs) <= 15000) {
-        return false; // duplicate of a nearby identical interaction
-      }
-      lastKept.set(key, a.timestamp);
+      const c = coordsOf(a);
+      const recent = lastKept.get(key) || [];
+      const dup = recent.some(e => Math.abs(a.timestamp - e.ts) <= 15000
+        && (!c || !e.c || near(c, e.c)));
+      if (dup) return false;
+      recent.push({ ts: a.timestamp, c });
+      lastKept.set(key, recent);
       return true;
     });
   }
@@ -169,9 +178,46 @@ export class SessionReplayer {
 
       case 'click':
       case 'cdp-click': {
-        // X2: resolveAndWait tries primary selector → textFallback → tag
+        // Coordinate-faithful click: when the recording captured x/y AND the
+        // resolved element actually contains that point, click the recorded
+        // coordinates instead of the element center — required when one
+        // element hosts multiple hit targets (canvas buttons, rec-duel d05).
         const selector = await this.resolveAndWait(action);
+        if (typeof action.x === 'number' && typeof action.y === 'number') {
+          const hit = await page.evaluate<boolean>(`
+            (function() {
+              const el = ${queryJS(selector)};
+              if (!el) return false;
+              const r = el.getBoundingClientRect();
+              return ${action.x} >= r.x - 2 && ${action.x} <= r.x + r.width + 2
+                  && ${action.y} >= r.y - 2 && ${action.y} <= r.y + r.height + 2;
+            })()
+          `).catch(() => false);
+          if (hit) {
+            await page.mouse.click(action.x, action.y, { stealth: true });
+            break;
+          }
+        }
         await page.click(selector, { timeout });
+        break;
+      }
+
+      case 'scroll': {
+        // value format "direction:distance" (encoded by the daemon on record)
+        const [dir, distStr] = (action.value || 'down:300').split(':');
+        const dist = Number(distStr) || 300;
+        const sign = dir === 'up' ? -1 : dir === 'left' ? 0 : 1;
+        const selector = await this.resolveAndWait(action).catch(() => undefined);
+        if (selector) {
+          await page.evaluate(`
+            (function() {
+              const el = ${queryJS(selector)};
+              if (el) el.scrollTop += ${sign * dist};
+            })()
+          `).catch(() => {});
+        } else {
+          await page.evaluate(`window.scrollBy(0, ${sign * dist})`).catch(() => {});
+        }
         break;
       }
 
