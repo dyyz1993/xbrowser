@@ -843,6 +843,33 @@ const ACTION_SIGNAL_SCRIPT = `
     }
   }, true);
 
+  // ── Pointer-based drag (modern sliders, sortable lists) ──
+  // HTML5 dragstart/drop never fires for pointer-driven drags — capture via
+  // pointerdown/pointerup with a movement threshold instead (rec-duel d08).
+  var __xb_ptr_down = null;
+  document.addEventListener('pointerdown', function(e) {
+    var t = actualTarget(e);
+    __xb_ptr_down = { x: e.clientX, y: e.clientY, element: describe(t), ts: Date.now() };
+  }, true);
+  document.addEventListener('pointerup', function(e) {
+    if (!__xb_ptr_down) return;
+    var start = __xb_ptr_down;
+    __xb_ptr_down = null;
+    var dx = e.clientX - start.x, dy = e.clientY - start.y;
+    if (Math.abs(dx) < 15 && Math.abs(dy) < 15) return; // tap/click, not a drag
+    pushAction('drag', {
+      x: e.clientX,
+      y: e.clientY,
+      element: start.element,
+      drag: {
+        fromX: start.x,
+        fromY: start.y,
+        toX: e.clientX,
+        toY: e.clientY,
+      },
+    });
+  }, true);
+
   // ── Drag & drop ──
   var __xb_drag_source = null;
   var __xb_drag_start_pos = null;
@@ -1750,7 +1777,7 @@ export class SessionRecorder {
 
   /** Ambient action types: filtered out in clean mode */
   private static readonly AMBIENT_TYPES = new Set([
-    'hover', 'focus', 'scroll', 'visibility', 'resize', 'clipboard', 'touch', 'contextmenu', 'drag',
+    'hover', 'focus', 'scroll', 'visibility', 'resize', 'clipboard', 'touch', 'contextmenu',
   ]);
   constructor(context: BrowserContext, page: Page, sessionName: string) {
     this.context = context;
@@ -2528,6 +2555,8 @@ export class SessionRecorder {
       files?: UserAction['files'];
       /** Browser-side hover enrichment (async-sampled popups). */
       hoverContext?: UserAction['hoverContext'];
+      /** For type='drag' — pointer-drag coordinates (fromX/fromY/toX/toY). */
+      drag?: UserAction['drag'];
       /** For type='popup_appear' — proactive sensing payload. */
       popupAppear?: UserAction['popupAppear'];
       /** For type='discovered_filters' — proactive baseline scan. */
@@ -2745,6 +2774,9 @@ export class SessionRecorder {
         // been collected so far.
         hoverContext: raw.hoverContext,
         files: raw.files,
+        // Pointer-drag payload (fromX/fromY/toX/toY) — replayer replays the
+        // drag from these coordinates; dropping it made drags no-ops (d08)
+        drag: raw.drag,
       });
 
 	      // Capture element screenshot for key action types (non-critical)

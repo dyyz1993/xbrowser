@@ -136,6 +136,13 @@ export class SessionReplayer {
   private dedupAdjacentActions(actions: UserAction[]): UserAction[] {
     const normType = (t: string): string =>
       t === 'cdp-click' ? 'click' : t === 'cdp-fill' ? 'input' : t;
+    // Drop generic-target clicks: when describe fails to resolve a meaningful
+    // element the signal lands on html/body. Replaying such a click moves the
+    // mouse to the page center — destroying hover state (menus close) without
+    // ever hitting the intended target (rec-duel d09).
+    const generic = (a: UserAction): boolean =>
+      (a.type === 'click' || a.type === 'dblclick' || a.type === 'contextmenu')
+      && (a.element?.selector === 'html' || a.element?.selector === 'body');
     const keyOf = (a: UserAction): string =>
       `${normType(a.type)}|${a.element?.selector || ''}|${a.element?.text || ''}`;
     const coordsOf = (a: UserAction): { x: number; y: number } | null =>
@@ -144,6 +151,7 @@ export class SessionReplayer {
       Math.abs(p.x - q.x) <= 30 && Math.abs(p.y - q.y) <= 30;
     const lastKept = new Map<string, Array<{ ts: number; c: { x: number; y: number } | null }>>();
     return actions.filter((a) => {
+      if (generic(a)) return false;
       const key = keyOf(a);
       const c = coordsOf(a);
       const recent = lastKept.get(key) || [];

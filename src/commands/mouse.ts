@@ -26,9 +26,14 @@ export const mouseCommand = registerCommand({
         await ctx.page.mouse.move(p.x, p.y, { steps: p.steps || 1 });
         break;
       case 'down':
+        // A real press happens AT the coordinates — move first, otherwise the
+        // dispatch goes to the stale internal position (0,0) and misses the
+        // target entirely (rec-duel d08: slider grab at pointerdown 0,0).
+        await ctx.page.mouse.move(p.x, p.y);
         await ctx.page.mouse.down({ button });
         break;
       case 'up':
+        await ctx.page.mouse.move(p.x, p.y);
         await ctx.page.mouse.up({ button });
         break;
       case 'click':

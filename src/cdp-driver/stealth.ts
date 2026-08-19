@@ -107,8 +107,16 @@ export function bezierTrajectory(
   const dist = Math.hypot(x1 - x0, y1 - y0);
   const n = Math.max(10, Math.min(28, Math.round(dist / 15)));
 
+  // Short-move restraint: humans move nearly straight over short distances,
+  // and any lateral excursion here can leave a hover container (CSS :hover
+  // menu/slide-out closes instantly) making the subsequent click miss —
+  // observed as the click landing on <html> behind the closed menu (d09).
+  const shortMove = dist < 120;
+
   // Random arc direction and curvature
-  const curvature = Math.max(dist * rand(...config.bezierCurvature), rand(18, 35));
+  const curvature = shortMove
+    ? rand(2, 6)
+    : Math.max(dist * rand(...config.bezierCurvature), rand(18, 35));
   const dir = Math.random() < 0.5 ? 1 : -1;
   const d = dist || 1;
   const dx = x1 - x0, dy = y1 - y0;
@@ -126,26 +134,36 @@ export function bezierTrajectory(
     const t = cosineEase(i / n);
     const mt = 1 - t;
 
-    let px = mt ** 3 * x0 + 3 * mt * 2 * t * c1x + 3 * mt * t ** 2 * c2x + t ** 3 * x1;
-    let py = mt ** 3 * y0 + 3 * mt * 2 * t * c1y + 3 * mt * t ** 2 * c2y + t ** 3 * y1;
+    // Cubic Bernstein basis: B(t) = (1-t)³·P0 + 3(1-t)²t·P1 + 3(1-t)t²·P2 + t³·P3.
+    // NOTE: was previously `3 * mt * 2 * t` (= 6·mt·t) — the weights summed to
+    // 2.125, extruding every mid-flight point ~2× past the target in a huge
+    // loop. Endpoints were still correct so clicks worked, but the wild path
+    // exits hover containers (closing menus) and is hardly human-like (d09).
+    let px = mt ** 3 * x0 + 3 * mt ** 2 * t * c1x + 3 * mt * t ** 2 * c2x + t ** 3 * x1;
+    let py = mt ** 3 * y0 + 3 * mt ** 2 * t * c1y + 3 * mt * t ** 2 * c2y + t ** 3 * y1;
 
-    // Add noise
-    px += rand(-config.noiseAmplitude, config.noiseAmplitude);
-    py += rand(-config.noiseAmplitude, config.noiseAmplitude);
+    // Add noise (restrained on short moves to stay inside hover containers)
+    const amp = shortMove ? Math.min(2, config.noiseAmplitude) : config.noiseAmplitude;
+    px += rand(-amp, amp);
+    py += rand(-amp, amp);
 
     points.push({ x: px, y: py, delay: rand(9, 16) });
   }
 
-  // Overshoot + correction (overshoot-correction pattern)
-  const over = rand(...config.overshootRange);
-  const ox = x1 + (dx / d) * over + rand(-2, 2);
-  const oy = y1 + (dy / d) * over + rand(-2, 2);
-  points.push({ x: ox, y: oy, delay: rand(14, 30) });
-  points.push({
-    x: x1 + (dx / d) * over * 0.4,
-    y: y1 + (dy / d) * over * 0.4,
-    delay: rand(14, 30),
-  });
+  // Overshoot + correction (overshoot-correction pattern).
+  // Skipped on short moves: overshooting 6-14px past a nearby target often
+  // exits the hover container and closes the very menu being clicked (d09).
+  if (!shortMove) {
+    const over = rand(...config.overshootRange);
+    const ox = x1 + (dx / d) * over + rand(-2, 2);
+    const oy = y1 + (dy / d) * over + rand(-2, 2);
+    points.push({ x: ox, y: oy, delay: rand(14, 30) });
+    points.push({
+      x: x1 + (dx / d) * over * 0.4,
+      y: y1 + (dy / d) * over * 0.4,
+      delay: rand(14, 30),
+    });
+  }
   points.push({ x: x1 + rand(-1, 1), y: y1 + rand(-1, 1), delay: rand(14, 30) });
 
   return points;

@@ -600,7 +600,12 @@ export function createRPCHandler(): RPCHandler & {
     if (!actionType) return;
 
     const selector = (params.selector as string) || (params.css as string);
-    let value = (params.value as string) || (params.expression as string);
+    // type 命令的参数名是 text；contenteditable 场景 CDP 键盘输入不触发 input
+    // 事件（信号侧无值），命令注入是唯一值来源，必须捕获（rec-duel d10）
+    let value: string | undefined = (params.value as string) || (params.expression as string);
+    if (value === undefined || value === '') {
+      value = params.text as string | undefined;
+    }
     // scroll 命令：把方向+距离编码进 value，回放端解码执行
     if (command === 'scroll') {
       const dir = (params.direction as string) || 'down';
