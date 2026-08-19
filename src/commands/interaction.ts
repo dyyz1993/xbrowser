@@ -29,12 +29,30 @@ export const clickCommand = registerCommand({
     let cleanup: (() => void) | undefined;
 
     if (ctx.browserContext?.on) {
+      // Snapshot pages before the click: Target auto-attach can emit 'page'
+      // events for wrappers of ALREADY-EXISTING targets during the click —
+      // treating those as "this click opened a new tab" derails the command
+      // into the new-tab branch (waitForLoadState/title on a half-dead
+      // wrapper, 2×30s CDP timeouts = the d07 hang).
+      // Compare by TARGET IDENTITY, not wrapper object identity: auto-attach
+      // can create a SECOND wrapper for an already-known target mid-click —
+      // only genuinely new targets count as "this click opened a new tab".
+      const targetIdOf = (p: unknown): string | undefined =>
+        (p as { _targetId?: string })._targetId;
+      let targetIdsBefore: Set<string | undefined>;
+      try {
+        targetIdsBefore = new Set(ctx.browserContext.pages().map(targetIdOf));
+      } catch { targetIdsBefore = new Set(); }
       const pagePromise = new Promise<Page | undefined>((resolve) => {
         const timer = setTimeout(() => {
           ctx.browserContext.off('page', handler);
           resolve(undefined);
         }, 3000);
         const handler = (page: Page) => {
+          if (targetIdsBefore.has(targetIdOf(page))) return; // re-attach of a known target
+          // about:blank swap targets attach with fresh targetIds during clicks
+          // on file:// pages — not a user-facing new tab (d07 hang: 2×30s waits)
+          try { if ((page.url?.() ?? '') === 'about:blank') return; } catch { /* ignore */ }
           clearTimeout(timer);
           ctx.browserContext.off('page', handler);
           resolve(page);

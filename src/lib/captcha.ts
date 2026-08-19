@@ -14,14 +14,27 @@ const CAPTCHA_SELECTORS: Record<string, string> = {
 };
 
 export async function detectCaptcha(page: Page): Promise<CaptchaInfo | null> {
-  for (const [type, selector] of Object.entries(CAPTCHA_SELECTORS)) {
-    const el = await page.$(selector);
-    if (el) {
-      const iframeUrl = await el.getAttribute('src').catch(() => undefined);
-      return { type: type as CaptchaInfo['type'], selector, iframeUrl: iframeUrl || undefined };
-    }
-  }
-  return null;
+  // Single evaluate instead of page.$ per selector: the DOM agent can be
+  // permanently unresponsive on freshly-attached tab sessions (d07), where
+  // every DOM.getDocument call hung to its timeout. Runtime.evaluate works
+  // everywhere — one round trip, no DOM dependency.
+  const hit = await page.evaluate<{ type: string; selector: string; iframeUrl?: string } | null>(`
+    (function() {
+      var S = ${JSON.stringify(CAPTCHA_SELECTORS)};
+      for (var type in S) {
+        var sel = S[type];
+        var el;
+        try { el = document.querySelector(sel); } catch (e) { continue; }
+        if (el) {
+          var url = el.getAttribute && el.getAttribute('src');
+          return { type: type, selector: sel, iframeUrl: url || undefined };
+        }
+      }
+      return null;
+    })()
+  `).catch(() => null);
+  if (!hit) return null;
+  return { type: hit.type as CaptchaInfo['type'], selector: hit.selector, iframeUrl: hit.iframeUrl || undefined };
 }
 
 export async function waitForCaptchaSolved(
