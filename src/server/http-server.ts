@@ -57,6 +57,13 @@ export class HTTPServer {
         reject(err);
       });
 
+      // Long-running RPCs (real-site replays) legitimately exceed Node's
+      // default 300s requestTimeout — the socket was killed mid-replay
+      // (real-world juejin replay died at exactly 5:01).
+      server.headersTimeout = 20 * 60_000;
+      server.requestTimeout = 20 * 60_000;
+      server.keepAliveTimeout = 20 * 60_000;
+
       server.listen(this.port, this.host, () => {
         const addr = server.address();
         if (addr && typeof addr === 'object') {

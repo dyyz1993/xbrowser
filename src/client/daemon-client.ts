@@ -2,6 +2,7 @@ import type { ExecutionResult } from '../executor.js';
 import { errMsg } from '../utils/error.js';
 import { startDaemonProcess, stopDaemonProcess } from '../daemon/daemon.js';
 import { version as cliVersion } from '../version.js';
+import { request as httpRequest } from 'http';
 
 const DAEMON_PORT = 9224;
 const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`;
@@ -298,7 +299,50 @@ export async function forwardRecordSummary(session: string): Promise<unknown> {
 }
 
 export async function forwardReplay(file: string, session: string, slowMo?: number): Promise<unknown> {
-  return rpcCall('replay', { file, session, slowMo }, 120000);
+  // Real-site replays legitimately exceed 5 minutes: slow page loads, stealth
+  // trajectories, per-step load-state waits. Node fetch (undici) hard-caps the
+  // response body wait at 300s regardless of AbortSignal — use raw http.request
+  // (no body timeout) so only the replayer's own per-step timeouts apply.
+  return longRpcCall('replay', { file, session, slowMo }, 20 * 60_000);
+}
+
+/** Raw-HTTP RPC for long-running calls that outlive undici's 300s bodyTimeout. */
+function longRpcCall<T = unknown>(
+  method: string,
+  params: Record<string, unknown>,
+  timeoutMs: number,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const body = JSON.stringify({ method, params });
+    const req = httpRequest(
+      {
+        hostname: '127.0.0.1',
+        port: DAEMON_PORT,
+        path: '/rpc',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as T & { error?: string };
+            if (parsed && typeof parsed.error === 'string' && Object.keys(parsed).length === 1) {
+              reject(new Error(`Daemon error: ${parsed.error}`));
+            } else {
+              resolve(parsed);
+            }
+          } catch (e) {
+            reject(e instanceof Error ? e : new Error(String(e)));
+          }
+        });
+      },
+    );
+    req.setTimeout(timeoutMs, () => req.destroy(new Error(`replay RPC timeout after ${timeoutMs}ms`)));
+    req.on('error', reject);
+    req.end(body);
+  });
 }
 
 export async function forwardRecordCheckpoint(session: string, type: string, hint: string, selector?: string): Promise<unknown> {

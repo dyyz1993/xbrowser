@@ -74,7 +74,11 @@ export async function waitForActionable(
           return { x, y, width: r.width, height: r.height };
         })()
       `).catch(() => null);
-      if (rect) return { nodeId: 0, rect };
+      // Zero-size elements are hidden (display:none offscreen variants,
+      // legacy submit buttons like baidu's #su) — clicking them dispatches
+      // at (0,0), hitting whatever sits at the page origin (real-world baidu).
+      if (rect && rect.width > 0 && rect.height > 0) return { nodeId: 0, rect };
+      lastError = `Element not visible (zero size): ${selector}`;
       lastError = `Element not found: ${selector}`;
       await page.waitForTimeout(200);
     }

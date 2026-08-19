@@ -69,10 +69,15 @@ function queryMainJS(selector: string): string {
     return `(() => {
       const target = ${JSON.stringify(text)};
       const exact = ${exact};
+      // Match on OWN text nodes (not strict leaf elements): search-result
+      // titles mix text with inline highlight <em> marks — a strict leaf filter
+      // finds nothing there (real-world juejin). Own-text keeps the match
+      // precise (descendant-only text doesn't count) while tolerating markup.
+      const ownText = (e) => Array.prototype.filter.call(e.childNodes, (n) => n.nodeType === 3)
+        .map((n) => n.textContent).join('').trim();
       const els = [...document.querySelectorAll('*')].filter(e => {
-        if (e.children.length > 0) return false;
-        if (e.offsetParent === null) return false;
-        const t = (e.textContent || '').trim();
+        if (e.offsetParent === null && e.tagName !== 'BODY') return false;
+        const t = ownText(e);
         if (!t) return false;
         return exact ? t === target : t.toLowerCase().includes(target.toLowerCase());
       });
@@ -86,7 +91,7 @@ function queryMainJS(selector: string): string {
           || e.hasAttribute('onclick') || e.getAttribute('role') === 'button';
       };
       els.sort((a, b) => {
-        const ta = (a.textContent || '').trim(), tb = (b.textContent || '').trim();
+        const ta = ownText(a), tb = ownText(b);
         const ea = ta === target ? 0 : 1, eb = tb === target ? 0 : 1;
         if (ea !== eb) return ea - eb;
         const ia = isInteractive(a) ? 0 : 1, ib = isInteractive(b) ? 0 : 1;

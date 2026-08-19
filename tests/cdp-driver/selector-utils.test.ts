@@ -32,7 +32,7 @@ describe('cdp-driver selector-utils', () => {
       expect(js).toContain('querySelectorAll');
       expect(js).toContain('最新'); // quotes JSON-escaped inside deep-query wrapper
       expect(js).toContain('includes');
-      expect(js).toContain('children.length');
+      expect(js).toContain('nodeType === 3');
     });
 
     it('translates text="Foo" (quoted) to exact match', () => {
@@ -48,7 +48,7 @@ describe('cdp-driver selector-utils', () => {
       const js = queryJS('popup-text=删除');
       expect(js).not.toContain('document.querySelector("popup-text=');
       expect(js).toContain('删除'); // quotes JSON-escaped inside deep-query wrapper
-      expect(js).toContain('children.length');
+      expect(js).toContain('children.length'); // popup-text keeps strict leaf filter
     });
 
     it('handles text with special characters safely', () => {
@@ -133,8 +133,8 @@ describe('cdp-driver selector-utils', () => {
 
     it('text=最新 produces valid JS (used as fallback for spm-anchor-id)', () => {
       const js = queryJS('text=最新');
-      // The generated JS must be syntactically valid and find leaf elements
-      expect(js).toContain('children.length > 0');  // skip non-leaf
+      // The generated JS matches on OWN text nodes (markup-tolerant)
+      expect(js).toContain('nodeType === 3');
       expect(js).toContain('offsetParent === null'); // skip hidden
       expect(js).toContain('最新'); // quotes JSON-escaped inside deep-query wrapper
     });
