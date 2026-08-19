@@ -106,6 +106,10 @@ export class XBPageImpl implements XBPage {
     await this.conn.send('Page.enable', undefined, this.sessionId);
     await this.conn.send('Runtime.enable', undefined, this.sessionId);
     await this.conn.send('Network.enable', undefined, this.sessionId);
+    // DOM agent: without DOM.enable, DOM.getDocument can hang forever on
+    // freshly-attached tab sessions (d07: target=_blank tab switch froze every
+    // subsequent page.$ call).
+    await this.conn.send('DOM.enable', undefined, this.sessionId).catch(() => {});
 
     // Setup event listeners
     this.setupPageEvents();
@@ -123,6 +127,13 @@ export class XBPageImpl implements XBPage {
       );
       this._url = info.url;
       this._title = info.title;
+      // Auto-attached pages (target=_blank, window.open) already finished
+      // loading BEFORE we attached — the load events fired without us. Mark
+      // the load state as reached, or every waitForLoadState('load'/'dom…')
+      // needlessly burns its full timeout (d07: 30s per call).
+      if (info.url && info.url !== 'about:blank' && info.url !== '') {
+        this._loadState = { loadFired: true, domContentFired: true, networkIdle: true };
+      }
     } catch { /* target info optional */ }
   }
 
@@ -428,6 +439,108 @@ export class XBPageImpl implements XBPage {
     }
 
     return result.result?.value as R;
+  }
+
+  /**
+   * 在指定 iframe 上下文中执行表达式（攻防 D16 能力建设，2026-08-19）。
+   *
+   * 双路径：
+   *  1. 同进程 iframe —— Runtime.enable 收集 executionContextCreated，
+   *     找到目标 frameId 的 contextId，用 contextId 定向执行；
+   *  2. 跨域 OOPIF（独立 target）—— Target.setAutoAttach(flatten) 监听
+   *     attachedToTarget 中 type==='iframe' 的会话，用其 sessionId 执行。
+   *
+   * 这绕过了页面同源策略（那是页面 JS 的约束，CDP 是调试通道）——
+   * 支付窗/验证码/第三方嵌入内容的读写都靠它。
+   */
+  async evaluateInFrame<R = unknown>(urlIncludes: string, expression: string): Promise<R> {
+    if (this._closed) throw new Error('Page is closed');
+
+    const evalIn = async (sessionId: string | undefined, contextId?: number): Promise<R> => {
+      const params: Record<string, unknown> = { expression, returnByValue: true, awaitPromise: true };
+      if (contextId !== undefined) params.contextId = contextId;
+      const result = await this.conn.send<{
+        result?: { value?: unknown };
+        exceptionDetails?: { text: string; exception?: { description?: string; value?: string } };
+      }>('Runtime.evaluate', params, sessionId);
+      if (result.exceptionDetails) {
+        const detail = result.exceptionDetails.exception?.description
+          ?? result.exceptionDetails.exception?.value
+          ?? result.exceptionDetails.text;
+        throw new Error(`[frame ${urlIncludes}] ${detail}`);
+      }
+      return result.result?.value as R;
+    };
+
+    // 路径 A（首选）：OOPIF 是独立 CDP target——浏览器级 Target.getTargets
+    // 直接按 type==='iframe' + URL 匹配，attach 后执行。实测 Page.getFrameTree
+    // 对 OOPIF 不可靠（树里没有，但 target 存在且正常渲染）。
+    try {
+      const tg = await this.conn.send<{ targetInfos?: Array<{ targetId: string; type: string; url?: string }> }>('Target.getTargets', undefined);
+      const hit = (tg.targetInfos || []).find((t) => t.type === 'iframe' && (t.url || '').includes(urlIncludes));
+      if (hit) {
+        const att = await this.conn.send<{ sessionId: string }>('Target.attachToTarget', { targetId: hit.targetId, flatten: true });
+        return evalIn(att.sessionId);
+      }
+    } catch { /* 落到路径 B（tunnel 扩展链路可能不支持浏览器级 getTargets） */ }
+
+    // 路径 B：同进程 iframe——Runtime.enable 收集 executionContextCreated，
+    // 用 Page.getFrameTree 做 frameId→URL 映射，contextId 定向执行
+    type FrameNode = { frame: { id: string; url: string }; childFrames?: FrameNode[] };
+    type CtxEvent = { context?: { id?: number; auxData?: { frameId?: string } } };
+    type AttachEvent = { sessionId?: string; targetInfo?: { type?: string; url?: string } };
+    const tree = await this.conn.send<{ frameTree: FrameNode }>('Page.getFrameTree', undefined, this.sessionId);
+    const all: Array<{ id: string; url: string }> = [];
+    const walk = (node: FrameNode): void => {
+      all.push({ id: node.frame.id, url: node.frame.url });
+      for (const child of node.childFrames || []) walk(child);
+    };
+    walk(tree.frameTree);
+    const mainId = tree.frameTree?.frame?.id;
+    const target = all.find((f) => f.id !== mainId && f.url.includes(urlIncludes));
+
+    if (target) {
+      const contexts: Array<{ id: number; frameId: string }> = [];
+      const onCtx = (raw: unknown): void => {
+        const c = (raw as CtxEvent)?.context;
+        if (c?.id && c?.auxData?.frameId) contexts.push({ id: c.id, frameId: c.auxData.frameId });
+      };
+      this.conn.on('Runtime.executionContextCreated', onCtx);
+      try {
+        await this.conn.send('Runtime.enable', undefined, this.sessionId).catch(() => {});
+        await new Promise((r) => setTimeout(r, 400));
+      } finally {
+        this.conn.off('Runtime.executionContextCreated', onCtx);
+      }
+      const ctx = contexts.find((c) => c.frameId === target.id);
+      if (ctx) return evalIn(this.sessionId, ctx.id);
+    }
+
+    // 路径 C：Target.setAutoAttach 监听后续 attach 的 iframe target（兜底）
+    const attached: Array<{ sessionId: string; url: string }> = [];
+    const onAttach = (raw: unknown): void => {
+      const ev = raw as AttachEvent;
+      if (ev?.sessionId && ev.targetInfo?.type === 'iframe') {
+        attached.push({ sessionId: ev.sessionId, url: ev.targetInfo.url || '' });
+      }
+    };
+    this.conn.on('Target.attachedToTarget', onAttach);
+    try {
+      await this.conn.send('Target.setAutoAttach', {
+        autoAttach: true,
+        waitForDebuggerOnStart: false,
+        flatten: true,
+      }, this.sessionId);
+      await new Promise((r) => setTimeout(r, 600));
+    } finally {
+      this.conn.off('Target.attachedToTarget', onAttach);
+      this.conn.send('Target.setAutoAttach', { autoAttach: false, waitForDebuggerOnStart: false, flatten: true }, this.sessionId).catch(() => {});
+    }
+    const hit = attached.find((a) => a.url.includes(urlIncludes));
+    if (!hit) {
+      throw new Error(`frame not found for "${urlIncludes}"（OOPIF target、frame 树、auto-attach 三路均未命中；可能仍在加载）`);
+    }
+    return evalIn(hit.sessionId);
   }
 
   /** evaluateHandle — evaluates fn and returns a handle for element bounding box */
@@ -892,18 +1005,28 @@ export class XBPageImpl implements XBPage {
       } catch { /* performSearch may not support xpath */ }
       return 1; // Element exists but we can't get nodeId — return truthy
     }
-    // Get document root
-    const doc = await this.conn.send<{ root: { nodeId: number } }>(
-      'DOM.getDocument',
-      { depth: 0 },
-      this.sessionId,
-    );
+    // Get document root — with timeout guard: on freshly-attached tab
+    // sessions the DOM agent can silently never respond (d07: detectCaptcha's
+    // page.$ hung forever after a target=_blank tab switch). Time out and
+    // report "not found" instead of deadlocking the command.
+    const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T | null> =>
+      Promise.race([p, new Promise<null>(r => setTimeout(() => r(null), ms))]);
 
-    const result = await this.conn.send<{ nodeId: number }>(
-      'DOM.querySelector',
-      { nodeId: doc.root.nodeId, selector },
-      this.sessionId,
+    const doc = await withTimeout(
+      this.conn.send<{ root: { nodeId: number } }>('DOM.getDocument', { depth: 0 }, this.sessionId),
+      8000,
     );
+    if (!doc) return 0;
+
+    const result = await withTimeout(
+      this.conn.send<{ nodeId: number }>(
+        'DOM.querySelector',
+        { nodeId: doc.root.nodeId, selector },
+        this.sessionId,
+      ),
+      8000,
+    );
+    if (!result) return 0;
 
     return result.nodeId;
   }

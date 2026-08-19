@@ -198,11 +198,24 @@ export async function handleBrowserCommand(
           output: (options.output || options.o || args[0]) as string | undefined,
         };
         break;
-      case 'eval':
+      case 'eval': {
         cmdName = 'eval';
-        params = { expression: args.join(' ') || (options.expression as string) || '' };
-        if (!params.expression) outputError('Usage: xbrowser eval <expression>');
+        // --frame <substr> 定向 iframe 上下文（非全局 flag 会混进 args，拼接表达式时剔除）
+        const frameVal = (options.frame as string) || undefined;
+        const exprParts: string[] = [];
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === '--frame') {
+            i++; // skip value
+            continue;
+          }
+          if (args[i].startsWith('--frame=')) continue;
+          exprParts.push(args[i]);
+        }
+        params = { expression: exprParts.join(' ') || (options.expression as string) || '' };
+        if (frameVal) params.frame = frameVal;
+        if (!params.expression) outputError('Usage: xbrowser eval <expression> [--frame <url-substring>]');
         break;
+      }
       case 'scroll': {
         // scroll supports:
         //   scroll                → scroll down (default)

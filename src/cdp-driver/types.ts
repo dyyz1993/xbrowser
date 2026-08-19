@@ -139,6 +139,13 @@ export interface XBPage {
   // Frame discovery
   discoverFrames(): Promise<XBFrame[]>;
 
+  /**
+   * 在 URL 含 urlIncludes 的 iframe 上下文中执行表达式。
+   * 同进程 iframe 走 contextId；跨域 OOPIF 走 Target auto-attach。
+   * 绕过页面同源策略（CDP 是调试通道）——跨域嵌入内容读写的唯一路径。
+   */
+  evaluateInFrame<R = unknown>(urlIncludes: string, expression: string): Promise<R>;
+
   // Page management
   bringToFront(): Promise<void>;
   setExtraHTTPHeaders(headers: Record<string, string>): Promise<void>;
