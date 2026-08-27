@@ -845,6 +845,11 @@ export class XBPageImpl implements XBPage {
     );
   }
 
+  /** 覆盖 User-Agent（headless 环境对抗 UA 检测的标配能力） */
+  async setUserAgent(userAgent: string): Promise<void> {
+    await this._setUserAgent(userAgent);
+  }
+
   /** Internal: set extra HTTP headers */
   async _setExtraHTTPHeaders(headers: Record<string, string>): Promise<void> {
     await this.setExtraHTTPHeaders(headers);

@@ -5,6 +5,7 @@ import './wait.js';
 import './scroll.js';
 import './mouse.js';
 import './evaluate.js';
+import './ua.js';
 import './storage.js';
 import './screenshot.js';
 import './structure.js';

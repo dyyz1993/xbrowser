@@ -198,6 +198,12 @@ export async function handleBrowserCommand(
           output: (options.output || options.o || args[0]) as string | undefined,
         };
         break;
+      case 'ua': {
+        cmdName = 'ua';
+        const val = args.join(' ').trim() || (options.value as string) || '';
+        params = { value: val };
+        break;
+      }
       case 'eval': {
         cmdName = 'eval';
         // --frame <substr> 定向 iframe 上下文（非全局 flag 会混进 args，拼接表达式时剔除）

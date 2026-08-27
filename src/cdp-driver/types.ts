@@ -136,6 +136,9 @@ export interface XBPage {
   // Scripts
   addInitScript(script: string): Promise<void>;
 
+  /** 覆盖当前页会话的 User-Agent（Network.setUserAgentOverride，会话级持久） */
+  setUserAgent(userAgent: string): Promise<void>;
+
   // Frame discovery
   discoverFrames(): Promise<XBFrame[]>;
 
