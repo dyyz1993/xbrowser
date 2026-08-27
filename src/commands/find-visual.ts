@@ -29,12 +29,15 @@ function loadVLMCredentials(): { apiKey: string; baseURL: string; model: string 
         | undefined;
       if (provider?.options?.apiKey && provider.options.baseURL) {
         const models = Object.keys(provider.models ?? {});
-        // Prefer a dedicated VL model, else flagship (native vision)
+        // Prefer a dedicated VL model, else flash-tier (grounded pointing),
+        // else flagship. Grounded flash models locate small UI elements far
+        // better than reasoning flagships, which estimate (~±300px off).
         const vl = models.find((m) => /vl|vision/i.test(m));
+        const flash = models.find((m) => /flash/i.test(m) && /5\.?3/i.test(m));
         return {
           apiKey: provider.options.apiKey,
           baseURL: provider.options.baseURL.replace(/\/$/, ''),
-          model: process.env.XBROWSER_VLM_MODEL || vl || models.find((m) => /5\.[23]/.test(m)) || models[0],
+          model: process.env.XBROWSER_VLM_MODEL || vl || flash || models.find((m) => /5\.[23]/.test(m)) || models[0],
         };
       }
     } catch { /* try next */ }
