@@ -103,6 +103,7 @@ export const findVisualCommand = registerCommand({
     element: z.string().describe('元素的自然语言描述，如 "红色的登录按钮"（注意：--target 是全局页面路由参数，此处用 --element）'),
     click: z.boolean().optional().describe('找到后立即点击（真实鼠标事件）'),
     threshold: z.coerce.number().optional().describe('置信度阈值，低于则报 not-found（默认 0）'),
+    zoom: z.boolean().optional().describe('二段式放大精修（默认开）——粗框区域二次截图让 VLM 精确定位'),
   }),
   result: z.object({
     found: z.boolean(),
@@ -155,6 +156,47 @@ export const findVisualCommand = registerCommand({
       return ok({ found: false, element: p.element, model: creds.model }, [
         `截图中未找到: ${p.element}`,
       ]);
+    }
+
+    // 2.5 Two-stage zoom refine: re-screenshot the coarse box region via CDP
+    // clip (Chromium-native crop, no image lib), ask the VLM to locate within
+    // the zoomed view, map back. Small-element precision insurance.
+    if (p.zoom !== false && hit) {
+      try {
+        const pad = Math.max(20, Math.round(Math.max(hit.box.width, hit.box.height) * 0.5));
+        const clip = {
+          x: Math.max(0, hit.box.x - pad),
+          y: Math.max(0, hit.box.y - pad),
+          width: Math.min(imgW - Math.max(0, hit.box.x - pad), hit.box.width + pad * 2),
+          height: Math.min(imgH - Math.max(0, hit.box.y - pad), hit.box.height + pad * 2),
+        };
+        if (clip.width > 8 && clip.height > 8) {
+          const zoomBuf = await page.screenshot({ type: 'png', clip });
+          const zoomB64 = zoomBuf.toString('base64');
+          const zoomW = zoomBuf.readUInt32BE(16);
+          const zoomH = zoomBuf.readUInt32BE(20);
+          const refined = await locateByVLM(creds, zoomB64, p.element);
+          if (refined) {
+            const rb = refined.box;
+            const inZoom = rb.x >= 0 && rb.y >= 0
+              && rb.x + rb.width <= zoomW + 2 && rb.y + rb.height <= zoomH + 2
+              && rb.width > 2 && rb.height > 2;
+            if (inZoom) {
+              // Map zoom-local coords back to viewport image coords
+              hit = {
+                label: refined.label || hit.label,
+                box: {
+                  x: clip.x + rb.x,
+                  y: clip.y + rb.y,
+                  width: rb.width,
+                  height: rb.height,
+                },
+                confidence: refined.confidence === 'low' ? hit.confidence : refined.confidence,
+              };
+            }
+          }
+        }
+      } catch { /* zoom refine is best-effort — coarse hit stands */ }
     }
 
     if (p.threshold !== undefined) {
