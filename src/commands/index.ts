@@ -4,6 +4,7 @@ import './query.js';
 import './wait.js';
 import './scroll.js';
 import './mouse.js';
+import './find-visual.js';
 import './evaluate.js';
 import './ua.js';
 import './storage.js';
