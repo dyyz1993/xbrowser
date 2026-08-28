@@ -316,6 +316,32 @@ export function buildStealthInitScript(): string {
     '          return v;};}',
     '      return c;};',
     '  }catch(e){}',
+    // 5. AudioContext fingerprint: per-load stable micro-noise on channel
+    //    data (d21). DSP sum differences between headless software audio and
+    //    real hardware audio are a classic fingerprint — add ±1e-7 level
+    //    noise (inaudible, changes the sum hash).
+    '  try{',
+    '    var _gcd=AudioBuffer.prototype.getChannelData;',
+    '    AudioBuffer.prototype.getChannelData=function(ch){',
+    '      var d=_gcd.call(this,ch);',
+    '      var key="__xb_audio_"+ch;',
+    '      if(!this[key]){',
+    '        this[key]=true;',
+    '        for(var i=0;i<d.length;i+=997){d[i]=d[i]+(_prng()-0.5)*2e-7;}',
+    '      }',
+    '      return d;',
+    '    };',
+    '    var _gffd=AnalyserNode.prototype.getFloatFrequencyData;',
+    '    AnalyserNode.prototype.getFloatFrequencyData=function(arr){',
+    '      _gffd.call(this,arr);',
+    '      for(var i=0;i<arr.length;i+=31){arr[i]=arr[i]+(_prng()-0.5)*0.01;}',
+    '    };',
+    '    var _gfbd=AnalyserNode.prototype.getByteFrequencyData;',
+    '    AnalyserNode.prototype.getByteFrequencyData=function(arr){',
+    '      _gfbd.call(this,arr);',
+    '      for(var i=0;i<arr.length;i+=31){arr[i]=(arr[i]+((_prng()*3)|0))&255;}',
+    '    };',
+    '  }catch(e){}',
     // 3. toString disguise (name-list based)
     '  var _ts=Function.prototype.toString;',
     '  var _hf=document.hasFocus;',
