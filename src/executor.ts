@@ -266,7 +266,13 @@ export async function executeCommand(
   // Forward browser-dependent commands to daemon (auto-starts daemon if not running).
   if (command.scope !== 'cli' && !process.env.XBROWSER_DAEMON_WORKER) {
     const { forwardExec } = await import('./client/daemon-client.js');
-    const result = await forwardExec(commandName, params, sessionName, extraOpts?.cdpEndpoint);
+    // Long-running agent loops (vision-task: N × VLM round-trips ≈ 5-15s/step)
+    // outlive the default 120s exec RPC.
+    const longRunning = /^(vision-task|crawl|scrape|record|replay)$/.test(commandName);
+    const result = await forwardExec(
+      commandName, params, sessionName, extraOpts?.cdpEndpoint,
+      longRunning ? 20 * 60_000 : undefined,
+    );
     if (result) return result;
     // forwardExec returned null/undefined (e.g. daemon unreachable) — fall through to local execution
   }
