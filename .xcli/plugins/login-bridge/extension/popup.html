@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: system-ui; width: 320px; padding: 12px; margin: 0; }
+  h3 { margin: 0 0 8px; font-size: 15px; }
+  input { width: 100%; box-sizing: border-box; padding: 6px 8px; margin: 4px 0 10px; border: 1px solid #ddd; border-radius: 6px; }
+  button { width: 100%; padding: 8px; margin: 3px 0; border: 0; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  #exp { background: #e8493f; color: #fff; }
+  #imp { background: #2980b9; color: #fff; }
+  #tabs { background: #eee; }
+  #out { font-size: 12px; margin-top: 8px; white-space: pre-wrap; color: #555; max-height: 140px; overflow: auto; }
+  .hint { font-size: 11px; color: #999; margin-top: 6px; }
+</style>
+</head>
+<body>
+  <h3>xbrowser 登录态同步</h3>
+  <input id="domain" placeholder="域名过滤（留空=全部），如 xiaohongshu.com">
+  <button id="exp">导出到 xbrowser（Chrome → 自动化）</button>
+  <button id="imp">从 xbrowser 导入（自动化 → Chrome）</button>
+  <button id="tabs">查看 tab 分组</button>
+  <div id="out">bridge: http://127.0.0.1:9355</div>
+  <div class="hint">导出包含 cookie + 当前页 localStorage；仅发送到本机 9355 端口。</div>
+  <script src="popup.js"></script>
+</body>
+</html>

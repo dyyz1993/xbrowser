@@ -32,7 +32,7 @@ npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 | `src/cdp-driver/` | 自研 CDP 驱动（Playwright 替代） |
 | `src/cli/` | 子命令路由（session / plugin / record / preview / viewer） |
 | `src/daemon/` | 后台 daemon + WebSocket preview 服务器 |
-| `.xcli/plugins/` | **插件主目录**（124 个站点插件） |
+| `.xcli/plugins/` | **插件主目录**（125 个站点插件） |
 | `.xcli/storage/` | 插件持久化数据（cookie、登录态、运行缓存） |
 | `tests/` | 单元/E2E 测试 |
 | `lint-scripts/` | lint 规则（Plugin Contract 校验、参数检查） |
