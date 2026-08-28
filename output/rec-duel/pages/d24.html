@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D24 chrome-object</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+</style>
+</head>
+<body>
+<h2>D24 — Chrome 对象深度校验</h2>
+<p>自动化工具最常伪造 window.chrome，但只伪造了外壳。深度校验内部结构。</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+  var c = window.chrome;
+
+  checks.push({ name: 'window.chrome 存在', ok: !!c });
+  if (!c) { render(checks); return; }
+
+  // 1. chrome.app 必须有 run() 和 load()（headless 伪造常缺失）
+  checks.push({ name: 'chrome.app', ok: !!(c.app && typeof c.app.run === 'function') });
+  // 2. chrome.runtime 结构（存在但通常无 id —— 扩展上下文才有）
+  checks.push({ name: 'chrome.runtime', ok: 'runtime' in c });
+  // 3. chrome.csi / chrome.loadTimes（老 API 但真实 Chrome 仍在）
+  checks.push({ name: 'chrome.csi', ok: typeof c.csi === 'function' || c.csi !== undefined });
+  checks.push({ name: 'chrome.loadTimes', ok: typeof c.loadTimes === 'function' || c.loadTimes !== undefined });
+  // 4. toString 一致性（伪造对象的 toString 常暴露）
+  var tsOk = false;
+  try { tsOk = String(c.app) === '[object Object]' && Object.prototype.toString.call(c) === '[object Object]'; } catch (e) {}
+  checks.push({ name: 'toString 一致', ok: tsOk });
+  // 5. Notification.permission（headless 常为 denied 或异常）
+  checks.push({ name: 'Notification.permission 合理', ok: ['default', 'granted', 'denied'].includes(Notification.permission) });
+  // 6. navigator.permissions.query 行为（headless 的 notifications 查询返回 prompt 而非 denied）
+  var permOk = null;
+  try {
+    navigator.permissions.query({ name: 'notifications' }).then(function (s) {
+      // 真实 Chrome 无痕/headless 常 denied；普通窗口 default。两者都合理，报错才是异常
+      window.__permResult = s.state;
+    }).catch(function () { window.__permResult = 'rejected'; });
+  } catch (e) { permOk = false; }
+  // 7. Error.stack 格式（CDP 注入的栈没有浏览器扩展层）
+  try { var e = new Error('t'); checks.push({ name: 'Error.stack 非空', ok: e.stack && e.stack.length > 10 }); } catch (e2) {}
+
+  window.__log.push({ action: 'check', allPass: checks.every(function (x) { return x.ok; }), checks: checks.map(function (x) { return { name: x.name, ok: x.ok }; }) });
+  render(checks);
+}
+function render(checks) {
+  var el = document.getElementById('log');
+  el.innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + '</div>';
+  }).join('');
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd24', log: window.__log, perm: window.__permResult || null }); };
+</script>
+</body>
+</html>

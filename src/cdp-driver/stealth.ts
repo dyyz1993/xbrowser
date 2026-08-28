@@ -376,9 +376,19 @@ export function buildStealthInitScript(): string {
     '      var p=_oc.apply(this,arguments);',
     '      var self=this;',
     '      return p.then(function(offer){',
-    '        offer.sdp=offer.sdp.replace(/(a=candidate[^\r\n]*typ host[^\r\n]*)/g,"");',
+    '        offer.sdp=offer.sdp.split(String.fromCharCode(10)).filter(function(l){return l.indexOf("typ host")<0}).join(String.fromCharCode(10));',
     '        return offer;});',
     '    };',
+    '  }catch(e){}',
+    // 3d. Chrome object depth (d24): automation fakes usually only set
+    //     window.chrome = {}; deep checks hit app.run/runtime/csi/loadTimes.
+    '  try{',
+    '    if(window.chrome){',
+    '      if(!window.chrome.app||!window.chrome.app.run)window.chrome.app={run:function(){},load:function(){},getDetails:function(){return null},InstallState:{DISABLED:"disabled",INSTALLED:"installed",NOT_INSTALLED:"not_installed"},RunningState:{CANNOT_RUN:"cannot_run",READY_TO_RUN:"ready_to_run",RUNNING:"running"}};',
+    '      if(!window.chrome.runtime)window.chrome.runtime={OnInstalledReason:{CHROME_UPDATE:"chrome_update",INSTALL:"install",UPDATE:"update"},PlatformOs:{ANDROID:"android",CROS:"cros",LINUX:"linux",MAC:"mac",OPENBSD:"openbsd",WIN:"win"},connect:function(){},sendMessage:function(){},id:undefined};',
+    '      if(!window.chrome.csi)window.chrome.csi=function(){return{};}',
+    '      if(!window.chrome.loadTimes)window.chrome.loadTimes=function(){return{};}',
+    '    }',
     '  }catch(e){}',
     // 3. toString disguise (name-list based)
     '  var _ts=Function.prototype.toString;',
