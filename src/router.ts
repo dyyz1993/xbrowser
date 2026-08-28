@@ -225,13 +225,66 @@ function extractSessionNameFromArgv(argv: string[]): string {
 async function handleEvalMode(argv: string[]): Promise<void> {
   const evalCommands = parseEvalFlags(argv);
   if (evalCommands.length === 0) return;
-  const chain = evalCommands.join(' ; ');
+  // Encode each script as base64url so chain parsing (which splits on ';',
+  // whitespace and newlines) cannot break JS containing semicolons or
+  // multiline statements. The eval command decodes scriptB64.
+  const chain = evalCommands
+    .map((script) => `eval --script-b64 ${Buffer.from(script, 'utf8').toString('base64url')}`)
+    .join(' ; ');
   const cdpEndpoint = extractCdpFromArgv(argv);
   // Extract --session from argv for eval mode (not handled by parseArgs)
   const sessionArgIdx = argv.indexOf('--session');
   const sessionName = sessionArgIdx >= 0 && argv[sessionArgIdx + 1]
     ? argv[sessionArgIdx + 1]
     : process.env.XBROWSER_SESSION || 'default';
+  const chainResult = await executeChain(chain, { cdpEndpoint, sessionName });
+  printChainResult(chainResult);
+  if (!chainResult.success) throw new Error("Command failed");
+}
+
+/**
+ * `xbrowser eval <js...>` — everything after the `eval` word is ONE script.
+ * Shell quotes are consumed before argv reaches us, so the script's own
+ * newlines/semicolons are indistinguishable from chain separators at parse
+ * time (field-verified: any eval containing `;` or newlines was split into
+ * fake commands). Pass the script base64url-encoded via --script-b64, which
+ * chain parsing cannot break, and let the eval command decode it.
+ */
+function findEvalStart(argv: string[]): number {
+  const flagsWithValue = new Set(['--session', '--cdp']);
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (a === '-e' || a === '--eval') return -1; // -e mode owns this input
+    if (a.startsWith('--')) {
+      if (flagsWithValue.has(a)) { i++; continue; } // skip flag + value
+      continue; // valueless global flag (--json/--yaml)
+    }
+    return a === 'eval' ? i : -1; // first positional token must be `eval`
+  }
+  return -1;
+}
+
+async function handleEvalScript(parts: string[], argv: string[]): Promise<void> {
+  const cdpEndpoint = extractCdpFromArgv(argv);
+  const sessionName = extractSessionNameFromArgv(argv);
+  // Pull --frame <value> out of the parts; everything else is script lines.
+  let frame: string | undefined;
+  const scriptLines: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (part === '--frame' && parts[i + 1]) { frame = parts[i + 1]; i++; continue; }
+    if (part === '--session' || part === '--cdp') { i++; continue; } // global flags, already extracted
+    scriptLines.push(part);
+  }
+  const script = scriptLines.join('\n');
+  if (!script.trim()) {
+    console.error('Error: eval requires a script (usage: xbrowser eval <js...>)');
+    throw new Error("Command failed");
+  }
+  const b64 = Buffer.from(script, 'utf8').toString('base64url');
+  const chain = frame
+    ? `eval --frame ${frame} --script-b64 ${b64}`
+    : `eval --script-b64 ${b64}`;
   const chainResult = await executeChain(chain, { cdpEndpoint, sessionName });
   printChainResult(chainResult);
   if (!chainResult.success) throw new Error("Command failed");
@@ -293,6 +346,15 @@ export async function routeCommand(
   try {
     if (stdinCommands && stdinCommands.length > 0) {
       await handleStdinMode(stdinCommands, argv);
+      return;
+    }
+
+    // `xbrowser [flags] eval <js...>` must be intercepted before chain
+    // parsing — see handleEvalScript. Runs after the -e branch so
+    // `xbrowser -e` still wins when both forms are mixed.
+    const evalStart = findEvalStart(argv);
+    if (evalStart >= 0 && argv.length > evalStart + 1) {
+      await handleEvalScript(argv.slice(evalStart + 1), argv);
       return;
     }
 
