@@ -235,6 +235,48 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  site.command('import-from-chrome', {
+    description: '从 Google Chrome 导入登录态（需 Chrome 已完全退出——运行中密钥被轮换无法解密）',
+    scope: 'project',
+    loginRequired: 'none',
+    parameters: z.object({
+      site: z.string().describe('目标站点域名，如 juejin.cn'),
+      profile: z.string().optional().describe('Chrome profile 名（默认 Default）'),
+    }),
+    handler: async (p) => {
+      const { execSync } = await import('child_process');
+      // 1. Chrome 必须完全退出（运行时密钥轮换，开着解不开）
+      let chromeRunning = false;
+      try { execSync('pgrep -x "Google Chrome"', { stdio: 'ignore' }); chromeRunning = true; } catch { /* not running */ }
+      if (chromeRunning) {
+        return fail('Google Chrome 正在运行 — 请先完全退出（Cmd+Q）再重试', [
+          '原因：Chrome 运行时把 cookie 解密密钥轮换进内存，钥匙串条目是陈旧的',
+          '退出后真实密钥会写回钥匙串，本命令即可解开（Codex 同款机制）',
+        ]);
+      }
+      // 2. 拷贝 cookie 库（含 journal 合并的完整 backup）
+      const chromeDb = join(homedir(), 'Library', 'Application Support', 'Google', 'Chrome', p.profile || 'Default', 'Cookies');
+      if (!existsSync(chromeDb)) return fail(`找不到 Chrome cookie 库: ${chromeDb}`);
+      const tmpDb = join(bridgeStoreFile, '..', 'chrome-import.db');
+      execSync(`sqlite3 "${chromeDb}" ".backup ${tmpDb}"`);
+
+      // 3. 钥匙串取 Chrome 密钥 → 解密
+      const { decryptChromeCookies } = await import('./decrypt-chrome.js');
+      const cookies = decryptChromeCookies(tmpDb, p.site);
+      if (!cookies.length) return fail(`解出 0 条 cookie（site=${p.site}）— 该站点可能无登录态`);
+
+      // 4. 存入 bridge 库存
+      const store = loadStore();
+      store[p.site] = { cookies, localStorage: [], at: Date.now() };
+      saveStore(store);
+
+      return ok({ imported: cookies.length, site: p.site }, [
+        `已导入 ${cookies.length} 条 cookie（${p.site}）→ 用 login-bridge apply 注入浏览器`,
+        '现在可以重新打开 Chrome 了',
+      ]);
+    },
+  });
+
   site.command('launch', {
     description: '用固定 profile 启动 Chromium（登录态持久化在 ~/.xbrowser/chrome-profile）',
     scope: 'project',
