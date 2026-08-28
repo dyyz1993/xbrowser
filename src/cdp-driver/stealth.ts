@@ -368,6 +368,18 @@ export function buildStealthInitScript(): string {
     '        return b;});',
     '    };',
     '  }catch(e){}',
+    // 3c. WebRTC local IP leak guard (d23): headless STUN candidates can
+    //     expose host IPs; mDNS-only candidates are the modern Chrome default.
+    '  try{',
+    '    var _oc=RTCPeerConnection.prototype.createOffer;',
+    '    RTCPeerConnection.prototype.createOffer=function(){',
+    '      var p=_oc.apply(this,arguments);',
+    '      var self=this;',
+    '      return p.then(function(offer){',
+    '        offer.sdp=offer.sdp.replace(/(a=candidate[^\r\n]*typ host[^\r\n]*)/g,"");',
+    '        return offer;});',
+    '    };',
+    '  }catch(e){}',
     // 3. toString disguise (name-list based)
     '  var _ts=Function.prototype.toString;',
     '  var _hf=document.hasFocus;',
