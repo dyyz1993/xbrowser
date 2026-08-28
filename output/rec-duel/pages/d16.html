@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D16 session-device-bind</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.step{margin:8px 0;padding:10px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+button{padding:8px 20px;margin:4px}</style>
+</head>
+<body>
+<h2>D16 — Session 跨设备绑定检测</h2>
+<p>模拟"session 签发设备"与"当前设备"的指纹一致性校验。页面记住了首次访问的指纹（localStorage 模拟服务端 session 表），每次加载对比当前指纹。</p>
+<div id="log"></div>
+<button id="reset">重置首次指纹（模拟重新登录）</button>
+<script>
+window.__log = [];
+function fingerprint() {
+  // 组合多个稳定特征 —— 模拟真实设备指纹
+  var c = document.createElement('canvas');
+  var ctx = c.getContext('2d');
+  ctx.textBaseline = 'top';
+  ctx.font = '14px Arial';
+  ctx.fillStyle = '#f60';
+  ctx.fillRect(0, 0, 100, 20);
+  ctx.fillStyle = '#069';
+  ctx.fillText('fingerprint,test', 2, 2);
+  var canvasHash = c.toDataURL().length + ':' + c.toDataURL().substring(60, 90);
+  return {
+    ua: navigator.userAgent,
+    platform: navigator.platform,
+    languages: (navigator.languages || []).join(','),
+    hwConcurrency: navigator.hardwareConcurrency,
+    deviceMemory: navigator.deviceMemory || 0,
+    screen: screen.width + 'x' + screen.height + '@' + screen.colorDepth,
+    tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    canvasHash: canvasHash,
+    webdriver: navigator.webdriver,
+    chromeObj: !!window.chrome,
+    pluginsLen: navigator.plugins.length
+  };
+}
+function render(checks) {
+  var el = document.getElementById('log');
+  el.innerHTML = '';
+  checks.forEach(function (c) {
+    var d = document.createElement('div');
+    d.className = 'step ' + (c.ok ? 'pass' : 'fail');
+    d.textContent = (c.ok ? '✓ ' : '✗ ') + c.name + (c.detail ? ' — ' + c.detail : '');
+    el.appendChild(d);
+  });
+}
+function check() {
+  var cur = fingerprint();
+  var first = JSON.parse(localStorage.getItem('d16_first') || 'null');
+  if (!first) {
+    localStorage.setItem('d16_first', JSON.stringify(cur));
+    first = cur;
+    window.__log.push({ action: 'enroll', fp: cur });
+  }
+  var checks = [
+    { name: 'UA 一致', ok: cur.ua === first.ua, detail: first.ua !== cur.ua ? first.ua.substring(0, 30) + ' → ' + cur.ua.substring(0, 30) : '' },
+    { name: '平台一致', ok: cur.platform === first.platform },
+    { name: '语言列表一致', ok: cur.languages === first.languages },
+    { name: 'CPU 核数一致', ok: cur.hwConcurrency === first.hwConcurrency },
+    { name: '屏幕一致', ok: cur.screen === first.screen },
+    { name: '时区一致', ok: cur.tz === first.tz },
+    { name: 'Canvas 指纹一致', ok: cur.canvasHash === first.canvasHash },
+    { name: 'webdriver 标记', ok: !cur.webdriver, detail: cur.webdriver ? 'navigator.webdriver=true 暴露' : '' },
+    { name: 'chrome 对象存在', ok: cur.chromeObj === first.chromeObj, detail: first.chromeObj !== cur.chromeObj ? 'chrome 对象从 ' + first.chromeObj + ' 变为 ' + cur.chromeObj : '' },
+    { name: '插件数一致', ok: cur.pluginsLen === first.pluginsLen, detail: first.pluginsLen !== cur.pluginsLen ? first.pluginsLen + ' → ' + cur.pluginsLen : '' }
+  ];
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks.map(function (c) { return { name: c.name, ok: c.ok, detail: c.detail || '' }; }) });
+  render(checks);
+}
+check();
+document.getElementById('reset').addEventListener('click', function () {
+  localStorage.removeItem('d16_first');
+  window.__log.push({ action: 'reset' });
+  check();
+});
+window.__outcome = function () { return JSON.stringify({ page: 'd16', log: window.__log }); };
+</script>
+</body>
+</html>

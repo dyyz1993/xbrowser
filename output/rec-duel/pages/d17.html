@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D17 op-tempo</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.stat{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd;font-family:monospace}
+.warn{color:#e67e22;font-weight:600}.bad{color:#e74c3c;font-weight:600}.ok{color:#27ae60}
+button{padding:8px 20px;margin:4px}</style>
+</head>
+<body>
+<h2>D17 — 操作密度画像</h2>
+<p>模拟风控的行为统计：动作间隔的方差、会话切换频率、单时间窗动作量。机器人的间隔分布方差极低、可预测。</p>
+<div id="stats"></div>
+<input id="test-input" placeholder="在此输入20个字符" style="padding:8px;font-size:15px;width:300px;margin:10px 0">
+<button id="reset">重置画像</button>
+<script>
+window.__log = [];
+var events = [];
+function stats() {
+  if (events.length < 2) return { n: events.length };
+  var gaps = [];
+  for (var i = 1; i < events.length; i++) gaps.push(events[i] - events[i-1]);
+  var mean = gaps.reduce(function(a,b){return a+b},0) / gaps.length;
+  var variance = gaps.reduce(function(a,b){return a+(b-mean)*(b-mean)},0) / gaps.length;
+  var cv = mean > 0 ? Math.sqrt(variance) / mean : 0; // 变异系数
+  // 人类打字/点击的 CV 通常 > 0.5；机器均匀延迟 CV → 0
+  var cvFlag = cv < 0.2 ? 'bad' : cv < 0.5 ? 'warn' : 'ok';
+  var tooFast = gaps.filter(function(g){return g < 30}).length;
+  return { n: events.length, meanMs: Math.round(mean), cv: Math.round(cv*100)/100, cvFlag: cvFlag, tooFast: tooFast };
+}
+function render() {
+  var s = stats();
+  var el = document.getElementById('stats');
+  if (s.n < 2) { el.innerHTML = '<div class="stat">动作数: ' + s.n + '（继续操作以积累统计）</div>'; return; }
+  el.innerHTML =
+    '<div class="stat">动作数: ' + s.n + '</div>' +
+    '<div class="stat">平均间隔: ' + s.meanMs + 'ms</div>' +
+    '<div class="stat">间隔变异系数 CV: ' + s.cv + ' <span class="' + s.cvFlag + '">[' + (s.cvFlag==='ok'?'人类特征':s.cvFlag==='warn'?'边缘':'机器人特征') + ']</span></div>' +
+    '<div class="stat">超快动作(<30ms): ' + s.tooFast + (s.tooFast > 0 ? ' <span class="warn">⚠ 多次</span>' : '') + '</div>';
+}
+function track() { events.push(Date.now()); window.__log.push({ t: events[events.length-1] }); render(); }
+['click','keydown','wheel'].forEach(function(ev){  // 只算 keydown（真实风控只看按下边界，keydown→char→keyup 连发不算）
+  document.addEventListener(ev, track, true);
+});
+render();
+document.getElementById('reset').addEventListener('click', function(){ events = []; window.__log = []; render(); });
+window.__outcome = function () { return JSON.stringify({ page: 'd17', log: window.__log, final: stats() }); };
+</script>
+</body>
+</html>

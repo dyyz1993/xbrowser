@@ -6,6 +6,7 @@
 
 import type { XBKeyboard } from './types.js';
 import type { CDPConnection } from './connection.js';
+import { DEFAULT_STEALTH_CONFIG as STEALTH_CFG, rand as stealthRand } from './stealth.js';
 
 export class XBKeyboardImpl implements XBKeyboard {
   private conn: CDPConnection;
@@ -37,8 +38,11 @@ export class XBKeyboardImpl implements XBKeyboard {
 
     await this.dispatchKeyEvent(downParams);
 
-    // Send char event for printable characters to trigger text insertion
+    // Send char event for printable characters to trigger text insertion.
+    // 按下→字符之间同样保持 keyPressDuration：d17 检测器统计的是页面全部
+    // key 事件序列，rawKeyDown→char 连发仍算超快动作。
     if (mapping.text) {
+      await sleep(stealthRand(...STEALTH_CFG.keyPressDuration));
       await this.dispatchKeyEvent({
         type: 'char',
         text: mapping.text,
@@ -46,6 +50,11 @@ export class XBKeyboardImpl implements XBKeyboard {
     }
 
     if (delay > 0) await sleep(delay);
+    else {
+      // 人类按键持续 50-110ms；零延迟的 down→up 连发是键盘行为检测的
+      // "超快动作"特征（d17 攻防：36/38 动作 <30ms 被标记）
+      await sleep(stealthRand(...STEALTH_CFG.keyPressDuration));
+    }
 
     const upParams: Record<string, unknown> = {
       type: 'keyUp',
