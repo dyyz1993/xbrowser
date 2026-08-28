@@ -2,14 +2,12 @@ import { z } from 'zod';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { writeFileSync, mkdirSync } from 'fs';
 import { dirname, join } from 'path';
-import { homedir } from 'os';
+import { resolveScreenshotsDir } from '../config.js';
 import type { BrowserCommandContext } from '../context.js';
 import { registerCommand } from './command-registry.js';
 
-const SCREENSHOTS_DIR = join(homedir(), '.xbrowser', 'screenshots');
-
 function ensureScreenshotsDir(): void {
-  mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+  mkdirSync(resolveScreenshotsDir(), { recursive: true });
 }
 
 /**
@@ -32,12 +30,12 @@ function generateScreenshotPath(format: string): string {
   const timestamp = Date.now();
   const random = Math.random().toString(36).slice(2, 8);
   const ext = format === 'jpeg' ? 'jpg' : 'png';
-  return join(SCREENSHOTS_DIR, `screenshot-${timestamp}-${random}.${ext}`);
+  return join(resolveScreenshotsDir(), `screenshot-${timestamp}-${random}.${ext}`);
 }
 
 export const screenshotCommand = registerCommand({
   name: 'screenshot',
-  description: 'Take a screenshot of the page or element',
+  description: 'Take a screenshot of the page or element (auto-saved to the OS temp dir unless --output is given; persistent override: xbrowser config set screenshots.dir <path>)',
   scope: 'page',
   selectorParams: ['selector'],
   parameters: z.object({

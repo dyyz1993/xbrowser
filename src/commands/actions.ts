@@ -2,21 +2,19 @@ import { z } from 'zod';
 import { ok } from '@dyyz1993/xcli-core';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
-import { homedir } from 'os';
 import type { BrowserCommandContext } from '../context.js';
+import { resolveScreenshotsDir } from '../config.js';
 import { registerCommand } from './command-registry.js';
 
-const SCREENSHOTS_DIR = join(homedir(), '.xbrowser', 'screenshots');
-
 function ensureScreenshotsDir(): void {
-  mkdirSync(SCREENSHOTS_DIR, { recursive: true });
+  mkdirSync(resolveScreenshotsDir(), { recursive: true });
 }
 
 function generateScreenshotPath(format: string): string {
   const timestamp = Date.now();
   const random = Math.random().toString(36).slice(2, 8);
   const ext = format === 'jpeg' ? 'jpg' : 'png';
-  return join(SCREENSHOTS_DIR, `screenshot-${timestamp}-${random}.${ext}`);
+  return join(resolveScreenshotsDir(), `screenshot-${timestamp}-${random}.${ext}`);
 }
 
 const waitActionSchema = z.object({

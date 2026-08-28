@@ -132,3 +132,15 @@ export function getCaptchaConfig(): CaptchaConfig {
     previewPort: parseInt(process.env.XBROWSER_PREVIEW_PORT || '') || config.preview?.port || 9223,
   };
 }
+
+/**
+ * Resolve the directory where auto-saved screenshots are written.
+ * Default is the OS temp dir (auto-reclaimed by the OS — screenshots are
+ * ephemeral test evidence), overridable via `screenshots.dir` in the config
+ * for users who want a persistent location.
+ */
+export function resolveScreenshotsDir(): string {
+  const configured = getConfigValue('screenshots.dir');
+  if (typeof configured === 'string' && configured.trim()) return configured.trim();
+  return join(tmpdir(), 'xbrowser', 'screenshots');
+}
