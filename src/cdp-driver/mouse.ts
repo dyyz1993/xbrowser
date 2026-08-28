@@ -32,7 +32,7 @@ export class XBMouseImpl implements XBMouse {
 
   async click(x: number, y: number, opts: { button?: 'left' | 'right' | 'middle'; clickCount?: number; delay?: number; stealth?: boolean; elementWidth?: number; elementHeight?: number } = {}): Promise<void> {
     const button = opts.button ?? 'left';
-    const stealth = opts.stealth ?? true;
+    const stealth = opts.stealth ?? process.env.XBROWSER_STEALTH !== 'off';
     let tx = x, ty = y;
     if (stealth && opts.elementWidth !== undefined && opts.elementHeight !== undefined) {
       const off = landingOffset(opts.elementWidth, opts.elementHeight);
