@@ -282,6 +282,40 @@ export function buildStealthInitScript(): string {
     '  Object.defineProperty(Screen.prototype,"availWidth",{get:_gw,configurable:true});',
     '  Object.defineProperty(Screen.prototype,"availHeight",{get:_gah,configurable:true});',
     '  document.hasFocus=function(){return true};',
+    // 4. Canvas/WebGL fingerprint: per-session stable noise (d20).
+    //    Headless software raster differs subtly from Chrome GPU raster —
+    //    toDataURL hashes fingerprint the rasterizer. Inject a stable
+    //    (per-page-load) subpixel shift into fillText so hashes look like a
+    //    distinct-but-consistent real GPU, and hide the HEADLESS tell in
+    //    WebGL renderer strings.
+    '  var _seed=Math.floor(Math.random()*2147483647);',
+    '  var _prng=function(){_seed=(_seed*48271)%2147483647;return _seed/2147483647;};',
+    '  var _dx=(_prng()*0.4-0.2).toFixed(3)*1, _dy=(_prng()*0.4-0.2).toFixed(3)*1;',
+    '  var _fillText=CanvasRenderingContext2D.prototype.fillText;',
+    '  CanvasRenderingContext2D.prototype.fillText=function(t,x,y,m){',
+    '    return _fillText.call(this,t,x+_dx,y+_dy,m);',
+    '  };',
+    '  var _toDataURL=HTMLCanvasElement.prototype.toDataURL;',
+    '  HTMLCanvasElement.prototype.toDataURL=function(){',
+    '    var ctx=this.getContext("2d");',
+    '    if(ctx){var d=ctx.getImageData(0,0,Math.min(this.width,2),Math.min(this.height,2));',
+    '      for(var i=0;i<d.data.length;i+=4){if(d.data[i+3]>0){d.data[i]^=1;break;}}',
+    '      ctx.putImageData(d,0,0);}',
+    '    return _toDataURL.apply(this,arguments);',
+    '  };',
+    '  try{',
+    '    var _gl=HTMLCanvasElement.prototype.getContext;',
+    '    HTMLCanvasElement.prototype.getContext=function(t,o){',
+    '      var c=_gl.call(this,t,o);',
+    '      if(c&&(t==="webgl"||t==="experimental-webgl")&&c.getParameter){',
+    '        var _gp=c.getParameter.bind(c);',
+    '        c.getParameter=function(p){',
+    '          var v=_gp(p);',
+    '          if(typeof v==="string"&&/SwiftShader|Software|Rasterizer|Headless/i.test(v))',
+    '            return "ANGLE (Apple, ANGLE Metal Renderer: Apple M2 Max, Unspecified Version)";',
+    '          return v;};}',
+    '      return c;};',
+    '  }catch(e){}',
     // 3. toString disguise (name-list based)
     '  var _ts=Function.prototype.toString;',
     '  var _hf=document.hasFocus;',
