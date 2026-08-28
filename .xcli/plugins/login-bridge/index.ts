@@ -73,7 +73,7 @@ function spawnResidentBridge(): void {
       if (req.method === 'GET' && (req.url || '').startsWith('/cookies')) {
         const q = new URL(req.url, 'http://x').searchParams.get('domain') || '';
         const store = loadStore();
-        const all = Object.entries(store).filter(([k]) => !q || k === q || k === '*').flatMap(([, v]) => v.cookies);
+        const all = Object.entries(store).filter(([k]) => !q || k === q || k === '*').flatMap(([, v]) => v.cookies || []);
         res.writeHead(200, { ...cors, 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ cookies: all }));
         return;
@@ -121,7 +121,7 @@ function startBridge(): Promise<void> {
         const store = loadStore();
         const all = Object.entries(store)
           .filter(([k]) => !q || k === q || k === '*')
-          .flatMap(([, v]) => v.cookies);
+          .flatMap(([, v]) => v.cookies || []);
         res.writeHead(200, { ...cors, 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ cookies: all }));
         return;
@@ -151,7 +151,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('serve', {
     description: '启动 bridge HTTP 服务（9355，接收 Chrome 插件推送）',
     scope: 'project',
-    loginRequired: 'none',
+    requiresLogin: false,
     parameters: z.object({}),
     handler: async () => {
       try {
@@ -180,7 +180,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('save', {
     description: '从 bridge 拉取最新登录态并归档到本地（.xbrowser/login-bridge-store.json 即档案）',
     scope: 'project',
-    loginRequired: 'none',
+    requiresLogin: false,
     parameters: z.object({}),
     handler: async () => {
       const store = loadStore();
@@ -195,19 +195,19 @@ export default function (xcli: XCLIAPI): void {
   site.command('apply', {
     description: '把归档的 cookie 注入当前会话页面（--site 过滤域名）',
     scope: 'page',
-    loginRequired: 'none',
+    requiresLogin: false,
     parameters: z.object({
       site: z.string().optional().describe('只注入匹配该域名的 cookie，如 xiaohongshu.com'),
     }),
     handler: async (p, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as
+      const page = (ctx as unknown as Record<string, unknown>).page as
         | { _cdpSend?: (m: string, p?: unknown) => Promise<unknown> }
         | undefined;
       const store = loadStore();
       const all: CookieItem[] = Object.entries(store)
         .filter(([k]) => !p.site || k === p.site || k === '*')
-        .flatMap(([, v]) => v.cookies);
-      const matched = p.site ? all.filter((c) => cookieDomainMatches(c.domain, p.site!)) : all;
+        .flatMap(([, v]) => v.cookies || []);
+      const matched = p.site ? all.filter((c: any) => cookieDomainMatches(String(c.domain), p.site!)) : all;
       if (!matched.length) return fail(`无匹配 cookie（site=${p.site || '*'}）— 先在 Chrome 插件里导出`);
 
       // 通过 CDP Storage.setCookies 注入（page._cdpSend；evaluate 无法设 httpOnly）
@@ -238,7 +238,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('import-from-chrome', {
     description: '从 Google Chrome 导入登录态（Chrome 运行中即可，经 hack-browser-data 解密）',
     scope: 'project',
-    loginRequired: 'none',
+    requiresLogin: false,
     parameters: z.object({
       site: z.string().describe('目标站点域名，如 juejin.cn'),
     }),
@@ -247,28 +247,39 @@ export default function (xcli: XCLIAPI): void {
       const outDir = join(bridgeStoreFile, '..', 'hbd-out');
 
       // 主路径：hack-browser-data（brew 安装）——支持 macOS 新版 Chrome 运行时解密
-      let cookies: Array<Record<string, unknown>> = [];
+      let cookies: Array<CookieItem> = [];
       let via = 'hack-browser-data';
-      let hbdOk = true;
       try {
-        execSync(`cd /tmp && hack-browser-data dump -b chrome -c cookie -f json -d "${outDir}"`,
+        // daemon 的 PATH 不含 /opt/homebrew/bin —— 用绝对路径（找不到则回退 PATH 查找）
+        // daemon 可能跑在受限可见度的环境 —— 依次探测已知安装位置
+        const hbdCandidates = [
+          '/opt/homebrew/bin/hack-browser-data',
+          '/usr/local/bin/hack-browser-data',
+          join(homedir(), '.brew', 'bin', 'hack-browser-data'),
+        ];
+        const hbdBin = hbdCandidates.find((p2) => existsSync(p2)) || 'hack-browser-data';
+        console.error('[login-bridge] HOME=' + homedir() + ' hbdBin=' + hbdBin + ' candidates=' + JSON.stringify(hbdCandidates.map(p2 => existsSync(p2))));
+        execSync(`cd /tmp && ${hbdBin} dump -b chrome -c cookie -f json -d "${outDir}"`,
           { stdio: 'pipe', timeout: 120_000 });
         const raw = JSON.parse(readFileSync(join(outDir, 'cookie.json'), 'utf8'));
         const arr: Array<Record<string, unknown>> = Array.isArray(raw) ? raw : Object.values(raw).flat() as Array<Record<string, unknown>>;
+        // hack-browserData 导出字段：host/is_secure/is_http_only/expire_at(ISO)，
+        // 首次接入时误按 Playwright 风格（hostname/secure/expires）映射 → 全部丢空，
+        // __Secure- 前缀 cookie 因 secure:false 被 CDP 拒写（YouTube 登录失败的根因）
         cookies = arr
-          .filter((c) => String(c.hostname ?? c.host ?? '').includes(p.site.replace(/^\./, '')))
+          .filter((c) => String(c.host ?? c.hostname ?? '').includes(p.site.replace(/^\./, '')))
           .map((c) => ({
-            domain: c.hostname ?? c.host,
-            name: c.name,
-            value: c.value,
-            path: c.path || '/',
-            secure: !!c.secure,
-            httpOnly: !!c.http_only,
-            expirationDate: c.expires ?? undefined,
-            sameSite: c.samesite === 0 ? 'no_restriction' : c.samesite === 1 ? 'lax' : c.samesite === 2 ? 'strict' : 'unspecified',
+            domain: String(c.host ?? ''),
+            name: String(c.name),
+            value: String(c.value ?? ''),
+            path: String(c.path || '/'),
+            secure: !!c.is_secure,
+            httpOnly: !!c.is_http_only,
+            expirationDate: c.expire_at ? Math.floor(new Date(String(c.expire_at)).getTime() / 1000) : undefined,
+            sameSite: 'unspecified',
           }));
-      } catch {
-        hbdOk = false;
+      } catch (e) {
+        console.error('[login-bridge] hbd path error:', String(e).substring(0, 200));
       }
 
       // Fallback：Chrome 完全退出后走钥匙串解密（decrypt-chrome.ts）
@@ -286,7 +297,7 @@ export default function (xcli: XCLIAPI): void {
         const tmpDb = join(bridgeStoreFile, '..', 'chrome-import.db');
         execSync(`sqlite3 "${chromeDb}" ".backup ${tmpDb}"`);
         const { decryptChromeCookies } = await import('./decrypt-chrome.js');
-        cookies = decryptChromeCookies(tmpDb, p.site);
+        cookies = decryptChromeCookies(tmpDb, p.site) as unknown as CookieItem[];
         via = 'keychain-decrypt';
       }
 
@@ -294,6 +305,19 @@ export default function (xcli: XCLIAPI): void {
 
       const store = loadStore();
       store[p.site] = { cookies, localStorage: [], at: Date.now() };
+      // 记录用户 Chrome 的 UA（从 cookie 库同目录的 Local State 无法直接拿，
+      // 用 cookie 库 mtime + hbd 的 browser 字段确认是 Chrome；UA 版本从
+      // Chrome 主程序 Info.plist 读，失败则用空 = 不固化）
+      try {
+        const uaOut = execSync(
+          `defaults read "/Applications/Google Chrome.app/Contents/Info" CFBundleShortVersionString 2>/dev/null`,
+          { encoding: 'utf8' }).trim();
+        console.error('[login-bridge] UA probe raw:', JSON.stringify(uaOut.substring(0,20)));
+        if (/^\d+\./.test(uaOut)) {
+          const ua = `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${uaOut.split('.')[0]}.0.0.0 Safari/537.36`;
+          writeFileSync(join(homedir(), '.xbrowser', 'login-bridge-ua.txt'), ua);
+        }
+      } catch (e2) { console.error('[login-bridge] UA probe fail:', String(e2).substring(0,120)); }
       saveStore(store);
 
       return ok({ imported: cookies.length, site: p.site, via }, [
@@ -306,7 +330,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('launch', {
     description: '用固定 profile 启动 Chromium（登录态持久化在 ~/.xbrowser/chrome-profile）',
     scope: 'project',
-    loginRequired: 'none',
+    requiresLogin: false,
     parameters: z.object({
       url: z.string().optional(),
       port: z.coerce.number().optional().describe('CDP 端口（默认 9333）'),
@@ -321,13 +345,20 @@ export default function (xcli: XCLIAPI): void {
       const bin = candidates.find((c) => existsSync(c));
       if (!bin) return fail('未找到 Chromium/Chrome');
       mkdirSync(PROFILE_DIR, { recursive: true });
+      // UA 固化（R45 攻防产出）：导入的 cookie 属于用户 Chrome 的 UA 环境，
+      // Chromium 自动化必须以相同 UA 运行——否则站点看到 session 的 UA 突变，
+      // 触发设备绑定风控（豆包案例：首次成功后重启失效）。
+      const uaFile = join(homedir(), '.xbrowser', 'login-bridge-ua.txt');
+      const importUA = existsSync(uaFile) ? readFileSync(uaFile, 'utf8').trim() : null;
+      const uaFlag = importUA ? `--user-agent=${importUA}` : '';
       const child = spawn(bin, [
         '--headless=new',
         `--remote-debugging-port=${port}`,
         `--user-data-dir=${PROFILE_DIR}`,
+        uaFlag,
         '--no-first-run', '--window-size=1440,900',
         p.url || 'about:blank',
-      ], { detached: true, stdio: 'ignore' });
+      ].filter(Boolean), { detached: true, stdio: 'ignore' });
       child.unref();
       await new Promise((r) => setTimeout(r, 2500));
       return ok({ pid: child.pid, port, profile: PROFILE_DIR }, [
