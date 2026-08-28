@@ -73,23 +73,40 @@ async function rpcCall<T = unknown>(
   timeoutMs: number = 10000,
 ): Promise<T> {
   await ensureDaemonRunning();
-  const resp = await fetch(`${DAEMON_BASE}/rpc`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ method, params }),
-    signal: AbortSignal.timeout(timeoutMs),
+  // Raw http.request instead of fetch: undici hard-caps response-body waits at
+  // 300s REGARDLESS of AbortSignal — long RPCs (vision-task, replay) died at
+  // exactly 5:01. Only the explicit timeoutMs applies here.
+  return new Promise<T>((resolve, reject) => {
+    const body = JSON.stringify({ method, params });
+    const req = httpRequest(
+      {
+        hostname: '127.0.0.1',
+        port: DAEMON_PORT,
+        path: '/rpc',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as T & { error?: string };
+            if (parsed && typeof parsed.error === 'string' && Object.keys(parsed).length === 1) {
+              reject(new Error(`Daemon error: ${parsed.error}`));
+            } else {
+              resolve(parsed);
+            }
+          } catch (e) {
+            reject(e instanceof Error ? e : new Error(String(e)));
+          }
+        });
+      },
+    );
+    req.setTimeout(timeoutMs, () => req.destroy(new Error(`RPC ${method} timeout after ${timeoutMs}ms`)));
+    req.on('error', reject);
+    req.end(body);
   });
-  if (!resp.ok) {
-    // HTTP 500 的真实错误在 body 的 { error: <message> } 里（xcli-core 的 try/catch 兜底返回），
-    // statusText 永远是 "Internal Server Error"，没有诊断价值——必须读 body。
-    let detail = resp.statusText;
-    try {
-      const body = await resp.json() as { error?: string };
-      if (body?.error) detail = body.error;
-    } catch { /* body 不是 JSON，回退到 statusText */ }
-    throw new Error(`Daemon error: ${detail}`);
-  }
-  return resp.json() as Promise<T>;
 }
 
 /**
@@ -306,43 +323,13 @@ export async function forwardReplay(file: string, session: string, slowMo?: numb
   return longRpcCall('replay', { file, session, slowMo }, 20 * 60_000);
 }
 
-/** Raw-HTTP RPC for long-running calls that outlive undici's 300s bodyTimeout. */
+/** Long-running calls share the same undici-free transport as rpcCall now. */
 function longRpcCall<T = unknown>(
   method: string,
   params: Record<string, unknown>,
   timeoutMs: number,
 ): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const body = JSON.stringify({ method, params });
-    const req = httpRequest(
-      {
-        hostname: '127.0.0.1',
-        port: DAEMON_PORT,
-        path: '/rpc',
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (c: Buffer) => chunks.push(c));
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as T & { error?: string };
-            if (parsed && typeof parsed.error === 'string' && Object.keys(parsed).length === 1) {
-              reject(new Error(`Daemon error: ${parsed.error}`));
-            } else {
-              resolve(parsed);
-            }
-          } catch (e) {
-            reject(e instanceof Error ? e : new Error(String(e)));
-          }
-        });
-      },
-    );
-    req.setTimeout(timeoutMs, () => req.destroy(new Error(`replay RPC timeout after ${timeoutMs}ms`)));
-    req.on('error', reject);
-    req.end(body);
-  });
+  return rpcCall<T>(method, params, timeoutMs);
 }
 
 export async function forwardRecordCheckpoint(session: string, type: string, hint: string, selector?: string): Promise<unknown> {
