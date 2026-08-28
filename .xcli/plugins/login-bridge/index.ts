@@ -236,43 +236,69 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.command('import-from-chrome', {
-    description: '从 Google Chrome 导入登录态（需 Chrome 已完全退出——运行中密钥被轮换无法解密）',
+    description: '从 Google Chrome 导入登录态（Chrome 运行中即可，经 hack-browser-data 解密）',
     scope: 'project',
     loginRequired: 'none',
     parameters: z.object({
       site: z.string().describe('目标站点域名，如 juejin.cn'),
-      profile: z.string().optional().describe('Chrome profile 名（默认 Default）'),
     }),
     handler: async (p) => {
       const { execSync } = await import('child_process');
-      // 1. Chrome 必须完全退出（运行时密钥轮换，开着解不开）
-      let chromeRunning = false;
-      try { execSync('pgrep -x "Google Chrome"', { stdio: 'ignore' }); chromeRunning = true; } catch { /* not running */ }
-      if (chromeRunning) {
-        return fail('Google Chrome 正在运行 — 请先完全退出（Cmd+Q）再重试', [
-          '原因：Chrome 运行时把 cookie 解密密钥轮换进内存，钥匙串条目是陈旧的',
-          '退出后真实密钥会写回钥匙串，本命令即可解开（Codex 同款机制）',
-        ]);
-      }
-      // 2. 拷贝 cookie 库（含 journal 合并的完整 backup）
-      const chromeDb = join(homedir(), 'Library', 'Application Support', 'Google', 'Chrome', p.profile || 'Default', 'Cookies');
-      if (!existsSync(chromeDb)) return fail(`找不到 Chrome cookie 库: ${chromeDb}`);
-      const tmpDb = join(bridgeStoreFile, '..', 'chrome-import.db');
-      execSync(`sqlite3 "${chromeDb}" ".backup ${tmpDb}"`);
+      const outDir = join(bridgeStoreFile, '..', 'hbd-out');
 
-      // 3. 钥匙串取 Chrome 密钥 → 解密
-      const { decryptChromeCookies } = await import('./decrypt-chrome.js');
-      const cookies = decryptChromeCookies(tmpDb, p.site);
+      // 主路径：hack-browser-data（brew 安装）——支持 macOS 新版 Chrome 运行时解密
+      let cookies: Array<Record<string, unknown>> = [];
+      let via = 'hack-browser-data';
+      let hbdOk = true;
+      try {
+        execSync(`cd /tmp && hack-browser-data dump -b chrome -c cookie -f json -d "${outDir}"`,
+          { stdio: 'pipe', timeout: 120_000 });
+        const raw = JSON.parse(readFileSync(join(outDir, 'cookie.json'), 'utf8'));
+        const arr: Array<Record<string, unknown>> = Array.isArray(raw) ? raw : Object.values(raw).flat() as Array<Record<string, unknown>>;
+        cookies = arr
+          .filter((c) => String(c.hostname ?? c.host ?? '').includes(p.site.replace(/^\./, '')))
+          .map((c) => ({
+            domain: c.hostname ?? c.host,
+            name: c.name,
+            value: c.value,
+            path: c.path || '/',
+            secure: !!c.secure,
+            httpOnly: !!c.http_only,
+            expirationDate: c.expires ?? undefined,
+            sameSite: c.samesite === 0 ? 'no_restriction' : c.samesite === 1 ? 'lax' : c.samesite === 2 ? 'strict' : 'unspecified',
+          }));
+      } catch {
+        hbdOk = false;
+      }
+
+      // Fallback：Chrome 完全退出后走钥匙串解密（decrypt-chrome.ts）
+      if (!cookies.length) {
+        let chromeRunning = false;
+        try { execSync('pgrep -x "Google Chrome"', { stdio: 'ignore' }); chromeRunning = true; } catch { /* not running */ }
+        if (chromeRunning) {
+          return fail(`hack-browser-data 解出 0 条（site=${p.site}）且 Chrome 运行中无法走备用解密`, [
+            via === 'hack-browser-data' ? '检查该站点是否真的在 Chrome 里登录过' : 'brew install hack-browser-data 后重试',
+            '或完全退出 Chrome（Cmd+Q）后再试（会走钥匙串解密 fallback）',
+          ]);
+        }
+        const chromeDb = join(homedir(), 'Library', 'Application Support', 'Google', 'Chrome', 'Default', 'Cookies');
+        if (!existsSync(chromeDb)) return fail(`找不到 Chrome cookie 库: ${chromeDb}`);
+        const tmpDb = join(bridgeStoreFile, '..', 'chrome-import.db');
+        execSync(`sqlite3 "${chromeDb}" ".backup ${tmpDb}"`);
+        const { decryptChromeCookies } = await import('./decrypt-chrome.js');
+        cookies = decryptChromeCookies(tmpDb, p.site);
+        via = 'keychain-decrypt';
+      }
+
       if (!cookies.length) return fail(`解出 0 条 cookie（site=${p.site}）— 该站点可能无登录态`);
 
-      // 4. 存入 bridge 库存
       const store = loadStore();
       store[p.site] = { cookies, localStorage: [], at: Date.now() };
       saveStore(store);
 
-      return ok({ imported: cookies.length, site: p.site }, [
-        `已导入 ${cookies.length} 条 cookie（${p.site}）→ 用 login-bridge apply 注入浏览器`,
-        '现在可以重新打开 Chrome 了',
+      return ok({ imported: cookies.length, site: p.site, via }, [
+        `已导入 ${cookies.length} 条 cookie（${p.site}，via ${via}）`,
+        `注入: xbrowser login-bridge apply --site ${p.site} --cdp <endpoint> --session <sess>`,
       ]);
     },
   });
