@@ -500,6 +500,19 @@ export function buildStealthInitScript(): string {
     '        document.fonts.add(ff);ff.load();}catch(e2){}',
     '    });',
     '  }catch(e){}',
+    // 3g. Notification.requestPermission 延迟（d62）：headless 无原生横幅，
+    //     request 瞬回 denied —— 真机 request 会 pending 在横幅上数秒到分钟。
+    //     延迟 2-6s 再 resolve，模拟横幅期（用户"看了下然后拒绝"）。
+    '  try{',
+    '    if(window.Notification&&Notification.requestPermission){',
+    '      var _nrp=Notification.requestPermission.bind(Notification);',
+    '      Notification.requestPermission=function(cb){',
+    '        return new Promise(function(res){',
+    '          setTimeout(function(){_nrp().then(function(r){if(cb)try{cb(r)}catch(e){}res(r);});},2000+Math.random()*4000);',
+    '        });',
+    '      };',
+    '    }',
+    '  }catch(e){}',
     // 3. toString disguise (name-list based)
     '  var _ts=Function.prototype.toString;',
     '  var _hf=document.hasFocus;',
