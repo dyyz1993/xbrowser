@@ -62,7 +62,7 @@ export const DEFAULT_STEALTH_CONFIG: StealthConfig = {
   bezierCurvature: [0.35, 0.6],
   noiseAmplitude: 5.5,
   overshootRange: [6, 14],
-  aimPause: [150, 400],
+  aimPause: [80, 280],
   pressDuration: [60, 140],
   releaseDrift: [0.8, 2.5],
   landingOffsetSmall: [0.3, 2.5],
