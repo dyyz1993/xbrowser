@@ -140,12 +140,21 @@ export class XBKeyboardImpl implements XBKeyboard {
       }
       await this.dispatchKeyEvent(downParams);
 
-      // Send char event for printable characters to trigger text insertion
+      // Send char event for printable characters to trigger text insertion.
+      // rawKeyDown→char 保持同刻：真实键盘的 keypress 是 keydown 的派生对
+      // （Δ≈0-2ms），此处不加延迟（d50 验证派生对无断裂）。
       if (mapping.text) {
         await this.dispatchKeyEvent({
           type: 'char',
           text: mapping.text,
         });
+      }
+
+      // char→keyUp 必须间隔 keyPressDuration（人类按键持续 50-110ms）：
+      // d50 攻防实测 33/33 键 down→up 仅 2ms —— press() 路径 d17 修过，
+      // type() 路径漏了同样的节奏（两个函数两套实现的漂移）。
+      if (process.env.XBROWSER_STEALTH !== 'off') {
+        await sleep(stealthRand(...STEALTH_CFG.keyPressDuration));
       }
 
       // Send keyUp

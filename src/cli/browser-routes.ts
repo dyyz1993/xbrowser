@@ -125,7 +125,12 @@ export async function handleBrowserCommand(
         if (!sel || !txt)
           outputError('Usage: xbrowser type <selector> <text>\n       xbrowser type -s <selector> -v <text>');
         cmdName = 'type';
-        params = { selector: sel, text: txt };
+        // delay 必须透传（S60 事故：与 S58 mouse/steps 同病 —— 手工挑字段
+        // 丢参。--delay 恒失效会让恒定节奏机器人绕过键盘 CV 检测）
+        params = {
+          selector: sel, text: txt,
+          ...(options.delay !== undefined ? { delay: Number(options.delay) } : {}),
+        };
         break;
       }
       case 'press': {
