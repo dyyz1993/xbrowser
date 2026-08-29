@@ -132,16 +132,15 @@ process.on('exit', () => {
 async function getCDPTargets(cdpEndpoint: string | number): Promise<Array<{ id: string; url: string; title: string; webSocketDebuggerUrl: string }>> {
   try {
     const ep = String(cdpEndpoint);
-    let host = 'localhost';
-    let port = '9222';
+    let url = 'http://localhost:9222/json/list';
     if (ep.startsWith('http://') || ep.startsWith('https://')) {
+      // 保留 endpoint 的 query（多用户网关 ?key= 按 key 隔离路由）
       const u = new URL(ep);
-      host = u.hostname;
-      port = u.port || '9222';
+      u.pathname = (u.pathname.replace(/\/+$/, '') || '') + '/json/list';
+      url = u.toString();
     } else if (/^\d+$/.test(ep)) {
-      port = ep;
+      url = `http://localhost:${ep}/json/list`;
     }
-    const url = `http://${host}:${port}/json/list`;
     const resp = await fetch(url);
     return (await resp.json()) as Array<{ id: string; url: string; title: string; webSocketDebuggerUrl: string }>;
   } catch {
@@ -874,6 +873,14 @@ export async function createSession(
     }
 
     page = targetPage;
+
+    // CDP 多 tab 激活保障（S72 掘金实战）：同源多 tab 时 attach 可能选中
+    // 后台 tab —— 后台 tab 的输入管线被节流/挂起，Input.dispatchMouseEvent
+    // 直接 30s 超时（d07 第六层同源症状）。attach 后立即 bringToFront，
+    // 确保后续输入派发打在激活 tab 上。
+    if (isCDP) {
+      await targetPage.bringToFront().catch(() => { /* best-effort */ });
+    }
 
     // Note: auto-attach for new tab detection is only enabled for self-launched Chromium
     // (via newContext -> _enableAutoAttach). CDP tunnels may not support it reliably.
