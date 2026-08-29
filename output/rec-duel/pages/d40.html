@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D40 storage</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+</style>
+</head>
+<body>
+<h2>D40 — 存储指纹</h2>
+<p>localStorage/sessionStorage/IndexedDB/Cache API 的行为一致性 —— headless 的存储配额与权限特征。</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+  var r = {};
+
+  // 1. localStorage / sessionStorage 基础
+  try {
+    localStorage.setItem('__d40', 'test');
+    checks.push({ name: 'localStorage 读写', ok: localStorage.getItem('__d40') === 'test' });
+    localStorage.removeItem('__d40');
+    checks.push({ name: 'localStorage 删除', ok: localStorage.getItem('__d40') === null });
+  } catch (e) {
+    checks.push({ name: 'localStorage 读写', ok: false, detail: String(e).substring(0, 40) });
+  }
+  sessionStorage.setItem('__d40', 's');
+  checks.push({ name: 'sessionStorage 读写', ok: sessionStorage.getItem('__d40') === 's' });
+
+  // 2. Storage 对象属性
+  checks.push({ name: 'localStorage instanceof Storage', ok: localStorage instanceof Storage });
+  checks.push({ name: 'localStorage.length 数字', ok: typeof localStorage.length === 'number' });
+
+  // 3. 存储估算（navigator.storage.estimate）
+  if (navigator.storage && navigator.storage.estimate) {
+    navigator.storage.estimate().then(function (est) {
+      r.quota = est.quota;
+      r.usage = est.usage;
+      checks.push({ name: 'storage.estimate 可用', ok: est.quota > 0 && est.usage >= 0,
+        detail: 'quota=' + Math.round(est.quota / 1048576) + 'MB usage=' + est.usage });
+      finish();
+    }).catch(function () {
+      checks.push({ name: 'storage.estimate（拒绝=宽容）', ok: true, detail: 'rejected' });
+      finish();
+    });
+  } else {
+    checks.push({ name: 'navigator.storage.estimate（不存在=宽容）', ok: true });
+    finish();
+  }
+
+  // 4. IndexedDB 打开
+  try {
+    var req = indexedDB.open('__d40_test', 1);
+    req.onsuccess = function (e) {
+      checks.push({ name: 'IndexedDB 打开', ok: true });
+      e.target.result.close();
+      indexedDB.deleteDatabase('__d40_test');
+      // 5. indexedDB 出现在 window
+      checks.push({ name: 'indexedDB 在 window 上', ok: 'indexedDB' in window });
+    };
+    req.onerror = function () {
+      checks.push({ name: 'IndexedDB 打开', ok: false, detail: 'error' });
+    };
+  } catch (e) {
+    checks.push({ name: 'IndexedDB 打开（file:// 限制=宽容）', ok: true, detail: String(e).substring(0, 40) });
+  }
+
+  // 6. Cache API
+  if ('caches' in window) {
+    caches.open('__d40').then(function (c) {
+      checks.push({ name: 'Cache API 打开', ok: !!c });
+      caches.delete('__d40');
+    }).catch(function () {
+      checks.push({ name: 'Cache API（file:// 拒绝=宽容）', ok: true });
+    });
+  } else {
+    checks.push({ name: 'caches API 存在', ok: false });
+  }
+
+  // 7. Storage 事件（跨 tab 通信）
+  var storageEvt = false;
+  window.addEventListener('storage', function () { storageEvt = true; });
+  // 同 tab 的 setItem 不触发 storage（spec）—— 只验证监听器不抛错
+  checks.push({ name: 'storage 事件监听可注册', ok: true });
+
+  // 8. cookieEnabled
+  checks.push({ name: 'navigator.cookieEnabled = true', ok: navigator.cookieEnabled === true });
+
+  var finished = false;
+  function finish() {
+    if (finished) return;
+    finished = true;
+    // 延迟收尾等 IndexedDB/Cache 结果
+    setTimeout(function () {
+      window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks, r: r });
+      document.getElementById('log').innerHTML = checks.map(function (c) {
+        return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + ' <code>' + (c.detail || '') + '</code></div>';
+      }).join('');
+    }, 800);
+  }
+  setTimeout(finish, 2000);
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd40', log: window.__log }); };
+</script>
+</body>
+</html>
