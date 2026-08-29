@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D27 media-stack</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+code{background:#f0f0f0;padding:1px 5px;border-radius:3px;font-size:12px}
+</style>
+</head>
+<body>
+<h2>D27 — 媒体特性堆叠指纹</h2>
+<p>mediaQueries 的高维组合（prefers-*/color/分辨率/打印模式）构成高熵指纹 —— headless 的组合与真实桌面 Chrome 有细微差异。</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+  var mq = {};
+
+  // —— 用户偏好类 ——
+  var prefs = ['prefers-color-scheme', 'prefers-reduced-motion', 'prefers-reduced-transparency', 'prefers-contrast'];
+  prefs.forEach(function (p) {
+    var m = matchMedia('(' + p + ': ' + (p === 'prefers-color-scheme' ? 'dark' : 'reduce') + ')');
+    var m2 = matchMedia('(' + p + ': no-preference)');
+    mq[p] = { positive: m.matches, noPref: m2.matches };
+  });
+
+  // 真实 macOS Chrome 默认：light + no-reduced-motion + no-reduced-transparency + no-preference
+  checks.push({ name: 'prefers-color-scheme 有值', ok: mq['prefers-color-scheme'].positive || matchMedia('(prefers-color-scheme: light)').matches });
+  checks.push({ name: 'reduced-motion no-preference（桌面默认）', ok: !mq['prefers-reduced-motion'].positive });
+  checks.push({ name: 'reduced-transparency no-preference', ok: !mq['prefers-reduced-transparency'].positive || mq['prefers-reduced-transparency'].noPref });
+
+  // —— 显示能力类 ——
+  mq.colorGamut = matchMedia('(color-gamut: p3)').matches ? 'p3' : matchMedia('(color-gamut: srgb)').matches ? 'srgb' : 'unknown';
+  mq.dynamicRange = matchMedia('(dynamic-range: high)').matches ? 'high' : 'standard';
+  mq.refreshRate = 'unknown';
+  try { mq.refreshRate = matchMedia('(update: fast)').matches ? 'fast' : 'slow'; } catch (e) {}
+
+  checks.push({ name: 'color-gamut p3 或 srgb（Mac 支持 p3）', ok: mq.colorGamut === 'p3' || mq.colorGamut === 'srgb', detail: mq.colorGamut });
+  checks.push({ name: 'dynamic-range 合理值', ok: mq.dynamicRange === 'high' || mq.dynamicRange === 'standard', detail: mq.dynamicRange });
+
+  // —— 分辨率类 ——
+  mq.dpr = window.devicePixelRatio;
+  mq.resolution2x = matchMedia('(min-resolution: 2dppx)').matches;
+  checks.push({ name: 'DPR 与 min-resolution 一致', ok: (mq.dpr >= 2) === mq.resolution2x, detail: 'dpr=' + mq.dpr + ' 2x=' + mq.resolution2x });
+
+  // —— 输入能力类 ——
+  mq.hover = matchMedia('(hover: hover)').matches;
+  mq.pointer = matchMedia('(pointer: fine)').matches ? 'fine' : matchMedia('(pointer: coarse)').matches ? 'coarse' : 'none';
+  mq.anyHover = matchMedia('(any-hover: hover)').matches;
+  checks.push({ name: 'hover:hover（桌面鼠标）', ok: mq.hover });
+  checks.push({ name: 'pointer:fine（精确指针）', ok: mq.pointer === 'fine', detail: mq.pointer });
+  checks.push({ name: 'any-hover 一致性', ok: mq.anyHover === mq.hover });
+
+  // —— 打印/语音类 ——
+  mq.print = matchMedia('print').matches;
+  mq.scripting = 'unknown';
+  try { mq.scripting = matchMedia('(scripting: enabled)').matches ? 'enabled' : 'none'; } catch (e) {}
+  checks.push({ name: '非打印模式', ok: !mq.print });
+  checks.push({ name: 'scripting enabled', ok: mq.scripting !== 'none', detail: mq.scripting });
+
+  // —— 组合熵检测：特征组合是否属于已知的桌面 Mac Chrome 分布 ——
+  var expectedMac = {
+    hover: true, pointer: 'fine', print: false,
+    colorGamut: ['p3'], reducedMotion: false,
+  };
+  var comboScore = 0;
+  if (mq.hover === expectedMac.hover) comboScore++;
+  if (mq.pointer === expectedMac.pointer) comboScore++;
+  if (mq.print === expectedMac.print) comboScore++;
+  if (expectedMac.colorGamut.includes(mq.colorGamut)) comboScore++;
+  if (!mq['prefers-reduced-motion'].positive === !expectedMac.reducedMotion) comboScore++;
+  checks.push({ name: 'Mac Chrome 特征组合 5/5', ok: comboScore === 5, detail: comboScore + '/5' });
+
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks, mq: mq });
+  render(checks);
+}
+function render(checks) {
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + (c.detail ? ' <code>' + c.detail + '</code>' : '') + '</div>';
+  }).join('');
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd27', log: window.__log }); };
+</script>
+</body>
+</html>

@@ -5,6 +5,9 @@ import { createServer, type Server } from 'http';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { join } from 'path';
+import { pathToFileURL } from 'url';
+import { createRequire } from 'module';
+const __req = createRequire(import.meta.url);
 
 /**
  * login-bridge — Chrome ↔ xbrowser 登录态双向通道
@@ -361,6 +364,21 @@ export default function (xcli: XCLIAPI): void {
       ].filter(Boolean), { detached: true, stdio: 'ignore' });
       child.unref();
       await new Promise((r) => setTimeout(r, 2500));
+      // 初始化后设置 color-gamut p3（Mac 广色域特征 —— headless 默认 srgb 是指纹差异）
+      try {
+        const ver = await fetch(`http://localhost:${port}/json/version`).then(r => r.ok).catch(() => false);
+        if (ver) {
+          const { WebSocket: WS } = await import(pathToFileURL(__req.resolve('ws', { paths: [process.cwd() + '/node_modules'] })).href);
+          const targets = await fetch(`http://localhost:${port}/json`).then(r => r.json());
+          const pg = targets.find((t: { type: string }) => t.type === 'page');
+          if (pg) {
+            const ws = new WS(pg.webSocketDebuggerUrl);
+            await new Promise((r2) => ws.on('open', r2));
+            ws.send(JSON.stringify({ id: 1, method: 'Emulation.setEmulatedMedia', params: { features: [{ name: 'color-gamut', value: 'p3' }] } }));
+            setTimeout(() => ws.close(), 1000);
+          }
+        }
+      } catch { /* best-effort — 启动不受影响 */ }
       return ok({ pid: child.pid, port, profile: PROFILE_DIR }, [
         `Chromium 已启动（固定 profile，登录态持久）: --cdp http://localhost:${port}`,
       ]);
