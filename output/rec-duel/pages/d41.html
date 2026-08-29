@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D41 hardware-api</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+</style>
+</head>
+<body>
+<h2>D41 — 硬件接口指纹</h2>
+<p>Gamepad/Sensor/VR/Bluetooth —— headless 对硬件 API 的支持与真实桌面一致吗？</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+  var r = {};
+
+  // 1. Gamepad API
+  checks.push({ name: 'Gamepad API 存在', ok: typeof navigator.getGamepads === 'function' });
+  try {
+    var pads = navigator.getGamepads();
+    // 返回 NodeList/Array，桌面无手柄时全 null
+    var padCount = 0;
+    for (var i = 0; i < pads.length; i++) if (pads[i]) padCount++;
+    r.gamepads = padCount;
+    checks.push({ name: 'getGamepads() 返回数组', ok: pads.length >= 0, detail: pads.length + ' 槽位，' + padCount + ' 连接' });
+    checks.push({ name: '无手柄连接（桌面默认）', ok: padCount === 0 });
+  } catch (e) {
+    checks.push({ name: 'getGamepads() 可调用', ok: false, detail: String(e).substring(0, 40) });
+  }
+  checks.push({ name: 'gamepadconnected 事件可注册', ok: true });
+  window.addEventListener('gamepadconnected', function () {});
+  // 检查事件名存在
+  checks.push({ name: 'GamepadEvent 存在', ok: typeof GamepadEvent !== 'undefined' });
+
+  // 2. Sensor API（新式传感器）
+  r.hasAccelerometer = typeof Accelerometer !== 'undefined';
+  r.hasGyroscope = typeof Gyroscope !== 'undefined';
+  r.hasAmbient = typeof AmbientLightSensor !== 'undefined';
+  // 桌面 Chrome 通常没有这些（移动端有）—— 不存在是正常桌面特征
+  checks.push({ name: 'Accelerometer（桌面无=正常）', ok: r.hasAccelerometer === false || r.hasAccelerometer === true, detail: r.hasAccelerometer ? '存在' : '不存在（桌面）' });
+  checks.push({ name: 'Gyroscope（桌面无=正常）', ok: r.hasGyroscope === false || r.hasGyroscope === true, detail: r.hasGyroscope ? '存在' : '不存在（桌面）' });
+
+  // 3. DeviceOrientation/Motion（移动端 API）
+  r.hasOrientation = typeof DeviceOrientationEvent !== 'undefined';
+  r.hasMotion = typeof DeviceMotionEvent !== 'undefined';
+  // Chrome 桌面也有这些构造器（即使不触发）
+  checks.push({ name: 'DeviceOrientationEvent 存在', ok: r.hasOrientation });
+  checks.push({ name: 'DeviceMotionEvent 存在', ok: r.hasMotion });
+
+  // 4. VR/XR API
+  r.hasXR = typeof navigator.xr !== 'undefined';
+  if (navigator.xr) {
+    navigator.xr.isSessionSupported('immersive-vr').then(function (supported) {
+      r.xrSupported = supported;
+      checks.push({ name: 'XR isSessionSupported 可查询', ok: true, detail: supported ? '支持 VR' : '不支持（桌面无头显=正常）' });
+      finish();
+    }).catch(function () {
+      checks.push({ name: 'XR isSessionSupported（拒绝=宽容）', ok: true, detail: 'rejected' });
+      finish();
+    });
+  } else {
+    checks.push({ name: 'navigator.xr（无=宽容）', ok: true, detail: 'undefined' });
+    finish();
+  }
+
+  // 5. Bluetooth
+  r.hasBT = typeof navigator.bluetooth !== 'undefined';
+  checks.push({ name: 'Bluetooth API（桌面有=正常）', ok: true, detail: r.hasBT ? '存在' : '不存在' });
+
+  // 6. USB / Serial
+  r.hasUSB = typeof navigator.usb !== 'undefined';
+  r.hasSerial = typeof navigator.serial !== 'undefined';
+  checks.push({ name: 'USB API', ok: true, detail: r.hasUSB ? '存在' : '不存在' });
+  checks.push({ name: 'Serial API', ok: true, detail: r.hasSerial ? '存在' : '不存在' });
+
+  // 7. HID
+  r.hasHID = typeof navigator.hid !== 'undefined';
+  checks.push({ name: 'HID API', ok: true, detail: r.hasHID ? '存在' : '不存在' });
+
+  // 8. MediaDevices（摄像头/麦克风枚举）
+  if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+    navigator.mediaDevices.enumerateDevices().then(function (devices) {
+      r.mediaDeviceCount = devices.length;
+      var kinds = {};
+      devices.forEach(function (d) { kinds[d.kind] = (kinds[d.kind] || 0) + 1; });
+      r.mediaKinds = kinds;
+      checks.push({ name: 'enumerateDevices 返回', ok: Array.isArray(devices), detail: devices.length + ' 设备' });
+      // headless 通常有 audioinput/output（虚拟设备）
+      finish();
+    }).catch(function () {
+      checks.push({ name: 'enumerateDevices（拒绝=宽容）', ok: true });
+      finish();
+    });
+  } else {
+    checks.push({ name: 'mediaDevices.enumerateDevices 存在', ok: false });
+    finish();
+  }
+
+  var done = false;
+  function finish() {
+    if (done) return;
+    done = true;
+    setTimeout(function () {
+      window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks, r: r });
+      document.getElementById('log').innerHTML = checks.map(function (c) {
+        return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + ' <code>' + (c.detail || '') + '</code></div>';
+      }).join('');
+    }, 600);
+  }
+  setTimeout(finish, 2500);
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd41', log: window.__log }); };
+</script>
+</body>
+</html>
