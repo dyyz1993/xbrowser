@@ -858,16 +858,38 @@ export async function createSession(
         (url ? t.url.includes(new URL(url).hostname) : true)
       );
       if (matchTarget && matchTarget.url) {
-        targetPage = await context.newPage();
-        await targetPage.goto(matchTarget.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+        // d07 第六层（S82）：复用已有 page —— 旧逻辑每条命令 newPage 复制
+        // target（3 条命令繁殖 9 个 tab，S72 七 tab 泥潭的真根因）。
+        // 同 URL 的 page 已存在则直接复用，仅无匹配时才开新 tab。
+        const existing = context.pages().find(p => {
+          try { return p.url() === matchTarget.url; } catch { return false; }
+        });
+        if (existing) {
+          targetPage = existing;
+        } else {
+          targetPage = await context.newPage();
+          await targetPage.goto(matchTarget.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+        }
       }
     }
 
     if (!targetPage) {
       const pages = context.pages();
-      if (pages.length > 0) {
+      if (pages.length > 1) {
+        // d07 第六层最小切片（S81）：多 tab 时优先激活 tab ——
+        // visibilityState=visible 的 tab 全浏览器唯一（后台 tab 全 hidden）。
+        // pages[0] 是注册顺序不是激活顺序（S72 七 tab 泥潭的选错根因）。
+        try {
+          for (const p of pages) {
+            const vis = await p.evaluate<string>('document.visibilityState').catch(() => 'hidden');
+            if (vis === 'visible') { targetPage = p; break; }
+          }
+        } catch { /* best-effort */ }
+      }
+      if (!targetPage && pages.length > 0) {
         targetPage = pages[0];
-      } else {
+      }
+      if (!targetPage) {
         targetPage = await context.newPage();
       }
     }
