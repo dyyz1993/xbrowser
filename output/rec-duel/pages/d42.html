@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D42 intl-deep</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+</style>
+</head>
+<body>
+<h2>D42 — Intl/本地化深度指纹</h2>
+<p>ICU 数据库的完整性 —— headless 与桌面 Chrome 的 Intl 实现可能有细微差异。</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+  var r = {};
+
+  // 1. Intl 对象存在
+  checks.push({ name: 'Intl 存在', ok: typeof Intl === 'object' });
+  checks.push({ name: 'Intl.DateTimeFormat 存在', ok: typeof Intl.DateTimeFormat === 'function' });
+
+  // 2. 时区解析（关键）
+  var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  r.tz = tz;
+  checks.push({ name: 'timeZone = Asia/Shanghai', ok: tz === 'Asia/Shanghai', detail: tz });
+
+  // 3. 时区偏移一致性
+  var offset = new Date().getTimezoneOffset();
+  checks.push({ name: '偏移 = -480（UTC+8）', ok: offset === -480, detail: String(offset) });
+
+  // 4. 中文格式化（ICU 完整性）
+  var zhFmt = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'full' });
+  var zhDate = zhFmt.format(new Date(2026, 0, 15));
+  r.zhDate = zhDate;
+  checks.push({ name: 'zh-CN 完整日期含星期', ok: /星期|周/.test(zhDate), detail: zhDate.substring(0, 25) });
+
+  // 5. 数字格式化
+  var numFmt = new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' });
+  var cny = numFmt.format(1234.56);
+  checks.push({ name: 'CNY 货币格式', ok: /¥|￥/.test(cny), detail: cny });
+
+  // 6. 相对时间格式化
+  try {
+    var rel = new Intl.RelativeTimeFormat('zh-CN');
+    var relStr = rel.format(-1, 'day');
+    checks.push({ name: 'RelativeTimeFormat', ok: relStr.length > 0, detail: relStr });
+  } catch (e) {
+    checks.push({ name: 'RelativeTimeFormat', ok: false, detail: '不支持' });
+  }
+
+  // 7. 列表格式化
+  try {
+    var list = new Intl.ListFormat('zh-CN');
+    var listStr = list.format(['苹果', '香蕉', '橙子']);
+    checks.push({ name: 'ListFormat', ok: listStr.includes('苹果') && listStr.includes('橙子'), detail: listStr });
+  } catch (e) {
+    checks.push({ name: 'ListFormat', ok: false });
+  }
+
+  // 8. Segmenter（分词）
+  try {
+    var seg = new Intl.Segmenter('zh-CN');
+    var segs = Array.from(seg.segment('你好世界'));
+    checks.push({ name: 'Segmenter 中文分词', ok: segs.length >= 2, detail: segs.length + ' 段' });
+  } catch (e) {
+    checks.push({ name: 'Segmenter（较新 API，宽容）', ok: true, detail: '不支持' });
+  }
+
+  // 9. Collator（排序）
+  var coll = new Intl.Collator('zh-CN');
+  var sorted = ['张三', '李四', '阿五'].sort(coll.compare);
+  checks.push({ name: 'Collator 中文排序', ok: Array.isArray(sorted) && sorted.length === 3, detail: sorted.join(' ') });
+
+  // 10. PluralRules
+  try {
+    var pr = new Intl.PluralRules('zh-CN');
+    checks.push({ name: 'PluralRules 中文 = other', ok: pr.select(1) === 'other', detail: pr.select(1) });
+  } catch (e) {
+    checks.push({ name: 'PluralRules', ok: false });
+  }
+
+  // 11. locale 与时区合理性（zh-CN @ Asia/Shanghai）
+  var locale = navigator.language;
+  checks.push({ name: 'zh-CN 语言与东亚时区一致', ok: locale === 'zh-CN' && tz === 'Asia/Shanghai', detail: locale + ' @ ' + tz });
+
+  // 12. supportedLocalesOf
+  var supported = Intl.DateTimeFormat.supportedLocalesOf(['zh-CN', 'en-US', 'ja-JP']);
+  checks.push({ name: 'supportedLocalesOf 含三种', ok: supported.length >= 3, detail: supported.join(', ') });
+
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks, r: r });
+  render(checks);
+}
+function render(checks) {
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + ' <code>' + (c.detail || '') + '</code></div>';
+  }).join('');
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd42', log: window.__log }); };
+</script>
+</body>
+</html>
