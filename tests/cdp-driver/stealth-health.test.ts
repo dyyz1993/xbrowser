@@ -37,6 +37,7 @@ describe('stealth init script health', () => {
       ['WebRTC host 剥离', 'typ host'],
       ['chrome.app 深度', 'ready_to_run'],
       ['focus 伪装', 'hasFocus'],
+      ['coalesced 合成（d47）', 'getCoalescedEvents'],
     ];
     for (const [name, anchor] of anchors) {
       expect(script, `缺失伪装段: ${name}`).toContain(anchor);

@@ -252,6 +252,7 @@ export function lookupKey(ch: string): { key: string; code: string; vk: number; 
 export function buildStealthInitScript(): string {
   return [
     '(function(){',
+    '  window.__xbStealthVer="57";',
     // 1. AEL event proxy
     '  var o=EventTarget.prototype.addEventListener;',
     '  var fc=new InputDeviceCapabilities({firesTouchEvents:false});',
@@ -414,6 +415,70 @@ export function buildStealthInitScript(): string {
     '    var _pto=Object.getOwnPropertyDescriptor(Performance.prototype,"timeOrigin");',
     '    if(_pto&&_pto.get){Object.defineProperty(performance,"timeOrigin",{get:function(){return _pto.get.call(performance);},configurable:true});}',
     '  }catch(e){}',
+    // 3f. getCoalescedEvents 合成（d47）：真实鼠标 125Hz 采样被浏览器按帧合并，
+    //     快速移动时 pointermove.getCoalescedEvents() 返回 2~6 个事件（群内
+    //     ≈8ms）；CDP Input 逐事件派发不走合并管线，coalesced>1 恒为 0（结构性
+    //     暴露，间隔模拟救不了——实测 Chrome 帧对齐时 CDP 连发事件被直接丢弃
+    //     而非合并）。按 125Hz 物理插值合成 coalesced 群：期望样本数 = dt/8ms-1，
+    //     合成事件用真 PointerEvent 构造 + 实例级 isTrusted/timeStamp 遮蔽。
+    '  try{',
+    '    if(window.PointerEvent&&PointerEvent.prototype.getCoalescedEvents){',
+    '      var _gce=PointerEvent.prototype.getCoalescedEvents;',
+    '      var _lm=null;',
+    '      var _gceH=function(){',
+    '        var list=_gce.call(this);',
+    '        if(this.type!=="pointermove"||!this.isTrusted)return list;',
+    '        var cur={x:this.clientX,y:this.clientY,ts:this.timeStamp};',
+    '        var out=null;',
+    '        if((!list||list.length<2)&&_lm){',
+    '          var dt=cur.ts-_lm.ts,dx=cur.x-_lm.x,dy=cur.y-_lm.y;',
+    // dt 长（帧丢弃后）不代表群覆盖整个 dt —— 真实 coalesced 群只覆盖
+    // 最后一帧窗口（≤16.7ms，群内 ≈8ms=125Hz）。合成群从自身往回推 8ms
+    // 链，位移取末端占比（span/dt，dt 远大于 span 时位移趋零=丢弃后实况）。
+    '          var expN=Math.floor(dt/8)-1;',
+    // dt<12ms（不足一帧+采样周期）时真实浏览器不会产生合并群 ——
+    // 单采样帧 coalesced=1，强行合成会出现 ~2ms 的超物理群内间隔。
+    '          if(expN>0&&dt>=12&&Math.random()>0.15){',
+    '            var n=Math.min(4,expN+(Math.random()<0.3?1:0));',
+    '            var span=Math.min(dt,n*8.3);',
+    '            var frac=Math.min(1,span/Math.max(dt,1));',
+    '            out=[];',
+    '            for(var i=1;i<=n;i++){',
+    // k=距自身的步数（含自身共 n+1 个事件，相邻恒 ≈8.3ms=125Hz 周期）
+    '              var k=n+1-i;',
+    '              var ev=new PointerEvent("pointermove",{',
+    '                pointerId:this.pointerId,pointerType:"mouse",isPrimary:this.isPrimary,',
+    '                clientX:cur.x-dx*frac*(k/(n+1))+(Math.random()-0.5)*1.5,',
+    '                clientY:cur.y-dy*frac*(k/(n+1))+(Math.random()-0.5)*1.5,',
+    '                screenX:this.screenX,screenY:this.screenY,',
+    '                buttons:this.buttons,button:this.button,',
+    '                bubbles:true,cancelable:true,composed:true,',
+    '                width:this.width,height:this.height,pressure:this.pressure,',
+    '                tiltX:this.tiltX,tiltY:this.tiltY,twist:this.twist});',
+    '              var tsV=cur.ts-k*8.3-Math.random()*1.2;',
+    // isTrusted/timeStamp 是实例不可配置属性（defineProperty 抛
+    // "Cannot redefine"），改 Proxy 包装：getPrototypeOf/ownKeys 透传，
+    // instanceof 与属性枚举行为与真事件一致。IIFE 捕获本次循环的 tsV
+    // 快照 —— var 提升会让所有 Proxy 闭包共享最后一次赋值（实测四个
+    // 合成事件同时间戳、群内间隔塌到 ~2ms）。
+    '              out.push((function(e2,t2){return new Proxy(e2,{get:function(t,p){',
+    '                if(p==="isTrusted")return true;',
+    '                if(p==="timeStamp")return t2;',
+    '                var v=Reflect.get(t,p);return typeof v==="function"?v.bind(t):v;',
+    '              }});})(ev,tsV));',
+    '            }',
+    '            out.push(this);',
+    '          }',
+    '        }',
+    '        _lm=cur;',
+    '        return out||list;',
+    '      };',
+    '      PointerEvent.prototype.getCoalescedEvents=_gceH;',
+    // name 反查伪装：var _gceH=fn 的具名推断会暴露 hook（原生 name 是
+    // "getCoalescedEvents"）——toString 白名单管不到 name 属性。
+    '      try{Object.defineProperty(_gceH,"name",{value:"getCoalescedEvents"});}catch(e){}',
+    '    }',
+    '  }catch(e){}',
     // 3d. Chrome object depth (d24): automation fakes usually only set
     //     window.chrome = {}; deep checks hit app.run/runtime/csi/loadTimes.
     '  try{',
@@ -448,6 +513,7 @@ export function buildStealthInitScript(): string {
     '    if(this===HTMLCanvasElement.prototype.toDataURL)return"function toDataURL() { [native code] }";',
     '    if(this===AnalyserNode.prototype.getFloatFrequencyData)return"function getFloatFrequencyData() { [native code] }";',
     '    if(this===AudioBuffer.prototype.getChannelData)return"function getChannelData() { [native code] }";',
+    '    if(this===_gceH)return"function getCoalescedEvents() { [native code] }";',
     '    return _ts.call(this);',
     '  };',
     // 4. onclick prototype hijack (dual-stream consistency)

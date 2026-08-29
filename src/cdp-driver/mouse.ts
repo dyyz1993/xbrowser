@@ -101,7 +101,9 @@ export class XBMouseImpl implements XBMouse {
   }
 
   async move(x: number, y: number, opts: { steps?: number; stealth?: boolean } = {}): Promise<void> {
-    // stealth 模式下每个 move 点带轨迹延迟（人类移动 ≥8ms/点，d46 验证）
+    // stealth 模式下每个 move 点带帧级延迟（d47）：浏览器按帧（60fps≈16.7ms）
+    // 向页面派发 pointermove——间隔低于帧长的连发会被帧对齐丢弃（实测 180
+    // 步派发仅 ~26 个存活），且"超帧率 move 流"本身是指纹。帧级间隔 16-28ms。
     const stealth = opts.stealth ?? process.env.XBROWSER_STEALTH !== 'off';
     const steps = Math.max(1, opts.steps ?? 1);
     const fromX = this._x;
@@ -110,7 +112,7 @@ export class XBMouseImpl implements XBMouse {
     const dy = y - fromY;
 
     for (let i = 1; i <= steps; i++) {
-      if (stealth) await sleep(sRand(8, 20));
+      if (stealth) await sleep(sRand(16, 28));
       const t = i / steps;
       this._x = fromX + dx * t;
       this._y = fromY + dy * t;
