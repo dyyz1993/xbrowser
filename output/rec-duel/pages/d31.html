@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D31 cross-hook</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+</style>
+</head>
+<body>
+<h2>D31 — 跨 Hook 干扰扫描</h2>
+<p>多个伪装层的组合行为：A 层的 hook 是否破坏 B 层的伪装？（每个 hook 单独测通过 ≠ 组合通过）</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+
+  // ── 组合 1：canvas hook × measureText hook ──
+  // fillText 偏移 + measureText 微扰 + toDataURL 微扰同时启用时
+  var c = document.createElement('canvas');
+  c.width = 200; c.height = 50;
+  var x = c.getContext('2d');
+  x.font = '20px Arial';
+  x.fillText('combo-test', 10, 30);
+  var measured = x.measureText('combo-test').width;
+  var dataLen = c.toDataURL().length;
+  checks.push({ name: 'canvas 三 hook 组合：measure 返回数值', ok: typeof measured === 'number' && measured > 0, detail: String(Math.round(measured)) });
+  checks.push({ name: 'canvas 三 hook 组合：toDataURL 产出', ok: dataLen > 100, detail: String(dataLen) });
+
+  // ── 组合 2：audio hook × toDataURL hook（toDataURL 触发 canvas 微扰是否影响 audio PRNG 状态）──
+  // PRNG 是共享种子 —— toDataURL 的微扰会推进种子，影响后续 measureText 偏移方向
+  // 这是 per-load 稳定性的潜在破坏：多次调用序列不同 → 偏移不同
+  var m1 = x.measureText('probe').width;
+  var m2 = x.measureText('probe').width;
+  var m3 = x.measureText('probe').width;
+  var stable = m1 === m2 && m2 === m3; // measureText 对同一文本必须幂等
+  checks.push({ name: 'measureText 同文本幂等（多次调用一致）', ok: stable, detail: stable ? Math.round(m1) : m1 + '/' + m2 + '/' + m3 });
+
+  // ── 组合 3：event hook × screen hook ──
+  // 点击事件坐标（浮点化）是否与 screen 尺寸（1728）一致合理
+  var el = document.createElement('div');
+  var cx = null;
+  el.addEventListener('click', function (e) { cx = e.clientX; });
+  el.dispatchEvent(new MouseEvent('click', { clientX: 500 }));
+  checks.push({ name: '合成事件坐标不受 screen hook 干扰', ok: cx === 500, detail: String(cx) });
+
+  // ── 组合 4：WebGL hook × canvas hook ──
+  var gl = document.createElement('canvas').getContext('webgl');
+  var dbg = gl ? gl.getExtension('WEBGL_debug_renderer_info') : null;
+  var renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : 'no-gl';
+  checks.push({ name: 'WebGL renderer 与 2D canvas 共存', ok: typeof renderer === 'string' && renderer.length > 0, detail: renderer.substring(0, 25) });
+  // WebGL 绘图后 2D canvas 仍正常
+  var c2 = document.createElement('canvas');
+  c2.width = 10; c2.height = 10;
+  c2.getContext('2d').fillRect(0, 0, 10, 10);
+  checks.push({ name: 'WebGL 启用后 2D canvas 正常', ok: c2.toDataURL().length > 50 });
+
+  // ── 组合 5：FontFace 别名 × measureText ──
+  // d22 注册的 Menlo 别名（→Courier New）与 measureText 微扰组合
+  var mMenlo, mCourier;
+  x.font = '72px Menlo';
+  mMenlo = x.measureText('test').width;
+  x.font = '72px "Courier New"';
+  mCourier = x.measureText('test').width;
+  checks.push({ name: 'Menlo 别名与真 Courier 宽度接近', ok: Math.abs(mMenlo - mCourier) < mCourier * 0.3, detail: Math.round(mMenlo) + ' vs ' + Math.round(mCourier) });
+
+  // ── 组合 6：getVoices hook × enumerate ──
+  var voices;
+  try { voices = speechSynthesis.getVoices().length; } catch (e) { voices = -1; }
+  checks.push({ name: 'getVoices 可重复调用（幂等）', ok: voices > 0, detail: String(voices) });
+  try {
+    var v2 = speechSynthesis.getVoices();
+    var v3 = speechSynthesis.getVoices();
+    checks.push({ name: 'voices 数组结构稳定', ok: Array.isArray(v2) && Array.isArray(v3) && v2.length === v3.length });
+  } catch (e) { checks.push({ name: 'voices 数组结构稳定', ok: false }); }
+
+  // ── 组合 7：isTrusted 修复 × 坐标修复（d28+d29 回归组合）──
+  var el2 = document.createElement('div');
+  var evtInfo = {};
+  el2.addEventListener('click', function (e) { evtInfo = { t: e.isTrusted, x: e.clientX }; });
+  el2.dispatchEvent(new MouseEvent('click', { clientX: 777 }));
+  checks.push({ name: 'd28+d29 组合：合成事件 t=false x=777', ok: evtInfo.t === false && evtInfo.x === 777, detail: JSON.stringify(evtInfo) });
+
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks });
+  render(checks);
+}
+function render(checks) {
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + (c.detail ? ' <code>' + c.detail + '</code>' : '') + '</div>';
+  }).join('');
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd31', log: window.__log }); };
+</script>
+</body>
+</html>
