@@ -3,6 +3,27 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
+// R104 后 rpcCall 走原生 http —— 桥接 mock（防 CI 上真实连 9224）
+vi.mock('node:http', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('node:http')>();
+  return {
+    ...orig,
+    request: vi.fn((...args: unknown[]) => {
+      const cb = args[args.length - 1] as (res: unknown) => void;
+      const req = { setTimeout: vi.fn(), on: vi.fn(), end: vi.fn() } as unknown as NodeJS.ReadableStream;
+      const res = {
+        statusCode: 200,
+        on: (ev: string, fn: (d?: Buffer) => void) => {
+          if (ev === 'data') setTimeout(() => fn(Buffer.from('{"success":true}')), 1);
+          if (ev === 'end') setTimeout(() => fn(), 5);
+        },
+      };
+      if (typeof cb === 'function') setTimeout(() => cb(res), 0);
+      return req;
+    }),
+  };
+});
+
 const mockStartDaemon = vi.fn().mockResolvedValue({ pid: 99999, port: 9224 });
 
 vi.mock('../../src/daemon/daemon.js', () => ({
