@@ -289,9 +289,17 @@ export async function executeCommand(
           session.page.evaluate(() => true),
           new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
         ]);
-      } catch {
-        await closeSessionByName(session.name);
-        session = undefined;
+      } catch (err) {
+        // 死亡/忙区分（S90，S89 坐实的多 session 抢 tab 根修）：探活超时
+        // 只说明页面 busy（长任务/重载中）—— 旧逻辑一律销毁 session，
+        // 重建时 visible-first 会抢到别的 tab，多 session 全体漂移。
+        // 只有连接级死亡（closed/detached/destroyed）才销毁重建。
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/closed|detached|destroyed|not found|Session closed/i.test(msg)) {
+          await closeSessionByName(session.name);
+          session = undefined;
+        }
+        // 超时（busy）：保留 session 与 page 绑定不动
       }
     }
     if (session && targetPageOverride && session.page) {
