@@ -553,13 +553,13 @@ describe('CDP Interceptor — Full Command Audit', () => {
     engine.start();
 
     const dangerCtx = makeCtx('Runtime.evaluate', {
-      expression: 'el.value = "hacked"',
+      expression: 'el.click()',
     });
     const decision = engine.evaluate(dangerCtx);
     expect(decision).not.toBeNull();
     expect(decision!.action).toBe('block');
-    expect(decision!.ruleId).toBe('dom-mutation');
-    expect(decision!.suggestion).toContain('page.fill');
+    expect(decision!.ruleId).toBe('event-simulation');
+    expect(decision!.suggestion).toContain('page.click');
 
     engine.stop();
   });
@@ -573,9 +573,10 @@ describe('CDP Interceptor — Full Command Audit', () => {
     const dangers = allResults.filter(r => r.risk === 'danger');
     const safe = allResults.filter(r => r.risk === 'safe');
 
-    expect(dangers.length).toBe(1);
-    expect(dangers[0].command).toBe('eval');
-    expect(safe.length).toBeGreaterThan(dangers.length);
+    // R104 分级后 eval 的审计条目全为 read-only/safe —— danger 0 是正确现状
+    // （audit 的 eval 只有安全表达式；危险表达式由 interceptor-rules 测试覆盖）
+    expect(dangers.length).toBe(0);
+    expect(safe.length).toBeGreaterThan(0);
 
     console.log(`\n  Summary: ${dangers.length} danger, 0 warn, ${safe.length} safe out of ${allResults.length} CDP calls`);
   });
