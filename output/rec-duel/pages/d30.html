@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D30 hook-forensics</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+</style>
+</head>
+<body>
+<h2>D30 — Hook 取证检测</h2>
+<p>伪装函数的 toString / 属性描述符 / 原型链 —— 取证级检查。</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+
+  // 1. addEventListener.toString 应该是 native code
+  var aelStr = EventTarget.prototype.addEventListener.toString();
+  checks.push({ name: 'addEventListener toString = native', ok: /\[native code\]/.test(aelStr) });
+  // 2. 但更深的取证：Function.prototype.toString 自身
+  var ftsStr = Function.prototype.toString.toString();
+  checks.push({ name: 'Function.toString 自身 = native', ok: /\[native code\]/.test(ftsStr) });
+  // 3. 属性描述符：addEventListener.length（参数个数 —— 真实是 2）
+  checks.push({ name: 'addEventListener.length === 2', ok: EventTarget.prototype.addEventListener.length === 2, detail: String(EventTarget.prototype.addEventListener.length) });
+  // 4. hasFocus 的 toString
+  var hfStr = document.hasFocus.toString();
+  checks.push({ name: 'hasFocus toString = native', ok: /\[native code\]/.test(hfStr) });
+  // 5. 伪装 getter 的描述符可枚举性（真实 getter 是原型上的，不可自有枚举）
+  var screenDesc = Object.getOwnPropertyDescriptor(Screen.prototype, 'width');
+  checks.push({ name: 'screen.width 描述符来自原型', ok: !!screenDesc && 'get' in screenDesc });
+  var ownDesc = Object.getOwnPropertyDescriptor(window.screen, 'width');
+  checks.push({ name: 'screen 实例无自有 width（走原型）', ok: ownDesc === undefined, detail: ownDesc ? '有自有属性!' : '走原型 ✓' });
+  // 6. toDataURL 的 toString
+  var tduStr = HTMLCanvasElement.prototype.toDataURL.toString();
+  checks.push({ name: 'toDataURL toString = native', ok: /\[native code\]/.test(tduStr) });
+  // 7. measureText 返回对象的构造器（真实是 TextMetrics）
+  var ctx = document.createElement('canvas').getContext('2d');
+  var tm = ctx.measureText('test');
+  checks.push({ name: 'measureText 返回 instanceof TextMetrics', ok: tm instanceof TextMetrics, detail: tm.constructor.name });
+  // 8. eval 后的函数作用域检查（Proxy 检测的经典法：不可被 call/apply 重新绑定）
+  try {
+    var proxied = new Proxy(function(){}, { get: function(t, p) { if (p === 'toString') return function() { return 'fake'; }; return t[p]; } });
+    checks.push({ name: 'Proxy 语义理解测试', ok: String(proxied) === 'fake' });
+  } catch (e) { checks.push({ name: 'Proxy 语义理解测试', ok: false }); }
+
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks });
+  render(checks);
+}
+function render(checks) {
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + (c.detail ? ' <code>' + c.detail + '</code>' : '') + '</div>';
+  }).join('');
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd30', log: window.__log }); };
+</script>
+</body>
+</html>
