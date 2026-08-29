@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D25 fonts-enum</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+code{background:#f0f0f0;padding:1px 5px;border-radius:3px;font-size:12px}
+</style>
+</head>
+<body>
+<h2>D25 — Fonts API 枚举检测</h2>
+<p>document.fonts / FontFaceSet 的行为特征 + 字体可用性探测（offsetWidth 对比法）。</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+  var F = document.fonts;
+
+  // 1. document.fonts API 存在
+  checks.push({ name: 'document.fonts 存在', ok: !!F });
+  if (F) {
+    // 2. status 值合法
+    checks.push({ name: 'FontFaceSet.status 合理', ok: ['loading', 'loaded'].includes(F.status) });
+    // 3. ready 是 Promise
+    checks.push({ name: 'fonts.ready 是 Promise', ok: F.ready && typeof F.ready.then === 'function' });
+    // 4. check() 方法
+    checks.push({ name: 'fonts.check() 可用', ok: typeof F.check === 'function' });
+    try { F.check('12px Arial'); checks.push({ name: 'check() 返回 boolean', ok: typeof F.check('12px Arial') === 'boolean' }); } catch (e) {}
+  }
+
+  // 5. 字体可用性探测（span 对比法 —— 经典指纹）
+  var testFonts = ['monospace', 'sans-serif', 'serif', 'Menlo', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'SimSun'];
+  var baseline = {};
+  var detected = {};
+  testFonts.slice(0, 3).forEach(function (f) {
+    var s = document.createElement('span');
+    s.style.cssText = 'font-size:72px;position:absolute;visibility:hidden;white-space:nowrap;';
+    s.style.fontFamily = f;
+    s.textContent = 'mmmmmmmmmmlli';
+    document.body.appendChild(s);
+    baseline[f] = s.offsetWidth;
+    document.body.removeChild(s);
+  });
+  checks.push({ name: '基础字体宽度 > 0', ok: Object.values(baseline).every(function (w) { return w > 0; }) });
+
+  // 探测专有字体（macOS 应该有 Menlo/PingFang，Windows 有雅黑）
+  var probe = document.createElement('span');
+  probe.style.cssText = 'font-size:72px;position:absolute;visibility:hidden;white-space:nowrap;';
+  probe.style.fontFamily = 'monospace';
+  probe.textContent = 'mmmmmmmmmmlli';
+  document.body.appendChild(probe);
+  var monoW = probe.offsetWidth;
+  ['Menlo', 'PingFang SC', 'Microsoft YaHei'].forEach(function (f) {
+    probe.style.fontFamily = f + ', monospace';
+    var w = probe.offsetWidth;
+    detected[f] = w !== monoW; // 回退到 monospace 时宽度相同 = 字体不可用
+  });
+  document.body.removeChild(probe);
+
+  // macOS 环境（我们伪装的）应该有 Menlo + PingFang，没有雅黑
+  checks.push({ name: 'Menlo 可用（macOS 特征）', ok: detected['Menlo'] === true });
+  checks.push({ name: 'PingFang SC 可用（macOS 特征）', ok: detected['PingFang SC'] === true });
+  checks.push({ name: '雅黑不可用（非 Windows）', ok: detected['Microsoft YaHei'] === false });
+
+  // 6. navigator.plugins 深度（配合字体环境）
+  var pl = navigator.plugins.length;
+  checks.push({ name: 'plugins 3-5 个（Chrome 默认）', ok: pl >= 3 && pl <= 5, detail: 'count=' + pl });
+
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks, detected: detected, baseline: baseline });
+  render(checks);
+}
+function render(checks) {
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + (c.detail ? ' <code>' + c.detail + '</code>' : '') + '</div>';
+  }).join('');
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd25', log: window.__log }); };
+</script>
+</body>
+</html>

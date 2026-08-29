@@ -390,6 +390,17 @@ export function buildStealthInitScript(): string {
     '      if(!window.chrome.loadTimes)window.chrome.loadTimes=function(){return{};}',
     '    }',
     '  }catch(e){}',
+    // 3e. Font availability patch (d25): headless Chromium misses some system
+    //     fonts (e.g. Menlo on macOS) that real Chrome has. Register a FontFace
+    //     aliasing the missing font to a local() equivalent so offsetWidth-based
+    //     font probing sees the same availability as the faked environment.
+    '  try{',
+    '    var _fontAliases=[["Menlo","Courier New"],["SF Mono","Menlo"],["Segoe UI","Helvetica"]];',
+    '    _fontAliases.forEach(function(pa){',
+    '      try{var ff=new FontFace(pa[0],"local("+JSON.stringify(pa[1])+")");',
+    '        document.fonts.add(ff);ff.load();}catch(e2){}',
+    '    });',
+    '  }catch(e){}',
     // 3. toString disguise (name-list based)
     '  var _ts=Function.prototype.toString;',
     '  var _hf=document.hasFocus;',
