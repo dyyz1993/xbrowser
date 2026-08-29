@@ -8,14 +8,14 @@ export const mouseCommand = registerCommand({
   description: 'Control the mouse (move, click, etc.)',
   scope: 'page',
   parameters: z.object({
-    action: z.enum(['move', 'down', 'up', 'click', 'dblclick']),
+    action: z.enum(['move', 'down', 'up', 'click', 'dblclick', 'drag']),
     x: z.coerce.number(),
     y: z.coerce.number(),
     button: z.enum(['left', 'right', 'middle']).optional(),
     steps: z.coerce.number().optional(),
   }),
   result: z.object({
-    action: z.enum(['move', 'down', 'up', 'click', 'dblclick']),
+    action: z.enum(['move', 'down', 'up', 'click', 'dblclick', 'drag']),
     x: z.number(),
     y: z.number(),
   }),
@@ -41,6 +41,11 @@ export const mouseCommand = registerCommand({
         break;
       case 'dblclick':
         await ctx.page.mouse.dblclick(p.x, p.y, { button });
+        break;
+      case 'drag':
+        // 从当前鼠标位置拖到 (x,y) —— 驱动真实 HTML5 DnD 管线（d59 实测：
+        // dragstart→dragover…→drop→dragend 全 trusted）
+        await ctx.page.mouse.drag(p.x, p.y, p.steps ? { steps: p.steps } : {});
         break;
     }
     return ok({ action: p.action, x: p.x, y: p.y });

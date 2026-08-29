@@ -128,6 +128,39 @@ export class XBMouseImpl implements XBMouse {
     this._y = y;
   }
 
+  /**
+   * Drag from the CURRENT cursor position to (x, y): press, traverse a
+   * bezier trajectory with the button held, release. Drives the REAL
+   * HTML5 DnD pipeline — field-verified (d59): this sequence fires
+   * dragstart → dragover… → drop → dragend, all isTrusted=true. No
+   * Input.dispatchDragEvent needed.
+   */
+  async drag(x: number, y: number, opts: { steps?: number } = {}): Promise<void> {
+    const stealth = process.env.XBROWSER_STEALTH !== 'off';
+    await this.send('Input.dispatchMouseEvent', {
+      type: 'mousePressed', x: this._x, y: this._y, button: 'left', clickCount: 1,
+    });
+    this._button = 'left';
+    // 按住移动：HTML5 拖拽启动需要移动超过阈值（约 4-8px）且逐帧移动
+    const steps = opts.steps ?? Math.max(10, Math.min(24, Math.round(Math.hypot(x - this._x, y - this._y) / 20)));
+    const fx = this._x, fy = this._y;
+    for (let i = 1; i <= steps; i++) {
+      if (stealth) await sleep(sRand(16, 28));
+      const t = i / steps;
+      this._x = fx + (x - fx) * t;
+      this._y = fy + (y - fy) * t;
+      await this.send('Input.dispatchMouseEvent', {
+        type: 'mouseMoved', x: this._x, y: this._y, button: this._button,
+      });
+    }
+    this._x = x; this._y = y;
+    await sleep(sRand(60, 140)); // drop 前的悬停放手节奏
+    await this.send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased', x, y, button: 'left', clickCount: 1,
+    });
+    this._button = 'none';
+  }
+
   async wheel(deltaX: number, deltaY: number): Promise<void> {
     await this.send('Input.dispatchMouseEvent', {
       type: 'mouseWheel',

@@ -291,6 +291,24 @@ export class XBLocatorImpl implements XBLocator {
     return selected;
   }
 
+  async dragAndDrop(source: string, target: string): Promise<void> {
+    // d59：此前接口声明了 dragAndDrop 但零实现（接口虚假宣传家族）。
+    // 现基于 mouse.drag 原语（真实 HTML5 DnD 管线）实现。
+    const boxes = await this.page.evaluate<Array<{ x: number; y: number } | null>>(`
+      (function() {
+        const s = ${this._q(source)}, t = ${this._q(target)};
+        if (!s || !t) return null;
+        const c = (el) => { const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; };
+        return [c(s), c(t)];
+      })()
+    `);
+    if (!boxes || !boxes[0] || !boxes[1]) {
+      throw new Error(`dragAndDrop: element not found (${source} / ${target})`);
+    }
+    await this.page.mouse.move(boxes[0].x, boxes[0].y);
+    await this.page.mouse.drag(boxes[1].x, boxes[1].y);
+  }
+
   async screenshot(opts: XBScreenshotOptions = {}): Promise<Buffer> {
     await waitForActionable(this.page, this.selector);
 

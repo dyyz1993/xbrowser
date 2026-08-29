@@ -255,6 +255,8 @@ export interface XBMouse {
   up(opts?: { button?: 'left' | 'right' | 'middle' }): Promise<void>;
   move(x: number, y: number, opts?: { steps?: number }): Promise<void>;
   wheel(deltaX: number, deltaY: number): Promise<void>;
+  /** Drag from current position to (x,y) — drives the real HTML5 DnD pipeline */
+  drag(x: number, y: number, opts?: { steps?: number }): Promise<void>;
 }
 
 // ── Keyboard ───────────────────────────────────────────────────
