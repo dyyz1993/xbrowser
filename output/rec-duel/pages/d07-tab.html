@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D07 tab</title>
+<style>body{font-family:system-ui;padding:40px;background:#fff8e1}button{padding:10px 24px}</style>
+</head>
+<body>
+<h2>新 Tab — 请确认</h2>
+<button id="tab-confirm">确认</button>
+<span id="out"></span>
+<script>
+// 同源（file://），把证明写回 opener —— 裁判只读原 tab 的 __outcome
+document.getElementById('tab-confirm').addEventListener('click', function () {
+  // headless 下 window.opener 为 null（Chromium 策略）——BroadcastChannel 替代
+  try {
+    var ch = new BroadcastChannel('d07-proof');
+    ch.postMessage({ action: 'tab-confirm', at: 'new-tab' });
+    ch.close();
+    document.getElementById('out').textContent = '已通过 BroadcastChannel 写回 ✔';
+  } catch (e) {
+    document.getElementById('out').textContent = 'BC 失败: ' + e.message;
+  }
+});
+</script>
+</body>
+</html>

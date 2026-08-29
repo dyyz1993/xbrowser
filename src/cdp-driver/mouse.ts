@@ -40,10 +40,21 @@ export class XBMouseImpl implements XBMouse {
     }
     if (stealth) {
       const traj = bezierTrajectory(this._x, this._y, tx, ty);
+      // 总预算守卫：session 慢（新 tab Input agent 每事件 6-7s，d07 第六层）
+      // 时轨迹 10+ 事件累计 70s。超 5s 预算截断，跳到终点保点击可用。
+      const _tb = Date.now();
+      let _truncated = false;
       for (const p of traj) {
+        if (Date.now() - _tb > 5000) { _truncated = true; break; }
         await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y, button: this._button });
         this._x = p.x; this._y = p.y;
         await sleep(p.delay);
+      }
+      this._x = tx; this._y = ty;
+      if (_truncated) {
+        // 截断后必须补发终点事件 —— 浏览器鼠标位置停在半路，
+        // 后续 press/release 虽用正确坐标但 hover 态不对（d07 实测按钮不触发）
+        await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: tx, y: ty, button: this._button });
       }
       await sleep(sRand(...CFG.aimPause));
     } else {

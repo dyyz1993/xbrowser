@@ -180,6 +180,13 @@ async function handleSwitch(
     if (okProbe) break;
     await new Promise(r => setTimeout(r, 300));
   }
+  // R106/d07 第六层：evaluate 走 Runtime domain 秒过，但 Input domain 的首个
+  // dispatchMouseEvent 慢至 6-7s（新 tab 的 Input agent 未激活）—— stealth 轨迹
+  // 10+ 事件累计 70s。预热：派发一个轻量 mouseMoved 激活 Input 管道。
+  try {
+    const mouse = (targetPage as unknown as { mouse?: { move: (x: number, y: number) => Promise<void> } }).mouse;
+    if (mouse) await mouse.move(1, 1).catch(() => {});
+  } catch { /* best-effort */ }
 
   const session = ctx.sessionId ? getSessionById(ctx.sessionId) : undefined;
   if (session) {

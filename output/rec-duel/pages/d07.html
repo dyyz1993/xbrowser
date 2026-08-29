@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D07 new-tab</title>
+<style>body{font-family:system-ui;padding:40px;background:#fafafa}a{color:#2980b9;font-size:18px}</style>
+</head>
+<body>
+<h2>D07 — 新标签页链路</h2>
+<p>点击链接打开新 tab，在新 tab 里点「确认」——证明在新 tab 的页面上写回。</p>
+<a id="open-link" href="d07-tab.html" target="_blank">打开新页面 →</a>
+<div id="result" style="margin-top:16px"></div>
+<script>
+window.__log = [];
+window.__outcome = function () { return JSON.stringify({ page: 'd07', log: window.__log }); };
+document.getElementById('open-link').addEventListener('click', function () {
+  window.__log.push({ action: 'open-tab' });
+  try {
+    var __ch = new BroadcastChannel('d07-proof');
+    __ch.onmessage = function (e) { window.__log.push(e.data); };
+  } catch (e) {}
+  document.getElementById('result').textContent = '已打开新 tab，请在新 tab 确认';
+});
+</script>
+</body>
+</html>
