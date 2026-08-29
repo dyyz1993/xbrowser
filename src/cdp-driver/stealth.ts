@@ -281,7 +281,9 @@ export function buildStealthInitScript(): string {
     '  Object.defineProperty(Screen.prototype,"height",{get:_gh,configurable:true});',
     '  Object.defineProperty(Screen.prototype,"availWidth",{get:_gw,configurable:true});',
     '  Object.defineProperty(Screen.prototype,"availHeight",{get:_gah,configurable:true});',
-    '  document.hasFocus=function(){return true};',
+    // hasFocus 与 visibilityState 联动（d29）：恒 true 在 hidden 标签下暴露
+    // —— 真实浏览器失焦/后台时 hasFocus=false
+    '  document.hasFocus=function(){return document.visibilityState==="visible";};',
     // 4. Canvas/WebGL fingerprint: per-session stable noise (d20).
     //    Headless software raster differs subtly from Chrome GPU raster —
     //    toDataURL hashes fingerprint the rasterizer. Inject a stable
