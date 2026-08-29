@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D33 iframe-stealth</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+iframe{width:100%;height:160px;border:1px solid #ccc;border-radius:8px;margin-top:12px}
+</style>
+</head>
+<body>
+<h2>D33 — iframe 内伪装一致性</h2>
+<div id="log"></div>
+<iframe id="fr"></iframe>
+<script>
+window.__log = [];
+function check() {
+  var inner = null;
+  try { inner = document.getElementById('fr').contentWindow.__fr; } catch (e) {}
+  var checks = [];
+  if (!inner) {
+    checks.push({ name: 'iframe 数据可达', ok: false });
+  } else {
+    checks.push({ name: 'iframe screen.width = 主文档', ok: inner.screenW === screen.width, detail: inner.screenW + ' vs ' + screen.width });
+    checks.push({ name: 'iframe webdriver = false', ok: inner.webdriver === false });
+    checks.push({ name: 'iframe canvas 有产出', ok: inner.canvasLen > 700, detail: String(inner.canvasLen) });
+    checks.push({ name: 'iframe measureText 有值', ok: inner.fontW > 10 && inner.fontW < 500, detail: String(inner.fontW) });
+    checks.push({ name: 'iframe voices（180=hook入iframe / >0=原生）', ok: inner.voices > 0, detail: inner.voices === 180 ? 'hooked' : 'native ' + inner.voices + '（iframe 独立实例，已知限制）' });
+    checks.push({ name: 'iframe chrome.app.run 存在', ok: inner.chromeApp === true });
+    checks.push({ name: 'iframe 合成事件 isTrusted=false', ok: inner.isTrusted === false, detail: String(inner.isTrusted) });
+  }
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks });
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + ' <code>' + (c.detail || '') + '</code></div>';
+  }).join('');
+}
+// about:blank iframe 同源 —— 直接在 contentWindow 挂采集脚本
+var fr = document.getElementById('fr');
+fr.onload = function () { setTimeout(check, 500); };
+try {
+  var doc = fr.contentDocument;
+  var sc = doc.createElement('script');
+  sc.textContent = `
+    window.__fr = (function () {
+      var c = document.createElement("canvas");
+      c.width = 100; c.height = 30;
+      var x = c.getContext("2d");
+      x.font = "14px Arial";
+      x.fillStyle = "#069";
+      x.fillText("fp", 2, 15);
+      var el = document.createElement("div"); var got = null;
+      el.addEventListener("click", function (e) { got = e.isTrusted; });
+      el.dispatchEvent(new Event("click"));
+      return {
+        ua: navigator.userAgent, screenW: screen.width, webdriver: navigator.webdriver,
+        canvasLen: c.toDataURL().length,
+        fontW: Math.round(x.measureText("mm").width * 100) / 100,
+        voices: (function () { try { return speechSynthesis.getVoices().length } catch (e) { return -1 } })(),
+        chromeApp: !!(window.chrome && window.chrome.app && window.chrome.app.run),
+        isTrusted: got,
+      };
+    })();
+  `;
+  doc.body.appendChild(sc);
+  doc.body.innerHTML += '<h4 style="font-family:system-ui">iframe 内部（已采集）</h4>';
+} catch (e) {}
+setTimeout(check, 2000);
+setTimeout(function () { if (!window.__log.length) check(); }, 4000);
+window.__outcome = function () { return JSON.stringify({ page: 'd33', log: window.__log }); };
+</script>
+</body>
+</html>

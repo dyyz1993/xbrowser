@@ -357,7 +357,9 @@ export function buildStealthInitScript(): string {
     '    var _sv=speechSynthesis.getVoices.bind(speechSynthesis);',
     '    speechSynthesis.getVoices=function(){',
     '      var real=_sv();',
-    '      if(real&&real.length)return real;',
+    '      if(real&&real.length>50)return real;',
+    // 注意阈值从 0 改 50：iframe 原生约 10 个 —— 原阈值下 iframe 返回原生 10 个
+    // 而不是伪装 180（d33 暴露）。>50 = 主文档伪装列表已生效，其余返回伪装。
     '      return _fakeVoices.map(function(n,i){return {name:n,lang:i<2?"en-US":i<6?"en-GB":"zh-TW",localService:true,default:i===0,voiceURI:n};});',
     '    };',
     '  }catch(e){}',
