@@ -172,6 +172,12 @@ export async function launchChrome(options: ChromeLaunchOptions = {}): Promise<L
     // Use --headless for broad compatibility. --headless=new has port binding
     // issues on some Chrome versions (148+).
     allArgs.push('--headless', '--hide-scrollbars', '--mute-audio');
+    // autoplay 策略（d61/S85 边界第 5 例实测记录）：此 headless 构建的
+    // muted autoplay 也被 NotAllowedError 拒（真机默认允许 muted）——
+    // no-user-gesture-required flag 实测无效，构建级限制（媒体站可据此
+    // 识别 headless，属暴露面而非可伪装项）。flag 保留：对其他构建可能
+    // 生效且无害。
+    allArgs.push('--autoplay-policy=no-user-gesture-required');
   }
 
   let tmpDir: string | undefined;
@@ -262,6 +268,23 @@ export async function connectToCDP(rawEndpoint: string): Promise<string> {
 
 // ── Helpers ────────────────────────────────────────────────────
 
+/**
+ * 合并 CDP endpoint 与 HTTP 路径。endpoint 可能带 query（如
+ * `http://host:9221?key=cdp_xxx`，多用户网关按 key 隔离配对），
+ * 直接字符串拼接会产出 `?key=xx/json/version` 这种非法 URL——
+ * 必须用 URL API 把 path 合进 pathname、保留 query。
+ */
+export function joinCdpHttpUrl(baseURL: string, path: string): string {
+  try {
+    const u = new URL(baseURL);
+    u.pathname = (u.pathname.replace(/\/+$/, '') || '') + path;
+    return u.toString();
+  } catch {
+    // 非 URL 形态（理论上不该出现）退回旧拼接
+    return `${baseURL}${path}`;
+  }
+}
+
 async function findFreePort(): Promise<number> {
   const { createServer } = await import('node:net');
   return new Promise((resolve, reject) => {
@@ -305,7 +328,7 @@ async function waitForCDPReady(
 }
 
 async function resolveEndpointFromHTTP(baseURL: string): Promise<string> {
-  const url = `${baseURL}/json/version`;
+  const url = joinCdpHttpUrl(baseURL, '/json/version');
   const resp = await fetch(url, { signal: AbortSignal.timeout(3000) });
   if (!resp.ok) {
     throw new Error(`CDP HTTP ${resp.status}: ${url}`);
@@ -321,7 +344,7 @@ async function resolveEndpointFromHTTP(baseURL: string): Promise<string> {
  * Get the list of pages from /json/list
  */
 export async function getCDPTargets(baseURL: string): Promise<CDPTargetInfo[]> {
-  const url = `${baseURL}/json/list`;
+  const url = joinCdpHttpUrl(baseURL, '/json/list');
   const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
   if (!resp.ok) {
     throw new Error(`CDP list HTTP ${resp.status}: ${url}`);
