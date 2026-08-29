@@ -879,7 +879,9 @@ export async function createSession(
     // 直接 30s 超时（d07 第六层同源症状）。attach 后立即 bringToFront，
     // 确保后续输入派发打在激活 tab 上。
     if (isCDP) {
-      await targetPage.bringToFront().catch(() => { /* best-effort */ });
+      // 可选调用：测试 mock 可能不带 bringToFront（同步 TypeError 会穿透
+      // .catch —— CI 抓过一次，tests/browser.test.ts 3 用例）
+      await Promise.resolve(targetPage.bringToFront?.()).catch(() => { /* best-effort */ });
     }
 
     // Note: auto-attach for new tab detection is only enabled for self-launched Chromium
