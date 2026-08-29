@@ -103,14 +103,17 @@ export class XBLocatorImpl implements XBLocator {
       value.length >= 40 &&
       process.env.XBROWSER_FILL_TYPE !== 'type'
     ) {
+      // 三级路径（d58）：原生粘贴（CDP 协议边界，当前必败但保留给未来
+      // 协议演进）→ 合成 paste + execCommand insertText（真实编辑管线，
+      // 事件形态贴近人类粘贴）→ 键盘打字（最终兜底）
       try {
-        const { pasteViaClipboard } = await import('../utils/clipboard.js');
+        const { pasteViaClipboard, syntheticPaste } = await import('../utils/clipboard.js');
         await pasteViaClipboard(this.page, value);
-        // 验证粘贴落地（值可能被 input mask 拦截），失败 fallback 打字
         const got = await this.page.evaluate<string>(
           `(function(){ const el = ${this._q(this.selector)}; return el ? (el.value || '') : ''; })()`,
         );
         if (got === value) return;
+        if (await syntheticPaste(this.page, this._q(this.selector), value)) return;
       } catch { /* fall through to typing */ }
     }
     await this.page.keyboard.type(value, { stealth: true });

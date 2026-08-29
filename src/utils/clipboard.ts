@@ -53,3 +53,33 @@ export async function pasteViaClipboard(page: XBPage, text: string): Promise<voi
   // Give the renderer a moment to run the native paste pipeline
   await new Promise(r => setTimeout(r, 150));
 }
+
+/**
+ * Synthetic paste fallback (d58): CDP cannot drive the native paste
+ * shortcut (protocol-level boundary, S74/S75 verified on headless AND
+ * headful). This path synthesizes the paste event shape instead:
+ * ClipboardEvent('paste') with real DataTransfer + execCommand
+ * insertText (runs the REAL editing pipeline: input event, undo stack,
+ * React onChange compat). Event chain: paste (synthetic, isTrusted=
+ * false — boundary honestly noted) → input (real pipeline), zero
+ * keystrokes, instant delivery — far closer to human paste shape than
+ * typing 40+ chars at ~300ms each.
+ */
+export async function syntheticPaste(page: XBPage, selector: string, text: string): Promise<boolean> {
+  const result = await page.evaluate<boolean>(`
+    (function() {
+      const el = ${'{SELECTOR}'};
+      if (!el) return false;
+      el.focus();
+      if (el.value) { el.select(); document.execCommand('delete'); }
+      try {
+        const dt = new DataTransfer();
+        dt.setData('text/plain', ${JSON.stringify(text)});
+        el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+      } catch (e) { /* ClipboardEvent ctor guard */ }
+      const ok = document.execCommand('insertText', false, ${JSON.stringify(text)});
+      return ok === true && (el.value || '') === ${JSON.stringify(text)};
+    })()
+  `.replace('{SELECTOR}', selector));
+  return result === true;
+}
