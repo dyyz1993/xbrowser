@@ -12,13 +12,17 @@ interface ParsedSelectorArgs {
 }
 
 function parseSelectorFlags(args: string[], options: Record<string, unknown>): ParsedSelectorArgs {
-  const selector = (options.s || options.selector || options['selector']) as string | undefined;
-  const value = (options.v || options.value) as string | undefined;
+  // CLI 解析器可能把 -s/-v 当布尔 flag（true）而非取值，严格只收字符串，
+  // 非字符串时回退到位置参数（remaining），保证 `fill -s #kw -v v` 仍可用
+  const rawSelector = options.s ?? options.selector;
+  const rawValue = options.v ?? options.value;
+  const selector = typeof rawSelector === "string" ? normalizeSelector(rawSelector) : undefined;
+  const value = typeof rawValue === "string" ? rawValue : undefined;
 
   const remaining = args.filter((a) => !a.startsWith('-'));
 
   return {
-    selector: selector ? normalizeSelector(selector) : undefined,
+    selector,
     value,
     remaining,
   };
@@ -277,7 +281,13 @@ export async function handleBrowserCommand(
           outputError('Usage: xbrowser mouse <move|click|dblclick> <x> <y>\n       xbrowser mouse --action <action> --x <x> --y <y>');
         }
         cmdName = 'mouse';
-        params = { action, x, y, ...(options.button ? { button: options.button } : {}) };
+        // steps 必须透传（S58 事故：此处手工挑字段漏了 steps，--steps N 恒降级
+        // 为单步派发 —— 移动轨迹/速率伪装全部失效，且极难察觉（命令仍"成功"））
+        params = {
+          action, x, y,
+          ...(options.button ? { button: options.button } : {}),
+          ...(options.steps !== undefined ? { steps: Number(options.steps) } : {}),
+        };
         break;
       }
       case 'html':
