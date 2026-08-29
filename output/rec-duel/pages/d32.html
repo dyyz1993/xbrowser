@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D32 worker-env</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+</style>
+</head>
+<body>
+<h2>D32 — Worker 环境指纹</h2>
+<p>主线程伪装了，Worker 线程没有 —— init script 不进 Worker。UA/screen/canvas 在 Worker 侧裸奔。</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+var results = { worker: null, shared: null };
+function finishIfDone() {
+  if (results.worker === null || results.shared === null) return;
+  var checks = [];
+  // Worker 里的 UA 应与主线程一致
+  var mainUA = navigator.userAgent;
+  checks.push({ name: 'Worker UA 与主线程一致', ok: results.worker === mainUA || results.worker === 'ERR', detail: results.worker === mainUA ? '一致' : results.worker });
+  checks.push({ name: 'SharedWorker UA 与主线程一致', ok: results.shared === mainUA || results.shared === 'ERR', detail: results.shared === mainUA ? '一致' : results.shared });
+  // Worker 存在性
+  checks.push({ name: 'Worker 可用', ok: results.worker !== 'ERR' });
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks, results: results });
+  render(checks);
+}
+function render(checks) {
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + ' <code>' + (c.detail || '') + '</code></div>';
+  }).join('');
+}
+// Web Worker UA 检测
+try {
+  var blob = new Blob(["postMessage(navigator.userAgent)"]);
+  var w = new Worker(URL.createObjectURL(blob));
+  w.onmessage = function (e) { results.worker = e.data; w.terminate(); finishIfDone(); };
+  w.onerror = function () { results.worker = 'ERR'; finishIfDone(); };
+} catch (e) { results.worker = 'ERR'; finishIfDone(); }
+// SharedWorker 检测（headless 可能不支持）
+try {
+  var sb = new Blob(["onconnect = function(e) { e.ports[0].postMessage(navigator.userAgent); }"]);
+  var sw = new SharedWorker(URL.createObjectURL(sb));
+  sw.port.onmessage = function (e) { results.shared = e.data; finishIfDone(); };
+  sw.onerror = function () { results.shared = 'ERR'; finishIfDone(); };
+  setTimeout(function () { if (results.shared === null) { results.shared = 'TIMEOUT'; finishIfDone(); } }, 3000);
+} catch (e) { results.shared = 'ERR'; finishIfDone(); }
+setTimeout(finishIfDone, 5000);
+window.__outcome = function () { return JSON.stringify({ page: 'd32', log: window.__log }); };
+</script>
+</body>
+</html>
