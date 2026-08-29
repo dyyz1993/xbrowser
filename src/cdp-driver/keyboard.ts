@@ -102,11 +102,26 @@ export class XBKeyboardImpl implements XBKeyboard {
     await this.dispatchKeyEvent(params);
   }
 
-  async type(text: string, opts: { delay?: number } = {}): Promise<void> {
-    const delay = opts.delay ?? 0;
+  async type(text: string, opts: { delay?: number; stealth?: boolean } = {}): Promise<void> {
+    // 默认启用 stealth 三层节奏（fast/normal/pause 分布，d17 验证 CV>0.5）
+    const stealth = opts.stealth ?? process.env.XBROWSER_STEALTH !== 'off';
+    const fixedDelay = opts.delay ?? 0;
 
     for (const char of text) {
-      if (delay > 0) await sleep(delay);
+      if (fixedDelay > 0) {
+        await sleep(fixedDelay);
+      } else if (stealth) {
+        // 三层分布：22% 快速 / 60% 正常 / 18% 思考停顿
+        const roll = Math.random();
+        const cfg = STEALTH_CFG.typingRhythm;
+        if (roll < cfg.pauseProb) {
+          await sleep(stealthRand(cfg.pauseRange[0], cfg.pauseRange[1]));
+        } else if (roll < cfg.pauseProb + cfg.fastProb) {
+          await sleep(stealthRand(cfg.fastRange[0], cfg.fastRange[1]));
+        } else {
+          await sleep(stealthRand(cfg.normalRange[0], cfg.normalRange[1]));
+        }
+      }
 
       const mapping = resolveKeyMapping(char);
 

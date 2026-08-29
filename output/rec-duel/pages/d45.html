@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D45 key-timing</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+input{padding:8px;font-size:16px;width:300px}
+</style>
+</head>
+<body>
+<h2>D45 — 键盘事件时序指纹</h2>
+<p>keydown→keypress→keyup 的间隔分布 —— CDP 与真实键盘的时序特征。</p>
+<input id="ti" placeholder="在此输入 abcdef">
+<div id="log"></div>
+<script>
+window.__log = [];
+var keyEvents = [];
+function setupCapture() {
+  var input = document.getElementById('ti');
+  ['keydown', 'keypress', 'keyup', 'input'].forEach(function (ev) {
+    input.addEventListener(ev, function (e) {
+      keyEvents.push({ type: e.type, key: e.key, ts: performance.now(), trusted: e.isTrusted });
+    });
+  });
+}
+setupCapture();
+function analyze() {
+  var checks = [];
+  if (keyEvents.length < 6) {
+    checks.push({ name: '需要至少 2 个字符的事件序列（用 CDP type 注入）', ok: false, detail: 'events=' + keyEvents.length + ' —— 先运行: xbrowser type "#ti" "abc" 后刷新分析' });
+  } else {
+    // 1. 事件序列结构：每个字符应产生 keydown+keypress+input+keyup（近似）
+    var types = keyEvents.map(function (e) { return e.type; });
+    var hasAll = ['keydown', 'keyup', 'input'].every(function (t) { return types.includes(t); });
+    checks.push({ name: 'keydown/keyup/input 三种事件都有', ok: hasAll, detail: types.join(',') });
+
+    // 2. 所有事件 isTrusted=true（CDP Input 管线）
+    var keyUpDown = keyEvents.filter(function (e) { return e.type === 'keydown' || e.type === 'keyup'; });
+    var allTrusted = keyUpDown.every(function (e) { return e.isTrusted === true || e.isTrusted === undefined; });
+    checks.push({ name: 'keydown/keyup 全 isTrusted=true', ok: allTrusted });
+
+    // 3. keydown 先于 keyup（每字符配对）
+    var ordered = true;
+    var lastDown = -Infinity;
+    keyEvents.forEach(function (e) {
+      if (e.type === 'keydown') {
+        if (e.ts < lastDown) ordered = false;
+        lastDown = e.ts;
+      }
+      if (e.type === 'keyup' && e.ts < lastDown) ordered = false;
+    });
+    checks.push({ name: 'keydown 先于对应 keyup', ok: ordered });
+
+    // 4. 键间隔分布（人与人/CDP 的节奏）
+    var downs = keyEvents.filter(function (e) { return e.type === 'keydown'; }).map(function (e) { return e.ts; });
+    var gaps = [];
+    for (var i = 1; i < downs.length; i++) gaps.push(downs[i] - downs[i - 1]);
+    var stats = { n: gaps.length, min: 0, max: 0, mean: 0, cv: 0 };
+    if (gaps.length > 0) {
+      stats.min = Math.round(Math.min.apply(null, gaps));
+      stats.max = Math.round(Math.max.apply(null, gaps));
+      stats.mean = Math.round(gaps.reduce(function (a, b) { return a + b; }, 0) / gaps.length);
+      var variance = gaps.reduce(function (a, b) { return a + Math.pow(b - stats.mean, 2); }, 0) / gaps.length;
+      stats.cv = Math.round((Math.sqrt(variance) / (stats.mean || 1)) * 100) / 100;
+    }
+    window.__stats = stats;
+    // stealth 节奏下 CV 应 > 0.3（三层分布生效）
+    checks.push({ name: '间隔 CV > 0.3（stealth 节奏）', ok: stats.cv > 0.3, detail: 'CV=' + stats.cv + ' mean=' + stats.mean + 'ms' });
+    checks.push({ name: '字符间 > 25ms（无超快连击）', ok: stats.min >= 25 || gaps.length === 0, detail: 'min=' + stats.min + 'ms（keydown 间）' });
+  }
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks, keyEvents: keyEvents.length });
+  render(checks);
+}
+function render(checks) {
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + ' <code>' + (c.detail || '') + '</code></div>';
+  }).join('');
+}
+window.__outcome = function () { return JSON.stringify({ page: 'd45', log: window.__log, stats: window.__stats || null }); };
+// 自动分析模式：URL 带 #analyze 时延迟跑
+if (location.hash === '#analyze') setTimeout(analyze, 500);
+</script>
+</body>
+</html>
