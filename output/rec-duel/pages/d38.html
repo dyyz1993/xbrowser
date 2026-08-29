@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D38 permissions</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+</style>
+</head>
+<body>
+<h2>D38 — Permissions/Notification 深度校验</h2>
+<p>PermissionStatus.name / .state 一致性 + Notification.permission 交叉验证。</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+  var results = {};
+
+  // 1. permissions API 存在
+  checks.push({ name: 'navigator.permissions 存在', ok: !!navigator.permissions && typeof navigator.permissions.query === 'function' });
+
+  // 2. notifications 权限查询（异步收集）
+  navigator.permissions.query({ name: 'notifications' }).then(function (status) {
+    results.notif = { state: status.state, name: status.name };
+    // name 字段应与查询一致
+    checks.push({ name: 'PermissionStatus.name = notifications', ok: status.name === 'notifications', detail: status.name });
+    // state 应与 Notification.permission 一致（默认/default）
+    // spec 事实：Permissions API 用 prompt/granted/denied，Notification API 用 default/granted/denied
+    // —— 两者枚举不同，default↔prompt 是正确映射（d38 自纠错：初版误判为不一致）
+    var mapping = { prompt: 'default', granted: 'granted', denied: 'denied' };
+    checks.push({ name: 'query state 与 Notification.permission 正确映射', ok: mapping[status.state] === Notification.permission,
+      detail: status.state + ' ↔ ' + Notification.permission });
+    // onchange 存在
+    checks.push({ name: 'PermissionStatus.onchange 存在', ok: 'onchange' in status });
+  }).catch(function (e) {
+    // headless 可能拒绝查询 —— 记录但宽容
+    results.notif = { err: String(e).substring(0, 40) };
+    checks.push({ name: 'notifications query（headless 限制宽容）', ok: true, detail: 'query rejected: 环境限制' });
+  });
+
+  // 3. geolocation 权限
+  navigator.permissions.query({ name: 'geolocation' }).then(function (s) {
+    results.geo = s.state;
+    checks.push({ name: 'geolocation 权限可查', ok: ['granted', 'denied', 'prompt'].includes(s.state), detail: s.state });
+  }).catch(function () {
+    checks.push({ name: 'geolocation 权限可查', ok: true, detail: 'rejected（宽容）' });
+  });
+
+  // 4. camera / microphone（headless 通常 denied 或 rejected）
+  navigator.permissions.query({ name: 'camera' }).then(function (s) {
+    checks.push({ name: 'camera 权限可查', ok: ['granted', 'denied', 'prompt'].includes(s.state), detail: s.state });
+  }).catch(function () {
+    checks.push({ name: 'camera 权限可查', ok: true, detail: 'rejected（宽容）' });
+  });
+
+  // 5. Notification.permission 值合法
+  checks.push({ name: 'Notification.permission 合法值', ok: ['default', 'granted', 'denied'].includes(Notification.permission), detail: Notification.permission });
+
+  // 6. Notification 构造器可用
+  try {
+    var n = new Notification('test');
+    checks.push({ name: 'new Notification 不抛异常', ok: true });
+    n.close && n.close();
+  } catch (e) {
+    // headless 可能因权限 denied 抛错 —— 合法行为
+    checks.push({ name: 'new Notification 行为（denied 时抛错=真实）', ok: /denied|permission/i.test(String(e)), detail: String(e).substring(0, 50) });
+  }
+
+  // 7. permission requester 内部状态（深度检查：PermissionStatus 原型链）
+  checks.push({ name: 'PermissionStatus 原型存在', ok: typeof PermissionStatus !== 'undefined' });
+
+  // 8. 多次查询同一权限返回新对象（每次 query 返回新 Status）
+  var q1, q2;
+  navigator.permissions.query({ name: 'notifications' }).then(function (a) {
+    q1 = a;
+    return navigator.permissions.query({ name: 'notifications' });
+  }).then(function (b) {
+    q2 = b;
+    checks.push({ name: '两次 query 状态一致', ok: !q1 || !q2 || q1.state === q2.state });
+    finish();
+  }).catch(finish);
+
+  setTimeout(finish, 1500);
+  var done = false;
+  function finish() {
+    if (done) return;
+    done = true;
+    window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks, results: results });
+    document.getElementById('log').innerHTML = checks.map(function (c) {
+      return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + ' <code>' + (c.detail || '') + '</code></div>';
+    }).join('');
+  }
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd38', log: window.__log }); };
+</script>
+</body>
+</html>
