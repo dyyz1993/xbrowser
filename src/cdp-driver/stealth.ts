@@ -404,6 +404,14 @@ export function buildStealthInitScript(): string {
     '        return offer;});',
     '    };',
     '  }catch(e){}',
+    // 3d-2. performance.now precision clamp (d34): full-precision timestamps
+    //     (11 decimals) differ from site-isolation-clamped real Chrome (~100μs).
+    '  try{',
+    '    var _pn=performance.now.bind(performance);',
+    '    performance.now=function(){return Math.round(_pn()*10)/10;};',
+    '    var _pto=Object.getOwnPropertyDescriptor(Performance.prototype,"timeOrigin");',
+    '    if(_pto&&_pto.get){Object.defineProperty(performance,"timeOrigin",{get:function(){return _pto.get.call(performance);},configurable:true});}',
+    '  }catch(e){}',
     // 3d. Chrome object depth (d24): automation fakes usually only set
     //     window.chrome = {}; deep checks hit app.run/runtime/csi/loadTimes.
     '  try{',

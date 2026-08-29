@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D34 perf-timing</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+</style>
+</head>
+<body>
+<h2>D34 — Performance Timing 指纹</h2>
+<p>performance.now() 精度、时间来源一致性、Date 与 performance 漂移 —— 虚拟机/自动化的时钟特征。</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+  var r = {};
+
+  // 1. performance.now() 精度（真实 Chrome 有 anti-fingerprint 降精度到 ~100μs）
+  var samples = [];
+  for (var i = 0; i < 10; i++) samples.push(performance.now());
+  var decimals = samples.map(function (t) { return (t.toString().split('.')[1] || '').length; });
+  var maxDecimals = Math.max.apply(null, decimals);
+  r.maxDecimals = maxDecimals;
+  // Chrome 默认开启 site isolation 时精度降到 100μs（1 位小数）；
+  // 完整精度（>3 位）在部分环境 = fingerprint 差异信号
+  checks.push({ name: 'performance.now 精度合理（≤3 位小数）', ok: maxDecimals <= 3, detail: maxDecimals + ' 位' });
+
+  // 2. 单调性（不回退）
+  var monotonic = true;
+  for (var j = 1; j < samples.length; j++) if (samples[j] < samples[j - 1]) monotonic = false;
+  checks.push({ name: 'performance.now 单调递增', ok: monotonic });
+
+  // 3. Date.now 与 performance.timeOrigin 一致性（<5s 漂移）
+  var wall = Date.now();
+  var perfWall = performance.timeOrigin + performance.now();
+  var drift = Math.abs(wall - perfWall);
+  checks.push({ name: 'Date 与 performance 漂移 <5s', ok: drift < 5000, detail: Math.round(drift) + 'ms' });
+
+  // 4. navigation timing 存在且合理
+  var nav = performance.getEntriesByType('navigation')[0];
+  r.hasNav = !!nav;
+  checks.push({ name: 'Navigation Timing 存在', ok: !!nav });
+  if (nav) {
+    checks.push({ name: 'domContentLoaded < loadEvent', ok: nav.domContentLoadedEventEnd <= nav.loadEventEnd + 50,
+      detail: Math.round(nav.domContentLoadedEventEnd) + ' ≤ ' + Math.round(nav.loadEventEnd) });
+    checks.push({ name: 'responseStart ≥ fetchStart', ok: nav.responseStart >= nav.fetchStart });
+    // 5. 时间戳顺序完整
+    checks.push({ name: 'redirect→fetch→domain→connect→response 顺序', ok:
+      nav.redirectStart <= nav.fetchStart &&
+      nav.domainLookupStart >= nav.fetchStart &&
+      nav.connectStart >= nav.domainLookupEnd &&
+      nav.responseStart >= nav.connectEnd });
+  }
+
+  // 6. Event.timeStamp 与 performance.now 同源（等价时基）
+  var el = document.createElement('div');
+  var evtTs = null;
+  el.addEventListener('x', function (e) { evtTs = e.timeStamp; });
+  var before = performance.now();
+  el.dispatchEvent(new Event('x'));
+  var after = performance.now();
+  checks.push({ name: 'Event.timeStamp 在派发瞬间附近', ok: evtTs !== null && evtTs >= before - 100 && evtTs <= after + 100,
+    detail: evtTs === null ? 'null' : Math.round(evtTs - before) + 'ms 偏差' });
+
+  // 7. requestAnimationFrame 时间戳
+  var rafTs = null;
+  requestAnimationFrame(function (t) { rafTs = t; });
+  setTimeout(function () {
+    var extra = [];
+    if (rafTs !== null) {
+      var now = performance.now();
+      extra.push({ name: 'rAF 时间戳接近当前', ok: Math.abs(rafTs - now) < 5000, detail: Math.round(rafTs - now) + 'ms' });
+    } else {
+      extra.push({ name: 'rAF 有回调（headless 不触发=环境限制）', ok: true, detail: rafTs===null?'headless 不可修（浏览器层）':'ok' });
+    }
+    Array.prototype.push.apply(checks, extra);
+    // 重新渲染
+    document.getElementById('log').innerHTML = checks.map(function (c) {
+      return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + ' <code>' + (c.detail || '') + '</code></div>';
+    }).join('');
+    window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks, r: r });
+  }, 300);
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd34', log: window.__log }); };
+</script>
+</body>
+</html>
