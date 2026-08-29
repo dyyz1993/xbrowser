@@ -183,6 +183,36 @@ export class XBKeyboardImpl implements XBKeyboard {
     );
   }
 
+  /**
+   * Navigation key press using CDP type 'keyDown' (NOT rawKeyDown).
+   * rawKeyDown skips browser default actions — select option navigation,
+   * arrow-key scrolling etc. never fire under it (d53: ArrowDown on a
+   * focused <select> left the value unchanged). keyDown carries the
+   * default action.
+   */
+  async pressNav(key: string): Promise<void> {
+    const mapping = resolveKeyMapping(key);
+    const downParams: Record<string, unknown> = {
+      type: 'keyDown',
+      key: mapping.key,
+      code: mapping.code,
+    };
+    if (mapping.keyCode) {
+      downParams.windowsVirtualKeyCode = mapping.keyCode;
+      downParams.nativeVirtualKeyCode = mapping.keyCode;
+    }
+    await this.dispatchKeyEvent(downParams);
+    if (process.env.XBROWSER_STEALTH !== 'off') {
+      await sleep(stealthRand(...STEALTH_CFG.keyPressDuration));
+    }
+    await this.dispatchKeyEvent({
+      type: 'keyUp',
+      key: mapping.key,
+      code: mapping.code,
+      ...(mapping.keyCode ? { windowsVirtualKeyCode: mapping.keyCode } : {}),
+    });
+  }
+
   private async dispatchKeyEvent(params: Record<string, unknown>): Promise<void> {
     await this.conn.send('Input.dispatchKeyEvent', params, this.sessionId);
   }

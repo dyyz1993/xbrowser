@@ -206,12 +206,45 @@ export class XBLocatorImpl implements XBLocator {
 
     const values = Array.isArray(value) ? value : [value];
 
-    // Use evaluate to set the select value
-    const selected = await this.page.evaluate<string[]>(`
+    // Resolve target option index（d53）：键盘导航需要 index 与最短路径
+    const info = await this.page.evaluate<{ cur: number; target: number; targetValue: string; multiple: boolean }>(`
       (function() {
         const el = ${this._q(this.selector)};
         if (!el || el.tagName !== 'SELECT') throw new Error('Not a select element');
+        const values = ${JSON.stringify(values)};
+        let target = -1, targetValue = '';
+        outer:
+        for (let i = 0; i < el.options.length; i++) {
+          const opt = el.options[i];
+          for (const v of values) {
+            const hit = typeof v === 'object'
+              ? (v.label !== undefined ? opt.label === v.label
+                 : v.value !== undefined ? opt.value === v.value
+                 : opt.index === v.index)
+              : (opt.value === v || opt.label === v);
+            if (hit) { target = i; targetValue = opt.value; break outer; }
+          }
+        }
+        return { cur: el.selectedIndex, target: target, targetValue: targetValue, multiple: el.multiple };
+      })()
+    `);
+    if (info.target < 0) {
+      throw new Error(`Option not found: ${JSON.stringify(values)}`);
+    }
 
+    // Click-focus + 设值（d53）：headless 的 <select> 原生键盘导航对 CDP
+    // 键盘事件免疫（rawKeyDown/keyDown/字母键实测全部不动值 —— Playwright/
+    // Puppeteer 生态同样如此，trusted change 在 headless 无法产生）。本实现
+    // 相比裸 evaluate 的增强：先 click-focus 补齐真实前置链
+    // （pointerdown→mousedown→focus），change 为合成（生态限制）。
+    // keyboard.pressNav（keyDown 类型）保留在 API 层供其他控件默认行为用。
+    if (!info.multiple) {
+      await this.click({ timeout: 5000 });
+    }
+
+    const selected = await this.page.evaluate<string[]>(`
+      (function() {
+        const el = ${this._q(this.selector)};
         const values = ${JSON.stringify(values)};
         const selectedValues = [];
 
