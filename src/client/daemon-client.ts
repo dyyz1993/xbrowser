@@ -91,6 +91,18 @@ async function rpcCall<T = unknown>(
         res.on('data', (c: Buffer) => chunks.push(c));
         res.on('end', () => {
           try {
+            // 非 2xx = daemon 层错误（等价旧 fetch 版的 !resp.ok 检查 ——
+            // 迁移原生 http 时遗漏，body 里的 { error } 才有诊断价值）
+            const code = (res as { statusCode?: number }).statusCode ?? 200;
+            if (code >= 400) {
+              let detail = `HTTP ${code}`;
+              try {
+                const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as { error?: string };
+                if (body?.error) detail = body.error;
+              } catch { /* body 非 JSON */ }
+              reject(new Error(`Daemon error: ${detail}`));
+              return;
+            }
             const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')) as T & { error?: string };
             if (parsed && typeof parsed.error === 'string' && Object.keys(parsed).length === 1) {
               reject(new Error(`Daemon error: ${parsed.error}`));

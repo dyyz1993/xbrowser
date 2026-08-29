@@ -4,6 +4,62 @@ import { forwardNetworkList, forwardNetworkClear } from '../../src/client/daemon
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
+// R104 后 rpcCall 走原生 http.request（undici 300s 根治）——模块级 mock
+const __httpState = {
+  lastBody: '' as string,
+  responseBody: '{}' as string,
+  statusCode: 200 as number,
+};
+vi.mock('node:http', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('node:http')>();
+  return {
+    ...orig,
+    request: vi.fn((...args: unknown[]) => {
+      // 兼容 (opts, cb) 签名
+      const cb = args[args.length - 1] as (res: unknown) => void;
+      const req = {
+        setTimeout: vi.fn(),
+        on: vi.fn(),
+        end(body?: string) {
+          __httpState.lastBody = body ?? '';
+          // 以 fetch 兼容格式记录调用（旧断言读 mockFetch.mock.calls）
+          mockFetch.mock.calls.push([
+            'http://localhost:9224/rpc',
+            { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: __httpState.lastBody },
+          ]);
+        },
+      } as unknown as NodeJS.ReadableStream & { end(b?: string): void };
+      const res = {
+        statusCode: (() => {
+          // 桥接：mockFetch impl 的 ok:false → 500（rpcCall 的 statusCode 检查用）
+          const impl = mockFetch.getMockImplementation();
+          void impl;
+          return __httpState.statusCode ?? 200;
+        })(),
+        on: (ev: string, fn: (d?: Buffer) => void) => {
+          if (ev === 'data') setTimeout(async () => {
+            // 桥接：从 mockFetch 当前 implementation 取响应（旧测试用它定义 JSON）
+            try {
+              const impl = mockFetch.getMockImplementation();
+              if (impl) {
+                const r = await impl('http://localhost:9224/rpc', {});
+                const j = r && typeof r.json === 'function' ? await r.json() : r;
+                fn(Buffer.from(JSON.stringify(j)));
+                return;
+              }
+            } catch { /* fallthrough */ }
+            fn(Buffer.from(__httpState.responseBody));
+          }, 0);
+          if (ev === 'end') setTimeout(() => fn(), 5);
+        },
+      };
+      if (typeof cb === 'function') setTimeout(() => cb(res), 0);
+      return req;
+    }),
+  };
+});
+
+
 vi.mock('../../src/daemon/daemon.js', () => ({
   startDaemonProcess: vi.fn().mockRejectedValue(new Error('no daemon in test')),
   getDaemonConfig: vi.fn(),
@@ -15,6 +71,7 @@ vi.mock('../../src/daemon/daemon.js', () => ({
 describe('forwardNetworkList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    __httpState.statusCode = 200;
     mockFetch.mockImplementation((url: string) => {
       if (url.includes('/health')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
@@ -80,6 +137,7 @@ describe('forwardNetworkList', () => {
   });
 
   it('should throw on non-OK response', async () => {
+    __httpState.statusCode = 500;  // 桥接 ok:false → 原生 http 的 statusCode
     mockFetch.mockImplementation((url: string) => {
       if (url.includes('/health')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
@@ -90,7 +148,7 @@ describe('forwardNetworkList', () => {
       });
     });
 
-    await expect(forwardNetworkList('s1')).rejects.toThrow('Daemon error: Internal Server Error');
+    await expect(forwardNetworkList('s1')).rejects.toThrow('Daemon error: HTTP 500');
   });
 
   it('should surface the specific error from body, not the generic statusText', async () => {
@@ -168,6 +226,7 @@ describe('forwardNetworkList', () => {
 describe('forwardNetworkClear', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    __httpState.statusCode = 200;
     mockFetch.mockImplementation((url: string) => {
       if (url.includes('/health')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
@@ -213,6 +272,7 @@ describe('forwardNetworkClear', () => {
   });
 
   it('should throw on non-OK response', async () => {
+    __httpState.statusCode = 500;  // 桥接 ok:false → 原生 http 的 statusCode
     mockFetch.mockImplementation((url: string) => {
       if (url.includes('/health')) {
         return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'ok' }) });
@@ -223,6 +283,6 @@ describe('forwardNetworkClear', () => {
       });
     });
 
-    await expect(forwardNetworkClear('s1')).rejects.toThrow('Daemon error: Bad Gateway');
+    await expect(forwardNetworkClear('s1')).rejects.toThrow('Daemon error: HTTP 500');
   });
 });
