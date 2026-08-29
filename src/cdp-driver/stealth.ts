@@ -263,7 +263,7 @@ export function buildStealthInitScript(): string {
     '      return f.call(this,new Proxy(e,{get:function(k,p){',
     '        if(p==="sourceCapabilities")return fc;',
     '        if(p==="isTrusted")return k.isTrusted;',
-    '        if((p==="clientX"||p==="clientY")&&k.type==="click"&&Number.isFinite(k[p])){',
+    '        if((p==="clientX"||p==="clientY")&&k.type==="click"&&Number.isInteger(k[p])&&k.isTrusted===true){',
     '          var _f=((k.timeStamp||Date.now())%89)/89*0.7+0.15;',
     '          return k[p]+_f;',
     '        }',
@@ -415,7 +415,7 @@ export function buildStealthInitScript(): string {
     // 4. onclick prototype hijack (dual-stream consistency)
     '  var _ba=function(k,p){',
     '    if(p==="isTrusted")return k.isTrusted;',
-    '    if((p==="clientX"||p==="clientY")&&k.type==="click"&&Number.isFinite(k[p])){',
+    '    if((p==="clientX"||p==="clientY")&&k.type==="click"&&Number.isInteger(k[p])&&k.isTrusted===true){',
     '      var _f=((k.timeStamp||Date.now())%89)/89*0.7+0.15;return k[p]+_f;',
     '    }',
     '    var v=Reflect.get(k,p);return typeof v==="function"?v.bind(k):v;',

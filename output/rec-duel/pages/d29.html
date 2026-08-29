@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D29 over-spoof</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+</style>
+</head>
+<body>
+<h2>D29 — 过度伪装备扫</h2>
+<p>d28 的思路推广：逐项检查"被伪装的值"是否在真实浏览器会出现不同值 —— 若检测方能制造差异场景而我们恒定不变，即暴露。</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+  var r = {};
+
+  // 1. sourceCapabilities：真实浏览器合成事件/多数真实事件为 null
+  var e1 = new MouseEvent('click');
+  r.syntheticSC = e1.sourceCapabilities;
+  checks.push({ name: '合成事件 sourceCapabilities === null', ok: e1.sourceCapabilities === null, detail: String(e1.sourceCapabilities).substring(0, 30) });
+
+  // 2. hasFocus 与 visibilityState 一致性：document.hidden=false 时 hasFocus 可 true；
+  //    但检测方用 Promise + setTimeout 在 blur 后测（headless 恒 focused 是已知特征但低危）
+  r.hasFocus = document.hasFocus();
+  r.hidden = document.hidden;
+  checks.push({ name: 'hasFocus 与 hidden 一致', ok: (r.hidden === false) || (r.hasFocus === false), detail: 'focus=' + r.hasFocus + ' hidden=' + r.hidden });
+
+  // 3. screen.width 与 window.outerWidth 的合理性（outerWidth ≤ screen.width）
+  r.screenW = screen.width;
+  r.outerW = window.outerWidth;
+  r.innerW = window.innerWidth;
+  checks.push({ name: 'outerWidth ≤ screen.width', ok: r.outerW <= r.screenW, detail: r.outerW + ' ≤ ' + r.screenW });
+  checks.push({ name: 'innerWidth ≤ outerWidth', ok: r.innerW <= r.outerW, detail: r.innerW + ' ≤ ' + r.outerW });
+
+  // 4. availHeight < height（任务栏/Dock 占用 —— 恒等也可疑）
+  r.screenH = screen.height;
+  r.availH = screen.availHeight;
+  checks.push({ name: 'availHeight ≤ height（且通常 <）', ok: r.availH <= r.screenH, detail: r.availH + ' / ' + r.screenH });
+
+  // 5. 事件坐标类型：真实 CDP 事件的 clientX 有小数概率（我们曾加浮点化）
+  //    检测方自己合成坐标为整数的 click —— 若我们给它加浮点，行为异常
+  var el = document.createElement('div');
+  var gotX = null;
+  el.addEventListener('click', function (ev) { gotX = ev.clientX; });
+  var ce = new MouseEvent('click', { clientX: 100, clientY: 100 });
+  el.dispatchEvent(ce);
+  r.syntheticX = gotX;
+  checks.push({ name: '合成事件坐标不被篡改（100 === 100）', ok: gotX === 100, detail: String(gotX) });
+
+  // 6. Battery charging 恒 true 检测（Level 1 且 charging 且不是笔记本 —— 可接受但记录）
+  try {
+    navigator.getBattery().then(function (b) {
+      r.charging = b.charging;
+      window.__log[window.__log.length - 1].battery = b.charging;
+      window.__recheck && window.__recheck();
+    });
+  } catch (e) {}
+
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks, r: r });
+  render(checks);
+}
+function render(checks) {
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + (c.detail ? ' <code>' + c.detail + '</code>' : '') + '</div>';
+  }).join('');
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd29', log: window.__log }); };
+</script>
+</body>
+</html>
