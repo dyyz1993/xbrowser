@@ -100,7 +100,9 @@ export class XBMouseImpl implements XBMouse {
     });
   }
 
-  async move(x: number, y: number, opts: { steps?: number } = {}): Promise<void> {
+  async move(x: number, y: number, opts: { steps?: number; stealth?: boolean } = {}): Promise<void> {
+    // stealth 模式下每个 move 点带轨迹延迟（人类移动 ≥8ms/点，d46 验证）
+    const stealth = opts.stealth ?? process.env.XBROWSER_STEALTH !== 'off';
     const steps = Math.max(1, opts.steps ?? 1);
     const fromX = this._x;
     const fromY = this._y;
@@ -108,6 +110,7 @@ export class XBMouseImpl implements XBMouse {
     const dy = y - fromY;
 
     for (let i = 1; i <= steps; i++) {
+      if (stealth) await sleep(sRand(8, 20));
       const t = i / steps;
       this._x = fromX + dx * t;
       this._y = fromY + dy * t;

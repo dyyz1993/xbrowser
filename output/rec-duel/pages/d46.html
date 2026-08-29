@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D46 drag-chain</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+#drop{width:200px;height:100px;border:2px dashed #2980b9;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#2980b9;margin:20px 0}
+</style>
+</head>
+<body>
+<h2>D46 — 拖拽事件序列指纹</h2>
+<p>pointerdown→pointermove→pointerup 链完整性 + dragstart/drop 事件配对。</p>
+<div id="drop">拖拽目标区</div>
+<div id="log"></div>
+<script>
+window.__log = [];
+var evChain = [];
+var dropZone = document.getElementById('drop');
+['pointerdown', 'pointermove', 'pointerup', 'dragstart', 'dragover', 'drop', 'dragend', 'mousedown', 'mousemove', 'mouseup'].forEach(function (ev) {
+  dropZone.addEventListener(ev, function (e) {
+    evChain.push({ type: e.type, ts: performance.now(), trusted: e.isTrusted, buttons: e.buttons, pointerId: e.pointerId });
+  });
+});
+window.__analyze = function () {
+  var checks = [];
+  var types = evChain.map(function (e) { return e.type; });
+
+  // 1. 基础序列：应有 pointerdown（CDP mouse 派生）
+  checks.push({ name: 'pointerdown 在序列中', ok: types.includes('pointerdown') });
+  checks.push({ name: 'pointerup 在序列中', ok: types.includes('pointerup') });
+
+  // 2. mousedown/mouseup 同步派生
+  checks.push({ name: 'mousedown 同步存在', ok: types.includes('mousedown') });
+  checks.push({ name: 'mouseup 同步存在', ok: types.includes('mouseup') });
+
+  // 3. isTrusted 全 true
+  var trusted = evChain.every(function (e) { return e.isTrusted === true || e.isTrusted === undefined; });
+  checks.push({ name: '全 isTrusted=true（宽容 undefined）', ok: trusted });
+
+  // 4. pointerdown 先于 pointerup
+  var pdIdx = types.indexOf('pointerdown');
+  var puIdx = types.indexOf('pointerup');
+  if (pdIdx >= 0 && puIdx >= 0) {
+    checks.push({ name: 'pointerdown 先于 pointerup', ok: pdIdx < puIdx });
+  }
+
+  // 5. 每个事件有时间戳（非零）
+  var hasTs = evChain.every(function (e) { return e.ts > 0; });
+  checks.push({ name: '事件有时间戳', ok: hasTs });
+
+  // 6. pointermove 间隔分析（如果有多个 move）
+  var moves = evChain.filter(function (e) { return e.type === 'mousemove'; });  // 只算 mousemove（pointermove 同步派发 ts 相同）
+  if (moves.length > 1) {
+    var gaps = [];
+    for (var i = 1; i < moves.length; i++) gaps.push(moves[i].ts - moves[i - 1].ts);
+    var minGap = Math.min.apply(null, gaps);
+    checks.push({ name: 'move 间隔 ≥ 5ms（非瞬移）', ok: minGap >= 5, detail: 'min=' + Math.round(minGap) + 'ms, moves=' + moves.length });
+  } else {
+    checks.push({ name: 'move 事件存在', ok: moves.length >= 1, detail: moves.length + ' 个 move' });
+  }
+
+  // 7. pointerId 一致（同一指针）
+  var pids = evChain.filter(function (e) { return e.pointerId !== undefined; }).map(function (e) { return e.pointerId; });
+  var uniquePids = new Set(pids);
+  checks.push({ name: 'pointerId 一致', ok: uniquePids.size <= 1, detail: [...uniquePids].join(',') });
+
+  // 8. buttons 语义（down 时 buttons=1，up 时 buttons=0）
+  var pd = evChain.find(function (e) { return e.type === 'pointerdown'; });
+  var pu = evChain.find(function (e) { return e.type === 'pointerup'; });
+  if (pd && pu) {
+    checks.push({ name: 'down buttons=1, up buttons=0', ok: pd.buttons === 1 && pu.buttons === 0,
+      detail: 'down=' + pd.buttons + ' up=' + pu.buttons });
+  }
+
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks, chainLen: evChain.length });
+  render(checks);
+};
+function render(checks) {
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + ' <code>' + (c.detail || '') + '</code></div>';
+    }).join('');
+}
+window.__outcome = function () { return JSON.stringify({ page: 'd46', log: window.__log, chain: evChain.length }); };
+</script>
+</body>
+</html>
