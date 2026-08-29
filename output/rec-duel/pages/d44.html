@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D44 mq-consistency</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+</style>
+</head>
+<body>
+<h2>D44 — 媒体特性反向一致性</h2>
+<p>matchMedia 与 CSS @media 的结果必须一致 —— 伪造 matchMedia 而不伪造 CSS 评估会穿帮。</p>
+<div id="log"></div>
+<style id="probe-css">
+.mq-probe { display: none; }
+@media (prefers-color-scheme: dark) { #css-dark { display: block; } }
+@media (prefers-color-scheme: light) { #css-light { display: block; } }
+@media (color-gamut: p3) { #css-p3 { display: block; } }
+@media (min-resolution: 2dppx) { #css-2x { display: block; } }
+@media (hover: hover) { #css-hover { display: block; } }
+</style>
+<div id="css-dark" class="mq-probe">CSS: dark</div>
+<div id="css-light" class="mq-probe">CSS: light</div>
+<div id="css-p3" class="mq-probe">CSS: p3</div>
+<div id="css-2x" class="mq-probe">CSS: 2x</div>
+<div id="css-hover" class="mq-probe">CSS: hover</div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+
+  // 一致性对：matchMedia vs CSS @media 应用结果
+  var pairs = [
+    { name: 'dark 模式', mq: matchMedia('(prefers-color-scheme: dark)').matches, css: document.getElementById('css-dark').style.display !== 'none' && getComputedStyle(document.getElementById('css-dark')).display !== 'none' },
+    { name: 'light 模式', mq: matchMedia('(prefers-color-scheme: light)').matches, css: getComputedStyle(document.getElementById('css-light')).display !== 'none' },
+    { name: 'color-gamut p3', mq: matchMedia('(color-gamut: p3)').matches, css: getComputedStyle(document.getElementById('css-p3')).display !== 'none' },
+    { name: 'min-resolution 2x', mq: matchMedia('(min-resolution: 2dppx)').matches, css: getComputedStyle(document.getElementById('css-2x')).display !== 'none' },
+    { name: 'hover', mq: matchMedia('(hover: hover)').matches, css: getComputedStyle(document.getElementById('css-hover')).display !== 'none' },
+  ];
+
+  pairs.forEach(function (p) {
+    checks.push({ name: p.name + '：matchMedia(' + p.mq + ') = CSS(' + p.css + ')', ok: p.mq === p.css,
+      detail: p.mq === p.css ? '一致 ✓' : 'mq=' + p.mq + ' css=' + p.css + ' 不一致！' });
+  });
+
+  // dark/light 互斥
+  var isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+  var isLight = matchMedia('(prefers-color-scheme: light)').matches;
+  checks.push({ name: 'dark/light 互斥', ok: isDark !== isLight, detail: 'dark=' + isDark + ' light=' + isLight });
+
+  // DPR 与 min-resolution 一致
+  var dpr = window.devicePixelRatio;
+  var mq2x = matchMedia('(min-resolution: 2dppx)').matches;
+  checks.push({ name: 'DPR(' + dpr + ') 与 2dppx(' + mq2x + ') 一致', ok: (dpr >= 2) === mq2x });
+
+  // matchMedia 的 toString
+  checks.push({ name: 'matchMedia toString = native', ok: /\[native code\]/.test(window.matchMedia.toString()) });
+
+  // MediaQueryList 结构
+  var mql = matchMedia('(prefers-color-scheme: dark)');
+  checks.push({ name: 'MediaQueryList instanceof', ok: mql instanceof MediaQueryList });
+  checks.push({ name: 'mql.media 字符串保持', ok: mql.media === '(prefers-color-scheme: dark)', detail: mql.media });
+  checks.push({ name: 'addEventListener 可用', ok: typeof mql.addEventListener === 'function' });
+
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks });
+  render(checks);
+}
+function render(checks) {
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + ' <code>' + (c.detail || '') + '</code></div>';
+  }).join('');
+}
+setTimeout(check, 300);
+window.__outcome = function () { return JSON.stringify({ page: 'd44', log: window.__log }); };
+</script>
+</body>
+</html>
