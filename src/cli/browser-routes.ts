@@ -11,6 +11,38 @@ interface ParsedSelectorArgs {
   remaining: string[];
 }
 
+/**
+ * Schema-driven param completion: for every key in the command's zod shape,
+ * copy it from CLI options when the hand-built params lack it. Fixes the
+ * three-time silent-drop pattern (mouse.steps S58, type.delay S60) at the
+ * root — hand-picked field lists can no longer silently drop schema fields.
+ */
+function autoCompleteParams(
+  cmdName: string,
+  params: Record<string, unknown>,
+  options: Record<string, unknown>,
+): Record<string, unknown> {
+  try {
+    const cmd = getCommand(cmdName);
+    if (!cmd?.parameters) return params;
+    const schema = asZodSchema(cmd.parameters);
+    const shape = (schema?.shape ??
+      (schema?._def as Record<string, unknown> | undefined)?.shape) as
+      Record<string, unknown> | undefined;
+    if (!shape) return params;
+    for (const key of Object.keys(shape)) {
+      if (params[key] !== undefined) continue;
+      const v = options[key];
+      if (v === undefined || v === true && key === 'json' || key === 'yaml') continue;
+      if (typeof v === 'string' && v === '') continue;
+      params[key] = v;
+    }
+    return params;
+  } catch {
+    return params;
+  }
+}
+
 function parseSelectorFlags(args: string[], options: Record<string, unknown>): ParsedSelectorArgs {
   // CLI 解析器可能把 -s/-v 当布尔 flag（true）而非取值，严格只收字符串，
   // 非字符串时回退到位置参数（remaining），保证 `fill -s #kw -v v` 仍可用
@@ -502,6 +534,14 @@ export async function handleBrowserCommand(
   if (target) {
     params = { ...params, _target: target };
   }
+
+  // Schema 驱动参数兜底（S61，三连丢参的系统性修复）：上面各 case 手工挑
+  // 字段构造 params，历史上漏过 mouse.steps / type.delay（命令"成功"但参数
+  // 静默失效，极难察觉）。这里对照命令 zod schema 的 shape，把 options 中
+  // 存在且 schema 认识、但 params 尚缺的字段自动补上 —— 以后 schema 加字段
+  // 自动透传，手工构造漏掉也有兜底。全局 CLI flag（session/cdp/json/yaml/
+  // tab/target…）不在命令 schema 里，天然不会被误补。
+  params = autoCompleteParams(cmdName, params, options);
 
 	  const tabIndex = options.tab as string | undefined;
 	  if (tabIndex !== undefined) {
