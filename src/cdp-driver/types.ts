@@ -263,6 +263,8 @@ export interface XBKeyboard {
   press(key: string, opts?: { delay?: number }): Promise<void>;
   /** Navigation key with CDP 'keyDown' type (carries browser default actions) */
   pressNav(key: string): Promise<void>;
+  /** Shortcut combo (modifier+key) with explicit per-event modifiers bitmask */
+  pressCombo(key: string, modifier: 'Meta' | 'Control' | 'Alt' | 'Shift'): Promise<void>;
   down(key: string): Promise<void>;
   up(key: string): Promise<void>;
   type(text: string, opts?: { delay?: number; stealth?: boolean }): Promise<void>;

@@ -213,6 +213,27 @@ export class XBKeyboardImpl implements XBKeyboard {
     });
   }
 
+  /**
+   * Shortcut combo press (modifier+key) with explicit per-event modifiers
+   * bitmask — plain down(mod)+press(key) inserts the raw character because
+   * CDP modifiers are per-event fields, not session state (d56: Meta,v
+   * typed a literal 'v'). keyDown type carries the default action so the
+   * browser's shortcut dispatcher sees the combo (e.g. native paste).
+   */
+  async pressCombo(key: string, modifier: 'Meta' | 'Control' | 'Alt' | 'Shift'): Promise<void> {
+    const MODBIT: Record<string, number> = { Alt: 1, Control: 2, Meta: 4, Shift: 8 };
+    const m = resolveKeyMapping(modifier);
+    const k = resolveKeyMapping(key);
+    const bits = MODBIT[modifier] ?? 0;
+    await this.dispatchKeyEvent({ type: 'rawKeyDown', key: m.key, code: m.code, ...(m.keyCode ? { windowsVirtualKeyCode: m.keyCode } : {}), modifiers: bits });
+    await this.dispatchKeyEvent({ type: 'keyDown', key: k.key, code: k.code, ...(k.keyCode ? { windowsVirtualKeyCode: k.keyCode } : {}), modifiers: bits });
+    if (process.env.XBROWSER_STEALTH !== 'off') {
+      await sleep(stealthRand(...STEALTH_CFG.keyPressDuration));
+    }
+    await this.dispatchKeyEvent({ type: 'keyUp', key: k.key, code: k.code, ...(k.keyCode ? { windowsVirtualKeyCode: k.keyCode } : {}), modifiers: bits });
+    await this.dispatchKeyEvent({ type: 'keyUp', key: m.key, code: m.code, ...(m.keyCode ? { windowsVirtualKeyCode: m.keyCode } : {}), modifiers: 0 });
+  }
+
   private async dispatchKeyEvent(params: Record<string, unknown>): Promise<void> {
     await this.conn.send('Input.dispatchKeyEvent', params, this.sessionId);
   }

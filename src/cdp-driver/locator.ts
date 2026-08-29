@@ -93,8 +93,26 @@ export class XBLocatorImpl implements XBLocator {
     await waitForActionable(this.page, this.selector, opts);
     await scrollIntoView(this.page, this.selector);
 
-    // Stealth fill: click focus + keyboard type
+    // Stealth fill: click focus + keyboard type / paste (d56)
     await this.click({ ...opts });
+    // 长文本粘贴路径（d56）：人类长文本（≥40 字符）80%+ 用粘贴 ——
+    // trusted paste 事件 + 整段瞬达。逐字打 40+ 字符的每字符 ~300ms
+    // 节奏本身是指纹。OS 剪贴板 + 平台粘贴组合键（原生粘贴管线）。
+    if (
+      process.env.XBROWSER_STEALTH !== 'off' &&
+      value.length >= 40 &&
+      process.env.XBROWSER_FILL_TYPE !== 'type'
+    ) {
+      try {
+        const { pasteViaClipboard } = await import('../utils/clipboard.js');
+        await pasteViaClipboard(this.page, value);
+        // 验证粘贴落地（值可能被 input mask 拦截），失败 fallback 打字
+        const got = await this.page.evaluate<string>(
+          `(function(){ const el = ${this._q(this.selector)}; return el ? (el.value || '') : ''; })()`,
+        );
+        if (got === value) return;
+      } catch { /* fall through to typing */ }
+    }
     await this.page.keyboard.type(value, { stealth: true });
     return;
     // Legacy path (unreachable but kept for reference):
