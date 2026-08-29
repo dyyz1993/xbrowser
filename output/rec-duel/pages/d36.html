@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D36 stack-format</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+</style>
+</head>
+<body>
+<h2>D36 — Error 堆栈指纹</h2>
+<p>堆栈格式/来源/行号特征 —— 注入的 hook 会在堆栈里留下 CDP 痕迹（&lt;anonymous&gt; vs eval）。</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+  var r = {};
+
+  // 1. Error 基础
+  var e = new Error('probe');
+  checks.push({ name: 'Error.stack 非空', ok: !!e.stack && e.stack.length > 20 });
+  checks.push({ name: 'stack 含 Error: probe', ok: e.stack.includes('Error: probe') });
+
+  // 2. 堆栈行来源格式（真实页面 = 文件 URL 或行号）
+  var firstLine = (e.stack.split('\n')[1] || '');
+  r.firstFrame = firstLine.substring(0, 80);
+  checks.push({ name: '首帧含 @ 或 at', ok: /@|at\s/.test(firstLine) });
+
+  // 3. 不应含 CDP 注入痕迹
+  var hasCDP = /__xb|__xbrowser|stealth|CDP-Guard/i.test(e.stack);
+  checks.push({ name: '堆栈无注入痕迹', ok: !hasCDP });
+
+  // 4. eval 内堆栈含 eval 来源标识
+  var evalErr = null;
+  try { eval('(function(){ throw new Error("inner") })()'); } catch (ex) { evalErr = ex; }
+  if (evalErr) {
+    checks.push({ name: 'eval 堆栈含 eval 标识', ok: /eval/.test(evalErr.stack) });
+  }
+
+  // 5. 嵌套函数的堆栈深度正确
+  function lvl3() { return new Error('deep').stack.split('\n').length; }
+  function lvl2() { return lvl3(); }
+  function lvl1() { return lvl2(); }
+  var depth = lvl1();
+  r.stackDepth = depth;
+  checks.push({ name: '嵌套堆栈 ≥4 行', ok: depth >= 4, detail: depth + ' 行' });
+
+  // 6. Error.prepareStackTrace 可用（V8 特性）
+  var origPrepare = Error.prepareStackTrace;
+  var customStack = null;
+  Error.prepareStackTrace = function (err, frames) { return frames.length + ' frames'; };
+  try { customStack = new Error().stack; } catch (ex) {}
+  Error.prepareStackTrace = origPrepare;
+  checks.push({ name: 'prepareStackTrace 可用', ok: customStack !== null && /\d+ frames/.test(customStack || ''), detail: customStack });
+
+  // 7. stack 属性 getter 行为（赋值后可读）
+  var e2 = new Error('setter-test');
+  e2.stack = 'custom';
+  checks.push({ name: 'stack 可覆写', ok: e2.stack === 'custom' });
+
+  // 8. TypeError/RangeError 继承链
+  var te = new TypeError('t');
+  checks.push({ name: 'TypeError instanceof Error', ok: te instanceof Error && te instanceof TypeError });
+
+  // 9. window.onerror 能捕获（全局处理器）
+  var captured = false;
+  var origOnerror = window.onerror;
+  window.onerror = function () { captured = true; return true; };
+  setTimeout(function () { throw new Error('async-throw'); }, 0);
+  setTimeout(function () {
+    window.onerror = origOnerror;
+    checks.push({ name: 'window.onerror 捕获异步异常', ok: captured });
+    window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks, r: r });
+    render(checks);
+  }, 200);
+
+  render(checks);
+}
+function render(checks) {
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + ' <code>' + (c.detail || '') + '</code></div>';
+  }).join('');
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd36', log: window.__log }); };
+</script>
+</body>
+</html>
