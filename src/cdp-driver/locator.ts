@@ -127,13 +127,10 @@ export class XBLocatorImpl implements XBLocator {
     await waitForActionable(this.page, this.selector, { timeout: opts.timeout });
     await scrollIntoView(this.page, this.selector);
 
-    // Focus
-    await this.page.evaluate(`
-      (function() {
-        const el = ${this._q(this.selector)};
-        if (el) el.focus();
-      })()
-    `);
+    // Click-focus（d52）：JS el.focus() 是孤立 focus —— focus 事件纵然
+    // isTrusted=true，但无前置 pointerdown/mousedown 链，焦点行为链检测的
+    // 直接暴露。与 fill 一致用 stealth click 聚焦。
+    await this.click({ timeout: opts.timeout });
 
     await this.page.keyboard.press(key);
   }
@@ -142,13 +139,8 @@ export class XBLocatorImpl implements XBLocator {
     await waitForActionable(this.page, this.selector, { timeout: opts.timeout });
     await scrollIntoView(this.page, this.selector);
 
-    // Focus
-    await this.page.evaluate(`
-      (function() {
-        const el = ${this._q(this.selector)};
-        if (el) el.focus();
-      })()
-    `);
+    // Click-focus（d52，同 press）
+    await this.click({ timeout: opts.timeout });
 
     await this.page.keyboard.type(text, { delay: opts.delay });
   }
