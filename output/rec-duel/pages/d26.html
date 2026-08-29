@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D26 tz-geo</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+code{background:#f0f0f0;padding:1px 5px;border-radius:3px;font-size:12px}
+</style>
+</head>
+<body>
+<h2>D26 — 时区与地理一致性</h2>
+<p>Intl 时区 / Date 行为 / 屏幕物理特征 / 语言的交叉验证 —— 不一致的组合是代理/VPN/无头环境的高置信指纹。</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+  var detected = {};
+
+  // 1. Intl 时区
+  var tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  detected.tz = tz;
+
+  // 2. 时区偏移与 tz 一致性（Asia/Shanghai = UTC+8 = -480 分钟偏移）
+  var offset = new Date().getTimezoneOffset();
+  detected.offset = offset;
+  var tzOffsetMap = {
+    'Asia/Shanghai': -480, 'Asia/Hong_Kong': -480, 'Asia/Taipei': -480,
+    'America/New_York': 300, 'Europe/London': 0, 'Asia/Tokyo': -540,
+    'America/Los_Angeles': 480,
+  };
+  var expected = tzOffsetMap[tz];
+  checks.push({ name: '时区偏移与名称一致', ok: expected === undefined ? true : expected === offset,
+    detail: tz + ' → ' + offset + 'min' });
+
+  // 3. 语言与时区合理性（中文 + 非中国时区 = 可能代理；反之亦然）
+  var lang = (navigator.language || '').toLowerCase();
+  detected.lang = lang;
+  var zhTz = ['Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Taipei', 'Asia/Macau', 'Asia/Singapore'];
+  if (lang.startsWith('zh')) {
+    checks.push({ name: '中文语言 + 东亚时区（合理）', ok: zhTz.includes(tz), detail: lang + ' @ ' + tz });
+  } else {
+    checks.push({ name: '非中文语言（宽松检查）', ok: true });
+  }
+
+  // 4. Date.toString 的时区缩写
+  var ds = new Date().toString();
+  detected.dateStr = ds.match(/\(([^)]+)\)/) ? ds.match(/\(([^)]+)\)/)[1] : 'none';
+  var cnAbbr = ['CST', '中国标准时间', 'GMT+0800'];
+  if (zhTz.includes(tz)) {
+    checks.push({ name: 'Date.toString 时区缩写合理', ok: cnAbbr.some(function(a) { return detected.dateStr.includes(a); }),
+      detail: detected.dateStr.substring(0, 30) });
+  } else {
+    checks.push({ name: 'Date 缩写（非东亚，宽松）', ok: true });
+  }
+
+  // 5. DST 检测（中国无夏令时 —— 如果 tz 是 CST 但检测到 DST 就是伪造）
+  var jan = new Date(2026, 0, 1).getTimezoneOffset();
+  var jul = new Date(2026, 6, 1).getTimezoneOffset();
+  detected.dst = jan !== jul;
+  if (tz === 'Asia/Shanghai') {
+    checks.push({ name: '中国无 DST（1月=7月偏移）', ok: jan === jul, detail: jan + '/' + jul });
+  }
+
+  // 6. Date.now() 与 performance.timeOrigin 的一致性
+  var wallClock = Date.now();
+  var perfOrigin = performance.timeOrigin + performance.now();
+  var drift = Math.abs(wallClock - perfOrigin);
+  checks.push({ name: '系统时钟与性能时钟漂移 <5s', ok: drift < 5000, detail: Math.round(drift) + 'ms' });
+
+  // 7. Intl.DateTimeFormat 完整格式化（不抛异常）
+  try {
+    var fmt = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'full', timeStyle: 'long' });
+    fmt.format(new Date());
+    checks.push({ name: 'zh-CN 完整格式化可用', ok: true });
+  } catch (e) {
+    checks.push({ name: 'zh-CN 完整格式化可用', ok: false, detail: String(e).substring(0, 40) });
+  }
+
+  // 8. 24h vs 12h 格式（zh-CN 默认 24h）
+  var hourFmt = new Intl.DateTimeFormat('zh-CN', { hour: 'numeric', minute: 'numeric' });
+  var hourStr = hourFmt.format(new Date(2026, 0, 1, 15, 30));
+  detected.hourFmt = hourStr;
+  checks.push({ name: '时间格式无 AM/PM（zh-CN 24h）', ok: !/am|pm/i.test(hourStr), detail: hourStr });
+
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks, detected: detected });
+  render(checks);
+}
+function render(checks) {
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + (c.detail ? ' <code>' + c.detail + '</code>' : '') + '</div>';
+  }).join('');
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd26', log: window.__log }); };
+</script>
+</body>
+</html>
