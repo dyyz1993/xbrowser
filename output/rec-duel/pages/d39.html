@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D39 ws-network</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+</style>
+</head>
+<body>
+<h2>D39 — WebSocket/Network 信息泄漏</h2>
+<p>WebSocket 构造器行为、Resource Timing、navigator.connection —— 自动化环境的信息泄漏面。</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+  var r = {};
+
+  // 1. WebSocket 构造器
+  checks.push({ name: 'WebSocket 存在', ok: typeof WebSocket === 'function' });
+  var wsDesc = Object.getOwnPropertyDescriptor(WebSocket.prototype, 'url');
+  checks.push({ name: 'WebSocket.prototype.url getter', ok: !!wsDesc && 'get' in wsDesc });
+  try { var ws = new WebSocket('wss://echo.websocket.org'); r.wsUrl = ws.url; ws.close(); } catch (e) { r.wsUrl = 'err'; }
+  // 构造器参数
+  checks.push({ name: 'WebSocket.length = 1', ok: WebSocket.length === 1, detail: String(WebSocket.length) });
+
+  // 2. WebSocket READY_STATE 常量
+  checks.push({ name: 'CONNECTING=0 OPEN=1 CLOSING=2 CLOSED=3', ok:
+    WebSocket.CONNECTING === 0 && WebSocket.OPEN === 1 && WebSocket.CLOSING === 2 && WebSocket.CLOSED === 3 });
+
+  // 3. navigator.connection（NetworkInformation）
+  var conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  r.hasConnection = !!conn;
+  if (conn) {
+    checks.push({ name: 'connection.effectiveType 合法', ok: ['slow-2g', '2g', '3g', '4g'].includes(conn.effectiveType), detail: conn.effectiveType });
+    checks.push({ name: 'connection.downlink > 0', ok: conn.downlink > 0, detail: String(conn.downlink) });
+    checks.push({ name: 'connection.rtt ≥ 0', ok: conn.rtt >= 0, detail: String(conn.rtt) });
+  } else {
+    checks.push({ name: 'navigator.connection（headless 无=正常）', ok: true, detail: 'undefined（桌面 Chrome 可选）' });
+  }
+
+  // 4. Resource Timing API
+  var resources = performance.getEntriesByType('resource');
+  r.resourceCount = resources.length;
+  checks.push({ name: 'Resource Timing 存在', ok: typeof PerformanceResourceTiming !== 'undefined' });
+  if (resources.length > 0) {
+    var res = resources[0];
+    checks.push({ name: 'resource 有 duration', ok: res.duration >= 0 });
+    checks.push({ name: 'resource 有 initiatorType', ok: !!res.initiatorType, detail: res.initiatorType });
+  }
+
+  // 5. navigator.onLine
+  checks.push({ name: 'navigator.onLine = true', ok: navigator.onLine === true });
+
+  // 6. fetch/XHR 构造器形态
+  checks.push({ name: 'fetch.toString = native', ok: /\[native code\]/.test(fetch.toString()) });
+  checks.push({ name: 'XMLHttpRequest 存在', ok: typeof XMLHttpRequest === 'function' });
+  var xhr = new XMLHttpRequest();
+  checks.push({ name: 'XHR.readyState 常量（0-4）', ok: xhr.UNSENT === 0 && xhr.DONE === 4 });
+
+  // 7. RTCPeerConnection 存在性（WebRTC 通信面）
+  checks.push({ name: 'RTCPeerConnection 存在', ok: typeof RTCPeerConnection === 'function' });
+
+  // 8. navigator.sendBeacon
+  checks.push({ name: 'sendBeacon 存在', ok: typeof navigator.sendBeacon === 'function' });
+
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks, r: r });
+  render(checks);
+}
+function render(checks) {
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + ' <code>' + (c.detail || '') + '</code></div>';
+  }).join('');
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd39', log: window.__log }); };
+</script>
+</body>
+</html>
