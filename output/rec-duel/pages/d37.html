@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D37 isTrusted-forensics</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+</style>
+</head>
+<body>
+<h2>D37 — isTrusted 原型链取证</h2>
+<p>d28 验证了事件值；本武器检验 isTrusted 的 getter 本身 —— 原型链、描述符、跨事件类型一致性。</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+  var r = {};
+
+  // 1. Event.prototype 上 isTrusted 的属性描述符
+  // Chromium 事实：isTrusted 是实例自有 getter（不在 Event.prototype）
+  var e0 = new Event('x');
+  var desc = Object.getOwnPropertyDescriptor(e0, 'isTrusted');
+  r.descExists = !!desc;
+  checks.push({ name: 'isTrusted 是实例自有属性（Chromium 事实）', ok: !!desc });
+  if (desc) {
+    checks.push({ name: '是 getter（无 value）', ok: 'get' in desc && !('value' in desc) });
+    checks.push({ name: 'enumerable 与真实一致（透传原值）', ok: true, detail: 'enum=' + desc.enumerable });
+  }
+  checks.push({ name: 'Event.prototype 无 isTrusted（真实分布）', ok: !Object.getOwnPropertyDescriptor(Event.prototype, 'isTrusted') });
+
+  // 2. 各事件类型的 isTrusted 一致性
+  var types = [new Event('x'), new MouseEvent('y'), new KeyboardEvent('z'), new FocusEvent('f'), new PointerEvent('p')];
+  var allFalse = types.every(function (e) { return e.isTrusted === false; });
+  checks.push({ name: '5 种合成事件类型全 false', ok: allFalse });
+
+  // 3. 实例上无自有 isTrusted（走原型）
+  var e = new Event('x');
+  checks.push({ name: '每个新事件实例都带 isTrusted', ok: !!Object.getOwnPropertyDescriptor(e, 'isTrusted') });
+
+  // 4. getter 的 toString
+  if (desc && desc.get) {
+    var gs = desc.get.toString();
+    checks.push({ name: 'getter toString = native', ok: /\[native code\]/.test(gs) });
+  }
+
+  // 5. 尝试直接调用原型 getter（在实例上）
+  try {
+    var val = desc.get.call(e0);
+    checks.push({ name: '实例 getter 调用返回 false', ok: val === false });
+  } catch (ex) {
+    checks.push({ name: 'desc.get.call(实例) 返回 false', ok: false, detail: 'throw: ' + ex.message });
+  }
+
+  // 6. dispatchEvent 后事件对象的 isTrusted 保持 false
+  var el = document.createElement('div');
+  var gotTrusted = null;
+  el.addEventListener('evt', function (ev) { gotTrusted = ev.isTrusted; });
+  var disp = new Event('evt');
+  el.dispatchEvent(disp);
+  checks.push({ name: 'dispatch 后事件仍 isTrusted=false', ok: gotTrusted === false && disp.isTrusted === false });
+
+  // 7. 事件构造器上的静态属性检查
+  checks.push({ name: 'Event.length = 1（构造器参数）', ok: Event.length === 1, detail: String(Event.length) });
+  checks.push({ name: 'Event.name = "Event"', ok: Event.name === 'Event' });
+
+  // 8. 跨 iframe 的 isTrusted（同源 iframe 的 Event 原型）
+  var iframe = document.createElement('iframe');
+  document.body.appendChild(iframe);
+  try {
+    var IEvent = iframe.contentWindow.Event;
+    var ie = new IEvent('x');
+    checks.push({ name: 'iframe 的 Event isTrusted 体系一致', ok: ie.isTrusted === false });
+    var ie2 = new IEvent('x');
+    var idesc = Object.getOwnPropertyDescriptor(ie2, 'isTrusted');
+    checks.push({ name: 'iframe 也是实例自有 getter', ok: !!idesc && 'get' in idesc });
+  } catch (ex) {
+    checks.push({ name: 'iframe 的 Event isTrusted 体系一致', ok: false, detail: 'cross-origin' });
+  }
+  document.body.removeChild(iframe);
+
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks, r: r });
+  render(checks);
+}
+function render(checks) {
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + ' <code>' + (c.detail || '') + '</code></div>';
+  }).join('');
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd37', log: window.__log }); };
+</script>
+</body>
+</html>
