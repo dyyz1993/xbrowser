@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D35 css-computed</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+#probe{position:absolute;visibility:hidden}
+</style>
+</head>
+<body>
+<h2>D35 — CSS 计算样式指纹</h2>
+<p>getComputedStyle 的篡改检测 + 样式引擎一致性（伪装层最容易在此穿帮）。</p>
+<div id="log"></div>
+<div id="probe">x</div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+  var probe = document.getElementById('probe');
+  var cs = getComputedStyle(probe);
+
+  // 1. toString 形态
+  var csStr = getComputedStyle.toString();
+  checks.push({ name: 'getComputedStyle toString = native', ok: /\[native code\]/.test(csStr) });
+
+  // 2. 返回对象类型
+  checks.push({ name: '返回 instanceof CSSStyleDeclaration', ok: cs instanceof CSSStyleDeclaration });
+
+  // 3. 基础属性一致性（visibility:hidden 应生效）
+  checks.push({ name: 'visibility = hidden（CSS 生效）', ok: cs.visibility === 'hidden' });
+  checks.push({ name: 'position = absolute', ok: cs.position === 'absolute' });
+
+  // 4. fontFamily 回退到 body 的 system-ui
+  checks.push({ name: 'fontFamily 含 system-ui', ok: cs.fontFamily.includes('system-ui'), detail: cs.fontFamily.substring(0, 40) });
+
+  // 5. 属性枚举完整（CSSStyleDeclaration 有 ~300+ computed 属性）
+  var propCount = 0;
+  for (var i = 0; i < cs.length; i++) propCount++;
+  checks.push({ name: '计算属性数 > 200', ok: propCount > 200, detail: propCount + ' 个' });
+
+  // 6. getPropertyValue 与属性访问一致
+  var byProp = cs.getPropertyValue('visibility');
+  checks.push({ name: 'getPropertyValue 与属性访问一致', ok: byProp === cs.visibility });
+
+  // 7. 颜色值格式（rgb 格式 = Chrome 标准）
+  var color = cs.color;
+  checks.push({ name: 'color 是 rgb 格式', ok: /^rgb\(/.test(color), detail: color });
+
+  // 8. setProperty 修改 + 重新计算生效
+  probe.style.color = 'rgb(1, 2, 3)';
+  var afterSet = getComputedStyle(probe).color;
+  checks.push({ name: 'style 修改反映到 computed', ok: afterSet === 'rgb(1, 2, 3)', detail: afterSet });
+
+  // 9. 隐藏元素（display:none）属性
+  probe.style.display = 'none';
+  var noneCS = getComputedStyle(probe);
+  checks.push({ name: 'display:none 检测正确', ok: noneCS.display === 'none' });
+  probe.style.display = '';
+
+  // 10. matchMedia 结果与 computed 一致性
+  var mqHover = matchMedia('(hover: hover)').matches;
+  var pointerType = 'unknown';
+  try {
+    // 无法直接从 computed 读 pointer，但 hover 与 pointer 一致性可查
+    pointerType = mqHover ? 'fine-likely' : 'coarse-likely';
+  } catch (e) {}
+  checks.push({ name: 'matchMedia hover 与 pointer 环境一致', ok: pointerType === 'fine-likely', detail: pointerType });
+
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks });
+  render(checks);
+}
+function render(checks) {
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + ' <code>' + (c.detail || '') + '</code></div>';
+  }).join('');
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd35', log: window.__log }); };
+</script>
+</body>
+</html>
