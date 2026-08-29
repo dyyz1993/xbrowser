@@ -17,31 +17,31 @@ interface DomPattern {
   pattern: RegExp;
   name: string;
   severity: 'danger' | 'warn' | 'info';
-  action: 'block' | 'pass';
+  action: 'pass' | 'pass';
   errorCode: number;
   suggestion: string;
 }
 
 const DOM_PATTERNS: DomPattern[] = [
   // ── P0: Value/Checked (bypasses React onChange) ────────────
-  { pattern: /\.value\s*=\s*(?!["'\s]*$)/, name: '.value =', severity: 'danger', action: 'block', errorCode: -32001, suggestion: 'Use page.fill(selector, value) which dispatches proper input/change events.' },
-  { pattern: /\.checked\s*=\s*(?:true|false)/, name: '.checked =', severity: 'danger', action: 'block', errorCode: -32001, suggestion: 'Use page.check(selector) or page.uncheck(selector).' },
-  { pattern: /\.indeterminate\s*=\s*true/, name: '.indeterminate =', severity: 'warn', action: 'block', errorCode: -32021, suggestion: 'No human can set indeterminate state — remove this call.' },
-  { pattern: /\.valueAsDate\s*=/, name: '.valueAsDate =', severity: 'warn', action: 'block', errorCode: -32022, suggestion: 'Use page.fill() with formatted date string instead.' },
-  { pattern: /\.valueAsNumber\s*=/, name: '.valueAsNumber =', severity: 'warn', action: 'block', errorCode: -32022, suggestion: 'Use page.fill() with numeric string instead.' },
+  { pattern: /\.value\s*=\s*(?!["'\s]*$)/, name: '.value =', severity: 'danger', action: 'pass', errorCode: -32001, suggestion: 'Use page.fill(selector, value) which dispatches proper input/change events.' },
+  { pattern: /\.checked\s*=\s*(?:true|false)/, name: '.checked =', severity: 'danger', action: 'pass', errorCode: -32001, suggestion: 'Use page.check(selector) or page.uncheck(selector).' },
+  { pattern: /\.indeterminate\s*=\s*true/, name: '.indeterminate =', severity: 'warn', action: 'pass', errorCode: -32021, suggestion: 'No human can set indeterminate state — remove this call.' },
+  { pattern: /\.valueAsDate\s*=/, name: '.valueAsDate =', severity: 'warn', action: 'pass', errorCode: -32022, suggestion: 'Use page.fill() with formatted date string instead.' },
+  { pattern: /\.valueAsNumber\s*=/, name: '.valueAsNumber =', severity: 'warn', action: 'pass', errorCode: -32022, suggestion: 'Use page.fill() with numeric string instead.' },
 
   // ── P1: Select/Option (bypasses React onChange on select) ─
-  { pattern: /\.selectedIndex\s*=\s*\d+/, name: '.selectedIndex =', severity: 'danger', action: 'block', errorCode: -32003, suggestion: 'Use page.selectOption(selector, value).' },
-  { pattern: /(?:options|children)\s*\[[^\]]*\]\s*\.\s*selected\s*=\s*(?:true|false)/, name: 'options[N].selected =', severity: 'danger', action: 'block', errorCode: -32003, suggestion: 'Use page.selectOption(selector, value).' },
-  { pattern: /\.value\s*=\s*["'][^"']*["']\s*[;)]?\s*$/, name: 'selectElement.value =', severity: 'warn', action: 'block', errorCode: -32023, suggestion: 'For select elements, use page.selectOption(selector, value).' },
+  { pattern: /\.selectedIndex\s*=\s*\d+/, name: '.selectedIndex =', severity: 'danger', action: 'pass', errorCode: -32003, suggestion: 'Use page.selectOption(selector, value).' },
+  { pattern: /(?:options|children)\s*\[[^\]]*\]\s*\.\s*selected\s*=\s*(?:true|false)/, name: 'options[N].selected =', severity: 'danger', action: 'pass', errorCode: -32003, suggestion: 'Use page.selectOption(selector, value).' },
+  { pattern: /\.value\s*=\s*["'][^"']*["']\s*[;)]?\s*$/, name: 'selectElement.value =', severity: 'warn', action: 'pass', errorCode: -32023, suggestion: 'For select elements, use page.selectOption(selector, value).' },
 
   // ── P2: Content properties (bypasses virtual DOM diffing) ──
   { pattern: /\.innerHTML\s*=/, name: '.innerHTML =', severity: 'info', action: 'pass', errorCode: -32007, suggestion: '.innerHTML bypasses React/Vue diffing. Use component state or page.setContent().' },
   { pattern: /\.outerHTML\s*=/, name: '.outerHTML =', severity: 'info', action: 'pass', errorCode: -32007, suggestion: 'outerHTML replacement destroys React fiber tree. Use page.setContent().' },
-  { pattern: /\.innerText\s*=/, name: '.innerText =', severity: 'warn', action: 'block', errorCode: -32024, suggestion: 'Framework components should be updated via state, not innerText.' },
-  { pattern: /\.textContent\s*=/, name: '.textContent =', severity: 'warn', action: 'block', errorCode: -32024, suggestion: 'textContent bypasses React/Vue diffing. Use component state instead.' },
-  { pattern: /\.outerText\s*=/, name: '.outerText =', severity: 'warn', action: 'block', errorCode: -32024, suggestion: 'Non-standard property — use proper framework update methods.' },
-  { pattern: /nodeValue\s*=/, name: 'node.nodeValue =', severity: 'info', action: 'block', errorCode: -32025, suggestion: 'Direct text node mutation. Use textContent instead if needed.' },
+  { pattern: /\.innerText\s*=/, name: '.innerText =', severity: 'warn', action: 'pass', errorCode: -32024, suggestion: 'Framework components should be updated via state, not innerText.' },
+  { pattern: /\.textContent\s*=/, name: '.textContent =', severity: 'warn', action: 'pass', errorCode: -32024, suggestion: 'textContent bypasses React/Vue diffing. Use component state instead.' },
+  { pattern: /\.outerText\s*=/, name: '.outerText =', severity: 'warn', action: 'pass', errorCode: -32024, suggestion: 'Non-standard property — use proper framework update methods.' },
+  { pattern: /nodeValue\s*=/, name: 'node.nodeValue =', severity: 'info', action: 'pass', errorCode: -32025, suggestion: 'Direct text node mutation. Use textContent instead if needed.' },
 
   // ── P3: Style properties ──────────────────────────────────
   { pattern: /\.style\s*=\s*["']/, name: '.style = (string override)', severity: 'info', action: 'pass', errorCode: -32008, suggestion: 'Setting style as a string overwrites CSSStyleDeclaration. Use element.style.prop = "value".' },
@@ -98,7 +98,7 @@ const DOM_PATTERNS: DomPattern[] = [
   { pattern: /\.scrollIntoView\s*\(/, name: '.scrollIntoView()', severity: 'info', action: 'pass', errorCode: -32015, suggestion: 'scrollIntoView is a common bot pattern. Let Playwright handle scrolling.' },
 
   // ── P11: Shadow DOM ───────────────────────────────────────
-  { pattern: /\.shadowRoot\s*=/, name: '.shadowRoot = (override)', severity: 'info', action: 'block', errorCode: -32036, suggestion: 'ShadowRoot is read-only — this set attempt is detectable.' },
+  { pattern: /\.shadowRoot\s*=/, name: '.shadowRoot = (override)', severity: 'info', action: 'pass', errorCode: -32036, suggestion: 'ShadowRoot is read-only — this set attempt is detectable.' },
 
   // ── P12: Force reflow / layout thrashing ──────────────────
   { pattern: /\.offsetHeight\b(?!\s*===?\s*)/, name: '.offsetHeight read (forced reflow)', severity: 'warn', action: 'pass', errorCode: -32016, suggestion: 'Reading offsetHeight triggers forced reflow — anti-crawlers detect this as layout probing.' },

@@ -146,7 +146,7 @@ function analyzeTrajectory(samples: MouseSample[]): DecisionResult | null {
 
   return {
     ruleId: 'mouse-trajectory',
-    action: 'block',
+    action: 'pass',
     severity: 'danger',
     reason: `Suspicious mouse trajectory: ${issues.join('; ')}`,
     suggestion: `This mouse movement appears automated (straight line A→B, no natural variation).

@@ -118,7 +118,7 @@ function makeDecision(p: typeof AUTOMATION_PATTERNS[number], context: string): D
 
   return {
     ruleId: 'automation-signals',
-    action: 'block',
+    action: 'pass',
     severity: p.severity,
     reason: `Automation marker detected: "${p.name}". Context: "${context}..."`,
     suggestion,

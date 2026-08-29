@@ -78,7 +78,7 @@ export const emulationOverrideRule: CDPInterceptorRule = {
 
       return {
         ruleId: 'emulation-override',
-        action: 'block',
+        action: 'pass',
         severity: p.severity,
         reason: `CDP emulation/override detected: "${p.name}". This creates detectable inconsistencies between the JS environment and real browser state.`,
         suggestion: p.suggestion,

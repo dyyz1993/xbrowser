@@ -40,7 +40,7 @@ export const networkAnomalyRule: CDPInterceptorRule = {
           // Check for suspicious headers
           if (!headerStr.includes('sec-ch-ua')) {
             return {
-              ruleId: 'network-anomaly', action: 'block', severity: 'warn',
+              ruleId: 'network-anomaly', action: 'pass', severity: 'warn',
               reason: 'Network.setExtraHTTPHeaders called without Sec-CH-UA client hints — browser normally sends these.',
               suggestion: 'Modern browsers send Sec-CH-UA headers automatically. Adding custom headers without them creates detectable inconsistency.',
               errorCode: -32110,
@@ -53,7 +53,7 @@ export const networkAnomalyRule: CDPInterceptorRule = {
 
       case 'Network.clearBrowserCache': {
         return {
-          ruleId: 'network-anomaly', action: 'block', severity: 'warn',
+          ruleId: 'network-anomaly', action: 'pass', severity: 'warn',
           reason: 'Network.clearBrowserCache called — cache clearing mid-session is unnatural for real users.',
           suggestion: 'Avoid cache clearing during sessions. Start with a fresh profile if needed.',
           errorCode: -32111,
@@ -63,7 +63,7 @@ export const networkAnomalyRule: CDPInterceptorRule = {
 
       case 'Network.clearBrowserCookies': {
         return {
-          ruleId: 'network-anomaly', action: 'block', severity: 'warn',
+          ruleId: 'network-anomaly', action: 'pass', severity: 'warn',
           reason: 'Network.clearBrowserCookies called — wiping cookies mid-session is a scraper optimization.',
           suggestion: 'Cookies should only be cleared via normal browser flow (expiration, user action).',
           errorCode: -32112,
@@ -73,7 +73,7 @@ export const networkAnomalyRule: CDPInterceptorRule = {
 
       case 'Network.setBlockedURLs': {
         return {
-          ruleId: 'network-anomaly', action: 'block', severity: 'warn',
+          ruleId: 'network-anomaly', action: 'pass', severity: 'warn',
           reason: 'Network.setBlockedURLs blocks resource loading — this changes the page behavior and is detectable.',
           suggestion: 'Blocking images/fonts/etc creates measurable differences in performance and page rendering.',
           errorCode: -32113,
@@ -93,7 +93,7 @@ export const networkAnomalyRule: CDPInterceptorRule = {
 
       case 'Fetch.enable': {
         return {
-          ruleId: 'network-anomaly', action: 'block', severity: 'warn',
+          ruleId: 'network-anomaly', action: 'pass', severity: 'warn',
           reason: 'Fetch.enable intercepts all network requests — a man-in-the-middle approach used by scrapers.',
           suggestion: 'Do not use Fetch domain for network interception if avoiding detection.',
           errorCode: -32115,

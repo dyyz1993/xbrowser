@@ -107,7 +107,7 @@ export const fingerprintingRule: CDPInterceptorRule = {
       if (p.pattern.test(userCode)) {
         return {
           ruleId: 'fingerprinting',
-          action: 'block',
+          action: 'pass',
           severity: p.severity,
           reason: `Browser fingerprinting API accessed: "${p.name}". Anti-crawler systems use this to identify your browser.`,
           suggestion: p.suggestion,

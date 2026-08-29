@@ -31,7 +31,7 @@ interface EventPattern {
 const EVENT_PATTERNS: EventPattern[] = [
   // ── Direct method calls (all isTrusted=false) ─────────
   { pattern: /\.click\s*\(\s*\)/, name: 'el.click()', severity: 'danger', errorCode: -32070, suggestion: 'el.click() fires isTrusted=false events. Use page.click(selector) which uses Input.dispatchMouseEvent (isTrusted=true).' },
-  { pattern: /\.focus\s*\(\s*\)/, name: 'el.focus()', severity: 'danger', errorCode: -32071, suggestion: 'el.focus() without user interaction is detectable. Use page.click(selector) which naturally focuses.' },
+  { pattern: /\.focus\s*\(\s*\)/, name: 'el.focus()', severity: 'warn', errorCode: -32071, suggestion: 'el.focus() without user interaction is detectable. Use page.click(selector) which naturally focuses.' },
   { pattern: /\.blur\s*\(\s*\)/, name: 'el.blur()', severity: 'danger', errorCode: -32071, suggestion: 'el.blur() without user interaction. Avoid in automation scripts.' },
   { pattern: /\.submit\s*\(\s*\)/, name: 'el.submit()', severity: 'danger', errorCode: -32072, suggestion: 'form.submit() bypasses onSubmit handlers. Click the submit button: page.click(\'button[type="submit"]\').' },
   { pattern: /\.reset\s*\(\s*\)/, name: 'el.reset()', severity: 'danger', errorCode: -32072, suggestion: 'form.reset() without user action. Let the user clear fields manually.' },
@@ -47,7 +47,7 @@ const EVENT_PATTERNS: EventPattern[] = [
   { pattern: /\.reportValidity\s*\(\s*\)/, name: 'el.reportValidity()', severity: 'info', errorCode: -32076, suggestion: 'Validity reporting without form submission attempt.' },
 
   // ── dispatchEvent with synthetic events (isTrusted=false) ──
-  { pattern: /dispatchEvent\s*\(\s*new\s+(?:Event|CustomEvent)\s*\(/, name: 'dispatchEvent(new Event/CustomEvent)', severity: 'danger', errorCode: -32077, suggestion: 'Synthetic events have isTrusted=false. Use Input.dispatch* CDP methods for trusted events.' },
+  { pattern: /dispatchEvent\s*\(\s*new\s+(?:Event|CustomEvent)\s*\(/, name: 'dispatchEvent(new Event/CustomEvent)', severity: 'warn', errorCode: -32077, suggestion: 'Synthetic events have isTrusted=false. Use Input.dispatch* CDP methods for trusted events.' },
   { pattern: /dispatchEvent\s*\(\s*new\s+MouseEvent\s*\(/, name: 'dispatchEvent(new MouseEvent)', severity: 'danger', errorCode: -32077, suggestion: 'Synthetic mouse events (isTrusted=false). Use Input.dispatchMouseEvent CDP method.' },
   { pattern: /dispatchEvent\s*\(\s*new\s+KeyboardEvent\s*\(/, name: 'dispatchEvent(new KeyboardEvent)', severity: 'danger', errorCode: -32077, suggestion: 'Synthetic keyboard events (isTrusted=false). Use Input.dispatchKeyEvent CDP method.' },
   { pattern: /dispatchEvent\s*\(\s*new\s+FocusEvent\s*\(/, name: 'dispatchEvent(new FocusEvent)', severity: 'warn', errorCode: -32078, suggestion: 'Synthetic focus events bypass user interaction.' },
@@ -80,7 +80,9 @@ export const eventSimulationRule: CDPInterceptorRule = {
       if (p.pattern.test(userCode)) {
         return {
           ruleId: 'event-simulation',
-          action: 'block',
+          // danger 级硬拦（el.click 等 100% 暴露的模式）；
+          // warning 级放行+提示（dispatchEvent 在部分合法场景如 DataTransfer paste 使用）
+          action: p.severity === 'danger' ? 'block' : 'pass',
           severity: p.severity,
           reason: `Event simulation detected: "${p.name}". Synthetic events have isTrusted=false and are 100% detectable.`,
           suggestion: p.suggestion,

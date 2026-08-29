@@ -58,7 +58,7 @@ export const pageLifecycleRule: CDPInterceptorRule = {
           if (interval < 100) {
             return {
               ruleId: 'page-lifecycle',
-              action: 'block',
+              action: 'pass',
               severity: 'warn',
               reason: `Multiple Page.navigate calls within ${interval}ms of each other — unnatural rapid navigation.`,
               suggestion: 'Add proper waits between navigations: wait for page load before navigating again.',
@@ -76,7 +76,7 @@ export const pageLifecycleRule: CDPInterceptorRule = {
         if (state.lastNavTime > 0 && now - state.lastNavTime < 500) {
           return {
             ruleId: 'page-lifecycle',
-            action: 'block',
+            action: 'pass',
             severity: 'danger',
             reason: 'Page.captureScreenshot called within 500ms of navigation — content extraction pattern.',
             suggestion: 'Wait for the page to fully render before taking screenshots: wait for load/networkidle.',
@@ -87,7 +87,7 @@ export const pageLifecycleRule: CDPInterceptorRule = {
         if (state.screenshots > 3 && state.navigations.length < 2) {
           return {
             ruleId: 'page-lifecycle',
-            action: 'block',
+            action: 'pass',
             severity: 'warn',
             reason: 'Multiple screenshots on a single page without navigation — suspicious extraction behavior.',
             suggestion: 'Consider if all screenshots are necessary.',
@@ -101,7 +101,7 @@ export const pageLifecycleRule: CDPInterceptorRule = {
       case 'Page.printToPDF': {
         return {
           ruleId: 'page-lifecycle',
-          action: 'block',
+          action: 'pass',
           severity: 'danger',
           reason: 'Page.printToPDF called — this is a telltale scraper pattern that gives away automation intent.',
           suggestion: 'Avoid PDF generation. If you must, add significant delays and user-like interaction first.',
@@ -114,7 +114,7 @@ export const pageLifecycleRule: CDPInterceptorRule = {
         if (state.lastNavTime > 0 && now - state.lastNavTime < 1000) {
           return {
             ruleId: 'page-lifecycle',
-            action: 'block',
+            action: 'pass',
             severity: 'warn',
             reason: 'Page.reload called immediately after navigate — unnatural fast-reload pattern.',
             suggestion: 'Introduce delays between navigation and reload to simulate human behavior.',
@@ -129,7 +129,7 @@ export const pageLifecycleRule: CDPInterceptorRule = {
         if (state.navigations.length < 2) {
           return {
             ruleId: 'page-lifecycle',
-            action: 'block',
+            action: 'pass',
             severity: 'info',
             reason: 'Page.close called after minimal interaction — zombie pages common in automation.',
             suggestion: 'Ensure meaningful interaction before closing pages.',
@@ -146,7 +146,7 @@ export const pageLifecycleRule: CDPInterceptorRule = {
         if (state.evaluateCount > 50 && state.navigations.length === 0) {
           return {
             ruleId: 'page-lifecycle',
-            action: 'block',
+            action: 'pass',
             severity: 'info',
             reason: '50+ evaluate calls without any Page.navigate — data extraction without real browsing.',
             suggestion: 'Navigate to a real page first. Evaluate on about:blank is suspicious.',

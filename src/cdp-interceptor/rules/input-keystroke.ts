@@ -108,7 +108,7 @@ function analyzeKeyTiming(samples: KeySample[]): DecisionResult | null {
   if (allIdentical) {
     return {
       ruleId: 'input-keystroke',
-      action: 'block',
+      action: 'pass',
       severity: 'danger',
       reason: `All ${intervals.length} keystroke intervals are exactly ${intervals[0]}ms — impossible for human typing.`,
       suggestion: `Use page.fill(selector, text) instead of page.type() with delay.
@@ -121,7 +121,7 @@ Or add random variation: page.type(selector, text, {delay: 50 + Math.random() * 
   if (cv < 0.08) {
     return {
       ruleId: 'input-keystroke',
-      action: 'block',
+      action: 'pass',
       severity: 'warn',
       reason: `Unnatural keystroke timing (CV=${cv.toFixed(3)}). Human typing has CV > 0.2 on average.`,
       suggestion: `Add random variation to your typing delay: page.type(selector, text, {delay: 50 + Math.random() * 80}).`,
