@@ -593,6 +593,12 @@ export async function executeChain(
       const { type, pipeline: commands } = pipeline;
 
       for (const cmdStr of commands) {
+        // 链间人类节奏（d54，opt-in：XBROWSER_CHAIN_PACE=human）：默认链命令
+        // 零间隔连发 —— goto 后 <200ms 即操作是"加载即操作"暴露（无视觉定位
+        // 时间）。开启后命令间随机 0.8-2.5s，模拟人类阅读/定位节奏。
+        if (process.env.XBROWSER_CHAIN_PACE === 'human' && results.length > 0) {
+          await new Promise(r => setTimeout(r, 800 + Math.random() * 1700));
+        }
         const parts = splitCommand(cmdStr);
         if (parts.length === 0) continue;
 

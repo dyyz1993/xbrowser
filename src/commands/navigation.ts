@@ -12,6 +12,7 @@ export const gotoCommand = registerCommand({
     url: z.string(),
     waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle', 'commit']).optional(),
     timeout: z.number().optional(),
+    referrer: z.string().optional(),
   }),
   result: z.object({
     url: z.string(),
@@ -37,6 +38,8 @@ export const gotoCommand = registerCommand({
       response = await ctx.page.goto(url, {
         waitUntil: p.waitUntil || 'domcontentloaded',
         ...(p.timeout ? { timeout: p.timeout } : {}),
+        // referrer（d54）：模拟从源页面点链接进入 —— document.referrer 非空
+        ...(p.referrer ? { referer: p.referrer } : {}),
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
