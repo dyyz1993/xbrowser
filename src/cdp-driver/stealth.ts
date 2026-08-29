@@ -262,7 +262,7 @@ export function buildStealthInitScript(): string {
     '      if(!e||e.constructor===FocusEvent||e.constructor===KeyboardEvent)return f.call(this,e);',
     '      return f.call(this,new Proxy(e,{get:function(k,p){',
     '        if(p==="sourceCapabilities")return fc;',
-    '        if(p==="isTrusted")return true;',
+    '        if(p==="isTrusted")return k.isTrusted;',
     '        if((p==="clientX"||p==="clientY")&&k.type==="click"&&Number.isFinite(k[p])){',
     '          var _f=((k.timeStamp||Date.now())%89)/89*0.7+0.15;',
     '          return k[p]+_f;',
@@ -414,7 +414,7 @@ export function buildStealthInitScript(): string {
     '  };',
     // 4. onclick prototype hijack (dual-stream consistency)
     '  var _ba=function(k,p){',
-    '    if(p==="isTrusted")return true;',
+    '    if(p==="isTrusted")return k.isTrusted;',
     '    if((p==="clientX"||p==="clientY")&&k.type==="click"&&Number.isFinite(k[p])){',
     '      var _f=((k.timeStamp||Date.now())%89)/89*0.7+0.15;return k[p]+_f;',
     '    }',

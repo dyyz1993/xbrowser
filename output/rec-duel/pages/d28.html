@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>D28 isTrusted-paradox</title>
+<style>body{font-family:system-ui;padding:30px;background:#fafafa;max-width:900px}
+.check{margin:6px 0;padding:8px 14px;border-radius:8px;background:#fff;border:1px solid #ddd}
+.pass{border-color:#27ae60}.fail{border-color:#e74c3c}
+</style>
+</head>
+<body>
+<h2>D28 — isTrusted 悖论检测</h2>
+<p>过度伪装的陷阱：把合成事件的 isTrusted 也改成 true，反而暴露 —— 真实浏览器里合成事件必然 isTrusted=false。</p>
+<div id="log"></div>
+<script>
+window.__log = [];
+function check() {
+  var checks = [];
+  var results = {};
+  ['click','input','change','submit','keydown'].forEach(function (t) {
+    var el = document.createElement('div');
+    var got = null;
+    el.addEventListener(t, function (e) { got = e.isTrusted; });
+    el.dispatchEvent(new Event(t, { bubbles: true }));
+    results[t] = got;
+  });
+  // 真实浏览器：合成事件 isTrusted 必须 === false
+  // 过度伪装（把合成也改 true）：在此暴露
+  ['click','input','change','submit','keydown'].forEach(function (t) {
+    checks.push({ name: '合成 ' + t + ' isTrusted=false（真实行为）', ok: results[t] === false, detail: String(results[t]) });
+  });
+  // Event 构造器的 isTrusted 属性（原型层检查）
+  var e = new Event('x');
+  checks.push({ name: 'new Event().isTrusted === false', ok: e.isTrusted === false, detail: String(e.isTrusted) });
+  window.__log.push({ action: 'check', allPass: checks.every(function (c) { return c.ok; }), checks: checks, results: results });
+  render(checks);
+}
+function render(checks) {
+  document.getElementById('log').innerHTML = checks.map(function (c) {
+    return '<div class="check ' + (c.ok ? 'pass' : 'fail') + '">' + (c.ok ? '✓ ' : '✗ ') + c.name + '</div>';
+  }).join('');
+}
+check();
+window.__outcome = function () { return JSON.stringify({ page: 'd28', log: window.__log }); };
+</script>
+</body>
+</html>
