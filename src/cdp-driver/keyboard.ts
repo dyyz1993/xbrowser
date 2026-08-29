@@ -6,7 +6,7 @@
 
 import type { XBKeyboard } from './types.js';
 import type { CDPConnection } from './connection.js';
-import { DEFAULT_STEALTH_CONFIG as STEALTH_CFG, rand as stealthRand } from './stealth.js';
+import { DEFAULT_STEALTH_CONFIG as STEALTH_CFG, typingDelay, rand as stealthRand } from './stealth.js';
 
 export class XBKeyboardImpl implements XBKeyboard {
   private conn: CDPConnection;
@@ -111,60 +111,67 @@ export class XBKeyboardImpl implements XBKeyboard {
       if (fixedDelay > 0) {
         await sleep(fixedDelay);
       } else if (stealth) {
-        // 三层分布：22% 快速 / 60% 正常 / 18% 思考停顿
-        const roll = Math.random();
-        const cfg = STEALTH_CFG.typingRhythm;
-        if (roll < cfg.pauseProb) {
-          await sleep(stealthRand(cfg.pauseRange[0], cfg.pauseRange[1]));
-        } else if (roll < cfg.pauseProb + cfg.fastProb) {
-          await sleep(stealthRand(cfg.fastRange[0], cfg.fastRange[1]));
-        } else {
-          await sleep(stealthRand(cfg.normalRange[0], cfg.normalRange[1]));
+        // 三层节奏走共享 typingDelay（S64 接线：此前手写重复实现，
+        // 与 press/type 双实现漂移同族的温床）
+        await sleep(typingDelay());
+      }
+
+      // 打字修正流（S64 接线 typoProbability，此前 config 字段躺了 50+ 季
+      // 零调用）：按概率打错邻键，人类式停顿后 backspace 修正 —— d50 实测
+      // 无修正流的 backspace 恒 0，而人类长文本 2-10%
+      if (stealth && char.length === 1 && Math.random() < STEALTH_CFG.typoProbability) {
+        const wrong = NEIGHBOR_KEYS[char];
+        if (wrong && wrong !== char) {
+          await this.dispatchKeySequence(resolveKeyMapping(wrong), stealth);
+          await sleep(stealthRand(120, 420)); // 感知到打错的反应停顿
+          await this.dispatchKeySequence(KEY_MAP.Backspace, stealth);
         }
       }
 
-      const mapping = resolveKeyMapping(char);
-
-      // Send rawKeyDown
-      const downParams: Record<string, unknown> = {
-        type: 'rawKeyDown',
-        key: mapping.key,
-        code: mapping.code,
-      };
-      if (mapping.text) {
-        downParams.text = mapping.text;
-        downParams.unmodifiedText = mapping.text;
-      }
-      if (mapping.keyCode) {
-        downParams.windowsVirtualKeyCode = mapping.keyCode;
-      }
-      await this.dispatchKeyEvent(downParams);
-
-      // Send char event for printable characters to trigger text insertion.
-      // rawKeyDown→char 保持同刻：真实键盘的 keypress 是 keydown 的派生对
-      // （Δ≈0-2ms），此处不加延迟（d50 验证派生对无断裂）。
-      if (mapping.text) {
-        await this.dispatchKeyEvent({
-          type: 'char',
-          text: mapping.text,
-        });
-      }
-
-      // char→keyUp 必须间隔 keyPressDuration（人类按键持续 50-110ms）：
-      // d50 攻防实测 33/33 键 down→up 仅 2ms —— press() 路径 d17 修过，
-      // type() 路径漏了同样的节奏（两个函数两套实现的漂移）。
-      if (process.env.XBROWSER_STEALTH !== 'off') {
-        await sleep(stealthRand(...STEALTH_CFG.keyPressDuration));
-      }
-
-      // Send keyUp
-      await this.dispatchKeyEvent({
-        type: 'keyUp',
-        key: mapping.key,
-        code: mapping.code,
-        ...(mapping.keyCode ? { windowsVirtualKeyCode: mapping.keyCode } : {}),
-      });
+      await this.dispatchKeySequence(resolveKeyMapping(char), stealth);
     }
+  }
+
+  /**
+   * Single-key event sequence: rawKeyDown → (char) → keyUp.
+   * Shared by press() and type() — two separate implementations drifted
+   * apart once already (S60: type() lost the keyPressDuration that press()
+   * had; d50 caught it as 33/33 keys with down→up of 2ms).
+   */
+  private async dispatchKeySequence(mapping: KeyInfo, stealth: boolean): Promise<void> {
+    const downParams: Record<string, unknown> = {
+      type: 'rawKeyDown',
+      key: mapping.key,
+      code: mapping.code,
+    };
+    if (mapping.text) {
+      downParams.text = mapping.text;
+      downParams.unmodifiedText = mapping.text;
+    }
+    if (mapping.keyCode) {
+      downParams.windowsVirtualKeyCode = mapping.keyCode;
+    }
+    await this.dispatchKeyEvent(downParams);
+
+    // rawKeyDown→char 保持同刻：keypress 是 keydown 的派生对（Δ≈0-2ms）
+    if (mapping.text) {
+      await this.dispatchKeyEvent({ type: 'char', text: mapping.text });
+    }
+
+    // char→keyUp 间隔 keyPressDuration（人类按键持续 50-110ms）
+    if (stealth) {
+      await sleep(stealthRand(...STEALTH_CFG.keyPressDuration));
+    }
+
+    const upParams: Record<string, unknown> = {
+      type: 'keyUp',
+      key: mapping.key,
+      code: mapping.code,
+    };
+    if (mapping.keyCode) {
+      upParams.windowsVirtualKeyCode = mapping.keyCode;
+    }
+    await this.dispatchKeyEvent(upParams);
   }
 
   async insertText(text: string): Promise<void> {
@@ -247,6 +254,19 @@ const KEY_MAP: Record<string, KeyInfo> = {
   F1: { key: 'F1', code: 'F1', keyCode: 112 }, F2: { key: 'F2', code: 'F2', keyCode: 113 }, F3: { key: 'F3', code: 'F3', keyCode: 114 }, F4: { key: 'F4', code: 'F4', keyCode: 115 },
   F5: { key: 'F5', code: 'F5', keyCode: 116 }, F6: { key: 'F6', code: 'F6', keyCode: 117 }, F7: { key: 'F7', code: 'F7', keyCode: 118 }, F8: { key: 'F8', code: 'F8', keyCode: 119 },
   F9: { key: 'F9', code: 'F9', keyCode: 120 }, F10: { key: 'F10', code: 'F10', keyCode: 121 }, F11: { key: 'F11', code: 'F11', keyCode: 122 }, F12: { key: 'F12', code: 'F12', keyCode: 123 },
+};
+
+/**
+ * QWERTY right-neighbor keys for typo simulation (typoProbability wiring,
+ * S64). Humans miss-hit the adjacent key ~2-10% on long texts; a typed
+ * stream with zero backspaces is itself a fingerprint (d50).
+ */
+const NEIGHBOR_KEYS: Record<string, string> = {
+  a: 's', b: 'v', c: 'x', d: 'f', e: 'r', f: 'g', g: 'h', h: 'j', i: 'o',
+  j: 'k', k: 'l', l: 'k', m: 'n', n: 'm', o: 'p', p: 'o', q: 'w', r: 't',
+  s: 'd', t: 'y', u: 'i', v: 'b', w: 'e', x: 'c', y: 'u', z: 'x',
+  '1': '2', '2': '3', '3': '4', '4': '5', '5': '6', '6': '7', '7': '8',
+  '8': '9', '9': '0',
 };
 
 function sleep(ms: number): Promise<void> {
