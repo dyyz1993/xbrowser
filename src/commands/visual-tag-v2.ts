@@ -364,7 +364,7 @@ export const visualTagV2Command = registerCommand({
   description: '分色标注页面元素（红=可点击 蓝=输入 绿=图片 黄=列表 紫=数字 橙=文本）',
   scope: 'page',
   parameters: z.object({
-    action: z.enum(['tag', 'lookup', 'clear', 'stats', 'by-type', 'find', 'export']),
+    action: z.enum(['tag', 'lookup', 'clear', 'stats', 'by-type', 'find', 'export', 'interact']),
     id: z.string().optional().describe('lookup 时指定要查的 ID'),
     query: z.string().optional().describe('find 时指定搜索词（如 "找有AI编程标签的卡片"）'),
     type: z.string().optional().describe('by-type 时过滤类型：click/input/img/list/count/text'),
@@ -449,6 +449,93 @@ export const visualTagV2Command = registerCommand({
           `(function(){return JSON.stringify(window.__xbTagStats||{})})()`,
         );
         return ok({ action: 'stats', element: JSON.parse(result) as Record<string, unknown> });
+      }
+      case 'interact': {
+        // v10：自然语言直达交互——find + click/fill/read 一体化
+        const query = (p as Record<string, unknown>).query as string;
+        const action = (p as Record<string, unknown>)['interact-action'] as string;
+        const value = (p as Record<string, unknown>).value as string;
+        if (!query) return fail('interact 需要 --query 参数');
+        if (!action) return fail('interact 需要 --interact-action 参数（click/fill/read）');
+
+        // 1) find：用 query 找元素
+        const findResult = await ctx.page.evaluate<string>(
+          `(function(){
+            var map = window.__xbTagSerializable;
+            if (!map) return JSON.stringify({err:'no-map'});
+            var query = ${JSON.stringify(query)};
+            var results = [];
+            for (var id in map) {
+              var e = map[id];
+              var text = (e.text || '').toLowerCase();
+              if (text.includes(query.toLowerCase())) {
+                results.push({id:id, type:e.type, text:e.text, num:e.num, label:e.formLabel});
+              }
+            }
+            // 类型匹配
+            var typeMap = {button:'click', link:'click', 按钮:'click', 图片:'img', image:'img',
+                          输入:'input', input:'input', 列表:'list', 数字:'count', count:'count'};
+            for (var tk in typeMap) {
+              if (query.toLowerCase().includes(tk)) {
+                for (var id2 in map) {
+                  if (map[id2].type === typeMap[tk]) {
+                    results.push({id:id2, type:map[id2].type, text:map[id2].text, num:map[id2].num, label:map[id2].formLabel});
+                  }
+                }
+              }
+            }
+            return JSON.stringify({total:results.length, results:results.slice(0,10)});
+          })()`,
+        );
+        const parsed = JSON.parse(findResult) as { err?: string; total?: number; results?: Array<{id:string; type:string; text:string; label?:string}> };
+        if (parsed.err) return fail(parsed.err);
+        if (!parsed.total || !parsed.results?.length) return fail(`未找到匹配 "${query}" 的元素`);
+
+        // 取第一个匹配
+        const target = parsed.results[0];
+
+        // 2) 根据 action 执行
+        if (action === 'read') {
+          return ok({ action: 'interact', query, target, result: { read: target.text || target.label } });
+        }
+
+        if (action === 'click') {
+          // 用 trustedClick 或 CDP click
+          const el = await ctx.page.evaluate<{ x:number; y:number } | null>(
+            `(function(){
+              var map = window.__xbTagMap;
+              if (!map) return null;
+              var entry = map[${JSON.stringify(target.id)}];
+              if (!entry || !entry._el) return null;
+              var r = entry._el.getBoundingClientRect();
+              return {x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2)};
+            })()`,
+          );
+          if (!el) return fail(`元素 ${target.id} 不可交互`);
+          await ctx.page.mouse.click(el.x, el.y, { stealth: true });
+          return ok({ action: 'interact', query, target, result: { clicked: true, x: el.x, y: el.y } });
+        }
+
+        if (action === 'fill') {
+          if (!value) return fail('fill 需要 --value 参数');
+          const el = await ctx.page.evaluate<{ x:number; y:number } | null>(
+            `(function(){
+              var map = window.__xbTagMap;
+              if (!map) return null;
+              var entry = map[${JSON.stringify(target.id)}];
+              if (!entry || !entry._el) return null;
+              var r = entry._el.getBoundingClientRect();
+              return {x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2)};
+            })()`,
+          );
+          if (!el) return fail(`元素 ${target.id} 不可交互`);
+          // click 聚焦 + 键盘输入
+          await ctx.page.mouse.click(el.x, el.y, { stealth: true });
+          await ctx.page.keyboard.type(value, { stealth: true });
+          return ok({ action: 'interact', query, target, result: { filled: true, value } });
+        }
+
+        return fail(`未知 action: ${action}`);
       }
       case 'export': {
         const result = await ctx.page.evaluate<string>(
