@@ -134,8 +134,37 @@ const TAG_V2_SCRIPT = `
       parentNode = parentNode.parentElement;
     }
 
+    // v6：表单语义——识别 input 的关联 label
+    var formLabel = null;
+    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT') {
+      var inputId = el.id;
+      if (inputId) {
+        var lbl = document.querySelector('label[for="' + inputId + '"]');
+        if (lbl) formLabel = lbl.textContent.trim();
+      }
+      if (!formLabel) {
+        var aria = el.getAttribute('aria-label');
+        if (aria) formLabel = aria;
+      }
+      if (!formLabel) {
+        var ph = el.getAttribute('placeholder');
+        if (ph) formLabel = '(placeholder) ' + ph;
+      }
+      if (!formLabel) {
+        var parentLbl = el.closest('label');
+        if (parentLbl) formLabel = parentLbl.textContent.trim().slice(0, 30);
+      }
+      if (!formLabel) {
+        var prev = el.previousElementSibling;
+        if (prev && (prev.tagName === 'LABEL' || prev.tagName === 'SPAN' || prev.tagName === 'DIV') && prev.textContent.trim()) {
+          formLabel = '(adjacent) ' + prev.textContent.trim().slice(0, 30);
+        }
+      }
+    }
+
     window.__xbTagMap[id] = {
       type: type,\n      parent: parentId,\n      _el: el,
+      formLabel: formLabel,
       tagName: el.tagName,
       text: (el.textContent || '').trim().slice(0, 40),
       num: (el.textContent || '').trim().match(/[\\d,.]+/)?.[0] || null,
@@ -206,7 +235,7 @@ export const visualTagV2Command = registerCommand({
       }
       case 'by-type': {
         const result = await ctx.page.evaluate<string>(
-          `(function(){var m=window.__xbTagMap;if(!m)return'{}';var out={};for(var k in m){if(!${JSON.stringify(p.type || '')}||m[k].type===${JSON.stringify(p.type || '')}){out[k]={type:m[k].type,text:m[k].text,num:m[k].num}}}return JSON.stringify(out)})()`,
+          `(function(){var m=window.__xbTagMap;if(!m)return'{}';var out={};for(var k in m){if(!${JSON.stringify(p.type || '')}||m[k].type===${JSON.stringify(p.type || '')}){out[k]={type:m[k].type,text:m[k].text,num:m[k].num,label:m[k].formLabel}}}return JSON.stringify(out)})()`,
         );
         return ok({ action: 'by-type', element: JSON.parse(result) as Record<string, unknown> });
       }
