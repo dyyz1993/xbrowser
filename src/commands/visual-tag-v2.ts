@@ -51,8 +51,12 @@ const TAG_V2_SCRIPT = `
     var cls = el.className || '';
 
     // 优先级1：数字/计数器——先于列表（S129 遗留问题修复）
-    if (el.children.length === 0 && text.length > 0 && text.length < 20) {
-      var numMatch = text.match(/^[0-9,.]+\\s*(万|亿|k|K|M|\\+|人|次|条|篇|个|评|赞|分|星)?$/);
+    var hasOnlySvgChildren = true;
+    for (var ci = 0; ci < el.children.length; ci++) {
+      if (el.children[ci].tagName.toUpperCase() !== 'SVG' && el.children[ci].tagName.toUpperCase() !== 'PATH' && el.children[ci].tagName.toUpperCase() !== 'SPAN') { hasOnlySvgChildren = false; break; }
+    }
+    if ((el.children.length === 0 || hasOnlySvgChildren) && text.length > 0 && text.length < 25) {
+      var numMatch = text.match(/^[0-9,.]+\\s*(万|亿|k|K|M|stars?|forks?|watching|issues?|commits?|\\+|人|次|条|篇|个|评|赞|分|星)?$/);
       if (numMatch) return 'count';
     }
     // 优先级1.5：class 含 count/num/like/star/fork 的容器
@@ -94,9 +98,9 @@ const TAG_V2_SCRIPT = `
     text:  { stroke: '#FF8C00', fill: '#FFECD2' },  // 橙
   };
 
-  var all = document.querySelectorAll('button, a[href], td, th, input, select, textarea, img, ul, ol, li, svg, [onclick], [role="button"], [contenteditable], [aria-label], [data-target], [class*="btn"], [class*="list"], [class*="item"], [class*="count"], [class*="num"], [class*="like"], [class*="comment"], [class*="stat"], [class*="card"], [class*="tab"], [class*="menu"], [class*="nav"], [class*="link"]');
+  var all = document.querySelectorAll('button, a[href], td, th, input, select, textarea, img, ul, ol, li, svg, [onclick], [role="button"], [contenteditable], [aria-label], [data-target], [class*="btn"], [class*="list"], [class*="item"], [class*="count"], [class*="num"], [class*="like"], [class*="comment"], [class*="stat"], [class*="card"], [class*="tab"], [class*="menu"], [class*="nav"], [class*="link"], [class*="Link"]');
 
-  for (var i = 0; i < all.length && i < 300; i++) {
+  for (var i = 0; i < all.length && i < 3000; i++) {
     var el = all[i];
     var r = el.getBoundingClientRect();
     if (r.width < 8 || r.height < 8) continue;
