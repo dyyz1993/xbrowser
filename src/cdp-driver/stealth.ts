@@ -263,8 +263,13 @@ export function buildStealthInitScript(): string {
     '      if(!e)return f.call(this,e);',
     '      return f.call(this,new Proxy(e,{get:function(k,p){',
     '        if(p==="sourceCapabilities")return fc;',
-    '        if(p==="isTrusted")return Reflect.get(k,"isTrusted");',
-    '        if((p==="clientX"||p==="clientY")&&k.type==="click"&&Number.isInteger(k[p])&&k.isTrusted===true){',
+    // S122：isTrusted 全量伪装——CDP 合成事件也是 true（跟内核一致），
+    // JS 事件也变 true（S117 说洗不掉——但 AEL 参数包装层面可以）。
+    // 检测器在 listener 里读 e.isTrusted 读到的是这个 Proxy 的返回值。
+    // 注意：只有经过 addEventListener 注册的 listener 才被包装；
+    // onXXX 属性赋值的走 _ba（onclick 原型 hook，同款处理）。
+    '        if(p==="isTrusted")return true;',
+    '        if((p==="clientX"||p==="clientY")&&k.type==="click"&&Number.isInteger(k[p])){',
     '          var _f=((k.timeStamp||Date.now())%89)/89*0.7+0.15;',
     '          return k[p]+_f;',
     '        }',
@@ -531,7 +536,7 @@ export function buildStealthInitScript(): string {
     '  };',
     // 4. onclick prototype hijack (dual-stream consistency)
     '  var _ba=function(k,p){',
-    '    if(p==="isTrusted")return Reflect.get(k,"isTrusted");',
+    '    if(p==="isTrusted")return true;',
     '    if((p==="clientX"||p==="clientY")&&k.type==="click"&&Number.isInteger(k[p])&&k.isTrusted===true){',
     '      var _f=((k.timeStamp||Date.now())%89)/89*0.7+0.15;return k[p]+_f;',
     '    }',
