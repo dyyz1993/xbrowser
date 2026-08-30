@@ -840,11 +840,13 @@ export async function createSession(
     }
 
     // 第一遍：找 hostname 匹配的页面（修复"session 总被绑到错 tab"bug；
-    // url 可能为 null，走 resolvePageUrl 主动获取）
+    // url 可能为 null，走 resolvePageUrl 主动获取）。占用检查（S97）：
+    // hostname 匹配会绑走他 session 的页面再导航 —— M1 漂移根因。
     if (!targetPage && targetHostname) {
       for (const ctx of contexts) {
         const pages = ctx.pages();
         for (const p of pages) {
+          if (ownedPages.has(p)) continue;
           const pUrl = await resolvePageUrl(p);
           if (isRealPageUrl(pUrl) && pUrl.includes(targetHostname)) {
             targetPage = p;
@@ -855,11 +857,12 @@ export async function createSession(
       }
     }
 
-    // 第二遍：fallback 到任意非空白、非 chrome:// 页面
+    // 第二遍：fallback 到任意非空白、非 chrome:// 页面（占用检查 S97）
     if (!targetPage) {
       for (const ctx of contexts) {
         const pages = ctx.pages();
         for (const p of pages) {
+          if (ownedPages.has(p)) continue;
           const pUrl = await resolvePageUrl(p);
           if (isRealPageUrl(pUrl)) {
             targetPage = p;
