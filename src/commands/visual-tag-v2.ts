@@ -123,8 +123,19 @@ const TAG_V2_SCRIPT = `
     ctx.lineWidth = 1.5;
     ctx.strokeRect(r.x, r.y, r.width, r.height);
 
+    // v4：查父级标注 ID（嵌套关系）
+    var parentId = null;
+    var parentNode = el.parentElement;
+    while (parentNode && parentNode !== document.body) {
+      for (var pk in window.__xbTagMap) {
+        if (window.__xbTagMap[pk]._el === parentNode) { parentId = pk; break; }
+      }
+      if (parentId) break;
+      parentNode = parentNode.parentElement;
+    }
+
     window.__xbTagMap[id] = {
-      type: type,
+      type: type,\n      parent: parentId,\n      _el: el,
       tagName: el.tagName,
       text: (el.textContent || '').trim().slice(0, 40),
       num: (el.textContent || '').trim().match(/[\\d,.]+/)?.[0] || null,
@@ -146,6 +157,16 @@ const TAG_V2_SCRIPT = `
     };
   }
 
+  // v4：生成可序列化版本（去掉 _el DOM 引用）
+  var serializable = {};
+  for (var sk in window.__xbTagMap) {
+    var item = {};
+    for (var key in window.__xbTagMap[sk]) {
+      if (key !== '_el') item[key] = window.__xbTagMap[sk][key];
+    }
+    serializable[sk] = item;
+  }
+  window.__xbTagSerializable = serializable;
   window.__xbTagStats = { total: Object.keys(window.__xbTagMap).length, byType: counters };
   return JSON.stringify(window.__xbTagStats);
 })()
