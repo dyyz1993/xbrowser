@@ -368,6 +368,8 @@ export const visualTagV2Command = registerCommand({
     id: z.string().optional().describe('lookup 时指定要查的 ID'),
     query: z.string().optional().describe('find 时指定搜索词（如 "找有AI编程标签的卡片"）'),
     type: z.string().optional().describe('by-type 时过滤类型：click/input/img/list/count/text'),
+    'interact-action': z.enum(['click', 'fill', 'read']).optional().describe('interact 动作类型'),
+    value: z.string().optional().describe('fill 时的填充值'),
   }),
   result: z.object({
     action: z.string(),
@@ -453,8 +455,8 @@ export const visualTagV2Command = registerCommand({
       case 'interact': {
         // v10：自然语言直达交互——find + click/fill/read 一体化
         const query = (p as Record<string, unknown>).query as string;
-        const action = (p as Record<string, unknown>)['interact-action'] as string;
-        const value = (p as Record<string, unknown>).value as string;
+        const pAny = p as Record<string, unknown>; const action = (pAny['interact-action'] || pAny.interactAction || pAny.interact_action) as string;
+        const value = pAny.value as string;
         if (!query) return fail('interact 需要 --query 参数');
         if (!action) return fail('interact 需要 --interact-action 参数（click/fill/read）');
 
