@@ -98,11 +98,16 @@ const executors = {
 
   evaluate: async ({ expression, tabId, allFrames }) => {
     const target = tabId ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+    // world: MAIN —— 在页面上下文执行（扩展 CSP 禁 eval，S104 实测
+    // EvalError；MAIN world 遵循页面自身 CSP，绝大多数页面可用）
     const [{ result, error }] = await chrome.scripting.executeScript({
       target: { tabId: target, allFrames: !!allFrames },
+      world: 'MAIN',
       func: (expr) => {
-        try { const v = eval(expr); return { ok: true, value: v === undefined ? null : (typeof v === 'function' ? String(v) : (typeof v === 'object' ? JSON.stringify(v) : v)) }; }
-        catch (e) { return { ok: false, error: String(e) }; }
+        try {
+          const v = eval(expr);
+          return { ok: true, value: v === undefined ? null : (typeof v === 'function' ? String(v) : (typeof v === 'object' ? JSON.stringify(v) : v)) };
+        } catch (e) { return { ok: false, error: String(e) }; }
       },
       args: [expression],
     });
