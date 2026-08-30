@@ -202,9 +202,23 @@ function discoverChromiumPath(): string | undefined {
  * @param options - Launch options including headless mode, executable path, or CDP endpoint.
  * @returns A fresh Playwright Browser instance.
  */
+// d07 连接级持久化（S102）：--cdp 模式此前每命令新建连接 —— 旧连接的
+// page wrapper 与新连接 pages() 对象不可比（S98 坐实 === 恒 false），跨
+// session 占用判定只能靠 URL 兜底且 newPage 的 tab 管理割裂。daemon 级
+// endpoint→browser 缓存让同一浏览器的所有 session 共享一个连接与 wrapper
+// 世界，对象比对恢复有效、tab 状态一致。
+const _browserPool = new Map<string, Browser>();
+
 export async function createBrowser(options?: BrowserLaunchOptions): Promise<Browser> {
   if (options?.cdpEndpoint) {
     const realEndpoint = await resolveCDPEndpoint(options.cdpEndpoint);
+    if (!options.intercept) {
+      const pooled = _browserPool.get(realEndpoint);
+      if (pooled && !pooled.disconnected) {
+        return pooled;
+      }
+      if (pooled) _browserPool.delete(realEndpoint);
+    }
 
     if (options.intercept) {
       const config: CDPInterceptorConfig = typeof options.intercept === 'object'
@@ -227,6 +241,7 @@ export async function createBrowser(options?: BrowserLaunchOptions): Promise<Bro
     await browser.discoverContexts().catch((err: unknown) => {
       console.error(`[browser] discoverContexts failed: ${errMsg(err)}`);
     });
+    if (!options.intercept) _browserPool.set(realEndpoint, browser);
     return browser;
   }
 
