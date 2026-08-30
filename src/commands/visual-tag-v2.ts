@@ -47,23 +47,37 @@ const TAG_V2_SCRIPT = `
 
   function classifyElement(el) {
     var tag = el.tagName;
-    if (tag === 'BUTTON' || (el.getAttribute('role') === 'button') ||
-        el.tagName === 'A' && el.getAttribute('href') ||
-        /btn|button|click|action/i.test(el.className || '')) return 'click';
+    var text = (el.textContent || '').trim();
+    var cls = el.className || '';
+
+    // 优先级1：数字/计数器——先于列表（S129 遗留问题修复）
+    if (el.children.length === 0 && text.length > 0 && text.length < 20) {
+      var numMatch = text.match(/^[0-9,.]+\\s*(万|亿|k|K|M|\\+|人|次|条|篇|个|评|赞|分|星)?$/);
+      if (numMatch) return 'count';
+    }
+    // 优先级1.5：class 含 count/num/like/star/fork 的容器
+    if (/count|num\b|like|star|fork|rating|badge/i.test(cls) && el.children.length <= 2) return 'count';
+
+    // 优先级2：输入框
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
         el.getAttribute('contenteditable')) return 'input';
-    if (tag === 'IMG' || el.querySelector && el.querySelector('img') &&
-        el.children.length <= 2 && !el.textContent.trim()) return 'img';
+
+    // 优先级3：可点击（v3 扩宽：data-target/onclick/tab/menu/nav/link class）
+    if (tag === 'BUTTON' || (el.getAttribute('role') === 'button') ||
+        (tag === 'A' && el.getAttribute('href')) ||
+        el.hasAttribute('onclick') || el.hasAttribute('data-target') ||
+        /btn|button|click|action|tab\b|menu|nav\b|link\b/i.test(cls)) return 'click';
+
+    // 优先级4：图片（v3：含 SVG 图标）
+    if (tag === 'IMG' || (tag === 'SVG') ||
+        (el.querySelector && el.querySelector('img,svg') &&
+         el.children.length <= 2 && !text)) return 'img';
+
+    // 优先级5：列表（v3：加 card）
     if (tag === 'UL' || tag === 'OL' || tag === 'LI' ||
-        /list|item|feed|timeline/i.test(el.className || '')) return 'list';
-    // 数字/计数器检测：纯数字文本 或 数字+单位
-    var text = (el.textContent || '').trim();
-    if (el.children.length === 0 && text.length > 0 && text.length < 15) {
-      if (/^[\\d,.]+\\s*(万|亿|k|K|M|\\+|人|次|条|篇|个|评|赞)?$/.test(text) ||
-          /^[\\d,.]+$/.test(text.replace(/[^\\d,.]/g, '')) && text.replace(/[^\\d,.]/g, '').length > text.length * 0.5) {
-        return 'count';
-      }
-    }
+        /list|item|feed|timeline|card/i.test(cls)) return 'list';
+
+    // 优先级6：文本
     if (text.length > 20) return 'text';
     return null;
   }
@@ -77,7 +91,7 @@ const TAG_V2_SCRIPT = `
     text:  { stroke: '#FF8C00', fill: '#FFECD2' },  // 橙
   };
 
-  var all = document.querySelectorAll('button, a[href], input, select, textarea, img, ul, ol, li, [onclick], [role="button"], [contenteditable], [class*="btn"], [class*="list"], [class*="item"], [class*="count"], [class*="num"], [class*="like"], [class*="comment"], [class*="stat"]');
+  var all = document.querySelectorAll('button, a[href], input, select, textarea, img, ul, ol, li, svg, [onclick], [role="button"], [contenteditable], [aria-label], [data-target], [class*="btn"], [class*="list"], [class*="item"], [class*="count"], [class*="num"], [class*="like"], [class*="comment"], [class*="stat"], [class*="card"], [class*="tab"], [class*="menu"], [class*="nav"], [class*="link"]');
 
   for (var i = 0; i < all.length && i < 300; i++) {
     var el = all[i];
