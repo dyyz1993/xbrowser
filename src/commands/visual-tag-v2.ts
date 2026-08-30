@@ -177,8 +177,9 @@ export const visualTagV2Command = registerCommand({
   description: '分色标注页面元素（红=可点击 蓝=输入 绿=图片 黄=列表 紫=数字 橙=文本）',
   scope: 'page',
   parameters: z.object({
-    action: z.enum(['tag', 'lookup', 'clear', 'stats', 'by-type']),
-    id: z.string().optional(),
+    action: z.enum(['tag', 'lookup', 'clear', 'stats', 'by-type', 'find']),
+    id: z.string().optional().describe('lookup 时指定要查的 ID'),
+    query: z.string().optional().describe('find 时指定搜索词（如 "找有AI编程标签的卡片"）'),
     type: z.string().optional().describe('by-type 时过滤类型：click/input/img/list/count/text'),
   }),
   result: z.object({
@@ -208,6 +209,53 @@ export const visualTagV2Command = registerCommand({
           `(function(){var m=window.__xbTagMap;if(!m)return'{}';var out={};for(var k in m){if(!${JSON.stringify(p.type || '')}||m[k].type===${JSON.stringify(p.type || '')}){out[k]={type:m[k].type,text:m[k].text,num:m[k].num}}}return JSON.stringify(out)})()`,
         );
         return ok({ action: 'by-type', element: JSON.parse(result) as Record<string, unknown> });
+      }
+      case 'find': {
+        // v5：语义搜索——用文字描述找元素
+        const query = (p as Record<string, unknown>).query as string;
+        if (!query) return fail('find 需要 --query 参数（如 "找有AI编程标签的卡片"）');
+        const result = await ctx.page.evaluate<string>(
+          `(function(){
+            var map = window.__xbTagSerializable;
+            if (!map) return JSON.stringify({err:'no-map'});
+            var query = ${JSON.stringify(query)};
+            var results = [];
+            // 1) 直接文本匹配
+            for (var id in map) {
+              var e = map[id];
+              var text = (e.text || '').toLowerCase();
+              var q = query.toLowerCase();
+              if (text.includes(q)) {
+                results.push({id:id, type:e.type, text:e.text, num:e.num, parent:e.parent, reason:'text-match'});
+              }
+            }
+            // 2) 类型匹配（query 含"按钮"/"链接"/"图片"/"数字"等）
+            var typeMap = {button:'click', link:'click', 按钮:'click', 链接:'click', 图片:'img', image:'img',
+                          输入:'input', input:'input', 列表:'list', list:'list', 卡片:'list', card:'list',
+                          数字:'count', count:'count', 计数:'count', 文本:'text'};
+            for (var tk in typeMap) {
+              if (query.toLowerCase().includes(tk)) {
+                for (var id2 in map) {
+                  if (map[id2].type === typeMap[tk]) {
+                    results.push({id:id2, type:map[id2].type, text:map[id2].text, num:map[id2].num, parent:map[id2].parent, reason:'type-match:'+tk});
+                  }
+                }
+              }
+            }
+            // 3) 数字匹配（query 含数字）
+            var numMatch = query.match(/([0-9,.]+)/);
+            if (numMatch && map) {
+              var target = parseFloat(numMatch[1].replace(/,/g,''));
+              for (var id3 in map) {
+                if (map[id3].num && parseFloat(map[id3].num.replace(/,/g,'')) === target) {
+                  results.push({id:id3, type:map[id3].type, text:map[id3].text, num:map[id3].num, parent:map[id3].parent, reason:'num-match'});
+                }
+              }
+            }
+            return JSON.stringify({total:results.length, results:results.slice(0,20)});
+          })()`,
+        );
+        return ok({ action: 'find', query, element: JSON.parse(result) as Record<string, unknown> });
       }
       case 'stats': {
         const result = await ctx.page.evaluate<string>(
