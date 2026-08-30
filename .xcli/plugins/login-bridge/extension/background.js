@@ -192,6 +192,30 @@ const executors = {
     });
   },
 
+  // S120：可信点击（chrome.debugger Input.dispatchMouseEvent）——
+  // 页面 el.click() 是合成事件，ProseMirror 等框架不认；可信点击等价鼠标。
+  trustedClick: async ({ x, y, tabId }) => {
+    const target = tabId ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+    return new Promise((resolve) => {
+      const dbg = { tabId: target };
+      // 先 detach（可能残留）再 attach —— 残留 attach 会让新 attach 静默失败
+      chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
+      chrome.debugger.attach(dbg, '1.3', () => {
+        const err = chrome.runtime.lastError;
+        if (err) { resolve({ ok: false, error: err.message }); return; }
+        chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent',
+          { type: 'mousePressed', x, y, button: 'left', clickCount: 1 }, () => {
+            chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent',
+              { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }, () => {
+                chrome.debugger.detach(dbg).catch(() => {});
+                resolve({ ok: true, clicked: x + ',' + y });
+              });
+          });
+      });
+      });
+    });
+  },
+
   screenshot: async () => {
     const url = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
     return { ok: true, dataUrl: url.slice(0, 100), fullLength: url.length, base64: url.split(',')[1] };
