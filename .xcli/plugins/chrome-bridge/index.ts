@@ -64,6 +64,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       cmd: z.string(),
       args: z.string().optional().describe('JSON 参数'),
+      client: z.string().optional().describe('目标浏览器：0/1/.../last（多浏览器连入时选择）'),
       timeout: z.number().optional(),
     }),
     examples: [
@@ -72,7 +73,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser chrome-bridge exec --cmd evaluate --args \'{"expression":"document.title"}\'', description: '取标题' },
     ],
     handler: async (params) => {
-      const qs = `cmd=${encodeURIComponent(params.cmd)}&args=${encodeURIComponent(params.args || '{}')}`;
+      const qs = `cmd=${encodeURIComponent(params.cmd)}&args=${encodeURIComponent(params.args || '{}')}` + (params.client ? `&client=${encodeURIComponent(params.client)}` : '');
       const r = await fetch(`http://127.0.0.1:9347/exec?${qs}`).then(r => r.json()).catch(() => null);
       if (!r) return fail('bridge 未启动或无扩展连接');
       return r.ok === true ? ok({ cmd: params.cmd, result: r.data }) : fail(r.error || 'extension error');
@@ -85,7 +86,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({ url: z.string() }),
     examples: [{ cmd: 'xbrowser chrome-bridge open https://example.com', description: '打开页面' }],
     handler: async (params) => {
-      const qs = `cmd=navigate&args=${encodeURIComponent(JSON.stringify({ url: params.url }))}`;
+      const qs = `cmd=navigate&args=${encodeURIComponent(JSON.stringify({ url: params.url }))}` + ((params as Record<string, unknown>).client ? `&client=${encodeURIComponent(String((params as Record<string, unknown>).client))}` : '');
       const r = await fetch(`http://127.0.0.1:9347/exec?${qs}`).then(r => r.json()).catch(() => null);
       if (!r) return fail('bridge 未启动或无扩展连接');
       return r.ok === true ? ok({ url: params.url, result: r.data }) : fail(r.error || 'extension error');
