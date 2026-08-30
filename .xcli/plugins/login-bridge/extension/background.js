@@ -178,7 +178,9 @@ const executors = {
           }, (q) => {
             if (!q || !q.nodeId) { chrome.debugger.detach(dbg); resolve({ ok: false, error: 'input node not found' }); return; }
             chrome.debugger.sendCommand(dbg, 'DOM.setFileInputFiles', {
-              nodeId: q.nodeId, files: [filePathB64],
+              nodeId: q.nodeId,
+              // position-22 反序列化 bug 规避：显式构造纯字符串数组
+              files: [String(filePathB64)].filter(Boolean),
             }, () => {
               const err2 = chrome.runtime.lastError;
               chrome.debugger.detach(dbg);
