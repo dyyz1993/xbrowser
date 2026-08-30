@@ -263,12 +263,16 @@ export function buildStealthInitScript(): string {
     '      if(!e)return f.call(this,e);',
     '      return f.call(this,new Proxy(e,{get:function(k,p){',
     '        if(p==="sourceCapabilities")return fc;',
-    // S122：isTrusted 全量伪装——CDP 合成事件也是 true（跟内核一致），
-    // JS 事件也变 true（S117 说洗不掉——但 AEL 参数包装层面可以）。
-    // 检测器在 listener 里读 e.isTrusted 读到的是这个 Proxy 的返回值。
-    // 注意：只有经过 addEventListener 注册的 listener 才被包装；
-    // onXXX 属性赋值的走 _ba（onclick 原型 hook，同款处理）。
-    '        if(p==="isTrusted")return true;',
+    // S124 修正（d67 攻防）：恒 true 是"过度伪装"——站点自己的合成事件
+    // 也变 true → 直接判定浏览器被篡改（比检测自动化更严重的指纹暴露）。
+    // 正确策略：透传原始值（CDP Input 事件本来就是 true，JS 合成本来是 false）
+    // + paste 定向伪装（合成的 paste 在真实场景都是 trusted 的键盘操作产物）
+    '        if(p==="isTrusted"){',
+    '          var orig=Reflect.get(k,"isTrusted");',
+    '          if(orig===true)return true;',
+    '          if(k.type==="paste")return true;',
+    '          return orig;',
+    '        }',
     '        if((p==="clientX"||p==="clientY")&&k.type==="click"&&Number.isInteger(k[p])){',
     '          var _f=((k.timeStamp||Date.now())%89)/89*0.7+0.15;',
     '          return k[p]+_f;',
@@ -291,7 +295,12 @@ export function buildStealthInitScript(): string {
     '          var ev=_origWeGet.call(this);',
     '          if(!ev)return ev;',
     '          return new Proxy(ev,{get:function(k,p){',
-    '            if(p==="isTrusted")return true;',
+    '            if(p==="isTrusted"){',
+    '              var orig=Reflect.get(k,"isTrusted");',
+    '              if(orig===true)return true;',
+    '              if(k.type==="paste")return true;',
+    '              return orig;',
+    '            }',
     '            var v=Reflect.get(k,p);return typeof v==="function"?v.bind(k):v;',
     '          }});',
     '        }',
@@ -555,7 +564,12 @@ export function buildStealthInitScript(): string {
     '  };',
     // 4. onclick prototype hijack (dual-stream consistency)
     '  var _ba=function(k,p){',
-    '    if(p==="isTrusted")return true;',
+    '    if(p==="isTrusted"){',
+    '      var orig=Reflect.get(k,"isTrusted");',
+    '      if(orig===true)return true;',
+    '      if(k.type==="paste")return true;',
+    '      return orig;',
+    '    }',
     '    if((p==="clientX"||p==="clientY")&&k.type==="click"&&Number.isInteger(k[p])&&k.isTrusted===true){',
     '      var _f=((k.timeStamp||Date.now())%89)/89*0.7+0.15;return k[p]+_f;',
     '    }',
