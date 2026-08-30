@@ -217,6 +217,21 @@ const TAG_V2_SCRIPT = `
       if (mutations[mi].addedNodes.length > 0) { needsRetag = true; break; }
     }
     if (!needsRetag) return;
+    // v8.1：清理被移除元素的标注（死标注会留在 Canvas 上）
+    for (var ri = 0; ri < mutations.length; ri++) {
+      var removed = mutations[ri].removedNodes;
+      for (var rj = 0; rj < removed.length; rj++) {
+        var removedNode = removed[rj];
+        if (!removedNode.tagName) continue;
+        for (var rk in window.__xbTagMap) {
+          var entry = window.__xbTagMap[rk];
+          if (entry._el === removedNode || (entry._el && removedNode.contains && removedNode.contains(entry._el))) {
+            delete window.__xbTagMap[rk];
+            window.__xbTagStats.total--;
+          }
+        }
+      }
+    }
     // 防抖：300ms 内的连续变化只触发一次重标注
     clearTimeout(window.__xbTagRetagTimer);
     window.__xbTagRetagTimer = setTimeout(function() {
