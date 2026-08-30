@@ -820,9 +820,28 @@ export async function createSession(
 
     let targetPage: Page | null = null;
 
+    // 第零遍（S96，d07 下一切片）：精确 URL 匹配 —— goto 特定 URL 时优先
+    // 绑定"已是该 URL"的页面（无需导航，也绝不会把别的 session 的页面
+    // 导航走）。S95 实战：hostname 匹配绑到遗留 tab 后导航超时静默，title
+    // 残留旧页 —— hostname 级匹配只该是次选。
+    const ownedPages = new Set<unknown>();
+    for (const ssn of sessions.list()) ownedPages.add(ssn.page);
+    if (url) {
+      for (const ctx of contexts) {
+        for (const p of ctx.pages()) {
+          if (ownedPages.has(p)) continue;
+          try {
+            const pUrl = await resolvePageUrl(p);
+            if (pUrl === url) { targetPage = p; break; }
+          } catch { /* ignore */ }
+        }
+        if (targetPage) break;
+      }
+    }
+
     // 第一遍：找 hostname 匹配的页面（修复"session 总被绑到错 tab"bug；
     // url 可能为 null，走 resolvePageUrl 主动获取）
-    if (targetHostname) {
+    if (!targetPage && targetHostname) {
       for (const ctx of contexts) {
         const pages = ctx.pages();
         for (const p of pages) {
