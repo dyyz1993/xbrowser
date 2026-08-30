@@ -16,6 +16,7 @@ import path from 'path';
 import { execSync } from 'child_process';
 
 const BR = 'http://127.0.0.1:9347';
+let _editorTabId = null; // S159: assemble 的编辑器 tab
 const articlePath = process.argv[2];
 
 if (!articlePath) {
@@ -70,7 +71,7 @@ async function genCover(prompt) {
     await sleep(7000);
     const u = await doubaoEvalBig(`(function(){
       var imgs=Array.from(document.querySelectorAll('img')).filter(function(im){
-        return im.src.indexOf('rc_gen_image')!==-1&&im.naturalWidth>500;
+        return (im.src.indexOf('rc_gen_image')!==-1||im.src.indexOf('flow-imagex-sign')!==-1)&&im.naturalWidth>500;
       });
       return imgs.length?imgs[imgs.length-1].src:'';
     })()`);
@@ -101,13 +102,30 @@ async function genCover(prompt) {
 
 // ── 3. 组装草稿 ──
 async function assemble(coverPath) {
+  let _edTab = null;
+  async function evalEditor(expression) {
+    const r = await fetch(`${BR}/exec?client=0`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cmd: 'evaluate', args: { expression, ...(_edTab ? { tabId: _edTab } : {}) } }),
+    });
+    const j = await r.json();
+    return j.data && j.data.value !== undefined ? j.data.value : JSON.stringify(j).slice(0, 150);
+  }
+
   console.log('\n📝 组装掘金草稿...');
-  const nav = encodeURIComponent(JSON.stringify({ url: 'https://juejin.cn/editor/drafts/new?v=2' }));
-  await fetch(`${BR}/exec?client=0&cmd=navigate&args=${nav}`);
+  // S159: 掘金编辑器也用 task-open 隔离（不覆盖豆包 task tab）
+  const openResp = await fetch(`${BR}/exec?client=0`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cmd: 'task-open', args: { name: 'article-editor', url: 'https://juejin.cn/editor/drafts/new?v=2' } }),
+  }).then(r => r.json()).catch(() => null);
+  const editorTabId = openResp?.data?.tabId || null;
+  _edTab = editorTabId;
+  _editorTabId = editorTabId; // 供 pasteImg 使用
+  console.log('   editor tab:', editorTabId);
   await sleep(6000);
 
   // 标题
-  console.log('   title:', await evalBig(`(function(){
+  console.log('   title:', await evalEditor(`(function(){
     var t=document.querySelector('.title-input');
     if(!t)return'no';
     t.focus();t.select();
@@ -117,7 +135,7 @@ async function assemble(coverPath) {
   })()`));
 
   // intro
-  await evalBig(`var cm=document.querySelector('.CodeMirror').CodeMirror; cm.setValue(${JSON.stringify(intro)}); 'ok'`);
+  await evalEditor(`var cm=document.querySelector('.CodeMirror').CodeMirror; cm.setValue(${JSON.stringify(intro)}); 'ok'`);
 
   // 封面图（如果有）
   if (coverPath && fs.existsSync(coverPath)) {
@@ -133,7 +151,7 @@ async function assemble(coverPath) {
     // 图片检测：检查文章目录是否有 section-N.png
     const imgPath = path.join(path.dirname(articlePath), `section-${i}.png`);
 
-    await evalBig(`var cm=document.querySelector('.CodeMirror').CodeMirror; cm.setValue(cm.getValue()+'\\n\\n'+${JSON.stringify(sec)}); 'ok'`);
+    await evalEditor(`var cm=document.querySelector('.CodeMirror').CodeMirror; cm.setValue(cm.getValue()+'\\n\\n'+${JSON.stringify(sec)}); 'ok'`);
 
     if (fs.existsSync(imgPath)) {
       console.log(`   段${i+1} 图:`, await pasteImg(imgPath));
@@ -145,7 +163,7 @@ async function assemble(coverPath) {
 
   // 保存验证
   await sleep(8000);
-  const final = await evalBig(`(function(){
+  const final = await evalEditor(`(function(){
     var v=document.querySelector('.CodeMirror').CodeMirror.getValue();
     var lines=v.split('\\n');
     var imgLines=[];
@@ -195,10 +213,10 @@ async function doubaoEvalBig(expression) {
   return j.data && j.data.value !== undefined ? j.data.value : JSON.stringify(j).slice(0, 150);
 }
 
-async function evalBig(expression) {
+async function evalEditor(expression) {
   const r = await fetch(`${BR}/exec?client=0`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cmd: 'evaluate', args: { expression, ...(doubaoTabId ? { tabId: doubaoTabId } : {}) } }),
+    body: JSON.stringify({ cmd: 'evaluate', args: { expression, ...(_editorTabId ? { tabId: _editorTabId } : {}) } }),
   });
   const j = await r.json();
   return j.data && j.data.value !== undefined ? j.data.value : JSON.stringify(j).slice(0, 150);
@@ -231,8 +249,9 @@ async function clickSend() {
 }
 
 async function pasteImg(imgPath) {
+  // S159: paste 到编辑器 task tab（不是 active tab）
   const b64 = fs.readFileSync(imgPath).toString('base64');
-  return evalBig(`(async()=>{
+  return evalEditor(`(async()=>{
     const b64='${b64}';
     const bin=atob(b64);const buf=new Uint8Array(bin.length);
     for(let i=0;i<bin.length;i++)buf[i]=bin.charCodeAt(i);
