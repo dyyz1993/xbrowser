@@ -158,6 +158,38 @@ const executors = {
     return error ? { ok: false, error: String(error) } : result;
   },
 
+  uploadFile: async ({ filePathB64, fileName, selector, tabId }) => {
+    // S113：页面级 DataTransfer 注入被 React 清零（files 赋值立即归零）。
+    // chrome.debugger DOM.setFileInputFiles 是原生级（等价手动选文件）。
+    // 限制：CDP 的 setFileInputFiles 只接受 file:// 真实路径 —— 先把
+    // base64 落到扩展可写的临时位置不可行（SW 无 fs），改走两步：
+    // 1) navigate 到 file:// 中转页不行 —— 直接用 sendCommand 前把文件
+    //    写入由 CLI 侧先放置的固定路径（CLI 负责写盘）。
+    const target = tabId ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+    return new Promise((resolve) => {
+      const dbg = { tabId: target };
+      chrome.debugger.attach(dbg, '1.3', () => {
+        const err = chrome.runtime.lastError;
+        if (err) { resolve({ ok: false, error: err.message }); return; }
+        // 先查 input 节点（DOM.getDocument + querySelector）
+        chrome.debugger.sendCommand(dbg, 'DOM.getDocument', {}, (doc) => {
+          chrome.debugger.sendCommand(dbg, 'DOM.querySelector', {
+            nodeId: doc.root.nodeId, selector: selector || 'input[type=file]:last-of-type',
+          }, (q) => {
+            if (!q || !q.nodeId) { chrome.debugger.detach(dbg); resolve({ ok: false, error: 'input node not found' }); return; }
+            chrome.debugger.sendCommand(dbg, 'DOM.setFileInputFiles', {
+              nodeId: q.nodeId, files: [filePathB64],
+            }, () => {
+              const err2 = chrome.runtime.lastError;
+              chrome.debugger.detach(dbg);
+              resolve(err2 ? { ok: false, error: err2.message } : { ok: true, nodeSet: true });
+            });
+          });
+        });
+      });
+    });
+  },
+
   screenshot: async () => {
     const url = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
     return { ok: true, dataUrl: url.slice(0, 100), fullLength: url.length, base64: url.split(',')[1] };
