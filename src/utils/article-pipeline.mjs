@@ -36,12 +36,22 @@ console.log(`   ${sections.length} 个章节, ${article.length} 字符\n`);
 // ── 2. 豆包生成封面图 ──
 async function genCover(prompt) {
   console.log('🎨 豆包生成封面图...');
-  const nav = encodeURIComponent(JSON.stringify({ url: 'https://www.doubao.com/chat/?category=1' }));
-  await fetch(`${BR}/exec?client=0&cmd=navigate&args=${nav}`);
+  // S158: 用 task-open 在后台新开一个豆包 tab（不覆盖用户正在看的 tab）
+  const openBody = JSON.stringify({ cmd: 'task-open', args: { name: 'article-cover', url: 'https://www.doubao.com/chat/?category=1' } });
+  const openResp = await fetch(`${BR}/exec?client=0`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: openBody,
+  }).then(r => r.json()).catch(() => null);
+  if (openResp && openResp.data && openResp.data.tabId) {
+    doubaoTabId = openResp.data.tabId;
+  } else {
+    await discoverDoubaoTab();
+  }
+  console.log('    doubao tab:', doubaoTabId);
   await sleep(6000);
 
   // fill prompt
-  await evalBig(`(function(){
+  await doubaoEvalBig(`(function(){
     var ce=document.querySelector('.tiptap.ProseMirror');
     if(!ce)return 'no';
     ce.focus();
@@ -58,7 +68,7 @@ async function genCover(prompt) {
   // wait for image
   for (let w = 0; w < 35; w++) {
     await sleep(7000);
-    const u = await evalBig(`(function(){
+    const u = await doubaoEvalBig(`(function(){
       var imgs=Array.from(document.querySelectorAll('img')).filter(function(im){
         return im.src.indexOf('rc_gen_image')!==-1&&im.naturalWidth>500;
       });
@@ -66,7 +76,7 @@ async function genCover(prompt) {
     })()`);
     if (typeof u === 'string' && u.startsWith('http')) {
       console.log('   img found:', u.slice(55, 85));
-      const b64 = await evalBig(`(async()=>{
+      const b64 = await doubaoEvalBig(`(async()=>{
         const r=await fetch(${JSON.stringify(u)});
         const b=await r.arrayBuffer();
         let s='';const u8=new Uint8Array(b);
@@ -75,6 +85,13 @@ async function genCover(prompt) {
       })()`);
       fs.writeFileSync('/tmp/article-cover.png', Buffer.from(b64, 'base64'));
       console.log('   cover saved:', fs.statSync('/tmp/article-cover.png').size, 'bytes');
+      // 清理任务 tab
+      if (doubaoTabId) {
+        await fetch(`${BR}/exec?client=0`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cmd: 'task-close', args: { name: 'article-cover' } }),
+        }).catch(() => {});
+      }
       return true;
     }
   }
@@ -147,7 +164,29 @@ async function assemble(coverPath) {
 // ── utils ──
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-async function evalBig(expression) {
+// S158: 发现豆包 tab 的 tabId（多 tab 环境下必须指定，否则 trustedClick 打错 tab）
+let doubaoTabId = null;
+async function discoverDoubaoTab() {
+  const r = await fetch(`${BR}/exec?client=0`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cmd: 'tabs' }),
+  });
+  const j = await r.json();
+  const tabs = j.data || [];
+  let bestTab = null;
+  for (const t of tabs) {
+    if (t.url && t.url.includes('doubao.com/chat')) {
+      // 优先 category=1（图生图），其次取最新的
+      if (t.url.includes('category=1')) { bestTab = t; break; }
+      if (!bestTab || t.id > bestTab.id) bestTab = t;
+    }
+  }
+  if (bestTab) { doubaoTabId = bestTab.id; return bestTab.id; }
+  return null;
+}
+
+// S158: 豆包专用 evaluate（带 tabId，genCover 内使用）
+async function doubaoEvalBig(expression) {
   const r = await fetch(`${BR}/exec?client=0`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cmd: 'evaluate', args: { expression } }),
@@ -156,8 +195,17 @@ async function evalBig(expression) {
   return j.data && j.data.value !== undefined ? j.data.value : JSON.stringify(j).slice(0, 150);
 }
 
+async function evalBig(expression) {
+  const r = await fetch(`${BR}/exec?client=0`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cmd: 'evaluate', args: { expression, ...(doubaoTabId ? { tabId: doubaoTabId } : {}) } }),
+  });
+  const j = await r.json();
+  return j.data && j.data.value !== undefined ? j.data.value : JSON.stringify(j).slice(0, 150);
+}
+
 async function clickSend() {
-  const pos = await evalBig(`(function(){
+  const pos = await doubaoEvalBig(`(function(){
     var ce=document.querySelector('.tiptap.ProseMirror');
     if(!ce)return'';
     var ceR=ce.getBoundingClientRect();
@@ -173,7 +221,7 @@ async function clickSend() {
   for (let i = 0; i < 3; i++) {
     const r = await fetch(`${BR}/exec?client=0`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cmd: 'trustedClick', args: { x: sx, y: sy } }),
+      body: JSON.stringify({ cmd: 'trustedClick', args: { x: sx, y: sy, ...(doubaoTabId ? { tabId: doubaoTabId } : {}) } }),
     });
     const j = await r.json();
     if (j.data && j.data.ok) return true;
