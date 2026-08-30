@@ -364,7 +364,7 @@ export const visualTagV2Command = registerCommand({
   description: '分色标注页面元素（红=可点击 蓝=输入 绿=图片 黄=列表 紫=数字 橙=文本）',
   scope: 'page',
   parameters: z.object({
-    action: z.enum(['tag', 'lookup', 'clear', 'stats', 'by-type', 'find']),
+    action: z.enum(['tag', 'lookup', 'clear', 'stats', 'by-type', 'find', 'export']),
     id: z.string().optional().describe('lookup 时指定要查的 ID'),
     query: z.string().optional().describe('find 时指定搜索词（如 "找有AI编程标签的卡片"）'),
     type: z.string().optional().describe('by-type 时过滤类型：click/input/img/list/count/text'),
@@ -449,6 +449,55 @@ export const visualTagV2Command = registerCommand({
           `(function(){return JSON.stringify(window.__xbTagStats||{})})()`,
         );
         return ok({ action: 'stats', element: JSON.parse(result) as Record<string, unknown> });
+      }
+      case 'export': {
+        const result = await ctx.page.evaluate<string>(
+          `(function(){
+            var map = window.__xbTagSerializable;
+            if (!map) return JSON.stringify({err:'no-map'});
+            // 按 type 分组统计
+            var byType = {};
+            for (var id in map) {
+              var t = map[id].type || 'unknown';
+              byType[t] = (byType[t] || 0) + 1;
+            }
+            // 构建层级树（parent → children）
+            var tree = {};
+            var roots = [];
+            for (var id2 in map) {
+              var parent = map[id2].parent;
+              if (parent && map[parent]) {
+                if (!tree[parent]) tree[parent] = [];
+                tree[parent].push(id2);
+              } else {
+                roots.push(id2);
+              }
+            }
+            // elements 导出摘要（完整 DOM 映射太大，只导核心字段）
+            var elementsOut = {};
+            for (var id3 in map) {
+              elementsOut[id3] = {
+                type: map[id3].type,
+                text: (map[id3].text || '').slice(0, 20),
+                num: map[id3].num,
+                label: map[id3].formLabel,
+                frame: map[id3].frame,
+                parent: map[id3].parent,
+                table: map[id3].table ? {col: map[id3].table.col, row: map[id3].table.rowIndex} : null
+              };
+            }
+            return JSON.stringify({
+              total: Object.keys(map).length,
+              byType: byType,
+              rootIds: roots.slice(0, 20),
+              hierarchy: Object.keys(tree).slice(0, 50).reduce(function(acc, k) { acc[k] = tree[k]; return acc; }, {}),
+              elements: elementsOut
+            });
+          })()`,
+        );
+        const parsed = JSON.parse(result) as Record<string, unknown>;
+        if (parsed.err) return fail(String(parsed.err));
+        return ok({ action: 'export', element: parsed });
       }
       case 'clear': {
         await ctx.page.evaluate(`(function(){var o=document.getElementById('__xb-tag-overlay');if(o)o.remove();window.__xbTagMap=null;window.__xbTagStats=null;return 'ok'})()`);
