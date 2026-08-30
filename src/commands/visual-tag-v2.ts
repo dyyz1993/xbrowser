@@ -209,6 +209,71 @@ const TAG_V2_SCRIPT = `
     };
   }
 
+  // v8：动态标注——MutationObserver 监听新元素，自动补充标注
+  if (window.__xbTagObserver) { window.__xbTagObserver.disconnect(); }
+  window.__xbTagObserver = new MutationObserver(function(mutations) {
+    var needsRetag = false;
+    for (var mi = 0; mi < mutations.length; mi++) {
+      if (mutations[mi].addedNodes.length > 0) { needsRetag = true; break; }
+    }
+    if (!needsRetag) return;
+    // 防抖：300ms 内的连续变化只触发一次重标注
+    clearTimeout(window.__xbTagRetagTimer);
+    window.__xbTagRetagTimer = setTimeout(function() {
+      // 只标注新增的可见元素（不重画整个 Canvas）
+      var ctx2 = document.getElementById('__xb-tag-overlay');
+      if (!ctx2) return;
+      var canvas2 = ctx2.getContext('2d');
+      for (var ni = 0; ni < mutations.length; ni++) {
+        var nodes = mutations[ni].addedNodes;
+        for (var nj = 0; nj < nodes.length; nj++) {
+          var node = nodes[nj];
+          if (!node.getBoundingClientRect) continue;
+          var r = node.getBoundingClientRect();
+          if (r.width < 8 || r.height < 8) continue;
+          // 分类并标注
+          var newType = classifyElement(node);
+          if (!newType) continue;
+          var newId = genId(TYPE_PREFIX[newType] || 't', counters[newType]);
+          counters[newType]++;
+          var colors = COLORS[newType];
+          canvas2.fillStyle = colors.fill;
+          canvas2.fillRect(r.x - 2, r.y - 14, newId.length * 7 + 6, 14);
+          canvas2.strokeStyle = '#000';
+          canvas2.lineWidth = 1;
+          canvas2.strokeRect(r.x - 2, r.y - 14, newId.length * 7 + 6, 14);
+          canvas2.fillStyle = '#000';
+          canvas2.font = 'bold 11px monospace';
+          canvas2.fillText(newId, r.x + 1, r.y - 4);
+          canvas2.strokeStyle = colors.stroke;
+          canvas2.lineWidth = 1.5;
+          canvas2.strokeRect(r.x, r.y, r.width, r.height);
+          // 存映射
+          var parentId = null;
+          var parentNode = node.parentElement;
+          while (parentNode && parentNode !== document.body) {
+            for (var pk in window.__xbTagMap) {
+              if (window.__xbTagMap[pk]._el === parentNode) { parentId = pk; break; }
+            }
+            if (parentId) break;
+            parentNode = parentNode.parentElement;
+          }
+          window.__xbTagMap[newId] = { type: newType, tagName: node.tagName, text: (node.textContent||'').trim().slice(0,40), parent: parentId, _el: node, rect: {x:Math.round(r.x),y:Math.round(r.y),w:Math.round(r.width),h:Math.round(r.height)} };
+          window.__xbTagStats.total++;
+        }
+      }
+      // 更新 serializable
+      var ser = {};
+      for (var sk2 in window.__xbTagMap) {
+        var item = {};
+        for (var key in window.__xbTagMap[sk2]) { if (key !== '_el') item[key] = window.__xbTagMap[sk2][key]; }
+        ser[sk2] = item;
+      }
+      window.__xbTagSerializable = ser;
+    }, 300);
+  });
+  window.__xbTagObserver.observe(document.body, { childList: true, subtree: true });
+
   // v4：生成可序列化版本（去掉 _el DOM 引用）
   var serializable = {};
   for (var sk in window.__xbTagMap) {
