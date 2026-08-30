@@ -1,27 +1,24 @@
 /**
  * xbrowser Login Bridge — background worker
  *
- * 导出：抓取指定站点（或全部）的 cookie + localStorage，经本机 bridge 服务
- * 推给 xbrowser（POST http://127.0.0.1:9355/cookies）。
- * 导入：从 bridge 拉 cookie 列表写入浏览器（用于反向同步）。
+ * 登录态：导出 cookie+localStorage 到 bridge（9355 HTTP），导入反向同步。
+ * 控制通道（S103）：常驻 WS 客户端连 xbrowser bridge（ws://127.0.0.1:9346），
+ * 接收 xbrowser 下发的命令（navigate/evaluate/click/fill/tabs/screenshot），
+ * 在用户浏览器内执行 —— 无需开 --remote-debugging-port。
  */
 
 const BRIDGE = 'http://127.0.0.1:9355';
+const WS_BRIDGE = 'ws://127.0.0.1:9346';
+
+// ── 登录态（原有能力） ──────────────────────────────────────
 
 async function exportCookies(domainFilter) {
   const all = await chrome.cookies.getAll(domainFilter ? { domain: domainFilter } : {});
-  // 只要有意义的：名字非空 + host 少量敏感过滤（__Host- 保留，它们是关键登录态）
   return all.map((c) => ({
-    domain: c.domain,
-    name: c.name,
-    value: c.value,
-    path: c.path,
-    secure: c.secure,
-    httpOnly: c.httpOnly,
+    domain: c.domain, name: c.name, value: c.value, path: c.path,
+    secure: c.secure, httpOnly: c.httpOnly,
     sameSite: c.sameSite === 'unspecified' ? 'unspecified' : c.sameSite,
-    expirationDate: c.expirationDate,
-    hostOnly: c.hostOnly,
-    storeId: c.storeId,
+    expirationDate: c.expirationDate, hostOnly: c.hostOnly, storeId: c.storeId,
   }));
 }
 
@@ -41,15 +38,12 @@ async function exportLocalStorage(tab, domainFilter) {
       },
     });
     return (result || []).map((e) => ({ url: tab.url, ...e }));
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 async function pushToBridge(payload) {
   const resp = await fetch(`${BRIDGE}/cookies`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
   return resp.json();
@@ -66,25 +60,146 @@ async function importCookies(items) {
     try {
       const details = {
         url: `http${c.secure ? 's' : ''}://${c.domain.replace(/^\./, '')}${c.path || '/'}`,
-        name: c.name,
-        value: c.value,
-        path: c.path || '/',
-        secure: !!c.secure,
-        httpOnly: !!c.httpOnly,
+        name: c.name, value: c.value, path: c.path || '/',
+        secure: !!c.secure, httpOnly: !!c.httpOnly,
       };
       if (!c.hostOnly && c.domain && c.domain.startsWith('.')) details.domain = c.domain;
       if (c.expirationDate) details.expirationDate = c.expirationDate;
       if (c.sameSite && c.sameSite !== 'unspecified') details.sameSite = c.sameSite;
       await chrome.cookies.set(details);
       ok++;
-    } catch {
-      fail++;
-    }
+    } catch { fail++; }
   }
   return { ok, fail };
 }
 
-// ── Message router (popup → worker) ──
+// ── 控制通道执行器（S103） ──────────────────────────────────
+
+const executors = {
+  ping: async () => ({ pong: true, ua: navigator.userAgent }),
+
+  tabs: async () => {
+    const tabs = await chrome.tabs.query({});
+    return tabs.map((t) => ({ id: t.id, title: t.title, url: t.url, active: t.active }));
+  },
+
+  navigate: async ({ url, tabId }) => {
+    const target = tabId ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+    if (url) {
+      if (target != null) {
+        await chrome.tabs.update(target, { url });
+        return { ok: true, tabId: target };
+      }
+      const tab = await chrome.tabs.create({ url, active: true });
+      return { ok: true, tabId: tab.id, created: true };
+    }
+    return { ok: false, error: 'no url' };
+  },
+
+  evaluate: async ({ expression, tabId, allFrames }) => {
+    const target = tabId ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+    const [{ result, error }] = await chrome.scripting.executeScript({
+      target: { tabId: target, allFrames: !!allFrames },
+      func: (expr) => {
+        try { const v = eval(expr); return { ok: true, value: v === undefined ? null : (typeof v === 'function' ? String(v) : (typeof v === 'object' ? JSON.stringify(v) : v)) }; }
+        catch (e) { return { ok: false, error: String(e) }; }
+      },
+      args: [expression],
+    });
+    return error ? { ok: false, error: String(error) } : result;
+  },
+
+  click: async ({ selector, tabId }) => {
+    const target = tabId ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+    const [{ result, error }] = await chrome.scripting.executeScript({
+      target: { tabId: target },
+      func: (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return { ok: false, error: 'not found: ' + sel };
+        el.click();
+        return { ok: true };
+      },
+      args: [selector],
+    });
+    return error ? { ok: false, error: String(error) } : result;
+  },
+
+  fill: async ({ selector, value, tabId }) => {
+    const target = tabId ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+    const [{ result, error }] = await chrome.scripting.executeScript({
+      target: { tabId: target },
+      func: (sel, val) => {
+        const el = document.querySelector(sel);
+        if (!el) return { ok: false, error: 'not found: ' + sel };
+        const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+        setter.call(el, val);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        return { ok: true };
+      },
+      args: [selector, value],
+    });
+    return error ? { ok: false, error: String(error) } : result;
+  },
+
+  screenshot: async () => {
+    const url = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
+    return { ok: true, dataUrl: url.slice(0, 100), fullLength: url.length, base64: url.split(',')[1] };
+  },
+
+  url: async ({ tabId }) => {
+    const t = tabId != null
+      ? (await chrome.tabs.get(tabId))
+      : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+    return { ok: true, url: t?.url, title: t?.title };
+  },
+};
+
+// ── WS 客户端（连 xbrowser bridge 9346） ────────────────────
+
+let ws = null;
+let backoff = 1000;
+
+function badge(text, color) {
+  try { chrome.action.setBadgeText({ text }); if (color) chrome.action.setBadgeBackgroundColor({ color }); } catch {}
+}
+
+function connectWS() {
+  try { ws = new WebSocket(WS_BRIDGE); } catch { scheduleReconnect(); return; }
+  ws.onopen = () => { backoff = 1000; badge('ON', '#238636'); };
+  ws.onclose = () => { ws = null; badge('off', '#8b949e'); scheduleReconnect(); };
+  ws.onerror = () => { try { ws.close(); } catch {} };
+  ws.onmessage = async (ev) => {
+    let msg;
+    try { msg = JSON.parse(ev.data); } catch { return; }
+    const { id, cmd, args } = msg || {};
+    const reply = (payload) => { try { ws?.send(JSON.stringify({ id, ...payload })); } catch {} };
+    const exec = executors[cmd];
+    if (!exec) { reply({ ok: false, error: `unknown cmd: ${cmd}` }); return; }
+    try { reply({ ok: true, data: await exec(args || {}) }); }
+    catch (e) { reply({ ok: false, error: String(e) }); }
+  };
+}
+
+function scheduleReconnect() {
+  setTimeout(connectWS, backoff);
+  backoff = Math.min(backoff * 2, 15000);
+}
+
+connectWS();
+
+// MV3 SW 生命周期兜底（S103）：SW 空闲 ~30s 被杀，setTimeout 重试随进程
+// 蒸发（实测扩展加载成功但永不连入的根因）。alarms 是 Chrome 官方的
+// 定时唤醒源 —— 每 30s 唤醒 SW，若 WS 断开则重连。
+chrome.alarms.create('ws-keepalive', { periodInMinutes: 0.5 });
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'ws-keepalive' && (!ws || ws.readyState > 1)) {
+    connectWS();
+  }
+});
+
+// ── Message router (popup → worker) ─────────────────────────
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     try {
@@ -93,11 +208,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         const local = await exportLocalStorage(tab, msg.domain);
         const result = await pushToBridge({ source: 'chrome', domain: msg.domain || '*', cookies, localStorage: local, at: Date.now() });
-        sendResponse({ ok: true, cookies: cookies.length, localStorage: local.length, result });
+        sendResponse({ ok: true, cookies: cookies.length, localStorage: local.length, result, wsConnected: !!ws });
       } else if (msg.type === 'import') {
         const data = await pullFromBridge(msg.domain);
         const r = await importCookies(data.cookies || []);
-        sendResponse({ ok: true, ...r });
+        sendResponse({ ok: true, ...r, wsConnected: !!ws });
+      } else if (msg.type === 'status') {
+        sendResponse({ ok: true, wsConnected: !!ws, wsBridge: WS_BRIDGE });
       } else if (msg.type === 'tabs') {
         const tabs = await chrome.tabs.query({});
         const groups = {};
@@ -111,5 +228,5 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: false, error: String(e) });
     }
   })();
-  return true; // async sendResponse
+  return true;
 });

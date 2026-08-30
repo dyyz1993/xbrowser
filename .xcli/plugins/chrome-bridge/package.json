@@ -1,0 +1,18 @@
+{
+  "name": "xbrowser-plugin-chrome-bridge",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "dependencies": { "zod": "^3.24.0" },
+  "peerDependencies": { "@dyyz1993/xcli-core": ">=1.0.0" },
+  "xbrowser": {
+    "name": "chrome-bridge",
+    "slug": "chrome-bridge",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "Chrome 扩展控制通道：插件装进用户浏览器，xbrowser 经 WS 直接控制（无需调试端口）",
+    "site": "https://127.0.0.1",
+    "requiresLogin": false,
+    "commands": ["serve", "status", "exec", "open"]
+  }
+}
