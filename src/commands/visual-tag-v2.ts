@@ -209,6 +209,61 @@ const TAG_V2_SCRIPT = `
     };
   }
 
+  // v9：跨 frame 标注——递归处理同源 iframe 内的元素
+  function tagFrame(doc, offsetX, offsetY) {
+    var frameAll = doc.querySelectorAll('button, a[href], input, select, textarea, img, [onclick], [role=button], [contenteditable], [aria-label]');
+    for (var fi = 0; fi < frameAll.length && fi < 100; fi++) {
+      var fel = frameAll[fi];
+      var fr = fel.getBoundingClientRect();
+      if (fr.width < 8 || fr.height < 8) continue;
+      var fType = classifyElement(fel);
+      if (!fType) continue;
+      var fId = genId(TYPE_PREFIX[fType] || 't', counters[fType]);
+      counters[fType]++;
+      var fColors = COLORS[fType];
+      // 坐标偏移到主文档 Canvas（iframe 在主文档中的位置 + 元素在 iframe 中的位置）
+      var fx = fr.x + offsetX, fy = fr.y + offsetY;
+      ctx.fillStyle = fColors.fill;
+      ctx.fillRect(fx - 2, fy - 14, fId.length * 7 + 6, 14);
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 1;
+      ctx.strokeRect(fx - 2, fy - 14, fId.length * 7 + 6, 14);
+      ctx.fillStyle = '#000'; ctx.font = 'bold 11px monospace';
+      ctx.fillText(fId, fx + 1, fy - 4);
+      ctx.strokeStyle = fColors.stroke; ctx.lineWidth = 1.5;
+      ctx.strokeRect(fx, fy, fr.width, fr.height);
+      window.__xbTagMap[fId] = {
+        type: fType, tagName: fel.tagName,
+        text: (fel.textContent||'').trim().slice(0,40),
+        num: (fel.textContent||'').trim().match(/[0-9,.]+/)?.[0] || null,
+        formLabel: (fel.getAttribute('aria-label')||fel.getAttribute('placeholder')||'').slice(0,30) || null,
+        frame: 'iframe',
+        _el: fel,
+        rect: {x:Math.round(fx),y:Math.round(fy),w:Math.round(fr.width),h:Math.round(fr.height)},
+        selector: (function(e){return e.id?'#'+e.id:e.tagName.toLowerCase()}) (fel)
+      };
+    }
+    // 递归处理嵌套 iframe
+    var nestedFrames = doc.querySelectorAll('iframe');
+    for (var nf = 0; nf < nestedFrames.length; nf++) {
+      try {
+        var nestedDoc = nestedFrames[nf].contentDocument;
+        if (!nestedDoc) continue;
+        var nestedRect = nestedFrames[nf].getBoundingClientRect();
+        tagFrame(nestedDoc, nestedRect.x, nestedRect.y);
+      } catch(e) { /* 跨域 iframe 跳过 */ }
+    }
+  }
+  // 遍历主文档的所有同源 iframe
+  var mainFrames = document.querySelectorAll('iframe');
+  for (var mf = 0; mf < mainFrames.length; mf++) {
+    try {
+      var mDoc = mainFrames[mf].contentDocument;
+      if (!mDoc) continue;
+      var mRect = mainFrames[mf].getBoundingClientRect();
+      tagFrame(mDoc, mRect.x, mRect.y);
+    } catch(e) { /* 跨域跳过 */ }
+  }
+
   // v8：动态标注——MutationObserver 监听新元素，自动补充标注
   if (window.__xbTagObserver) { window.__xbTagObserver.disconnect(); }
   window.__xbTagObserver = new MutationObserver(function(mutations) {
