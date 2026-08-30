@@ -76,6 +76,63 @@ async function importCookies(items) {
 // ── 控制通道执行器（S103） ──────────────────────────────────
 
 const executors = {
+  // ── S121: CDP 透传（核心：命令转发器，扩展零逻辑） ──
+  cdp: async ({ tabId, method, params }) => {
+    const target = tabId ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+    return new Promise((resolve) => {
+      chrome.debugger.attach({ tabId: target }, '1.3', () => {
+        // 已 attach 也继续（幂等）
+        chrome.debugger.sendCommand({ tabId: target }, method, params || {}, (result) => {
+          const err = chrome.runtime.lastError;
+          if (err) resolve({ ok: false, error: err.message });
+          else resolve({ ok: true, data: result });
+        });
+      });
+    });
+  },
+  'cdp-detach': async ({ tabId }) => {
+    const target = tabId ?? null;
+    if (target) {
+      await chrome.debugger.detach({ tabId: target }).catch(() => {});
+      return { ok: true, detached: target };
+    }
+    return { ok: false, error: 'no tabId' };
+  },
+
+  // ── S121: tab group 生命周期（任务分组） ──
+  'task-open': async ({ name, url }) => {
+    const tab = await chrome.tabs.create({ url: url || 'about:blank', active: true });
+    const group = await chrome.tabs.group({ tabIds: [tab.id] });
+    await chrome.tabGroups.update(group, { title: 'xb-task-' + (name || 'default'), color: 'green' });
+    return { tabId: tab.id, groupId: group };
+  },
+  'task-close': async ({ name }) => {
+    const groups = await chrome.tabGroups.query({});
+    const targets = name
+      ? groups.filter((g) => g.title === 'xb-task-' + name)
+      : groups.filter((g) => g.title.startsWith('xb-task-'));
+    let closed = 0;
+    for (const g of targets) {
+      const tabs = await chrome.tabs.query({ groupId: g.id });
+      for (const t of tabs) await chrome.tabs.remove(t.id).catch(() => {});
+      closed++;
+    }
+    return { closed };
+  },
+  'task-list': async () => {
+    const groups = await chrome.tabGroups.query({});
+    const out = [];
+    for (const g of groups.filter((g) => g.title.startsWith('xb-task-'))) {
+      const tabs = await chrome.tabs.query({ groupId: g.id });
+      out.push({
+        name: g.title.slice(8),
+        groupId: g.id,
+        tabs: tabs.map((t) => ({ id: t.id, url: (t.url || '').slice(0, 60), title: (t.title || '').slice(0, 30) })),
+      });
+    }
+    return out;
+  },
+
   ping: async () => ({ pong: true, ua: navigator.userAgent }),
 
   tabs: async () => {

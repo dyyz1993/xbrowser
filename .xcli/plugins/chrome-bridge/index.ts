@@ -80,6 +80,60 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  site.command('cdp', {
+    description: 'CDP 命令透传到用户浏览器（chrome.debugger sendCommand 转发）',
+    scope: 'project',
+    parameters: z.object({
+      method: z.string().describe('CDP 方法名，如 Runtime.evaluate / Page.navigate / Input.dispatchMouseEvent'),
+      params: z.string().optional().describe('CDP 参数 JSON'),
+      tabId: z.number().optional(),
+    }),
+    examples: [
+      { cmd: 'xbrowser chrome-bridge cdp --method Runtime.evaluate --params \'{"expression":"1+1"}\'', description: '执行 JS' },
+      { cmd: 'xbrowser chrome-bridge cdp --method Page.captureScreenshot', description: 'CDP 截图' },
+    ],
+    handler: async (params) => {
+      const body = { cmd: 'cdp', args: {
+        method: params.method,
+        ...(params.params ? (()=>{try{return JSON.parse(params.params)}catch{return {}}})() : {}),
+        ...(params.tabId ? { tabId: params.tabId } : {}),
+      }};
+      const r = await fetch('http://127.0.0.1:9347/exec?client=0', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then(r => r.json()).catch(() => null);
+      if (!r) return fail('bridge 未启动或无扩展连接');
+      return r.ok === true ? ok({ method: params.method, result: r.data }) : fail(r.error || 'extension error');
+    },
+  });
+
+  site.command('task', {
+    description: 'tab group 任务管理：open（开任务组）/ close（删组）/ list（列组）',
+    scope: 'project',
+    parameters: z.object({
+      action: z.enum(['open', 'close', 'list']),
+      name: z.string().optional(),
+      url: z.string().optional(),
+    }),
+    examples: [
+      { cmd: 'xbrowser chrome-bridge task --action open --name demo --url https://example.com', description: '开任务组' },
+      { cmd: 'xbrowser chrome-bridge task --action close --name demo', description: '删任务组' },
+    ],
+    handler: async (params) => {
+      const cmdMap = { open: 'task-open', close: 'task-close', list: 'task-list' };
+      const body = { cmd: cmdMap[params.action], args: {
+        ...(params.name ? { name: params.name } : {}),
+        ...(params.url ? { url: params.url } : {}),
+      }};
+      const r = await fetch('http://127.0.0.1:9347/exec?client=0', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }).then(r => r.json()).catch(() => null);
+      if (!r) return fail('bridge 未启动或无扩展连接');
+      return r.ok === true ? ok(r.data) : fail(r.error || 'extension error');
+    },
+  });
+
   site.command('open', {
     description: '在用户浏览器打开 URL（navigate 快捷方式）',
     scope: 'project',
