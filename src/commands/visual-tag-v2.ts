@@ -73,6 +73,9 @@ const TAG_V2_SCRIPT = `
         (el.querySelector && el.querySelector('img,svg') &&
          el.children.length <= 2 && !text)) return 'img';
 
+    // 优先级4.5：表格单元格
+    if (tag === 'TD' || tag === 'TH') return 'list';
+
     // 优先级5：列表（v3：加 card）
     if (tag === 'UL' || tag === 'OL' || tag === 'LI' ||
         /list|item|feed|timeline|card/i.test(cls)) return 'list';
@@ -91,7 +94,7 @@ const TAG_V2_SCRIPT = `
     text:  { stroke: '#FF8C00', fill: '#FFECD2' },  // 橙
   };
 
-  var all = document.querySelectorAll('button, a[href], input, select, textarea, img, ul, ol, li, svg, [onclick], [role="button"], [contenteditable], [aria-label], [data-target], [class*="btn"], [class*="list"], [class*="item"], [class*="count"], [class*="num"], [class*="like"], [class*="comment"], [class*="stat"], [class*="card"], [class*="tab"], [class*="menu"], [class*="nav"], [class*="link"]');
+  var all = document.querySelectorAll('button, a[href], td, th, input, select, textarea, img, ul, ol, li, svg, [onclick], [role="button"], [contenteditable], [aria-label], [data-target], [class*="btn"], [class*="list"], [class*="item"], [class*="count"], [class*="num"], [class*="like"], [class*="comment"], [class*="stat"], [class*="card"], [class*="tab"], [class*="menu"], [class*="nav"], [class*="link"]');
 
   for (var i = 0; i < all.length && i < 300; i++) {
     var el = all[i];
@@ -162,9 +165,25 @@ const TAG_V2_SCRIPT = `
       }
     }
 
+    // v7：表格语义——单元格 → 列名 + 行号
+    var tableInfo = null;
+    if (el.tagName === 'TD' || el.tagName === 'TH') {
+      var table = el.closest('table');
+      if (table) {
+        var row = el.closest('tr');
+        var cellIndex = el.cellIndex;
+        var rowIndex = row ? row.rowIndex : -1;
+        // 找表头（thead 的 th 或第一行的 th）
+        var header = table.querySelector('thead th:nth-child(' + (cellIndex + 1) + ')') ||
+                     table.querySelector('tr:first-child th:nth-child(' + (cellIndex + 1) + ')');
+        var colName = header ? header.textContent.trim() : 'col-' + (cellIndex + 1);
+        tableInfo = { col: colName, colIndex: cellIndex, rowIndex: rowIndex, value: el.textContent.trim().slice(0, 20) };
+      }
+    }
+
     window.__xbTagMap[id] = {
       type: type,\n      parent: parentId,\n      _el: el,
-      formLabel: formLabel,
+      formLabel: formLabel,\n      table: tableInfo,
       tagName: el.tagName,
       text: (el.textContent || '').trim().slice(0, 40),
       num: (el.textContent || '').trim().match(/[\\d,.]+/)?.[0] || null,
