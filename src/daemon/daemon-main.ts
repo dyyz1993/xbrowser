@@ -158,6 +158,21 @@ async function main() {
     console.error('Daemon unhandledRejection:', msg);
   });
 
+  // chrome-bridge 通道自启（S107）：daemon 起来时自动拉起扩展控制通道
+  // （独立进程 WS:9346/HTTP:9347，已在运行则跳过）。持久化补全——用户
+  // 不需要手动跑 chrome-bridge serve，daemon 在通道就在。
+  try {
+    const bridgeUp = await fetch('http://127.0.0.1:9347/status').then(r => r.ok).catch(() => false);
+    if (!bridgeUp) {
+      const { spawn } = await import('child_process');
+      const path = await import('path');
+      const serverPath = path.join(process.cwd(), '.xcli', 'plugins', 'chrome-bridge', 'server.mjs');
+      const child = spawn(process.execPath, [serverPath, '9346'], { detached: true, stdio: 'ignore' });
+      child.unref();
+      log('chrome-bridge server auto-started (WS:9346/HTTP:9347)');
+    }
+  } catch { /* best-effort */ }
+
   // Keep alive — prevents the process from exiting
   setInterval(() => {}, 60000);
 }
