@@ -96,22 +96,32 @@ const executors = {
     return { ok: false, error: 'no url' };
   },
 
-  evaluate: async ({ expression, tabId, allFrames }) => {
+  evaluate: async ({ expression, tabId }) => {
+    // S105：chrome.scripting（含 world MAIN）的注入都受 CSP 约束（eval 被拦）。
+    // chrome.debugger 走 CDP Runtime.evaluate —— DevTools console 同源能力，
+    // 不受页面/扩展 CSP 限制。attach 时浏览器顶部出现"正在调试"横幅（用户可见）。
     const target = tabId ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
-    // world: MAIN —— 在页面上下文执行（扩展 CSP 禁 eval，S104 实测
-    // EvalError；MAIN world 遵循页面自身 CSP，绝大多数页面可用）
-    const [{ result, error }] = await chrome.scripting.executeScript({
-      target: { tabId: target, allFrames: !!allFrames },
-      world: 'MAIN',
-      func: (expr) => {
-        try {
-          const v = eval(expr);
-          return { ok: true, value: v === undefined ? null : (typeof v === 'function' ? String(v) : (typeof v === 'object' ? JSON.stringify(v) : v)) };
-        } catch (e) { return { ok: false, error: String(e) }; }
-      },
-      args: [expression],
+    return new Promise((resolve) => {
+      const dbg = { tabId: target };
+      const finish = (r) => {
+        chrome.debugger.detach(dbg).catch(() => {});
+        if (r?.exceptionDetails) {
+          resolve({ ok: false, error: r.exceptionDetails.exception?.description || r.exceptionDetails.text });
+        } else {
+          let v = r?.result?.value;
+          if (v === undefined) v = null;
+          else if (typeof v === 'object') { try { v = JSON.parse(JSON.stringify(v)); } catch {} }
+          resolve({ ok: true, value: v });
+        }
+      };
+      chrome.debugger.attach(dbg, '1.3', () => {
+        const err = chrome.runtime.lastError;
+        if (err) { resolve({ ok: false, error: err.message }); return; }
+        chrome.debugger.sendCommand(dbg, 'Runtime.evaluate',
+          { expression, returnByValue: true, awaitPromise: true },
+          (r) => finish(r));
+      });
     });
-    return error ? { ok: false, error: String(error) } : result;
   },
 
   click: async ({ selector, tabId }) => {
