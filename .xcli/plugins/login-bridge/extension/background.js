@@ -75,10 +75,26 @@ async function importCookies(items) {
 
 // ── 控制通道执行器（S103） ──────────────────────────────────
 
+
+// S139：获取目标 tab——优先用 xb-task 组的最后一个 tab（后台），不抢用户焦点
+async function getTaskTabId() {
+  const groups = await chrome.tabGroups.query({});
+  const taskGroups = groups.filter(g => g.title && g.title.startsWith('xb-task-'));
+  if (taskGroups.length > 0) {
+    // 取最后一个任务组的 tab
+    const g = taskGroups[taskGroups.length - 1];
+    const tabs = await chrome.tabs.query({ groupId: g.id });
+    if (tabs.length > 0) return tabs[tabs.length - 1].id;
+  }
+  // fallback: active tab（兼容无任务组的旧用法）
+  const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return active?.id;
+}
+
 const executors = {
   // ── S121: CDP 透传（核心：命令转发器，扩展零逻辑） ──
   cdp: async ({ tabId, method, params }) => {
-    const target = tabId ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+    const target = tabId ?? await getTaskTabId();
     return new Promise((resolve) => {
       chrome.debugger.attach({ tabId: target }, '1.3', () => {
         // 已 attach 也继续（幂等）
@@ -101,7 +117,7 @@ const executors = {
 
   // ── S121: tab group 生命周期（任务分组） ──
   'task-open': async ({ name, url }) => {
-    const tab = await chrome.tabs.create({ url: url || 'about:blank', active: true });
+    const tab = await chrome.tabs.create({ url: url || 'about:blank', active: false }); // 后台创建，不抢焦点
     const group = await chrome.tabs.group({ tabIds: [tab.id] });
     await chrome.tabGroups.update(group, { title: 'xb-task-' + (name || 'default'), color: 'green' });
     return { tabId: tab.id, groupId: group };
@@ -141,13 +157,13 @@ const executors = {
   },
 
   navigate: async ({ url, tabId }) => {
-    const target = tabId ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+    const target = tabId ?? await getTaskTabId();
     if (url) {
       if (target != null) {
-        await chrome.tabs.update(target, { url });
+        await chrome.tabs.update(target, { url, active: false });
         return { ok: true, tabId: target };
       }
-      const tab = await chrome.tabs.create({ url, active: true });
+      const tab = await chrome.tabs.create({ url, active: false }); // 后台创建，不抢焦点
       return { ok: true, tabId: tab.id, created: true };
     }
     return { ok: false, error: 'no url' };
@@ -157,7 +173,7 @@ const executors = {
     // S105：chrome.scripting（含 world MAIN）的注入都受 CSP 约束（eval 被拦）。
     // chrome.debugger 走 CDP Runtime.evaluate —— DevTools console 同源能力，
     // 不受页面/扩展 CSP 限制。attach 时浏览器顶部出现"正在调试"横幅（用户可见）。
-    const target = tabId ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+    const target = tabId ?? await getTaskTabId();
     return new Promise((resolve) => {
       const dbg = { tabId: target };
       const finish = (r) => {
@@ -182,7 +198,7 @@ const executors = {
   },
 
   click: async ({ selector, tabId }) => {
-    const target = tabId ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+    const target = tabId ?? await getTaskTabId();
     const [{ result, error }] = await chrome.scripting.executeScript({
       target: { tabId: target },
       func: (sel) => {
@@ -197,7 +213,7 @@ const executors = {
   },
 
   fill: async ({ selector, value, tabId }) => {
-    const target = tabId ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+    const target = tabId ?? await getTaskTabId();
     const [{ result, error }] = await chrome.scripting.executeScript({
       target: { tabId: target },
       func: (sel, val) => {
@@ -222,7 +238,7 @@ const executors = {
     // base64 落到扩展可写的临时位置不可行（SW 无 fs），改走两步：
     // 1) navigate 到 file:// 中转页不行 —— 直接用 sendCommand 前把文件
     //    写入由 CLI 侧先放置的固定路径（CLI 负责写盘）。
-    const target = tabId ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+    const target = tabId ?? await getTaskTabId();
     return new Promise((resolve) => {
       const dbg = { tabId: target };
       chrome.debugger.attach(dbg, '1.3', () => {
@@ -252,7 +268,7 @@ const executors = {
   // S120：可信点击（chrome.debugger Input.dispatchMouseEvent）——
   // 页面 el.click() 是合成事件，ProseMirror 等框架不认；可信点击等价鼠标。
   trustedClick: async ({ x, y, tabId }) => {
-    const target = tabId ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0]?.id;
+    const target = tabId ?? await getTaskTabId();
     return new Promise((resolve) => {
       const dbg = { tabId: target };
       // 先 detach（可能残留）再 attach —— 残留 attach 会让新 attach 静默失败
