@@ -824,14 +824,16 @@ export async function createSession(
     // 绑定"已是该 URL"的页面（无需导航，也绝不会把别的 session 的页面
     // 导航走）。S95 实战：hostname 匹配绑到遗留 tab 后导航超时静默，title
     // 残留旧页 —— hostname 级匹配只该是次选。
-    const ownedPages = new Set<unknown>();
-    for (const ssn of sessions.list()) ownedPages.add(ssn.page);
+    const ownedUrls = new Set<string>();
+    for (const ssn of sessions.list()) {
+      try { const u = ssn.page?.url(); if (u && u !== 'about:blank') ownedUrls.add(u); } catch { /* ignore */ }
+    }
     if (url) {
       for (const ctx of contexts) {
         for (const p of ctx.pages()) {
-          if (ownedPages.has(p)) continue;
           try {
             const pUrl = await resolvePageUrl(p);
+            if (ownedUrls.has(pUrl)) continue;
             if (pUrl === url) { targetPage = p; break; }
           } catch { /* ignore */ }
         }
@@ -846,8 +848,9 @@ export async function createSession(
       for (const ctx of contexts) {
         const pages = ctx.pages();
         for (const p of pages) {
-          if (ownedPages.has(p)) continue;
-          const pUrl = await resolvePageUrl(p);
+          const pUrl0 = await resolvePageUrl(p);
+          if (ownedUrls.has(pUrl0)) continue;
+          const pUrl = pUrl0;
           if (isRealPageUrl(pUrl) && pUrl.includes(targetHostname)) {
             targetPage = p;
             break;
@@ -862,8 +865,9 @@ export async function createSession(
       for (const ctx of contexts) {
         const pages = ctx.pages();
         for (const p of pages) {
-          if (ownedPages.has(p)) continue;
-          const pUrl = await resolvePageUrl(p);
+          const pUrl0 = await resolvePageUrl(p);
+          if (ownedUrls.has(pUrl0)) continue;
+          const pUrl = pUrl0;
           if (isRealPageUrl(pUrl)) {
             targetPage = p;
             break;
@@ -875,17 +879,30 @@ export async function createSession(
 
     if (!targetPage && options?.cdpEndpoint) {
       const targets = await getCDPTargets(options.cdpEndpoint);
+      // S98：matchTarget 本身必须尊重占用 —— 旧逻辑 find 只筛 URL 非空白，
+      // 被 session 占用的 tab 也会命中，随后 newPage+goto(matchTarget.url)
+      // 把别的 session 的页面导航走（Q1 漂移全链根因）。占用 tab 直接跳过。
+      const ownedUrlsT = new Set<string>();
+      for (const ssn of sessions.list()) {
+        try { const u = ssn.page?.url(); if (u && u !== 'about:blank') ownedUrlsT.add(u); } catch { /* ignore */ }
+      }
       const matchTarget = targets.find(t =>
         t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://') && !t.url.startsWith('chrome-untrusted://') && !t.url.startsWith('chrome-error://') &&
-        (url ? t.url.includes(new URL(url).hostname) : true)
+        !ownedUrlsT.has(t.url) &&
+        (url ? t.url === url || t.url.includes(new URL(url).hostname) : true)
       );
       if (matchTarget && matchTarget.url) {
         // d07 第六层（S82）：复用已有 page —— 旧逻辑每条命令 newPage 复制
         // target（3 条命令繁殖 9 个 tab，S72 七 tab 泥潭的真根因）。
         // 同 URL 的 page 已存在则直接复用，仅无匹配时才开新 tab。
+        // URL 比对而非对象比对（S98 坐实：--cdp 模式每命令新建连接，
+        // 旧连接的 page wrapper 与本连接 pages() 的不可比，=== 恒 false）
+        const ownedUrls = new Set<string>();
+        for (const ssn of sessions.list()) {
+          try { const u = ssn.page?.url(); if (u && u !== 'about:blank') ownedUrls.add(u); } catch { /* ignore */ }
+        }
         const isOwned = (p: unknown) => {
-          for (const ssn of sessions.list()) { if (ssn.page === p) return true; }
-          return false;
+          try { return ownedUrls.has((p as { url(): string }).url()); } catch { return false; }
         };
         // 复用需未被其他 session 占用（S95 实战：J-draft 的 hostname 匹配
         // 复用了 J-home 绑定的 tab 并导航走 —— 跨 session 页面漂移）
