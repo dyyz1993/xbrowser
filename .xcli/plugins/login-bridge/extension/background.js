@@ -383,7 +383,10 @@ const executors = {
     return out;
   },
 
-  ping: async () => ({ pong: true, ua: navigator.userAgent, v: 'S169-MARK' }),
+  ping: async () => ({ pong: true, ua: navigator.userAgent, v: (chrome.runtime.getManifest ? chrome.runtime.getManifest().version : '?') }),
+  // S170: 热更新直达通道——WS 消息在 SW 内执行，chrome.runtime.reload 可靠
+  // （popup.html 页面载体的 chrome.runtime 绑定时好时坏，此执行器取代该路径）
+  'ext-reload': async () => { setTimeout(() => chrome.runtime.reload(), 50); return { ok: true, reloading: true }; },
 
   tabs: async () => {
     const tabs = await chrome.tabs.query({});

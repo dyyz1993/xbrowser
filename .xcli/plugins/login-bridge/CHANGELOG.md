@@ -23,3 +23,8 @@
 
 ### Fixed（1.3.1）
 - **L1 原型逃逸封堵**：实例 defineProperty 覆写可被 `getOwnPropertyDescriptor(Document.prototype,...).get.call(document)` 一行拿真值——getter 现于原型与实例两层同步覆写，toString 伪装 native
+
+## [1.4.0] - 2026-08-31
+
+### Added
+- **ext-reload 执行器**：WS 消息直达 SW 调 chrome.runtime.reload()——热更新不再依赖 popup 页面绑定（时好时坏）与 GUI 点击；ping 响应带 manifest version（激活验证闭环）
