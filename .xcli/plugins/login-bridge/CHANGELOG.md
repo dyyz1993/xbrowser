@@ -15,3 +15,8 @@
 
 ### Fixed
 - 任务 tab 上 screenshot 走持久 attach，不再每次 detach-first
+
+## [1.3.0] - 2026-08-31
+
+### Added
+- **win-open/win-close 执行器（L0 真渲染模式）**：任务放进 400x300 可见 popup 小窗（focused:false 不抢焦点）——实测 rAF 帧距 17ms（hidden 模式 ~1000ms）、trusted mousemove 到达率 98.9%（hidden 0.6%）、visibilityState 天然 visible；L1 伪装保留作防御纵深
