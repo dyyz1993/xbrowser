@@ -289,7 +289,31 @@ const executors = {
     });
   },
 
-  screenshot: async () => {
+  // S161：tabId 感知截图——captureVisibleTab 只能截激活 tab（会截到用户正在看的页面），
+  // 指定 tabId 时改用 debugger Page.captureScreenshot（后台 tab 也能截，截完立即 detach）
+  screenshot: async ({ tabId }) => {
+    if (tabId != null) {
+      return new Promise((resolve) => {
+        const dbg = { tabId };
+        chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
+          chrome.debugger.attach(dbg, '1.3', () => {
+            if (chrome.runtime.lastError) {
+              const url = chrome.tabs.captureVisibleTab(null, { format: 'png' });
+              url.then(u => resolve({ ok: true, fallback: 'visible', fullLength: u.length, base64: u.split(',')[1] }));
+              return;
+            }
+            chrome.debugger.sendCommand(dbg, 'Page.captureScreenshot', { format: 'png' }, (res) => {
+              chrome.debugger.detach(dbg).catch(() => {});
+              if (chrome.runtime.lastError || !res || !res.data) {
+                resolve({ ok: false, error: (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'capture failed' });
+                return;
+              }
+              resolve({ ok: true, fullLength: res.data.length + 22, base64: res.data });
+            });
+          });
+        });
+      });
+    }
     const url = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
     return { ok: true, dataUrl: url.slice(0, 100), fullLength: url.length, base64: url.split(',')[1] };
   },
