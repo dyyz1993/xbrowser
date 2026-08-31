@@ -8,6 +8,7 @@
  */
 
 import type { CDPInterceptorRule, RuleContext, DecisionResult } from './types.js';
+import { isProbeMarked } from './rules/shared.js';
 import { domMutationRule } from './rules/dom-mutation.js';
 import { mouseTrajectoryRule } from './rules/mouse-trajectory.js';
 import { inputKeystrokeRule } from './rules/input-keystroke.js';
@@ -72,6 +73,15 @@ export function createRuleEngine(customRules?: CDPInterceptorRule[]): RuleEngine
         ...ctx,
         sessionState: getSessionState(ctx.sessionId),
       };
+
+      // S192: 探针标记引擎级白名单——带 /* @xb-probe */ 标记的表达式跳过全部
+      // 字面量拦截规则（测试/观测流量验证伪装行为本身，标记不显式出现在生产代码）。
+      try {
+        const code = typeof ctx.params?.expression === 'string' ? ctx.params.expression : JSON.stringify(ctx.params ?? '');
+        if (isProbeMarked(code)) return null;
+      } catch {
+        // 标记检测失败不阻断正常评估
+      }
 
       for (const rule of rules) {
         if (rule.canHandle && !rule.canHandle(fullCtx)) continue;
