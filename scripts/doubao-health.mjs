@@ -9,6 +9,8 @@
 import fs from 'fs';
 
 const BR = 'http://127.0.0.1:9347';
+// S198: --quick 模式——只查 open/ready/mode（供管线 genCover 前置门禁，30 秒内）
+const QUICK = process.argv.includes('--quick');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function bridge(cmd, args = {}, t = 25) {
@@ -53,12 +55,14 @@ async function main() {
   }
   step('ready', ready ? 'pass' : 'fail', '编辑器+新对话按钮可见');
 
-  // 3. 新对话
-  const nc = ready ? await ev(TAB, `(function(){var els=Array.from(document.querySelectorAll('button,div,span,a')).filter(function(el){var t=(el.textContent||'').trim();return t==='新对话'&&el.children.length<=2});var vis=els.filter(function(el){return el.getBoundingClientRect().width>0});if(!vis.length)return 'none';vis[vis.length-1].click();return 'ok'})()`) : 'skip';
+  // 3. 新对话（quick 模式跳过）
+  if (QUICK) { steps.push({ step: 'new-chat', status: 'skip', detail: 'quick mode' }); }
+  const nc = !QUICK && ready ? await ev(TAB, `(function(){var els=Array.from(document.querySelectorAll('button,div,span,a')).filter(function(el){var t=(el.textContent||'').trim();return t==='新对话'&&el.children.length<=2});var vis=els.filter(function(el){return el.getBoundingClientRect().width>0});if(!vis.length)return 'none';vis[vis.length-1].click();return 'ok'})()`) : 'skip';
   step('new-chat', nc === 'ok' ? 'pass' : 'warn', String(nc));
   await sleep(2500);
 
   // 4. 生图模式
+  if (QUICK) { steps.push({ step: 'image-mode', status: 'skip', detail: 'quick mode (genCover 自行验证)' }); }
   let mode = 'off';
   for (let i = 0; i < 3 && mode !== 'on'; i++) {
     await ev(TAB, `(function(){var els=Array.from(document.querySelectorAll('button,div,span')).filter(function(el){var t=(el.textContent||'').trim();return t==='图像生成'&&el.children.length<=2});var vis=els.filter(function(el){return el.getBoundingClientRect().width>0});if(!vis.length)return 'none';vis[vis.length-1].click();return 'ok'})()`);
@@ -67,13 +71,18 @@ async function main() {
   }
   step('image-mode', mode === 'on' ? 'pass' : 'fail', `选中态=${mode}`);
 
-  // 5. 输入（paste 通道）
+  // 5. 输入（paste 通道；quick 跳过）
+  if (QUICK) { steps.push({ step: 'paste', status: 'skip', detail: 'quick mode' }); }
   const p = await ev(TAB, `(function(){var ce=document.querySelector('.tiptap.ProseMirror');if(!ce)return 'no';ce.focus();var dt=new DataTransfer();dt.setData('text/plain','健康探针测试 S181');ce.dispatchEvent(new ClipboardEvent('paste',{clipboardData:dt,bubbles:true,cancelable:true}));return 'len:'+ce.textContent.length})()`) || '';
   step('paste', String(p).startsWith('len:') && Number(String(p).slice(4)) > 0 ? 'pass' : 'fail', String(p));
 
-  // 6. 发送按钮可见性（不真发送，避免污染会话）
-  const btn = await ev(TAB, `(function(){var ce=document.querySelector('.tiptap.ProseMirror');if(!ce)return 'no-ce';var ceR=ce.getBoundingClientRect();var btns=Array.from(document.querySelectorAll('button')).filter(function(b){var r=b.getBoundingClientRect();return r.width>15&&r.width<80&&Math.abs(r.y-ceR.y)<160&&r.x>ceR.x+ceR.width-260});return btns.length?'visible':'none'})()`) || '';
-  step('send-btn', btn === 'visible' ? 'pass' : 'warn', String(btn));
+  // 6. 发送按钮可见性（quick 跳过）
+  if (QUICK) {
+    steps.push({ step: 'send-btn', status: 'skip', detail: 'quick mode' });
+  } else {
+    const btn = await ev(TAB, `(function(){var ce=document.querySelector('.tiptap.ProseMirror');if(!ce)return 'no-ce';var ceR=ce.getBoundingClientRect();var btns=Array.from(document.querySelectorAll('button')).filter(function(b){var r=b.getBoundingClientRect();return r.width>15&&r.width<80&&Math.abs(r.y-ceR.y)<160&&r.x>ceR.x+ceR.width-260});return btns.length?'visible':'none'})()`) || '';
+    step('send-btn', btn === 'visible' ? 'pass' : 'warn', String(btn));
+  }
 
   // 清理
   await bridge('task-close', { name: 'health-probe' }).catch(() => {});
