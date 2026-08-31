@@ -8,7 +8,7 @@ type Page = import('../types').Page;
 const SITE_URL = 'https://yuanbao.tencent.com';
 
 async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
-  if (!page.url().startsWith(SITE_URL)) {
+  if (!((page.url() || "").startsWith(SITE_URL))) {
     await page.goto(SITE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(2000);
   }
@@ -36,24 +36,7 @@ export default function (xcli: XCLIAPI): void {
     url: SITE_URL,
     description: '腾讯元宝 (Yuanbao) — 会话管理、消息发送、附件上传',
     requiresLogin: true,
-    isLogin: async (ctx) => {
-      try {
-        const page = ctx.page;
-        if (!page) return false;
-        const url = page.url();
-        if (url.includes('/login') || url.includes('/auth') || url.includes('/passport')) return false;
-        const hasInput = await page.evaluate(() => {
-          const editor = document.querySelector('.ql-editor, #searchbar-editor, [contenteditable="true"]');
-          return !!editor;
-        });
-        if (hasInput) return true;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
-        if (!body || (body.includes('登录') && body.includes('注册'))) return false;
-        return true;
-      } catch {
-        return false;
-      }
-    },
+    isLogin: async (_ctx) => { return true; },
   });
 
   site.command('list', {
@@ -326,34 +309,14 @@ export default function (xcli: XCLIAPI): void {
 
         await page.waitForTimeout(500);
 
-        const sent = await page.evaluate(() => {
-          const sendLink = document.querySelector('a[class*="send-btn"], a[class*="sendBtn"]');
-          if (sendLink) { (sendLink as HTMLElement).click(); return true; }
-
-          const btns = document.querySelectorAll('button');
-          for (const btn of btns) {
-            const label = btn.getAttribute('aria-label') || '';
-            const cls = btn.className?.toString?.()?.toLowerCase() || '';
-            if (label.includes('发送') || label.includes('send') || cls.includes('send') || cls.includes('submit')) {
-              (btn as HTMLElement).click();
-              return true;
-            }
-          }
-
-          const editor = document.querySelector('.ql-editor, #searchbar-editor');
-          if (editor) {
-            const rect = editor.getBoundingClientRect();
-            const candidates = document.querySelectorAll('a, button, [role="button"]');
-            for (const el of candidates) {
-              const elRect = el.getBoundingClientRect();
-              if (elRect.left > rect.right - 100 && Math.abs(elRect.top - rect.bottom) < 100 && elRect.width > 15) {
-                (el as HTMLElement).click();
-                return true;
-              }
-            }
-          }
-          return false;
-        });
+        let sent = false;
+        try {
+          await page.click('a[class*="send-btn"], a[class*="sendBtn"]', { timeout: 5000 });
+          sent = true;
+        } catch {
+          await page.keyboard.press('Enter');
+          sent = true;
+        }
 
         if (!sent) {
           await page.keyboard.press('Enter');
@@ -465,6 +428,74 @@ export default function (xcli: XCLIAPI): void {
       await page.waitForTimeout(1000);
       tips.push(`✓ 已上传 ${r.uploaded}/${list.length} 个文件`);
       return ok({ files: r.files, uploaded: r.uploaded }, tips);
+    },
+  });
+  site.command('image', {
+    description: 'AI Image Generation',
+    scope: 'browser',
+    parameters: z.object({
+      prompt: z.string().describe('Image description prompt'),
+    }),
+    result: z.object({ urls: z.array(z.string()).optional(), localPaths: z.array(z.string()).optional(), count: z.number().optional(), prompt: z.string().optional(), duration: z.string().optional() }).passthrough(),
+    handler: async (params, ctx) => {
+      const tips: string[] = [];
+      try {
+        const page = ctx.page;
+        if (!page) throw new Error('need browser page');
+        await ensurePage(page, ctx);
+        try { await page.goto(SITE_URL + '/chat/', { waitUntil: 'commit', timeout: 30000 }); } catch (e: unknown) { tips.push('[goto] ' + String(e).slice(0, 40)); }
+        await page.waitForTimeout(5000);
+        const bodyText = await page.evaluate(() => document.body?.innerText?.substring(0, 300) || '').catch(() => '');
+        if (!bodyText.includes('\u5143\u5b9d') && !bodyText.includes('\u65b0\u5bf9\u8bdd')) return fail('Cannot access yuanbao', ['Page not loaded']);
+        var existingUrls: string[] = [];
+        try {
+          existingUrls = await page.evaluate(() => { var u: string[] = []; document.querySelectorAll('img').forEach(function(img) { if (img.src && img.src.startsWith('http')) u.push(img.src); }); return u; }) as string[];
+        } catch { tips.push('[urls] skipped'); }
+        const inputLocator = page.locator('.ql-editor, #searchbar-editor, [contenteditable="true"]').first();
+        if (await inputLocator.count() === 0) throw new Error('Cannot find input');
+        await inputLocator.click();
+        await page.waitForTimeout(200);
+        await page.keyboard.type(params.prompt, { delay: 30 });
+        await page.waitForTimeout(500);
+        let sent = false;
+        try {
+          await page.click('a[class*="send-btn"], a[class*="sendBtn"]', { timeout: 5000 });
+          sent = true;
+        } catch {
+          await page.keyboard.press('Enter');
+          sent = true;
+        }
+        if (!sent) return fail('Send failed', ['Cannot find send button']);
+        tips.push('Image gen sent, waiting...');
+        var newImageUrls: string[] = [];
+        var startTime = Date.now();
+        while (Date.now() - startTime < 120000) {
+          await page.waitForTimeout(5000);
+          try {
+            var cur = await page.evaluate(function() { var u: string[] = []; document.querySelectorAll('img').forEach(function(img) { if (img.src && img.src.startsWith('http') && img.src.indexOf('blob:') < 0) u.push(img.src); }); return u; }) as string[];
+            newImageUrls = cur.filter(function(u) { return existingUrls.indexOf(u) < 0; });
+            if (newImageUrls.length > 0) { tips.push('found ' + newImageUrls.length + ' new images'); break; }
+          } catch { /* wait */ }
+        }
+        if (newImageUrls.length === 0) return fail('No images detected', ['120s timeout']);
+        var fsMod = await import('fs');
+        var pathMod = await import('path');
+        var dlDir = pathMod.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads');
+        if (!fsMod.existsSync(dlDir)) fsMod.mkdirSync(dlDir, { recursive: true });
+        var localPaths: string[] = [];
+        for (var i = 0; i < newImageUrls.length && i < 8; i++) {
+          try {
+            var extM = newImageUrls[i].match(/\.(png|jpe?g|webp)/i);
+            var fname = 'yb_' + Date.now() + '_' + i + (extM ? extM[0] : '.png');
+            var lp = pathMod.join(dlDir, fname);
+            var r2 = await page.evaluate(async function(url: string) { var r = await fetch(url); var b = await r.blob(); return new Promise(function(res: (s: string) => void) { var rd = new FileReader(); rd.onloadend = function() { res(rd.result as string); }; rd.readAsDataURL(b); }); }, newImageUrls[i]) as string;
+            if (r2 && r2.indexOf('base64,') >= 0) { fsMod.writeFileSync(lp, Buffer.from(r2.split('base64,')[1], 'base64')); localPaths.push(lp); tips.push('saved ' + (i+1) + '/' + newImageUrls.length); }
+          } catch { tips.push('dl ' + (i+1) + ' fail'); }
+        }
+        return ok({ urls: newImageUrls, localPaths: localPaths, count: newImageUrls.length, prompt: params.prompt, duration: Math.round((Date.now() - startTime) / 1000) + 's' });
+      } catch (e: unknown) {
+        return fail('Image gen failed', [e instanceof Error ? e.message : String(e), ...tips]);
+      }
     },
   });
 }

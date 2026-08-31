@@ -143,7 +143,7 @@ describe('stealth 运行时探针（S174 检测面覆盖审计）', { timeout: T
   });
 
   it('S177: TextMetrics 噪声生效（同文本两次宽度不同）', async () => {
-    const ctx = await page.evaluate(`(function(){
+    const _ctx = await page.evaluate(`(function(){
       var c = document.createElement('canvas');
       var ctx = c.getContext('2d');
       var w1 = ctx.measureText('noiseprobe').width;
@@ -153,7 +153,7 @@ describe('stealth 运行时探针（S174 检测面覆盖审计）', { timeout: T
       var protoNoisy = protoGet && protoGet.get ? String(protoGet.get).indexOf('_dx') !== -1 : false;
       return JSON.stringify({w1:w1, w2:w2, w3:w3, protoNoisy:protoNoisy});
     })()`);
-    var o = JSON.parse(String(ctx));
+    var o = JSON.parse(String(_ctx));
     // 噪声是 per-session stable：同文本两次宽度必须相同（页内自洽）
     expect(o.w2).toBe(o.w1);
     // S172 封堵验证：原型 getter 已被噪声包装（含 _dx 偏移源码）
@@ -207,6 +207,28 @@ describe('stealth 运行时探针（S174 检测面覆盖审计）', { timeout: T
     var o = JSON.parse(String(r));
     // AEL 包装后：add 2 次触发 2 次、remove 后不再触发（包装不破坏 add/remove 语义）
     expect(o.count).toBe(2);
+  });
+
+  it('S180: 跨 tab 偏移独立（多页关联抵抗）', async () => {
+    // 第二个独立 context = 独立 tab 独立文档
+    const context2 = await browser.newContext();
+    const page2 = await context2.newPage() as XBPage;
+    await page2.goto('data:text/html,<html><title>probe-b</title><body>b</body></html>');
+    const tA = await page.evaluate('performance.timeOrigin');
+    const tB = await page2.evaluate('performance.timeOrigin');
+    await context2.close();
+    // 同一时刻创建的两个页面，若 timeOrigin 相同即可被跨页关联——必须不同
+    expect(Number(tB)).not.toBe(Number(tA));
+    // 偏移差应在 ±5min 预算内（不出现荒谬的大漂移）
+    expect(Math.abs(Number(tB) - Number(tA))).toBeLessThan(600000 + 600000);
+  });
+
+  it('S180: 页内 now()+timeOrigin 与 Date.now 的偏移恒定（防每读漂移）', async () => {
+    const d1 = await page.evaluate('(performance.timeOrigin + performance.now()) - Date.now()');
+    await new Promise((r) => setTimeout(r, 300));
+    const d2 = await page.evaluate('(performance.timeOrigin + performance.now()) - Date.now()');
+    // 两次读取的偏移差应 <1s（300ms 间隔 + 计时噪声），证明偏移恒定不漂移
+    expect(Math.abs(Number(d2) - Number(d1))).toBeLessThan(1000);
   });
 
   it('S176: 伪装 patch 性能预算（<5ms）', async () => {

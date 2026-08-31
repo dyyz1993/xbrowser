@@ -231,14 +231,12 @@ async function assemble(coverPath) {
   _edTab = editorTabId;
   _editorTabId = editorTabId; // 供 pasteImg 使用
   console.log('   editor tab:', editorTabId);
-  // S179: CodeMirror 就绪轮询——掘金编辑器慢加载时固定 sleep 6s 不够，
-  // CodeMirror null 会让全部段落写入失败（S165 告警逻辑抓出的真实故障）
-  let cmReady = false;
-  for (let r = 0; r < 15; r++) {
-    const st = await evalEditor(`(function(){var cm=document.querySelector('.CodeMirror');return (cm&&cm.CodeMirror)?'1':'0'})()`);
-    if (st === '1') { cmReady = true; break; }
-    await sleep(2000);
-  }
+  // S179/S180: CodeMirror 就绪轮询（waitUntil 统一抽象）——掘金编辑器慢加载时
+  // 固定 sleep 6s 不够，CodeMirror null 会让全部段落写入失败（S165 告警逻辑抓出）
+  const cmReady = await waitUntil(
+    async () => (await evalEditor(`(function(){var cm=document.querySelector('.CodeMirror');return (cm&&cm.CodeMirror)?'1':'0'})()`)) === '1',
+    { timeout: 30000, interval: 2000, name: 'CodeMirror' },
+  );
   console.log('   editor ready:', cmReady);
   if (!cmReady) console.log('   ⚠️ CodeMirror 未就绪，段落写入预计失败');
 
@@ -304,6 +302,20 @@ async function assemble(coverPath) {
 
 // ── utils ──
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// S180: 就绪轮询统一抽象——evalEditor/evalBig 的就绪探针统一走这里。
+// 返回 true 表示就绪；超时返回 false（调用方自行决定是否降级）。
+async function waitUntil(checkFn, { timeout = 30000, interval = 2000, name = 'condition' } = {}) {
+  const t0 = Date.now();
+  for (;;) {
+    if (await checkFn()) return true;
+    if (Date.now() - t0 > timeout) {
+      console.log(`   ⚠️ waitUntil 超时: ${name} (${timeout}ms)`);
+      return false;
+    }
+    await sleep(interval);
+  }
+}
 
 // S167: 任务载体抽象——XB_WIN_MODE=1 时走可见小窗（L0 真渲染：帧距 17ms、
 // trusted 事件到达 98.9%），否则走 hidden tab group（L1 伪装兜底）。
@@ -489,8 +501,8 @@ if (process.env.XB_SKIP_COVER === '1' && fs.existsSync('/tmp/article-cover.png')
     try {
       execSync(`python3 scripts/gen-cover.py --title ${JSON.stringify(title)} --steps '${stepsJson.replace(/'/g, "'\\''")}' --tag ${JSON.stringify(tag)} --out /tmp/article-cover.png`, { stdio: 'inherit' });
       hasCover = true;
-    } catch (e) {
-      console.log('   ⚠️ PIL 兜底也失败:', String(e).slice(0, 60));
+    } catch {
+      console.log('   ⚠️ PIL 兜底也失败');
     }
   }
 }
