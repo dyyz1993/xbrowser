@@ -91,6 +91,13 @@ describe('stealth 运行时探针（S174 检测面覆盖审计）', { timeout: T
     expect(probe.vis).toBe('visible');
   });
 
+  it('S182: 现代 API 状态锁定（REPORT 区收编，漂移即报警）', () => {
+    expect(probe.scheduler).toBe('present');
+    expect(probe.userActivation).toBe('present');
+    expect(probe.prerendering).toBe('false');
+    expect(probe.gpu).toBe('no-webgpu'); // 本机 headless Chrome 151 不暴露 WebGPU（S182 台账）
+  });
+
   it('S176: timeOrigin 同页恒定且与 Date.now 联动', async () => {
     const t1 = await page.evaluate('performance.timeOrigin');
     const t2 = await page.evaluate('performance.timeOrigin');
