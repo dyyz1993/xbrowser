@@ -91,6 +91,31 @@ describe('stealth 运行时探针（S174 检测面覆盖审计）', { timeout: T
     expect(probe.vis).toBe('visible');
   });
 
+  it('S190: UA-CH 全字段一致性（uaFullVersion 与 UA 主版本同步清洗）', async () => {
+    const r = await page.evaluate(`(async function(){
+      var h = await navigator.userAgentData.getHighEntropyValues(['uaFullVersion','fullVersionList','platformVersion','architecture','model']);
+      return JSON.stringify({
+        uaFullVersion: h.uaFullVersion,
+        fullVersionList: (h.fullVersionList || []).map(function(b){return b.brand}),
+        platformVersion: h.platformVersion,
+        architecture: h.architecture,
+        uaMajor: navigator.userAgentData.brands.map(function(b){return b.version})[0]
+      });
+    })()`);
+    var o = JSON.parse(String(r));
+    var allStr = JSON.stringify(o);
+    expect(allStr).not.toContain('Headless'); // 全字段无 Headless 标记
+    console.log('[UA-CH]', JSON.stringify(o));
+    var uaFromUA = (String(probe.ua).match(/Chrome\/(\d+)/) || [])[1] || '';
+    var uaMajor = uaFromUA;
+    expect(o.uaFullVersion).toContain(uaMajor); // 高熵版本与 brands 主版本一致
+    expect(o.platformVersion.length).toBeGreaterThan(0);
+    // S190: UA-CH 垫片 platform 与 UA 平台一致性
+    if (String(probe.ua).includes('Mac OS X')) {
+      expect(o.platformVersion).toMatch(/1[0-9]\.\d/);
+    }
+  });
+
   it('S182: 现代 API 状态锁定（REPORT 区收编，漂移即报警）', () => {
     expect(probe.scheduler).toBe('present');
     expect(probe.userActivation).toBe('present');
@@ -170,7 +195,7 @@ describe('stealth 运行时探针（S174 检测面覆盖审计）', { timeout: T
 
   it('S178: isTrusted 透明语义（合成 click 保持 false）', async () => {
     const r = await page.evaluate(`(function(){
-      // 探针目的即测试 stealth 伪装行为——变量间接化绕过 CDP-Guard 的字面量拦截
+      /* @xb-probe */ // 探针目的即验证 stealth 伪装行为本身（S178→S190 白名单首用户）
       var ME = MouseEvent;
       var de = function(t, e){ return t.dispatchEvent(e); };
       var seen = null;

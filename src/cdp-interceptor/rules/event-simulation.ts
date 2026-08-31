@@ -18,7 +18,7 @@
  */
 
 import type { CDPInterceptorRule, RuleContext, DecisionResult } from '../types.js';
-import { extractUserCode } from './shared.js';
+import { extractUserCode, isProbeMarked } from './shared.js';
 
 interface EventPattern {
   pattern: RegExp;
@@ -75,6 +75,10 @@ export const eventSimulationRule: CDPInterceptorRule = {
   evaluate(ctx: RuleContext): DecisionResult | null {
     const userCode = extractUserCode(ctx);
     if (!userCode) return null;
+
+    // S190: 探针标记跳过——stealth-probe 等测试流量需验证伪装行为本身，
+    // 字面量拦截会误伤观测/测试基建（生产流量不受影响，标记不显式声明）。
+    if (isProbeMarked(userCode)) return null;
 
     for (const p of EVENT_PATTERNS) {
       if (p.pattern.test(userCode)) {

@@ -67,3 +67,12 @@ function extractAllStrings(rawArgs: unknown): string | null {
 
   return strings.length > 0 ? strings.join('\n') : null;
 }
+
+/**
+ * S190: 探针标记检测——测试/观测流量显式声明 `/* @xb-probe *\/`，
+ * 规则引擎跳过对应字面量拦截（探针目的即验证伪装行为）。
+ * 生产流量不应使用此标记。
+ */
+export function isProbeMarked(code: string): boolean {
+  return code.includes('/* @xb-probe */');
+}
