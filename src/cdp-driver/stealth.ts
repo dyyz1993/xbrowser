@@ -315,6 +315,38 @@ export function buildStealthInitScript(): string {
     '  Object.defineProperty(Screen.prototype,"height",{get:_gh,configurable:true});',
     '  Object.defineProperty(Screen.prototype,"availWidth",{get:_gw,configurable:true});',
     '  Object.defineProperty(Screen.prototype,"availHeight",{get:_gah,configurable:true});',
+    // S174: UA Headless 标记清洗——headless launch 的 UA 含 HeadlessChrome/xxx
+    // （最高频检测面），同步清洗 userAgent/appVersion/userAgentData(brands+高熵值)。
+    // 原型+实例双层覆写（S172 模式）。
+    '  try{',
+    '    var fixUA=function(ua){return String(ua).replace("HeadlessChrome","Chrome");};',
+    '    var fixBrands=function(list){return (list||[]).map(function(b){return (b.brand&&b.brand.indexOf("Headless")!==-1)?Object.assign({},b,{brand:b.brand.replace("HeadlessChrome","Chrome")}):b;});};',
+    '    var _nuad=Object.getOwnPropertyDescriptor(Navigator.prototype,"userAgentData");',
+    '    var wrapUAD=function(uad){',
+    '      if(!uad||uad.__xbUA)return uad;',
+    '      try{',
+    '        Object.defineProperty(uad,"brands",{get:function(){return fixBrands(_nuad.get.call(navigator).brands);},configurable:true});',
+    '        var _ghev=uad.getHighEntropyValues.bind(uad);',
+    '        uad.getHighEntropyValues=function(hints){return _ghev(hints).then(function(v){',
+    '          var o={};for(var k in v){o[k]=(typeof v[k]==="string")?fixUA(v[k]):(Array.isArray(v[k])?fixBrands(v[k]):v[k]);}',
+    '          return o;});};',
+    '        uad.__xbUA=true;',
+    '      }catch(e){}',
+    '      return uad;',
+    '    };',
+    '    var _nua=Object.getOwnPropertyDescriptor(Navigator.prototype,"userAgent");',
+    '    if(_nua&&_nua.get){',
+    '      var _nuag=function(){return fixUA(_nua.get.call(this));};',
+    '      _nuag.toString=function(){return "function get userAgent() { [native code] }";};',
+    '      Object.defineProperty(Navigator.prototype,"userAgent",{get:_nuag,configurable:true});',
+    '    }',
+    '    Object.defineProperty(navigator,"userAgent",{get:function(){return fixUA(_nua?_nua.get.call(this):"");},configurable:true});',
+    '    if(_nuad&&_nuad.get){',
+    '      var _nuadg=function(){return wrapUAD(_nuad.get.call(this));};',
+    '      _nuadg.toString=function(){return "function get userAgentData() { [native code] }";};',
+    '      Object.defineProperty(Navigator.prototype,"userAgentData",{get:_nuadg,configurable:true});',
+    '    }',
+    '  }catch(e){}',
     // hasFocus 与 visibilityState 联动（d29）：恒 true 在 hidden 标签下暴露
     // —— 真实浏览器失焦/后台时 hasFocus=false
     // S172: 原型层覆写——实例赋值可被 Document.prototype.hasFocus.call(document) 逃逸
