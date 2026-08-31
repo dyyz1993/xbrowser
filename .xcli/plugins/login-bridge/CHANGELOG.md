@@ -6,3 +6,12 @@
 
 ### Fixed
 - 生图链路配套：task-close 先行防旧会话污染（配合 article-pipeline S161-162 修复）
+
+## [1.2.0] - 2026-08-31
+
+### Added
+- **L1 可见性一致性层**：task-open 自动预置 document_start 伪装（visibilityState/hidden/hasFocus 恒 visible + visibilitychange 重断言 + rAF 垫片），任务 tab 持久 attach，evaluate/trustedClick/screenshot 复用不再反复 attach/detach（顺带根治 "Another debugger already attached" 残留）
+- **L2 warmup 预热执行器**：trusted 鼠标轨迹（变速曲线+过冲回修+抖动）+ 停顿 + 小幅滚轮，为防守方事件数组铺垫自然前排数据
+
+### Fixed
+- 任务 tab 上 screenshot 走持久 attach，不再每次 detach-first

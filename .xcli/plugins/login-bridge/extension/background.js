@@ -9,6 +9,193 @@
 
 const BRIDGE = 'http://127.0.0.1:9355';
 const WS_BRIDGE = 'ws://127.0.0.1:9346';
+// S164-BISECT-2: 内联 stealth-common（importScripts 在真实 SW 崩，源码内联绕开）
+/**
+ * stealth-common.cjs — 桥任务 tab 的反检测纯逻辑（S164）
+ *
+ * 被两方共享：
+ *  - background.js 通过 importScripts 加载（self.StealthCommon）
+ *  - vitest 单测通过 ESM interop 加载（module.exports）
+ *
+ * L1 可见性一致性层：后台任务 tab 对页面 JS 自称"可见"——
+ *   物理矛盾（hidden tab 收到 trusted 输入）是后台自动化的头号死穴，
+ *   防守方给每个事件打的 visibility 戳必须与输入行为一致。
+ *   d29 教训的延伸：伪装必须自洽（全链 visible），半真半假更可疑。
+ *
+ * L2 行为预热：真实的鼠标轨迹不是匀速直线——
+ *   突发簇状采样、缓入缓出、过冲回修、悬停停留。
+ *   预热数据进防守方事件数组的前排，后续任务事件混在自然数据里。
+ */
+(function (root, factory) {
+  var api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  else root.StealthCommon = api;
+})(typeof self !== 'undefined' ? self : globalThis, function () {
+  'use strict';
+
+  /**
+   * L1：document_start 注入源。加到 Page.addScriptToEvaluateOnNewDocument，
+   * 并在 task-open 后立即 Runtime.evaluate 一次覆盖当前文档。
+   *
+   * 一致性清单（全部指向 visible）：
+   *   document.visibilityState / webkitVisibilityState
+   *   document.hidden / webkitHidden
+   *   document.hasFocus()
+   *   visibilitychange 监听（真实状态切换发生时重新断言，防泄漏）
+   *   rAF 垫片：hidden tab 的 rAF 完全静默是硬伤——垫片保证"会回调"，
+   *   帧距受后台定时器节流限制（~1000ms），属已知残留（L3），文档明示不掩盖。
+   */
+  var VISIBILITY_STEALTH_SOURCE = [
+    '(function(){',
+    '  if (window.__xbVisStealth) return; window.__xbVisStealth = true;',
+    '  var assert = function () {',
+    '    try {',
+    '      Object.defineProperty(document, "visibilityState", { get: function () { return "visible"; }, configurable: true });',
+    '      Object.defineProperty(document, "webkitVisibilityState", { get: function () { return "visible"; }, configurable: true });',
+    '      Object.defineProperty(document, "hidden", { get: function () { return false; }, configurable: true });',
+    '      Object.defineProperty(document, "webkitHidden", { get: function () { return false; }, configurable: true });',
+    '      document.hasFocus = function () { return true; };',
+    '    } catch (e) {}',
+    '  };',
+    '  assert();',
+    '  document.addEventListener("visibilitychange", function () { assert(); }, true);',
+    '  var _raf = window.requestAnimationFrame ? window.requestAnimationFrame.bind(window) : null;',
+    '  window.requestAnimationFrame = function (cb) {',
+    '    return setTimeout(function () { cb(performance.now()); }, 16);',
+    '  };',
+    '})();',
+  ].join('\n');
+
+  /**
+   * 生成一段拟人鼠标轨迹点。
+   * @param {object} o
+   * @param {number} o.fromX 起点 x
+   * @param {number} o.fromY 起点 y
+   * @param {number} o.toX 终点 x
+   * @param {number} o.toY 终点 y
+   * @param {number} [o.steps=48] 点数
+   * @param {number} [o.overshoot=0.06] 过冲比例（0 关闭）
+   * @returns {Array<{x:number,y:number}>}
+   */
+  function generateMousePath(o) {
+    var steps = o.steps || 48;
+    var overshoot = o.overshoot === undefined ? 0.06 : o.overshoot;
+    var dx = o.toX - o.fromX;
+    var dy = o.toY - o.fromY;
+    var dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    // 过冲：目标外延一段再修回（真实指针的常见形态）
+    var overX = o.toX + (dx / dist) * dist * overshoot;
+    var overY = o.toY + (dy / dist) * dist * overshoot;
+    var pts = [];
+    var i, t, ease, jitter, px, py;
+    for (i = 0; i < steps; i++) {
+      t = i / (steps - 1);
+      ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // easeInOutQuad
+      jitter = (dist > 40 ? 2.2 : 0.8);
+      px = o.fromX + (overX - o.fromX) * ease + (Math.random() - 0.5) * jitter;
+      py = o.fromY + (overY - o.fromY) * ease + (Math.random() - 0.5) * jitter;
+      pts.push({ x: Math.round(px), y: Math.round(py) });
+    }
+    // 修回段：从过冲点收敛到真实目标（5 步）
+    for (i = 1; i <= 5; i++) {
+      t = i / 5;
+      pts.push({
+        x: Math.round(overX + (o.toX - overX) * t),
+        y: Math.round(overY + (o.toY - overY) * t),
+      });
+    }
+    return pts;
+  }
+
+  /**
+   * 规划一次预热行为序列。
+   * @param {object} o
+   * @param {number} o.w 视口宽
+   * @param {number} o.h 视口高
+   * @param {number} [o.ms=3000] 目标时长（毫秒）
+   * @returns {Array<{type:'move'|'pause'|'wheel', x?:number, y?:number, dy?:number, delay:number}>}
+   *   动作按序执行；move 走 generateMousePath 展开成连续点。
+   */
+  function planWarmup(o) {
+    var w = o.w || 1280;
+    var h = o.h || 720;
+    var budget = o.ms || 3000;
+    var actions = [];
+    // 起始位：视口内随机（真实用户打开页面时指针在任意位置）
+    var cx = w * (0.2 + Math.random() * 0.6);
+    var cy = h * (0.2 + Math.random() * 0.6);
+    // 3 段游走：随机目标点（避开边缘 10%），每段之间短暂停顿
+    var segs = 3;
+    var segMs = Math.max(400, Math.floor(budget / segs) - 120);
+    // 采样密度随段时长缩放：真实鼠标 ~8ms/点（125Hz 上限）
+    var stepsPerSeg = Math.max(12, Math.min(120, Math.round(segMs / 8)));
+    var s, tx, ty, pts, k;
+    for (s = 0; s < segs; s++) {
+      tx = w * (0.1 + Math.random() * 0.8);
+      ty = h * (0.1 + Math.random() * 0.8);
+      pts = generateMousePath({ fromX: cx, fromY: cy, toX: tx, toY: ty, steps: stepsPerSeg });
+      for (k = 0; k < pts.length; k++) {
+        actions.push({ type: 'move', x: pts[k].x, y: pts[k].y, delay: Math.max(4, Math.round(8 * (0.5 + Math.random()))) });
+      }
+      cx = tx; cy = ty;
+      if (s < segs - 1) {
+        actions.push({ type: 'pause', delay: 80 + Math.round(Math.random() * 260) });
+      }
+    }
+    // 收尾：一次小幅滚轮（阅读感），停顿
+    actions.push({ type: 'wheel', x: cx, y: cy, dy: 120 + Math.round(Math.random() * 160), delay: 60 });
+    actions.push({ type: 'pause', delay: 150 + Math.round(Math.random() * 200) });
+    return actions;
+  }
+
+  return {
+    VISIBILITY_STEALTH_SOURCE: VISIBILITY_STEALTH_SOURCE,
+    generateMousePath: generateMousePath,
+    planWarmup: planWarmup,
+  };
+});
+
+const stealthTabs = new Set();
+// S164-BISECT-2-END
+
+// 持久 attach 的任务 tab：已注册 document_start 伪装脚本。
+// 这些 tab 上的 evaluate/trustedClick/screenshot 跳过 attach/detach
+//（二次 attach 会报 "Another debugger is already attached"，
+//  且 detach-first 会拆掉伪装注册）。
+async function enableTaskStealth(tabId) {
+  const dbg = { tabId };
+  const attachOnce = (retry) => new Promise((resolve) => {
+    chrome.debugger.attach(dbg, '1.3', () => {
+      const err = chrome.runtime.lastError;
+      if (!err) { resolve(true); return; }
+      // 残留 attach（此前流程异常退出）→ 拆掉重试一次
+      if (retry && /already attached/i.test(err.message)) {
+        chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
+          chrome.debugger.attach(dbg, '1.3', () => {
+            resolve(!chrome.runtime.lastError);
+          });
+        });
+        return;
+      }
+      resolve(false);
+    });
+  });
+  const ok = await attachOnce(true);
+  if (!ok) return { ok: false, error: 'attach failed' };
+  const send = (method, params) => new Promise((resolve) => {
+    chrome.debugger.sendCommand(dbg, method, params || {}, () => resolve(!chrome.runtime.lastError));
+  });
+  await send('Page.enable');
+  const reg = await new Promise((resolve) => {
+    chrome.debugger.sendCommand(dbg, 'Page.addScriptToEvaluateOnNewDocument',
+      { source: StealthCommon.VISIBILITY_STEALTH_SOURCE }, (r) => resolve(r));
+  });
+  if (chrome.runtime.lastError) return { ok: false, error: chrome.runtime.lastError.message };
+  // 立即对当前文档生效（addScriptToEvaluateOnNewDocument 只管后续文档）
+  await send('Runtime.evaluate', { expression: StealthCommon.VISIBILITY_STEALTH_SOURCE });
+  stealthTabs.add(tabId);
+  return { ok: true, tabId, identifier: reg?.identifier, persistent: true };
+}
 
 // ── 登录态（原有能力） ──────────────────────────────────────
 
@@ -120,7 +307,9 @@ const executors = {
     const tab = await chrome.tabs.create({ url: url || 'about:blank', active: false }); // 后台创建，不抢焦点
     const group = await chrome.tabs.group({ tabIds: [tab.id] });
     await chrome.tabGroups.update(group, { title: 'xb-task-' + (name || 'default'), color: 'green' });
-    return { tabId: tab.id, groupId: group };
+    // S164: 任务 tab 预置可见性一致性层（失败降级为普通任务 tab，不阻塞）
+    const stealth = await enableTaskStealth(tab.id).catch((e) => ({ ok: false, error: String(e) }));
+    return { tabId: tab.id, groupId: group, stealth: stealth.ok };
   },
   'task-close': async ({ name }) => {
     const groups = await chrome.tabGroups.query({});
@@ -130,7 +319,10 @@ const executors = {
     let closed = 0;
     for (const g of targets) {
       const tabs = await chrome.tabs.query({ groupId: g.id });
-      for (const t of tabs) await chrome.tabs.remove(t.id).catch(() => {});
+      for (const t of tabs) {
+        await chrome.tabs.remove(t.id).catch(() => {});
+        stealthTabs.delete(t.id);
+      }
       closed++;
     }
     return { closed };
@@ -173,11 +365,13 @@ const executors = {
     // S105：chrome.scripting（含 world MAIN）的注入都受 CSP 约束（eval 被拦）。
     // chrome.debugger 走 CDP Runtime.evaluate —— DevTools console 同源能力，
     // 不受页面/扩展 CSP 限制。attach 时浏览器顶部出现"正在调试"横幅（用户可见）。
+    // S164：stealthTabs 上的 tab 走持久 attach，跳过 attach/detach。
     const target = tabId ?? await getTaskTabId();
+    const persistent = stealthTabs.has(target);
     return new Promise((resolve) => {
       const dbg = { tabId: target };
       const finish = (r) => {
-        chrome.debugger.detach(dbg).catch(() => {});
+        if (!persistent) chrome.debugger.detach(dbg).catch(() => {});
         if (r?.exceptionDetails) {
           resolve({ ok: false, error: r.exceptionDetails.exception?.description || r.exceptionDetails.text });
         } else {
@@ -187,6 +381,12 @@ const executors = {
           resolve({ ok: true, value: v });
         }
       };
+      if (persistent) {
+        chrome.debugger.sendCommand(dbg, 'Runtime.evaluate',
+          { expression, returnByValue: true, awaitPromise: true },
+          (r) => finish(r));
+        return;
+      }
       chrome.debugger.attach(dbg, '1.3', () => {
         const err = chrome.runtime.lastError;
         if (err) { resolve({ ok: false, error: err.message }); return; }
@@ -269,32 +469,97 @@ const executors = {
   // 页面 el.click() 是合成事件，ProseMirror 等框架不认；可信点击等价鼠标。
   trustedClick: async ({ x, y, tabId }) => {
     const target = tabId ?? await getTaskTabId();
+    const persistent = stealthTabs.has(target); // S164: 持久 attach 不做 detach-first（会拆伪装）
     return new Promise((resolve) => {
       const dbg = { tabId: target };
-      // 先 detach（可能残留）再 attach —— 残留 attach 会让新 attach 静默失败
-      chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
-      chrome.debugger.attach(dbg, '1.3', () => {
-        const err = chrome.runtime.lastError;
-        if (err) { resolve({ ok: false, error: err.message }); return; }
+      const dispatch = () => {
         chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent',
           { type: 'mousePressed', x, y, button: 'left', clickCount: 1 }, () => {
             chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent',
               { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }, () => {
-                chrome.debugger.detach(dbg).catch(() => {});
+                if (!persistent) chrome.debugger.detach(dbg).catch(() => {});
                 resolve({ ok: true, clicked: x + ',' + y });
               });
           });
-      });
+      };
+      if (persistent) { dispatch(); return; }
+      // 先 detach（可能残留）再 attach —— 残留 attach 会让新 attach 静默失败
+      chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
+        chrome.debugger.attach(dbg, '1.3', () => {
+          const err = chrome.runtime.lastError;
+          if (err) { resolve({ ok: false, error: err.message }); return; }
+          dispatch();
+        });
       });
     });
+  },
+
+  // S164: 行为预热（L2）——trusted 鼠标轨迹 + 滚轮。
+  // 防守方事件数组的前排应当是自然数据：变速曲线游走、停顿、小幅滚动。
+  // 全部经 Input 域派发（isTrusted=true），与真实输入在事件层面不可区分。
+  warmup: async ({ tabId, ms }) => {
+    const target = tabId ?? await getTaskTabId();
+    if (target == null) return { ok: false, error: 'no tabId' };
+    const dbg = { tabId: target };
+    const persistent = stealthTabs.has(target);
+    const attachIfNeeded = () => new Promise((resolve) => {
+      if (persistent) { resolve(true); return; }
+      chrome.debugger.attach(dbg, '1.3', () => resolve(!chrome.runtime.lastError));
+    });
+    // 视口尺寸
+    const vp = await new Promise((resolve) => {
+      chrome.debugger.sendCommand(dbg, 'Runtime.evaluate',
+        { expression: 'JSON.stringify({w:innerWidth,h:innerHeight})', returnByValue: true }, (r) => {
+          try { resolve(JSON.parse(r.result.value)); } catch { resolve({ w: 1280, h: 720 }); }
+        });
+    });
+    const okAttach = await attachIfNeeded();
+    if (!okAttach) return { ok: false, error: 'attach failed' };
+    const actions = StealthCommon.planWarmup({ w: vp.w, h: vp.h, ms: ms || 3000 });
+    const t0 = Date.now();
+    let done = 0;
+    await new Promise((resolve) => {
+      const step = () => {
+        if (done >= actions.length) { resolve(); return; }
+        const a = actions[done++];
+        const fire = (ok) => {
+          if (!ok) { resolve(); return; } // 派发失败（tab 关闭等）立即收尾
+          setTimeout(step, a.delay);
+        };
+        if (a.type === 'move') {
+          chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent',
+            { type: 'mouseMoved', x: a.x, y: a.y, buttons: 0 }, () => fire(!chrome.runtime.lastError));
+        } else if (a.type === 'wheel') {
+          chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent',
+            { type: 'mouseWheel', x: a.x, y: a.y, deltaX: 0, deltaY: a.dy }, () => fire(!chrome.runtime.lastError));
+        } else { // pause
+          setTimeout(step, a.delay);
+        }
+      };
+      step();
+    });
+    if (!persistent) chrome.debugger.detach(dbg).catch(() => {});
+    return { ok: true, tabId: target, actions: actions.length, ms: Date.now() - t0 };
   },
 
   // S161：tabId 感知截图——captureVisibleTab 只能截激活 tab（会截到用户正在看的页面），
   // 指定 tabId 时改用 debugger Page.captureScreenshot（后台 tab 也能截，截完立即 detach）
   screenshot: async ({ tabId }) => {
     if (tabId != null) {
+      const persistent = stealthTabs.has(tabId); // S164
       return new Promise((resolve) => {
         const dbg = { tabId };
+        const capture = () => {
+          chrome.debugger.sendCommand(dbg, 'Page.captureScreenshot', { format: 'png' }, (res) => {
+            if (!persistent) chrome.debugger.detach(dbg).catch(() => {});
+            if (chrome.runtime.lastError || !res || !res.data) {
+              resolve({ ok: false, error: (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'capture failed' });
+              return;
+            }
+            resolve({ ok: true, fullLength: res.data.length + 22, base64: res.data });
+          });
+        };
+        if (persistent) { capture(); return; }
         chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
           chrome.debugger.attach(dbg, '1.3', () => {
             if (chrome.runtime.lastError) {
@@ -302,14 +567,7 @@ const executors = {
               url.then(u => resolve({ ok: true, fallback: 'visible', fullLength: u.length, base64: u.split(',')[1] }));
               return;
             }
-            chrome.debugger.sendCommand(dbg, 'Page.captureScreenshot', { format: 'png' }, (res) => {
-              chrome.debugger.detach(dbg).catch(() => {});
-              if (chrome.runtime.lastError || !res || !res.data) {
-                resolve({ ok: false, error: (chrome.runtime.lastError && chrome.runtime.lastError.message) || 'capture failed' });
-                return;
-              }
-              resolve({ ok: true, fullLength: res.data.length + 22, base64: res.data });
-            });
+            capture();
           });
         });
       });
