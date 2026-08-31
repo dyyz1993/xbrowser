@@ -349,6 +349,7 @@ async function evalEditor(expression) {
 async function clickSend() {
   // S161-2: el.click() 优先（坐标 trustedClick 在 task tab 上会因 DPR/缩放偏移点空，
   // 实测模式按钮同样问题）；合成点击后验证 URL 变成 /chat/<id> 才算发出
+  // S162: 按钮过滤放宽（-260，生图模式 chips 占位后按钮左移）+ URL 验证等 5s（实测 8s 内生效）
   for (let i = 0; i < 3; i++) {
     const r = await doubaoEvalBig(`(function(){
       var ce=document.querySelector('.tiptap.ProseMirror');
@@ -356,14 +357,14 @@ async function clickSend() {
       var ceR=ce.getBoundingClientRect();
       var btns=Array.from(document.querySelectorAll('button')).filter(function(b){
         var r=b.getBoundingClientRect();
-        return r.width>15&&r.width<80&&Math.abs(r.y-ceR.y)<160&&r.x>ceR.x+ceR.width-220;
+        return r.width>15&&r.width<80&&Math.abs(r.y-ceR.y)<160&&r.x>ceR.x+ceR.width-260;
       });
       if(!btns.length)return'no-btn';
       btns[btns.length-1].click();
       return 'ok';
     })()`);
     if (r === 'ok') {
-      await sleep(2500);
+      await sleep(5000);
       const url = await doubaoEvalBig(`location.href`);
       if (typeof url === 'string' && /\/chat\/\d+/.test(url)) return true;
       console.log(`   send try${i + 1}: clicked but no conversation yet`);
