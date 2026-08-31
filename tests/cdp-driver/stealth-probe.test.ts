@@ -108,6 +108,60 @@ describe('stealth 运行时探针（S174 检测面覆盖审计）', { timeout: T
     expect(Number(after)).not.toBe(Number(before)); // 新文档新偏移
   });
 
+  it('S177: hasFocus 原型逃逸封堵（实例与原型路径一致）', async () => {
+    const r = await page.evaluate(`(function(){
+      var viaInst = document.hasFocus();
+      var viaProto = Document.prototype.hasFocus.call(document);
+      return JSON.stringify({viaInst:viaInst, viaProto:viaProto});
+    })()`);
+    var o = JSON.parse(String(r));
+    expect(o.viaInst).toBe(o.viaProto); // 双路径同返回（S172 封堵验证）
+    expect(o.viaProto).toBe(true);
+  });
+
+  it('S177: performance.now 精度钳制双路径生效', async () => {
+    const r = await page.evaluate(`(function(){
+      var p1 = performance.now();
+      var viaInst = String(p1).split('.')[1] || '';
+      var viaProto = String(Performance.prototype.now.call(performance)).split('.')[1] || '';
+      return JSON.stringify({instDecimals:viaInst.length, protoDecimals:viaProto.length});
+    })()`);
+    var o = JSON.parse(String(r));
+    expect(o.instDecimals).toBeLessThanOrEqual(1); // 钳制到 0.1ms
+    expect(o.protoDecimals).toBeLessThanOrEqual(1); // 原型路径同样钳制
+  });
+
+  it('S177: getVoices 假声列表双路径一致', async () => {
+    const r = await page.evaluate(`(function(){
+      var viaInst = speechSynthesis.getVoices().length;
+      var viaProto = SpeechSynthesis.prototype.getVoices.call(speechSynthesis).length;
+      return JSON.stringify({viaInst:viaInst, viaProto:viaProto});
+    })()`);
+    var o = JSON.parse(String(r));
+    expect(o.viaInst).toBe(o.viaProto); // 双路径同列表
+    expect(o.viaInst).toBeLessThanOrEqual(50); // 伪装列表 ≤50（真 Chrome 通常 >50）
+  });
+
+  it('S177: TextMetrics 噪声生效（同文本两次宽度不同）', async () => {
+    const ctx = await page.evaluate(`(function(){
+      var c = document.createElement('canvas');
+      var ctx = c.getContext('2d');
+      var w1 = ctx.measureText('noiseprobe').width;
+      var w2 = ctx.measureText('noiseprobe').width;
+      var protoGet = Object.getOwnPropertyDescriptor(TextMetrics.prototype, 'width');
+      var w3 = protoGet && protoGet.get ? protoGet.get.call(ctx.measureText('noiseprobe')) : w1;
+      var protoNoisy = protoGet && protoGet.get ? String(protoGet.get).indexOf('_dx') !== -1 : false;
+      return JSON.stringify({w1:w1, w2:w2, w3:w3, protoNoisy:protoNoisy});
+    })()`);
+    var o = JSON.parse(String(ctx));
+    // 噪声是 per-session stable：同文本两次宽度必须相同（页内自洽）
+    expect(o.w2).toBe(o.w1);
+    // S172 封堵验证：原型 getter 已被噪声包装（含 _dx 偏移源码）
+    expect(String(o.w3)).toBe(o.w1.toFixed(12)); // 原型路径同噪声（数值一致）
+    expect(o.w3).toBeCloseTo(o.w1, 10);
+    expect(o.protoNoisy).toBe(true); // S172: 原型层噪声覆写在位
+  });
+
   it('S176: 伪装 patch 性能预算（<5ms）', async () => {
     const cost = await page.evaluate(`(function(){
       var t0 = performance.now();
