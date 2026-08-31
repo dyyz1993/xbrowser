@@ -174,6 +174,25 @@ const WS_BRIDGE = 'ws://127.0.0.1:9346';
 
 const stealthTabs = new Set(); // S169: 重建内联块时误删，补回
 
+// S186: 检测观测器 spy 源（document_start 注入，收集 descriptor 查询）
+const SPY_SOURCE = [
+  '(function(){',
+  '  if (window.__xbSpy) return;',
+  '  window.__xbSpy = true;',
+  '  window.__spyLog = [];',
+  '  var _gopd = Object.getOwnPropertyDescriptor;',
+  '  Object.getOwnPropertyDescriptor = function (o, k) {',
+  '    try {',
+  '      if (o === Document.prototype || o === document || o === Navigator.prototype || o === navigator || o === window) {',
+  '        var src = (o === Document.prototype || o === document) ? "D" : (o === Navigator.prototype || o === navigator) ? "N" : "W";',
+  '        window.__spyLog.push(src + ":" + String(k));',
+  '      }',
+  '    } catch (e) {}',
+  '    return _gopd.apply(this, arguments);',
+  '  };',
+  '})();',
+].join('\n');
+
 // 持久 attach 的任务 tab：已注册 document_start 伪装脚本。
 // 这些 tab 上的 evaluate/trustedClick/screenshot 跳过 attach/detach
 //（二次 attach 会报 "Another debugger is already attached"，
@@ -367,6 +386,48 @@ const executors = {
     if (windowId == null) return { ok: false, error: 'no windowId' };
     await chrome.windows.remove(windowId).catch(() => {});
     return { ok: true, closed: windowId };
+  },
+
+  // ── S186: 检测观测器（document_start spy）──
+  // 时序关键：先 about:blank 开窗并注册 init script，再导航到目标站，
+  // 保证 spy 早于目标页任何脚本。保持 attach（观测期间横幅可见，属预期）。
+  'spy-open': async ({ name, url }) => {
+    const win = await chrome.windows.create({
+      url: 'about:blank', focused: false, type: 'popup', width: 900, height: 640,
+    });
+    const tab = win && win.tabs && win.tabs[0];
+    if (!tab) return { ok: false, error: 'no tab' };
+    const dbg = { tabId: tab.id };
+    const attached = await new Promise((resolve) => {
+      chrome.debugger.attach(dbg, '1.3', () => resolve(!chrome.runtime.lastError));
+    });
+    if (!attached) return { ok: false, error: 'attach failed' };
+    const send = (method, params) => new Promise((resolve) => {
+      chrome.debugger.sendCommand(dbg, method, params || {}, () => resolve(!chrome.runtime.lastError));
+    });
+    await send('Page.enable');
+    await send('Page.addScriptToEvaluateOnNewDocument', { source: SPY_SOURCE });
+    if (url) await chrome.tabs.update(tab.id, { url });
+    return { ok: true, tabId: tab.id, windowId: win.id };
+  },
+  'spy-read': async ({ tabId }) => {
+    const target = tabId ?? await getTaskTabId();
+    return new Promise((resolve) => {
+      const dbg = { tabId: target };
+      chrome.debugger.sendCommand(dbg, 'Runtime.evaluate',
+        { expression: 'JSON.stringify({hooked:!!window.__xbSpy,total:(window.__spyLog||[]).length,log:(window.__spyLog||[]).slice(0,200)})', returnByValue: true },
+        (r) => {
+          if (chrome.runtime.lastError) { resolve({ ok: false, error: chrome.runtime.lastError.message }); return; }
+          let v = r?.result?.value;
+          try { v = JSON.parse(v); } catch {}
+          resolve({ ok: true, value: v });
+        });
+    });
+  },
+  'spy-detach': async ({ tabId }) => {
+    const dbg = { tabId };
+    await chrome.debugger.detach(dbg).catch(() => {});
+    return { ok: true, detached: tabId };
   },
 
   'task-list': async () => {
