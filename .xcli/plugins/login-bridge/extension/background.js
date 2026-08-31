@@ -330,7 +330,7 @@ const executors = {
   // S166: 可见小窗口模式（L0 真渲染）——hidden tab 有两个进程级残留：
   // rAF 帧距 ~1000ms（节流）+ trusted mousemove 大量丢弃（输入路由）。
   // 小窗口（focused:false 不抢焦点）让 Chrome 真渲染：帧距 ~16ms、事件全到达。
-  // 代价：屏幕角落一个 400x300 小窗。left/top 可传，默认 (60, 60)。
+  // 代价：屏幕角落一个 900x640 小窗（豆包等重响应式站点 400px 会折叠工具栏）。left/top 可传。
   'win-open': async ({ name, url, left, top, width, height }) => {
     const win = await chrome.windows.create({
       url: url || 'about:blank',
@@ -338,8 +338,8 @@ const executors = {
       type: 'popup',
       left: left != null ? left : 60,
       top: top != null ? top : 60,
-      width: width != null ? width : 400,
-      height: height != null ? height : 300,
+      width: width != null ? width : 900,
+      height: height != null ? height : 640,
     });
     const tab = win && win.tabs && win.tabs[0];
     if (!tab) return { ok: false, error: 'no tab in window' };
