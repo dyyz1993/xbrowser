@@ -90,6 +90,32 @@ describe('stealth 运行时探针（S174 检测面覆盖审计）', { timeout: T
   it('visibilityState 为 visible', () => {
     expect(probe.vis).toBe('visible');
   });
+
+  it('S176: timeOrigin 同页恒定且与 Date.now 联动', async () => {
+    const t1 = await page.evaluate('performance.timeOrigin');
+    const t2 = await page.evaluate('performance.timeOrigin');
+    expect(t1).toBe(t2); // 页内自洽：两次读取恒定
+    const drift = await page.evaluate(
+      'Math.abs((performance.timeOrigin + performance.now()) - Date.now())'
+    );
+    expect(Number(drift)).toBeLessThan(300000); // 偏移 ±5min 内，页内绝对时间自洽
+  });
+
+  it('S176: 跨导航偏移变化（不可关联）', async () => {
+    const before = await page.evaluate('performance.timeOrigin');
+    await page.goto('data:text/html,<html><title>probe2</title><body>2</body></html>');
+    const after = await page.evaluate('performance.timeOrigin');
+    expect(Number(after)).not.toBe(Number(before)); // 新文档新偏移
+  });
+
+  it('S176: 伪装 patch 性能预算（<5ms）', async () => {
+    const cost = await page.evaluate(`(function(){
+      var t0 = performance.now();
+      document.dispatchEvent(new Event('visibilitychange'));
+      return performance.now() - t0;
+    })()`);
+    expect(Number(cost)).toBeLessThan(5);
+  });
 });
 
 function context_new(browser: XBBrowser): Promise<unknown> {
