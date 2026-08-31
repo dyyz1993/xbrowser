@@ -31,13 +31,18 @@ describe('stealth init script health', () => {
       ['toDataURL 微扰', 'toDataURL'],
       ['WebGL renderer', 'getParameter'],
       ['audio 微扰', 'getFloatFrequencyData'],
-      ['字体度量', 'measureText'],
+      ['字体度量（S172 原型层）', 'TextMetrics.prototype,\"width\"'],
       ['speechSynthesis', 'getVoices'],
       ['电池', 'getBattery'],
       ['WebRTC host 剥离', 'typ host'],
       ['chrome.app 深度', 'ready_to_run'],
       ['focus 伪装', 'hasFocus'],
       ['coalesced 合成（d47）', 'getCoalescedEvents'],
+      // S172 原型逃逸封堵：覆写必须在原型层（实例层可被 xxx.prototype.xxx.call 逃逸）
+      ['hasFocus 原型层', 'Document.prototype.hasFocus'],
+      ['performance.now 原型层', 'Performance.prototype.now='],
+      ['getVoices 原型层', 'SpeechSynthesis.prototype.getVoices='],
+      ['TextMetrics 原型层（S172）', 'TextMetrics.prototype,"width"'],
     ];
     for (const [name, anchor] of anchors) {
       expect(script, `缺失伪装段: ${name}`).toContain(anchor);

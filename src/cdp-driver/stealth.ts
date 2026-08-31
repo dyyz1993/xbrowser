@@ -317,7 +317,8 @@ export function buildStealthInitScript(): string {
     '  Object.defineProperty(Screen.prototype,"availHeight",{get:_gah,configurable:true});',
     // hasFocus 与 visibilityState 联动（d29）：恒 true 在 hidden 标签下暴露
     // —— 真实浏览器失焦/后台时 hasFocus=false
-    '  document.hasFocus=function(){return document.visibilityState==="visible";};',
+    // S172: 原型层覆写——实例赋值可被 Document.prototype.hasFocus.call(document) 逃逸
+    '  Document.prototype.hasFocus=function(){return document.visibilityState==="visible";};',
     // 4. Canvas/WebGL fingerprint: per-session stable noise (d20).
     //    Headless software raster differs subtly from Chrome GPU raster —
     //    toDataURL hashes fingerprint the rasterizer. Inject a stable
@@ -380,26 +381,25 @@ export function buildStealthInitScript(): string {
     '  }catch(e){}',
     // 3b. Font metrics + speechSynthesis + battery (d22): headless tells
     '  try{',
-    '    var _mt=CanvasRenderingContext2D.prototype.measureText;',
     '    var _tmw=Object.getOwnPropertyDescriptor(TextMetrics.prototype,"width");',
-    '    CanvasRenderingContext2D.prototype.measureText=function(t){',
-    '      var m=_mt.call(this,t);',
-    '      try{Object.defineProperty(m,"width",{get:function(){return _tmw.get.call(m)+_dx*0.01;},configurable:true});}catch(e){}',
-    '      return m;',
-    '    };',
+    '    if(_tmw&&_tmw.get){',
+    '      // S172: 原型层覆写——实例(m)覆写可被 TextMetrics.prototype.width getter 逃逸',
+    '      Object.defineProperty(TextMetrics.prototype,"width",{get:function(){return _tmw.get.call(this)+_dx*0.01;},configurable:true});',
+    '    }',
     '  }catch(e){}',
     '  try{',
     '    var _fakeVoices=["Alex","Daniel","Karen","Moira","Ralph","Samantha","Ting-Ting","Mei-Jia","Sinji","Yunda"];',
-    '    var _sv=speechSynthesis.getVoices.bind(speechSynthesis);',
-    '    speechSynthesis.getVoices=function(){',
-    '      var real=_sv();',
+    // S172: 原型层覆写——实例赋值可被 SpeechSynthesis.prototype.getVoices.call() 逃逸
+    '    var _sv=SpeechSynthesis.prototype.getVoices;',
+    '    SpeechSynthesis.prototype.getVoices=function(){',
+    '      var real=_sv.call(this);',
     '      if(real&&real.length>50)return real;',
     // 注意阈值从 0 改 50：iframe 原生约 10 个 —— 原阈值下 iframe 返回原生 10 个
     // 而不是伪装 180（d33 暴露）。>50 = 主文档伪装列表已生效，其余返回伪装。
     '      return _fakeVoices.map(function(n,i){return {name:n,lang:i<2?"en-US":i<6?"en-GB":"zh-TW",localService:true,default:i===0,voiceURI:n};});',
     '    };',
     // d33 修复：iframe 的 speechSynthesis 是独立实例（主文档 hook 不可达）——
-    // 轮询同源 iframe，对其 contentWindow.speechSynthesis 同样 patch
+    // 轮询同源 iframe，对其 contentWindow 的原型同样 patch（S172: 原型层，防逃逸）
     '  try{',
     '    var _piv=function(){',
     '      var frs=document.querySelectorAll("iframe");',
@@ -407,8 +407,8 @@ export function buildStealthInitScript(): string {
     '        var cw=frs[i].contentWindow;',
     '        if(!cw||!cw.speechSynthesis||cw.speechSynthesis.__xbP)continue;',
     '        cw.speechSynthesis.__xbP=true;',
-    '        var _sv2=cw.speechSynthesis.getVoices.bind(cw.speechSynthesis);',
-    '        cw.speechSynthesis.getVoices=function(){var r=_sv2();if(r&&r.length>50)return r;',
+    '        var _sv2=cw.SpeechSynthesis.prototype.getVoices;',
+    '        cw.SpeechSynthesis.prototype.getVoices=function(){var r=_sv2.call(this);if(r&&r.length>50)return r;',
     '          return _fakeVoices.map(function(n,j){return{name:n,lang:j<2?"en-US":j<6?"en-GB":"zh-TW",localService:true,default:j===0,voiceURI:n};});};',
     '      }catch(e2){}}',
     '    };',
@@ -443,8 +443,9 @@ export function buildStealthInitScript(): string {
     // 3d-2. performance.now precision clamp (d34): full-precision timestamps
     //     (11 decimals) differ from site-isolation-clamped real Chrome (~100μs).
     '  try{',
-    '    var _pn=performance.now.bind(performance);',
-    '    performance.now=function(){return Math.round(_pn()*10)/10;};',
+    '    var _pn=Performance.prototype.now;',
+    '    // S172: 原型层覆写——实例赋值可被 Performance.prototype.now.call(performance) 逃逸',
+    '    Performance.prototype.now=function(){return Math.round(_pn.call(this)*10)/10;};',
     '    var _pto=Object.getOwnPropertyDescriptor(Performance.prototype,"timeOrigin");',
     '    if(_pto&&_pto.get){Object.defineProperty(performance,"timeOrigin",{get:function(){return _pto.get.call(performance);},configurable:true});}',
     '  }catch(e){}',
@@ -560,6 +561,9 @@ export function buildStealthInitScript(): string {
     '    if(this===AnalyserNode.prototype.getFloatFrequencyData)return"function getFloatFrequencyData() { [native code] }";',
     '    if(this===AudioBuffer.prototype.getChannelData)return"function getChannelData() { [native code] }";',
     '    if(this===_gceH)return"function getCoalescedEvents() { [native code] }";',
+    '    if(this===Document.prototype.hasFocus)return"function hasFocus() { [native code] }";',
+    '    if(this===Performance.prototype.now)return"function now() { [native code] }";',
+    '    if(this===SpeechSynthesis.prototype.getVoices)return"function getVoices() { [native code] }";',
     '    return _ts.call(this);',
     '  };',
     // 4. onclick prototype hijack (dual-stream consistency)
