@@ -36,24 +36,18 @@ console.log(`   ${sections.length} 个章节, ${article.length} 字符\n`);
 
 // ── 2. 豆包生成封面图 ──
 async function genCover(prompt) {
-  console.log('🎨 豆包生成封面图...');
+  console.log(`🎨 豆包生成封面图...${WIN_MODE ? '（L0 真渲染小窗）' : ''}`);
   // S161: 先关上一轮的任务 tab——task-open 复用旧 tab 时新 prompt 会进旧会话，
   // 轮询首轮即命中上一轮旧图（S160/S161 两轮 229897 字节完全一致的实证）
-  await fetch(`${BR}/exec?client=0`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cmd: 'task-close', args: { name: 'article-cover' } }),
-  }).catch(() => {});
+  await closeTask('article-cover');
   await sleep(1500);
-  // S158: 用 task-open 在后台新开一个豆包 tab（不覆盖用户正在看的 tab）
+  // S158: 后台新开豆包 tab（不覆盖用户正在看的 tab）
   // S161: `?category=1` 已失效（被重定向回最近会话）——改为裸 /chat +
   //       显式点"新对话"+"图像生成"两个按钮完成模式切换
-  const openBody = JSON.stringify({ cmd: 'task-open', args: { name: 'article-cover', url: 'https://www.doubao.com/chat' } });
-  const openResp = await fetch(`${BR}/exec?client=0`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: openBody,
-  }).then(r => r.json()).catch(() => null);
-  if (openResp && openResp.data && openResp.data.tabId) {
-    doubaoTabId = openResp.data.tabId;
+  // S167: XB_WIN_MODE=1 时走可见小窗（L0 真渲染）
+  const opened = await openTask('article-cover', 'https://www.doubao.com/chat');
+  if (opened.tabId) {
+    doubaoTabId = opened.tabId;
   } else {
     await discoverDoubaoTab();
   }
@@ -204,12 +198,9 @@ async function genCover(prompt) {
       }
       fs.writeFileSync('/tmp/article-cover.png', Buffer.from(b64, 'base64'));
       console.log('   cover saved:', fs.statSync('/tmp/article-cover.png').size, 'bytes');
-      // 清理任务 tab
+      // 清理任务载体（tab group 或小窗）
       if (doubaoTabId) {
-        await fetch(`${BR}/exec?client=0`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cmd: 'task-close', args: { name: 'article-cover' } }),
-        }).catch(() => {});
+        await closeTask('article-cover');
       }
       return true;
     }
@@ -232,17 +223,11 @@ async function assemble(coverPath) {
 
   console.log('\n📝 组装掘金草稿...');
   // S161: 同 genCover——先关旧 editor tab，防止在上一轮残留草稿上追加
-  await fetch(`${BR}/exec?client=0`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cmd: 'task-close', args: { name: 'article-editor' } }),
-  }).catch(() => {});
+  await closeTask('article-editor');
   await sleep(1500);
-  // S159: 掘金编辑器也用 task-open 隔离（不覆盖豆包 task tab）
-  const openResp = await fetch(`${BR}/exec?client=0`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cmd: 'task-open', args: { name: 'article-editor', url: 'https://juejin.cn/editor/drafts/new?v=2' } }),
-  }).then(r => r.json()).catch(() => null);
-  const editorTabId = openResp?.data?.tabId || null;
+  // S159: 掘金编辑器也隔离开（不覆盖豆包 task tab）；S167: 支持 win 模式
+  const opened = await openTask('article-editor', 'https://juejin.cn/editor/drafts/new?v=2');
+  const editorTabId = opened.tabId;
   _edTab = editorTabId;
   _editorTabId = editorTabId; // 供 pasteImg 使用
   console.log('   editor tab:', editorTabId);
@@ -310,6 +295,50 @@ async function assemble(coverPath) {
 
 // ── utils ──
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// S167: 任务载体抽象——XB_WIN_MODE=1 时走可见小窗（L0 真渲染：帧距 17ms、
+// trusted 事件到达 98.9%），否则走 hidden tab group（L1 伪装兜底）。
+// 两种模式都返回 { tabId, close }，调用方不感知差异。
+const WIN_MODE = process.env.XB_WIN_MODE === '1';
+const winIds = new Map(); // name -> windowId（win 模式回收用）
+async function openTask(name, url, opts = {}) {
+  if (WIN_MODE) {
+    // 900x640：豆包等重响应式站点在 400px 宽度会折叠工具栏（S166 教训）
+    const geom = opts.winGeom || { width: 900, height: 640 };
+    const body = { cmd: 'win-open', args: { name, url, ...geom } };
+    const r = await fetch(`${BR}/exec?client=0`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(x => x.json()).catch(() => null);
+    const tabId = r?.data?.tabId || null;
+    if (tabId && r?.data?.windowId) winIds.set(name, r.data.windowId);
+    return { tabId };
+  }
+  const body = { cmd: 'task-open', args: { name, url } };
+  const r = await fetch(`${BR}/exec?client=0`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }).then(x => x.json()).catch(() => null);
+  return { tabId: r?.data?.tabId || null };
+}
+async function closeTask(name, winId = null) {
+  if (WIN_MODE) {
+    const wid = winId ?? winIds.get(name);
+    if (wid != null) {
+      await fetch(`${BR}/exec?client=0`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cmd: 'win-close', args: { windowId: wid } }),
+      }).catch(() => {});
+      winIds.delete(name);
+      return;
+    }
+  }
+  await fetch(`${BR}/exec?client=0`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cmd: 'task-close', args: { name } }),
+  }).catch(() => {});
+}
+
 
 // S158: 发现豆包 tab 的 tabId（多 tab 环境下必须指定，否则 trustedClick 打错 tab）
 let doubaoTabId = null;
