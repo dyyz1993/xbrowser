@@ -327,6 +327,32 @@ const executors = {
     }
     return { closed };
   },
+  // S166: 可见小窗口模式（L0 真渲染）——hidden tab 有两个进程级残留：
+  // rAF 帧距 ~1000ms（节流）+ trusted mousemove 大量丢弃（输入路由）。
+  // 小窗口（focused:false 不抢焦点）让 Chrome 真渲染：帧距 ~16ms、事件全到达。
+  // 代价：屏幕角落一个 400x300 小窗。left/top 可传，默认 (60, 60)。
+  'win-open': async ({ name, url, left, top, width, height }) => {
+    const win = await chrome.windows.create({
+      url: url || 'about:blank',
+      focused: false,             // 不抢焦点
+      type: 'popup',
+      left: left != null ? left : 60,
+      top: top != null ? top : 60,
+      width: width != null ? width : 400,
+      height: height != null ? height : 300,
+    });
+    const tab = win && win.tabs && win.tabs[0];
+    if (!tab) return { ok: false, error: 'no tab in window' };
+    // 与 task tab 同享可见性一致性层（双保险：真渲染 + 环境戳自洽）
+    const stealth = await enableTaskStealth(tab.id).catch((e) => ({ ok: false, error: String(e) }));
+    return { ok: true, tabId: tab.id, windowId: win.id, stealth: stealth.ok };
+  },
+  'win-close': async ({ windowId }) => {
+    if (windowId == null) return { ok: false, error: 'no windowId' };
+    await chrome.windows.remove(windowId).catch(() => {});
+    return { ok: true, closed: windowId };
+  },
+
   'task-list': async () => {
     const groups = await chrome.tabGroups.query({});
     const out = [];
