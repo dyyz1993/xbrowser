@@ -493,8 +493,18 @@ if (process.env.XB_SKIP_COVER === '1' && fs.existsSync('/tmp/article-cover.png')
   hasCover = true;
   console.log('🎨 复用已有封面:', fs.statSync('/tmp/article-cover.png').size, 'bytes');
 } else {
-  // S171: 豆包双轮重试，仍失败自动降级 PIL 流程图封面（不再无封面交付）
-  hasCover = await genCover(coverPrompt);
+  // S171/S198: 前置健康门禁——quick 探针不通（mode 切不动等）直接 PIL 降级，
+  // 省去豆包流程内的失败重试时间（约 5 分钟）
+  let healthOk = true;
+  try {
+    execSync('node scripts/doubao-health.mjs --quick', { stdio: 'pipe', timeout: 120_000 });
+  } catch {
+    healthOk = false;
+    console.log('🎨 ⚠️ 健康门禁未通过（mode 切换断点等）→ 自动降级 PIL 封面');
+  }
+  if (healthOk) {
+    hasCover = await genCover(coverPrompt);
+  }
   if (!hasCover) {
     console.log('🎨 豆包双轮失败 → 自动降级 PIL 流程图封面');
     const stepTitles = sections.map(s => (s.split('\n')[0] || '').replace(/^#+\s*/, '').slice(0, 16));

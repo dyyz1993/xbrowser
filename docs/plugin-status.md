@@ -8,14 +8,14 @@
 | 指标 | 值 |
 |------|-----|
 | 插件总数 | 126 |
-| ✅ 已完成（有实现+有测试） | 90 |
+| ✅ 已完成（有实现+有测试） | 91 |
 | 🟡 有实现无测试 | 23 |
-| 🔴 scaffold 待实现 | 13 |
-| **当前债务** | **36** |
+| 🔴 scaffold 待实现 | 12 |
+| **当前债务** | **35** |
 
 > 债务 = 🟡无测试 + 🔴scaffold + ⛔加载失败。目标：债务 → 0。
 
-## 🔴 Scaffold 待实现（13）
+## 🔴 Scaffold 待实现（12）
 
 | 插件 | 行数 | URL |
 |------|------|-----|
@@ -31,7 +31,6 @@
 | notebooklm | 14 | https://notebooklm.google.com |
 | tiktok | 14 | https://www.tiktok.com |
 | upwork | 14 | https://www.upwork.com |
-| youtube | 14 | https://www.youtube.com |
 
 ## 🟡 有实现无测试（23） — P1 优先
 
@@ -61,7 +60,7 @@
 | xueqiu | 64 | 2 | `project` |
 | yahoo-finance | 46 | 1 | `project` |
 
-## ✅ 已完成（90）
+## ✅ 已完成（91）
 
 | 插件 | 命令数 | scope |
 |------|--------|-------|
@@ -153,5 +152,6 @@
 | wikipedia | 5 | `project` |
 | wordpress | 5 | `browser`, `page` |
 | xiaohongshu | 8 | `browser` |
+| youtube | 1 | `browser` |
 | yuanbao | 6 | `browser`, `page` |
 | zhihu | 8 | `browser` |
