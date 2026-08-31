@@ -86,6 +86,15 @@ async function main() {
 function finish(ok, steps, pass) {
   const report = { ok, steps, at: new Date().toISOString() };
   try { fs.mkdirSync('/tmp', { recursive: true }); fs.writeFileSync('/tmp/doubao-health.json', JSON.stringify(report, null, 2)); } catch {}
+  // S197: 持久归档（output/health/ 按时间戳）——跨季数据积累，十份样本看稳定性模式
+  try {
+    const archiveDir = 'output/health';
+    fs.mkdirSync(archiveDir, { recursive: true });
+    const stamp = report.at.replace(/[:.]/g, '-').slice(0, 19);
+    const archivePath = `${archiveDir}/doubao-health-${stamp}.json`;
+    fs.writeFileSync(archivePath, JSON.stringify(report, null, 2));
+    console.log(`   归档: ${archivePath}`);
+  } catch {}
   console.log(`\n${ok ? '✅ 链路健康' : '❌ 链路存在断点'}（${pass ?? steps.filter((s) => s.status === 'pass').length}/${steps.length} pass）`);
   console.log('   详情: /tmp/doubao-health.json');
   process.exit(ok ? 0 : 1);
