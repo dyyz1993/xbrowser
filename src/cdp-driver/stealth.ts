@@ -10,6 +10,17 @@
  *   • Wheel exponential decay (momentum)
  *
  * Also provides init script for page-level stealth hooks:
+ *
+ * ── 维护红线（S183 站点观测实证）────────────────────────────
+ *   1. 永不覆写 navigator.webdriver —— 原生 false 即最佳伪装。
+ *      掘金等站点以 ~5s/次轮询 Navigator.prototype.webdriver 的
+ *      descriptor（getter native + 实例无覆写 = 正常），任何覆写
+ *      都会在 descriptor 检测下露馅。
+ *   2. 实例覆写必须原型层同步（S172）—— 实例 defineProperty 可被
+ *      X.prototype.p.call(target) 一行逃逸，见 stealth-audit.test.ts。
+ *   3. 覆写函数必须进 toString native 伪装名单（S172b 审计规则 R2）。
+ *   ────────────────────────────────────────────────────────
+ * Also provides init script for page-level stealth hooks:
  *   • AEL event proxy (sourceCapabilities / isTrusted / coordinate floatification)
  *   • onclick prototype hijack (dual-stream consistency)
  *   • Screen/hasFocus override + toString disguise
