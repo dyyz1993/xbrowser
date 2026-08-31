@@ -447,7 +447,17 @@ export function buildStealthInitScript(): string {
     '    // S172: 原型层覆写——实例赋值可被 Performance.prototype.now.call(performance) 逃逸',
     '    Performance.prototype.now=function(){return Math.round(_pn.call(this)*10)/10;};',
     '    var _pto=Object.getOwnPropertyDescriptor(Performance.prototype,"timeOrigin");',
-    '    if(_pto&&_pto.get){Object.defineProperty(performance,"timeOrigin",{get:function(){return _pto.get.call(performance);},configurable:true});}',
+    '    if(_pto&&_pto.get){',
+    '      // S173: timeOrigin 真伪装——占位层（返回真值）升级为会话级随机偏移。',
+    '      // 防 cross-page 导航时刻关联：不同站点用 timeOrigin 精确对齐用户行为档案。',
+    '      // 偏移由本页 _seed 派生（页内自洽，now()+偏移一致），跨页随机（不可关联）。',
+    '      var _toff=Math.floor((_seed/2147483647)*600000-300000);',
+    '      var _tog=function(){return _pto.get.call(performance)+_toff;};',
+    '      _tog.toString=function(){return "function get timeOrigin() { [native code] }";};',
+    '      // S172 审计：实例覆写可被原型 getter 逃逸——原型层覆写',
+    '      Object.defineProperty(Performance.prototype,"timeOrigin",{get:_tog,configurable:true});',
+    '      Object.defineProperty(performance,"timeOrigin",{get:_tog,configurable:true});',
+    '    }',
     '  }catch(e){}',
     // 3f. getCoalescedEvents 合成（d47）：真实鼠标 125Hz 采样被浏览器按帧合并，
     //     快速移动时 pointermove.getCoalescedEvents() 返回 2~6 个事件（群内

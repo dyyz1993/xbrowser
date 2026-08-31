@@ -43,6 +43,8 @@ describe('stealth init script health', () => {
       ['performance.now 原型层', 'Performance.prototype.now='],
       ['getVoices 原型层', 'SpeechSynthesis.prototype.getVoices='],
       ['TextMetrics 原型层（S172）', 'TextMetrics.prototype,"width"'],
+      ['timeOrigin 偏移伪装（S173）', '_toff'],
+      ['timeOrigin 原型层（S173）', 'Performance.prototype,"timeOrigin"'],
     ];
     for (const [name, anchor] of anchors) {
       expect(script, `缺失伪装段: ${name}`).toContain(anchor);
