@@ -45,7 +45,7 @@ function makeCtx(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const COMMANDS = ['list', 'new', 'open', 'chat', 'attach'];
+const COMMANDS = ['list', 'new', 'open', 'chat', 'attach', 'image'];
 
 describe('yuanbao plugin', () => {
   beforeEach(() => {
@@ -63,8 +63,8 @@ describe('yuanbao plugin', () => {
     );
   });
 
-  it('should register 5 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(5);
+  it('should register 6 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(6);
   });
 
   it('should register expected command names', () => {

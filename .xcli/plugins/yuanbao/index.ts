@@ -433,6 +433,9 @@ export default function (xcli: XCLIAPI): void {
   site.command('image', {
     description: 'AI Image Generation',
     scope: 'browser',
+    examples: [
+      { cmd: 'xbrowser yuanbao image --prompt "sunset over mountains"', description: 'Generate an image from a prompt' },
+    ],
     parameters: z.object({
       prompt: z.string().describe('Image description prompt'),
     }),
@@ -451,6 +454,13 @@ export default function (xcli: XCLIAPI): void {
           if (bodyText.includes('\u5143\u5b9d') || bodyText.includes('\u65b0\u5bf9\u8bdd')) break;
         }
         if (!bodyText.includes('\u5143\u5b9d') && !bodyText.includes('\u65b0\u5bf9\u8bdd')) return fail('Cannot access yuanbao', ['Page not loaded after 30s']);
+        // 先点「AI 生图」按钮切到生图模式（直接在聊天框打字只会得到文字回复，不会生图）
+        try {
+          const imgModeBtn = page.locator('button', { hasText: 'AI 生图' }).first();
+          await imgModeBtn.click({ timeout: 8000 });
+          tips.push('AI 生图 mode on');
+          await page.waitForTimeout(1000);
+        } catch (e: unknown) { tips.push('[AI生图按钮] ' + String(e).slice(0, 40)); }
         var existingUrls: string[] = [];
         try {
           existingUrls = await page.evaluate(() => { var u: string[] = []; document.querySelectorAll('img').forEach(function(img) { if (img.src && img.src.startsWith('http')) u.push(img.src); }); return u; }) as string[];
@@ -482,7 +492,20 @@ export default function (xcli: XCLIAPI): void {
           await page.waitForTimeout(5000);
           try {
             var cur = await page.evaluate(function() { var u: string[] = []; document.querySelectorAll('img').forEach(function(img) { if (img.src && img.src.startsWith('http') && img.src.indexOf('blob:') < 0) u.push(img.src); }); return u; }) as string[];
-            newImageUrls = cur.filter(function(u) { return existingUrls.indexOf(u) < 0; });
+            newImageUrls = cur.filter(function(u) {
+              if (existingUrls.indexOf(u) >= 0) return false;
+              var low = u.toLowerCase();
+              if (low.indexOf('/static/') >= 0 || low.indexOf('/assets/') >= 0 || low.indexOf('_next/') >= 0 || low.indexOf('icon') >= 0 || low.indexOf('logo') >= 0 || low.indexOf('avatar') >= 0 || low.indexOf('btn') >= 0 || low.indexOf('button') >= 0 || low.indexOf('sprite') >= 0 || low.indexOf('.svg') >= 0) return false;
+              return true;
+            });
+            var sized: string[] = [];
+            for (var j = 0; j < newImageUrls.length; j++) {
+              try {
+                var sz = await page.evaluate(async function(url: string) { var r = await fetch(url); var b = await r.blob(); return b.size; }, newImageUrls[j]) as number;
+                if (sz >= 30000) sized.push(newImageUrls[j]);
+              } catch { sized.push(newImageUrls[j]); }
+            }
+            newImageUrls = sized;
             if (newImageUrls.length > 0) { tips.push('found ' + newImageUrls.length + ' new images'); break; }
           } catch { /* wait */ }
         }
