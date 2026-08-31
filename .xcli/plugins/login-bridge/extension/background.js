@@ -383,7 +383,7 @@ const executors = {
     return out;
   },
 
-  ping: async () => ({ pong: true, ua: navigator.userAgent }),
+  ping: async () => ({ pong: true, ua: navigator.userAgent, v: 'S169-MARK' }),
 
   tabs: async () => {
     const tabs = await chrome.tabs.query({});
