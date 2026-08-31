@@ -7,7 +7,7 @@
  * 先看清全貌，再逐个收编。
  */
 import { describe, it, expect, afterAll, beforeAll } from 'vitest';
-import { launch, type XBBrowser, type XBPage } from '../../src/cdp-driver/index.js';
+import { launch, buildStealthInitScript, DEFAULT_STEALTH_CONFIG, type XBBrowser, type XBPage } from '../../src/cdp-driver/index.js';
 
 const TEST_TIMEOUT = 30_000;
 const LAUNCH_OPTS = process.env.CDP_ENDPOINT
@@ -112,7 +112,7 @@ describe('stealth 运行时探针（S174 检测面覆盖审计）', { timeout: T
     expect(o.platformVersion.length).toBeGreaterThan(0);
     // S190: UA-CH 垫片 platform 与 UA 平台一致性
     if (String(probe.ua).includes('Mac OS X')) {
-      expect(o.platformVersion).toMatch(/1[0-9]\.\d/);
+      expect(o.platformVersion).toMatch(/^\d+(\.\d+)+$/); // macOS 新版本号体系（26.2.0）
     }
   });
 

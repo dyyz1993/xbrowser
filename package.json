@@ -75,6 +75,7 @@
     "lint": "eslint src/ bin/ --ext .ts",
     "lint:plugin-contract": "node lint-scripts/check-plugin-contract.mjs && node lint-scripts/check-plugin-status.mjs",
     "lint:plugin-status": "node lint-scripts/check-plugin-status.mjs --update",
+    "stealth:check": "vitest run tests/cdp-driver/stealth-health.test.ts tests/cdp-driver/stealth-audit.test.ts tests/cdp-driver/stealth-probe.test.ts",
     "lint:docs": "node lint-scripts/check-docs-consistency.mjs",
     "typecheck": "tsc --noEmit",
     "start": "node dist/cli.js",
