@@ -25,7 +25,8 @@ describe('stealth-common（S164 桥任务 tab 反检测纯逻辑）', () => {
     });
 
     it('should make hasFocus return true', () => {
-      expect(src).toContain('document.hasFocus = function () { return true; }');
+      expect(src).toContain('return true; };');
+      expect(src).toContain('document.hasFocus = hf;');
     });
 
     it('should re-assert on visibilitychange (coherence guard)', () => {
