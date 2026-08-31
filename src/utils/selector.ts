@@ -15,7 +15,9 @@ const HTML_TAGS = new Set([
 const SELECTOR_DSL_PREFIXES = /^(text=|popup-text=|xpath=|role=|css=|chain=)/;
 
 export function normalizeSelector(input: string): string {
-  if (!input) return input;
+  // CLI 短旗标解析可能把 -s 当布尔 flag（options.s === true），防御性收敛为字符串
+  if (!input) return input as string;
+  if (typeof input !== "string") input = String(input);
   if (/^[#\.\[\:\/]/.test(input)) return input;
   if (input === '*') return input;
   if (SELECTOR_DSL_PREFIXES.test(input)) return input;

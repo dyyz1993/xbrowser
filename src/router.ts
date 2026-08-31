@@ -267,6 +267,15 @@ function findEvalStart(argv: string[]): number {
 async function handleEvalScript(parts: string[], argv: string[]): Promise<void> {
   const cdpEndpoint = extractCdpFromArgv(argv);
   const sessionName = extractSessionNameFromArgv(argv);
+  // Programmatic callers may use the b64 channel directly — pass through
+  // verbatim (no re-encoding, which would double-encode the script).
+  if (parts[0] === '--script-b64' && parts[1]) {
+    const chainResult = await executeChain(`eval --script-b64 ${parts[1]}`, { cdpEndpoint, sessionName });
+    printChainResult(chainResult);
+    if (!chainResult.success) throw new Error("Command failed");
+    return;
+  }
+
   // Pull --frame <value> out of the parts; everything else is script lines.
   let frame: string | undefined;
   const scriptLines: string[] = [];

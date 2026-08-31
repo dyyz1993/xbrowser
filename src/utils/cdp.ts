@@ -56,7 +56,11 @@ export async function resolveCDPEndpoint(raw: string): Promise<string> {
 
   if (raw.startsWith('http://') || raw.startsWith('https://')) {
     try {
-      const httpResp = await fetchNoProxy(`${raw}/json/version`);
+      // endpoint 可能带 query（多用户网关 http://host:9221?key=xxx 按 key 配对），
+      // 字符串拼接会产出 `?key=xx/json/version` 非法 URL——必须用 URL API 合并
+      const u = new URL(raw);
+      u.pathname = (u.pathname.replace(/\/+$/, '') || '') + '/json/version';
+      const httpResp = await fetchNoProxy(u.toString());
       const data = (await httpResp.json()) as { webSocketDebuggerUrl?: string };
       if (!data.webSocketDebuggerUrl) {
         throw new Error(`Could not discover CDP endpoint from ${raw}`);

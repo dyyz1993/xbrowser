@@ -1,17 +1,17 @@
 # 插件完成度看板
 
 > **自动生成，请勿手改** · 由 `lint-scripts/check-plugin-status.mjs` 生成
-> 生成时间：2026-07-27 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
+> 生成时间：2026-08-28 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
 
 ## 汇总
 
 | 指标 | 值 |
 |------|-----|
-| 插件总数 | 124 |
-| ✅ 已完成（有实现+有测试） | 81 |
-| 🟡 有实现无测试 | 29 |
+| 插件总数 | 125 |
+| ✅ 已完成（有实现+有测试） | 89 |
+| 🟡 有实现无测试 | 22 |
 | 🔴 scaffold 待实现 | 14 |
-| **当前债务** | **43** |
+| **当前债务** | **36** |
 
 > 债务 = 🟡无测试 + 🔴scaffold + ⛔加载失败。目标：债务 → 0。
 
@@ -34,28 +34,22 @@
 | upwork | 14 | https://www.upwork.com |
 | youtube | 14 | https://www.youtube.com |
 
-## 🟡 有实现无测试（29） — P1 优先
+## 🟡 有实现无测试（22） — P1 优先
 
 | 插件 | 行数 | 命令数 | scope |
 |------|------|--------|-------|
-| apple-podcasts | 67 | 2 | `project` |
-| arxiv | 92 | 3 | `project` |
 | bbc | 39 | 1 | `project` |
-| crates | 74 | 2 | `project` |
-| dictionary | 80 | 3 | `project` |
 | douban | 59 | 1 | `page` |
 | github-trending | 53 | 1 | `project` |
 | goofish | 333 | 3 | `page` |
 | google-scholar | 47 | 1 | `project` |
-| hackernews | 229 | 8 | `project` |
 | hf | 62 | 2 | `project` |
-| homebrew | 70 | 2 | `project` |
+| login-bridge | 339 | 5 | `page`, `project` |
 | maven | 39 | 1 | `project` |
 | nuget | 40 | 1 | `project` |
 | packagist | 38 | 1 | `project` |
 | producthunt | 286 | 4 | `browser`, `page` |
 | pubmed | 47 | 1 | `project` |
-| pypi | 96 | 3 | `project` |
 | rubygems | 39 | 1 | `project` |
 | semanticscholar | 39 | 1 | `project` |
 | smzdm | 56 | 1 | `page` |
@@ -64,11 +58,10 @@
 | tieba | 51 | 1 | `page` |
 | weread | 40 | 1 | `project` |
 | wikidata | 65 | 2 | `project` |
-| wikipedia | 124 | 5 | `project` |
 | xueqiu | 64 | 2 | `project` |
 | yahoo-finance | 46 | 1 | `project` |
 
-## ✅ 已完成（81）
+## ✅ 已完成（89）
 
 | 插件 | 命令数 | scope |
 |------|--------|-------|
@@ -77,7 +70,9 @@
 | 699pic | 1 | `browser` |
 | 9gag | 1 | `browser` |
 | ai-search | 1 | `browser` |
+| apple-podcasts | 2 | `project` |
 | artstation | 1 | `browser` |
+| arxiv | 3 | `project` |
 | assert | 1 | `page` |
 | backlink-auto | 3 | `browser`, `project` |
 | baidu | 8 | `browser`, `cli` |
@@ -89,6 +84,7 @@
 | chatgpt | 5 | `browser`, `page` |
 | claude | 5 | `browser`, `page` |
 | cmf-seats | 3 | `any`, `page` |
+| crates | 2 | `project` |
 | csdn | 5 | `browser`, `page` |
 | ctrip | 1 | `browser` |
 | ctrip-review | 1 | `browser` |
@@ -96,6 +92,7 @@
 | deviantart | 1 | `browser` |
 | devto | 4 | `browser`, `page` |
 | dianping | 1 | `page` |
+| dictionary | 3 | `project` |
 | diff | 1 | `page` |
 | doubao | 20 | `browser`, `page` |
 | douyin | 8 | `browser` |
@@ -110,7 +107,9 @@
 | gettyimages | 1 | `browser` |
 | github | 6 | `browser` |
 | google | 3 | `browser`, `cli` |
+| hackernews | 8 | `project` |
 | hashnode | 4 | `browser`, `page` |
+| homebrew | 2 | `project` |
 | huaban | 1 | `browser` |
 | image | 1 | `browser` |
 | imdb | 2 | `browser` |
@@ -126,6 +125,7 @@
 | pinterest | 1 | `browser` |
 | pixabay | 1 | `browser` |
 | pixiv | 2 | `browser` |
+| pypi | 3 | `project` |
 | qianwen | 5 | `browser`, `page` |
 | quanjing | 1 | `browser` |
 | quora | 4 | `browser`, `page` |
@@ -149,6 +149,7 @@
 | v2ex | 2 | `browser` |
 | wanx | 3 | `browser` |
 | weibo | 3 | `browser` |
+| wikipedia | 5 | `project` |
 | wordpress | 5 | `browser`, `page` |
 | xiaohongshu | 8 | `browser` |
 | yuanbao | 5 | `browser`, `page` |
