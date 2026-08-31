@@ -518,12 +518,18 @@ const executors = {
     const actions = StealthCommon.planWarmup({ w: vp.w, h: vp.h, ms: ms || 3000 });
     const t0 = Date.now();
     let done = 0;
+    const budget = (ms || 3000) * 2 + 4000; // 死线：回调链任何一处卡死也不挂起调用方
     await new Promise((resolve) => {
+      let finished = false;
+      const fin = () => { if (!finished) { finished = true; resolve(); } };
+      setTimeout(fin, budget);
       const step = () => {
-        if (done >= actions.length) { resolve(); return; }
+        if (finished) return;
+        if (done >= actions.length) { fin(); return; }
         const a = actions[done++];
         const fire = (ok) => {
-          if (!ok) { resolve(); return; } // 派发失败（tab 关闭等）立即收尾
+          if (finished) return;
+          if (!ok) { fin(); return; } // 派发失败（tab 关闭等）立即收尾
           setTimeout(step, a.delay);
         };
         if (a.type === 'move') {
