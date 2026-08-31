@@ -231,7 +231,16 @@ async function assemble(coverPath) {
   _edTab = editorTabId;
   _editorTabId = editorTabId; // 供 pasteImg 使用
   console.log('   editor tab:', editorTabId);
-  await sleep(6000);
+  // S179: CodeMirror 就绪轮询——掘金编辑器慢加载时固定 sleep 6s 不够，
+  // CodeMirror null 会让全部段落写入失败（S165 告警逻辑抓出的真实故障）
+  let cmReady = false;
+  for (let r = 0; r < 15; r++) {
+    const st = await evalEditor(`(function(){var cm=document.querySelector('.CodeMirror');return (cm&&cm.CodeMirror)?'1':'0'})()`);
+    if (st === '1') { cmReady = true; break; }
+    await sleep(2000);
+  }
+  console.log('   editor ready:', cmReady);
+  if (!cmReady) console.log('   ⚠️ CodeMirror 未就绪，段落写入预计失败');
 
   // 标题
   console.log('   title:', await evalEditor(`(function(){
