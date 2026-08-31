@@ -41,6 +41,23 @@ describe('stealth 运行时探针（S174 检测面覆盖审计）', { timeout: T
           r.platformVersion = h.platformVersion;
         } catch(e) { r.uadErr = String(e); }
       }
+      try {
+        if (navigator.gpu && navigator.gpu.requestAdapter) {
+          var ad = await navigator.gpu.requestAdapter();
+          r.gpu = ad ? 'adapter-present' : 'adapter-null';
+          try {
+            var info = ad.info || (ad.requestAdapterInfo ? await ad.requestAdapterInfo() : null);
+            if (info) r.gpuInfo = { vendor: info.vendor, architecture: info.architecture, description: (info.description||'').slice(0,40) };
+          } catch(e) { r.gpuInfoErr = String(e).slice(0,40); }
+        } else {
+          r.gpu = 'no-webgpu';
+        }
+      } catch(e) { r.gpu = 'err:' + String(e).slice(0,30); }
+      r.scheduler = typeof scheduler !== 'undefined' && typeof (scheduler || {}).yield === 'function' ? 'present' : 'absent';
+      r.storageBuckets = typeof (navigator.storage || {}).buckets === 'object' ? 'present' : 'absent';
+      r.prerendering = document.prerendering === undefined ? 'unsupported' : String(document.prerendering);
+      r.userActivation = typeof navigator.userActivation === 'object' ? 'present' : 'absent';
+      r.windowManagement = typeof document.hasPrivateTokens === 'function' ? 'present' : 'absent';
       return JSON.stringify(r);
     })()`;
     const raw = await page.evaluate(expr);
