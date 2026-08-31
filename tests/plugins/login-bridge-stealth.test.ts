@@ -42,6 +42,17 @@ describe('stealth-common（S164 桥任务 tab 反检测纯逻辑）', () => {
       expect(src).toContain('__xbVisStealth');
     });
 
+    it('should patch Document.prototype (S169: prototype escape)', () => {
+      // 实例覆写可被 getOwnPropertyDescriptor(Document.prototype,...).get.call(document) 逃逸
+      expect(src).toContain('patch(Document.prototype)');
+      expect(src).toContain('patch(document)');
+    });
+
+    it('should disguise getter toString as native (S169)', () => {
+      expect(src).toContain('[native code]');
+      expect(src).toContain('nativeize');
+    });
+
     it('should be syntactically valid JS', () => {
       expect(() => {
         new Function(src);

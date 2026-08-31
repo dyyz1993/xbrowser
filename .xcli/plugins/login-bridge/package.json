@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-login-bridge",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "main": "index.ts",
   "type": "module",
   "dependencies": { "zod": "^3.24.0" },
@@ -8,7 +8,7 @@
   "xbrowser": {
     "name": "login-bridge",
     "slug": "login-bridge",
-    "version": "1.3.0",
+    "version": "1.3.1",
     "author": "dyyz1993",
     "description": "Chrome ↔ xbrowser 登录态双向同步：Chrome 插件导出 cookie → bridge(9355) → 注入固定 profile 的自动化 Chromium",
     "site": "http://local.bridge",

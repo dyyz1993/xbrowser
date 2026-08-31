@@ -9,7 +9,7 @@
 
 const BRIDGE = 'http://127.0.0.1:9355';
 const WS_BRIDGE = 'ws://127.0.0.1:9346';
-// S164-BISECT-2: 内联 stealth-common（importScripts 在真实 SW 崩，源码内联绕开）
+// BEGIN inlined stealth-common.cjs
 /**
  * stealth-common.cjs — 桥任务 tab 的反检测纯逻辑（S164）
  *
@@ -48,13 +48,28 @@ const WS_BRIDGE = 'ws://127.0.0.1:9346';
   var VISIBILITY_STEALTH_SOURCE = [
     '(function(){',
     '  if (window.__xbVisStealth) return; window.__xbVisStealth = true;',
-    '  var assert = function () {',
+    '  // S169: 实例覆写可被原型 getter 逃逸——',
+    '  //  Object.getOwnPropertyDescriptor(Document.prototype,"visibilityState").get.call(document)',
+    '  //  拿到的是真值。getter 必须在原型与实例两层同步覆写，且 toString 伪装 native。',
+    '  var nativeize = function (f, name) {',
+    '    try { f.toString = function () { return "function get " + name + "() { [native code] }"; }; } catch (e) {}',
+    '    return f;',
+    '  };',
+    '  var patch = function (obj) {',
     '    try {',
-    '      Object.defineProperty(document, "visibilityState", { get: function () { return "visible"; }, configurable: true });',
-    '      Object.defineProperty(document, "webkitVisibilityState", { get: function () { return "visible"; }, configurable: true });',
-    '      Object.defineProperty(document, "hidden", { get: function () { return false; }, configurable: true });',
-    '      Object.defineProperty(document, "webkitHidden", { get: function () { return false; }, configurable: true });',
-    '      document.hasFocus = function () { return true; };',
+    '      Object.defineProperty(obj, "visibilityState", { get: nativeize(function () { return "visible"; }, "visibilityState"), configurable: true });',
+    '      Object.defineProperty(obj, "webkitVisibilityState", { get: nativeize(function () { return "visible"; }, "webkitVisibilityState"), configurable: true });',
+    '      Object.defineProperty(obj, "hidden", { get: nativeize(function () { return false; }, "hidden"), configurable: true });',
+    '      Object.defineProperty(obj, "webkitHidden", { get: nativeize(function () { return false; }, "webkitHidden"), configurable: true });',
+    '    } catch (e) {}',
+    '  };',
+    '  var assert = function () {',
+    '    patch(Document.prototype);',
+    '    patch(document);',
+    '    try {',
+    '      var hf = function () { return true; };',
+    '      hf.toString = function () { return "function hasFocus() { [native code] }"; };',
+    '      document.hasFocus = hf;',
     '    } catch (e) {}',
     '  };',
     '  assert();',
@@ -155,8 +170,7 @@ const WS_BRIDGE = 'ws://127.0.0.1:9346';
   };
 });
 
-const stealthTabs = new Set();
-// S164-BISECT-2-END
+// END inlined stealth-common.cjs
 
 // 持久 attach 的任务 tab：已注册 document_start 伪装脚本。
 // 这些 tab 上的 evaluate/trustedClick/screenshot 跳过 attach/detach
