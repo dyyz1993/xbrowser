@@ -33,6 +33,11 @@ export class XBContextImpl implements XBContext {
     this.setupAutoAttach();
   }
 
+  /** S194: 任务 tab 的 stealth 配置（UA-CH 档案等）经 context 传给 page 层 */
+  get stealthConfig(): Partial<import('./stealth.js').StealthConfig> | undefined {
+    return this.options.stealthConfig;
+  }
+
   async newPage(): Promise<XBPage> {
     if (this.closed) throw new Error('Context is closed');
 

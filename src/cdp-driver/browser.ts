@@ -44,6 +44,7 @@ export class XBBrowserImpl implements XBBrowser {
     childProcess?: ChildProcess,
     tmpDir?: string,
     cdpEndpoint?: string,
+    private launchOpts?: { stealthConfig?: Partial<import('./stealth.js').StealthConfig> },
   ) {
     this.conn = conn;
     this.childProcess = childProcess ?? null;
@@ -117,6 +118,10 @@ export class XBBrowserImpl implements XBBrowser {
   }
 
   async newContext(opts: XBContextOptions = {}): Promise<XBContext> {
+    // S194: launch 级 stealthConfig 作为 context 默认（显式 opts 优先）
+    if (this.launchOpts?.stealthConfig && !opts.stealthConfig) {
+      opts = { ...opts, stealthConfig: this.launchOpts.stealthConfig };
+    }
     if (this._disconnected) {
       throw new Error('Browser is disconnected');
     }

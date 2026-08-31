@@ -263,6 +263,52 @@ describe('stealth 运行时探针（S174 检测面覆盖审计）', { timeout: T
     expect(Math.abs(Number(d2) - Number(d1))).toBeLessThan(1000);
   });
 
+  it('S194: stealthConfig 经 context 传递链生效（自定义 brand 出现在垫片）', async () => {
+    const customBrand = 'XBCustom Probe Brand';
+    const result = await launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-gpu'],
+      stealthConfig: {
+        uaChProfile: {
+          brands: [
+            { brand: customBrand, version: '151' },
+            { brand: 'Chromium', version: '151' },
+          ],
+          platform: 'macOS',
+          platformVersion: '26.2.0',
+          architecture: 'arm',
+          bitness: '64',
+          model: '',
+          uaFullVersion: '151.0.7922.175',
+          fullVersionList: [
+            { brand: customBrand, version: '151.0.7922.175' },
+            { brand: 'Chromium', version: '151.0.7922.175' },
+          ],
+        },
+      },
+    });
+    try {
+      const context = await result.browser.newContext();
+      const p2 = (await context.newPage()) as XBPage;
+      await p2.goto('data:text/html,<html><title>c</title><body>c</body></html>');
+      const raw = await p2.evaluate(`(async function(){
+        var r = { hasUAD: !!navigator.userAgentData,
+          brands: navigator.userAgentData ? navigator.userAgentData.brands.map(function(b){return b.brand}) : [],
+          full: null };
+        if (navigator.userAgentData) {
+          try { var h = await navigator.userAgentData.getHighEntropyValues(['fullVersionList']); r.full = (h.fullVersionList||[]).map(function(b){return b.brand}); } catch(e) {}
+        }
+        return JSON.stringify(r);
+      })()`);
+      const o = JSON.parse(String(raw));
+      expect(o.hasUAD).toBe(true);
+      expect(o.brands.join('|')).toContain('XBCustom');
+      expect(String(o.full || '')).toContain('XBCustom');
+    } finally {
+      await result.browser.close().catch(() => {});
+    }
+  }, 30_000);
+
   it('S176: 伪装 patch 性能预算（<5ms）', async () => {
     const cost = await page.evaluate(`(function(){
       var t0 = performance.now();

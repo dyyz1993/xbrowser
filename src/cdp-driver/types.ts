@@ -32,6 +32,8 @@ export interface XBContextOptions {
   userAgent?: string;
   extraHTTPHeaders?: Record<string, string>;
   ignoreHTTPSErrors?: boolean;
+  /** S194: stealth 伪装配置（UA-CH 档案等）——经 context 传至 page 的注入层 */
+  stealthConfig?: Partial<import('./stealth.js').StealthConfig>;
 }
 
 // ── Context ────────────────────────────────────────────────────
@@ -411,6 +413,8 @@ export interface XBRequest {
 
 export interface XBLaunchOptions {
   headless?: boolean;
+  /** S194: stealth 配置（UA-CH 档案等）——launch 级注入，所有 context/page 继承 */
+  stealthConfig?: Partial<import('./stealth.js').StealthConfig>;
   executablePath?: string;
   args?: string[];
   userDataDir?: string;

@@ -104,7 +104,8 @@ export async function launch(options: XBLaunchOptions = {}): Promise<LaunchResul
   const httpEndpoint = options.cdpEndpoint && !options.cdpEndpoint.startsWith('ws')
     ? options.cdpEndpoint
     : undefined;
-  const browser = new XBBrowserImpl(conn, childProcess, tmpDir, httpEndpoint);
+  const browser = new XBBrowserImpl(conn, childProcess, tmpDir, httpEndpoint,
+    options.stealthConfig ? { stealthConfig: options.stealthConfig } : undefined);
 
   return { browser, wsEndpoint };
 }

@@ -26,7 +26,7 @@ import type {
 import type { XBContextImpl } from './context.js';
 import type { XBBrowserImpl } from './browser.js';
 import { XBMouseImpl } from './mouse.js';
-import { buildStealthInitScript } from './stealth.js';
+import { buildStealthInitScript, DEFAULT_STEALTH_CONFIG } from './stealth.js';
 import { XBKeyboardImpl } from './keyboard.js';
 import { XBLocatorImpl } from './locator.js';
 import { XBElementHandleImpl } from './element-handle.js';
@@ -159,7 +159,7 @@ export class XBPageImpl implements XBPage {
     if (process.env.XBROWSER_STEALTH !== 'off') {
       try {
         await this.conn.send('Page.addScriptToEvaluateOnNewDocument',
-          { source: buildStealthInitScript() }, this.sessionId);
+          { source: buildStealthInitScript({ ...DEFAULT_STEALTH_CONFIG, ...(this._contextImpl.stealthConfig ?? {}) }) }, this.sessionId);
       } catch { /* best-effort */ }
     }
 
