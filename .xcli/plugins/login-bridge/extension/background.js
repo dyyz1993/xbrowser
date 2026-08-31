@@ -172,6 +172,8 @@ const WS_BRIDGE = 'ws://127.0.0.1:9346';
 
 // END inlined stealth-common.cjs
 
+const stealthTabs = new Set(); // S169: 重建内联块时误删，补回
+
 // 持久 attach 的任务 tab：已注册 document_start 伪装脚本。
 // 这些 tab 上的 evaluate/trustedClick/screenshot 跳过 attach/detach
 //（二次 attach 会报 "Another debugger is already attached"，
