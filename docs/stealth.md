@@ -157,3 +157,93 @@ Chrome Browser (CDP WebSocket)
 | 服务端 ML | 机器学习行为模型（非规则引擎） | 需多样化操作模式 |
 | CAPTCHA | 遇到验证码需人工接管 | `--waitCaptcha` 标志 |
 | 性能开销 | 隐身模式 ~45s/次 vs 普通模式 ~0.6s | `XBROWSER_STEALTH=off` 可关闭 |
+
+
+---
+
+# 环境伪装层（S169–S196）
+
+> 行为仿真层（上文）之外，stealth 的另一半：**API 表面与环境状态的环境伪装**。
+> 覆盖 UA-CH 档案驱动垫片、timeOrigin 偏移、HeadlessChrome 清洗、原型逃逸防御。
+
+## UA-CH 档案驱动垫片
+
+headless Chrome 不暴露 `navigator.userAgentData`——**API 缺失本身就是 headless 指纹**。垫片从真实采样档案生成完整的 UA-CH API 表面（brands/platform/getHighEntropyValues/fullVersionList/toJSON）。
+
+### 使用（stealthConfig 四层传递链）
+
+```javascript
+import { launch } from '@xbrowser/cli';
+
+const { browser } = await launch({
+  headless: true,
+  stealthConfig: {
+    // 从你的真实机器采样（方法见下）
+    uaChProfile: {
+      brands: [{ brand: 'Not=A?Brand', version: '99' }, { brand: 'Google Chrome', version: '151' }, { brand: 'Chromium', version: '151' }],
+      platform: 'macOS',
+      platformVersion: '26.2.0',
+      architecture: 'arm',
+      bitness: '64',
+      model: '',
+      uaFullVersion: '151.0.7922.175',
+      fullVersionList: [/* 同 brands 形状，版本为全版本 */],
+    },
+  },
+});
+```
+
+传递链：`launch → browser → context → page`，page 注入时按 `{...DEFAULT, ...用户覆盖}` 合并——DEFAULT 档案兜底任何未覆盖字段。
+
+### 采样你的真实档案
+
+在日常使用的 Chrome（有头、真实硬件）控制台运行：
+
+```javascript
+copy(JSON.stringify({
+  brands: navigator.userAgentData.brands,
+  platform: navigator.userAgentData.platform,
+  ...(await navigator.userAgentData.getHighEntropyValues(['platformVersion','architecture','bitness','uaFullVersion','fullVersionList'])),
+}))
+```
+
+剪贴板内容即 `uaChProfile`。
+
+## timeOrigin 偏移
+
+`performance.timeOrigin`（页面导航精确时刻）可被跨站点拼接成行为档案。伪装：**±5 分钟会话级随机偏移**——页内自洽（偏移恒定）、跨页不可关联、幅度落在网络抖动范围。
+
+## 原型逃逸防御
+
+实例覆写可被 `Object.getOwnPropertyDescriptor(X.prototype, p).get.call(target)` 一行绕过。所有覆写在**原型与实例双层同步**，getter 的 toString 伪装为 native。
+
+## 检测面观测（元编程钩子）
+
+| 站点 | 检测时机 | 清单 | 我方状态 |
+|------|---------|------|---------|
+| 掘金 | 持续轮询 ~5s/次 | `Navigator.prototype.webdriver` descriptor | 原生 false，无暴露 |
+| 豆包 | 交互触发（新对话后爆发） | 37 项 Selenium/PhantomJS/ChromeDriver 扫描 | 架构不注入，免疫 |
+| 知乎 | document_start 一次性 | webdriver + userAgent 成对一致性 | UA 清洗保证一致 |
+
+## 自检体系
+
+```bash
+npm run stealth:check
+```
+
+| 文件 | 层次 | 管什么 |
+|------|------|--------|
+| stealth-health | 结构 | 伪装段锚点齐全 |
+| stealth-audit | 规则 | 覆写在原型层 + toString 名单 + 豁免带理由 |
+| stealth-probe | 行为 | 19 断言真实 headless 验收 |
+
+四层证据链：**源码锚点 → 结构健康 → 行为断言 → 性能预算**。碰 stealth 层之前，先跑它。
+
+## 维护红线
+
+1. **永不覆写 `navigator.webdriver`**——原生 false 即最佳伪装（掘金式 descriptor 轮询可看穿一切覆写）
+2. **实例覆写必须原型层同步**——原型 getter 一行逃逸（S169/S172）
+3. **覆写函数必须进 toString native 名单**——伪装函数自己不能露馅
+4. **WIP 立即 commit**——未提交的 stealth 改动曾两次造成断裂
+5. **扩展 SW 禁用 importScripts**——加载 .cjs 在真实 SW 顶层崩（S164），用内联（scripts/inline-stealth.mjs 为登录桥侧同款方案）
+

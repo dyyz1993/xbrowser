@@ -17,6 +17,7 @@
 - **CDP 连接** — 连接已运行的 Chrome/Chromium，无需重新启动浏览器
 - **会话管理** — 多会话并行，独立上下文
 - **Daemon 模式** — 后台常驻，快速响应
+- **Stealth 伪装层** — UA-CH 档案驱动垫片 + 可配置 stealthConfig（详见 [docs/stealth.md](docs/stealth.md)）
 
 ## Use Cases
 
