@@ -1,10 +1,21 @@
 {
   "manifest_version": 3,
   "name": "xbrowser Login Bridge",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "导出站点登录态（cookie+localStorage）给 xbrowser 自动化浏览器，双向同步",
-  "permissions": ["cookies", "storage", "tabs", "activeTab", "scripting", "alarms", "debugger", "tabGroups"],
-  "host_permissions": ["<all_urls>"],
+  "permissions": [
+    "cookies",
+    "storage",
+    "tabs",
+    "activeTab",
+    "scripting",
+    "alarms",
+    "debugger",
+    "tabGroups"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_title": "xbrowser 登录态同步"
