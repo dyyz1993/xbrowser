@@ -28,3 +28,6 @@
 
 ### Added
 - **ext-reload 执行器**：WS 消息直达 SW 调 chrome.runtime.reload()——热更新不再依赖 popup 页面绑定（时好时坏）与 GUI 点击；ping 响应带 manifest version（激活验证闭环）
+
+### Fixed（1.4.1）
+- 端到端验证 ext-reload：bridge 命令 → SW 重启 → ping 带磁盘版本号，8 秒闭环零 GUI
