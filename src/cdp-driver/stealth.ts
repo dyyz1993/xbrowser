@@ -34,7 +34,32 @@ import type { CDPConnection } from './connection.js';
 // Types
 // ============================================================
 
+export interface UaChProfile {
+  /** GREASE brands 形状，例：Not=A?Brand:99（从真实环境采样） */
+  brands: Array<{ brand: string; version: string }>;
+  /** 平台（macOS / Windows / Linux） */
+  platform: string;
+  /** 平台版本（高熵） */
+  platformVersion: string;
+  /** 架构（arm / x86） */
+  architecture: string;
+  /** 位宽（64 / 32） */
+  bitness: string;
+  /** 设备型号（桌面端通常空） */
+  model: string;
+  /** 完整版本号（uaFullVersion，例：151.0.7922.175） */
+  uaFullVersion: string;
+  /** 完整版本列表（fullVersionList，与 brands 同形状+全版本） */
+  fullVersionList: Array<{ brand: string; version: string }>;
+}
+
 export interface StealthConfig {
+  /**
+   * S191: UA-CH 真实档案——垫片在 navigator.userAgentData 缺失时
+   * 以此生成 API 表面（值来自真实有头 Chrome 采样，形状一致）。
+   * 未提供时从 UA 字符串派生兜底值。
+   */
+  uaChProfile?: UaChProfile;
   /** Bezier curvature range [min, max] as fraction of distance */
   bezierCurvature: [number, number];
   /** Trajectory noise amplitude ±px */
@@ -70,6 +95,25 @@ export interface StealthConfig {
 }
 
 export const DEFAULT_STEALTH_CONFIG: StealthConfig = {
+  // S191: macOS arm64 + Chrome 151 真实采样（来源：登录桥只读通道）
+  uaChProfile: {
+    brands: [
+      { brand: 'Not=A?Brand', version: '99' },
+      { brand: 'Google Chrome', version: '151' },
+      { brand: 'Chromium', version: '151' },
+    ],
+    platform: 'macOS',
+    platformVersion: '26.2.0',
+    architecture: 'arm',
+    bitness: '64',
+    model: '',
+    uaFullVersion: '151.0.7922.175',
+    fullVersionList: [
+      { brand: 'Not=A?Brand', version: '99.0.0.0' },
+      { brand: 'Google Chrome', version: '151.0.7922.175' },
+      { brand: 'Chromium', version: '151.0.7922.175' },
+    ],
+  },
   bezierCurvature: [0.35, 0.6],
   noiseAmplitude: 5.5,
   overshootRange: [6, 14],
@@ -260,10 +304,14 @@ export function lookupKey(ch: string): { key: string; code: string; vk: number; 
 // Stealth init script (injected before page scripts via addScriptToEvaluateOnNewDocument)
 // ============================================================
 
-export function buildStealthInitScript(): string {
+export function buildStealthInitScript(config: StealthConfig = DEFAULT_STEALTH_CONFIG): string {
+  // S191: UA-CH 档案注入垫片（真实采样值 → 页面 JSON 字面量）
+  const prof = config.uaChProfile;
+  const profJson = prof ? JSON.stringify(prof) : 'null';
   return [
     '(function(){',
     '  window.__xbStealthVer="57";',
+    '  window.__xbUaChProf=' + profJson + ';',
     // 1. AEL event proxy
     '  var o=EventTarget.prototype.addEventListener;',
     '  var fc=new InputDeviceCapabilities({firesTouchEvents:false});',
@@ -359,27 +407,24 @@ export function buildStealthInitScript(): string {
     '    }',
     // S190: userAgentData 垫片——headless Chrome 151 不暴露 UA-CH API，
     // 缺失本身即 headless 指纹。从 UA 派生 brands/platform 垫片 + getHighEntropyValues。
-    '    if(!navigator.userAgentData){',
-    '      var mUA=navigator.userAgent.match(/Chrome\\/(\\d+)/);',
-    '      var ver=mUA?mUA[1]:"120";',
-    '      var plat=navigator.userAgent.indexOf("Mac OS X")!==-1?"macOS":navigator.userAgent.indexOf("Windows")!==-1?"Windows":"Linux";',
+    '    if(!navigator.userAgentData && window.__xbUaChProf){',
+    '      var prof = window.__xbUaChProf;',
     '      var uad={',
-    '        brands:[{brand:"Not A;Brand",version:"99"},{brand:"Chromium",version:ver},{brand:"Google Chrome",version:ver}],',
+    '        brands:prof.brands.map(function(b){return {brand:b.brand,version:b.version.split(".")[0]}}),',
     '        mobile:false,',
-    '        platform:plat,',
+    '        platform:prof.platform,',
     '        getHighEntropyValues:function(hints){',
-    '          var self=this;',
     '          return Promise.resolve().then(function(){',
-    '            var all={brands:self.brands,mobile:self.mobile,platform:self.platform,',
-    '              platformVersion:"10.15.7",architecture:"arm",bitness:"64",model:"",',
-    '              uaFullVersion:ver+".0.0.0",',
-    '              fullVersionList:[{brand:"Not A;Brand",version:"99"},{brand:"Chromium",version:ver},{brand:"Google Chrome",version:ver+".0.0.0"}]};',
+    '            var all={brands:uad.brands,mobile:false,platform:prof.platform,',
+    '              platformVersion:prof.platformVersion,architecture:prof.architecture,bitness:prof.bitness,model:prof.model,',
+    '              uaFullVersion:prof.uaFullVersion,',
+    '              fullVersionList:prof.fullVersionList};',
     '            var out={};',
     '            (hints||[]).forEach(function(h){if(h in all)out[h]=all[h]});',
     '            return out;',
     '          });',
     '        },',
-    '        toJSON:function(){return{brands:this.brands,mobile:this.mobile,platform:this.platform}}',
+    '        toJSON:function(){return{brands:uad.brands,mobile:false,platform:prof.platform}}',
     '      };',
     '      Object.defineProperty(navigator,"userAgentData",{get:function(){return uad},configurable:true});',
     '    }',
