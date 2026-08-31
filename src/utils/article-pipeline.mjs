@@ -470,6 +470,19 @@ if (process.env.XB_SKIP_COVER === '1' && fs.existsSync('/tmp/article-cover.png')
   hasCover = true;
   console.log('🎨 复用已有封面:', fs.statSync('/tmp/article-cover.png').size, 'bytes');
 } else {
+  // S171: 豆包双轮重试，仍失败自动降级 PIL 流程图封面（不再无封面交付）
   hasCover = await genCover(coverPrompt);
+  if (!hasCover) {
+    console.log('🎨 豆包双轮失败 → 自动降级 PIL 流程图封面');
+    const stepTitles = sections.map(s => (s.split('\n')[0] || '').replace(/^#+\s*/, '').slice(0, 16));
+    const stepsJson = JSON.stringify(stepTitles.length ? stepTitles : ['探针验证', '双轮重试', '自动降级', '来源标记']);
+    const tag = (title.match(/S\d+/) || ['实战沉淀'])[0] + ' 实战沉淀';
+    try {
+      execSync(`python3 scripts/gen-cover.py --title ${JSON.stringify(title)} --steps '${stepsJson.replace(/'/g, "'\\''")}' --tag ${JSON.stringify(tag)} --out /tmp/article-cover.png`, { stdio: 'inherit' });
+      hasCover = true;
+    } catch (e) {
+      console.log('   ⚠️ PIL 兜底也失败:', String(e).slice(0, 60));
+    }
+  }
 }
 await assemble(hasCover ? '/tmp/article-cover.png' : null);
