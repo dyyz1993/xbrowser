@@ -8,19 +8,18 @@
 | 指标 | 值 |
 |------|-----|
 | 插件总数 | 126 |
-| ✅ 已完成（有实现+有测试） | 91 |
+| ✅ 已完成（有实现+有测试） | 92 |
 | 🟡 有实现无测试 | 23 |
-| 🔴 scaffold 待实现 | 12 |
-| **当前债务** | **35** |
+| 🔴 scaffold 待实现 | 11 |
+| **当前债务** | **34** |
 
 > 债务 = 🟡无测试 + 🔴scaffold + ⛔加载失败。目标：债务 → 0。
 
-## 🔴 Scaffold 待实现（12）
+## 🔴 Scaffold 待实现（11）
 
 | 插件 | 行数 | URL |
 |------|------|-----|
 | amazon | 14 | https://www.amazon.com |
-| booking | 14 | https://www.booking.com |
 | boss | 14 | https://www.zhipin.com |
 | confluence | 14 | https://xxx.atlassian.net/wiki |
 | grok | 14 | https://grok.com |
@@ -60,7 +59,7 @@
 | xueqiu | 64 | 2 | `project` |
 | yahoo-finance | 46 | 1 | `project` |
 
-## ✅ 已完成（91）
+## ✅ 已完成（92）
 
 | 插件 | 命令数 | scope |
 |------|--------|-------|
@@ -80,6 +79,7 @@
 | bing | 3 | `browser`, `cli` |
 | blogger | 4 | `browser`, `page` |
 | bloomberg | 1 | `browser` |
+| booking | 1 | `browser` |
 | chatgpt | 5 | `browser`, `page` |
 | claude | 5 | `browser`, `page` |
 | cmf-seats | 3 | `any`, `page` |
