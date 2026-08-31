@@ -275,13 +275,18 @@ async function assemble(coverPath) {
     // 图片检测：检查文章目录是否有 section-N.png
     const imgPath = path.join(path.dirname(articlePath), `section-${i}.png`);
 
-    await evalEditor(`var cm=document.querySelector('.CodeMirror').CodeMirror; cm.setValue(cm.getValue()+'\\n\\n'+${JSON.stringify(sec)}); 'ok'`);
+    const segRes = await evalEditor(`var cm=document.querySelector('.CodeMirror').CodeMirror; cm.setValue(cm.getValue()+'\\n\\n'+${JSON.stringify(sec)}); 'ok'`);
+    // S165: 失败要显式报错——evalEditor 出错时返回 error JSON 串，
+    // 旧版无条件打 ok 会把 debugger 残留类故障吞掉（S163 教训）
+    if (segRes !== 'ok') {
+      console.log(`   段${i+1} ⚠️ 写入异常:`, String(segRes).slice(0, 80));
+    }
 
     if (fs.existsSync(imgPath)) {
       console.log(`   段${i+1} 图:`, await pasteImg(imgPath));
       await sleep(2000);
     } else {
-      console.log(`   段${i+1} ok`);
+      console.log(`   段${i+1} ${segRes === 'ok' ? 'ok' : '⚠️'}`);
     }
   }
 
