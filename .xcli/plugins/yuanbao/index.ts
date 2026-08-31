@@ -443,19 +443,28 @@ export default function (xcli: XCLIAPI): void {
         const page = ctx.page;
         if (!page) throw new Error('need browser page');
         await ensurePage(page, ctx);
-        try { await page.goto(SITE_URL + '/chat/', { waitUntil: 'commit', timeout: 30000 }); } catch (e: unknown) { tips.push('[goto] ' + String(e).slice(0, 40)); }
-        await page.waitForTimeout(5000);
-        const bodyText = await page.evaluate(() => document.body?.innerText?.substring(0, 300) || '').catch(() => '');
-        if (!bodyText.includes('\u5143\u5b9d') && !bodyText.includes('\u65b0\u5bf9\u8bdd')) return fail('Cannot access yuanbao', ['Page not loaded']);
+        try { await page.goto(SITE_URL + '/chat/', { waitUntil: 'domcontentloaded', timeout: 40000 }); } catch (e: unknown) { tips.push('[goto] ' + String(e).slice(0, 40)); }
+        let bodyText = '';
+        for (let i = 0; i < 12; i++) {
+          await page.waitForTimeout(2500);
+          bodyText = await page.evaluate(() => document.body?.innerText?.substring(0, 500) || '').catch(() => '');
+          if (bodyText.includes('\u5143\u5b9d') || bodyText.includes('\u65b0\u5bf9\u8bdd')) break;
+        }
+        if (!bodyText.includes('\u5143\u5b9d') && !bodyText.includes('\u65b0\u5bf9\u8bdd')) return fail('Cannot access yuanbao', ['Page not loaded after 30s']);
         var existingUrls: string[] = [];
         try {
           existingUrls = await page.evaluate(() => { var u: string[] = []; document.querySelectorAll('img').forEach(function(img) { if (img.src && img.src.startsWith('http')) u.push(img.src); }); return u; }) as string[];
         } catch { tips.push('[urls] skipped'); }
         const inputLocator = page.locator('.ql-editor, #searchbar-editor, [contenteditable="true"]').first();
         if (await inputLocator.count() === 0) throw new Error('Cannot find input');
-        await inputLocator.click();
+        try { await inputLocator.click({ timeout: 15000 }); } catch {
+          tips.push('[click->focus fallback]');
+          await page.evaluate(() => { var ed = document.querySelector('.ql-editor, #searchbar-editor, [contenteditable="true"]'); if (ed) (ed as HTMLElement).focus(); });
+        }
         await page.waitForTimeout(200);
-        await page.keyboard.type(params.prompt, { delay: 30 });
+        try { await page.keyboard.type(params.prompt, { delay: 20 }); } catch {
+          await page.keyboard.insertText(params.prompt);
+        }
         await page.waitForTimeout(500);
         let sent = false;
         try {

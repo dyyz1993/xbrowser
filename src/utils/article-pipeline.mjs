@@ -172,7 +172,9 @@ async function genCover(prompt) {
     const u = await doubaoEvalBig(`(function(){
       var base=${JSON.stringify(baseline)};
       var imgs=Array.from(document.querySelectorAll('img')).filter(function(im){
-        return (im.src.indexOf('rc_gen_image')!==-1||im.src.indexOf('flow-imagex-sign')!==-1)
+        // S181: 只认 rc_gen_image（真生成图标志）——flow-imagex-sign 是存储域名，
+        // 会话装饰图/头像也走该域名，mode off 时轮询会命中假图
+        return im.src.indexOf('rc_gen_image')!==-1
           &&im.naturalWidth>500
           &&base.indexOf(im.src)===-1;
       });
