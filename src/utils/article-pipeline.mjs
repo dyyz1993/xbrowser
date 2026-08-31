@@ -305,14 +305,17 @@ async function openTask(name, url, opts = {}) {
   if (WIN_MODE) {
     // 900x640：豆包等重响应式站点在 400px 宽度会折叠工具栏（S166 教训）
     const geom = opts.winGeom || { width: 900, height: 640 };
-    const body = { cmd: 'win-open', args: { name, url, ...geom } };
     const r = await fetch(`${BR}/exec?client=0`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({ cmd: 'win-open', args: { name, url, ...geom } }),
     }).then(x => x.json()).catch(() => null);
     const tabId = r?.data?.tabId || null;
-    if (tabId && r?.data?.windowId) winIds.set(name, r.data.windowId);
-    return { tabId };
+    if (tabId && r?.data?.windowId) {
+      winIds.set(name, r.data.windowId);
+      return { tabId };
+    }
+    // S168: 小窗创建失败（如指定位置不在可见屏内）→ 回退 hidden tab group（L1 兜底）
+    console.log('   ⚠️ win-open 失败，回退 task-open:', String(r?.error || r).slice(0, 70));
   }
   const body = { cmd: 'task-open', args: { name, url } };
   const r = await fetch(`${BR}/exec?client=0`, {
