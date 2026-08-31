@@ -8,14 +8,14 @@
 | 指标 | 值 |
 |------|-----|
 | 插件总数 | 126 |
-| ✅ 已完成（有实现+有测试） | 89 |
+| ✅ 已完成（有实现+有测试） | 90 |
 | 🟡 有实现无测试 | 23 |
-| 🔴 scaffold 待实现 | 14 |
-| **当前债务** | **37** |
+| 🔴 scaffold 待实现 | 13 |
+| **当前债务** | **36** |
 
 > 债务 = 🟡无测试 + 🔴scaffold + ⛔加载失败。目标：债务 → 0。
 
-## 🔴 Scaffold 待实现（14）
+## 🔴 Scaffold 待实现（13）
 
 | 插件 | 行数 | URL |
 |------|------|-----|
@@ -26,7 +26,6 @@
 | grok | 14 | https://grok.com |
 | indeed | 14 | https://www.indeed.com |
 | jira | 14 | https://xxx.atlassian.net |
-| kimi | 14 | https://kimi.moonshot.cn |
 | linkedin | 14 | https://www.linkedin.com |
 | linkedin-learning | 14 | https://www.linkedin.com/learning |
 | notebooklm | 14 | https://notebooklm.google.com |
@@ -62,7 +61,7 @@
 | xueqiu | 64 | 2 | `project` |
 | yahoo-finance | 46 | 1 | `project` |
 
-## ✅ 已完成（89）
+## ✅ 已完成（90）
 
 | 插件 | 命令数 | scope |
 |------|--------|-------|
@@ -118,6 +117,7 @@
 | instagram | 1 | `browser` |
 | jd | 1 | `browser` |
 | juejin | 6 | `browser`, `page` |
+| kimi | 1 | `browser` |
 | medium | 5 | `browser`, `page` |
 | mureka | 6 | `browser` |
 | npm | 3 | `project` |
@@ -153,5 +153,5 @@
 | wikipedia | 5 | `project` |
 | wordpress | 5 | `browser`, `page` |
 | xiaohongshu | 8 | `browser` |
-| yuanbao | 5 | `browser`, `page` |
+| yuanbao | 6 | `browser`, `page` |
 | zhihu | 8 | `browser` |
