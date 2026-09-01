@@ -48,6 +48,8 @@ const MUTATIONS: Record<string, { desc: string; fn: string }> = {
   randomizeId: { desc: 'id 全部随机化（不可预测）', fn: `document.querySelectorAll('[id]').forEach(function(el){ el.id = 'el-' + Math.random().toString(36).substr(2,8); });` },
   removeId: { desc: '删所有 id 属性', fn: `document.querySelectorAll('[id]').forEach(function(el){ el.removeAttribute('id'); });` },
   changeName: { desc: 'name 属性全部随机化', fn: `document.querySelectorAll('[name]').forEach(function(el){ el.setAttribute('name', 'fld-' + Math.random().toString(36).substr(2,6)); });` },
+  shuffleForm: { desc: 'form 子元素随机重排', fn: `document.querySelectorAll('form').forEach(function(f){ var kids=Array.from(f.children); for(var i=kids.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)); f.insertBefore(kids[j],kids[i]);} });` },
+  removeClass: { desc: '删所有 class 属性', fn: `document.querySelectorAll('[class]').forEach(function(el){ el.removeAttribute('class'); });` },
 };
 
 const LEVELS: Record<string, string[]> = {
@@ -57,6 +59,7 @@ const LEVELS: Record<string, string[]> = {
   aggressive: ['changeId', 'changeClass', 'addWrapper', 'removeName', 'removePlaceholder'],
   extreme2: ['randomizeId', 'removeId', 'changeName', 'addWrapper'],
   nuclear: ['randomizeId', 'removeId', 'changeName', 'removePlaceholder', 'addWrapper', 'changeClass'],
+  apocalypse: ['randomizeId', 'removeId', 'changeName', 'removePlaceholder', 'addWrapper', 'changeClass', 'shuffleForm', 'removeClass', 'removeElement'],
 };
 
 // ── 操作流 ──
@@ -282,6 +285,34 @@ describe('录制回放竞技场', { timeout: TIMEOUT }, () => {
     const report = archive(10, 'extreme2', results);
     console.log(`[extreme2] healing: ${report.healingRate}%  passed: ${report.passed}/${report.total}`);
     // extreme2 应该暴露 fallback chain 的真正边界
+    expect(report.total).toBe(5);
+  });
+
+  it('nuclear 攻击（全变异叠加）', async () => {
+    await setupPage('nuclear', 20);
+    await applyMutations('nuclear');
+    const results: any[] = [];
+    results.push({ ...(await tryFill('username', 'user')), target: 'username' });
+    results.push({ ...(await tryFill('password', 'pass')), target: 'password' });
+    results.push({ ...(await tryFill('email', 'email')), target: 'email' });
+    results.push({ ...(await trySelect('role', 'admin')), target: 'role' });
+    results.push({ ...(await tryClick('submit')), target: 'submit' });
+    const report = archive(20, 'nuclear', results);
+    console.log(`[nuclear] healing: ${report.healingRate}%  passed: ${report.passed}/${report.total}`);
+    expect(report.total).toBe(5);
+  });
+
+  it('apocalypse 攻击（全变异+子树重排+删 class+删元素）', async () => {
+    await setupPage('apocalypse', 21);
+    await applyMutations('apocalypse');
+    const results: any[] = [];
+    results.push({ ...(await tryFill('username', 'user')), target: 'username' });
+    results.push({ ...(await tryFill('password', 'pass')), target: 'password' });
+    results.push({ ...(await tryFill('email', 'email')), target: 'email' });
+    results.push({ ...(await trySelect('role', 'admin')), target: 'role' });
+    results.push({ ...(await tryClick('submit')), target: 'submit' });
+    const report = archive(21, 'apocalypse', results);
+    console.log(`[apocalypse] healing: ${report.healingRate}%  passed: ${report.passed}/${report.total}`);
     expect(report.total).toBe(5);
   });
 
