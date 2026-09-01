@@ -1457,14 +1457,17 @@ d.actions.forEach(a => {
 | `popup` | 弹窗容器信息 | `{ containerSelector: ".menu-list", containerText: "编辑 删除" }` |
 | `tag` / `text` / `role` | 元素基础信息 | `button` / `写文章` / `button` |
 
-### 20.6 回放策略（基于 confidence 分级）
+### 20.6 回放解析栈（S203 r1-r20 实装）
 
-回放器应按 confidence 从高到低尝试定位：
+回放器 `resolveAndWait` 的解析顺序（全部有竞技场场景钉住，见 `tests/arena/arena-production.test.ts`）：
 
-1. **high** → 直接用 `selector`（`#id` / `[data-testid]` / `[aria-label]` / `[name]`）
-2. **medium** → 用 `selector`，失败时用 `text` 兜底
-3. **low** → 优先用 `textFallback`（如 `popup-text=删除`），再用 `selector`，最后用 `x/y` 坐标
-4. **任何级别** → 都有 `x` / `y` 坐标作为最终兜底
+1. **主候选**：`selector` → `textFallback` → bare tag（仅 textarea/select 这类天然唯一 tag；input/button 落空交给 heal 链——恒可解析的候选会把后续层短路）
+2. **heal 语义候选**（指纹三级裁决：type/placeholder 矛盾=hard 丢弃、仅 text 矛盾=soft 备选）：partial（id/name/placeholder/class）→ meta（type/placeholder/ariaLabel）→ text-anchor（button/a 文案 xpath）→ label 锚点（labelText 包裹/for 关联）→ 唯一 tag → ordinal 结构序号
+3. **坐标兜底**：录制视口 x/y + elementFromPoint 反解路径，tag 守卫 + 组合树双向祖先判定（阴影重定向兼容）
+4. **盲位置**（最后手段）→ **软备选**（`~soft` 后缀标记）→ 失败（宁败不错）
+5. **知识复用**：heal 命中写回 `~/.xbrowser/knowledge/heals-{domain}.json`，同域二次回放 `known-heal` 直接命中；失效自动遗忘；TTL 30 天剪枝
+
+探针/指纹/遮挡层与执行层同源深查（shadow DOM/same-origin iframe/xpath=）。决策日志：`XBROWSER_HEAL_DEBUG=1`。度量靶场：`tests/arena/arena-production.test.ts`（生产 SessionReplayer 直连 + data-arena 语义校验），不要用测试内部重新实现的链路自证。
 
 ### 20.7 注意事项
 

@@ -741,6 +741,32 @@ Filter events.
 xbrowser filter <input> <output> [options]
 ```
 
+## Self-Healing Replay (自愈回放)
+
+站点改版后，录制的选择器会失效。回放器内置十级降级链，自动在页面上重新定位目标：
+
+```mermaid
+graph TB
+    P[主选择器] --> T[textFallback]
+    T --> S[语义候选<br/>partial/meta/text-anchor/label/唯一tag/ordinal]
+    S --> CO[坐标兜底]
+    CO --> B[盲位置<br/>最后手段]
+    B --> A[软备选 ~soft]
+    A --> F[失败: 宁败不错]
+    S -.命中.-> K[(知识库<br/>二次回放零成本)]
+```
+
+每一步都经过指纹校验（录制的 type/placeholder/text 与命中元素比对，正性矛盾即拒）和遮挡校验（click 类动作 elementFromPoint 检测覆盖层）。修改 `~/.xbrowser/config.json` 无需配置——默认开启。
+
+**知识复用**：heal 命中自动写回 `~/.xbrowser/knowledge/heals-{domain}.json`，同站点下次回放直接复用（`known-heal`），失效自动遗忘，条目 30 天未验证自动剪枝。
+
+**可观测**：
+
+- CLI 回放结束输出 `Self-healed N action(s)` 摘要与逐步策略
+- `--json` 模式的结果含 `healed` / `healedDetails` 字段
+- 策略名带 `~soft` 后缀 = 低置信降级命中（文案可疑但结构正确）
+- `XBROWSER_HEAL_DEBUG=1` 输出每一步候选的裁决日志
+
 ## See Also
 
 - [Commands Reference](./commands.md) — All available commands
