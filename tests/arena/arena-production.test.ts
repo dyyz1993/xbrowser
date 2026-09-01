@@ -432,6 +432,66 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(report.healed[2].strategy).toBe('coords');
   });
 
+  it('文案改版 + 布局位移：text 软矛盾降级备选，不弃正确元素', async () => {
+    // Go 按钮文案改为 'Sign in now'（text 指纹软矛盾）+ class 后缀改版 +
+    // 2000px spacer（coords 失效）。硬拒时代点击全链耗尽而失败（healed=2）；
+    // 软降级后 partial-class 命中真 Go（文案可疑但结构正确）→3/3、2/2。
+    const report = await runLevel('none', 70, {
+      expected: { search: 'arena search', qty: '3' },
+      recordingFactory: async (pfx, targetPath) => {
+        const centers = await page.evaluate<Record<string, { x: number; y: number }>>(`/* @xb-probe */ (function(){
+          var out = {};
+          ['search','qty','go'].forEach(function(k){
+            var r = document.querySelector('[data-arena="' + k + '"]').getBoundingClientRect();
+            out[k] = { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+          });
+          return out;
+        })()`);
+        let cid = 0;
+        const mk = (
+          type: UserAction['type'], selector: string,
+          at?: { x: number; y: number }, value?: string, text?: string,
+        ): UserAction => {
+          cid += 1;
+          return {
+            id: cid, type, timestamp: Date.now() + cid * 1000,
+            url: `file://${targetPath}`, pageTitle: `Arena ${pfx}`,
+            element: {
+              tag: selector.endsWith('btn-secondary') ? 'button' : 'input',
+              selector, text: text ?? '',
+              ...(selector.endsWith('btn-secondary') ? { type: 'button' } : {}),
+            },
+            ...(value !== undefined ? { value } : {}),
+            ...(at ? { x: at.x, y: at.y } : {}),
+          };
+        };
+        return {
+          actions: [
+            mk('input', '.search-box', undefined, 'arena search'),
+            mk('input', '.qty-box', undefined, '3'),
+            mk('click', '.btn-secondary', centers.go, undefined, 'Go'),
+          ],
+        };
+      },
+      preMutation: `
+        document.querySelectorAll('[class]').forEach(function(el){
+          el.className = el.className
+            .replace('search-box', 'search-box-v2')
+            .replace('qty-box', 'qty-box-v2')
+            .replace('btn-secondary', 'btn-secondary-v2');
+        });
+        var go = document.querySelector('[data-arena="go"]');
+        go.textContent = 'Sign in now';
+        var sp = document.createElement('div'); sp.style.height = '2000px';
+        document.body.insertBefore(sp, document.body.firstChild);
+      `,
+    });
+    expect(report.actionResult.success + report.actionResult.failed).toBe(3);
+    expect(report.semanticCorrect).toBe(2);
+    expect(report.healed.length).toBe(3);
+    expect(report.healed[2].strategy).toBe('partial-class');
+  });
+
   it('生产归档完整（含 semanticRate 与 healed 明细）', () => {
     const files = fs.readdirSync(path.resolve(ARCHIVE_DIR)).filter(f => f.startsWith('production-'));
     expect(files.length).toBeGreaterThanOrEqual(5);

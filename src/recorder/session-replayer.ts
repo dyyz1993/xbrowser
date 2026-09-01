@@ -586,7 +586,7 @@ export class SessionReplayer {
 
     const tryProbe = async (
       list: Array<{ sel: string; strategy: string }>,
-    ): Promise<{ selector: string; strategy: string } | null> => {
+    ): Promise<{ kind: 'hit' | 'alt'; hit: { selector: string; strategy: string } } | null> => {
       const probeSels = [...new Set(list.map(c => c.sel))];
       if (probeSels.length === 0) return null;
       let hitSels: string[] = [];
@@ -604,21 +604,28 @@ export class SessionReplayer {
         `).catch(() => []);
         if (hitSels.length > 0) break;
       }
+      let alt: { selector: string; strategy: string } | null = null;
       for (const c of list) {
         if (!hitSels.includes(c.sel)) continue;
         try {
           await page.waitForSelector(c.sel, { state: 'visible', timeout: Math.min(timeout, 1000) });
-          if (!(await this.verifyHealHit(action, c.sel))) continue; // 指纹矛盾——疑似 wrong-target
-          return { selector: c.sel, strategy: c.strategy };
+          const verdict = await this.verifyHealHit(action, c.sel);
+          if (verdict === 'hard') continue; // 指纹硬矛盾——疑似 wrong-target
+          if (verdict === 'soft') {
+            // 文案改版类软矛盾：记为备选，继续找干净命中（r8）
+            if (!alt) alt = { selector: c.sel, strategy: c.strategy };
+            continue;
+          }
+          return { kind: 'hit', hit: { selector: c.sel, strategy: c.strategy } };
         } catch {
           // 存在但不可见/确认失败——试下一个命中
         }
       }
-      return null;
+      return alt ? { kind: 'alt', hit: alt } : null;
     };
 
     const semanticHit = await tryProbe(semanticList);
-    if (semanticHit) return semanticHit;
+    if (semanticHit?.kind === 'hit') return semanticHit.hit;
 
     // 坐标兜底（S203 cron r5，AGENTS §20.6 承诺的最终兜底）：属性全灭且
     // 布局未变时，录制的视口 x/y 仍指向目标——elementFromPoint 反解
@@ -653,7 +660,12 @@ export class SessionReplayer {
     }
 
     const blindHit = await tryProbe(blindList);
-    if (blindHit) return blindHit;
+    if (blindHit?.kind === 'hit') return blindHit.hit;
+
+    // 软矛盾备选（r8）：文案改版下正确元素被 text 校验降级——全链无干净
+    // 命中时启用，宁可用"标签可疑但结构正确"的元素也不放弃回放。
+    const softAlt = semanticHit?.kind === 'alt' ? semanticHit.hit : (blindHit?.kind === 'alt' ? blindHit.hit : null);
+    if (softAlt) return softAlt;
 
     throw new Error(`Self-healing exhausted all ${candidates.length} strategies. Primary: ${primaryFailed.join(', ')}`);
   }
@@ -683,14 +695,17 @@ export class SessionReplayer {
   }
 
   /**
-   * r7: heal 命中指纹校验——"找对"而非"找到"。
-   * 录制的 type/placeholder/text 与命中元素做正性比对：两侧都有值但不等
-   * （正性矛盾）判为疑似 wrong-target，跳过该候选；元素侧属性缺失（改版
-   * 删掉）不算矛盾；无任何可校验信号时放行（校验失败不阻塞回放）。
+   * r7/r8: heal 命中指纹校验——"找对"而非"找到"。
+   * 录制的 type/placeholder/text 与命中元素比对，裁决分三级：
+   *   hard — type/placeholder 正性矛盾（两侧都有值但不等）：判 wrong-target，
+   *          丢弃该候选。文案改版不会动这两个属性，硬拒不会误杀。
+   *   soft — 仅 text 正性矛盾：最常见改版恰恰是文案改版，硬拒会误杀正确
+   *          元素，降级为备选（alt）——全链无干净命中时才启用。
+   *   pass — 无矛盾（元素侧属性缺失不算矛盾；无信号/异常放行）。
    */
-  private async verifyHealHit(action: UserAction, selector: string): Promise<boolean> {
+  private async verifyHealHit(action: UserAction, selector: string): Promise<'pass' | 'soft' | 'hard'> {
     const m = action.element;
-    if (!m?.type && !m?.placeholder && !m?.text) return true;
+    if (!m?.type && !m?.placeholder && !m?.text) return 'pass';
     try {
       const meta = await this.page!.evaluate<{ type: string | null; placeholder: string | null; text: string } | null>(`
         (function() {
@@ -703,14 +718,14 @@ export class SessionReplayer {
           };
         })()
       `);
-      if (!meta) return true;
-      if (m.type && meta.type && meta.type !== m.type) return false;
-      if (m.placeholder && meta.placeholder && meta.placeholder !== m.placeholder) return false;
+      if (!meta) return 'pass';
+      if (m.type && meta.type && meta.type !== m.type) return 'hard';
+      if (m.placeholder && meta.placeholder && meta.placeholder !== m.placeholder) return 'hard';
       const wantText = (m.text || '').trim();
-      if (wantText && meta.text && !meta.text.includes(wantText)) return false;
-      return true;
+      if (wantText && meta.text && !meta.text.includes(wantText)) return 'soft';
+      return 'pass';
     } catch {
-      return true;
+      return 'pass';
     }
   }
 
