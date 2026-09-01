@@ -23,6 +23,10 @@ export interface ReplayOptions {
   onStep?: (action: UserAction, index: number, total: number) => void;
   /** Called on step error */
   onError?: (action: UserAction, error: Error, index: number) => void;
+  /** S202: 自愈回放——选择器失效时自动降级到语义匹配（默认开启） */
+  selfHealing?: boolean;
+  /** Called when a step is self-healed via fallback strategy */
+  onHealed?: (action: UserAction, strategy: string, index: number) => void;
 }
 
 export class SessionReplayer {
@@ -38,7 +42,9 @@ export class SessionReplayer {
       stepTimeout: opts.stepTimeout ?? 10000,
       onStep: opts.onStep,
       onError: opts.onError,
-    };
+      selfHealing: opts.selfHealing !== false,
+      onHealed: opts.onHealed,
+    } as typeof this.opts;
   }
 
   /** Load a recording from a file path or parsed JSON */
@@ -475,6 +481,102 @@ export class SessionReplayer {
   }
 
   /**
+   * S202: 自愈选择器解析——主选择器失败后，生成语义备选并逐级尝试。
+   *
+   * Fallback chain:
+   *   1. Primary selector + textFallback + tag (existing)
+   *   2. Partial id match (extract stable substring from original id)
+   *   3. Type-based (input[type=text] etc — survives id/class/name mutations)
+   *   4. Tag + positional (form input:nth-of-type(N))
+   *   5. Text content match (visible text contains a stable substring)
+   */
+  private async healResolve(action: UserAction, primaryFailed: string[]): Promise<{ selector: string; strategy: string }> {
+    const page = this.page!;
+    const el = action.element;
+    const timeout = Math.min(this.opts.stepTimeout, 5000);
+
+    // 从 primary selector 提取语义核心（用于部分匹配）
+    const coreId = this.extractSemanticCore(primaryFailed[0] || '');
+    const tagName = el?.tag || 'input';
+
+    // 生成语义备选选择器
+    const candidates: Array<{ sel: string; strategy: string }> = [];
+
+    // 2a. 部分 id 匹配（original id 可能只是加了后缀）
+    if (coreId) {
+      candidates.push({ sel: `[id*="${coreId}"]`, strategy: 'partial-id' });
+    }
+
+    // 2b. name 属性部分匹配
+    if (coreId) {
+      candidates.push({ sel: `[name*="${coreId}"]`, strategy: 'partial-name' });
+    }
+
+    // 2c. placeholder 部分匹配
+    if (coreId) {
+      candidates.push({ sel: `[placeholder*="${coreId}"]`, strategy: 'partial-placeholder' });
+    }
+
+    // 2d. aria-label / data-testid
+    if (coreId) {
+      candidates.push({ sel: `[aria-label*="${coreId}"]`, strategy: 'aria-label' });
+      candidates.push({ sel: `[data-testid*="${coreId}"]`, strategy: 'data-testid' });
+    }
+
+    // 3. type-based（input[type=text] 等不随 DOM 变异改变）
+    const typeMap: Record<string, string> = {
+      username: 'text', password: 'password', email: 'email',
+      search: 'search', phone: 'tel', url: 'url',
+    };
+    if (typeMap[coreId]) {
+      candidates.push({ sel: `${tagName}[type="${typeMap[coreId]}"]`, strategy: 'type-based' });
+    }
+
+    // 4. tag 直接匹配（textarea/select/button 天然少量）
+    const uniqueTags = ['textarea', 'select'];
+    if (uniqueTags.includes(tagName)) {
+      candidates.push({ sel: tagName, strategy: 'tag-unique' });
+    }
+
+    // 5. tag + positional（form 内第 N 个 input/button）
+    candidates.push({ sel: `form ${tagName}:first-of-type`, strategy: 'tag-first' });
+    candidates.push({ sel: `form ${tagName}`, strategy: 'tag-in-form' });
+
+    // 逐个尝试
+    for (const c of candidates) {
+      if (!c.sel || c.sel === primaryFailed[0]) continue;
+      try {
+        await page.waitForSelector(c.sel, { state: 'visible', timeout });
+        return { selector: c.sel, strategy: c.strategy };
+      } catch {
+        // next candidate
+      }
+    }
+
+    throw new Error(`Self-healing exhausted all ${candidates.length} strategies. Primary: ${primaryFailed.join(', ')}`);
+  }
+
+  /** 从选择器字符串提取语义核心（去掉版本号/前缀/后缀等噪声） */
+  private extractSemanticCore(selector: string): string {
+    // 提取 id 值（#username-input-v3 → username-input-v3）
+    const idMatch = selector.match(/#([\w-]+)/);
+    if (idMatch) {
+      // 去掉版本号后缀（-v3, -v2 等）
+      return idMatch[1].replace(/-v\d+$/, '').replace(/-mut$/, '');
+    }
+    // 提取 name 值（[name="username"] → username）
+    const nameMatch = selector.match(/\[name=["']([\w-]+)["']\]/);
+    if (nameMatch) return nameMatch[1];
+    // 提取 placeholder 值
+    const phMatch = selector.match(/\[placeholder=["']([\w-]+)["']\]/);
+    if (phMatch) return phMatch[1];
+    // 提取 data-testid
+    const dtMatch = selector.match(/\[data-testid=["']([\w-]+)["']\]/);
+    if (dtMatch) return dtMatch[1];
+    return '';
+  }
+
+  /**
    * X2: Wait for an element using the best available selector, with
    * confidence-based fallback support.
    *
@@ -514,6 +616,17 @@ export class SessionReplayer {
         return sel;
       } catch {
         // Try next fallback
+      }
+    }
+
+    // S202: 自愈回放——所有候选选择器失败时，尝试语义备选
+    if (this.opts.selfHealing !== false) {
+      try {
+        const healed = await this.healResolve(action, candidates);
+        this.opts.onHealed?.(action, healed.strategy, candidates.length);
+        return healed.selector;
+      } catch {
+        // Self-healing also failed — rethrow original error
       }
     }
 
