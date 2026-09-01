@@ -930,6 +930,8 @@ export function createRPCHandler(): RPCHandler & {
           duration,
           eventsPlayed: result.success,
           totalEvents: result.success + result.failed + result.skipped,
+          healed: result.healed,
+          healedDetails: result.healedDetails,
           errors: replayErrors,
         });
       } catch (e) {
@@ -969,6 +971,8 @@ export function createRPCHandler(): RPCHandler & {
       duration: typeof input.duration === 'number' ? input.duration : 0,
       eventsPlayed,
       totalEvents,
+      healed: typeof input.healed === 'number' ? input.healed : 0,
+      healedDetails: Array.isArray(input.healedDetails) ? input.healedDetails : [],
       errors,
     };
   }

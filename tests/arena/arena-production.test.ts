@@ -67,6 +67,7 @@ interface RoundReport {
   level: string;
   round: number;
   actionResult: { success: number; failed: number; skipped: number };
+  healedCount: number;
   healed: Array<{ index: number; strategy: string }>;
   errors: Array<{ index: number; error: string }>;
   values: Record<string, string>;
@@ -160,6 +161,7 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
       level,
       round,
       actionResult,
+      healedCount: actionResult.healed,
       healed,
       errors,
       values,
@@ -496,7 +498,7 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(report.actionResult.success + report.actionResult.failed).toBe(3);
     expect(report.semanticCorrect).toBe(2);
     expect(report.healed.length).toBe(3);
-    expect(report.healed[2].strategy).toBe('partial-class');
+    expect(report.healed[2].strategy).toBe('partial-class~soft');
   });
 
   it('遮挡层攻击：被盖克隆按钮被跳过，heal 找到未遮挡真目标', async () => {
@@ -607,6 +609,8 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(run2.actionResult.failed).toBe(0);
     expect(run2.semanticCorrect).toBe(2);
     expect(run2.healed.filter(h => h.strategy === 'known-heal').length).toBe(3);
+    // r13: run() 返回值带 healed 统计（daemon 透传链路的源头）
+    expect(run2.healedCount).toBe(3);
 
     expect(fs.existsSync(path.join(kbDir, 'heals-file.json'))).toBe(true);
     fs.rmSync(kbDir, { recursive: true, force: true });

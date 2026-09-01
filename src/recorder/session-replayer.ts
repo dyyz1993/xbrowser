@@ -69,7 +69,10 @@ export class SessionReplayer {
   }
 
   /** Run the full replay */
-  async run(): Promise<{ success: number; failed: number; skipped: number }> {
+  async run(): Promise<{
+    success: number; failed: number; skipped: number;
+    healed: number; healedDetails: Array<{ index: number; strategy: string }>;
+  }> {
     if (!this.recording) throw new Error('No recording loaded. Call load() first.');
 
     // Use provided page or connect to browser via CDP
@@ -96,6 +99,7 @@ export class SessionReplayer {
     let success = 0;
     let failed = 0;
     let skipped = 0;
+    const healedDetails: Array<{ index: number; strategy: string }> = [];
 
     for (let i = 0; i < actions.length; i++) {
       const action = actions[i];
@@ -105,6 +109,13 @@ export class SessionReplayer {
       // context's page count; when it grows, follow the newest page so the
       // next action (recorded in that tab) replays against the right target (d07).
       const pagesBefore = this.listContextPages();
+
+      // r13: 包装 onHealed 收集本步 heal 明细（step index 比候选数更有意义）
+      const prevOnHealed = this.opts.onHealed;
+      this.opts.onHealed = (a, strategy, idx) => {
+        healedDetails.push({ index: i, strategy });
+        prevOnHealed?.(a, strategy, idx);
+      };
 
       try {
         // Replay mouse trajectory before the action (if present)
@@ -140,6 +151,8 @@ export class SessionReplayer {
         // X6: Navigation failures are fatals (like any other failure).
         // A page that fails to load makes all subsequent actions invalid.
         failed++;
+      } finally {
+        this.opts.onHealed = prevOnHealed;
       }
 
       // Delay between steps
@@ -148,7 +161,11 @@ export class SessionReplayer {
       }
     }
 
-    return { success, failed, skipped };
+    return {
+      success, failed, skipped,
+      healed: healedDetails.length,
+      healedDetails,
+    };
   }
 
   /** Replay a single action */
@@ -696,8 +713,9 @@ export class SessionReplayer {
 
     // 软矛盾备选（r8）：文案改版下正确元素被 text 校验降级——全链无干净
     // 命中时启用，宁可用"标签可疑但结构正确"的元素也不放弃回放。
+    // r13: ~soft 后缀标记低置信，onHealed/run() 消费方可观测。
     const softAlt = semanticHit?.kind === 'alt' ? semanticHit.hit : (blindHit?.kind === 'alt' ? blindHit.hit : null);
-    if (softAlt) return softAlt;
+    if (softAlt) return { selector: softAlt.selector, strategy: `${softAlt.strategy}~soft` };
 
     throw new Error(`Self-healing exhausted all ${candidates.length} strategies. Primary: ${primaryFailed.join(', ')}`);
   }

@@ -21,6 +21,9 @@ export interface PlaybackResult {
   eventsPlayed: number;
   totalEvents: number;
   errors: Array<{ eventIndex: number; event?: RecordedEvent; error: string }>;
+  /** r13: 自愈步数与明细（SessionReplayer 路径填充） */
+  healed?: number;
+  healedDetails?: Array<{ index: number; strategy: string }>;
 }
 
 /**
