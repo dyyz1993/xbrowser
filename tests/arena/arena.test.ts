@@ -45,6 +45,9 @@ const MUTATIONS: Record<string, { desc: string; fn: string }> = {
   addWrapper: { desc: '每个 input/button 外加包裹 div', fn: `document.querySelectorAll('form input, form button, form textarea, form select').forEach(function(el){ var w = document.createElement('div'); el.parentNode.insertBefore(w, el); w.appendChild(el); });` },
   removeName: { desc: '删所有 name 属性', fn: `document.querySelectorAll('[name]').forEach(function(el){ el.removeAttribute('name'); });` },
   removePlaceholder: { desc: '删所有 placeholder', fn: `document.querySelectorAll('[placeholder]').forEach(function(el){ el.removeAttribute('placeholder'); });` },
+  randomizeId: { desc: 'id 全部随机化（不可预测）', fn: `document.querySelectorAll('[id]').forEach(function(el){ el.id = 'el-' + Math.random().toString(36).substr(2,8); });` },
+  removeId: { desc: '删所有 id 属性', fn: `document.querySelectorAll('[id]').forEach(function(el){ el.removeAttribute('id'); });` },
+  changeName: { desc: 'name 属性全部随机化', fn: `document.querySelectorAll('[name]').forEach(function(el){ el.setAttribute('name', 'fld-' + Math.random().toString(36).substr(2,6)); });` },
 };
 
 const LEVELS: Record<string, string[]> = {
@@ -52,6 +55,8 @@ const LEVELS: Record<string, string[]> = {
   light: ['changeId'],
   medium: ['changeId', 'changeClass', 'addWrapper'],
   aggressive: ['changeId', 'changeClass', 'addWrapper', 'removeName', 'removePlaceholder'],
+  extreme2: ['randomizeId', 'removeId', 'changeName', 'addWrapper'],
+  nuclear: ['randomizeId', 'removeId', 'changeName', 'removePlaceholder', 'addWrapper', 'changeClass'],
 };
 
 // ── 操作流 ──
@@ -243,6 +248,21 @@ describe('录制回放竞技场', { timeout: TIMEOUT }, () => {
   });
 
   // ── 自愈率归档完整性 ──
+  it('S202: extreme2 攻击（id 随机化+删 id+name 随机化）', async () => {
+    await setupPage('extreme2', 10);
+    await applyMutations('extreme2');
+    const results: any[] = [];
+    results.push({ ...(await tryFill('username', 'user')), target: 'username' });
+    results.push({ ...(await tryFill('password', 'pass')), target: 'password' });
+    results.push({ ...(await tryFill('email', 'email')), target: 'email' });
+    results.push({ ...(await trySelect('role', 'admin')), target: 'role' });
+    results.push({ ...(await tryClick('submit')), target: 'submit' });
+    const report = archive(10, 'extreme2', results);
+    console.log(`[extreme2] healing: ${report.healingRate}%  passed: ${report.passed}/${report.total}`);
+    // extreme2 应该暴露 fallback chain 的真正边界
+    expect(report.total).toBe(5);
+  });
+
   it('归档文件存在且含自愈率', () => {
     const files = fs.readdirSync(path.resolve(ARCHIVE_DIR)).filter(f => f.endsWith('.json'));
     expect(files.length).toBeGreaterThanOrEqual(3);
