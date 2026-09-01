@@ -1,17 +1,17 @@
 # 插件完成度看板
 
 > **自动生成，请勿手改** · 由 `lint-scripts/check-plugin-status.mjs` 生成
-> 生成时间：2026-08-31 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
+> 生成时间：2026-09-01 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
 
 ## 汇总
 
 | 指标 | 值 |
 |------|-----|
 | 插件总数 | 126 |
-| ✅ 已完成（有实现+有测试） | 92 |
-| 🟡 有实现无测试 | 23 |
+| ✅ 已完成（有实现+有测试） | 95 |
+| 🟡 有实现无测试 | 20 |
 | 🔴 scaffold 待实现 | 11 |
-| **当前债务** | **34** |
+| **当前债务** | **31** |
 
 > 债务 = 🟡无测试 + 🔴scaffold + ⛔加载失败。目标：债务 → 0。
 
@@ -31,11 +31,10 @@
 | tiktok | 14 | https://www.tiktok.com |
 | upwork | 14 | https://www.upwork.com |
 
-## 🟡 有实现无测试（23） — P1 优先
+## 🟡 有实现无测试（20） — P1 优先
 
 | 插件 | 行数 | 命令数 | scope |
 |------|------|--------|-------|
-| bbc | 39 | 1 | `project` |
 | chrome-bridge | 150 | 6 | `project` |
 | douban | 59 | 1 | `page` |
 | github-trending | 53 | 1 | `project` |
@@ -43,8 +42,6 @@
 | google-scholar | 47 | 1 | `project` |
 | hf | 62 | 2 | `project` |
 | login-bridge | 388 | 5 | `page`, `project` |
-| maven | 39 | 1 | `project` |
-| nuget | 40 | 1 | `project` |
 | packagist | 38 | 1 | `project` |
 | producthunt | 286 | 4 | `browser`, `page` |
 | pubmed | 47 | 1 | `project` |
@@ -59,7 +56,7 @@
 | xueqiu | 64 | 2 | `project` |
 | yahoo-finance | 46 | 1 | `project` |
 
-## ✅ 已完成（92）
+## ✅ 已完成（95）
 
 | 插件 | 命令数 | scope |
 |------|--------|-------|
@@ -74,6 +71,7 @@
 | assert | 1 | `page` |
 | backlink-auto | 3 | `browser`, `project` |
 | baidu | 8 | `browser`, `cli` |
+| bbc | 1 | `project` |
 | behance | 1 | `browser` |
 | bilibili | 5 | `browser` |
 | bing | 3 | `browser`, `cli` |
@@ -117,9 +115,11 @@
 | jd | 1 | `browser` |
 | juejin | 6 | `browser`, `page` |
 | kimi | 1 | `browser` |
+| maven | 1 | `project` |
 | medium | 5 | `browser`, `page` |
 | mureka | 6 | `browser` |
 | npm | 3 | `project` |
+| nuget | 1 | `project` |
 | p500px | 1 | `browser` |
 | pexels | 1 | `browser` |
 | pinterest | 1 | `browser` |
