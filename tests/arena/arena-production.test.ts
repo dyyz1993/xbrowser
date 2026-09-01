@@ -167,7 +167,7 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
       values,
       semanticCorrect,
       semanticTotal: semanticKeys.length,
-      semanticRate: Math.round(semanticCorrect / semanticKeys.length * 100),
+      semanticRate: semanticKeys.length ? Math.round(semanticCorrect / semanticKeys.length * 100) : 100,
       at: new Date().toISOString(),
     };
     fs.mkdirSync(path.resolve(ARCHIVE_DIR), { recursive: true });
@@ -702,6 +702,37 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(kb['.stale-old']).toBeUndefined();          // 40 天前 → 剪掉
     expect(kb['.fresh-entry'].healed).toBe('#fresh');  // 1 天前 → 保留
     fs.rmSync(kbDir, { recursive: true, force: true });
+  });
+
+  it('shadow DOM：探测层深查一致化——阴影内按钮可正常 heal', async () => {
+    // 按钮在 open shadow root 内、id 加后缀变异。queryJS 深查支持 shadow，
+    // 但裸 probe/指纹/遮挡 evaluate 只扫顶层文档——阴影内候选全部误判
+    // miss，点击落到 soft 备选。深查一致化后 partial-id 干净命中。
+    const report = await runLevel('none', 130, {
+      expected: {},
+      recordingFactory: async (pfx: string, targetPath: string) => {
+        let cid = 0;
+        const mk = (type: UserAction['type'], selector: string, text?: string): UserAction => {
+          cid += 1;
+          return {
+            id: cid, type, timestamp: Date.now() + cid * 1000,
+            url: `file://${targetPath}`, pageTitle: `Arena ${pfx}`,
+            element: { tag: 'button', selector, text: text ?? '', type: 'button' },
+          };
+        };
+        return { actions: [mk('click', '#sgobtn', 'Go')] };
+      },
+      preMutation: `
+        var host = document.createElement('div');
+        var sh = host.attachShadow({ mode: 'open' });
+        sh.innerHTML = '<form><button id="sgobtn" type="button" class="sh-btn">Go</button></form>';
+        document.body.appendChild(host);
+        sh.querySelector('#sgobtn').id = 'sgobtn-v2';
+      `,
+    });
+    expect(report.actionResult.success + report.actionResult.failed).toBe(1);
+    expect(report.actionResult.failed).toBe(0);
+    expect(report.healed.map(h => h.strategy)).toContain('partial-id');
   });
 
   it('文案锚点：class 全量替换（非后缀）后录制文案仍锁定按钮', async () => {

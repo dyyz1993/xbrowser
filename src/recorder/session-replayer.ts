@@ -17,17 +17,6 @@ import { homedir } from 'os';
 /** r12: heal 知识条目 TTL——写入时剪枝，长期未验证的映射不配继续占位 */
 const HEAL_KB_TTL_DAYS = 30;
 
-/** r15: 裸 evaluate 内的选择器解析垫片——与 queryJS 对齐支持 xpath= 前缀。
- *  probe/指纹/遮挡三处原生 evaluate 不能直接用 queryJS（需传字符串），
- *  此垫片让 text-anchor 等 xpath 候选走通同一条确认管线。 */
-const RAW_Q = `function __xb_q(sel) {
-  if (sel.indexOf('xpath=') === 0) {
-    var r = document.evaluate(sel.slice(6), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
-    return r.singleNodeValue;
-  }
-  return document.querySelector(sel);
-}`;
-
 export interface ReplayOptions {
   cdpUrl?: string;
   /** Provide an existing page (from daemon session) instead of connecting */
@@ -674,15 +663,18 @@ export class SessionReplayer {
       const probeSels = [...new Set(list.map(c => c.sel))];
       if (probeSels.length === 0) return null;
       let hitSels: string[] = [];
+      // r17: 探测表达式用 queryJS 生成——与执行层同源深查（shadow DOM/
+      // same-origin iframe/xpath=），消除"探测层盲区误判 miss"的层间不一致
+      const probeExprs = JSON.stringify(probeSels.map(s => queryJS(s)));
       for (let attempt = 0; attempt < 5; attempt++) {
         if (attempt > 0) await new Promise(r => setTimeout(r, 200));
         hitSels = await page.evaluate<string[]>(`
           (function() {
-            ${RAW_Q}
+            var pairs = ${probeExprs};
             var sels = ${JSON.stringify(probeSels)};
             var hits = [];
-            for (var i = 0; i < sels.length; i++) {
-              try { if (__xb_q(sels[i])) hits.push(sels[i]); } catch (e) { /* invalid selector */ }
+            for (var i = 0; i < pairs.length; i++) {
+              try { if ((new Function('return (' + pairs[i] + ')'))()) hits.push(sels[i]); } catch (e) { /* invalid selector */ }
             }
             return hits;
           })()
@@ -696,13 +688,18 @@ export class SessionReplayer {
         try {
           await page.waitForSelector(c.sel, { state: 'visible', timeout: Math.min(timeout, 1000) });
           const verdict = await this.verifyHealHit(action, c.sel);
+          if (process.env.XBROWSER_HEAL_DEBUG) console.error(`[heal] cand=${c.sel} verdict=${verdict}`);
           if (verdict === 'hard') continue; // 指纹硬矛盾——疑似 wrong-target
           if (verdict === 'soft') {
             // 文案改版类软矛盾：记为备选，继续找干净命中（r8）
             if (!alt) alt = { selector: c.sel, strategy: c.strategy };
             continue;
           }
-          if (needsHitTest && await this.isClickOccluded(c.sel)) continue; // 遮挡（r9）
+          if (needsHitTest) {
+            const occ = await this.isClickOccluded(c.sel);
+            if (process.env.XBROWSER_HEAL_DEBUG) console.error(`[heal] cand=${c.sel} occluded=${occ}`);
+            if (occ) continue; // 遮挡（r9）
+          }
           return { kind: 'hit', hit: { selector: c.sel, strategy: c.strategy } };
         } catch {
           // 存在但不可见/确认失败——试下一个命中
@@ -862,18 +859,32 @@ export class SessionReplayer {
    * r9: click 类动作遮挡校验——元素"可见"（rect+样式）但被覆盖层（弹窗/
    * 横幅）盖住时，点击只会落在覆盖层上。elementFromPoint 顶元素非目标
    * 自身/子孙即判遮挡。视口外（top 为 null）不判定——点击路径会自行滚动。
+   * r17: 阴影边界重定向——elementFromPoint 对阴影内命中点返回宿主，
+   * el.contains 不跨 shadow 边界，需沿 getRootNode().host 攀升做组合树
+   * 祖先判定，否则阴影内元素恒误判遮挡。
    */
   private async isClickOccluded(selector: string): Promise<boolean> {
     try {
       return await this.page!.evaluate<boolean>(`
         (function() {
-          ${RAW_Q}
-          var el = __xb_q(${JSON.stringify(selector)});
+          var el = ${queryJS(selector)};
           if (!el) return true;
           var r = el.getBoundingClientRect();
           var top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
           if (!top) return false;
-          return !(top === el || el.contains(top));
+          function chainReaches(node, stop) {
+            while (node) {
+              if (node === stop) return true;
+              var root = node.getRootNode ? node.getRootNode() : null;
+              if (root && root.host) node = root.host;
+              else node = node.parentNode;
+            }
+            return false;
+          }
+          // 双向组合树判定（r17）：top 在 el 的组合子树内（命中目标的子孙），
+          // 或 el 在 top 的组合祖先链上（阴影重定向：top=宿主代表影子内命中）
+          var related = chainReaches(top, el) || chainReaches(el, top);
+          return !related;
         })()
       `);
     } catch {
@@ -896,8 +907,7 @@ export class SessionReplayer {
     try {
       const meta = await this.page!.evaluate<{ type: string | null; placeholder: string | null; text: string } | null>(`
         (function() {
-          ${RAW_Q}
-          var el = __xb_q(${JSON.stringify(selector)});
+          var el = ${queryJS(selector)};
           if (!el) return null;
           return {
             type: el.getAttribute('type'),
