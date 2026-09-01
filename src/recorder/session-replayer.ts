@@ -523,6 +523,20 @@ export class SessionReplayer {
       candidates.push({ sel: `[data-testid*="${coreId}"]`, strategy: 'data-testid' });
     }
 
+    // 2e. 录制元数据候选（S203 cron r2）：element.type/placeholder/ariaLabel
+    // 是录制器实捕的属性快照，不随 id/class/name 变异消失——id 随机化后
+    // coreId 全灭时仍能确定性消歧（type=text vs password vs email 逐字段唯一），
+    // 且内容定位不依赖文档序，shuffleForm 重排不影响。
+    if (el?.type) {
+      candidates.push({ sel: `${tagName}[type="${el.type}"]`, strategy: 'meta-type' });
+    }
+    if (el?.placeholder) {
+      candidates.push({ sel: `[placeholder="${el.placeholder}"]`, strategy: 'meta-placeholder' });
+    }
+    if (el?.ariaLabel) {
+      candidates.push({ sel: `[aria-label="${el.ariaLabel}"]`, strategy: 'meta-aria' });
+    }
+
     // 3. type-based（input[type=text] 等不随 DOM 变异改变）
     const typeMap: Record<string, string> = {
       username: 'text', password: 'password', email: 'email',

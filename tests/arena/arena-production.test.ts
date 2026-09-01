@@ -39,23 +39,25 @@ function buildRecording(prefix: string, targetPath: string): { actions: UserActi
     tag: string,
     value?: string,
     text?: string,
+    meta?: { type?: string; placeholder?: string },
   ): UserAction => {
     id += 1;
     return {
       id, type, timestamp: Date.now() + id * 1000,
       url: `file://${targetPath}`, pageTitle: `Arena ${prefix}`,
-      element: { tag, selector, text: text ?? '' },
+      element: { tag, selector, text: text ?? '', ...meta },
       ...(value !== undefined ? { value } : {}),
     };
   };
   return {
     actions: [
-      mk('input', `#username-${prefix}`, 'input', 'arena-user'),
-      mk('input', `#password-${prefix}`, 'input', 'arena-pass-123'),
-      mk('input', `#email-${prefix}`, 'input', 'arena@test.com'),
+      // meta 与真实录制器一致：实捕 type/placeholder 属性快照（cron r2 起参与 heal）
+      mk('input', `#username-${prefix}`, 'input', 'arena-user', undefined, { type: 'text', placeholder: 'Username' }),
+      mk('input', `#password-${prefix}`, 'input', 'arena-pass-123', undefined, { type: 'password', placeholder: 'Password' }),
+      mk('input', `#email-${prefix}`, 'input', 'arena@test.com', undefined, { type: 'email', placeholder: 'Email' }),
       mk('input', `#comment-${prefix}`, 'textarea', 'arena comment'),
       mk('change', `#role-${prefix}`, 'select', 'admin'),
-      mk('click', `#submit-${prefix}`, 'button', undefined, 'Login'),
+      mk('click', `#submit-${prefix}`, 'button', undefined, 'Login', { type: 'button' }),
     ],
   };
 }
@@ -186,25 +188,22 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
   it('extreme2 攻击（id 随机化+删 id+name 随机化）', async () => {
     const report = await runLevel('extreme2', 10);
     expect(report.actionResult.success + report.actionResult.failed).toBe(6);
-    // id/name 全灭后唯一语义候选 form input:first-of-type 在 addWrapper 下
-    // 三个 input 全匹配、恒落文档序第一个——comment/textarea、role/select
-    // 靠唯一 tag 兜底存活（2/5）。下轮靶子：录制元数据（element.type/
-    // placeholder/ariaLabel）生成候选，确定性消歧三个 input
-    expect(report.semanticCorrect).toBeGreaterThanOrEqual(2);
+    // cron r2：coreId 全灭后 meta-type 候选（input[type=password/email/text]）
+    // 确定性消歧三个 input
+    expect(report.semanticCorrect).toBe(5);
   });
 
   it('nuclear 攻击（全变异叠加）', async () => {
     const report = await runLevel('nuclear', 20);
     expect(report.actionResult.success + report.actionResult.failed).toBe(6);
-    expect(report.semanticCorrect).toBeGreaterThanOrEqual(2);
+    expect(report.semanticCorrect).toBe(5);
   });
 
   it('apocalypse 攻击（全变异+重排+删 class+元素替换）', async () => {
     const report = await runLevel('apocalypse', 21);
     expect(report.actionResult.success + report.actionResult.failed).toBe(6);
-    // shuffleForm 随机重排导致 form input:first-of-type 落点随机——
-    // 下轮靶子：录制序号 nth-of-type(N) 替代 first-of-type 后可确定性收紧
-    expect(report.semanticCorrect).toBeGreaterThanOrEqual(1);
+    // meta-type 是内容定位不依赖文档序，shuffleForm 随机重排不影响
+    expect(report.semanticCorrect).toBe(5);
   });
 
   it('生产归档完整（含 semanticRate 与 healed 明细）', () => {
