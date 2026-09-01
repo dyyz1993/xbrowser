@@ -73,11 +73,33 @@ const ACTIONS = [
 // ── Fallback chain ──
 
 const FALLBACK_CHAIN = [
+  // 精确匹配层（id/name/placeholder 存活时命中）
   (t: string) => `#${t}`,
   (t: string) => `[name="${t}"]`,
   (t: string) => `[placeholder="${t}"]`,
+  // 部分匹配层（id/name 带 -mut 后缀时命中）
   (t: string) => `[id*="${t}"]`,
   (t: string) => `[name*="${t}"]`,
+  // S202: 结构语义层（id/name 全灭后仍可命中）
+  // type 属性不随 DOM 变异改变
+  (t: string) => {
+    const typeMap: Record<string,string> = { username: 'text', password: 'password', email: 'email' };
+    return typeMap[t] ? `input[type="${typeMap[t]}"]` : '';
+  },
+  // tag 直接匹配（textarea/select/button 天然唯一或少量）
+  (t: string) => {
+    const tagMap: Record<string,string> = { comment: 'textarea', role: 'select', submit: 'button' };
+    return tagMap[t] ? tagMap[t] : '';
+  },
+  // form 内位置定位（第 N 个 input/select/button）
+  (t: string) => {
+    const posMap: Record<string,number> = { username: 0, password: 1, email: 2, comment: 0, role: 0, submit: 0 };
+    const pos = posMap[t] ?? -1;
+    if (pos < 0) return '';
+    const tagMap: Record<string,string> = { username: 'input', password: 'input', email: 'input', comment: 'textarea', role: 'select', submit: 'button' };
+    const tag = tagMap[t] || 'input';
+    return `form ${tag}:nth-of-type(${pos + 1})`;
+  },
 ];
 
 // ── 测试 ──
