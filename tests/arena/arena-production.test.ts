@@ -612,6 +612,89 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     fs.rmSync(kbDir, { recursive: true, force: true });
   });
 
+  it('知识库生命周期：陈旧映射遗忘后落入常规链并重新写回', async () => {
+    // 预埋陈旧映射（healed 指向不存在的元素）：known-heal 校验失败应遗忘，
+    // 常规链重新 heal（partial-class）并把正确映射写回同一键
+    const kbDir = path.join(os.tmpdir(), `heal-kb-r100-${Date.now()}`);
+    fs.mkdirSync(kbDir, { recursive: true });
+    const craft = {
+      '.search-box': { healed: '#nonexistent-xyz', strategy: 'partial-class', lastSeen: new Date().toISOString(), hits: 3 },
+    };
+    fs.writeFileSync(path.join(kbDir, 'heals-file.json'), JSON.stringify(craft, null, 2));
+
+    const report = await runLevel('none', 100, {
+      expected: { search: 'arena search', qty: '3' },
+      healKnowledgeDir: kbDir,
+      recordingFactory: async (pfx: string, targetPath: string) => {
+        let cid = 0;
+        const mk = (type: UserAction['type'], selector: string, value?: string): UserAction => {
+          cid += 1;
+          return {
+            id: cid, type, timestamp: Date.now() + cid * 1000,
+            url: `file://${targetPath}`, pageTitle: `Arena ${pfx}`,
+            element: { tag: 'input', selector, text: '' },
+            ...(value !== undefined ? { value } : {}),
+          };
+        };
+        return {
+          actions: [mk('input', '.search-box', 'arena search'), mk('input', '.qty-box', '3')],
+        };
+      },
+      preMutation: `
+        document.querySelectorAll('[class]').forEach(function(el){
+          el.className = el.className.replace('search-box', 'search-box-v2').replace('qty-box', 'qty-box-v2');
+        });
+      `,
+    });
+
+    expect(report.actionResult.failed).toBe(0);
+    expect(report.semanticCorrect).toBe(2);
+    // known-heal 未采用（陈旧映射被遗忘），常规链 partial-class 接管
+    expect(report.healed.filter(h => h.strategy === 'partial-class').length).toBe(2);
+
+    const kb = JSON.parse(fs.readFileSync(path.join(kbDir, 'heals-file.json'), 'utf8'));
+    expect(kb['.search-box'].healed).toBe('[class*="search-box"]'); // 正确映射覆盖陈旧值
+    fs.rmSync(kbDir, { recursive: true, force: true });
+  });
+
+  it('知识库生命周期：TTL 超期条目在写入时剪枝', async () => {
+    const kbDir = path.join(os.tmpdir(), `heal-kb-r101-${Date.now()}`);
+    fs.mkdirSync(kbDir, { recursive: true });
+    const daysAgo = (d: number): string => new Date(Date.now() - d * 86_400_000).toISOString();
+    fs.writeFileSync(path.join(kbDir, 'heals-file.json'), JSON.stringify({
+      '.stale-old': { healed: '#old', strategy: 'partial-class', lastSeen: daysAgo(40), hits: 9 },
+      '.fresh-entry': { healed: '#fresh', strategy: 'meta-type', lastSeen: daysAgo(1), hits: 2 },
+    }, null, 2));
+
+    await runLevel('none', 101, {
+      expected: { search: 'arena search', qty: '3' },
+      healKnowledgeDir: kbDir,
+      recordingFactory: async (pfx: string, targetPath: string) => {
+        let cid = 0;
+        const mk = (type: UserAction['type'], selector: string, value?: string): UserAction => {
+          cid += 1;
+          return {
+            id: cid, type, timestamp: Date.now() + cid * 1000,
+            url: `file://${targetPath}`, pageTitle: `Arena ${pfx}`,
+            element: { tag: 'input', selector, text: '' },
+            ...(value !== undefined ? { value } : {}),
+          };
+        };
+        return { actions: [mk('input', '.search-box', 'arena search'), mk('input', '.qty-box', '3')] };
+      },
+      preMutation: `
+        document.querySelectorAll('[class]').forEach(function(el){
+          el.className = el.className.replace('search-box', 'search-box-v2').replace('qty-box', 'qty-box-v2');
+        });
+      `,
+    });
+
+    const kb = JSON.parse(fs.readFileSync(path.join(kbDir, 'heals-file.json'), 'utf8'));
+    expect(kb['.stale-old']).toBeUndefined();          // 40 天前 → 剪掉
+    expect(kb['.fresh-entry'].healed).toBe('#fresh');  // 1 天前 → 保留
+    fs.rmSync(kbDir, { recursive: true, force: true });
+  });
+
   it('生产归档完整（含 semanticRate 与 healed 明细）', () => {
     const files = fs.readdirSync(path.resolve(ARCHIVE_DIR)).filter(f => f.startsWith('production-'));
     expect(files.length).toBeGreaterThanOrEqual(5);

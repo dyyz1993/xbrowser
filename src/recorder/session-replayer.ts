@@ -14,6 +14,9 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
+/** r12: heal 知识条目 TTL——写入时剪枝，长期未验证的映射不配继续占位 */
+const HEAL_KB_TTL_DAYS = 30;
+
 export interface ReplayOptions {
   cdpUrl?: string;
   /** Provide an existing page (from daemon session) instead of connecting */
@@ -764,6 +767,12 @@ export class SessionReplayer {
         lastSeen: new Date().toISOString(),
         hits: (data[primary]?.hits ?? 0) + 1,
       };
+      // TTL 剪枝（r12）：超期条目在写入时一并清除，文件不无界增长
+      const cutoff = Date.now() - HEAL_KB_TTL_DAYS * 86_400_000;
+      for (const k of Object.keys(data)) {
+        const ts = Date.parse(data[k]?.lastSeen ?? '');
+        if (!(ts >= cutoff)) delete data[k];
+      }
       mkdirSync(this.opts.healKnowledgeDir, { recursive: true });
       writeFileSync(file, JSON.stringify(data, null, 2));
     } catch {
