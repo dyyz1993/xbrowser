@@ -608,9 +608,10 @@ export class SessionReplayer {
         if (!hitSels.includes(c.sel)) continue;
         try {
           await page.waitForSelector(c.sel, { state: 'visible', timeout: Math.min(timeout, 1000) });
+          if (!(await this.verifyHealHit(action, c.sel))) continue; // 指纹矛盾——疑似 wrong-target
           return { selector: c.sel, strategy: c.strategy };
         } catch {
-          // 存在但不可见——试下一个命中
+          // 存在但不可见/确认失败——试下一个命中
         }
       }
       return null;
@@ -679,6 +680,38 @@ export class SessionReplayer {
     const classMatch = selector.match(/\.([\w-]+)/);
     if (classMatch) return classMatch[1];
     return '';
+  }
+
+  /**
+   * r7: heal 命中指纹校验——"找对"而非"找到"。
+   * 录制的 type/placeholder/text 与命中元素做正性比对：两侧都有值但不等
+   * （正性矛盾）判为疑似 wrong-target，跳过该候选；元素侧属性缺失（改版
+   * 删掉）不算矛盾；无任何可校验信号时放行（校验失败不阻塞回放）。
+   */
+  private async verifyHealHit(action: UserAction, selector: string): Promise<boolean> {
+    const m = action.element;
+    if (!m?.type && !m?.placeholder && !m?.text) return true;
+    try {
+      const meta = await this.page!.evaluate<{ type: string | null; placeholder: string | null; text: string } | null>(`
+        (function() {
+          var el = document.querySelector(${JSON.stringify(selector)});
+          if (!el) return null;
+          return {
+            type: el.getAttribute('type'),
+            placeholder: el.getAttribute('placeholder'),
+            text: (String(el.value ?? '') || el.textContent || '').trim().substring(0, 80),
+          };
+        })()
+      `);
+      if (!meta) return true;
+      if (m.type && meta.type && meta.type !== m.type) return false;
+      if (m.placeholder && meta.placeholder && meta.placeholder !== m.placeholder) return false;
+      const wantText = (m.text || '').trim();
+      if (wantText && meta.text && !meta.text.includes(wantText)) return false;
+      return true;
+    } catch {
+      return true;
+    }
   }
 
   /**

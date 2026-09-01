@@ -366,6 +366,72 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(report.healed.filter(h => h.strategy === 'coords').length).toBe(0);
   });
 
+  it('heal 指纹校验：decoy 间谍按钮（同类名异文案）不再静默吞点击', async () => {
+    // class 后缀改版 + 页首注入 decoy（class 含 btn-secondary、文案 Cancel、
+    // 点击清空全部字段）。无指纹校验时 partial-class 命中 decoy（文档序在前）
+    // →字段被清空→语义 0/2；有校验时文案正性矛盾被拒，落到 meta-type/coords
+    // 命中真 Go→语义 2/2。
+    const report = await runLevel('none', 60, {
+      expected: { search: 'arena search', qty: '3' },
+      recordingFactory: async (pfx, targetPath) => {
+        const centers = await page.evaluate<Record<string, { x: number; y: number }>>(`/* @xb-probe */ (function(){
+          var out = {};
+          ['search','qty','go'].forEach(function(k){
+            var r = document.querySelector('[data-arena="' + k + '"]').getBoundingClientRect();
+            out[k] = { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+          });
+          return out;
+        })()`);
+        let cid = 0;
+        const mk = (
+          type: UserAction['type'], selector: string,
+          at?: { x: number; y: number }, value?: string, text?: string,
+        ): UserAction => {
+          cid += 1;
+          return {
+            id: cid, type, timestamp: Date.now() + cid * 1000,
+            url: `file://${targetPath}`, pageTitle: `Arena ${pfx}`,
+            element: {
+              tag: selector.endsWith('btn-secondary') ? 'button' : 'input',
+              selector, text: text ?? '',
+              ...(selector.endsWith('btn-secondary') ? { type: 'button' } : {}),
+            },
+            ...(value !== undefined ? { value } : {}),
+            ...(at ? { x: at.x, y: at.y } : {}),
+          };
+        };
+        return {
+          actions: [
+            mk('input', '.search-box', undefined, 'arena search'),
+            mk('input', '.qty-box', undefined, '3'),
+            mk('click', '.btn-secondary', centers.go, undefined, 'Go'),
+          ],
+        };
+      },
+      preMutation: `
+        document.querySelectorAll('[class]').forEach(function(el){
+          el.className = el.className
+            .replace('search-box', 'search-box-v2')
+            .replace('qty-box', 'qty-box-v2')
+            .replace('btn-secondary', 'btn-secondary-v2');
+        });
+        var f0 = document.createElement('form');
+        f0.style.position = 'fixed'; f0.style.bottom = '0'; f0.style.left = '0';
+        var d = document.createElement('button');
+        d.className = 'btn-secondary-v2'; d.type = 'button'; d.textContent = 'Cancel';
+        d.addEventListener('click', function(){
+          document.querySelectorAll('[data-arena]').forEach(function(e){ e.value = ''; });
+        });
+        f0.appendChild(d);
+        document.body.insertBefore(f0, document.body.firstChild);
+      `,
+    });
+    expect(report.actionResult.success + report.actionResult.failed).toBe(3);
+    expect(report.semanticCorrect).toBe(2);
+    expect(report.healed.filter(h => h.strategy === 'partial-class').length).toBe(2);
+    expect(report.healed[2].strategy).toBe('coords');
+  });
+
   it('生产归档完整（含 semanticRate 与 healed 明细）', () => {
     const files = fs.readdirSync(path.resolve(ARCHIVE_DIR)).filter(f => f.startsWith('production-'));
     expect(files.length).toBeGreaterThanOrEqual(5);
