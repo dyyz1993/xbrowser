@@ -95,6 +95,17 @@ export class XBLocatorImpl implements XBLocator {
 
     // Stealth fill: click focus + keyboard type / paste (d56)
     await this.click({ ...opts });
+    // Playwright fill = replace（stealth 重写时丢失的语义）：聚焦后全选已有
+    // 内容，后续 type/paste 写在选区上即为替换。execCommand('selectAll') 走
+    // 编辑管线而非事件伪造，input/textarea/contenteditable 一致适用。
+    await this.page.evaluate(`
+      (function() {
+        const el = ${this._q(this.selector)};
+        if (!el) return;
+        if (document.activeElement !== el) el.focus();
+        if ((el.value || el.textContent || '') !== '') document.execCommand('selectAll');
+      })()
+    `);
     // 长文本粘贴路径（d56）：人类长文本（≥40 字符）80%+ 用粘贴 ——
     // trusted paste 事件 + 整段瞬达。逐字打 40+ 字符的每字符 ~300ms
     // 节奏本身是指纹。OS 剪贴板 + 平台粘贴组合键（原生粘贴管线）。

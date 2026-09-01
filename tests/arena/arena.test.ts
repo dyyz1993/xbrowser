@@ -13,54 +13,12 @@
  */
 import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import { launch, type XBBrowser, type XBPage } from '../../src/cdp-driver/index.js';
+import { buildTargetPage, MUTATIONS, LEVELS } from './shared.js';
 import fs from 'fs';
 import path from 'path';
 
 const TIMEOUT = 60_000;
 const ARCHIVE_DIR = 'output/arena';
-
-// ── 靶场页生成 ──
-
-function buildTargetPage(prefix: string): string {
-  return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Arena ${prefix}</title></head>
-<body>
-  <form id="login-${prefix}">
-    <input id="username-${prefix}" class="field-input" name="username" placeholder="Username" type="text" />
-    <input id="password-${prefix}" class="field-input" name="password" placeholder="Password" type="password" />
-    <input id="email-${prefix}" class="field-input" name="email" placeholder="Email" type="email" />
-    <textarea id="comment-${prefix}" class="field-area" name="comment">initial</textarea>
-    <select id="role-${prefix}" class="field-select"><option value="user">user</option><option value="admin">admin</option></select>
-    <button id="submit-${prefix}" class="btn-primary" type="submit">Login</button>
-  </form>
-  <div id="result-${prefix}" class="result-area">waiting</div>
-</body></html>`;
-}
-
-// ── DOM 攻击变异器 ──
-
-const MUTATIONS: Record<string, { desc: string; fn: string }> = {
-  changeId: { desc: '改所有 id（加 -mutated 后缀）', fn: `document.querySelectorAll('[id]').forEach(function(el){ if(el.id && el.id !== 'result-') el.id = el.id + '-mut'; });` },
-  changeClass: { desc: '改所有 class（加 mutated 后缀）', fn: `document.querySelectorAll('[class]').forEach(function(el){ el.className = el.className + ' mutated'; });` },
-  addWrapper: { desc: '每个 input/button 外加包裹 div', fn: `document.querySelectorAll('form input, form button, form textarea, form select').forEach(function(el){ var w = document.createElement('div'); el.parentNode.insertBefore(w, el); w.appendChild(el); });` },
-  removeName: { desc: '删所有 name 属性', fn: `document.querySelectorAll('[name]').forEach(function(el){ el.removeAttribute('name'); });` },
-  removePlaceholder: { desc: '删所有 placeholder', fn: `document.querySelectorAll('[placeholder]').forEach(function(el){ el.removeAttribute('placeholder'); });` },
-  randomizeId: { desc: 'id 全部随机化（不可预测）', fn: `document.querySelectorAll('[id]').forEach(function(el){ el.id = 'el-' + Math.random().toString(36).substr(2,8); });` },
-  removeId: { desc: '删所有 id 属性', fn: `document.querySelectorAll('[id]').forEach(function(el){ el.removeAttribute('id'); });` },
-  changeName: { desc: 'name 属性全部随机化', fn: `document.querySelectorAll('[name]').forEach(function(el){ el.setAttribute('name', 'fld-' + Math.random().toString(36).substr(2,6)); });` },
-  shuffleForm: { desc: 'form 子元素随机重排', fn: `document.querySelectorAll('form').forEach(function(f){ var kids=Array.from(f.children); for(var i=kids.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1)); f.insertBefore(kids[j],kids[i]);} });` },
-  removeClass: { desc: '删所有 class 属性', fn: `document.querySelectorAll('[class]').forEach(function(el){ el.removeAttribute('class'); });` },
-};
-
-const LEVELS: Record<string, string[]> = {
-  none: [],
-  light: ['changeId'],
-  medium: ['changeId', 'changeClass', 'addWrapper'],
-  aggressive: ['changeId', 'changeClass', 'addWrapper', 'removeName', 'removePlaceholder'],
-  extreme2: ['randomizeId', 'removeId', 'changeName', 'addWrapper'],
-  nuclear: ['randomizeId', 'removeId', 'changeName', 'removePlaceholder', 'addWrapper', 'changeClass'],
-  apocalypse: ['randomizeId', 'removeId', 'changeName', 'removePlaceholder', 'addWrapper', 'changeClass', 'shuffleForm', 'removeClass', 'removeElement'],
-};
 
 // ── 操作流 ──
 
