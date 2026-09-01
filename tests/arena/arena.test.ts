@@ -275,7 +275,9 @@ describe('录制回放竞技场', { timeout: TIMEOUT }, () => {
   });
 
   it('归档文件存在且含自愈率', () => {
-    const files = fs.readdirSync(path.resolve(ARCHIVE_DIR)).filter(f => f.endsWith('.json'));
+    // 只扫影子链自己的 round-* 归档（production-* 归档归生产竞技场管）
+    const files = fs.readdirSync(path.resolve(ARCHIVE_DIR))
+      .filter(f => f.startsWith('round-') && f.endsWith('.json'));
     expect(files.length).toBeGreaterThanOrEqual(3);
     for (const f of files) {
       const data = JSON.parse(fs.readFileSync(path.join(ARCHIVE_DIR, f), 'utf8'));

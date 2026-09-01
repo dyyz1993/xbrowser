@@ -603,11 +603,20 @@ export class SessionReplayer {
     if (el.textFallback?.selector && !candidates.includes(el.textFallback.selector)) {
       candidates.push(el.textFallback.selector);
     }
-    if (el.tag && !candidates.includes(el.tag)) {
+    // Bare-tag fallback only for naturally unique tags. A bare 'input'/'button'
+    // resolves to the FIRST match on the page — it silently targets the wrong
+    // element AND short-circuits healResolve (S203 production arena: semantic
+    // correctness 40%, healed=0 across every attack level). Generic tags fall
+    // through to the heal chain, which still tries form-scoped tag candidates
+    // after the semantic ones.
+    const UNIQUE_TAGS = new Set(['textarea', 'select']);
+    if (el.tag && UNIQUE_TAGS.has(el.tag) && !candidates.includes(el.tag)) {
       candidates.push(el.tag);
     }
 
-    if (candidates.length === 0) throw new Error('No selector available for element');
+    if (candidates.length === 0 && this.opts.selfHealing === false) {
+      throw new Error('No selector available for element');
+    }
 
     // Try each candidate in order
     for (const sel of candidates) {
@@ -630,6 +639,7 @@ export class SessionReplayer {
       }
     }
 
+    if (candidates.length === 0) throw new Error('No selector available for element');
     throw new Error(`Element not found, tried: ${candidates.join(', ')}`);
   }
 

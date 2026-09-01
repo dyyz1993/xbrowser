@@ -62,6 +62,7 @@ function buildRecording(prefix: string, targetPath: string): { actions: UserActi
 
 interface RoundReport {
   level: string;
+  round: number;
   actionResult: { success: number; failed: number; skipped: number };
   healed: Array<{ index: number; strategy: string }>;
   errors: Array<{ index: number; error: string }>;
@@ -133,6 +134,7 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
 
     const report: RoundReport = {
       level,
+      round,
       actionResult,
       healed,
       errors,
@@ -161,42 +163,47 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(report.semanticCorrect).toBe(report.semanticTotal);
   });
 
-  it('light 攻击（仅改 id）：暴露 tag 兜底 wrong-target', async () => {
+  it('light 攻击（仅改 id）：partial-id 语义自愈接住全部 input', async () => {
     const report = await runLevel('light', 1);
-    // 传统指标 100%——replayAction 从不抛错（tag 兜底恒可解析）
     expect(report.actionResult.success + report.actionResult.failed).toBe(6);
-    // 语义指标是本文件的核心产出；当前生产链在 light 级即丢分。
-    // 后续修复（tag 兜底改保守 / 坐标兜底 / class 语义核心）应推高此数字。
-    expect(report.semanticCorrect).toBeGreaterThanOrEqual(1);
+    // tag 兜底收紧后（cron r1）：#id 变异 → healResolve partial-id 命中，
+    // 三个 input 全部找对字段
+    expect(report.semanticCorrect).toBe(5);
   });
 
   it('medium 攻击（改 id+class+包裹层）', async () => {
     const report = await runLevel('medium', 2);
     expect(report.actionResult.success + report.actionResult.failed).toBe(6);
-    expect(report.semanticCorrect).toBeGreaterThanOrEqual(1);
+    expect(report.semanticCorrect).toBe(5);
   });
 
   it('aggressive 攻击（+删 name+删 placeholder）', async () => {
     const report = await runLevel('aggressive', 3);
     expect(report.actionResult.success + report.actionResult.failed).toBe(6);
-    expect(report.semanticCorrect).toBeGreaterThanOrEqual(1);
+    expect(report.semanticCorrect).toBe(5);
   });
 
   it('extreme2 攻击（id 随机化+删 id+name 随机化）', async () => {
     const report = await runLevel('extreme2', 10);
     expect(report.actionResult.success + report.actionResult.failed).toBe(6);
-    expect(report.semanticCorrect).toBeGreaterThanOrEqual(1);
+    // id/name 全灭后唯一语义候选 form input:first-of-type 在 addWrapper 下
+    // 三个 input 全匹配、恒落文档序第一个——comment/textarea、role/select
+    // 靠唯一 tag 兜底存活（2/5）。下轮靶子：录制元数据（element.type/
+    // placeholder/ariaLabel）生成候选，确定性消歧三个 input
+    expect(report.semanticCorrect).toBeGreaterThanOrEqual(2);
   });
 
   it('nuclear 攻击（全变异叠加）', async () => {
     const report = await runLevel('nuclear', 20);
     expect(report.actionResult.success + report.actionResult.failed).toBe(6);
-    expect(report.semanticCorrect).toBeGreaterThanOrEqual(1);
+    expect(report.semanticCorrect).toBeGreaterThanOrEqual(2);
   });
 
   it('apocalypse 攻击（全变异+重排+删 class+元素替换）', async () => {
     const report = await runLevel('apocalypse', 21);
     expect(report.actionResult.success + report.actionResult.failed).toBe(6);
+    // shuffleForm 随机重排导致 form input:first-of-type 落点随机——
+    // 下轮靶子：录制序号 nth-of-type(N) 替代 first-of-type 后可确定性收紧
     expect(report.semanticCorrect).toBeGreaterThanOrEqual(1);
   });
 
