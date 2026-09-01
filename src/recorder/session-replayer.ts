@@ -563,14 +563,35 @@ export class SessionReplayer {
     candidates.push({ sel: `form ${tagName}:first-of-type`, strategy: 'tag-first' });
     candidates.push({ sel: `form ${tagName}`, strategy: 'tag-in-form' });
 
-    // 逐个尝试
-    for (const c of candidates) {
-      if (!c.sel || c.sel === primaryFailed[0]) continue;
+    // 批量探测（S203 cron r4）：此前逐候选 waitForSelector，每个 miss 都烧满
+    // 超时（N 候选最坏 N×stepTimeout，单动作实测 18s）。一次 evaluate 批测
+    // 全部候选的存在性，再按优先级只对命中者做短确认等待；无命中时快速
+    // 重试数次兜底异步渲染。
+    const probeList = candidates.filter(c => c.sel && c.sel !== primaryFailed[0]);
+    const probeSels = [...new Set(probeList.map(c => c.sel))];
+    let hitSels: string[] = [];
+    for (let attempt = 0; attempt < 5; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 200));
+      hitSels = await page.evaluate<string[]>(`
+        (function() {
+          var sels = ${JSON.stringify(probeSels)};
+          var hits = [];
+          for (var i = 0; i < sels.length; i++) {
+            try { if (document.querySelector(sels[i])) hits.push(sels[i]); } catch (e) { /* invalid selector */ }
+          }
+          return hits;
+        })()
+      `).catch(() => []);
+      if (hitSels.length > 0) break;
+    }
+
+    for (const c of probeList) {
+      if (!hitSels.includes(c.sel)) continue;
       try {
-        await page.waitForSelector(c.sel, { state: 'visible', timeout });
+        await page.waitForSelector(c.sel, { state: 'visible', timeout: Math.min(timeout, 1000) });
         return { selector: c.sel, strategy: c.strategy };
       } catch {
-        // next candidate
+        // 存在但不可见——试下一个命中
       }
     }
 
