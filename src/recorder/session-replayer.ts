@@ -214,8 +214,14 @@ export class SessionReplayer {
       const key = keyOf(a);
       const c = coordsOf(a);
       const recent = lastKept.get(key) || [];
-      const dup = recent.some(e => Math.abs(a.timestamp - e.ts) <= 15000
-        && (!c || !e.c || near(c, e.c)));
+      // 双生窗口收窄（r20）：cdp 注入回声的延迟受录制端 flush 约束
+      //（约 1.5-2s）。旧 15s 窗口会把人类节奏的合法重复动作（连点加购、
+      // 二次提交）误杀成双生——购物车少一件这类静默错账。
+      const dup = recent.some(e => {
+        if (Math.abs(a.timestamp - e.ts) > 2500) return false;
+        if (!c || !e.c) return true; // 一侧无坐标 = cdp 双生签名
+        return near(c, e.c);
+      });
       if (dup) return false;
       recent.push({ ts: a.timestamp, c });
       lastKept.set(key, recent);

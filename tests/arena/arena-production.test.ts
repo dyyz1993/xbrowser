@@ -838,6 +838,64 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(report.healed.filter(h => h.strategy === 'label-anchor').length).toBe(2);
   });
 
+  it('重复动作去重收窄：人类连点不误杀，cdp 双生仍被去重', async () => {
+    // 独立计数器页：Add 按钮点击计数。人类节奏（间隔 4s）的两次同位点击
+    // 都应执行（count=2）；cdp 双生（真动作+无坐标回声，间隔 0.8s）仍应
+    // 去重（count=1）——旧 15s 窗口下两者都只执行 1 次。
+    const pagePath = '/tmp/arena-prod-counter.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html>
+<html><body>
+  <button id="add" onclick="document.getElementById('count').textContent =
+    String(Number(document.getElementById('count').textContent) + 1)">Add</button>
+  <div id="count">0</div>
+</body></html>`);
+    await page.goto(`file://${pagePath}`);
+    await page.waitForTimeout(200);
+    const rect = await page.evaluate<{ x: number; y: number }>(`/* @xb-probe */ (function(){
+      var r = document.getElementById('add').getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    })()`);
+    const mk = (id: number, type: UserAction['type'], ts: number, at?: { x: number; y: number }): UserAction => ({
+      id, type, timestamp: ts,
+      url: `file://${pagePath}`, pageTitle: 'counter',
+      element: { tag: 'button', selector: '#add', text: 'Add' },
+      ...(at ? { x: at.x, y: at.y } : {}),
+    });
+    const base = Date.now();
+
+    // A. 人类节奏重复：间隔 4s、同位同选择器 → 两次都执行
+    const rep = new SessionReplayer({
+      page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
+      healKnowledgeDir: path.join(ARCHIVE_DIR, 'heal-kb', '140a'),
+    });
+    await rep.load({
+      actions: [mk(1, 'click', base, rect), mk(2, 'click', base + 4000, rect)],
+    } as never);
+    const repResult = await rep.run();
+    await rep.close();
+    const countA = await page.evaluate<string>(`/* @xb-probe */ document.getElementById('count').textContent`);
+
+    await page.evaluate(`/* @xb-probe */ document.getElementById('count').textContent = '0'`);
+
+    // B. cdp 双生：真动作（带坐标）+ 0.8s 后的无坐标回声 → 去重，只执行 1 次
+    const twin = new SessionReplayer({
+      page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
+      healKnowledgeDir: path.join(ARCHIVE_DIR, 'heal-kb', '140b'),
+    });
+    await twin.load({
+      actions: [mk(1, 'click', base, rect), mk(2, 'cdp-click', base + 800)],
+    } as never);
+    const twinResult = await twin.run();
+    await twin.close();
+    const countB = await page.evaluate<string>(`/* @xb-probe */ document.getElementById('count').textContent`);
+
+    console.log(`[dedup] human-repeat count=${countA} (want 2)  twin count=${countB} (want 1)`);
+    expect(repResult.failed).toBe(0);
+    expect(twinResult.failed).toBe(0);
+    expect(countA).toBe('2');
+    expect(countB).toBe('1');
+  });
+
   it('生产归档完整（含 semanticRate 与 healed 明细）', () => {
     const files = fs.readdirSync(path.resolve(ARCHIVE_DIR)).filter(f => f.startsWith('production-'));
     expect(files.length).toBeGreaterThanOrEqual(5);
