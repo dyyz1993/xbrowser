@@ -25,6 +25,7 @@ import type { UserAction } from '../../src/recorder/recording-types.js';
 import { buildTargetPage, MUTATIONS, LEVELS, SEMANTIC_EXPECTED } from './shared.js';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
 const TIMEOUT = 180_000;
 const ARCHIVE_DIR = 'output/arena';
@@ -100,6 +101,7 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
       recordingFactory?: (prefix: string, targetPath: string) =>
         { actions: UserAction[] } | Promise<{ actions: UserAction[] }>;
       preMutation?: string;
+      healKnowledgeDir?: string;
     } = {},
   ): Promise<RoundReport> {
     const prefix = `p${round}_${level}`;
@@ -125,11 +127,16 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
 
     const healed: Array<{ index: number; strategy: string }> = [];
     const errors: Array<{ index: number; error: string }> = [];
+    // 默认按轮次隔离知识库且每轮清空（防跨调用串扰改写策略断言）；
+    // 显式传入可跨轮共享（r10 双轮回放），由调用方管理生命周期
+    const kbDir = opts.healKnowledgeDir ?? path.join(ARCHIVE_DIR, 'heal-kb', String(round));
+    if (!opts.healKnowledgeDir) fs.rmSync(kbDir, { recursive: true, force: true });
     const replayer = new SessionReplayer({
       page,
       selfHealing: true,
       stepDelay: 50,
       stepTimeout: 3000,
+      healKnowledgeDir: kbDir,
       onHealed: (action, strategy, index) => healed.push({ index, strategy }),
       onError: (action, err, index) => errors.push({ index, error: err.message }),
     });
@@ -547,6 +554,62 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(report.actionResult.failed).toBe(0);
     expect(report.semanticCorrect).toBe(2);
     expect(report.healed.filter(h => h.strategy === 'partial-class').length).toBe(2);
+  });
+
+  it('heal 知识复用：二次回放 known-heal 零成本命中', async () => {
+    // 同一场景回放两轮、共享知识库：首轮现场推理（partial-class）并写回；
+    // 次轮主选择器一失效即查库直取已验证修复（known-heal×3）。
+    const kbDir = path.join(os.tmpdir(), `heal-kb-r90-${Date.now()}`);
+    const classOpts = (round: number) => ({
+      expected: { search: 'arena search', qty: '3' },
+      healKnowledgeDir: kbDir,
+      recordingFactory: async (pfx: string, targetPath: string) => {
+        let cid = 0;
+        const mk = (
+          type: UserAction['type'], selector: string, value?: string, text?: string,
+        ): UserAction => {
+          cid += 1;
+          return {
+            id: cid, type, timestamp: Date.now() + cid * 1000 + round,
+            url: `file://${targetPath}`, pageTitle: `Arena ${pfx}`,
+            element: {
+              tag: selector.endsWith('btn-secondary') ? 'button' : 'input',
+              selector, text: text ?? '',
+              ...(selector.endsWith('btn-secondary') ? { type: 'button' } : {}),
+            },
+            ...(value !== undefined ? { value } : {}),
+          };
+        };
+        return {
+          actions: [
+            mk('input', '.search-box', 'arena search'),
+            mk('input', '.qty-box', '3'),
+            mk('click', '.btn-secondary', undefined, 'Go'),
+          ],
+        };
+      },
+      preMutation: `
+        document.querySelectorAll('[class]').forEach(function(el){
+          el.className = el.className
+            .replace('search-box', 'search-box-v2')
+            .replace('qty-box', 'qty-box-v2')
+            .replace('btn-secondary', 'btn-secondary-v2');
+        });
+      `,
+    });
+
+    const run1 = await runLevel('none', 91, classOpts(91));
+    expect(run1.actionResult.failed).toBe(0);
+    expect(run1.healed.length).toBe(3);
+    expect(run1.healed.some(h => h.strategy === 'known-heal')).toBe(false);
+
+    const run2 = await runLevel('none', 92, classOpts(92));
+    expect(run2.actionResult.failed).toBe(0);
+    expect(run2.semanticCorrect).toBe(2);
+    expect(run2.healed.filter(h => h.strategy === 'known-heal').length).toBe(3);
+
+    expect(fs.existsSync(path.join(kbDir, 'heals-file.json'))).toBe(true);
+    fs.rmSync(kbDir, { recursive: true, force: true });
   });
 
   it('生产归档完整（含 semanticRate 与 healed 明细）', () => {

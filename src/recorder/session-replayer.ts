@@ -10,6 +10,9 @@
 import type { UserAction, RecordingData } from './session-recorder.js';
 import type { XBPage, XBFilePayload } from '../cdp-driver/types.js';
 import { queryJS } from '../cdp-driver/selector-utils.js';
+import { readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
+import { homedir } from 'os';
 
 export interface ReplayOptions {
   cdpUrl?: string;
@@ -27,6 +30,9 @@ export interface ReplayOptions {
   selfHealing?: boolean;
   /** Called when a step is self-healed via fallback strategy */
   onHealed?: (action: UserAction, strategy: string, index: number) => void;
+  /** r10: heal 知识库目录（默认 ~/.xbrowser/knowledge）。同域 heal 命中
+   * 写回、二次回放直接复用；设为空串可关闭。 */
+  healKnowledgeDir?: string;
 }
 
 export class SessionReplayer {
@@ -44,6 +50,7 @@ export class SessionReplayer {
       onError: opts.onError,
       selfHealing: opts.selfHealing !== false,
       onHealed: opts.onHealed,
+      healKnowledgeDir: opts.healKnowledgeDir ?? join(homedir(), '.xbrowser', 'knowledge'),
     } as typeof this.opts;
   }
 
@@ -495,6 +502,26 @@ export class SessionReplayer {
     const el = action.element;
     const timeout = Math.min(this.opts.stepTimeout, 5000);
 
+    // 0. 知识复用（r10）：同域同主选择器的既往 heal 直接复用——二次回放
+    //    零成本自愈。可见性 + 指纹硬检通过才复用；失效则遗忘并落入常规链。
+    const domain = this.pageDomain(action);
+    if (this.opts.healKnowledgeDir) {
+      const known = this.lookupHealKnowledge(domain, primaryFailed[0] ?? '');
+      if (known) {
+        try {
+          await page.waitForSelector(known.healed, { state: 'visible', timeout: Math.min(timeout, 2000) });
+          const verdict = await this.verifyHealHit(action, known.healed);
+          if (verdict !== 'hard') {
+            this.bumpHealKnowledge(domain, primaryFailed[0] ?? '');
+            return { selector: known.healed, strategy: 'known-heal' };
+          }
+          this.forgetHealKnowledge(domain, primaryFailed[0] ?? '');
+        } catch {
+          this.forgetHealKnowledge(domain, primaryFailed[0] ?? '');
+        }
+      }
+    }
+
     // 从 primary selector 提取语义核心（用于部分匹配）
     const coreId = this.extractSemanticCore(primaryFailed[0] || '');
     const tagName = el?.tag || 'input';
@@ -696,6 +723,76 @@ export class SessionReplayer {
     return '';
   }
 
+  // ── heal 知识库（r10）：heal 一次、同域记住、二次回放零成本 ──
+
+  private pageDomain(action: UserAction): string {
+    try {
+      const u = new URL(action.url || this.page!.url());
+      return u.hostname || u.protocol.replace(':', '') || 'unknown';
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  private healKnowledgeFile(domain: string): string {
+    return join(this.opts.healKnowledgeDir as string, `heals-${domain}.json`);
+  }
+
+  private readHealFile(file: string): Record<string, { healed: string; strategy: string; lastSeen: string; hits: number }> {
+    try {
+      return JSON.parse(readFileSync(file, 'utf8'));
+    } catch {
+      return {};
+    }
+  }
+
+  private lookupHealKnowledge(domain: string, primary: string): { healed: string; strategy: string } | null {
+    if (!primary || !this.opts.healKnowledgeDir) return null;
+    const data = this.readHealFile(this.healKnowledgeFile(domain));
+    const e = data[primary];
+    return e ? { healed: e.healed, strategy: e.strategy } : null;
+  }
+
+  private persistHealKnowledge(action: UserAction, primary: string, healed: { selector: string; strategy: string }): void {
+    if (!this.opts.healKnowledgeDir || !primary || healed.strategy === 'known-heal') return;
+    try {
+      const file = this.healKnowledgeFile(this.pageDomain(action));
+      const data = this.readHealFile(file);
+      data[primary] = {
+        healed: healed.selector,
+        strategy: healed.strategy,
+        lastSeen: new Date().toISOString(),
+        hits: (data[primary]?.hits ?? 0) + 1,
+      };
+      mkdirSync(this.opts.healKnowledgeDir, { recursive: true });
+      writeFileSync(file, JSON.stringify(data, null, 2));
+    } catch {
+      // 知识沉淀失败不阻塞回放
+    }
+  }
+
+  private bumpHealKnowledge(domain: string, primary: string): void {
+    try {
+      const file = this.healKnowledgeFile(domain);
+      const data = this.readHealFile(file);
+      const e = data[primary];
+      if (!e) return;
+      e.hits += 1;
+      e.lastSeen = new Date().toISOString();
+      writeFileSync(file, JSON.stringify(data, null, 2));
+    } catch { /* best-effort */ }
+  }
+
+  private forgetHealKnowledge(domain: string, primary: string): void {
+    try {
+      const file = this.healKnowledgeFile(domain);
+      const data = this.readHealFile(file);
+      if (!data[primary]) return;
+      delete data[primary];
+      writeFileSync(file, JSON.stringify(data, null, 2));
+    } catch { /* best-effort */ }
+  }
+
   /**
    * r9: click 类动作遮挡校验——元素"可见"（rect+样式）但被覆盖层（弹窗/
    * 横幅）盖住时，点击只会落在覆盖层上。elementFromPoint 顶元素非目标
@@ -812,6 +909,7 @@ export class SessionReplayer {
       try {
         const healed = await this.healResolve(action, candidates);
         this.opts.onHealed?.(action, healed.strategy, candidates.length);
+        this.persistHealKnowledge(action, candidates[0] ?? '', healed);
         return healed.selector;
       } catch {
         // Self-healing also failed — rethrow original error
