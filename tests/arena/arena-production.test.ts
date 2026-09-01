@@ -311,7 +311,9 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     });
     expect(report.actionResult.success + report.actionResult.failed).toBe(3);
     expect(report.semanticCorrect).toBe(2);
-    expect(report.healed.filter(h => h.strategy === 'coords').length).toBe(3);
+    // r15 起文案锚点（干净命中）优先于坐标层接管 click：两个 fill 走 coords
+    expect(report.healed.filter(h => h.strategy === 'coords').length).toBe(2);
+    expect(report.healed[2].strategy).toBe('text-anchor');
   });
 
   it('布局位移 + 属性全灭：录制序号（ordinal）恢复定位', async () => {
@@ -371,7 +373,9 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     });
     expect(report.actionResult.success + report.actionResult.failed).toBe(3);
     expect(report.semanticCorrect).toBe(2);
-    expect(report.healed.filter(h => h.strategy === 'ordinal').length).toBe(3);
+    // r15 起文案锚点接管 click（干净命中优先）：两个 fill 仍走 ordinal
+    expect(report.healed.filter(h => h.strategy === 'ordinal').length).toBe(2);
+    expect(report.healed[2].strategy).toBe('text-anchor');
     expect(report.healed.filter(h => h.strategy === 'coords').length).toBe(0);
   });
 
@@ -438,7 +442,8 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(report.actionResult.success + report.actionResult.failed).toBe(3);
     expect(report.semanticCorrect).toBe(2);
     expect(report.healed.filter(h => h.strategy === 'partial-class').length).toBe(2);
-    expect(report.healed[2].strategy).toBe('coords');
+    // r15 起文案锚点（'Go' 不匹配 decoy 的 'Cancel'）干净命中真按钮
+    expect(report.healed[2].strategy).toBe('text-anchor');
   });
 
   it('文案改版 + 布局位移：text 软矛盾降级备选，不弃正确元素', async () => {
@@ -697,6 +702,73 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(kb['.stale-old']).toBeUndefined();          // 40 天前 → 剪掉
     expect(kb['.fresh-entry'].healed).toBe('#fresh');  // 1 天前 → 保留
     fs.rmSync(kbDir, { recursive: true, force: true });
+  });
+
+  it('文案锚点：class 全量替换（非后缀）后录制文案仍锁定按钮', async () => {
+    // class 改成完全无关的名字（无子串关系）→ partial-class 全灭；form1 的
+    // Login（同为 type=button）带点击清空陷阱——无 text-anchor 时 meta-type
+    // 软备选命中 Login→清空→0/2；有锚点时文案 'Go' 精确锁定真按钮→2/2。
+    const report = await runLevel('none', 110, {
+      expected: { search: 'arena search', qty: '3' },
+      recordingFactory: async (pfx, targetPath) => {
+        const snap = await page.evaluate<Record<string, { x: number; y: number; formNth: number; tagNth: number }>>(`/* @xb-probe */ (function(){
+          var out = {};
+          ['search','qty'].forEach(function(k){
+            var el = document.querySelector('[data-arena="' + k + '"]');
+            var r = el.getBoundingClientRect();
+            var form = el.closest('form');
+            var formSibs = Array.prototype.filter.call(form.parentElement.children, function(c){ return c.tagName === 'FORM'; });
+            var tagSibs = Array.prototype.filter.call(form.children, function(c){ return c.tagName === el.tagName; });
+            out[k] = {
+              x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2),
+              formNth: formSibs.indexOf(form) + 1, tagNth: tagSibs.indexOf(el) + 1,
+            };
+          });
+          return out;
+        })()`);
+        let cid = 0;
+        const mk = (
+          type: UserAction['type'], selector: string, s?: { x: number; y: number; formNth: number; tagNth: number },
+          value?: string, text?: string,
+        ): UserAction => {
+          cid += 1;
+          return {
+            id: cid, type, timestamp: Date.now() + cid * 1000,
+            url: `file://${targetPath}`, pageTitle: `Arena ${pfx}`,
+            element: {
+              tag: selector.endsWith('btn-secondary') ? 'button' : 'input',
+              selector, text: text ?? '',
+              ...(selector.endsWith('btn-secondary') ? { type: 'button' } : {}),
+              ...(s ? { ordinal: { formNth: s.formNth, tagNth: s.tagNth } } : {}),
+            },
+            ...(value !== undefined ? { value } : {}),
+            ...(s ? { x: s.x, y: s.y } : {}),
+          };
+        };
+        return {
+          actions: [
+            mk('input', '.search-box', snap.search, 'arena search'),
+            mk('input', '.qty-box', snap.qty, '3'),
+            mk('click', '.btn-secondary', undefined, undefined, 'Go'),
+          ],
+        };
+      },
+      preMutation: `
+        document.querySelectorAll('[class]').forEach(function(el){
+          el.className = el.className
+            .replace('search-box', 'search-cta')
+            .replace('qty-box', 'qty-cta')
+            .replace('btn-secondary', 'btn-cta');
+        });
+        document.querySelector('[data-arena="submit"]').addEventListener('click', function(){
+          document.querySelectorAll('[data-arena]').forEach(function(e){ e.value = ''; });
+        });
+      `,
+    });
+    expect(report.actionResult.success + report.actionResult.failed).toBe(3);
+    expect(report.semanticCorrect).toBe(2);
+    expect(report.healed[0].strategy).toBe('ordinal');
+    expect(report.healed[2].strategy).toBe('text-anchor');
   });
 
   it('生产归档完整（含 semanticRate 与 healed 明细）', () => {

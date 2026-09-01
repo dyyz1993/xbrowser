@@ -17,6 +17,17 @@ import { homedir } from 'os';
 /** r12: heal 知识条目 TTL——写入时剪枝，长期未验证的映射不配继续占位 */
 const HEAL_KB_TTL_DAYS = 30;
 
+/** r15: 裸 evaluate 内的选择器解析垫片——与 queryJS 对齐支持 xpath= 前缀。
+ *  probe/指纹/遮挡三处原生 evaluate 不能直接用 queryJS（需传字符串），
+ *  此垫片让 text-anchor 等 xpath 候选走通同一条确认管线。 */
+const RAW_Q = `function __xb_q(sel) {
+  if (sel.indexOf('xpath=') === 0) {
+    var r = document.evaluate(sel.slice(6), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+    return r.singleNodeValue;
+  }
+  return document.querySelector(sel);
+}`;
+
 export interface ReplayOptions {
   cdpUrl?: string;
   /** Provide an existing page (from daemon session) instead of connecting */
@@ -591,6 +602,17 @@ export class SessionReplayer {
       candidates.push({ sel: `[aria-label="${el.ariaLabel}"]`, strategy: 'meta-aria' });
     }
 
+    // 2g. 文案锚点（r15）：class/id 全量替换（非后缀装饰）是改版常态，而
+    // 按钮文案极少动——录制文案是最强内容锚。仅对 button/a 等文本承载
+    // 元素生成（input 的录制 text 是当时的 value，不可靠）。
+    const anchorText = (el?.text || '').trim().replace(/"/g, '');
+    if (anchorText && (tagName === 'button' || tagName === 'a')) {
+      candidates.push({
+        sel: `xpath=//${tagName}[contains(normalize-space(.), "${anchorText}")]`,
+        strategy: 'text-anchor',
+      });
+    }
+
     // 3. type-based（input[type=text] 等不随 DOM 变异改变）
     const typeMap: Record<string, string> = {
       username: 'text', password: 'password', email: 'email',
@@ -641,10 +663,11 @@ export class SessionReplayer {
         if (attempt > 0) await new Promise(r => setTimeout(r, 200));
         hitSels = await page.evaluate<string[]>(`
           (function() {
+            ${RAW_Q}
             var sels = ${JSON.stringify(probeSels)};
             var hits = [];
             for (var i = 0; i < sels.length; i++) {
-              try { if (document.querySelector(sels[i])) hits.push(sels[i]); } catch (e) { /* invalid selector */ }
+              try { if (__xb_q(sels[i])) hits.push(sels[i]); } catch (e) { /* invalid selector */ }
             }
             return hits;
           })()
@@ -829,7 +852,8 @@ export class SessionReplayer {
     try {
       return await this.page!.evaluate<boolean>(`
         (function() {
-          var el = document.querySelector(${JSON.stringify(selector)});
+          ${RAW_Q}
+          var el = __xb_q(${JSON.stringify(selector)});
           if (!el) return true;
           var r = el.getBoundingClientRect();
           var top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
@@ -857,7 +881,8 @@ export class SessionReplayer {
     try {
       const meta = await this.page!.evaluate<{ type: string | null; placeholder: string | null; text: string } | null>(`
         (function() {
-          var el = document.querySelector(${JSON.stringify(selector)});
+          ${RAW_Q}
+          var el = __xb_q(${JSON.stringify(selector)});
           if (!el) return null;
           return {
             type: el.getAttribute('type'),
