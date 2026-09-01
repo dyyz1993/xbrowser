@@ -391,6 +391,17 @@ export async function handleReplay(
 	    return;
 	}
 
+  // r14: text 模式下的人读自愈摘要（JSON/YAML 结构化字段本身已含 healed）
+  if (result.ok && mode !== 'json' && mode !== 'yaml') {
+    const healed = typeof result.healed === 'number' ? result.healed : 0;
+    if (healed > 0) {
+      console.log(`\nSelf-healed ${healed} action(s):`);
+      for (const d of (result.healedDetails as Array<{ index: number; strategy: string }> | undefined) ?? []) {
+        console.log(`  - step ${d.index + 1}: ${d.strategy}`);
+      }
+    }
+  }
+
   outputResult(result, mode);
 }
 

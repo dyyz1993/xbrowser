@@ -312,6 +312,31 @@ describe('record-routes', () => {
       );
     });
 
+    it('should print self-heal summary in text mode', async () => {
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      mockForwardReplay.mockResolvedValue({
+        ok: true,
+        success: true,
+        duration: 500,
+        eventsPlayed: 3,
+        totalEvents: 3,
+        healed: 2,
+        healedDetails: [
+          { index: 0, strategy: 'partial-class' },
+          { index: 2, strategy: 'meta-type~soft' },
+        ],
+        errors: [],
+      });
+
+      await handleReplay(['rec.yaml'], {}, 'text');
+
+      const out = logSpy.mock.calls.map((c) => c.map(String).join(' ')).join('\n');
+      expect(out).toContain('Self-healed 2 action(s)');
+      expect(out).toContain('step 1: partial-class');
+      expect(out).toContain('step 3: meta-type~soft');
+      logSpy.mockRestore();
+    });
+
     it('should forward --session and --slow-mo options', async () => {
       mockForwardReplay.mockResolvedValue({
         ok: true,
