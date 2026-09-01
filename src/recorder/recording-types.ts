@@ -99,6 +99,9 @@ export interface UserAction {
     /** 结构地址（r6）：祖先 form 在同级 form 中的序 + 元素在 form 内同 tag
      * 兄弟中的序（仅 form 直接子元素捕获）。布局位移后坐标失效时仍可定位。 */
     ordinal?: { formNth: number; tagNth: number };
+    /** 关联 label 的文本（r16）：for= 关联或祖先 label 包裹。行重排/虚拟
+     * 列表重建后结构序失效时的内容锚。 */
+    labelText?: string;
   };
   value?: string;
   key?: string;

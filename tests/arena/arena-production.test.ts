@@ -771,6 +771,42 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(report.healed[2].strategy).toBe('text-anchor');
   });
 
+  it('label 锚点：表单行重排 + class 全量替换后 label 文本仍锁定控件', async () => {
+    // label 包裹的表单行整体对调 + class 全量改名：ordinal/位置候选全部
+    // 失效，label 文本随控件同行移动——label-anchor 是唯一幸存信号。
+    const report = await runLevel('none', 120, {
+      expected: { vsearch: 'arena search', vqty: '3' },
+      recordingFactory: async (pfx, targetPath) => {
+        let cid = 0;
+        const mk = (type: UserAction['type'], selector: string, labelText: string, value?: string): UserAction => {
+          cid += 1;
+          return {
+            id: cid, type, timestamp: Date.now() + cid * 1000,
+            url: `file://${targetPath}`, pageTitle: `Arena ${pfx}`,
+            element: { tag: 'input', selector, text: '', labelText },
+            ...(value !== undefined ? { value } : {}),
+          };
+        };
+        return {
+          actions: [
+            mk('input', '.search-row', 'Search product', 'arena search'),
+            mk('input', '.qty-row', 'Order quantity', '3'),
+          ],
+        };
+      },
+      preMutation: `
+        document.querySelectorAll('[class]').forEach(function(el){
+          el.className = el.className.replace('search-row', 'row-x1').replace('qty-row', 'row-x2');
+        });
+        var f = document.getElementById('rows-p120_none');
+        f.insertBefore(f.children[1], f.children[0]);
+      `,
+    });
+    expect(report.actionResult.success + report.actionResult.failed).toBe(2);
+    expect(report.semanticCorrect).toBe(2);
+    expect(report.healed.filter(h => h.strategy === 'label-anchor').length).toBe(2);
+  });
+
   it('生产归档完整（含 semanticRate 与 healed 明细）', () => {
     const files = fs.readdirSync(path.resolve(ARCHIVE_DIR)).filter(f => f.startsWith('production-'));
     expect(files.length).toBeGreaterThanOrEqual(5);

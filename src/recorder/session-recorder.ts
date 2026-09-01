@@ -247,6 +247,17 @@ const ACTION_SIGNAL_SCRIPT = `
       }
     } catch(e) { /* skip */ }
 
+    // Label text (r16): the <label> associated with the element (for= association or ancestor wrapper). In virtual list /
+    // form-row reordering scenarios, structural ordinals fail, but the label text moves in the same line as the
+    // control—content moves, and the anchor follows the content.
+    var labelText = '';
+    try {
+      var lbl = null;
+      if (el.id) lbl = el.ownerDocument.querySelector('label[for="' + el.id + '"]');
+      if (!lbl && el.closest) lbl = el.closest('label');
+      if (lbl) labelText = (lbl.textContent || '').trim().substring(0, 40);
+    } catch(e) { /* skip */ }
+
     return {
       tag: tag,
       selector: selector,
@@ -261,6 +272,7 @@ const ACTION_SIGNAL_SCRIPT = `
       ariaLabel: el.getAttribute('aria-label') || undefined,
       href: el.getAttribute('href') ? el.getAttribute('href').substring(0, 80) : undefined,
       ordinal: ordinal || undefined,
+      labelText: labelText || undefined,
     };
   }
 

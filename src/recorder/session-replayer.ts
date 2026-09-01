@@ -613,6 +613,21 @@ export class SessionReplayer {
       });
     }
 
+    // 2h. label 锚点（r16）：表单行重排/虚拟列表重建后结构序失效，但 label
+    // 文本与控件同行移动——内容走到哪锚点跟到哪。两条路径：label 包裹
+    // （后代控件）与 label[for] 关联（按 id 反查）。
+    const labelText = (el?.labelText || '').trim().replace(/"/g, '');
+    if (labelText) {
+      candidates.push({
+        sel: `xpath=//label[contains(normalize-space(.), "${labelText}")]//${tagName}`,
+        strategy: 'label-anchor',
+      });
+      candidates.push({
+        sel: `xpath=//${tagName}[@id=(//label[contains(normalize-space(.), "${labelText}")]/@for)]`,
+        strategy: 'label-for-anchor',
+      });
+    }
+
     // 3. type-based（input[type=text] 等不随 DOM 变异改变）
     const typeMap: Record<string, string> = {
       username: 'text', password: 'password', email: 'email',

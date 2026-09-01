@@ -35,6 +35,12 @@ export function buildTargetPage(prefix: string, opts: { preventSubmit?: boolean 
     <input class="qty-box" data-arena="qty" />
     <button class="btn-secondary" type="button" data-arena="go">Go</button>
   </form>
+  <form id="rows-${prefix}">
+    <!-- label 行表单（S203 cron r16）：label 包裹控件，行重排时结构序失效、
+         label 文本与控件同行移动——label-anchor 的专属靶区 -->
+    <label>Search product<input class="search-row" data-arena="vsearch" /></label>
+    <label>Order quantity<input class="qty-row" data-arena="vqty" /></label>
+  </form>
   <div id="result-${prefix}" class="result-area">waiting</div>
 </body></html>`;
 }
