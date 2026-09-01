@@ -8,10 +8,10 @@
 | 指标 | 值 |
 |------|-----|
 | 插件总数 | 126 |
-| ✅ 已完成（有实现+有测试） | 95 |
-| 🟡 有实现无测试 | 20 |
+| ✅ 已完成（有实现+有测试） | 97 |
+| 🟡 有实现无测试 | 18 |
 | 🔴 scaffold 待实现 | 11 |
-| **当前债务** | **31** |
+| **当前债务** | **29** |
 
 > 债务 = 🟡无测试 + 🔴scaffold + ⛔加载失败。目标：债务 → 0。
 
@@ -31,16 +31,14 @@
 | tiktok | 14 | https://www.tiktok.com |
 | upwork | 14 | https://www.upwork.com |
 
-## 🟡 有实现无测试（20） — P1 优先
+## 🟡 有实现无测试（18） — P1 优先
 
 | 插件 | 行数 | 命令数 | scope |
 |------|------|--------|-------|
 | chrome-bridge | 150 | 6 | `project` |
-| douban | 59 | 1 | `page` |
 | github-trending | 53 | 1 | `project` |
 | goofish | 333 | 3 | `page` |
 | google-scholar | 47 | 1 | `project` |
-| hf | 62 | 2 | `project` |
 | login-bridge | 388 | 5 | `page`, `project` |
 | packagist | 38 | 1 | `project` |
 | producthunt | 286 | 4 | `browser`, `page` |
@@ -56,7 +54,7 @@
 | xueqiu | 64 | 2 | `project` |
 | yahoo-finance | 46 | 1 | `project` |
 
-## ✅ 已完成（95）
+## ✅ 已完成（97）
 
 | 插件 | 命令数 | scope |
 |------|--------|-------|
@@ -91,6 +89,7 @@
 | dianping | 1 | `page` |
 | dictionary | 3 | `project` |
 | diff | 1 | `page` |
+| douban | 1 | `page` |
 | doubao | 20 | `browser`, `page` |
 | douyin | 8 | `browser` |
 | dribbble | 1 | `browser` |
@@ -106,6 +105,7 @@
 | google | 3 | `browser`, `cli` |
 | hackernews | 8 | `project` |
 | hashnode | 4 | `browser`, `page` |
+| hf | 2 | `project` |
 | homebrew | 2 | `project` |
 | huaban | 1 | `browser` |
 | image | 1 | `browser` |
