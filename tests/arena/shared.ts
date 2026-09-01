@@ -27,6 +27,14 @@ export function buildTargetPage(prefix: string, opts: { preventSubmit?: boolean 
     <select id="role-${prefix}" class="field-select" data-arena="role"><option value="user">user</option><option value="admin">admin</option></select>
     <button id="submit-${prefix}" class="btn-primary" type="${submitType}" data-arena="submit">Login</button>
   </form>
+  <form>
+    <!-- class-primary 靶场（S203 cron r3）：无 id/name/placeholder，type 均为
+         普通 text——只有 class 携带语义。meta-type 候选在此场景会落进 form1
+         的同名 type 字段，只有 class 核心部分匹配能确定性消歧。 -->
+    <input class="search-box" type="text" data-arena="search" />
+    <input class="qty-box" type="text" data-arena="qty" />
+    <button class="btn-secondary" type="button" data-arena="go">Go</button>
+  </form>
   <div id="result-${prefix}" class="result-area">waiting</div>
 </body></html>`;
 }

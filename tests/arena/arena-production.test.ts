@@ -92,7 +92,15 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     try { fs.unlinkSync(lastTargetPath); } catch { /* best-effort */ }
   }, 30_000);
 
-  async function runLevel(level: string, round: number): Promise<RoundReport> {
+  async function runLevel(
+    level: string,
+    round: number,
+    opts: {
+      expected?: Record<string, string>;
+      recordingFactory?: (prefix: string, targetPath: string) => { actions: UserAction[] };
+      preMutation?: string;
+    } = {},
+  ): Promise<RoundReport> {
     const prefix = `p${round}_${level}`;
     const targetPath = path.join('/tmp', `arena-prod-${prefix}.html`);
     lastTargetPath = targetPath;
@@ -100,9 +108,14 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     await page.goto(`file://${targetPath}`);
     await page.waitForTimeout(300);
 
-    const recording = buildRecording(prefix, targetPath);
+    const recording = opts.recordingFactory
+      ? opts.recordingFactory(prefix, targetPath)
+      : buildRecording(prefix, targetPath);
 
     // 先施加攻击（录制的是变异前的选择器，攻击模拟站点改版）
+    if (opts.preMutation) {
+      await page.evaluate(`/* @xb-probe */ (function(){ ${opts.preMutation} })()`);
+    }
     for (const key of LEVELS[level] ?? []) {
       const mut = MUTATIONS[key];
       if (mut) await page.evaluate(`/* @xb-probe */ (function(){ ${mut.fn} })()`);
@@ -129,9 +142,10 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
       document.querySelectorAll('[data-arena]').forEach(function(el){ out[el.getAttribute('data-arena')] = el.value; });
       return out;
     })()`);
-    const semanticKeys = Object.keys(SEMANTIC_EXPECTED);
+    const expected = opts.expected ?? SEMANTIC_EXPECTED;
+    const semanticKeys = Object.keys(expected);
     const semanticCorrect = semanticKeys.filter(
-      k => (values as Record<string, string>)[k] === SEMANTIC_EXPECTED[k],
+      k => (values as Record<string, string>)[k] === expected[k],
     ).length;
 
     const report: RoundReport = {
@@ -204,6 +218,45 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(report.actionResult.success + report.actionResult.failed).toBe(6);
     // meta-type 是内容定位不依赖文档序，shuffleForm 随机重排不影响
     expect(report.semanticCorrect).toBe(5);
+  });
+
+  it('class-primary 录制 + class 后缀改版（partial-class 语义自愈）', async () => {
+    // 无 id/name/placeholder、type 均为普通 text 的字段——只有 class 带语义。
+    // 无 partial-class 时 meta-type input[type=text] 会落进 form1 的 username
+    // （0/2）；有修复时 class 核心 [class*="search-box"] 确定性命中（2/2）。
+    const report = await runLevel('none', 30, {
+      expected: { search: 'arena search', qty: '3' },
+      recordingFactory: (pfx, targetPath) => {
+        let cid = 0;
+        const mk = (type: UserAction['type'], selector: string, value?: string, text?: string): UserAction => {
+          cid += 1;
+          return {
+            id: cid, type, timestamp: Date.now() + cid * 1000,
+            url: `file://${targetPath}`, pageTitle: `Arena ${pfx}`,
+            element: { tag: selector.endsWith('btn-secondary') ? 'button' : 'input', selector, text: text ?? '' },
+            ...(value !== undefined ? { value } : {}),
+          };
+        };
+        return {
+          actions: [
+            mk('input', '.search-box', 'arena search'),
+            mk('input', '.qty-box', '3'),
+            mk('click', '.btn-secondary', undefined, 'Go'),
+          ],
+        };
+      },
+      preMutation: `
+        document.querySelectorAll('[class]').forEach(function(el){
+          el.className = el.className
+            .replace('search-box', 'search-box-v2')
+            .replace('qty-box', 'qty-box-v2')
+            .replace('btn-secondary', 'btn-secondary-v2');
+        });
+      `,
+    });
+    expect(report.actionResult.success + report.actionResult.failed).toBe(3);
+    expect(report.semanticCorrect).toBe(2);
+    expect(report.healed.some(h => h.strategy === 'partial-class')).toBe(true);
   });
 
   it('生产归档完整（含 semanticRate 与 healed 明细）', () => {

@@ -523,6 +523,13 @@ export class SessionReplayer {
       candidates.push({ sel: `[data-testid*="${coreId}"]`, strategy: 'data-testid' });
     }
 
+    // 2f. class 核心部分匹配（S203 cron r3）：class 改版常见形态是加后缀/
+    // 前缀装饰（css-modules 全哈希除外），录制时的 class 核心仍是锚点。
+    // 仅当主选择器本身是 class 型时生成——id/name 录制不添无谓候选。
+    if (coreId && primaryFailed[0]?.trimStart().startsWith('.')) {
+      candidates.push({ sel: `[class*="${coreId}"]`, strategy: 'partial-class' });
+    }
+
     // 2e. 录制元数据候选（S203 cron r2）：element.type/placeholder/ariaLabel
     // 是录制器实捕的属性快照，不随 id/class/name 变异消失——id 随机化后
     // coreId 全灭时仍能确定性消歧（type=text vs password vs email 逐字段唯一），
@@ -587,6 +594,10 @@ export class SessionReplayer {
     // 提取 data-testid
     const dtMatch = selector.match(/\[data-testid=["']([\w-]+)["']\]/);
     if (dtMatch) return dtMatch[1];
+    // class 核心（S203 cron r3）：class 型主选择器（.btn-primary）此前返回空，
+    // 导致 class 录制在改版后只剩盲位置候选
+    const classMatch = selector.match(/\.([\w-]+)/);
+    if (classMatch) return classMatch[1];
     return '';
   }
 
