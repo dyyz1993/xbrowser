@@ -305,6 +305,67 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(report.healed.filter(h => h.strategy === 'coords').length).toBe(3);
   });
 
+  it('布局位移 + 属性全灭：录制序号（ordinal）恢复定位', async () => {
+    // 2000px spacer 插入使录制的视口坐标全部失效（elementFromPoint 指到
+    // spacer，tag 守卫拒绝）；删 class 后结构序号是唯一幸存信号。
+    const report = await runLevel('none', 50, {
+      expected: { search: 'arena search', qty: '3' },
+      recordingFactory: async (pfx, targetPath) => {
+        // 录制时刻快照：元素中心坐标 + 结构序号（对齐 r6 录制器 describe 产物）
+        const snap = await page.evaluate<Record<string, { x: number; y: number; formNth: number; tagNth: number }>>(`/* @xb-probe */ (function(){
+          var out = {};
+          ['search','qty','go'].forEach(function(k){
+            var el = document.querySelector('[data-arena="' + k + '"]');
+            var r = el.getBoundingClientRect();
+            var form = el.closest('form');
+            var formSibs = Array.prototype.filter.call(form.parentElement.children, function(c){ return c.tagName === 'FORM'; });
+            var tagSibs = Array.prototype.filter.call(form.children, function(c){ return c.tagName === el.tagName; });
+            out[k] = {
+              x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2),
+              formNth: formSibs.indexOf(form) + 1, tagNth: tagSibs.indexOf(el) + 1,
+            };
+          });
+          return out;
+        })()`);
+        let cid = 0;
+        const mk = (
+          type: UserAction['type'], selector: string,
+          s: { x: number; y: number; formNth: number; tagNth: number },
+          value?: string, text?: string,
+        ): UserAction => {
+          cid += 1;
+          return {
+            id: cid, type, timestamp: Date.now() + cid * 1000,
+            url: `file://${targetPath}`, pageTitle: `Arena ${pfx}`,
+            element: {
+              tag: selector.endsWith('btn-secondary') ? 'button' : 'input',
+              selector, text: text ?? '',
+              ordinal: { formNth: s.formNth, tagNth: s.tagNth },
+            },
+            ...(value !== undefined ? { value } : {}),
+            x: s.x, y: s.y,
+          };
+        };
+        return {
+          actions: [
+            mk('input', '.search-box', snap.search, 'arena search'),
+            mk('input', '.qty-box', snap.qty, '3'),
+            mk('click', '.btn-secondary', snap.go, undefined, 'Go'),
+          ],
+        };
+      },
+      preMutation: `
+        document.querySelectorAll('[class]').forEach(function(el){ el.removeAttribute('class'); });
+        var sp = document.createElement('div'); sp.style.height = '2000px';
+        document.body.insertBefore(sp, document.body.firstChild);
+      `,
+    });
+    expect(report.actionResult.success + report.actionResult.failed).toBe(3);
+    expect(report.semanticCorrect).toBe(2);
+    expect(report.healed.filter(h => h.strategy === 'ordinal').length).toBe(3);
+    expect(report.healed.filter(h => h.strategy === 'coords').length).toBe(0);
+  });
+
   it('生产归档完整（含 semanticRate 与 healed 明细）', () => {
     const files = fs.readdirSync(path.resolve(ARCHIVE_DIR)).filter(f => f.startsWith('production-'));
     expect(files.length).toBeGreaterThanOrEqual(5);

@@ -559,6 +559,17 @@ export class SessionReplayer {
       candidates.push({ sel: tagName, strategy: 'tag-unique' });
     }
 
+    // 5b. 录制序号定位（r6）：describe 时的结构地址快照。布局位移（banner
+    // 插入/视口变化）使坐标失效，但结构序保持时此处仍精确命中。仅 form
+    // 直接子元素有捕获（ordinal 为空则跳过）。
+    const ord = el?.ordinal;
+    if (ord && ord.formNth > 0 && ord.tagNth > 0) {
+      candidates.push({
+        sel: `form:nth-of-type(${ord.formNth}) ${tagName}:nth-of-type(${ord.tagNth})`,
+        strategy: 'ordinal',
+      });
+    }
+
     // 5. tag + positional（form 内第 N 个 input/button）
     candidates.push({ sel: `form ${tagName}:first-of-type`, strategy: 'tag-first' });
     candidates.push({ sel: `form ${tagName}`, strategy: 'tag-in-form' });

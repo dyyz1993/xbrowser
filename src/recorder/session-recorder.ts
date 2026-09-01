@@ -228,6 +228,25 @@ const ACTION_SIGNAL_SCRIPT = `
       } catch(e) { /* skip */ }
     }
 
+    // Ordinal address (r6): ancestor form's ordinal among sibling forms + element's
+    // ordinal among same-tag direct children of that form. Direct children only —
+    // nested elements have no stable single-level address.
+    var ordinal = null;
+    try {
+      var ordForm = el.closest ? el.closest('form') : null;
+      if (ordForm && el.parentElement === ordForm) {
+        var ordParent = ordForm.parentElement;
+        var formSibs = ordParent
+          ? Array.prototype.filter.call(ordParent.children, function(c) { return c.tagName === 'FORM'; })
+          : [ordForm];
+        var tagSibs = Array.prototype.filter.call(ordForm.children, function(c) { return c.tagName === el.tagName; });
+        ordinal = {
+          formNth: formSibs.indexOf(ordForm) + 1,
+          tagNth: tagSibs.indexOf(el) + 1,
+        };
+      }
+    } catch(e) { /* skip */ }
+
     return {
       tag: tag,
       selector: selector,
@@ -241,6 +260,7 @@ const ACTION_SIGNAL_SCRIPT = `
       placeholder: el.getAttribute('placeholder') || undefined,
       ariaLabel: el.getAttribute('aria-label') || undefined,
       href: el.getAttribute('href') ? el.getAttribute('href').substring(0, 80) : undefined,
+      ordinal: ordinal || undefined,
     };
   }
 

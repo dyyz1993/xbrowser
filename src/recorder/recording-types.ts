@@ -96,6 +96,9 @@ export interface UserAction {
     placeholder?: string;
     ariaLabel?: string;
     href?: string;
+    /** 结构地址（r6）：祖先 form 在同级 form 中的序 + 元素在 form 内同 tag
+     * 兄弟中的序（仅 form 直接子元素捕获）。布局位移后坐标失效时仍可定位。 */
+    ordinal?: { formNth: number; tagNth: number };
   };
   value?: string;
   key?: string;
