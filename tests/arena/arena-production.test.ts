@@ -97,7 +97,8 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     round: number,
     opts: {
       expected?: Record<string, string>;
-      recordingFactory?: (prefix: string, targetPath: string) => { actions: UserAction[] };
+      recordingFactory?: (prefix: string, targetPath: string) =>
+        { actions: UserAction[] } | Promise<{ actions: UserAction[] }>;
       preMutation?: string;
     } = {},
   ): Promise<RoundReport> {
@@ -109,7 +110,7 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     await page.waitForTimeout(300);
 
     const recording = opts.recordingFactory
-      ? opts.recordingFactory(prefix, targetPath)
+      ? await opts.recordingFactory(prefix, targetPath)
       : buildRecording(prefix, targetPath);
 
     // 先施加攻击（录制的是变异前的选择器，攻击模拟站点改版）
@@ -221,8 +222,8 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
   });
 
   it('class-primary 录制 + class 后缀改版（partial-class 语义自愈）', async () => {
-    // 无 id/name/placeholder、type 均为普通 text 的字段——只有 class 带语义。
-    // 无 partial-class 时 meta-type input[type=text] 会落进 form1 的 username
+    // 无 id/name/placeholder、无 type 属性的字段——只有 class 带语义。
+    // 无 partial-class 时全部候选 miss → 盲位置候选落进 form1 的 username
     // （0/2）；有修复时 class 核心 [class*="search-box"] 确定性命中（2/2）。
     const report = await runLevel('none', 30, {
       expected: { search: 'arena search', qty: '3' },
@@ -257,6 +258,51 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(report.actionResult.success + report.actionResult.failed).toBe(3);
     expect(report.semanticCorrect).toBe(2);
     expect(report.healed.some(h => h.strategy === 'partial-class')).toBe(true);
+  });
+
+  it('属性全灭（无 id/name/placeholder/type + 删 class）：坐标兜底恢复 fill', async () => {
+    // 删 class 后 form2 字段的所有属性信号归零，录制的 x/y（元素中心）是
+    // 唯一幸存信号。无坐标兜底时盲位置候选落进 form1（0/2）；有兜底时
+    // elementFromPoint 反解路径确定性命中（2/2）。
+    const report = await runLevel('none', 40, {
+      expected: { search: 'arena search', qty: '3' },
+      recordingFactory: async (pfx, targetPath) => {
+        // 录制时刻取元素中心（真实录制器记录的就是 clientX/clientY）
+        const centers = await page.evaluate<Record<string, { x: number; y: number }>>(`/* @xb-probe */ (function(){
+          var out = {};
+          ['search','qty','go'].forEach(function(k){
+            var r = document.querySelector('[data-arena="' + k + '"]').getBoundingClientRect();
+            out[k] = { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+          });
+          return out;
+        })()`);
+        let cid = 0;
+        const mk = (
+          type: UserAction['type'], selector: string,
+          at?: { x: number; y: number }, value?: string, text?: string,
+        ): UserAction => {
+          cid += 1;
+          return {
+            id: cid, type, timestamp: Date.now() + cid * 1000,
+            url: `file://${targetPath}`, pageTitle: `Arena ${pfx}`,
+            element: { tag: selector.endsWith('btn-secondary') ? 'button' : 'input', selector, text: text ?? '' },
+            ...(value !== undefined ? { value } : {}),
+            ...(at ? { x: at.x, y: at.y } : {}),
+          };
+        };
+        return {
+          actions: [
+            mk('input', '.search-box', centers.search, 'arena search'),
+            mk('input', '.qty-box', centers.qty, '3'),
+            mk('click', '.btn-secondary', centers.go, undefined, 'Go'),
+          ],
+        };
+      },
+      preMutation: `document.querySelectorAll('[class]').forEach(function(el){ el.removeAttribute('class'); });`,
+    });
+    expect(report.actionResult.success + report.actionResult.failed).toBe(3);
+    expect(report.semanticCorrect).toBe(2);
+    expect(report.healed.filter(h => h.strategy === 'coords').length).toBe(3);
   });
 
   it('生产归档完整（含 semanticRate 与 healed 明细）', () => {

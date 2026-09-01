@@ -563,37 +563,85 @@ export class SessionReplayer {
     candidates.push({ sel: `form ${tagName}:first-of-type`, strategy: 'tag-first' });
     candidates.push({ sel: `form ${tagName}`, strategy: 'tag-in-form' });
 
-    // 批量探测（S203 cron r4）：此前逐候选 waitForSelector，每个 miss 都烧满
-    // 超时（N 候选最坏 N×stepTimeout，单动作实测 18s）。一次 evaluate 批测
-    // 全部候选的存在性，再按优先级只对命中者做短确认等待；无命中时快速
-    // 重试数次兜底异步渲染。
-    const probeList = candidates.filter(c => c.sel && c.sel !== primaryFailed[0]);
-    const probeSels = [...new Set(probeList.map(c => c.sel))];
-    let hitSels: string[] = [];
-    for (let attempt = 0; attempt < 5; attempt++) {
-      if (attempt > 0) await new Promise(r => setTimeout(r, 200));
-      hitSels = await page.evaluate<string[]>(`
-        (function() {
-          var sels = ${JSON.stringify(probeSels)};
-          var hits = [];
-          for (var i = 0; i < sels.length; i++) {
-            try { if (document.querySelector(sels[i])) hits.push(sels[i]); } catch (e) { /* invalid selector */ }
-          }
-          return hits;
-        })()
-      `).catch(() => []);
-      if (hitSels.length > 0) break;
-    }
+    // 批量探测（S203 cron r4）+ 三层优先级（r5）：
+    //   语义候选（partial/meta/唯一 tag）→ 坐标兜底 → 盲位置候选。
+    // 盲位置（tag-first/tag-in-form）恒可命中且是 wrong-target 惯犯，必须
+    // 排在坐标之后——否则永远饿死坐标层（r5 首跑实测 0/2 教训）。
+    const blindPositional = new Set(['tag-first', 'tag-in-form']);
+    const inList = (c: { sel: string; strategy: string }): boolean =>
+      !!c.sel && c.sel !== primaryFailed[0];
+    const semanticList = candidates.filter(c => inList(c) && !blindPositional.has(c.strategy));
+    const blindList = candidates.filter(c => inList(c) && blindPositional.has(c.strategy));
 
-    for (const c of probeList) {
-      if (!hitSels.includes(c.sel)) continue;
+    const tryProbe = async (
+      list: Array<{ sel: string; strategy: string }>,
+    ): Promise<{ selector: string; strategy: string } | null> => {
+      const probeSels = [...new Set(list.map(c => c.sel))];
+      if (probeSels.length === 0) return null;
+      let hitSels: string[] = [];
+      for (let attempt = 0; attempt < 5; attempt++) {
+        if (attempt > 0) await new Promise(r => setTimeout(r, 200));
+        hitSels = await page.evaluate<string[]>(`
+          (function() {
+            var sels = ${JSON.stringify(probeSels)};
+            var hits = [];
+            for (var i = 0; i < sels.length; i++) {
+              try { if (document.querySelector(sels[i])) hits.push(sels[i]); } catch (e) { /* invalid selector */ }
+            }
+            return hits;
+          })()
+        `).catch(() => []);
+        if (hitSels.length > 0) break;
+      }
+      for (const c of list) {
+        if (!hitSels.includes(c.sel)) continue;
+        try {
+          await page.waitForSelector(c.sel, { state: 'visible', timeout: Math.min(timeout, 1000) });
+          return { selector: c.sel, strategy: c.strategy };
+        } catch {
+          // 存在但不可见——试下一个命中
+        }
+      }
+      return null;
+    };
+
+    const semanticHit = await tryProbe(semanticList);
+    if (semanticHit) return semanticHit;
+
+    // 坐标兜底（S203 cron r5，AGENTS §20.6 承诺的最终兜底）：属性全灭且
+    // 布局未变时，录制的视口 x/y 仍指向目标——elementFromPoint 反解
+    // nth-of-type 路径。tag 匹配守卫：遮挡层在顶时会指错元素，tag 不符即弃。
+    // 已知限制：坐标是视口相对，回放时页面滚动状态不同则失效。
+    if (typeof action.x === 'number' && typeof action.y === 'number') {
       try {
-        await page.waitForSelector(c.sel, { state: 'visible', timeout: Math.min(timeout, 1000) });
-        return { selector: c.sel, strategy: c.strategy };
+        const pathSel = await page.evaluate<string>(`
+          (function() {
+            var el = document.elementFromPoint(${action.x}, ${action.y});
+            if (!el || el === document.body || el === document.documentElement) return '';
+            if (el.tagName.toLowerCase() !== ${JSON.stringify(el?.tag ?? '')}) return '';
+            var parts = [];
+            var cur = el;
+            while (cur && cur !== document.body) {
+              var parent = cur.parentElement;
+              if (!parent) break;
+              var same = Array.prototype.filter.call(parent.children, function(c) { return c.tagName === cur.tagName; });
+              parts.unshift(cur.tagName.toLowerCase() + ':nth-of-type(' + (same.indexOf(cur) + 1) + ')');
+              cur = parent;
+            }
+            return parts.length ? parts.join(' > ') : '';
+          })()
+        `);
+        if (pathSel) {
+          await page.waitForSelector(pathSel, { state: 'visible', timeout: Math.min(timeout, 1000) });
+          return { selector: pathSel, strategy: 'coords' };
+        }
       } catch {
-        // 存在但不可见——试下一个命中
+        // 坐标兜底失败——落入盲位置层
       }
     }
+
+    const blindHit = await tryProbe(blindList);
+    if (blindHit) return blindHit;
 
     throw new Error(`Self-healing exhausted all ${candidates.length} strategies. Primary: ${primaryFailed.join(', ')}`);
   }
