@@ -605,6 +605,7 @@ export class SessionReplayer {
         if (hitSels.length > 0) break;
       }
       let alt: { selector: string; strategy: string } | null = null;
+      const needsHitTest = action.type === 'click' || action.type === 'cdp-click';
       for (const c of list) {
         if (!hitSels.includes(c.sel)) continue;
         try {
@@ -616,6 +617,7 @@ export class SessionReplayer {
             if (!alt) alt = { selector: c.sel, strategy: c.strategy };
             continue;
           }
+          if (needsHitTest && await this.isClickOccluded(c.sel)) continue; // 遮挡（r9）
           return { kind: 'hit', hit: { selector: c.sel, strategy: c.strategy } };
         } catch {
           // 存在但不可见/确认失败——试下一个命中
@@ -692,6 +694,28 @@ export class SessionReplayer {
     const classMatch = selector.match(/\.([\w-]+)/);
     if (classMatch) return classMatch[1];
     return '';
+  }
+
+  /**
+   * r9: click 类动作遮挡校验——元素"可见"（rect+样式）但被覆盖层（弹窗/
+   * 横幅）盖住时，点击只会落在覆盖层上。elementFromPoint 顶元素非目标
+   * 自身/子孙即判遮挡。视口外（top 为 null）不判定——点击路径会自行滚动。
+   */
+  private async isClickOccluded(selector: string): Promise<boolean> {
+    try {
+      return await this.page!.evaluate<boolean>(`
+        (function() {
+          var el = document.querySelector(${JSON.stringify(selector)});
+          if (!el) return true;
+          var r = el.getBoundingClientRect();
+          var top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+          if (!top) return false;
+          return !(top === el || el.contains(top));
+        })()
+      `);
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -772,9 +796,11 @@ export class SessionReplayer {
     }
 
     // Try each candidate in order
+    const isClick = action.type === 'click' || action.type === 'cdp-click';
     for (const sel of candidates) {
       try {
         await page.waitForSelector(sel, { state: 'visible', timeout });
+        if (isClick && await this.isClickOccluded(sel)) continue; // 遮挡——点击只会落在覆盖层
         return sel;
       } catch {
         // Try next fallback

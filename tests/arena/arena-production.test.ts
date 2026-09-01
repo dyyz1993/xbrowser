@@ -492,6 +492,63 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(report.healed[2].strategy).toBe('partial-class');
   });
 
+  it('遮挡层攻击：被盖克隆按钮被跳过，heal 找到未遮挡真目标', async () => {
+    // 同类名同文案同 type 的克隆按钮被 mini-overlay 盖住（文档序在前）。
+    // 无遮挡校验时 partial-class 命中克隆→resolve 成功→driver actionability
+    // 拒绝→动作失败；有校验时克隆被即时跳过，meta-type 软备选（Login）未
+    // 被盖→点击成功。判别点：actionResult.failed 1→0。
+    const report = await runLevel('none', 80, {
+      expected: { search: 'arena search', qty: '3' },
+      recordingFactory: async (pfx, targetPath) => {
+        let cid = 0;
+        const mk = (
+          type: UserAction['type'], selector: string, value?: string, text?: string,
+        ): UserAction => {
+          cid += 1;
+          return {
+            id: cid, type, timestamp: Date.now() + cid * 1000,
+            url: `file://${targetPath}`, pageTitle: `Arena ${pfx}`,
+            element: {
+              tag: selector.endsWith('btn-secondary') ? 'button' : 'input',
+              selector, text: text ?? '',
+              ...(selector.endsWith('btn-secondary') ? { type: 'button' } : {}),
+            },
+            ...(value !== undefined ? { value } : {}),
+          };
+        };
+        return {
+          actions: [
+            mk('input', '.search-box', 'arena search'),
+            mk('input', '.qty-box', '3'),
+            mk('click', '.btn-secondary', undefined, 'Go'),
+          ],
+        };
+      },
+      preMutation: `
+        document.querySelectorAll('[class]').forEach(function(el){
+          el.className = el.className
+            .replace('search-box', 'search-box-v2')
+            .replace('qty-box', 'qty-box-v2')
+            .replace('btn-secondary', 'btn-secondary-v2');
+        });
+        var clone = document.createElement('button');
+        clone.className = 'btn-secondary-v2'; clone.type = 'button'; clone.textContent = 'Go';
+        clone.style.cssText = 'position:fixed;top:0;left:0;width:120px;height:40px;';
+        document.body.insertBefore(clone, document.body.firstChild);
+        var ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;top:0;left:0;width:200px;height:60px;z-index:9999;';
+        ov.addEventListener('click', function(){
+          document.querySelectorAll('[data-arena]').forEach(function(e){ e.value = ''; });
+        });
+        document.body.insertBefore(ov, document.body.children[1]);
+      `,
+    });
+    expect(report.actionResult.success + report.actionResult.failed).toBe(3);
+    expect(report.actionResult.failed).toBe(0);
+    expect(report.semanticCorrect).toBe(2);
+    expect(report.healed.filter(h => h.strategy === 'partial-class').length).toBe(2);
+  });
+
   it('生产归档完整（含 semanticRate 与 healed 明细）', () => {
     const files = fs.readdirSync(path.resolve(ARCHIVE_DIR)).filter(f => f.startsWith('production-'));
     expect(files.length).toBeGreaterThanOrEqual(5);
