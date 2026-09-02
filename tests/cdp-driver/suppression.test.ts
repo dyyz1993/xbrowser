@@ -259,4 +259,37 @@ describe('原生打断源压制（r29）', () => {
       authServer.close();
     }
   });
+
+  it('sup-s10 Notification 守卫：构造不弹 OS 通知且 API 形状完整', async () => {
+    // 攻击形态：new Notification() 弹 OS 级系统通知横幅（headful 污染
+    // 屏幕/打断注意力，等待通知点击的流程直接挂起）。防御=no-op 包装
+    // ——但 permission/requestPermission/实例方法必须保形状，页面通知
+    // 流程无感继续。
+    const r = await page.evaluate<{ flag: boolean; title: string; closed: boolean; perm: string; reqPerm: string }>(`(function(){
+      var out = { flag: window.__xb_notification_suppressed === true };
+      try {
+        var n = new Notification('xb-test-title', { body: 'b' });
+        out.title = n.title;
+        n.close();
+        out.closed = true;
+      } catch (e) { out.title = 'threw:' + e.name; }
+      out.perm = Notification.permission;
+      Notification.requestPermission().then(function(p) { window.__xb_req_perm = p; });
+      out.reqPerm = 'pending';
+      return out;
+    })()`);
+    await page.waitForTimeout(200);
+    // stealth d62 拟真层将 requestPermission 延迟 2-6s（错误页节流下实测
+    // 7.8s）——不断言时序，只断言形状：可调用且返回 thenable（.then 存在）
+    const rpShape = await page.evaluate<{ isFn: boolean; thenable: boolean }>(`(function(){
+      var p = Notification.requestPermission();
+      return { isFn: typeof Notification.requestPermission === 'function', thenable: !!(p && typeof p.then === 'function') };
+    })()`);
+    expect(r.flag).toBe(true);
+    expect(r.title).toBe('xb-test-title');
+    expect(r.closed).toBe(true);
+    expect(r.perm).toBe('granted');
+    expect(rpShape.isFn).toBe(true);
+    expect(rpShape.thenable).toBe(true);
+  });
 });

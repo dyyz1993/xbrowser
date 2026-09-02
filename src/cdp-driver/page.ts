@@ -198,6 +198,24 @@ export class XBPageImpl implements XBPage {
         '  document.addEventListener("contextmenu", function(e) { e.preventDefault(); }, true);',
         '  window.__xb_ctxmenu_suppressed = true;',
         '} catch (e) {}',
+        // sup-s10: Notification 守卫——new Notification() 弹 OS 级系统横幅
+        // （headful 污染屏幕，等待通知交互的流程挂起）。no-op 包装但保
+        // API 形状：permission/granted、requestPermission→granted、实例
+        // title/close 可用——页面通知流程无感继续。
+        'try {',
+        '  var XBN = function Notification(title, options) {',
+        '    this.title = title;',
+        '    this.body = (options && options.body) || "";',
+        '    this.tag = (options && options.tag) || "";',
+        '    this.onclick = null; this.onshow = null; this.onerror = null; this.onclose = null;',
+        '  };',
+        '  XBN.prototype.close = function() {};',
+        '  XBN.permission = "granted";',
+        '  XBN.requestPermission = function() { return Promise.resolve("granted"); };',
+        '  XBN.maxActions = (window.Notification && window.Notification.maxActions) || 2;',
+        '  window.Notification = XBN;',
+        '  window.__xb_notification_suppressed = true;',
+        '} catch (e) {}',
       ].join('\n'),
     }, this.sessionId).catch(() => {});
 
