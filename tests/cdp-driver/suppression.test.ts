@@ -292,4 +292,30 @@ describe('原生打断源压制（r29）', () => {
     expect(rpShape.isFn).toBe(true);
     expect(rpShape.thenable).toBe(true);
   });
-});
+
+  it('sup-s11 beforeunload 语义：默认 accept（离开），dismiss 尽力而为', async () => {
+    // 攻击形态：页面挂 beforeunload 守卫 + 旧逻辑对一切对话框 accept:false
+    // → beforeunload 的 dismiss = 取消导航——回放录制的"离开页面"流被静默
+    // 卡在原页（红测实证 net::ERR_ABORTED）。默认改 accept（与录制意图
+    // 一致）。注意：beforeunload 弹窗需用户激活才触发（无交互页直接放行）。
+    // 已知限制：'dismiss'（留守）在此构建上 CDP accept:false 对浏览器侧
+    // 导航语义不可靠（同代码时红时绿），文档化为尽力而为，测试只锁
+    // 确定性的默认 accept。
+    const p1 = path.join(os.tmpdir(), `bu1-${Date.now()}.html`);
+    const p2 = path.join(os.tmpdir(), `bu2-${Date.now()}.html`);
+    fs.writeFileSync(p1, `<!DOCTYPE html><html><body>
+      <button id="arm" onclick="window.__clicked=1">arm</button>
+      <script>window.addEventListener('beforeunload', function(e) { e.preventDefault(); e.returnValue = ''; });</script>
+      page-one</body></html>`);
+    fs.writeFileSync(p2, '<!DOCTYPE html><html><body>page-two</body></html>');
+    await page.goto(`file://${p1}`);
+    await page.waitForTimeout(200);
+    // 真点激活（无激活时 Chrome 不触发 beforeunload 弹窗，导航直接放行）
+    await page.click('#arm');
+    await page.waitForTimeout(200);
+    await page.goto(`file://${p2}`, { timeout: 5000 });
+    const urlAfterDefault = await page.evaluate<string>('location.href');
+    expect(urlAfterDefault).toContain('bu2');
+    fs.rmSync(p1, { force: true });
+    fs.rmSync(p2, { force: true });
+  });

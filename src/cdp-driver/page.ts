@@ -1229,6 +1229,13 @@ export class XBPageImpl implements XBPage {
     return this.conn.send<T>(method, params, this.sessionId);
   }
 
+  /** sup-s11: beforeunload 自动应答语义——'accept'（默认，离开页面，与录制
+   * 意图一致）或 'dismiss'（取消导航留守原页，尽力而为：此构建上 CDP
+   * accept:false 对浏览器侧导航的取消语义不稳定，不保证）。 */
+  setBeforeUnloadBehavior(mode: 'accept' | 'dismiss'): void {
+    this._beforeUnloadAccept = mode === 'accept';
+  }
+
   /**
    * 开启/关闭原生文件选择框拦截（CDP stateful 开关）。
    *
@@ -1298,8 +1305,12 @@ export class XBPageImpl implements XBPage {
 
         // Auto-dismiss dialog on next tick (prevents page hangs on alert/confirm/prompt).
         // Playwright auto-dismisses by default; we do the same after the event is dispatched.
+        // sup-s11: beforeunload 例外——dismiss=取消导航（回放录制的"离开页面"
+        // 流被静默卡死，实测 net::ERR_ABORTED），默认 accept（离开），可经
+        // setBeforeUnloadBehavior('dismiss') 配回留守语义。
+        const autoAccept = p.type === 'beforeunload' ? this._beforeUnloadAccept : false;
         setTimeout(() => {
-          this.conn.send('Page.handleJavaScriptDialog', { accept: false }, this.sessionId)
+          this.conn.send('Page.handleJavaScriptDialog', { accept: autoAccept }, this.sessionId)
             .catch(() => { /* dialog may already be handled */ });
         }, 0);
       }),
@@ -1472,6 +1483,7 @@ export class XBPageImpl implements XBPage {
   _networkRequests = new Map<string, { requestId: string; url: string; method: string; headers: Record<string, string>; postData: string | null; resourceType: string }>();
   private _routeHandlers: Array<{ pattern: string; regex: RegExp; handler: (route: XBRoute) => Promise<void> | void }> = [];
   private _interceptionEnabled = false;
+  private _beforeUnloadAccept = true;
 
   /** Store network data — called by browser.ts installNetworkCapture or internal event handlers */
   _storeNetworkRequest(requestId: string, data: { url: string; method: string; headers: Record<string, string>; postData: string | null; resourceType: string }): void {
