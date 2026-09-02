@@ -944,6 +944,43 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(healed.map(h => h.strategy)).toContain('text-anchor');
   });
 
+  it('JS 对话框自动压制：alert/confirm/prompt 不阻塞回放序列', async () => {
+    // 三个按钮依次触发 alert/confirm/prompt——任一对话框挂起都会卡死
+    // 回放序列。自动 dismiss 下：alert 置标后放行、confirm dismiss 返回
+    // false（'no'）、prompt dismiss 返回 null（'null'），最终标记='null'
+    // 证明三步全部执行且无挂起。
+    const pagePath = '/tmp/arena-prod-dialog.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html><html><body>
+      <button id="a" onclick="document.getElementById('m').textContent='alerted';alert('A')">A</button>
+      <button id="c" onclick="document.getElementById('m').textContent=confirm('C')?'yes':'no'">C</button>
+      <button id="p" onclick="document.getElementById('m').textContent=String(prompt('P','def'))">P</button>
+      <div id="m">idle</div>
+    </body></html>`);
+    await page.goto(`file://${pagePath}`);
+    await page.waitForTimeout(200);
+    const recording = {
+      actions: (['a', 'c', 'p'] as const).map((id, i) => ({
+        id: i + 1, type: 'click' as const, timestamp: Date.now() + (i + 1) * 1000,
+        url: `file://${pagePath}`, pageTitle: 'dialog',
+        element: { tag: 'button', selector: `#${id}`, text: id.toUpperCase() },
+      })),
+    };
+    const replayer = new SessionReplayer({
+      page, selfHealing: true, stepDelay: 100, stepTimeout: 5000,
+      healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-dialog-${Date.now()}`),
+    });
+    await replayer.load(recording);
+    const started = Date.now();
+    const result = await replayer.run();
+    await replayer.close();
+    const elapsed = Date.now() - started;
+    const mark = await page.evaluate<string>(`/* @xb-probe */ document.getElementById('m').textContent`);
+
+    expect(result.failed).toBe(0);
+    expect(mark).toBe('null'); // alert 置标 → confirm dismiss 'no' → prompt dismiss String(null)
+    expect(elapsed).toBeLessThan(30_000); // 无挂起
+  });
+
   it('same-origin iframe：回放穿透 iframe 填充，改名后 partial-id 自愈', async () => {
     // srcdoc iframe 内的表单——queryJS 深查可达、actionability 的
     // iframe 坐标偏移保证填充落点。锁定端到端能力（录制→回放→自愈）。
