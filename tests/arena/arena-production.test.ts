@@ -985,6 +985,54 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(log).toBe('changed:#ff0000'); // change 事件冒泡被页面监听捕获
   });
 
+  it('sup-s3 攻击：日期/时间控件回放（fill 键盘路径值错乱，值注入防御）', async () => {
+    // Chrome 日历弹层是浏览器内部 shadow popup（页面 DOM 不可及）；fill
+    // 的键盘路径把 ISO 字符逐个打进日期分段（数字落错段、分隔符被吞），
+    // 值大概率错乱。防御=date/datetime-local/month/week/time 家族值注入。
+    const pagePath = '/tmp/arena-prod-date.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html><html><body>
+      <form>
+        <input type="date" id="d1" data-arena="d1" />
+        <input type="datetime-local" id="d2" data-arena="d2" />
+        <div id="log">none</div>
+      </form>
+      <script>
+        document.getElementById('d1').addEventListener('change', function() {
+          document.getElementById('log').textContent = 'd1:' + this.value;
+        });
+      </script>
+    </body></html>`);
+    await page.goto(`file://${pagePath}`);
+    await page.waitForTimeout(200);
+    const mk = (id: number, sel: string, type: string, value: string) => ({
+      id, type: 'input' as const, timestamp: Date.now() + id * 1000,
+      url: `file://${pagePath}`, pageTitle: 'date',
+      element: { tag: 'input', selector: sel, text: '', type },
+      value,
+    });
+    const recording = {
+      actions: [
+        mk(1, '#d1', 'date', '2024-03-15'),
+        mk(2, '#d2', 'datetime-local', '2024-03-15T10:30'),
+      ],
+    };
+    const replayer = new SessionReplayer({
+      page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
+      healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-date-${Date.now()}`),
+    });
+    await replayer.load(recording);
+    const result = await replayer.run();
+    await replayer.close();
+    const d1 = await page.evaluate<string>(`/* @xb-probe */ document.getElementById('d1').value`);
+    const d2 = await page.evaluate<string>(`/* @xb-probe */ document.getElementById('d2').value`);
+    const log = await page.evaluate<string>(`/* @xb-probe */ document.getElementById('log').textContent`);
+
+    expect(result.failed).toBe(0);
+    expect(d1).toBe('2024-03-15');
+    expect(d2).toBe('2024-03-15T10:30');
+    expect(log).toBe('d1:2024-03-15');
+  });
+
   it('role=button 语义元素：class 全量改名后文案锚仍锁定（SPA div 按钮）', async () => {
     // SPA 主流形态：<div role="button"> 充当按钮——tagName 是 div，旧
     // text-anchor 门控（仅 button/a 标签）不会生成候选。文案锚扩展后

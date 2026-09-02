@@ -17,6 +17,12 @@ import { homedir } from 'os';
 /** r12: heal 知识条目 TTL——写入时剪枝，长期未验证的映射不配继续占位 */
 const HEAL_KB_TTL_DAYS = 30;
 
+/** sup-s1/s3: 原生控件家族——fill 的 click+type 路径无法设值（OS 面板/
+ * 浏览器内部弹层/键盘分段吞字符），回放统一改走 JS 值注入。 */
+const NATIVE_VALUE_INJECT_TYPES = new Set([
+  'color', 'date', 'datetime-local', 'month', 'week', 'time',
+]);
+
 export interface ReplayOptions {
   cdpUrl?: string;
   /** Provide an existing page (from daemon session) instead of connecting */
@@ -296,11 +302,12 @@ export class SessionReplayer {
 
       case 'input': {
         const selector = await this.resolveAndWait(action);
-        // sup-s1: 颜色卡防御——fill 路径（click+type）对 input[type=color]
-        // 完全失效：点击请求 OS 原生取色面板（headful 弹系统 UI，CDP 不可
-        // 及），键盘输入被忽略。JS 值注入 + input/change 事件（bubbles 保
-        // 证页面监听器收到）。
-        if (action.element?.type === 'color') {
+        // sup-s1/s3: 原生控件家族值注入——fill 路径（click+type）对这些
+        // input 类型完全失效：color 点击请求 OS 取色面板+键盘被忽略；date/
+        // datetime-local/month/week/time 的日历/时钟弹层是浏览器内部
+        // shadow popup（DOM 不可及），键盘路径实测值停留空串。统一改走
+        // el.value 赋值 + input/change 事件（bubbles 保证页面监听器收到）。
+        if (action.element?.type && NATIVE_VALUE_INJECT_TYPES.has(action.element.type)) {
           await page.evaluate(`
             (function() {
               var el = ${queryJS(selector)};
@@ -318,7 +325,7 @@ export class SessionReplayer {
 
       case 'cdp-fill': {
         const selector = await this.resolveAndWait(action);
-        if (action.element?.type === 'color') {
+        if (action.element?.type && NATIVE_VALUE_INJECT_TYPES.has(action.element.type)) {
           await page.evaluate(`
             (function() {
               var el = ${queryJS(selector)};
