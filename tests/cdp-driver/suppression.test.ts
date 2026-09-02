@@ -10,6 +10,7 @@ import { launch, type XBBrowser, type XBPage } from '../../src/cdp-driver/index.
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import http from 'http';
 
 describe('原生打断源压制（r29）', () => {
   let browser: XBBrowser;
@@ -30,13 +31,36 @@ describe('原生打断源压制（r29）', () => {
     if (browser) await browser.close().catch(() => {});
   }, 15_000);
 
-  it('权限气泡：notifications/geolocation 自动放行', async () => {
-    const state = await page.evaluate<string>(`(async function(){
-      var n = (await navigator.permissions.query({ name: 'notifications' })).state;
-      var g = (await navigator.permissions.query({ name: 'geolocation' })).state;
-      return n + '/' + g;
-    })()`);
-    expect(state).toBe('granted/granted');
+  it('权限气泡：notifications/geolocation/clipboard/camera/microphone/midi 自动放行', async () => {
+    // file:// 下 clipboard/camera/mic/midi 是 scheme 级硬拒（granted 升级
+    // 压不过策略，且 denied 不弹气泡不阻塞）；真实攻击面在 http(s) 页的
+    // prompt 态（气泡+await 用户=无人值守死锁）——用本地 http 服务验证。
+    const probe = `<!DOCTYPE html><html><body>ok</body></html>`;
+    const server = http.createServer((_req: http.IncomingMessage, res: http.ServerResponse) => {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(probe);
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    const port = (server.address() as { port: number }).port;
+    try {
+      await page.goto(`http://127.0.0.1:${port}/`, { timeout: 10_000 });
+      await page.waitForTimeout(200);
+      const state = await page.evaluate<string>(`(async function(){
+        var q = function(n) { return navigator.permissions.query({ name: n }).then(function(s) { return s.state; }).catch(function() { return 'unsupported'; }); };
+        var out = [];
+        out.push('n=' + await q('notifications'));
+        out.push('g=' + await q('geolocation'));
+        out.push('cr=' + await q('clipboard-read'));
+        out.push('cw=' + await q('clipboard-write'));
+        out.push('cam=' + await q('camera'));
+        out.push('mic=' + await q('microphone'));
+        out.push('midi=' + await q('midi'));
+        return out.join(' ');
+      })()`);
+      expect(state).toBe('n=granted g=granted cr=granted cw=granted cam=granted mic=granted midi=granted');
+    } finally {
+      server.close();
+    }
   });
 
   it('打印对话框：window.print 已被守卫替换', async () => {

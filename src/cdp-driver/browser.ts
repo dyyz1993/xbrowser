@@ -158,10 +158,26 @@ export class XBBrowserImpl implements XBBrowser {
         eventsEnabled: false,
         browserContextId: contextId,
       }, undefined, 10_000).catch(() => { /* 老内核不支持时忽略 */ });
+      // r29+sup-s8: 权限气泡压制——未授权时页面一调用即弹权限气泡并
+      // await 用户（无人值守死锁）。s8 实测两点：本内核 grantPermissions
+      // 为替换语义（每笔成功调用替换整个授权集，必须单笔全量）；摄像头/
+      // 麦克风的 CDP 枚举名是 videoCapture/audioCapture（camera/microphone
+      // 是 web 面向名，混入会让整笔被拒——二分实证）。
       await this.conn.send('Browser.grantPermissions', {
-        permissions: ['notifications', 'geolocation'],
+        permissions: [
+          'notifications', 'geolocation',
+          'clipboardReadWrite', 'clipboardSanitizedWrite',
+          'videoCapture', 'audioCapture', 'midi',
+        ],
         browserContextId: contextId,
-      }, undefined, 10_000).catch(() => { /* 同上 */ });
+      }, undefined, 10_000).catch(() => {
+        // 内核拒绝任一名则整笔失败（替换语义下不可分笔兜底）——保留
+        // r29 已验证对单独授权，至少不劣化
+        this.conn.send('Browser.grantPermissions', {
+          permissions: ['notifications', 'geolocation'],
+          browserContextId: contextId,
+        }, undefined, 10_000).catch(() => { /* best-effort */ });
+      });
     }
 
     // Set up auto-attach for new targets in this context
