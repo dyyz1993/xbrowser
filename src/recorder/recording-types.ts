@@ -70,7 +70,7 @@ export interface UserAction {
   type: 'click' | 'input' | 'change' | 'keydown' | 'submit' | 'scroll'
     | 'navigation' | 'goto' | 'cdp-fill' | 'cdp-click' | 'cdp-eval' | 'filechooser'
     | 'dblclick' | 'contextmenu' | 'hover' | 'drag' | 'resize' | 'clipboard'
-    | 'touch' | 'focus' | 'visibility'
+    | 'touch' | 'focus' | 'visibility' | 'drop'
     // Proactive sensing actions (not user-initiated, but observed by recorder)
     | 'popup_appear' | 'discovered_filters';
   timestamp: number;

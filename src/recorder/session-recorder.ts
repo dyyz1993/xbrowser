@@ -931,6 +931,50 @@ const ACTION_SIGNAL_SCRIPT = `
     __xb_drag_start_pos = { x: e.clientX, y: e.clientY };
   }, true);
   document.addEventListener('drop', function(e) {
+    // sup-s5: OS 文件拖入捕获——Dropzone/Uppy 类上传区无 input[type=file]，
+    // change 捕获够不着；dataTransfer.files 经 FileReader 内联（与
+    // filechooser 同构），回放端 'drop' 动作经 dropFiles 重放。
+    try {
+      var dropped = (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0)
+        ? Array.prototype.slice.call(e.dataTransfer.files)
+        : [];
+      if (dropped.length > 0) {
+        var zone = describe(resolveMeaningful(e));
+        var names = dropped.map(function(f) { return f.name; });
+        var readers = [];
+        for (var i = 0; i < dropped.length; i++) {
+          readers.push(new Promise(function(resolve) {
+            var reader = new FileReader();
+            reader.onload = function() { resolve(reader.result); };
+            reader.onerror = function() { resolve(null); };
+            reader.readAsDataURL(dropped[i]);
+          }));
+        }
+        Promise.all(readers).then(function(contents) {
+          var fileData = [];
+          for (var j = 0; j < dropped.length; j++) {
+            fileData.push({
+              name: dropped[j].name,
+              type: dropped[j].type,
+              size: dropped[j].size,
+              dataUrl: contents[j],
+            });
+          }
+          pushAction('drop', {
+            x: e.clientX,
+            y: e.clientY,
+            element: zone,
+            value: names.join(', '),
+            files: {
+              names: names,
+              count: dropped.length,
+              isMultiple: dropped.length > 1,
+              fileData: fileData,
+            },
+          });
+        });
+      }
+    } catch(_) { /* capture must not break the drag path */ }
     if (__xb_drag_source && __xb_drag_start_pos) {
       pushAction('drag', {
         x: e.clientX,

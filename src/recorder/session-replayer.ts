@@ -359,6 +359,18 @@ export class SessionReplayer {
         break;
       }
 
+      case 'drop': {
+        // sup-s5: OS 文件拖入重放——录制端从 dataTransfer.files 内联文件，
+        // 经 dropFiles（dragenter/dragover/drop 协议）重放到录制时的投放区
+        //（Dropzone 类上传区无 input[type=file]，setInputFiles 不适用）。
+        const selector = await this.resolveAndWait(action);
+        const files = this.resolveFiles(action);
+        if (files.length > 0) {
+          await page.dropFiles(selector, files[0]);
+        }
+        break;
+      }
+
       case 'keydown': {
         const key = action.key ?? '';
         // Special keys

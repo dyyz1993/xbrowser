@@ -1033,6 +1033,56 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(log).toBe('d1:2024-03-15');
   });
 
+  it('sup-s5 拖拽上传录制→回放闭环：drop 动作经 dropFiles 重放', async () => {
+    // Dropzone 类上传区无 input[type=file]，录制端此前对 OS 文件拖入
+    // 零捕获（回放无据可依）。闭环=录制端内联 dataTransfer.files，回放
+    // 端 'drop' 动作经 dropFiles（dragenter/over/drop 协议）重放。
+    const pagePath = '/tmp/arena-prod-drop-replay.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html><html><body>
+      <div id="zone" style="width:200px;height:100px;border:1px solid #ccc">Drop here</div>
+      <div id="log">none</div>
+      <script>
+        var zone = document.getElementById('zone');
+        zone.addEventListener('dragover', function(e) { e.preventDefault(); });
+        zone.addEventListener('drop', function(e) {
+          e.preventDefault();
+          var f = e.dataTransfer.files[0];
+          f.text().then(function(t) {
+            document.getElementById('log').textContent = f.name + ':' + t + ':' + f.size;
+          });
+        });
+      </script>
+    </body></html>`);
+    await page.goto(`file://${pagePath}`);
+    await page.waitForTimeout(200);
+    const recording = {
+      actions: [{
+        id: 1, type: 'drop' as const, timestamp: Date.now(),
+        url: `file://${pagePath}`, pageTitle: 'drop-replay',
+        element: { tag: 'div', selector: '#zone', text: 'Drop here' },
+        value: 'note.txt',
+        files: {
+          names: ['note.txt'], count: 1, isMultiple: false,
+          fileData: [{
+            name: 'note.txt', type: 'text/plain', size: 15,
+            dataUrl: 'data:text/plain;base64,' + Buffer.from('dropped-content').toString('base64'),
+          }],
+        },
+      }],
+    };
+    const replayer = new SessionReplayer({
+      page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
+      healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-drop-${Date.now()}`),
+    });
+    await replayer.load(recording);
+    const result = await replayer.run();
+    await replayer.close();
+    const log = await page.evaluate<string>(`/* @xb-probe */ document.getElementById('log').textContent`);
+
+    expect(result.failed).toBe(0);
+    expect(log).toBe('note.txt:dropped-content:15');
+  });
+
   it('role=button 语义元素：class 全量改名后文案锚仍锁定（SPA div 按钮）', async () => {
     // SPA 主流形态：<div role="button"> 充当按钮——tagName 是 div，旧
     // text-anchor 门控（仅 button/a 标签）不会生成候选。文案锚扩展后
