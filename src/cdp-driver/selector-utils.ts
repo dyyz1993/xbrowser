@@ -135,6 +135,53 @@ export function queryAllJS(selector: string): string {
 }
 
 /**
+ * Deep querySelectorAll — collects matches across top document → open shadow
+ * roots → same-origin iframes (same traversal as queryJS, but ALL matches per
+ * root). r25: probe-layer fingerprint scoring needs every match of a
+ * candidate, not just the first.
+ */
+export function queryAllDeepJS(selector: string): string {
+  return `(${deepQueryAllIIFE})( ${JSON.stringify(queryAllMainJS(selector))} )`;
+}
+
+/** Root-scoped all-matches expression (document is shadowed by the deep runner). */
+function queryAllMainJS(selector: string): string {
+  if (selector.startsWith('xpath=')) {
+    const xpath = JSON.stringify(selector.slice(6));
+    return `(() => { const it = document.evaluate(${xpath}, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null); const r=[]; for(let i=0;i<it.snapshotLength;i++) r.push(it.snapshotItem(i)); return r; })()`;
+  }
+  if (selector.startsWith('text=') || selector.startsWith('popup-text=')) {
+    return `(() => { const el = (${queryMainJS(selector)}); return el ? [el] : []; })()`;
+  }
+  return `Array.from(document.querySelectorAll(${JSON.stringify(selector)}))`;
+}
+
+const deepQueryAllIIFE = `(function(allExpr) {
+  const run = (root) => {
+    // allExpr 返回的是数组（querySelectorAll 快照）——不要按单元素包装
+    try { return new Function('document', 'return (' + allExpr + ')')(root) || []; }
+    catch (e) { return []; }
+  };
+  const out = [];
+  const scanRoot = (root) => {
+    const found = run(root);
+    for (const el of found) out.push(el);
+    let all;
+    try { all = root.querySelectorAll('*'); } catch (e) { return; }
+    for (const el of all) {
+      if (el.shadowRoot) scanRoot(el.shadowRoot);
+      if (el.tagName === 'IFRAME') {
+        let inner = null;
+        try { inner = el.contentDocument; } catch (e) { /* cross-origin */ }
+        if (inner) scanRoot(inner);
+      }
+    }
+  };
+  scanRoot(document);
+  return out;
+})`;
+
+/**
  * Generate JS that evaluates to the nth element from a selector.
  * For xpath selectors, uses snapshotItem(index).
  * For CSS selectors, uses :nth-of-type / :last-of-type pseudo-class.

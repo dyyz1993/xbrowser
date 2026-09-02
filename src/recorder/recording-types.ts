@@ -102,6 +102,9 @@ export interface UserAction {
     /** 关联 label 的文本（r16）：for= 关联或祖先 label 包裹。行重排/虚拟
      * 列表重建后结构序失效时的内容锚。 */
     labelText?: string;
+    /** 元素尺寸（r25）：录制时 rounded rect。同指纹诱饵消歧的评分信号
+     * （仅加分不否决——响应式布局合法改变尺寸）。 */
+    size?: { w: number; h: number };
   };
   value?: string;
   key?: string;

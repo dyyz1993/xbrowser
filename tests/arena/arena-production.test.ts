@@ -441,9 +441,10 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     });
     expect(report.actionResult.success + report.actionResult.failed).toBe(3);
     expect(report.semanticCorrect).toBe(2);
-    expect(report.healed.filter(h => h.strategy === 'partial-class').length).toBe(2);
-    // r15 起文案锚点（'Go' 不匹配 decoy 的 'Cancel'）干净命中真按钮
-    expect(report.healed[2].strategy).toBe('text-anchor');
+    // r25 起逐匹配消歧：partial-class 在 [诱饵(文案软), 真按钮(干净)] 中
+    // 直接选中真按钮——三个动作全部 partial-class，无需落到 text-anchor
+    expect(report.healed.filter(h => h.strategy === 'partial-class').length).toBe(3);
+    expect(report.healed[2].strategy).toBe('partial-class');
   });
 
   it('文案改版 + 布局位移：text 软矛盾降级备选，不弃正确元素', async () => {
@@ -928,7 +929,9 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     const healed: Array<{ index: number; strategy: string }> = [];
     const replayer = new SessionReplayer({
       page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
-      healKnowledgeDir: path.join(ARCHIVE_DIR, 'heal-kb', '140-dbl'),
+      // 每次调用唯一知识库目录——固定路径会跨 vitest 调用串扰策略断言
+      //（r10 同款教训）：上一轮写回的映射本轮被 known-heal 抢先命中
+      healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-dbl-${Date.now()}`),
       onHealed: (action, strategy, index) => healed.push({ index, strategy }),
     });
     await replayer.load(recording);
@@ -938,7 +941,67 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
 
     expect(result.failed).toBe(0);
     expect(count).toBe('1');
-    expect(healed.some(h => h.strategy === 'text-anchor')).toBe(true);
+    expect(healed.map(h => h.strategy)).toContain('text-anchor');
+  });
+
+  it('尺寸指纹：同文案同 type 诱饵按尺寸消歧（probe 级多匹配评分）', async () => {
+    // 诱饵与真按钮同 class 子串/同文案/type，仅尺寸不同（320x90 vs 实际），
+    // 文档序在前、点击清空字段。无逐匹配评分时 partial-class 首匹配=诱饵
+    // （指纹全过）→清空→0/2；有评分时真按钮（尺寸匹配 +1）胜出→2/2。
+    const report = await runLevel('none', 150, {
+      expected: { search: 'arena search', qty: '3' },
+      recordingFactory: async (pfx, targetPath) => {
+        const measured = await page.evaluate<{ w: number; h: number }>(`/* @xb-probe */ (function(){
+          var r = document.querySelector('[data-arena="go"]').getBoundingClientRect();
+          return { w: Math.round(r.width), h: Math.round(r.height) };
+        })()`);
+        let cid = 0;
+        const mk = (
+          type: UserAction['type'], selector: string,
+          value?: string, text?: string,
+        ): UserAction => {
+          cid += 1;
+          return {
+            id: cid, type, timestamp: Date.now() + cid * 1000,
+            url: `file://${targetPath}`, pageTitle: `Arena ${pfx}`,
+            element: {
+              tag: selector.endsWith('btn-secondary') ? 'button' : 'input',
+              selector, text: text ?? '',
+              ...(selector.endsWith('btn-secondary')
+                ? { type: 'button', size: measured }
+                : {}),
+            },
+            ...(value !== undefined ? { value } : {}),
+          };
+        };
+        return {
+          actions: [
+            mk('input', '.search-box', 'arena search'),
+            mk('input', '.qty-box', '3'),
+            mk('click', '.btn-secondary', undefined, 'Go'),
+          ],
+        };
+      },
+      preMutation: `
+        document.querySelectorAll('[class]').forEach(function(el){
+          el.className = el.className
+            .replace('search-box', 'search-box-v2')
+            .replace('qty-box', 'qty-box-v2')
+            .replace('btn-secondary', 'btn-secondary-v2');
+        });
+        var clone = document.createElement('button');
+        clone.className = 'btn-secondary-v2'; clone.type = 'button'; clone.textContent = 'Go';
+        clone.style.cssText = 'position:fixed;bottom:0;left:0;width:320px;height:90px;';
+        clone.addEventListener('click', function(){
+          document.querySelectorAll('[data-arena]').forEach(function(e){ e.value = ''; });
+        });
+        document.body.insertBefore(clone, document.body.firstChild);
+      `,
+    });
+    expect(report.actionResult.success + report.actionResult.failed).toBe(3);
+    expect(report.actionResult.failed).toBe(0);
+    expect(report.semanticCorrect).toBe(2);
+    expect(report.healed[2].strategy).toBe('partial-class');
   });
 
   it('生产归档完整（含 semanticRate 与 healed 明细）', () => {

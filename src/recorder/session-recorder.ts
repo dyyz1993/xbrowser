@@ -258,6 +258,16 @@ const ACTION_SIGNAL_SCRIPT = `
       if (lbl) labelText = (lbl.textContent || '').trim().substring(0, 40);
     } catch(e) { /* skip */ }
 
+    // Element size (r25): rounded rect at record time — scoring signal for
+    // fingerprint disambiguation between same-fingerprint decoys.
+    var size = null;
+    try {
+      var szR = el.getBoundingClientRect();
+      if (szR.width > 0 || szR.height > 0) {
+        size = { w: Math.round(szR.width), h: Math.round(szR.height) };
+      }
+    } catch(e) { /* skip */ }
+
     return {
       tag: tag,
       selector: selector,
@@ -273,6 +283,7 @@ const ACTION_SIGNAL_SCRIPT = `
       href: el.getAttribute('href') ? el.getAttribute('href').substring(0, 80) : undefined,
       ordinal: ordinal || undefined,
       labelText: labelText || undefined,
+      size: size || undefined,
     };
   }
 

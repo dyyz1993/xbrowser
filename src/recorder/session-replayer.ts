@@ -9,7 +9,7 @@
 
 import type { UserAction, RecordingData } from './session-recorder.js';
 import type { XBPage, XBFilePayload } from '../cdp-driver/types.js';
-import { queryJS } from '../cdp-driver/selector-utils.js';
+import { queryJS, queryAllDeepJS } from '../cdp-driver/selector-utils.js';
 import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -567,23 +567,11 @@ export class SessionReplayer {
       candidates.push({ sel: `[class*="${coreId}"]`, strategy: 'partial-class' });
     }
 
-    // 2e. 录制元数据候选（S203 cron r2）：element.type/placeholder/ariaLabel
-    // 是录制器实捕的属性快照，不随 id/class/name 变异消失——id 随机化后
-    // coreId 全灭时仍能确定性消歧（type=text vs password vs email 逐字段唯一），
-    // 且内容定位不依赖文档序，shuffleForm 重排不影响。
-    if (el?.type) {
-      candidates.push({ sel: `${tagName}[type="${el.type}"]`, strategy: 'meta-type' });
-    }
-    if (el?.placeholder) {
-      candidates.push({ sel: `[placeholder="${el.placeholder}"]`, strategy: 'meta-placeholder' });
-    }
-    if (el?.ariaLabel) {
-      candidates.push({ sel: `[aria-label="${el.ariaLabel}"]`, strategy: 'meta-aria' });
-    }
-
     // 2g. 文案锚点（r15）：class/id 全量替换（非后缀装饰）是改版常态，而
     // 按钮文案极少动——录制文案是最强内容锚。仅对 button/a 等文本承载
     // 元素生成（input 的录制 text 是当时的 value，不可靠）。
+    // r25 排序：内容锚（text/label）先于 meta 属性——内容是更强的身份证据，
+    // 同指纹多匹配时 meta 型候选易被同 type 元素稀释。
     const anchorText = (el?.text || '').trim().replace(/"/g, '');
     if (anchorText && (tagName === 'button' || tagName === 'a')) {
       candidates.push({
@@ -605,6 +593,20 @@ export class SessionReplayer {
         sel: `xpath=//${tagName}[@id=(//label[contains(normalize-space(.), "${labelText}")]/@for)]`,
         strategy: 'label-for-anchor',
       });
+    }
+
+    // 2e. 录制元数据候选（S203 cron r2）：element.type/placeholder/ariaLabel
+    // 是录制器实捕的属性快照，不随 id/class/name 变异消失——id 随机化后
+    // coreId 全灭时仍能确定性消歧（type=text vs password vs email 逐字段唯一），
+    // 且内容定位不依赖文档序，shuffleForm 重排不影响。
+    if (el?.type) {
+      candidates.push({ sel: `${tagName}[type="${el.type}"]`, strategy: 'meta-type' });
+    }
+    if (el?.placeholder) {
+      candidates.push({ sel: `[placeholder="${el.placeholder}"]`, strategy: 'meta-placeholder' });
+    }
+    if (el?.ariaLabel) {
+      candidates.push({ sel: `[aria-label="${el.ariaLabel}"]`, strategy: 'meta-aria' });
     }
 
     // 3. type-based（input[type=text] 等不随 DOM 变异改变）
@@ -652,50 +654,121 @@ export class SessionReplayer {
     ): Promise<{ kind: 'hit' | 'alt'; hit: { selector: string; strategy: string } } | null> => {
       const probeSels = [...new Set(list.map(c => c.sel))];
       if (probeSels.length === 0) return null;
-      let hitSels: string[] = [];
-      // r17: 探测表达式用 queryJS 生成——与执行层同源深查（shadow DOM/
-      // same-origin iframe/xpath=），消除"探测层盲区误判 miss"的层间不一致
-      const probeExprs = JSON.stringify(probeSels.map(s => queryJS(s)));
+      // r25: 指纹逐匹配评分——每候选取深查全部匹配，页内按录制指纹打分：
+      //   type/placeholder 正性矛盾 = -1 淘汰；text 正性矛盾 = 1（软）；
+      //   干净 = 10 + labelText 命中 +2 + 尺寸 ±40% 内 +1。
+      // 取每候选最优匹配，按候选优先级取第一个含非淘汰匹配者；最优匹配
+      // 非首个时用组合树 nth-of-type 路径钉住。解决"首个匹配是同指纹诱饵"
+      // 的整候选误选（旧逻辑只看每个候选的第一个匹配）。
+      const probeExprs = JSON.stringify(probeSels.map(s => queryAllDeepJS(s)));
+      const metaJson = JSON.stringify({
+        type: el?.type ?? null,
+        placeholder: el?.placeholder ?? null,
+        text: (el?.text || '').trim(),
+        labelText: (el?.labelText || '').trim(),
+        size: el?.size ?? null,
+      });
+      const probeSrc = `
+        (function() {
+          var sels = ${JSON.stringify(probeSels)};
+          var meta = ${metaJson};
+          var pairs = ${probeExprs};
+          function pathOf(m) {
+            var root = m.getRootNode ? m.getRootNode() : null;
+            if (root && root.nodeType !== 9) return null; // 阴影/iframe——路径不跨界，退回原选择器
+            var parts = [];
+            var cur = m;
+            while (cur && cur !== document.body) {
+              var parent = cur.parentElement;
+              if (!parent) return null;
+              var same = Array.prototype.filter.call(parent.children, function(c) { return c.tagName === cur.tagName; });
+              parts.unshift(cur.tagName.toLowerCase() + ':nth-of-type(' + (same.indexOf(cur) + 1) + ')');
+              cur = parent;
+            }
+            return parts.length ? parts.join(' > ') : null;
+          }
+          function scoreMatch(m) {
+            var mt = m.getAttribute ? m.getAttribute('type') : null;
+            var mp = m.getAttribute ? m.getAttribute('placeholder') : null;
+            var mtext = (String(m.value ?? '') || m.textContent || '').trim().slice(0, 80);
+            if (meta.type && mt && mt !== meta.type) return -1;
+            if (meta.placeholder && mp && mp !== meta.placeholder) return -1;
+            var s = 10;
+            if (meta.text && mtext && mtext.indexOf(meta.text) === -1) s = 1;
+            if (meta.labelText) {
+              var label = '';
+              try {
+                var lb = m.closest ? m.closest('label') : null;
+                if (lb) label = (lb.textContent || '').trim();
+              } catch (e) {}
+              if (label && label.indexOf(meta.labelText) !== -1) s += 2;
+            }
+            if (meta.size) {
+              var r = m.getBoundingClientRect();
+              if (r.width > 0 && r.height > 0) {
+                var dw = Math.abs(r.width - meta.size.w) / Math.max(meta.size.w, 1);
+                var dh = Math.abs(r.height - meta.size.h) / Math.max(meta.size.h, 1);
+                if (dw <= 0.4 && dh <= 0.4) s += 1;
+              }
+            }
+            return s;
+          }
+          var best = null;
+          for (var i = 0; i < sels.length; i++) {
+            var matches = [];
+            try { matches = (new Function('return (' + pairs[i] + ')'))() || []; } catch (e) { continue; }
+            var cap = Math.min(matches.length, 20);
+            var candBest = null;
+            for (var k = 0; k < cap; k++) {
+              var m = matches[k];
+              if (!m) continue;
+              var sc = scoreMatch(m);
+              if (sc < 0) continue;
+              if (!candBest || sc > candBest.score) {
+                candBest = { score: sc, k: k, soft: sc <= 1 };
+              }
+            }
+            if (candBest && (!best || candBest.score > best.score)) {
+              var pinned = candBest.k > 0 ? pathOf(matches[candBest.k]) : null;
+              if (candBest.k === 0 || pinned) {
+                best = { selIndex: i, k: candBest.k, pinned: pinned, soft: candBest.soft };
+              }
+            }
+          }
+          return best;
+        })()
+      `;
+      let best: { selIndex: number; k: number; pinned: string | null; soft: boolean } | null = null;
       for (let attempt = 0; attempt < 5; attempt++) {
         if (attempt > 0) await new Promise(r => setTimeout(r, 200));
-        hitSels = await page.evaluate<string[]>(`
-          (function() {
-            var pairs = ${probeExprs};
-            var sels = ${JSON.stringify(probeSels)};
-            var hits = [];
-            for (var i = 0; i < pairs.length; i++) {
-              try { if ((new Function('return (' + pairs[i] + ')'))()) hits.push(sels[i]); } catch (e) { /* invalid selector */ }
-            }
-            return hits;
-          })()
-        `).catch(() => []);
-        if (hitSels.length > 0) break;
+        best = await page
+          .evaluate<{ selIndex: number; k: number; pinned: string | null; soft: boolean } | null>(probeSrc)
+          .catch((e) => {
+            if (process.env.XBROWSER_HEAL_DEBUG) console.error('[heal] probe evaluate error:', e instanceof Error ? e.message.split('\n')[0] : String(e).slice(0, 200));
+            return null;
+          });
+        if (best) break;
       }
-      let alt: { selector: string; strategy: string } | null = null;
-      const needsHitTest = action.type === 'click' || action.type === 'cdp-click';
-      for (const c of list) {
-        if (!hitSels.includes(c.sel)) continue;
-        try {
-          await page.waitForSelector(c.sel, { state: 'visible', timeout: Math.min(timeout, 1000) });
-          const verdict = await this.verifyHealHit(action, c.sel);
-          if (process.env.XBROWSER_HEAL_DEBUG) console.error(`[heal] cand=${c.sel} verdict=${verdict}`);
-          if (verdict === 'hard') continue; // 指纹硬矛盾——疑似 wrong-target
-          if (verdict === 'soft') {
-            // 文案改版类软矛盾：记为备选，继续找干净命中（r8）
-            if (!alt) alt = { selector: c.sel, strategy: c.strategy };
-            continue;
-          }
-          if (needsHitTest) {
-            const occ = await this.isClickOccluded(c.sel);
-            if (process.env.XBROWSER_HEAL_DEBUG) console.error(`[heal] cand=${c.sel} occluded=${occ}`);
-            if (occ) continue; // 遮挡（r9）
-          }
-          return { kind: 'hit', hit: { selector: c.sel, strategy: c.strategy } };
-        } catch {
-          // 存在但不可见/确认失败——试下一个命中
-        }
+      if (!best) return null;
+
+      const originSel = probeSels[best.selIndex];
+      const finalSel = best.pinned ?? originSel;
+      const strategyName = list.find(c => c.sel === originSel)?.strategy ?? 'probe';
+      if (process.env.XBROWSER_HEAL_DEBUG) {
+        console.error(`[heal] cand=${finalSel} (via ${originSel}) soft=${best.soft}`);
       }
-      return alt ? { kind: 'alt', hit: alt } : null;
+      try {
+        await page.waitForSelector(finalSel, { state: 'visible', timeout: Math.min(timeout, 1000) });
+        // click 类动作遮挡确认（r9）——pinned 元素被盖时整层放弃，交给坐标/盲位置
+        const needsHitTest = action.type === 'click' || action.type === 'cdp-click';
+        if (needsHitTest && await this.isClickOccluded(finalSel)) return null;
+        return {
+          kind: best.soft ? 'alt' : 'hit',
+          hit: { selector: finalSel, strategy: strategyName },
+        };
+      } catch {
+        return null;
+      }
     };
 
     const semanticHit = await tryProbe(semanticList);
