@@ -357,6 +357,35 @@ describe('原生打断源压制（r29）', () => {
     fs.rmSync(p8, { force: true });
   });
 
+  it('sup-W3 Bluetooth stub：requestDevice 不弹配对框且页面 catch 分支接管', async () => {
+    // 攻击形态：navigator.bluetooth.requestDevice({acceptAllDevices})
+    // 弹浏览器原生蓝牙配对框（CDP 无法拦截），headless 下 promise 挂起。
+    const p9 = path.join(os.tmpdir(), `ble-${Date.now()}.html`);
+    fs.writeFileSync(p9, `<!DOCTYPE html><html><body>
+      <button id="go">Pair</button>
+      <div id="blog">idle</div>
+      <script>
+        document.getElementById('go').addEventListener('click', async function() {
+          try {
+            var dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true });
+            document.getElementById('blog').textContent = 'device:' + (dev && 'got');
+          } catch (e) {
+            document.getElementById('blog').textContent = 'catch:' + e.name;
+          }
+        });
+      </script>
+    </body></html>`);
+    await page.goto(`file://${p9}`);
+    await page.waitForTimeout(200);
+    await page.click('#go');
+    await page.waitForTimeout(500);
+    const log = await page.evaluate<string>(`document.getElementById('blog').textContent`);
+    const stubbed = await page.evaluate<boolean>(`window.__xb_ble_stubbed === true`);
+    expect(stubbed).toBe(true);
+    expect(log).toBe('catch:NotFoundError');
+    fs.rmSync(p9, { force: true });
+  });
+
   it('sup-s11 beforeunload 语义：默认 accept（离开），dismiss 尽力而为', async () => {
     // 攻击形态：页面挂 beforeunload 守卫 + 旧逻辑对一切对话框 accept:false
     // → beforeunload 的 dismiss = 取消导航——回放录制的"离开页面"流被静默

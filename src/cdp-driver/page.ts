@@ -245,6 +245,16 @@ export class XBPageImpl implements XBPage {
         '    window.__xb_usb_stubbed = true;',
         '  }',
         '} catch (e) {}',
+        // sup-W3: WebAPI stub（3/7 Bluetooth）——requestDevice 弹原生蓝牙
+        // 配对框，同 Serial/USB pattern：rejected Promise（NotFoundError）。
+        'try {',
+        '  if (navigator.bluetooth) {',
+        '    navigator.bluetooth.requestDevice = function() {',
+        '      return Promise.reject(new DOMException("xbrowser ble stub", "NotFoundError"));',
+        '    };',
+        '    window.__xb_ble_stubbed = true;',
+        '  }',
+        '} catch (e) {}',
       ].join('\n'),
     }, this.sessionId).catch(() => {});
 
