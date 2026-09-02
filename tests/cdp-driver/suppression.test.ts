@@ -449,6 +449,37 @@ describe('原生打断源压制（r29）', () => {
     fs.rmSync(p11, { force: true });
   });
 
+  it('sup-W6 IdleDetector stub：start 不弹权限框且页面 catch 分支接管', async () => {
+    // 攻击形态：IdleDetector.start() 弹权限气泡（permission 授权后还要
+    // 用户确认 idle 检测），headless 下 promise 挂起——流程死锁。防御：
+    // init script stub 返回 rejected（NotAllowedError），catch 接管。
+    const p12 = path.join(os.tmpdir(), `idle-${Date.now()}.html`);
+    fs.writeFileSync(p12, `<!DOCTYPE html><html><body>
+      <button id="go">Detect</button>
+      <div id="ilog">idle</div>
+      <script>
+        document.getElementById('go').addEventListener('click', async function() {
+          try {
+            var detector = new IdleDetector();
+            await detector.start();
+            document.getElementById('ilog').textContent = 'started:' + detector.state;
+          } catch (e) {
+            document.getElementById('ilog').textContent = 'catch:' + e.name;
+          }
+        });
+      </script>
+    </body></html>`);
+    await page.goto(`file://${p12}`);
+    await page.waitForTimeout(200);
+    await page.click('#go');
+    await page.waitForTimeout(500);
+    const log = await page.evaluate<string>(`document.getElementById('ilog').textContent`);
+    const stubbed = await page.evaluate<boolean>(`window.__xb_idle_stubbed === true`);
+    expect(stubbed).toBe(true);
+    expect(log).toBe('catch:NotAllowedError');
+    fs.rmSync(p12, { force: true });
+  });
+
   it('sup-s11 beforeunload 语义：默认 accept（离开），dismiss 尽力而为', async () => {
     // 攻击形态：页面挂 beforeunload 守卫 + 旧逻辑对一切对话框 accept:false
     // → beforeunload 的 dismiss = 取消导航——回放录制的"离开页面"流被静默

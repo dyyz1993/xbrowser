@@ -282,6 +282,17 @@ export class XBPageImpl implements XBPage {
         '    window.__xb_wakelock_stubbed = true;',
         '  }',
         '} catch (e) {}',
+        // sup-W6: WebAPI stub（6/7 IdleDetector）——start() 需权限气泡授权
+        // 才能继续，headless 下挂起。stub 返回 rejected（NotAllowedError），
+        // 页面 catch 分支接管。
+        'try {',
+        '  if (window.IdleDetector) {',
+        '    IdleDetector.start = function() {',
+        '      return Promise.reject(new DOMException("xbrowser idle stub", "NotAllowedError"));',
+        '    };',
+        '    window.__xb_idle_stubbed = true;',
+        '  }',
+        '} catch (e) {}',
       ].join('\n'),
     }, this.sessionId).catch(() => {});
 
