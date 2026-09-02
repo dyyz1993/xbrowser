@@ -113,4 +113,58 @@ describe('原生打断源压制（r29）', () => {
     expect(log).toBe('note.txt:dropped-content:15');
     fs.rmSync(p3, { force: true });
   });
+
+  it('sup-s6 file input 变种：multiple 多文件注入全部送达', async () => {
+    const p4 = path.join(os.tmpdir(), `multi-${Date.now()}.html`);
+    fs.writeFileSync(p4, `<!DOCTYPE html><html><body>
+      <input type="file" id="mf" multiple />
+      <div id="log">none</div>
+      <script>
+        document.getElementById('mf').addEventListener('change', function() {
+          var names = Array.from(this.files).map(function(f) { return f.name; });
+          document.getElementById('log').textContent = names.sort().join('|');
+        });
+      </script>
+    </body></html>`);
+    await page.goto(`file://${p4}`);
+    await page.waitForTimeout(200);
+    await page.setInputFiles('#mf', [
+      { name: 'b.txt', mimeType: 'text/plain', buffer: Buffer.from('B') },
+      { name: 'a.txt', mimeType: 'text/plain', buffer: Buffer.from('A') },
+      { name: 'c.txt', mimeType: 'text/plain', buffer: Buffer.from('C') },
+    ]);
+    await page.waitForTimeout(300);
+    const log = await page.evaluate<string>(`document.getElementById('log').textContent`);
+    expect(log).toBe('a.txt|b.txt|c.txt');
+    fs.rmSync(p4, { force: true });
+  });
+
+  it('sup-s6 file input 变种：webkitdirectory 文件送达（relativePath 为已知限制）', async () => {
+    const p5 = path.join(os.tmpdir(), `wkd-${Date.now()}.html`);
+    fs.writeFileSync(p5, `<!DOCTYPE html><html><body>
+      <input type="file" id="wd" webkitdirectory />
+      <div id="log">none</div>
+      <script>
+        document.getElementById('wd').addEventListener('change', function() {
+          var parts = Array.from(this.files).map(function(f) {
+            return f.name + '@' + (f.webkitRelativePath || '');
+          });
+          document.getElementById('log').textContent = parts.sort().join('|');
+        });
+      </script>
+    </body></html>`);
+    await page.goto(`file://${p5}`);
+    await page.waitForTimeout(200);
+    await page.setInputFiles('#wd', [
+      { name: 'readme.md', mimeType: 'text/markdown', buffer: Buffer.from('# hi') },
+      { name: 'main.js', mimeType: 'text/javascript', buffer: Buffer.from('x') },
+    ]);
+    await page.waitForTimeout(300);
+    const log = await page.evaluate<string>(`document.getElementById('log').textContent`);
+    // DataTransfer 构造的 File 无法携带 webkitRelativePath（只读属性，
+    // JS 无标准赋值途径）——文件本身可送达，目录树感知按站端 fallback
+    // （name 匹配/无目录模式）工作。锁定"送达 + 空路径"为已知行为。
+    expect(log).toBe('main.js@|readme.md@');
+    fs.rmSync(p5, { force: true });
+  });
 });
