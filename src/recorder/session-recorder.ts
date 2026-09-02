@@ -268,6 +268,15 @@ const ACTION_SIGNAL_SCRIPT = `
       }
     } catch(e) { /* skip */ }
 
+    // Row text (r27): textContent of the closest table/list row. In virtual
+    // lists and sortable tables the row re-indexes — the row TEXT travels
+    // with the content, giving inputs a content anchor that survives reorder.
+    var rowText = '';
+    try {
+      var row = el.closest ? el.closest('tr,li') : null;
+      if (row) rowText = (row.textContent || '').trim().replace(/\s+/g, ' ').substring(0, 40);
+    } catch(e) { /* skip */ }
+
     return {
       tag: tag,
       selector: selector,
@@ -284,6 +293,7 @@ const ACTION_SIGNAL_SCRIPT = `
       ordinal: ordinal || undefined,
       labelText: labelText || undefined,
       size: size || undefined,
+      rowText: rowText || undefined,
     };
   }
 

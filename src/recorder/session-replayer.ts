@@ -595,6 +595,20 @@ export class SessionReplayer {
       });
     }
 
+    // 2i. 行文本锚点（r27）：表格/列表行（tr/li）重排后 ordinal 失效，行内
+    // 文本随内容移动——label 缺失的行式表单（表格单元格里的 input）靠它锚定。
+    const rowText = (el?.rowText || '').trim().replace(/"/g, '');
+    if (rowText) {
+      candidates.push({
+        sel: `xpath=//tr[contains(normalize-space(.), "${rowText}")]//${tagName}`,
+        strategy: 'row-anchor',
+      });
+      candidates.push({
+        sel: `xpath=//li[contains(normalize-space(.), "${rowText}")]//${tagName}`,
+        strategy: 'row-anchor',
+      });
+    }
+
     // 2e. 录制元数据候选（S203 cron r2）：element.type/placeholder/ariaLabel
     // 是录制器实捕的属性快照，不随 id/class/name 变异消失——id 随机化后
     // coreId 全灭时仍能确定性消歧（type=text vs password vs email 逐字段唯一），

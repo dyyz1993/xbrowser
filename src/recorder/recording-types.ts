@@ -105,6 +105,9 @@ export interface UserAction {
     /** 元素尺寸（r25）：录制时 rounded rect。同指纹诱饵消歧的评分信号
      * （仅加分不否决——响应式布局合法改变尺寸）。 */
     size?: { w: number; h: number };
+    /** 所在行文本（r27）：closest('tr,li') 的 textContent 前 40 字符。
+     * 表格/列表行重排后结构序失效时的内容锚（label 锚的行推广）。 */
+    rowText?: string;
   };
   value?: string;
   key?: string;
