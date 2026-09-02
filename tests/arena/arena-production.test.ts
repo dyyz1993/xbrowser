@@ -944,6 +944,59 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(healed.map(h => h.strategy)).toContain('text-anchor');
   });
 
+  it('same-origin iframe：回放穿透 iframe 填充，改名后 partial-id 自愈', async () => {
+    // srcdoc iframe 内的表单——queryJS 深查可达、actionability 的
+    // iframe 坐标偏移保证填充落点。锁定端到端能力（录制→回放→自愈）。
+    const pagePath = '/tmp/arena-prod-iframe.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html><html><body>
+      <iframe style="width:420px;height:120px" srcdoc='<form><input id="iuser" class="iu" data-arena="iuser" /><input id="iqty" class="iq" data-arena="iqty" /></form>'></iframe>
+    </body></html>`);
+    await page.goto(`file://${pagePath}`);
+    await page.waitForTimeout(300);
+    const recording = {
+      actions: [
+        {
+          id: 1, type: 'input' as const, timestamp: Date.now() + 1000,
+          url: `file://${pagePath}`, pageTitle: 'iframe',
+          element: { tag: 'input', selector: '#iuser', text: '' },
+          value: 'iframe-user',
+        },
+        {
+          id: 2, type: 'input' as const, timestamp: Date.now() + 2000,
+          url: `file://${pagePath}`, pageTitle: 'iframe',
+          element: { tag: 'input', selector: '#iqty', text: '' },
+          value: '9',
+        },
+      ],
+    };
+    await page.evaluate(`/* @xb-probe */ (function(){
+      var d = document.querySelector('iframe').contentDocument;
+      d.getElementById('iuser').id = 'iuser-v2';
+      d.getElementById('iqty').id = 'iqty-v2';
+    })()`);
+    const healed: Array<{ index: number; strategy: string }> = [];
+    const replayer = new SessionReplayer({
+      page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
+      healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-iframe-${Date.now()}`),
+      onHealed: (action, strategy, index) => healed.push({ index, strategy }),
+    });
+    await replayer.load(recording);
+    const result = await replayer.run();
+    await replayer.close();
+    const values = await page.evaluate<Record<string, string>>(`/* @xb-probe */ (function(){
+      var d = document.querySelector('iframe').contentDocument;
+      return {
+        iuser: d.querySelector('[data-arena="iuser"]').value,
+        iqty: d.querySelector('[data-arena="iqty"]').value,
+      };
+    })()`);
+    console.log(`[iframe] iuser=${values.iuser} iqty=${values.iqty} healed=${JSON.stringify(healed.map(h => h.strategy))}`);
+    expect(result.failed).toBe(0);
+    expect(values.iuser).toBe('iframe-user');
+    expect(values.iqty).toBe('9');
+    expect(healed.filter(h => h.strategy === 'partial-id').length).toBe(2);
+  });
+
   it('row-anchor：表格行重排 + class 全量改名后行文本仍锁定单元格控件', async () => {
     // 无 label/placeholder/type 的表格行 input——行对调后 ordinal/位置候选
     // 全部失效，行文本（'张三'/'李四'）是唯一随内容移动的信号。
