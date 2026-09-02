@@ -296,6 +296,37 @@ describe('原生打断源压制（r29）', () => {
     expect(rpShape.thenable).toBe(true);
   });
 
+  it('sup-W1 Serial stub：requestPort 不弹选择器且页面 catch 分支接管', async () => {
+    // 攻击形态：navigator.serial.requestPort() 弹浏览器原生串口选择器
+    // （CDP 无法拦截），headless 下 promise 挂起——页面 catch 分支永远
+    // 不执行，log 停在 idle。防御：init script stub 返回 rejected
+    // Promise（NotFoundError），页面 catch 接管、流程继续。
+    const p7 = path.join(os.tmpdir(), `serial-${Date.now()}.html`);
+    fs.writeFileSync(p7, `<!DOCTYPE html><html><body>
+      <button id="go">Connect</button>
+      <div id="log">idle</div>
+      <script>
+        document.getElementById('go').addEventListener('click', async function() {
+          try {
+            var port = await navigator.serial.requestPort();
+            document.getElementById('log').textContent = 'port:' + (port && 'got');
+          } catch (e) {
+            document.getElementById('log').textContent = 'catch:' + e.name;
+          }
+        });
+      </script>
+    </body></html>`);
+    await page.goto(`file://${p7}`);
+    await page.waitForTimeout(200);
+    await page.click('#go');
+    await page.waitForTimeout(500);
+    const log = await page.evaluate<string>(`document.getElementById('log').textContent`);
+    const stubbed = await page.evaluate<boolean>(`window.__xb_serial_stubbed === true`);
+    expect(stubbed).toBe(true);
+    expect(log).toBe('catch:NotFoundError');
+    fs.rmSync(p7, { force: true });
+  });
+
   it('sup-s11 beforeunload 语义：默认 accept（离开），dismiss 尽力而为', async () => {
     // 攻击形态：页面挂 beforeunload 守卫 + 旧逻辑对一切对话框 accept:false
     // → beforeunload 的 dismiss = 取消导航——回放录制的"离开页面"流被静默

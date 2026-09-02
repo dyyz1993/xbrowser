@@ -223,6 +223,18 @@ export class XBPageImpl implements XBPage {
         '  window.Notification = XBN;',
         '  window.__xb_notification_suppressed = true;',
         '} catch (e) {}',
+        // sup-W1: WebAPI 选择器/配对框家族 stub（1/7 Serial）——
+        // navigator.serial.requestPort() 弹浏览器原生串口选择器（CDP 无法
+        // 拦截），headless 下 promise 挂起。stub 返回 rejected Promise
+        // （NotFoundError），页面 catch 分支接管、流程继续。
+        'try {',
+        '  if (navigator.serial) {',
+        '    navigator.serial.requestPort = function() {',
+        '      return Promise.reject(new DOMException("xbrowser serial stub", "NotFoundError"));',
+        '    };',
+        '    window.__xb_serial_stubbed = true;',
+        '  }',
+        '} catch (e) {}',
       ].join('\n'),
     }, this.sessionId).catch(() => {});
 
