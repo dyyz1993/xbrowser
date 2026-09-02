@@ -98,14 +98,31 @@ export async function launch(options: XBLaunchOptions = {}): Promise<LaunchResul
   const conn = new CDPConnection(wsEndpoint);
   await conn.ready();
 
+  // sup-W4: UA-CH 档案按真实二进制版本派生（Chrome 自动升级免疫）——
+  // Browser.getVersion 拿 product 版本串（spawn 与 attach 双路径都覆盖）；
+  // 用户显式 uaChProfile 优先。S190 一致性探针即此脱同步的检测面。
+  let stealthOpts: { stealthConfig: Partial<import('./stealth.js').StealthConfig> } | undefined;
+  try {
+    const bv = await conn.send<{ product: string }>('Browser.getVersion');
+    const m = bv.product.match(/(\d+)\.(\d+)\.(\d+)\.(\d+)/);
+    if (m && !options.stealthConfig?.uaChProfile) {
+      const { deriveUaChProfileForBinary } = await import('./stealth.js');
+      stealthOpts = { stealthConfig: { uaChProfile: deriveUaChProfileForBinary(m[0], m[1]) } };
+    }
+  } catch { /* 派生失败回退默认档 */ }
+  if (options.stealthConfig) {
+    stealthOpts = {
+      stealthConfig: { ...(stealthOpts?.stealthConfig ?? {}), ...options.stealthConfig },
+    };
+  }
+
   // Pass the ORIGINAL (HTTP) endpoint to the browser so discoverContexts()
   // can fall back to HTTP /json/list when Target.getTargets doesn't return
   // page-type targets (e.g. cdp-tunnel proxies).
   const httpEndpoint = options.cdpEndpoint && !options.cdpEndpoint.startsWith('ws')
     ? options.cdpEndpoint
     : undefined;
-  const browser = new XBBrowserImpl(conn, childProcess, tmpDir, httpEndpoint,
-    options.stealthConfig ? { stealthConfig: options.stealthConfig } : undefined);
+  const browser = new XBBrowserImpl(conn, childProcess, tmpDir, httpEndpoint, stealthOpts);
 
   return { browser, wsEndpoint };
 }

@@ -386,6 +386,35 @@ describe('原生打断源压制（r29）', () => {
     fs.rmSync(p9, { force: true });
   });
 
+  it('sup-W4 HID stub：requestDevices 不弹配对框且页面 catch 分支接管', async () => {
+    // 攻击形态：navigator.hid.requestDevices({filters}) 弹浏览器原生
+    // HID 设备选择器（CDP 无法拦截），headless 下 promise 挂起。
+    const p10 = path.join(os.tmpdir(), `hid-${Date.now()}.html`);
+    fs.writeFileSync(p10, `<!DOCTYPE html><html><body>
+      <button id="go">Pair</button>
+      <div id="hlog">idle</div>
+      <script>
+        document.getElementById('go').addEventListener('click', async function() {
+          try {
+            var devs = await navigator.hid.requestDevices({ filters: [] });
+            document.getElementById('hlog').textContent = 'devices:' + devs.length;
+          } catch (e) {
+            document.getElementById('hlog').textContent = 'catch:' + e.name;
+          }
+        });
+      </script>
+    </body></html>`);
+    await page.goto(`file://${p10}`);
+    await page.waitForTimeout(200);
+    await page.click('#go');
+    await page.waitForTimeout(500);
+    const log = await page.evaluate<string>(`document.getElementById('hlog').textContent`);
+    const stubbed = await page.evaluate<boolean>(`window.__xb_hid_stubbed === true`);
+    expect(stubbed).toBe(true);
+    expect(log).toBe('catch:NotFoundError');
+    fs.rmSync(p10, { force: true });
+  });
+
   it('sup-s11 beforeunload 语义：默认 accept（离开），dismiss 尽力而为', async () => {
     // 攻击形态：页面挂 beforeunload 守卫 + 旧逻辑对一切对话框 accept:false
     // → beforeunload 的 dismiss = 取消导航——回放录制的"离开页面"流被静默

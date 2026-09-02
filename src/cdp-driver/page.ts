@@ -255,6 +255,16 @@ export class XBPageImpl implements XBPage {
         '    window.__xb_ble_stubbed = true;',
         '  }',
         '} catch (e) {}',
+        // sup-W4: WebAPI stub（4/7 HID）——requestDevices 弹原生 HID 设备
+        // 选择器，同家族 pattern：rejected Promise（NotFoundError）。
+        'try {',
+        '  if (navigator.hid) {',
+        '    navigator.hid.requestDevices = function() {',
+        '      return Promise.reject(new DOMException("xbrowser hid stub", "NotFoundError"));',
+        '    };',
+        '    window.__xb_hid_stubbed = true;',
+        '  }',
+        '} catch (e) {}',
       ].join('\n'),
     }, this.sessionId).catch(() => {});
 

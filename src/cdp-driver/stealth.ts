@@ -94,8 +94,10 @@ export interface StealthConfig {
   wheelDecayRate: number;
 }
 
+// S191: macOS arm64 + Chrome 151 真实采样（来源：登录桥只读通道）。
+// sup-W4: UA-CH 版本字段经 deriveUaChProfileForBinary 在启动时用真实
+// 二进制版本覆盖——Chrome 自动升级不再造成 UA vs fullVersion 脱同步。
 export const DEFAULT_STEALTH_CONFIG: StealthConfig = {
-  // S191: macOS arm64 + Chrome 151 真实采样（来源：登录桥只读通道）
   uaChProfile: {
     brands: [
       { brand: 'Not=A?Brand', version: '99' },
@@ -133,6 +135,32 @@ export const DEFAULT_STEALTH_CONFIG: StealthConfig = {
   wheelPeak: 180,
   wheelDecayRate: 0.4,
 };
+
+/**
+ * sup-W4: 用真实二进制版本派生 UA-CH 档案——Chrome 自动升级后，硬编码
+ * 采样档（151）与真实 UA（152）脱同步，S190 一致性探针会抓到。GREASE
+ * 品牌（Not=A?Brand，version 99）按规范保持不变，非 GREASE 品牌与
+ * fullVersion 全部替换为真实版本。
+ */
+export function deriveUaChProfileForBinary(
+  full: string,
+  major: string,
+): StealthConfig['uaChProfile'] {
+  const base = DEFAULT_STEALTH_CONFIG.uaChProfile;
+  if (!base) return undefined;
+  const notGrease = (b: { brand: string; version: string }): boolean =>
+    !b.brand.includes('Not');
+  return {
+    ...base,
+    brands: base.brands.map((b) =>
+      notGrease(b) ? { ...b, version: major } : b,
+    ),
+    uaFullVersion: full,
+    fullVersionList: base.fullVersionList.map((b) =>
+      notGrease(b) ? { ...b, version: full } : b,
+    ),
+  };
+}
 
 // ============================================================
 // Utility functions
