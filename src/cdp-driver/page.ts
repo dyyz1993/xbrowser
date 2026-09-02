@@ -152,6 +152,13 @@ export class XBPageImpl implements XBPage {
         '    window.__xb_fs_stub_installed = true;',
         '  }',
         '} catch (e) {}',
+        // sup-s7: 右键菜单压制——headful 下 CDP 右键弹浏览器原生菜单（CDP
+        // 无法关闭浏览器 UI）。document 捕获阶段 preventDefault 抑制原生
+        // 菜单；不阻断传播，录制 contextmenu 事件与页面自定义菜单不受影响。
+        'try {',
+        '  document.addEventListener("contextmenu", function(e) { e.preventDefault(); }, true);',
+        '  window.__xb_ctxmenu_suppressed = true;',
+        '} catch (e) {}',
       ].join('\n'),
     }, this.sessionId).catch(() => {});
 

@@ -167,4 +167,30 @@ describe('原生打断源压制（r29）', () => {
     expect(log).toBe('main.js@|readme.md@');
     fs.rmSync(p5, { force: true });
   });
+
+  it('sup-s7 右键菜单压制：contextmenu 被 preventDefault（headful 不弹原生菜单）', async () => {
+    // headful 下 CDP 右键会弹浏览器原生菜单（页面未 preventDefault 时），
+    // CDP 无法关闭浏览器 UI。防御=document 捕获阶段 preventDefault——
+    // 不阻断传播（录制 contextmenu 事件与页面自定义菜单不受影响），
+    // defaultPrevented=true 正是 headful 抑制原生菜单的机制。
+    const p6 = path.join(os.tmpdir(), `ctx-${Date.now()}.html`);
+    fs.writeFileSync(p6, `<!DOCTYPE html><html><body>
+      <div id="t" style="width:100px;height:50px">target</div>
+      <div id="log">none</div>
+      <script>
+        document.addEventListener('contextmenu', function(e) {
+          document.getElementById('log').textContent = 'defaultPrevented=' + e.defaultPrevented;
+        }, true);
+      </script>
+    </body></html>`);
+    await page.goto(`file://${p6}`);
+    await page.waitForTimeout(200);
+    await page.click('#t', { button: 'right' });
+    await page.waitForTimeout(200);
+    const log = await page.evaluate<string>(`document.getElementById('log').textContent`);
+    const guard = await page.evaluate<boolean>(`window.__xb_ctxmenu_suppressed === true`);
+    expect(guard).toBe(true);
+    expect(log).toBe('defaultPrevented=true');
+    fs.rmSync(p6, { force: true });
+  });
 });
