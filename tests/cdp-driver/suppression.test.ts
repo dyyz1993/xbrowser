@@ -11,6 +11,9 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import http from 'http';
+import https from 'https';
+import { execSync } from 'child_process';
+import { startKeepAwake } from '../../src/utils/keep-awake.js';
 
 describe('原生打断源压制（r29）', () => {
   let browser: XBBrowser;
@@ -318,5 +321,49 @@ describe('原生打断源压制（r29）', () => {
     expect(urlAfterDefault).toContain('bu2');
     fs.rmSync(p1, { force: true });
     fs.rmSync(p2, { force: true });
+  });
+
+  it('sup-s12 SSL interstitial：ignoreHTTPSErrors 接线（原为死字段）', async () => {
+    // 攻击形态：自签证书站点弹出 SSL 警告插页（Your connection is not
+    // private），导航被拦。ignoreHTTPSErrors 此前在 XBContextOptions 声明
+    // 但零消费者（影子选项）——接线 Security.setIgnoreCertificateErrors。
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xb-cert-'));
+    const keyPath = path.join(dir, 'key.pem');
+    const certPath = path.join(dir, 'cert.pem');
+    execSync(`openssl req -x509 -newkey rsa:2048 -keyout ${keyPath} -out ${certPath} -days 1 -nodes -subj "/CN=127.0.0.1" 2>/dev/null`);
+    const httpsServer = https.createServer(
+      { key: fs.readFileSync(keyPath), cert: fs.readFileSync(certPath) },
+      (_q: http.IncomingMessage, res: http.ServerResponse) => {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('<html><body>tls-ok</body></html>');
+      },
+    );
+    await new Promise<void>((r) => httpsServer.listen(0, '127.0.0.1', r));
+    const tlsPort = (httpsServer.address() as { port: number }).port;
+    try {
+      const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+      const tp = await ctx.newPage();
+      await tp.goto(`https://127.0.0.1:${tlsPort}/`, { timeout: 10_000 });
+      const body = await tp.evaluate<string>('document.body.textContent');
+      await tp.close().catch(() => {});
+      await ctx.close().catch(() => {});
+      expect(body).toContain('tls-ok');
+    } finally {
+      httpsServer.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('sup-s12 caffeinate 防休眠：spawn 存活、dispose 收尾', async () => {
+    if (process.platform !== 'darwin') return; // macOS 专属机制
+    const ka = startKeepAwake();
+    expect(ka.pid).toBeTruthy();
+    // pid 存活断言（signal 0 = 探活不发送）
+    expect(() => process.kill(ka.pid!, 0)).not.toThrow();
+    ka.dispose();
+    await new Promise((r) => setTimeout(r, 300));
+    let gone = false;
+    try { process.kill(ka.pid!, 0); } catch { gone = true; }
+    expect(gone).toBe(true);
   });
 });

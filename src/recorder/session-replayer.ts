@@ -81,6 +81,21 @@ export class SessionReplayer {
   }> {
     if (!this.recording) throw new Error('No recording loaded. Call load() first.');
 
+    // sup-s12: 分钟级回放防系统休眠（macOS caffeinate，随进程退出自愈）
+    const { startKeepAwake } = await import('../utils/keep-awake.js');
+    const keepAwake = startKeepAwake();
+    try {
+      return await this._runInner();
+    } finally {
+      keepAwake.dispose();
+    }
+  }
+
+  private async _runInner(): Promise<{
+    success: number; failed: number; skipped: number;
+    healed: number; healedDetails: Array<{ index: number; strategy: string }>;
+  }> {
+    if (!this.recording) throw new Error('No recording loaded. Call load() first.');
     // Use provided page or connect to browser via CDP
     if (this.opts.page) {
       this.page = this.opts.page;

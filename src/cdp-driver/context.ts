@@ -43,6 +43,11 @@ export class XBContextImpl implements XBContext {
     return this.options.httpCredentials;
   }
 
+  /** sup-s12: 自签/无效证书放行——经 context 传给 page 层（原为死字段） */
+  get ignoreHTTPSErrors(): boolean | undefined {
+    return this.options.ignoreHTTPSErrors;
+  }
+
   async newPage(): Promise<XBPage> {
     if (this.closed) throw new Error('Context is closed');
 

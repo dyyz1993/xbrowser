@@ -115,6 +115,13 @@ export class XBPageImpl implements XBPage {
     // 凭证错则反复挂起。Fetch.authRequired 自动响应：配置了凭证则
     // ProvideCredentials，否则 CancelAuth 快速失败。空 patterns 不拦截
     // 常规请求（仅认证事件）。
+    // sup-s12: SSL interstitial 压制——ignoreHTTPSErrors 原为死字段（声明
+    // 零消费者），接线 Security.setIgnoreCertificateErrors（自签/内网页）
+    if (this._contextImpl.ignoreHTTPSErrors) {
+      await this.conn.send('Security.enable', undefined, this.sessionId).catch(() => {});
+      await this.conn.send('Security.setIgnoreCertificateErrors', { ignore: true }, this.sessionId).catch(() => {});
+    }
+
     // sup-s9: HTTP Basic/Digest 认证压制——主框架导航到 401 挑战时，
     // headful 弹模态认证框（handleJavaScriptDialog 管不着）。s9 三点实证：
     // ①headless 无凭证本就快速失败（ERR_INVALID_AUTH_CREDENTIALS，无框
