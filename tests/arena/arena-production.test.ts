@@ -944,6 +944,45 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(healed.map(h => h.strategy)).toContain('text-anchor');
   });
 
+  it('role=button 语义元素：class 全量改名后文案锚仍锁定（SPA div 按钮）', async () => {
+    // SPA 主流形态：<div role="button"> 充当按钮——tagName 是 div，旧
+    // text-anchor 门控（仅 button/a 标签）不会生成候选。文案锚扩展后
+    // class 全量改名仍由 role+文案锁定，点击置 __confirmed 标记。
+    const pagePath = '/tmp/arena-prod-role.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html><html><body>
+      <div role="button" class="cta" onclick="document.getElementById('st').textContent='confirmed'">Confirm</div>
+      <div id="st">idle</div>
+    </body></html>`);
+    await page.goto(`file://${pagePath}`);
+    await page.waitForTimeout(200);
+    await page.evaluate(`/* @xb-probe */ (function(){
+      document.querySelectorAll('[class]').forEach(function(el){
+        el.className = el.className.replace('cta', 'btn-x9');
+      });
+    })()`);
+    const recording = {
+      actions: [{
+        id: 1, type: 'click' as const, timestamp: Date.now(),
+        url: `file://${pagePath}`, pageTitle: 'role',
+        element: { tag: 'div', selector: '.cta', text: 'Confirm', role: 'button' },
+      }],
+    };
+    const healed: Array<{ index: number; strategy: string }> = [];
+    const replayer = new SessionReplayer({
+      page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
+      healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-role-${Date.now()}`),
+      onHealed: (action, strategy, index) => healed.push({ index, strategy }),
+    });
+    await replayer.load(recording);
+    const result = await replayer.run();
+    await replayer.close();
+    const st = await page.evaluate<string>(`/* @xb-probe */ document.getElementById('st').textContent`);
+
+    expect(result.failed).toBe(0);
+    expect(st).toBe('confirmed');
+    expect(healed[0].strategy).toBe('text-anchor');
+  });
+
   it('JS 对话框自动压制：alert/confirm/prompt 不阻塞回放序列', async () => {
     // 三个按钮依次触发 alert/confirm/prompt——任一对话框挂起都会卡死
     // 回放序列。自动 dismiss 下：alert 置标后放行、confirm dismiss 返回

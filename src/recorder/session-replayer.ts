@@ -567,15 +567,16 @@ export class SessionReplayer {
       candidates.push({ sel: `[class*="${coreId}"]`, strategy: 'partial-class' });
     }
 
-    // 2g. 文案锚点（r15）：class/id 全量替换（非后缀装饰）是改版常态，而
-    // 按钮文案极少动——录制文案是最强内容锚。仅对 button/a 等文本承载
-    // 元素生成（input 的录制 text 是当时的 value，不可靠）。
-    // r25 排序：内容锚（text/label）先于 meta 属性——内容是更强的身份证据，
-    // 同指纹多匹配时 meta 型候选易被同 type 元素稀释。
+    // 2g. 文案锚点（r15/r31）：class/id 全量替换（非后缀装饰）是改版常态，
+    // 而按钮文案极少动——录制文案是最强内容锚。覆盖 button/a 标签与
+    // role=button/link 语义元素（SPA 的 div 按钮是主流形态）；input 的
+    // 录制 text 是当时的 value，不可靠，不生成。
     const anchorText = (el?.text || '').trim().replace(/"/g, '');
-    if (anchorText && (tagName === 'button' || tagName === 'a')) {
+    const isTextBearer = tagName === 'button' || tagName === 'a'
+      || el?.role === 'button' || el?.role === 'link';
+    if (anchorText && isTextBearer) {
       candidates.push({
-        sel: `xpath=//${tagName}[contains(normalize-space(.), "${anchorText}")]`,
+        sel: `xpath=//*[contains(normalize-space(.), "${anchorText}")][self::${tagName} or self::a or self::button or @role="button" or @role="link"]`,
         strategy: 'text-anchor',
       });
     }
