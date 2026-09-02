@@ -296,12 +296,40 @@ export class SessionReplayer {
 
       case 'input': {
         const selector = await this.resolveAndWait(action);
+        // sup-s1: 颜色卡防御——fill 路径（click+type）对 input[type=color]
+        // 完全失效：点击请求 OS 原生取色面板（headful 弹系统 UI，CDP 不可
+        // 及），键盘输入被忽略。JS 值注入 + input/change 事件（bubbles 保
+        // 证页面监听器收到）。
+        if (action.element?.type === 'color') {
+          await page.evaluate(`
+            (function() {
+              var el = ${queryJS(selector)};
+              if (!el) return;
+              el.value = ${JSON.stringify(action.value ?? '')};
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+            })()
+          `);
+          break;
+        }
         await page.fill(selector, action.value ?? '', { timeout });
         break;
       }
 
       case 'cdp-fill': {
         const selector = await this.resolveAndWait(action);
+        if (action.element?.type === 'color') {
+          await page.evaluate(`
+            (function() {
+              var el = ${queryJS(selector)};
+              if (!el) return;
+              el.value = ${JSON.stringify(action.value ?? '')};
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+            })()
+          `);
+          break;
+        }
         await page.fill(selector, action.value ?? '', { timeout });
         break;
       }

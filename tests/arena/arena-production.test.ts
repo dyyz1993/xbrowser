@@ -944,6 +944,47 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(healed.map(h => h.strategy)).toContain('text-anchor');
   });
 
+  it('sup-s1 攻击：颜色卡 input[type=color] 回放填色（防御前红测/防御后绿）', async () => {
+    // 点击色卡会请求 OS 原生取色面板（headful 弹系统面板，headless 无 UI
+    // 但同样不设值），键盘输入对 color 类型无效——fill 路径（click+type）
+    // 对色卡完全不设值。防御=JS 值注入 + input/change 事件。
+    const pagePath = '/tmp/arena-prod-color.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html><html><body>
+      <form>
+        <input type="color" id="ink" data-arena="ink" value="#000000" />
+        <div id="log">none</div>
+      </form>
+      <script>
+        document.getElementById('ink').addEventListener('change', function() {
+          document.getElementById('log').textContent = 'changed:' + this.value;
+        });
+      </script>
+    </body></html>`);
+    await page.goto(`file://${pagePath}`);
+    await page.waitForTimeout(200);
+    const recording = {
+      actions: [{
+        id: 1, type: 'input' as const, timestamp: Date.now(),
+        url: `file://${pagePath}`, pageTitle: 'color',
+        element: { tag: 'input', selector: '#ink', text: '', type: 'color' },
+        value: '#ff0000',
+      }],
+    };
+    const replayer = new SessionReplayer({
+      page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
+      healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-color-${Date.now()}`),
+    });
+    await replayer.load(recording);
+    const result = await replayer.run();
+    await replayer.close();
+    const ink = await page.evaluate<string>(`/* @xb-probe */ document.getElementById('ink').value`);
+    const log = await page.evaluate<string>(`/* @xb-probe */ document.getElementById('log').textContent`);
+
+    expect(result.failed).toBe(0);
+    expect(ink).toBe('#ff0000');       // 值注入生效
+    expect(log).toBe('changed:#ff0000'); // change 事件冒泡被页面监听捕获
+  });
+
   it('role=button 语义元素：class 全量改名后文案锚仍锁定（SPA div 按钮）', async () => {
     // SPA 主流形态：<div role="button"> 充当按钮——tagName 是 div，旧
     // text-anchor 门控（仅 button/a 标签）不会生成候选。文案锚扩展后
