@@ -112,8 +112,47 @@ export class XBPageImpl implements XBPage {
     await this.conn.send('DOM.enable', undefined, this.sessionId).catch(() => {});
     // r29: 打印对话框压制——headful 下 print 预览会阻塞页面交互；
     // headless 本就无副作用，统一守卫并打标记供测试/诊断断言。
+    // sup-s2: File System Access API stub——showOpenFilePicker 等弹 OS 级
+    // 系统对话框（CDP 无法拦截，headless 下 promise 挂起/拒绝），stub 返回
+    // 合成 FileSystemFileHandle（包装内存 File），页面无感零弹框。
     await this.conn.send('Page.addScriptToEvaluateOnNewDocument', {
-      source: 'try { window.print = function() {}; window.__xb_print_suppressed = true; } catch (e) {}',
+      source: [
+        'try { window.print = function() {}; window.__xb_print_suppressed = true; } catch (e) {}',
+        'try {',
+        '  if (window.showOpenFilePicker) {',
+        '    var __xb_mkHandle = function(name, content) {',
+        '      var file = new File([content], name, { type: "text/plain" });',
+        '      return {',
+        '        kind: "file", name: name,',
+        '        getFile: function() { return Promise.resolve(file); },',
+        '        createWritable: function() { return Promise.resolve({ write: function() { return Promise.resolve(); }, close: function() { return Promise.resolve(); } }); },',
+        '        isSameEntry: function() { return Promise.resolve(false); },',
+        '        queryPermission: function() { return Promise.resolve("granted"); },',
+        '        requestPermission: function() { return Promise.resolve("granted"); },',
+        '      };',
+        '    };',
+        '    window.showOpenFilePicker = function() {',
+        '      return Promise.resolve([__xb_mkHandle("xbrowser-stub.txt", "xbrowser fs access stub")]);',
+        '    };',
+        '    window.showSaveFilePicker = function() {',
+        '      return Promise.resolve(__xb_mkHandle("xbrowser-stub-save.txt", ""));',
+        '    };',
+        '    window.showDirectoryPicker = function() {',
+        '      var emptyIter = function() { return [][Symbol.iterator](); };',
+        '      return Promise.resolve({',
+        '        kind: "directory", name: "xbrowser-stub-dir",',
+        '        values: emptyIter, entries: emptyIter, keys: emptyIter,',
+        '        getDirectoryHandle: function() { return Promise.reject(new Error("stub empty dir")); },',
+        '        getFileHandle: function() { return Promise.reject(new Error("stub empty dir")); },',
+        '        isSameEntry: function() { return Promise.resolve(false); },',
+        '        queryPermission: function() { return Promise.resolve("granted"); },',
+        '        requestPermission: function() { return Promise.resolve("granted"); },',
+        '      });',
+        '    };',
+        '    window.__xb_fs_stub_installed = true;',
+        '  }',
+        '} catch (e) {}',
+      ].join('\n'),
     }, this.sessionId).catch(() => {});
 
     // Setup event listeners

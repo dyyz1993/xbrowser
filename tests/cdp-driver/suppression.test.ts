@@ -48,4 +48,36 @@ describe('原生打断源压制（r29）', () => {
     // 守卫后的 print 可安全调用（no-op），不抛错不弹框
     expect(() => { void 0; }).not.toThrow();
   });
+
+  it('sup-s2 FS Access API stub：showOpenFilePicker 不弹系统框且页面拿到文件', async () => {
+    // 攻击形态：真 showOpenFilePicker 弹 OS 级系统对话框（CDP 无法拦截），
+    // headless 下 promise 拒绝/挂起——页面永远拿不到文件，log 停在 idle。
+    // 防御：init script stub 返回合成 FileSystemFileHandle（包装内存 File）。
+    const p2 = path.join(os.tmpdir(), `fsaccess-${Date.now()}.html`);
+    fs.writeFileSync(p2, `<!DOCTYPE html><html><body>
+      <button id="up">Upload</button>
+      <div id="log">idle</div>
+      <script>
+        document.getElementById('up').addEventListener('click', async function() {
+          try {
+            var handles = await window.showOpenFilePicker();
+            var file = await handles[0].getFile();
+            document.getElementById('log').textContent =
+              file.name + ':' + (await file.text());
+          } catch (e) {
+            document.getElementById('log').textContent = 'err:' + e.name;
+          }
+        });
+      </script>
+    </body></html>`);
+    await page.goto(`file://${p2}`);
+    await page.waitForTimeout(200);
+    await page.click('#up');
+    await page.waitForTimeout(500);
+    const log = await page.evaluate<string>(`document.getElementById('log').textContent`);
+    const stubbed = await page.evaluate<boolean>(`window.__xb_fs_stub_installed === true`);
+    expect(stubbed).toBe(true);
+    expect(log).toBe('xbrowser-stub.txt:xbrowser fs access stub');
+    fs.rmSync(p2, { force: true });
+  });
 });
