@@ -162,6 +162,8 @@ export interface XBPage {
 
   // File upload
   setInputFiles(selector: string, files: XBFilePayload | XBFilePayload[]): Promise<void>;
+  /** sup-s4: Dropzone 拖拽上传模拟——DataTransfer+File 派发 dragenter/dragover/drop */
+  dropFiles(selector: string, payload: XBFilePayload): Promise<void>;
 
   // Drag and drop
   dragAndDrop(source: string, target: string): Promise<void>;

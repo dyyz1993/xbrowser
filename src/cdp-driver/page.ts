@@ -1628,6 +1628,37 @@ export class XBPageImpl implements XBPage {
 
   // ── setInputFiles ───────────────────────────────────────────
 
+  /**
+   * sup-s4: Dropzone 拖拽上传模拟——Dropzone/Uppy/自绘上传区只监听
+   * dragover/drop（无 input[type=file] 可点），真实用户靠 OS 文件拖入
+   * 触发，自动化无法产生 OS 拖拽。页内构造 DataTransfer+File，按拖放
+   * 协议派发 dragenter/dragover/drop（bubbles+cancelable，坐标取目标
+   * 中心）。
+   */
+  async dropFiles(selector: string, payload: XBFilePayload): Promise<void> {
+    await this.evaluate(`
+      (function() {
+        var el = ${queryJS(selector)};
+        if (!el) throw new Error('drop target not found: ' + ${JSON.stringify(selector)});
+        var b64 = ${JSON.stringify(payload.buffer.toString('base64'))};
+        var bin = atob(b64);
+        var buf = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+        var file = new File([buf], ${JSON.stringify(payload.name)}, { type: ${JSON.stringify(payload.mimeType)} });
+        var dt = new DataTransfer();
+        dt.items.add(file);
+        var rect = el.getBoundingClientRect();
+        var opts = {
+          bubbles: true, cancelable: true,
+          clientX: rect.x + rect.width / 2, clientY: rect.y + rect.height / 2,
+        };
+        el.dispatchEvent(new DragEvent('dragenter', Object.assign({ dataTransfer: dt }, opts)));
+        el.dispatchEvent(new DragEvent('dragover', Object.assign({ dataTransfer: dt }, opts)));
+        el.dispatchEvent(new DragEvent('drop', Object.assign({ dataTransfer: dt }, opts)));
+      })()
+    `);
+  }
+
   async setInputFiles(selector: string, files: XBFilePayload | XBFilePayload[]): Promise<void> {
     const fileArr = Array.isArray(files) ? files : [files];
 

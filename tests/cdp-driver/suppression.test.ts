@@ -80,4 +80,37 @@ describe('原生打断源压制（r29）', () => {
     expect(log).toBe('xbrowser-stub.txt:xbrowser fs access stub');
     fs.rmSync(p2, { force: true });
   });
+
+  it('sup-s4 dropFiles：Dropzone 拖拽上传模拟（无 input[type=file] 的上传区）', async () => {
+    // 攻击形态：Dropzone/Uppy/自绘上传区只监听 dragover/drop——真实用户
+    // 靠 OS 文件拖入触发，自动化无法产生 OS 拖拽，上传永远无法完成。
+    // 防御：dropFiles 构造 DataTransfer+File 派发 dragenter/dragover/drop。
+    const p3 = path.join(os.tmpdir(), `dropzone-${Date.now()}.html`);
+    fs.writeFileSync(p3, `<!DOCTYPE html><html><body>
+      <div id="zone" style="width:200px;height:100px;border:1px solid #ccc">Drop here</div>
+      <div id="log">none</div>
+      <script>
+        var zone = document.getElementById('zone');
+        zone.addEventListener('dragover', function(e) { e.preventDefault(); });
+        zone.addEventListener('drop', function(e) {
+          e.preventDefault();
+          var f = e.dataTransfer.files[0];
+          f.text().then(function(t) {
+            document.getElementById('log').textContent = f.name + ':' + t + ':' + f.size;
+          });
+        });
+      </script>
+    </body></html>`);
+    await page.goto(`file://${p3}`);
+    await page.waitForTimeout(200);
+    await page.dropFiles('#zone', {
+      name: 'note.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('dropped-content'),
+    });
+    await page.waitForTimeout(400);
+    const log = await page.evaluate<string>(`document.getElementById('log').textContent`);
+    expect(log).toBe('note.txt:dropped-content:15');
+    fs.rmSync(p3, { force: true });
+  });
 });
