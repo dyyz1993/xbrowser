@@ -265,6 +265,23 @@ export class XBPageImpl implements XBPage {
         '    window.__xb_hid_stubbed = true;',
         '  }',
         '} catch (e) {}',
+        // sup-W5: WebAPI stub（5/7 WakeLock）——request('screen') 在无用户
+        // 激活/权限时挂起或拒绝，等待 wake 事件的流程死锁。stub 返回合成
+        // sentinel（release 可用，不真实持锁）。
+        'try {',
+        '  if (navigator.wakeLock) {',
+        '    navigator.wakeLock.request = function() {',
+        '      return Promise.resolve({',
+        '        released: false,',
+        '        type: "screen",',
+        '        release: function() { this.released = true; return Promise.resolve(); },',
+        '        addEventListener: function() {},',
+        '        removeEventListener: function() {},',
+        '      });',
+        '    };',
+        '    window.__xb_wakelock_stubbed = true;',
+        '  }',
+        '} catch (e) {}',
       ].join('\n'),
     }, this.sessionId).catch(() => {});
 

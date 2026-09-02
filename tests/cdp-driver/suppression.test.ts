@@ -415,6 +415,40 @@ describe('原生打断源压制（r29）', () => {
     fs.rmSync(p10, { force: true });
   });
 
+  it('sup-W5 WakeLock stub：request 不挂起且页面拿到可 release 的句柄', async () => {
+    // 攻击形态：navigator.wakeLock.request('screen') 在无用户激活/无权限
+    // 时 promise 挂起或拒绝——等待 wake 事件的页面流程死锁。防御：stub
+    // 返回带 release() 的合成 sentinel，页面拿到句柄继续（不真实持锁）。
+    const p11 = path.join(os.tmpdir(), `wake-${Date.now()}.html`);
+    fs.writeFileSync(p11, `<!DOCTYPE html><html><body>
+      <button id="go">Lock</button>
+      <div id="wlog">idle</div>
+      <script>
+        document.getElementById('go').addEventListener('click', async function() {
+          try {
+            var sentinel = await navigator.wakeLock.request('screen');
+            var released = false;
+            sentinel.release().then(function() { released = true; });
+            setTimeout(function() {
+              document.getElementById('wlog').textContent = 'lock:' + (released ? 'releasable' : 'stuck');
+            }, 300);
+          } catch (e) {
+            document.getElementById('wlog').textContent = 'catch:' + e.name;
+          }
+        });
+      </script>
+    </body></html>`);
+    await page.goto(`file://${p11}`);
+    await page.waitForTimeout(200);
+    await page.click('#go');
+    await page.waitForTimeout(700);
+    const log = await page.evaluate<string>(`document.getElementById('wlog').textContent`);
+    const stubbed = await page.evaluate<boolean>(`window.__xb_wakelock_stubbed === true`);
+    expect(stubbed).toBe(true);
+    expect(log).toBe('lock:releasable');
+    fs.rmSync(p11, { force: true });
+  });
+
   it('sup-s11 beforeunload 语义：默认 accept（离开），dismiss 尽力而为', async () => {
     // 攻击形态：页面挂 beforeunload 守卫 + 旧逻辑对一切对话框 accept:false
     // → beforeunload 的 dismiss = 取消导航——回放录制的"离开页面"流被静默
