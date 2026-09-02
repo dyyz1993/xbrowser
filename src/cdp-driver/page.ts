@@ -235,6 +235,16 @@ export class XBPageImpl implements XBPage {
         '    window.__xb_serial_stubbed = true;',
         '  }',
         '} catch (e) {}',
+        // sup-W2: WebAPI stub（2/7 USB）——requestDevice 弹原生设备配对框，
+        // 同 Serial pattern：rejected Promise（NotFoundError），catch 接管。
+        'try {',
+        '  if (navigator.usb) {',
+        '    navigator.usb.requestDevice = function() {',
+        '      return Promise.reject(new DOMException("xbrowser usb stub", "NotFoundError"));',
+        '    };',
+        '    window.__xb_usb_stubbed = true;',
+        '  }',
+        '} catch (e) {}',
       ].join('\n'),
     }, this.sessionId).catch(() => {});
 
