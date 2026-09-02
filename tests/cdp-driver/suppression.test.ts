@@ -480,6 +480,40 @@ describe('原生打断源压制（r29）', () => {
     fs.rmSync(p12, { force: true });
   });
 
+  it('sup-W7 PaymentRequest stub：show 不弹支付面板且页面 catch 分支接管', async () => {
+    // 攻击形态：new PaymentRequest(...).show() 弹浏览器支付面板（无用户
+    // 交互不关闭），headless 下 promise 挂起——支付流程死锁。防御：init
+    // script stub 返回 rejected（NotAllowedError），catch 接管。
+    const p13 = path.join(os.tmpdir(), `pay-${Date.now()}.html`);
+    fs.writeFileSync(p13, `<!DOCTYPE html><html><body>
+      <button id="go">Pay</button>
+      <div id="plog">idle</div>
+      <script>
+        document.getElementById('go').addEventListener('click', async function() {
+          try {
+            var req = new PaymentRequest(
+              [{ supportedMethods: 'basic-card' }],
+              { total: { label: 'T', amount: { currency: 'USD', value: '1.00' } } }
+            );
+            var resp = await req.show();
+            document.getElementById('plog').textContent = 'paid:' + resp.methodName;
+          } catch (e) {
+            document.getElementById('plog').textContent = 'catch:' + e.name;
+          }
+        });
+      </script>
+    </body></html>`);
+    await page.goto(`file://${p13}`);
+    await page.waitForTimeout(200);
+    await page.click('#go');
+    await page.waitForTimeout(500);
+    const log = await page.evaluate<string>(`document.getElementById('plog').textContent`);
+    const stubbed = await page.evaluate<boolean>(`window.__xb_pay_stubbed === true`);
+    expect(stubbed).toBe(true);
+    expect(log).toBe('catch:NotAllowedError');
+    fs.rmSync(p13, { force: true });
+  });
+
   it('sup-s11 beforeunload 语义：默认 accept（离开），dismiss 尽力而为', async () => {
     // 攻击形态：页面挂 beforeunload 守卫 + 旧逻辑对一切对话框 accept:false
     // → beforeunload 的 dismiss = 取消导航——回放录制的"离开页面"流被静默

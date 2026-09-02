@@ -293,6 +293,17 @@ export class XBPageImpl implements XBPage {
         '    window.__xb_idle_stubbed = true;',
         '  }',
         '} catch (e) {}',
+        // sup-W7: WebAPI stub（7/7 PaymentRequest）——show() 弹浏览器支付
+        // 面板（无用户交互不关闭），headless 下 promise 挂起。stub 返回
+        // rejected（NotAllowedError），页面 catch 分支接管。
+        'try {',
+        '  if (window.PaymentRequest) {',
+        '    PaymentRequest.prototype.show = function() {',
+        '      return Promise.reject(new DOMException("xbrowser pay stub", "NotAllowedError"));',
+        '    };',
+        '    window.__xb_pay_stubbed = true;',
+        '  }',
+        '} catch (e) {}',
       ].join('\n'),
     }, this.sessionId).catch(() => {});
 
