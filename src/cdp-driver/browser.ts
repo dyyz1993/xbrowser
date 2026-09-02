@@ -12,6 +12,9 @@
  */
 
 import { EventEmitter } from 'node:events';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { CDPConnection } from './connection.js';
 import { XBContextImpl } from './context.js';
 import { XBPageImpl } from './page.js';
@@ -142,6 +145,24 @@ export class XBBrowserImpl implements XBBrowser {
     }
 
     const context = new XBContextImpl(this.conn, contextId, this, opts);
+
+    // r29: 原生打断源压制（仅本进程 spawn 的浏览器）——权限气泡自动放行、
+    // 下载静默落盘不弹对话框。附加到用户浏览器（cdpEndpoint）时不改变
+    // 用户环境。contextId='default'（CDP tunnel 不支持隔离上下文）时跳过。
+    if (!this.cdpEndpoint && contextId !== 'default') {
+      const downloadDir = join(tmpdir(), 'xbrowser-downloads');
+      try { mkdirSync(downloadDir, { recursive: true }); } catch { /* best-effort */ }
+      await this.conn.send('Browser.setDownloadBehavior', {
+        behavior: 'allowAndName',
+        downloadPath: downloadDir,
+        eventsEnabled: false,
+        browserContextId: contextId,
+      }, undefined, 10_000).catch(() => { /* 老内核不支持时忽略 */ });
+      await this.conn.send('Browser.grantPermissions', {
+        permissions: ['notifications', 'geolocation'],
+        browserContextId: contextId,
+      }, undefined, 10_000).catch(() => { /* 同上 */ });
+    }
 
     // Set up auto-attach for new targets in this context
     context.on('page', (page) => {

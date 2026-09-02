@@ -110,6 +110,11 @@ export class XBPageImpl implements XBPage {
     // freshly-attached tab sessions (d07: target=_blank tab switch froze every
     // subsequent page.$ call).
     await this.conn.send('DOM.enable', undefined, this.sessionId).catch(() => {});
+    // r29: 打印对话框压制——headful 下 print 预览会阻塞页面交互；
+    // headless 本就无副作用，统一守卫并打标记供测试/诊断断言。
+    await this.conn.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: 'try { window.print = function() {}; window.__xb_print_suppressed = true; } catch (e) {}',
+    }, this.sessionId).catch(() => {});
 
     // Setup event listeners
     this.setupPageEvents();

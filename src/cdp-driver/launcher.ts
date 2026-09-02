@@ -161,10 +161,11 @@ export async function launchChrome(options: ChromeLaunchOptions = {}): Promise<L
     '--no-sandbox',
     '--no-first-run',
     '--no-default-browser-check',
+    '--disable-session-crashed-bubble',
     '--disable-background-timer-throttling',
     '--disable-backgrounding-occluded-windows',
     '--disable-renderer-backgrounding',
-    '--disable-features=Translate',
+    '--disable-features=Translate,PasswordLeakDetection',
     '--disable-popup-blocking',
   ];
 
