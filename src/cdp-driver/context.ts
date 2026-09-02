@@ -38,6 +38,11 @@ export class XBContextImpl implements XBContext {
     return this.options.stealthConfig;
   }
 
+  /** sup-s9: HTTP 认证凭证经 context 传给 page 层（authRequired 自动响应） */
+  get httpCredentials(): { username: string; password: string } | undefined {
+    return this.options.httpCredentials;
+  }
+
   async newPage(): Promise<XBPage> {
     if (this.closed) throw new Error('Context is closed');
 

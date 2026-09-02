@@ -110,8 +110,47 @@ export class XBPageImpl implements XBPage {
     // freshly-attached tab sessions (d07: target=_blank tab switch froze every
     // subsequent page.$ call).
     await this.conn.send('DOM.enable', undefined, this.sessionId).catch(() => {});
-    // r29: 打印对话框压制——headful 下 print 预览会阻塞页面交互；
-    // headless 本就无副作用，统一守卫并打标记供测试/诊断断言。
+    // sup-s9: HTTP Basic/Digest 认证压制——主框架导航到 401 挑战时，
+    // headful 弹模态认证框（CDP 的 handleJavaScriptDialog 管不着）、
+    // 凭证错则反复挂起。Fetch.authRequired 自动响应：配置了凭证则
+    // ProvideCredentials，否则 CancelAuth 快速失败。空 patterns 不拦截
+    // 常规请求（仅认证事件）。
+    // sup-s9: HTTP Basic/Digest 认证压制——主框架导航到 401 挑战时，
+    // headful 弹模态认证框（handleJavaScriptDialog 管不着）。s9 三点实证：
+    // ①headless 无凭证本就快速失败（ERR_INVALID_AUTH_CREDENTIALS，无框
+    // 无挂起）——压制默认态免费；②本构建 Fetch.enable 空 patterns=拦截
+    // 全部请求（about:blank 加载挂起→newPage 卡死）；③patterns 同时门控
+    // authRequired（永不匹配 pattern 会让 auth 事件也收不到）。
+    // 结论：仅凭证场景启用（pattern 全配 + requestPaused 旁路直通），
+    // authRequired 按 context.httpCredentials 应答，无凭证路径走原生快败。
+    if (this._contextImpl.httpCredentials) {
+      await this.conn.send('Fetch.enable', {
+        patterns: [{ urlPattern: '*', requestStage: 'Request' }],
+        handleAuthRequests: true,
+      }, this.sessionId).catch(() => {});
+      this._subscriptions.push(
+        this.conn.subscribe('Fetch.requestPaused', this.sessionId, (params: unknown) => {
+          // route() 未激活时旁路直通（仅认证场景需要 Fetch，不拦截常规流量）
+          if (this._interceptionEnabled) return;
+          const p = params as { requestId: string };
+          this.conn.send('Fetch.continueRequest', { requestId: p.requestId }, this.sessionId).catch(() => {});
+        }),
+      );
+      this._subscriptions.push(
+        this.conn.subscribe('Fetch.authRequired', this.sessionId, (params: unknown) => {
+          const p = params as { requestId: string };
+          const creds = this._contextImpl.httpCredentials;
+          this.conn.send('Fetch.continueWithAuth', {
+            requestId: p.requestId,
+            authChallengeResponse: creds
+              ? { response: 'ProvideCredentials', username: creds.username, password: creds.password }
+              : { response: 'CancelAuth' },
+          }, this.sessionId).catch(() => { /* best-effort */ });
+        }),
+      );
+    }
+
+    // r29: 打印对话框压制——headful 下 print 预览会阻塞页面交互；    // headless 本就无副作用，统一守卫并打标记供测试/诊断断言。
     // sup-s2: File System Access API stub——showOpenFilePicker 等弹 OS 级
     // 系统对话框（CDP 无法拦截，headless 下 promise 挂起/拒绝），stub 返回
     // 合成 FileSystemFileHandle（包装内存 File），页面无感零弹框。
@@ -1574,6 +1613,9 @@ export class XBPageImpl implements XBPage {
       this._interceptionEnabled = true;
       await this.conn.send('Fetch.enable', {
         patterns: [{ urlPattern: '*', requestStage: 'Request' }],
+        // sup-s9: 保留认证自动响应（Fetch.enable 为替换语义，不带此参数
+        // 会顶掉 _init 的 auth 配置）
+        handleAuthRequests: true,
       }, this.sessionId);
 
       this._subscriptions.push(

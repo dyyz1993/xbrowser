@@ -34,6 +34,9 @@ export interface XBContextOptions {
   ignoreHTTPSErrors?: boolean;
   /** S194: stealth 伪装配置（UA-CH 档案等）——经 context 传至 page 的注入层 */
   stealthConfig?: Partial<import('./stealth.js').StealthConfig>;
+  /** sup-s9: HTTP Basic/Digest 凭证——Fetch.authRequired 自动 ProvideCredentials；
+   * 缺省 CancelAuth（快速失败，不弹认证框不挂起） */
+  httpCredentials?: { username: string; password: string };
 }
 
 // ── Context ────────────────────────────────────────────────────

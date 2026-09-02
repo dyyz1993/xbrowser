@@ -217,4 +217,46 @@ describe('原生打断源压制（r29）', () => {
     expect(log).toBe('defaultPrevented=true');
     fs.rmSync(p6, { force: true });
   });
+
+  it('sup-s9 HTTP Basic 认证：httpCredentials 自动应答（无凭证 CancelAuth）', async () => {
+    // 攻击形态：主框架导航到 401+WWW-Authenticate 挑战——headful 弹模态
+    // 认证框（handleJavaScriptDialog 管不着），凭证错则反复挂起。headless
+    // 实测快速失败（无 UI 可弹），故端到端断言走凭证路径：配置
+    // httpCredentials → authRequired 自动 ProvideCredentials → 服务端
+    // 校验 Authorization 头 → 200 密文可见。缺省路径=CancelAuth 快速失败。
+    const authServer = http.createServer((q: http.IncomingMessage, res: http.ServerResponse) => {
+      const expectAuth = 'Basic ' + Buffer.from('bot:secret123').toString('base64');
+      if (q.headers.authorization === expectAuth) {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('<html><body>secret-ok</body></html>');
+      } else {
+        res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="xb-test"' });
+        res.end('auth required');
+      }
+    });
+    await new Promise<void>((r) => authServer.listen(0, '127.0.0.1', r));
+    const authPort = (authServer.address() as { port: number }).port;
+    try {
+      // 凭证路径：自动应答 → 200
+      const ctx = await browser.newContext({ httpCredentials: { username: 'bot', password: 'secret123' } });
+      const authed = await ctx.newPage();
+      await authed.goto(`http://127.0.0.1:${authPort}/auth`, { timeout: 10_000 });
+      const body = await authed.evaluate<string>('document.body.textContent');
+      await authed.close().catch(() => {});
+      await ctx.close().catch(() => {});
+      expect(body).toContain('secret-ok');
+
+      // 缺省路径：CancelAuth 快速失败（不挂起、无认证框）
+      const start = Date.now();
+      let threw = false;
+      try {
+        await page.goto(`http://127.0.0.1:${authPort}/auth`, { timeout: 8000 });
+      } catch { threw = true; }
+      const elapsed = Date.now() - start;
+      expect(elapsed).toBeLessThan(4000);
+      expect(threw).toBe(true);
+    } finally {
+      authServer.close();
+    }
+  });
 });
