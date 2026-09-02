@@ -343,9 +343,10 @@ export class SessionReplayer {
       }
 
       case 'dblclick': {
-        const selector = this.resolveSelector(action);
+        // r23: 接入 resolveAndWait（自愈链）——此前走 resolveSelector，
+        // 选择器失效即失败且无指纹/遮挡保护，裸 tag 还会误点第一个同 tag 元素
+        const selector = await this.resolveAndWait(action).catch(() => '');
         if (selector) {
-          await page.waitForSelector(selector, { state: 'visible', timeout });
           await page.dblclick(selector, { timeout });
         } else if (action.x !== undefined && action.y !== undefined) {
           await page.mouse.dblclick(action.x, action.y);
@@ -354,9 +355,8 @@ export class SessionReplayer {
       }
 
       case 'contextmenu': {
-        const selector = this.resolveSelector(action);
+        const selector = await this.resolveAndWait(action).catch(() => '');
         if (selector) {
-          await page.waitForSelector(selector, { state: 'visible', timeout });
           await page.click(selector, { button: 'right', timeout });
         } else if (action.x !== undefined && action.y !== undefined) {
           await page.mouse.click(action.x, action.y, { button: 'right' });
@@ -495,22 +495,6 @@ export class SessionReplayer {
 
       await page.mouse.move(x, y);
     }
-  }
-
-  /** Resolve the best selector for an action (primary selector only) */
-  private resolveSelector(action: UserAction): string {
-    const el = action.element;
-    if (!el) return '';
-
-    if (el.selector) {
-      return el.selector;
-    }
-
-    if (el.tag) {
-      return el.tag;
-    }
-
-    return '';
   }
 
   /**

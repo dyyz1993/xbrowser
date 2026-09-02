@@ -896,6 +896,51 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(countB).toBe('1');
   });
 
+  it('dblclick 接入自愈链：class 全量改名后双击仍命中', async () => {
+    // 此前 dblclick 走 resolveSelector（无 heal/指纹/遮挡）——选择器失效
+    // 即失败。接入 resolveAndWait 后经 text-anchor 干净命中。
+    const pagePath = '/tmp/arena-prod-dbl.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html>
+<html><head><script>var count=0; function bump(){document.getElementById('cnt').textContent=String(++count);}</script></head>
+<body>
+  <button class="dbl-btn" ondblclick="bump()">Double</button>
+  <div id="cnt">0</div>
+</body></html>`);
+    await page.goto(`file://${pagePath}`);
+    await page.waitForTimeout(200);
+    const rect = await page.evaluate<{ x: number; y: number }>(`/* @xb-probe */ (function(){
+      var r = document.querySelector('.dbl-btn').getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    })()`);
+    await page.evaluate(`/* @xb-probe */ (function(){
+      document.querySelectorAll('[class]').forEach(function(el){
+        el.className = el.className.replace('dbl-btn', 'dbl-cta');
+      });
+    })()`);
+    const recording = {
+      actions: [{
+        id: 1, type: 'dblclick' as const, timestamp: Date.now(),
+        url: `file://${pagePath}`, pageTitle: 'dbl',
+        element: { tag: 'button', selector: '.dbl-btn', text: 'Double' },
+        x: rect.x, y: rect.y,
+      }],
+    };
+    const healed: Array<{ index: number; strategy: string }> = [];
+    const replayer = new SessionReplayer({
+      page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
+      healKnowledgeDir: path.join(ARCHIVE_DIR, 'heal-kb', '140-dbl'),
+      onHealed: (action, strategy, index) => healed.push({ index, strategy }),
+    });
+    await replayer.load(recording);
+    const result = await replayer.run();
+    await replayer.close();
+    const count = await page.evaluate<string>(`/* @xb-probe */ document.getElementById('cnt').textContent`);
+
+    expect(result.failed).toBe(0);
+    expect(count).toBe('1');
+    expect(healed.some(h => h.strategy === 'text-anchor')).toBe(true);
+  });
+
   it('生产归档完整（含 semanticRate 与 healed 明细）', () => {
     const files = fs.readdirSync(path.resolve(ARCHIVE_DIR)).filter(f => f.startsWith('production-'));
     expect(files.length).toBeGreaterThanOrEqual(5);

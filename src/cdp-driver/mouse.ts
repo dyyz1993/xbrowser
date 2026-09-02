@@ -60,7 +60,7 @@ export class XBMouseImpl implements XBMouse {
     } else {
       await this.move(tx, ty);
     }
-    await this.down({ button });
+    await this.down({ button, clickCount: opts.clickCount ?? 1 });
     await sleep(stealth ? sRand(...CFG.pressDuration) : (opts.delay ?? 0));
     const rx = stealth ? this._x + sRand(...CFG.releaseDrift) * (Math.random() < .5 ? -1 : 1) : this._x;
     const ry = stealth ? this._y + sRand(...CFG.releaseDrift) * (Math.random() < .5 ? -1 : 1) : this._y;
@@ -76,7 +76,7 @@ export class XBMouseImpl implements XBMouse {
     await this.click(x, y, { clickCount: 2, button: opts.button });
   }
 
-  async down(opts: { button?: 'left' | 'right' | 'middle' } = {}): Promise<void> {
+  async down(opts: { button?: 'left' | 'right' | 'middle'; clickCount?: number } = {}): Promise<void> {
     const button = opts.button ?? 'left';
     this._button = button;
     await this.send('Input.dispatchMouseEvent', {
@@ -84,11 +84,13 @@ export class XBMouseImpl implements XBMouse {
       x: this._x,
       y: this._y,
       button,
-      clickCount: 1,
+      // r23: press 必须与 release 声明同一 clickCount——Chrome 按序列计数
+      // 合成 click/dblclick，press 缺声明会把计数器重置（dblclick 永不合成）
+      clickCount: opts.clickCount ?? 1,
     });
   }
 
-  async up(opts: { button?: 'left' | 'right' | 'middle' } = {}): Promise<void> {
+  async up(opts: { button?: 'left' | 'right' | 'middle'; clickCount?: number } = {}): Promise<void> {
     const button = opts.button ?? 'left';
     this._button = 'none';
     await this.send('Input.dispatchMouseEvent', {
@@ -96,7 +98,7 @@ export class XBMouseImpl implements XBMouse {
       x: this._x,
       y: this._y,
       button,
-      clickCount: 1,
+      clickCount: opts.clickCount ?? 1,
     });
   }
 
