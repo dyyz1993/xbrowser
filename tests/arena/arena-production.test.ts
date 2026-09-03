@@ -1081,6 +1081,97 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     const val = await page.evaluate<string>(`document.getElementById('out').value`);
     expect(val).toBe('delayed-data');
   });
+
+  it('env-E4 离线切换：offline 下回放有界失败（不挂起），online 后成功', async () => {
+    // 攻击形态：无人值守回放中途断网——fetch 挂起/卡死是死锁面。锁定：
+    // offline 下失败有界（不无限挂起），恢复在线后回放成功。确定性：
+    // offline 开关由测试显式控制，无定时器竞态。
+    const dataServer = http.createServer((_q: http.IncomingMessage, res: http.ServerResponse) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ v: 'loaded-data' }));
+    });
+    const pageServer = http.createServer((_q: http.IncomingMessage, res: http.ServerResponse) => {
+      if (_q.url === '/data') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ v: 'loaded-data' }));
+        return;
+      }
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(`<!DOCTYPE html><html><body>
+        <button id="load" type="button">Load</button>
+        <div id="box"></div>
+        <script>
+          document.getElementById('load').addEventListener('click', async function() {
+            var r = await fetch('/data');
+            var j = await r.json();
+            var inp = document.createElement('input');
+            inp.id = 'out'; inp.setAttribute('data-arena', 'out'); inp.value = j.v;
+            document.getElementById('box').appendChild(inp);
+          });
+        </script>
+      </body></html>`);
+    });
+    await new Promise<void>((r) => dataServer.listen(0, '127.0.0.1', r));
+    await new Promise<void>((r) => pageServer.listen(0, '127.0.0.1', r));
+    const pagePort = (pageServer.address() as { port: number }).port;
+    const cdp = page as unknown as { _cdpSend: (m: string, p?: Record<string, unknown>) => Promise<unknown> };
+    const net = (offline: boolean) => cdp._cdpSend('Network.emulateNetworkConditions', {
+      offline, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
+    });
+    try {
+      await page.goto(`http://127.0.0.1:${pagePort}/page`, { timeout: 10_000 });
+      const recording = {
+        actions: [
+          {
+            id: 1, type: 'click' as const, timestamp: Date.now() + 1000,
+            url: `http://127.0.0.1:${pagePort}/page`, pageTitle: 'offline',
+            element: { tag: 'button', selector: '#load', text: 'Load' },
+          },
+          {
+            id: 2, type: 'input' as const, timestamp: Date.now() + 2000,
+            url: `http://127.0.0.1:${pagePort}/page`, pageTitle: 'offline',
+            element: { tag: 'input', selector: '#out', text: '' },
+            value: 'loaded-data',
+          },
+        ],
+      };
+      const mk = (tag: string) => new SessionReplayer({
+        page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
+        actionRetry: true,
+        healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-off-${tag}-${Date.now()}`),
+        onError: (a, e) => console.log(`[env-E4 ${tag}] step-err (${a.selector}): ${e.message.slice(0, 110)}`),
+      });
+
+      // 红：offline 全程——fetch 失败，元素不出现，fill 失败但有界（不挂起）
+      // （页面已在 /page 上加载，无需重导航）
+      await net(true);
+      const red = mk('red');
+      await red.load(recording);
+      const redResult = await red.run();
+      await red.close();
+      expect(redResult.failed).toBe(1);
+
+      // 绿：恢复在线——重新加载页面，回放成功，值正确
+      await net(false);
+      await page.goto(`http://127.0.0.1:${pagePort}/page`, { timeout: 10_000 });
+      await page.waitForTimeout(200);
+      const green = mk('green');
+      await green.load(recording);
+      const greenResult = await green.run();
+      await green.close();
+      const diagG = await page.evaluate<{ url: string; hasOut: boolean; hasLoad: boolean; bodyHead: string }>(`(function(){
+        return { url: location.href, hasOut: !!document.getElementById('out'), hasLoad: !!document.getElementById('load'),
+          bodyHead: document.body.innerHTML.slice(0, 150) };
+      })()`);
+      console.log(`[env-E4 green diag]`, JSON.stringify(diagG), 'failed=', greenResult.failed, 'healed=', greenResult.healed);
+      const val = await page.evaluate<string | null>(`document.getElementById('out') ? document.getElementById('out').value : null`);
+      expect(greenResult.failed).toBe(0);
+      expect(val).toBe('loaded-data');
+    } finally {
+      dataServer.close();
+      pageServer.close();
+    }
+  });
   it('env-E1 视口变异-移动端：375x667 重排下语义回放存活、隐藏元素宁败不错', async () => {
     // 录制 1280 桌面宽度 → 回放 375 移动端视口：布局纵向堆叠重排。
     // 语义存活面：属性选择器填充不受重排影响；录制坐标（桌面位置）
