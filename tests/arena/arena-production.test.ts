@@ -1282,6 +1282,58 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(marker).toBe('clicked');
   });
 
+  it('env-E8 字体拦截：fallback 字体改变渲染宽度，text-anchor/填充不受影响', async () => {
+    // 攻击形态：page.route 断掉 @font-face 字体请求 → fallback 字体渲染
+    // （文本宽度变化）。text-anchor 按 DOM textContent 匹配（非渲染字形
+    // 度量），锁定语义回放不受渲染宽度影响。路由计数器证明字体确实被拦截。
+    const pagePath = '/tmp/arena-prod-font.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html><html><head><style>
+      @font-face { font-family: 'XFont'; src: url('/font.woff2') format('woff2'); }
+      body { font-family: 'XFont', serif; }
+    </style></head><body>
+      <form>
+        <input id="u" data-arena="u" />
+        <button id="pay" type="button" onclick="document.getElementById('m').textContent='paid'">Pay Now</button>
+      </form>
+      <div id="m">idle</div>
+    </body></html>`);
+    let fontIntercepted = 0;
+    await page.route('**/font.woff2', (route) => { fontIntercepted++; route.abort(); });
+    await page.goto(`file://${pagePath}`);
+    await page.waitForTimeout(300);
+    // 施加字体拦截变异后，渲染宽度已变（fallback 字体）
+    const recording = {
+      actions: [
+        {
+          id: 1, type: 'input' as const, timestamp: Date.now() + 1000,
+          url: `file://${pagePath}`, pageTitle: 'font',
+          element: { tag: 'input', selector: '#u', text: '' },
+          value: 'vu',
+        },
+        {
+          id: 2, type: 'click' as const, timestamp: Date.now() + 2000,
+          url: `file://${pagePath}`, pageTitle: 'font',
+          element: { tag: 'button', selector: '#pay', text: 'Pay Now' },
+        },
+      ],
+    };
+    const replayer = new SessionReplayer({
+      page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
+      healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-font-${Date.now()}`),
+    });
+    await replayer.load(recording);
+    const result = await replayer.run();
+    await replayer.close();
+    const marker = await page.evaluate<string>(`document.getElementById('m').textContent`);
+    const val = await page.evaluate<string>(`document.getElementById('u').value`);
+    console.log(`[env-E8] fontIntercepted=${fontIntercepted} marker=${marker} val=${val} failed=${result.failed}`);
+
+    expect(fontIntercepted).toBeGreaterThanOrEqual(1); // 字体确实被拦截
+    expect(result.failed).toBe(0);        // 语义回放成功
+    expect(marker).toBe('paid');          // text-anchor/填充不受渲染宽度影响
+    expect(val).toBe('vu');
+  });
+
   it('env-E5 深色模式：setEmulatedMedia dark 下语义回放存活（能力锁定）', async () => {
     // 深色模式下 CSS 全变但结构不变——属性选择器/语义锚不受影响。
     // 锁定"深色模式不影响语义回放"能力 + matchMedia 报告 dark。
