@@ -1111,6 +1111,70 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(result.failed).toBe(1);      // 隐藏元素干净失败（宁败不错）
   });
 
+  it('env-E2 缩放变异：deviceScaleFactor 2x 下 CSS 坐标空间锁定', async () => {
+    // DSF 1→2：物理像素翻倍但 CDP Input 派发用 CSS 像素——点击坐标空间
+    // 理论上不受影响。红测锁定该保证：点击实际落点（页面 clientX/Y）
+    // 与录制 CSS 坐标一致，填充不受影响。
+    const pagePath = '/tmp/arena-prob-dsf.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html><html><body>
+      <form>
+        <input id="u" data-arena="u" />
+        <button id="go" type="button">Go</button>
+      </form>
+      <div id="clog">none</div>
+      <script>
+        document.getElementById('go').addEventListener('click', function(e) {
+          document.getElementById('clog').textContent =
+            Math.round(e.clientX) + ',' + Math.round(e.clientY);
+        });
+      </script>
+    </body></html>`);
+    await page.goto(`file://${pagePath}`);
+    await page.waitForTimeout(200);
+    // 录制时刻（DSF=1）测量按钮中心 CSS 坐标
+    const center = await page.evaluate<{ x: number; y: number }>(`/* @xb-probe */ (function(){
+      var r = document.getElementById('go').getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    })()`);
+    const recording = {
+      actions: [
+        {
+          id: 1, type: 'input' as const, timestamp: Date.now() + 1000,
+          url: `file://${pagePath}`, pageTitle: 'dsf',
+          element: { tag: 'input', selector: '#u', text: '' },
+          value: 'vu',
+        },
+        {
+          id: 2, type: 'click' as const, timestamp: Date.now() + 2000,
+          url: `file://${pagePath}`, pageTitle: 'dsf',
+          element: { tag: 'button', selector: '#go', text: 'Go' },
+          x: center.x, y: center.y,
+        },
+      ],
+    };
+    // 回放前施加缩放变异
+    await page.setDeviceScaleFactor(2);
+    await page.waitForTimeout(200);
+    const dpr = await page.evaluate<number>('window.devicePixelRatio');
+    const replayer = new SessionReplayer({
+      page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
+      healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-dsf-${Date.now()}`),
+    });
+    await replayer.load(recording);
+    const result = await replayer.run();
+    await replayer.close();
+    const clog = await page.evaluate<string>(`document.getElementById('clog').textContent`);
+    const val = await page.evaluate<string>(`document.getElementById('u').value`);
+    console.log(`[env-E2] dpr=${dpr} clog=${clog} (recorded ${center.x},${center.y})`);
+
+    expect(dpr).toBe(2);                       // 缩放确实生效
+    expect(result.failed).toBe(0);
+    expect(val).toBe('vu');
+    const [cx, cy] = clog.split(',').map(Number);
+    expect(Math.abs(cx - center.x)).toBeLessThanOrEqual(2);  // CSS 坐标空间一致（±2 容差）
+    expect(Math.abs(cy - center.y)).toBeLessThanOrEqual(2);
+  });
+
   it('sup-s5 拖拽上传录制→回放闭环：drop 动作经 dropFiles 重放', async () => {
     // Dropzone 类上传区无 input[type=file]，录制端此前对 OS 文件拖入
     // 零捕获（回放无据可依）。闭环=录制端内联 dataTransfer.files，回放

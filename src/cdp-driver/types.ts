@@ -137,6 +137,8 @@ export interface XBPage {
   pdf(opts?: XBPdfOptions): Promise<Buffer>;
   viewportSize(): { width: number; height: number } | null;
   setViewportSize(size: { width: number; height: number }): Promise<void>;
+  /** env-E2: 缩放变异——deviceScaleFactor 切换（CSS 视口尺寸不变） */
+  setDeviceScaleFactor(dsf: number): Promise<void>;
 
   // Scripts
   addInitScript(script: string): Promise<void>;

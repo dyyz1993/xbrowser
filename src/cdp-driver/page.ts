@@ -1026,6 +1026,27 @@ export class XBPageImpl implements XBPage {
     this._viewportSize = size;
   }
 
+  /**
+   * env-E2: 缩放变异——deviceScaleFactor 切换（CSS 像素坐标空间不变，
+   * 物理像素翻倍）。保留当前 CSS 视口尺寸，只换 DSF。
+   */
+  async setDeviceScaleFactor(dsf: number): Promise<void> {
+    const size = this._viewportSize ?? (await this.evaluate<{ width: number; height: number }>(
+      '({ width: window.innerWidth, height: window.innerHeight })',
+    ));
+    await this.conn.send(
+      'Emulation.setDeviceMetricsOverride',
+      {
+        width: size.width,
+        height: size.height,
+        deviceScaleFactor: dsf,
+        mobile: false,
+      },
+      this.sessionId,
+    );
+    this._viewportSize = size;
+  }
+
   // ── Scripts ─────────────────────────────────────────────────
 
   async addInitScript(script: string): Promise<void> {
