@@ -42,6 +42,9 @@ export interface ReplayOptions {
   /** r10: heal 知识库目录（默认 ~/.xbrowser/knowledge）。同域 heal 命中
    * 写回、二次回放直接复用；设为空串可关闭。 */
   healKnowledgeDir?: string;
+  /** sup-E3: 行动失败单次重试（默认开启）——吸收慢网/抖动的边际超时
+   * （元素在预算临界点后才就绪）。导航类失败不重试（X6 语义）。 */
+  actionRetry?: boolean;
 }
 
 export class SessionReplayer {
@@ -60,6 +63,7 @@ export class SessionReplayer {
       selfHealing: opts.selfHealing !== false,
       onHealed: opts.onHealed,
       healKnowledgeDir: opts.healKnowledgeDir ?? join(homedir(), '.xbrowser', 'knowledge'),
+      actionRetry: opts.actionRetry ?? true,
     } as typeof this.opts;
   }
 
@@ -76,7 +80,7 @@ export class SessionReplayer {
 
   /** Run the full replay */
   async run(): Promise<{
-    success: number; failed: number; skipped: number;
+    success: number; failed: number; skipped: number; retried: number;
     healed: number; healedDetails: Array<{ index: number; strategy: string }>;
   }> {
     if (!this.recording) throw new Error('No recording loaded. Call load() first.');
@@ -92,7 +96,7 @@ export class SessionReplayer {
   }
 
   private async _runInner(): Promise<{
-    success: number; failed: number; skipped: number;
+    success: number; failed: number; skipped: number; retried: number;
     healed: number; healedDetails: Array<{ index: number; strategy: string }>;
   }> {
     if (!this.recording) throw new Error('No recording loaded. Call load() first.');
@@ -120,6 +124,7 @@ export class SessionReplayer {
     let success = 0;
     let failed = 0;
     let skipped = 0;
+    let retried = 0;
     const healedDetails: Array<{ index: number; strategy: string }> = [];
 
     for (let i = 0; i < actions.length; i++) {
@@ -143,7 +148,20 @@ export class SessionReplayer {
         if (action.trajectory) {
           await this.replayTrajectory(action.trajectory);
         }
-        await this.replayAction(action);
+        try {
+          await this.replayAction(action);
+        } catch (e) {
+          // sup-E3: 行动失败单次重试——吸收慢网/抖动的边际超时（元素在
+          // 预算临界点后才就绪）。导航失败不重试（X6：导航失败使后续
+          // 动作失效，且重试导航可能重复提交表单）。
+          if (this.opts.actionRetry === false
+            || action.type === 'navigation' || action.type === 'goto') {
+            throw e;
+          }
+          retried++;
+          await new Promise(r => setTimeout(r, 1200));
+          await this.replayAction(action);
+        }
 
         // X3: After each non-informational action, stabilize the page
         // so the next step doesn't race with async rendering.
@@ -184,6 +202,7 @@ export class SessionReplayer {
 
     return {
       success, failed, skipped,
+      retried,
       healed: healedDetails.length,
       healedDetails,
     };
@@ -1111,13 +1130,16 @@ export class SessionReplayer {
 
     // Try each candidate in order
     const isClick = action.type === 'click' || action.type === 'cdp-click';
+    const __dbgT0 = Date.now();
+    const __dbg = (msg: string) => { if (process.env.XBROWSER_HEAL_DEBUG) console.error(`[resolve ${Math.round((Date.now() - __dbgT0))}ms] ${msg}`); };
     for (const sel of candidates) {
       try {
         await page.waitForSelector(sel, { state: 'visible', timeout });
-        if (isClick && await this.isClickOccluded(sel)) continue; // 遮挡——点击只会落在覆盖层
+        if (isClick && await this.isClickOccluded(sel)) { __dbg(`occluded: ${sel}`); continue; }
+        __dbg(`primary hit: ${sel}`);
         return sel;
       } catch {
-        // Try next fallback
+        __dbg(`primary miss: ${sel}`);
       }
     }
 
@@ -1127,9 +1149,10 @@ export class SessionReplayer {
         const healed = await this.healResolve(action, candidates);
         this.opts.onHealed?.(action, healed.strategy, candidates.length);
         this.persistHealKnowledge(action, candidates[0] ?? '', healed);
+        __dbg(`heal hit: ${healed.selector} (${healed.strategy})`);
         return healed.selector;
       } catch {
-        // Self-healing also failed — rethrow original error
+        __dbg('heal exhausted');
       }
     }
 

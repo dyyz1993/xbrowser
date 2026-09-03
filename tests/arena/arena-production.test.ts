@@ -26,6 +26,7 @@ import { buildTargetPage, MUTATIONS, LEVELS, SEMANTIC_EXPECTED } from './shared.
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import http from 'http';
 
 const TIMEOUT = 180_000;
 const ARCHIVE_DIR = 'output/arena';
@@ -1033,6 +1034,53 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(log).toBe('d1:2024-03-15');
   });
 
+  it('env-E3 网络延迟注入：晚到元素（7s 揭示）——重试救回无重试时的必败', async () => {
+    // 慢脚本下元素 18s 才揭示：超出无重试时 attempt-1 的全窗口（~16.2s）
+    // → 必失败；行动重试（actionRetry）的 attempt-2 在 [14.4, 20.8] 滑动
+    // → 必含揭示时刻 → fill 成功。锁定 actionRetry 的兜底价值。
+    const mkPage = (tag: string): string => {
+      const p = path.join(os.tmpdir(), `arena-lat-${tag}-${Date.now()}.html`);
+      fs.writeFileSync(p, `<!DOCTYPE html><html><body>
+        <input id="out" hidden data-arena="out" />
+        <script>window.__pageT0 = Date.now(); setTimeout(function(){ document.getElementById('out').hidden = false; }, 7000);</script>
+      </body></html>`);
+      return p;
+    };
+    const recording = {
+      actions: [{
+        id: 1, type: 'input' as const, timestamp: Date.now(),
+        url: 'file:///tmp/arena-lat.html', pageTitle: 'latency',
+        element: { tag: 'input', selector: '#out', text: '' },
+        value: 'delayed-data',
+      }],
+    };
+    const runCase = async (tag: string, retry: boolean) => {
+      const p = mkPage(tag);
+      await page.goto(`file://${p}`);
+      await page.waitForTimeout(200);
+      const r = new SessionReplayer({
+        page, selfHealing: true, stepDelay: 50, stepTimeout: 1600,
+        actionRetry: retry,
+        healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-lat-${tag}-${Date.now()}`),
+      });
+      await r.load(recording);
+      const res = await r.run();
+      await r.close();
+      return res;
+    };
+
+    // 无重试：attempt-1 全窗口耗尽（reveal 18s > 16.2s 窗口末端）→ 必败
+    const red = await runCase('red', false);
+    expect(red.failed).toBe(1);
+    expect(red.retried).toBe(0);
+
+    // 重试：attempt-2 窗口 [14.4, 20.8] 必含 18s 揭示 → 成功
+    const green = await runCase('green', true);
+    expect(green.failed).toBe(0);
+    expect(green.retried).toBe(1);
+    const val = await page.evaluate<string>(`document.getElementById('out').value`);
+    expect(val).toBe('delayed-data');
+  });
   it('env-E1 视口变异-移动端：375x667 重排下语义回放存活、隐藏元素宁败不错', async () => {
     // 录制 1280 桌面宽度 → 回放 375 移动端视口：布局纵向堆叠重排。
     // 语义存活面：属性选择器填充不受重排影响；录制坐标（桌面位置）
