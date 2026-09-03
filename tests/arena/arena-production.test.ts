@@ -1220,6 +1220,68 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
       ._cdpSend('Emulation.setTimezoneOverride', { timezoneId: 'Asia/Shanghai' });
   });
 
+  it('env-E7 CPU 节流 4x：慢机环境下语义回放存活（能力锁定）', async () => {
+    // CI/低配机的 CPU 节流放大页面 JS 耗时——驱动超时预算需吸收。
+    // 页面主线程忙等 1.2s（节流 4x 下等效 ~4.8s 慢机），锁定回放引擎
+    // 在慢机环境的语义正确性。
+    const pagePath = '/tmp/arena-prod-cpu.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html><html><body>
+      <form>
+        <input id="u" data-arena="u" />
+        <input id="p" type="password" data-arena="p" />
+        <button id="go" type="button" onclick="document.getElementById('m').textContent='clicked'">Login</button>
+      </form>
+      <div id="m">idle</div>
+      <script>
+        var s = Date.now(); while (Date.now() - s < 1200) {}
+      </script>
+    </body></html>`);
+    await page.goto(`file://${pagePath}`);
+    // 施加 CPU 节流变异（CDP 直发）
+    await (page as unknown as { _cdpSend: (m: string, p?: Record<string, unknown>) => Promise<unknown> })
+      ._cdpSend('Emulation.setCPUThrottlingRate', { rate: 4 });
+    const recording = {
+      actions: [
+        {
+          id: 1, type: 'input' as const, timestamp: Date.now() + 1000,
+          url: `file://${pagePath}`, pageTitle: 'cpu',
+          element: { tag: 'input', selector: '#u', text: '' },
+          value: 'vu',
+        },
+        {
+          id: 2, type: 'input' as const, timestamp: Date.now() + 2000,
+          url: `file://${pagePath}`, pageTitle: 'cpu',
+          element: { tag: 'input', selector: '#p', text: '' },
+          value: 'vp',
+        },
+        {
+          id: 3, type: 'click' as const, timestamp: Date.now() + 3000,
+          url: `file://${pagePath}`, pageTitle: 'cpu',
+          element: { tag: 'button', selector: '#go', text: 'Login' },
+        },
+      ],
+    };
+    const replayer = new SessionReplayer({
+      page, selfHealing: true, stepDelay: 50, stepTimeout: 10_000,
+      healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-cpu-${Date.now()}`),
+    });
+    await replayer.load(recording);
+    const result = await replayer.run();
+    await replayer.close();
+    const marker = await page.evaluate<string>(`document.getElementById('m').textContent`);
+    const values = await page.evaluate<Record<string, string>>(`/* @xb-probe */ (function(){
+      var out = {};
+      document.querySelectorAll('[data-arena]').forEach(function(el){ out[el.getAttribute('data-arena')] = el.value; });
+      return out;
+    })()`);
+    console.log(`[env-E7] values=${JSON.stringify(values)} marker=${marker} failed=${result.failed}`);
+
+    expect(result.failed).toBe(0);        // 节流下语义回放存活
+    expect(values.u).toBe('vu');
+    expect(values.p).toBe('vp');
+    expect(marker).toBe('clicked');
+  });
+
   it('env-E5 深色模式：setEmulatedMedia dark 下语义回放存活（能力锁定）', async () => {
     // 深色模式下 CSS 全变但结构不变——属性选择器/语义锚不受影响。
     // 锁定"深色模式不影响语义回放"能力 + matchMedia 报告 dark。
