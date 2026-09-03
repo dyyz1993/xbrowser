@@ -1173,6 +1173,53 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     }
   });
 
+  it('env-E6 时区切换：date 填充 ISO 值不受时区影响 + 时区变异生效', async () => {
+    // 攻击形态：录制（Asia/Shanghai）→ 回放（America/New_York）——
+    // date input 的 value 是 ISO 日期（时区无关），填充应不受影响；
+    // getTimezoneOffset 从 -480（上海）变为 240（纽约 EDT）证明变异生效。
+    const pagePath = '/tmp/arena-prod-tz.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html><html><body>
+      <form>
+        <input type="date" id="d" data-arena="d" />
+      </form>
+      <div id="tz">unset</div>
+    </body></html>`);
+    await page.goto(`file://${pagePath}`);
+    await page.waitForTimeout(200);
+    const tzBefore = await page.evaluate<string>(`Intl.DateTimeFormat().resolvedOptions().timeZone`);
+    // 施加时区变异（CDP 直发）
+    await (page as unknown as { _cdpSend: (m: string, p?: Record<string, unknown>) => Promise<unknown> })
+      ._cdpSend('Emulation.setTimezoneOverride', { timezoneId: 'America/New_York' });
+    await page.waitForTimeout(200);
+    const tzAfter = await page.evaluate<string>(`Intl.DateTimeFormat().resolvedOptions().timeZone`);
+    const offset = await page.evaluate<number>('new Date().getTimezoneOffset()');
+    const recording = {
+      actions: [{
+        id: 1, type: 'input' as const, timestamp: Date.now(),
+        url: `file://${pagePath}`, pageTitle: 'tz',
+        element: { tag: 'input', selector: '#d', text: '', type: 'date' },
+        value: '2024-06-15',
+      }],
+    };
+    const replayer = new SessionReplayer({
+      page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
+      healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-tz-${Date.now()}`),
+    });
+    await replayer.load(recording);
+    const result = await replayer.run();
+    await replayer.close();
+    const val = await page.evaluate<string>(`document.getElementById('d').value`);
+    console.log(`[env-E6] tz ${tzBefore}→${tzAfter} offset=${offset} val=${val} failed=${result.failed}`);
+
+    expect(tzAfter).toBe('America/New_York');  // 时区变异确实生效
+    expect(offset).toBe(240);                  // EDT = UTC-4
+    expect(result.failed).toBe(0);             // 语义回放成功
+    expect(val).toBe('2024-06-15');            // date 填充 ISO 值时区无关
+    // 环境卫生：复位时区覆盖（emulation 跨导航持久，污染后续测试）
+    await (page as unknown as { _cdpSend: (m: string, p?: Record<string, unknown>) => Promise<unknown> })
+      ._cdpSend('Emulation.setTimezoneOverride', { timezoneId: 'Asia/Shanghai' });
+  });
+
   it('env-E5 深色模式：setEmulatedMedia dark 下语义回放存活（能力锁定）', async () => {
     // 深色模式下 CSS 全变但结构不变——属性选择器/语义锚不受影响。
     // 锁定"深色模式不影响语义回放"能力 + matchMedia 报告 dark。
@@ -1246,6 +1293,9 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(result.failed).toBe(0);        // 语义回放全绿（结构不变）
     expect(values.u).toBe('vu');
     expect(values.p).toBe('vp');
+    // 环境卫生：复位 emulated media（ emulation 跨导航持久，污染后续测试）
+    await (page as unknown as { _cdpSend: (m: string, p?: Record<string, unknown>) => Promise<unknown> })
+      ._cdpSend('Emulation.setEmulatedMedia', { features: [] });
   });
   it('env-E1 视口变异-移动端：375x667 重排下语义回放存活、隐藏元素宁败不错', async () => {
     // 录制 1280 桌面宽度 → 回放 375 移动端视口：布局纵向堆叠重排。
