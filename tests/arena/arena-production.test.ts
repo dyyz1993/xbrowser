@@ -1033,6 +1033,84 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(log).toBe('d1:2024-03-15');
   });
 
+  it('env-E1 视口变异-移动端：375x667 重排下语义回放存活、隐藏元素宁败不错', async () => {
+    // 录制 1280 桌面宽度 → 回放 375 移动端视口：布局纵向堆叠重排。
+    // 语义存活面：属性选择器填充不受重排影响；录制坐标（桌面位置）
+    // 在重排后不落在元素内，坐标忠实性检查失败 → 自动降级元素中心点击
+    // （锁定该降级路径）。失控面：media query 隐藏的元素——可见性门控
+    // 干净失败（宁败不错，无静默错误目标）。
+    const pagePath = '/tmp/arena-prod-viewport.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html><html><head><style>
+      @media (max-width: 500px) { .desktop-only { display: none; } }
+    </style></head><body>
+      <form>
+        <label>User <input id="u" data-arena="u" /></label>
+        <label>Pass <input id="p" type="password" data-arena="p" /></label>
+        <button id="go" type="button" onclick="document.getElementById('m').textContent='clicked'">Login</button>
+      </form>
+      <div class="desktop-only" onclick="document.getElementById('m').textContent='desktop-clicked'">desktop panel</div>
+      <div id="m">idle</div>
+    </body></html>`);
+    await page.goto(`file://${pagePath}`);
+    await page.waitForTimeout(200);
+    // 录制时刻（桌面宽度）测量按钮中心坐标
+    const rect = await page.evaluate<{ x: number; y: number }>(`/* @xb-probe */ (function(){
+      var r = document.getElementById('go').getBoundingClientRect();
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    })()`);
+    const recording = {
+      actions: [
+        {
+          id: 1, type: 'input' as const, timestamp: Date.now() + 1000,
+          url: `file://${pagePath}`, pageTitle: 'viewport',
+          element: { tag: 'input', selector: '#u', text: '' },
+          value: 'vu',
+        },
+        {
+          id: 2, type: 'input' as const, timestamp: Date.now() + 2000,
+          url: `file://${pagePath}`, pageTitle: 'viewport',
+          element: { tag: 'input', selector: '#p', text: '' },
+          value: 'vp',
+        },
+        {
+          id: 3, type: 'click' as const, timestamp: Date.now() + 3000,
+          url: `file://${pagePath}`, pageTitle: 'viewport',
+          element: { tag: 'button', selector: '#go', text: 'Login' },
+          x: rect.x, y: rect.y,
+        },
+        {
+          id: 4, type: 'click' as const, timestamp: Date.now() + 4000,
+          url: `file://${pagePath}`, pageTitle: 'viewport',
+          element: { tag: 'div', selector: '.desktop-only', text: 'desktop panel' },
+        },
+      ],
+    };
+    // 回放前施加视口变异（录制=默认宽度，回放=375x667 移动端）
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.waitForTimeout(200);
+    const vw = await page.evaluate<number>('window.innerWidth');
+    const replayer = new SessionReplayer({
+      page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
+      healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-vp-${Date.now()}`),
+    });
+    await replayer.load(recording);
+    const result = await replayer.run();
+    await replayer.close();
+    const values = await page.evaluate<Record<string, string>>(`/* @xb-probe */ (function(){
+      var out = {};
+      document.querySelectorAll('[data-arena]').forEach(function(el){ out[el.getAttribute('data-arena')] = el.value; });
+      return out;
+    })()`);
+    const marker = await page.evaluate<string>(`document.getElementById('m').textContent`);
+    console.log(`[env-E1] vw=${vw} values=${JSON.stringify(values)} marker=${marker} failed=${result.failed}`);
+
+    expect(vw).toBe(375);               // 视口变异确实生效
+    expect(values.u).toBe('vu');        // 重排下属性选择器填充存活
+    expect(values.p).toBe('vp');
+    expect(marker).toBe('clicked');     // 坐标降级→元素中心点击正确
+    expect(result.failed).toBe(1);      // 隐藏元素干净失败（宁败不错）
+  });
+
   it('sup-s5 拖拽上传录制→回放闭环：drop 动作经 dropFiles 重放', async () => {
     // Dropzone 类上传区无 input[type=file]，录制端此前对 OS 文件拖入
     // 零捕获（回放无据可依）。闭环=录制端内联 dataTransfer.files，回放
