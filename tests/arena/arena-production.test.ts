@@ -1334,6 +1334,86 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(val).toBe('vu');
   });
 
+  it('env-E9 存储清空：依赖 localStorage 分支渲染的页面——有界失败 + 恢复存储后语义回放存活', async () => {
+    // 攻击形态：录制环境带登录态/偏好（localStorage.pref='pro' → pro 表单），
+    // 回放环境存储被清（clearCookies + storage.clear）→ 页面渲染成 login 分支，
+    // 目标元素根本不存在。锁定两条：① 红侧失败有界且诊断正确（目标缺失，
+    // 不是挂起）；② 防御=回放前恢复存储态（xbrowser 的 set-local-storage/
+    // set-cookie 命令族即此策略），恢复后同一份 recording 语义回放存活。
+    const pagePath = '/tmp/arena-prod-storage.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html><html><body>
+      <div id="app"></div>
+      <script>
+        var app = document.getElementById('app');
+        if (localStorage.getItem('pref') === 'pro') {
+          app.innerHTML = '<form><input id="pro-in" data-arena="pin" />' +
+            '<button id="save" type="button" onclick="document.getElementById(\\'m\\').textContent=\\'pro-saved\\'">Save Pro</button></form>' +
+            '<div id="m">idle</div>';
+        } else {
+          app.innerHTML = '<a id="login-link" href="#">Please Login</a>';
+        }
+      </script>
+    </body></html>`);
+    const cdp = page as unknown as { _cdpSend: (m: string, p?: Record<string, unknown>) => Promise<unknown> };
+    const recording = {
+      actions: [
+        {
+          id: 1, type: 'input' as const, timestamp: Date.now() + 1000,
+          url: `file://${pagePath}`, pageTitle: 'storage',
+          element: { tag: 'input', selector: '#pro-in', text: '' },
+          value: 'v9',
+        },
+        {
+          id: 2, type: 'click' as const, timestamp: Date.now() + 2000,
+          url: `file://${pagePath}`, pageTitle: 'storage',
+          element: { tag: 'button', selector: '#save', text: 'Save Pro' },
+        },
+      ],
+    };
+    const mk = () => new SessionReplayer({
+      page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
+      healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-sto-${Date.now()}`),
+      onError: (a, e) => console.log(`[env-E9 red] step-err (${a.selector}): ${e.message.slice(0, 100)}`),
+    });
+
+    // 红：存储清空变异（storage.clear 三连 + cookies）→ 页面渲染 login 分支
+    await page.goto(`file://${pagePath}`);
+    await page.evaluate(`localStorage.setItem('pref','pro'); 'ok'`);
+    await page.reload();
+    await page.waitForTimeout(200);
+    await page.evaluate(`localStorage.clear(); sessionStorage.clear(); 'cleared'`);
+    await cdp._cdpSend('Storage.clearCookies').catch(() =>
+      cdp._cdpSend('Network.clearBrowserCookies'));
+    await page.reload();  // 存储清空后重载 → 分支渲染翻转
+    await page.waitForTimeout(200);
+    const branch = await page.evaluate<string>(
+      `document.getElementById('login-link') ? 'login' : 'pro'`);
+    const red = mk();
+    await red.load(recording);
+    const redResult = await red.run();
+    await red.close();
+    console.log(`[env-E9] red branch=${branch} failed=${redResult.failed}`);
+
+    expect(branch).toBe('login');         // 分支确实翻转（变异生效）
+    expect(redResult.failed).toBe(2);     // 两个 step 目标均缺失，逐个有界失败（不挂起）
+
+    // 绿：恢复存储态（set-local-storage 策略）→ 同一份 recording 语义回放存活
+    await page.evaluate(`localStorage.setItem('pref','pro'); 'ok'`);
+    await page.reload();
+    await page.waitForTimeout(200);
+    const green = mk();
+    await green.load(recording);
+    const greenResult = await green.run();
+    await green.close();
+    const marker = await page.evaluate<string>(`document.getElementById('m').textContent`);
+    const val = await page.evaluate<string>(`document.getElementById('pro-in').value`);
+    console.log(`[env-E9] green failed=${greenResult.failed} marker=${marker} val=${val}`);
+
+    expect(greenResult.failed).toBe(0);
+    expect(val).toBe('v9');
+    expect(marker).toBe('pro-saved');
+  });
+
   it('env-E5 深色模式：setEmulatedMedia dark 下语义回放存活（能力锁定）', async () => {
     // 深色模式下 CSS 全变但结构不变——属性选择器/语义锚不受影响。
     // 锁定"深色模式不影响语义回放"能力 + matchMedia 报告 dark。
