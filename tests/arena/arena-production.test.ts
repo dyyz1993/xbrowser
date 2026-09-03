@@ -1172,6 +1172,81 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
       pageServer.close();
     }
   });
+
+  it('env-E5 深色模式：setEmulatedMedia dark 下语义回放存活（能力锁定）', async () => {
+    // 深色模式下 CSS 全变但结构不变——属性选择器/语义锚不受影响。
+    // 锁定"深色模式不影响语义回放"能力 + matchMedia 报告 dark。
+    const pagePath = '/tmp/arena-prod-dark.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html><html><head><style>
+      body { background: #fff; color: #000; }
+      @media (prefers-color-scheme: dark) { body { background: #111; color: #eee; } }
+    </style></head><body>
+      <form>
+        <input id="u" data-arena="u" />
+        <input id="p" type="password" data-arena="p" />
+      </form>
+      <div id="mode">unset</div>
+      <script>
+        var mq = window.matchMedia('(prefers-color-scheme: dark)');
+        var upd = function() { document.getElementById('mode').textContent = mq.matches ? 'dark' : 'light'; };
+        if (mq.addEventListener) mq.addEventListener('change', upd);
+        upd();
+      </script>
+    </body></html>`);
+    await page.goto(`file://${pagePath}`);
+    await page.waitForTimeout(200);
+    // 显式先设 light（headless 默认即 dark），锁定亮→暗转换场景
+    await (page as unknown as { _cdpSend: (m: string, p?: Record<string, unknown>) => Promise<unknown> })
+      ._cdpSend('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-color-scheme', value: 'light' }],
+      });
+    await page.waitForTimeout(200);
+    const modeBefore = await page.evaluate<string>(`document.getElementById('mode').textContent`);
+    // 施加深色模式变异（CDP 直发，驱动未暴露接口）
+    await (page as unknown as { _cdpSend: (m: string, p?: Record<string, unknown>) => Promise<unknown> })
+      ._cdpSend('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-color-scheme', value: 'dark' }],
+      });
+    await page.waitForTimeout(200);
+    const modeAfter = await page.evaluate<string>(`document.getElementById('mode').textContent`);
+    const dpr = await page.evaluate<boolean>('window.matchMedia("(prefers-color-scheme: dark)").matches');
+    const recording = {
+      actions: [
+        {
+          id: 1, type: 'input' as const, timestamp: Date.now() + 1000,
+          url: `file://${pagePath}`, pageTitle: 'dark',
+          element: { tag: 'input', selector: '#u', text: '' },
+          value: 'vu',
+        },
+        {
+          id: 2, type: 'input' as const, timestamp: Date.now() + 2000,
+          url: `file://${pagePath}`, pageTitle: 'dark',
+          element: { tag: 'input', selector: '#p', text: '' },
+          value: 'vp',
+        },
+      ],
+    };
+    const replayer = new SessionReplayer({
+      page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
+      healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-dark-${Date.now()}`),
+    });
+    await replayer.load(recording);
+    const result = await replayer.run();
+    await replayer.close();
+    const values = await page.evaluate<Record<string, string>>(`/* @xb-probe */ (function(){
+      var out = {};
+      document.querySelectorAll('[data-arena]').forEach(function(el){ out[el.getAttribute('data-arena')] = el.value; });
+      return out;
+    })()`);
+    console.log(`[env-E5] mode ${modeBefore}→${modeAfter} dpr=${dpr} values=${JSON.stringify(values)} failed=${result.failed}`);
+
+    expect(modeBefore).toBe('light');
+    expect(modeAfter).toBe('dark');       // 深色模式变异确实生效
+    expect(dpr).toBe(true);
+    expect(result.failed).toBe(0);        // 语义回放全绿（结构不变）
+    expect(values.u).toBe('vu');
+    expect(values.p).toBe('vp');
+  });
   it('env-E1 视口变异-移动端：375x667 重排下语义回放存活、隐藏元素宁败不错', async () => {
     // 录制 1280 桌面宽度 → 回放 375 移动端视口：布局纵向堆叠重排。
     // 语义存活面：属性选择器填充不受重排影响；录制坐标（桌面位置）
