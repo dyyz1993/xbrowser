@@ -114,14 +114,17 @@ describe('SessionReplayer — new action types', () => {
     const result = await replayActions([
       makeAction({
         type: 'dblclick',
-        element: { tag: 'div', text: 'Item' },
+        element: { tag: 'textarea', text: 'Item' },
         x: 150,
         y: 250,
       }),
     ]);
     expect(result.success).toBe(1);
-    // resolveSelector falls back to tag name
-    expect(mockPage._mocks.dblclickFn).toHaveBeenCalledWith('div', { timeout: 1000 });
+    // resolveSelector falls back to the tag name for naturally-unique tags
+    // (textarea/select). Generic tags (div/span/input/button) fall through to
+    // the heal chain instead — a bare generic tag resolves to the FIRST match
+    // and silently targets the wrong element (S203 production arena).
+    expect(mockPage._mocks.dblclickFn).toHaveBeenCalledWith('textarea', { timeout: 1000 });
   });
 
   // ── contextmenu ──
@@ -143,14 +146,14 @@ describe('SessionReplayer — new action types', () => {
     const result = await replayActions([
       makeAction({
         type: 'contextmenu',
-        element: { tag: 'div', text: 'Area' },
+        element: { tag: 'select', text: 'Area' },
         x: 300,
         y: 400,
       }),
     ]);
     expect(result.success).toBe(1);
-    // resolveSelector falls back to tag name 'div'
-    expect(mockPage._mocks.clickFn).toHaveBeenCalledWith('div', { button: 'right', timeout: 1000 });
+    // resolveSelector falls back to tag name 'select' (naturally unique)
+    expect(mockPage._mocks.clickFn).toHaveBeenCalledWith('select', { button: 'right', timeout: 1000 });
   });
 
   // ── hover ──
@@ -172,14 +175,32 @@ describe('SessionReplayer — new action types', () => {
     const result = await replayActions([
       makeAction({
         type: 'hover',
-        element: { tag: 'span', text: 'Label' },
+        element: { tag: 'textarea', text: 'Label' },
         x: 10,
         y: 20,
       }),
     ]);
     expect(result.success).toBe(1);
-    // resolveSelector falls back to tag 'span'
-    expect(mockPage._mocks.hoverFn).toHaveBeenCalledWith('span');
+    // resolveSelector falls back to tag 'textarea' (naturally unique)
+    expect(mockPage._mocks.hoverFn).toHaveBeenCalledWith('textarea');
+  });
+
+  it('should fail bounded on generic bare tag (falls through to heal chain)', async () => {
+    // S203 tag-fallback tightening: a bare generic tag (div/span/input/button)
+    // resolves to the FIRST match on the page and silently targets the wrong
+    // element. It must NOT short-circuit the heal chain — here the mock page
+    // has no DOM, so the heal chain also misses, and the action fails bounded.
+    const result = await replayActions([
+      makeAction({
+        type: 'hover',
+        element: { tag: 'span', text: 'Label' },
+        x: 10,
+        y: 20,
+      }),
+    ]);
+    expect(result.success).toBe(0);
+    expect(result.failed).toBe(1);
+    expect(mockPage._mocks.hoverFn).not.toHaveBeenCalled();
   });
 
   // ── drag ──
