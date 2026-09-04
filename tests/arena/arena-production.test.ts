@@ -18,7 +18,7 @@
  *   - 文档承诺的 x/y 坐标兜底未实现
  *   - extractSemanticCore 对 class 类选择器返回空
  */
-import { describe, it, expect, afterAll, beforeAll } from 'vitest';
+import { describe, it, expect, afterEach, beforeEach } from 'vitest';
 import { launch, type XBBrowser, type XBPage } from '../../src/cdp-driver/index.js';
 import { SessionReplayer } from '../../src/recorder/session-replayer.js';
 import type { UserAction } from '../../src/recorder/recording-types.js';
@@ -83,14 +83,17 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
   let page: XBPage;
   let lastTargetPath = '';
 
-  beforeAll(async () => {
+  // 每用例独立浏览器实例：39 个场景共享单实例时，CDP 通道会在文件长跑
+  // 后半程僵死（本地实证 E1 后 Page.navigate 全部 30s 超时；CI 上遮挡层
+  // 场景断言失败）——资源跨用例累积，单用例全绿。逐用例重启隔离。
+  beforeEach(async () => {
     const result = await launch({ headless: true, args: ['--no-sandbox'] });
     browser = result.browser;
     const context = await browser.newContext();
     page = await context.newPage();
   }, 60_000);
 
-  afterAll(async () => {
+  afterEach(async () => {
     if (browser) await browser.close().catch(() => {});
     try { fs.unlinkSync(lastTargetPath); } catch { /* best-effort */ }
   }, 30_000);
@@ -1629,8 +1632,11 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     expect(result.failed).toBe(0);
     expect(val).toBe('vu');
     const [cx, cy] = clog.split(',').map(Number);
-    expect(Math.abs(cx - center.x)).toBeLessThanOrEqual(2);  // CSS 坐标空间一致（±2 容差）
-    expect(Math.abs(cy - center.y)).toBeLessThanOrEqual(2);
+    // 锁定的语义是"CSS 坐标空间不随 DSF 翻倍"——坐标空间若错，偏差会是
+    // 数十像素（约等于 center 本身）。±4 容差吸收 DSF=2 物理像素对齐的
+    // 0.5px 舍入放大（实测落点在 2-3px 间抖动）。
+    expect(Math.abs(cx - center.x)).toBeLessThanOrEqual(4);
+    expect(Math.abs(cy - center.y)).toBeLessThanOrEqual(4);
   });
 
   it('sup-s5 拖拽上传录制→回放闭环：drop 动作经 dropFiles 重放', async () => {
