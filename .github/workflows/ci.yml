@@ -32,7 +32,10 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 全量测试（3797+ 用例，含 arena 逐用例浏览器隔离）本地纯测试已 ~20 分钟；
+    # CI 带 coverage + build + 慢机，15 分钟预算下 test job 从未跑完过（超时被
+    # 标记 cancelled，是 2026-08 末以来 CI 持续红的主因之一）。
+    timeout-minutes: 60
     strategy:
       matrix:
         node-version: [22]
