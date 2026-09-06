@@ -1683,7 +1683,14 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     await replayer.load(recording);
     const result = await replayer.run();
     await replayer.close();
-    const log = await page.evaluate<string>(`/* @xb-probe */ document.getElementById('log').textContent`);
+    // f.text() 是页面内异步 Promise——CI 慢机上 run() 结束时回调可能未落，
+    // 轮询等待写入（保留断言强度：最终必须到达正确值）。
+    let log = 'none';
+    for (let i = 0; i < 30; i++) {
+      log = await page.evaluate<string>(`/* @xb-probe */ document.getElementById('log').textContent`);
+      if (log !== 'none') break;
+      await page.waitForTimeout(100);
+    }
 
     expect(result.failed).toBe(0);
     expect(log).toBe('note.txt:dropped-content:15');
