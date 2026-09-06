@@ -89,6 +89,9 @@ jobs:
   scrape-test:
     needs: build
     runs-on: ubuntu-latest
+    # 外网冒烟（爬 example.com）——时快时慢不稳定，cancelled/failure 不应
+    # 阻塞主链路；发布门槛是 lint/typecheck/test/build 四个核心 job。
+    continue-on-error: true
     timeout-minutes: 10
     if: github.ref == 'refs/heads/master'
     steps:
