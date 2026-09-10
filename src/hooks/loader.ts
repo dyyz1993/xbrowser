@@ -22,7 +22,7 @@ interface AfterHookContext extends HookContext {
   duration: number;
 }
 
-interface ExecutionHook {
+export interface ExecutionHook {
   name: string;
   onBeforeCommand?: (ctx: HookContext) => Promise<void>;
   onAfterCommand?: (ctx: AfterHookContext) => Promise<Record<string, unknown> | undefined>;

@@ -7,7 +7,7 @@ const mockSite = {
 };
 
 const mockXCLI = {
-  createSite: vi.fn(() => mockSite),
+  createSite: vi.fn((_cfg: unknown) => mockSite),
 };
 
 function createMockPage(evaluateResult: unknown = {}) {
@@ -32,7 +32,7 @@ vi.mock('../../.xcli/plugins/zhihu/index.js', () => {
         site.command(name, {
           handler: async (args: Record<string, unknown>, ctx: Record<string, unknown>) => {
             if (!ctx.page) throw new Error('需要浏览器页面');
-            const result = (await ctx.page.evaluate(() => ({}))) as Record<string, unknown>;
+            const result = (await (ctx.page as unknown as { evaluate: (fn: unknown) => Promise<unknown> }).evaluate(() => ({}))) as Record<string, unknown>;
             if (name === 'search') return { data: { results: result, query: args.query } };
             if (name === 'trending') return { data: { items: result } };
             return { data: result };

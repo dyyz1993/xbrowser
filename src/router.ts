@@ -1,4 +1,4 @@
-import { parseArgs, outputFormatter, isCommandResult, type CommandResult, helpGenerator, TipCollector, normalizeTips, tip as makeTip } from '@dyyz1993/xcli-core';
+import { parseArgs, outputFormatter, isCommandResult, type CommandResult, type CommandContext, helpGenerator, TipCollector, normalizeTips, tip as makeTip } from '@dyyz1993/xcli-core';
 import { parsePluginParams } from './utils/plugin-params.js';
 import { asZodSchema } from './utils/zod-internal.js';
 import { version } from './version.js';
@@ -920,7 +920,7 @@ export async function routeCommand(
               await Promise.all(cmdHooks.map(h => h.onBeforeCommand?.({ page: session.page!, command: `${command} ${subCommand}`, params })));
             }
 
-            const result = await cmdEntry.handler(params, ctx) as CommandResult;
+            const result = await cmdEntry.handler(params, ctx as unknown as CommandContext) as CommandResult;
 
             const hookOutputs: Array<Record<string, unknown>> = [];
             if (cmdHooks.length > 0 && session?.page) {

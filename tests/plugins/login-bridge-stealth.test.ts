@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 // UMD 模块：ESM interop 直接 default 导入（vite 预打包 cjs）
+// @ts-expect-error -- 扩展 cjs 无类型声明（SW 共享逻辑，运行时消费）
 import StealthCommon from '../../.xcli/plugins/login-bridge/extension/stealth-common.cjs';
 
 describe('stealth-common（S164 桥任务 tab 反检测纯逻辑）', () => {

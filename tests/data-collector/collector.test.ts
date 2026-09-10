@@ -55,7 +55,7 @@ describe('DataCollector', () => {
 
   describe('collectAll', () => {
     it('should return batch result structure', async () => {
-      const result = await collector.collectAll(['test query'], ['nonexistent-engine']);
+      const result = await collector.collectAll('test query', ['nonexistent-engine']);
       expect(result).toHaveProperty('results');
       expect(result).toHaveProperty('summary');
       expect(result).toHaveProperty('timestamp');
@@ -63,7 +63,7 @@ describe('DataCollector', () => {
     });
 
     it('should handle unknown engines gracefully', async () => {
-      const result = await collector.collectAll(['test query'], ['nonexistent-engine']);
+      const result = await collector.collectAll('test query', ['nonexistent-engine']);
       expect(result.results.length).toBe(1);
       expect(result.results[0].success).toBe(false);
     });

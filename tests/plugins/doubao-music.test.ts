@@ -52,12 +52,12 @@ function createMockPage() {
       return { json: async () => ({ code: 0, data: {} }) };
     }),
     waitForFunction: vi.fn(async () => {}),
-    evaluate: vi.fn((fn: EvaluateFn | string, ..._args: unknown[]) => {
+    evaluate: vi.fn((fn: EvaluateFn | string, ..._args: unknown[]): unknown => {
       if (typeof fn === 'string') return {};
       return {};
     }),
-    evaluateHandle: vi.fn((_fn: EvaluateFn | string, ..._args: unknown[]) => {
-      return { asElement: () => null };
+    evaluateHandle: vi.fn((_fn: EvaluateFn | string, ..._args: unknown[]): unknown => {
+      return { asElement: (): null => null };
     }),
     mouse: {
       click: vi.fn(async (_x: number, _y: number) => {}),

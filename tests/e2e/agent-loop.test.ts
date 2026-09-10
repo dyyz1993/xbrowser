@@ -67,7 +67,7 @@ describeE2E('E2E: default-session agent loop', () => {
       executablePath: playwrightExecutablePath,
       headless: true,
     });
-    await session.page.setContent(TEST_HTML, { waitUntil: 'domcontentloaded' });
+    await (session.page as unknown as { setContent(h: string, o?: unknown): Promise<unknown> }).setContent(TEST_HTML, { waitUntil: 'domcontentloaded' });
   }, 30000);
 
   afterAll(async () => {

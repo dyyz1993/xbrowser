@@ -507,10 +507,10 @@ describe('SessionRecorder', () => {
 
     it('should report injectionFailed=false when injection succeeds', async () => {
       // evaluate returns truthy for the verification check
-      mockPage.evaluate = vi.fn(async (script: unknown) => {
+      mockPage.evaluate = vi.fn(async (script: unknown, _arg?: unknown): Promise<unknown> => {
         // The recorder's verification probes `window.__xb_action_signal`.
         // Returning truthy simulates a successful injection.
-        if (typeof script === 'string' && script.includes('__xb_action_signal')) {
+        if (typeof script === 'string' && (script as string).includes('__xb_action_signal')) {
           return true;
         }
         // The actual script injection calls return undefined — that's fine.

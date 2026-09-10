@@ -1,5 +1,6 @@
 import { RuleTester } from 'eslint';
 import { describe, it } from 'vitest';
+// @ts-expect-error -- mjs 规则文件无类型声明（RuleTester 运行时消费）
 import rule from '../../lint-scripts/eslint-no-raw-output.mjs';
 
 // RuleTester.run must live inside describe/it under vitest — top-level run

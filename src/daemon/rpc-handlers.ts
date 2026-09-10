@@ -7,7 +7,7 @@
 import { errMsg } from '../utils/error.js';
 import { readFileSync } from 'fs';
 
-import type { RPCHandler } from '@dyyz1993/xcli-core';
+import type { RPCHandler, CommandContext } from '@dyyz1993/xcli-core';
 import {
   createSessionMeta,
   removeSession,
@@ -239,7 +239,7 @@ export function createRPCHandler(): RPCHandler & {
 
     // Execute plugin handler
     try {
-      const result = await cmdEntry.handler(cmdParams, ctx);
+      const result = await cmdEntry.handler(cmdParams, ctx as unknown as CommandContext);
       return result;
     } catch (err) {
       const errorMessage = errMsg(err);
@@ -253,7 +253,7 @@ export function createRPCHandler(): RPCHandler & {
       );
       if (recovery.recovered) {
         try {
-          const retryResult = await cmdEntry.handler(cmdParams, ctx);
+          const retryResult = await cmdEntry.handler(cmdParams, ctx as unknown as CommandContext);
           return retryResult;
         } catch (retryErr) {
           return { success: false, data: null, message: `Retry failed: ${errMsg(retryErr)}` };

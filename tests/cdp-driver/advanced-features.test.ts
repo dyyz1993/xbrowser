@@ -289,7 +289,7 @@ describe('CDP Driver Advanced Features', { timeout: TEST_TIMEOUT, hookTimeout: 6
         </script>
       </body></html>`);
 
-      await page.dragAndDrop('#source', '#target', { timeout: 5000 });
+      await page.dragAndDrop('#source', '#target');
 
       const result = await page.evaluate<string>(
         'document.getElementById("result").textContent',

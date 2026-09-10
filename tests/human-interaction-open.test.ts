@@ -10,7 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { HumanInteractionManager } from '../src/human-interaction.js';
 
 const { execFileSpy } = vi.hoisted(() => ({
-  execFileSpy: vi.fn((_cmd: string, args: string[], opts: unknown, cb: (err: Error | null) => void) => {
+  execFileSpy: vi.fn((_cmd: string, _args: string[], _opts: unknown, cb: (err: Error | null, stdout?: string, stderr?: string) => void) => {
     cb(null, '', '');
   }),
 }));
@@ -22,7 +22,6 @@ vi.mock('child_process', () => ({
 function makeInteraction(autoOpen: boolean): HumanInteractionManager {
   const page = { url: vi.fn(() => 'https://example.com') } as never;
   const wsServer = { registerSession: vi.fn(), broadcast: vi.fn(), getPort: vi.fn(() => 9224) } as never;
-  // @ts-expect-error test stubs for WSServer/Page
   const inst = new HumanInteractionManager(wsServer, page);
   // autoOpen comes from captcha config at construct time; force-enable here.
   (inst as unknown as { autoOpen: boolean }).autoOpen = autoOpen;
@@ -83,7 +82,7 @@ describe('human-interaction tryAutoOpen (P0-3 closure)', () => {
   it('does not throw when the opener fails', () => {
     Object.defineProperty(process, 'platform', { value: 'darwin' });
     const inst = makeInteraction(true);
-    execFileSpy.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: (err: Error) => void) => {
+    execFileSpy.mockImplementation((_cmd: string, _args: string[], _opts: unknown, cb: (err: Error, stdout?: string, stderr?: string) => void) => {
       cb(new Error('browser missing'), '', '');
     });
     expect(() => (inst as unknown as { tryAutoOpen(url: string): void }).tryAutoOpen('http://localhost:9224')).not.toThrow();

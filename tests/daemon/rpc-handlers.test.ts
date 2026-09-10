@@ -67,7 +67,7 @@ vi.mock('../../src/recorder/player.js', () => {
   const MockPlaybackEngine = vi.fn().mockImplementation(() => ({
     play: vi.fn().mockResolvedValue({ success: true, duration: 0, eventsPlayed: 0, totalEvents: 0 }),
   }));
-  MockPlaybackEngine.fromFile = vi.fn();
+  (MockPlaybackEngine as unknown as Record<string, ReturnType<typeof vi.fn>>).fromFile = vi.fn();
   return { PlaybackEngine: MockPlaybackEngine };
 });
 

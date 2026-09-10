@@ -10,8 +10,8 @@ import {
   addKnownIssue,
   getKnowledgePath,
   type SiteKnowledge,
-  type RecordingData,
 } from '../../src/recorder/site-knowledge.js';
+import type { RecordingData } from '../../src/recorder/session-recorder.js';
 import { rmSync } from 'fs';
 
 // ── Helpers ───────────────────────────────────────────────────

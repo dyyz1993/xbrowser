@@ -8,6 +8,7 @@
  * `document` that the module references as free variables / default args.
  */
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
+// @ts-expect-error -- domino 的 lib/index.d.ts 非 ES 模块（缺导出声明），运行时 default 可用
 import domino from '@mixmark-io/domino';
 import {
   generateUniqueSelector,

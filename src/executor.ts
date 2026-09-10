@@ -19,6 +19,7 @@ import { errMsg } from './utils/error.js';
 import { NoopSiteInstance } from './utils/stub-context.js';
 import { getCommand, getAllCommands } from './commands/index.js';
 import { attachDetectAntiBot, type BrowserCommandContext } from './context.js';
+import type { CommandContext } from '@dyyz1993/xcli-core';
 import { findOrRestoreSession, createSession, saveSessionDiskMeta, closeSessionByName, setActivePage, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
 import {
   parseCommandChain,
@@ -726,7 +727,7 @@ export async function executeChain(
               await Promise.all(hooks.map(h => h.onBeforeCommand?.({ page: session!.page!, command: `${cmdName} ${subCommand}`, params: pluginParams })));
             }
 
-            const raw = await cmdEntry.handler(pluginParams, pluginCtx) as CommandResult;
+            const raw = await cmdEntry.handler(pluginParams, pluginCtx as unknown as CommandContext) as CommandResult;
             const duration = Date.now() - start;
 
             let hookOutputs: HookOutput[] | undefined;

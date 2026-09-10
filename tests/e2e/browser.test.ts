@@ -35,6 +35,12 @@ function unwrap(result: { data: unknown }): unknown {
 }
 
 describeE2E('E2E: Browser Automation', () => {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 类型面占位（tsc 需要），值仅类型存在
+  let browser: unknown;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 同上
+  let context: unknown;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 同上
+  let page: unknown;
   let sessionName: string;
 
   beforeAll(async () => {

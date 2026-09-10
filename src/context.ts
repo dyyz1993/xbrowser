@@ -11,7 +11,7 @@ import type { WSServer } from './websocket-server.js';
  * along with optional `waitForHuman` (CAPTCHA handling) and
  * `detectAntiBot` (anti-bot detection) capabilities.
  */
-export interface BrowserCommandContext extends Omit<CommandContext, 'waitForHuman' | 'detectAntiBot'> {
+export interface BrowserCommandContext extends Omit<CommandContext, 'waitForHuman' | 'detectAntiBot' | 'page'> {
   page: Page;
   browser: Browser;
   browserContext: BrowserContext;
