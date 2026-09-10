@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'fs';
-import { resolve, join } from 'path';
+import { resolve } from 'path';
 import { tmpdir } from 'os';
 
 const TEST_DIR = resolve(tmpdir(), 'xbrowser-test-install-npm');
@@ -24,7 +24,6 @@ import { installFromNpm } from '../../src/plugin/install-sources/npm.js';
 import {
   downloadToFile,
   extractTarGz,
-  flattenPackageRoot,
   verifyPlugin,
 } from '@dyyz1993/xcli-core';
 

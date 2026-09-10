@@ -34,7 +34,6 @@ vi.mock('child_process', () => ({
 }));
 
 describe('chrome-bridge plugin', () => {
-  let site: Site, xcli: Xcli;
 
   beforeEach(() => {
     vi.clearAllMocks();

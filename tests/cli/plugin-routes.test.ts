@@ -78,7 +78,7 @@ vi.mock('../../src/utils/proxy-fetch.js', () => ({
 
 import { handlePlugin, handleCreate, handleDaemon } from '../../src/cli/plugin-routes.js';
 
-function createMockSiteWithSearch(items: Array<Record<string, unknown>> = []) {
+function createMockSiteWithSearch(_items: Array<Record<string, unknown>> = []) {
   return {
     name: 'marketplace',
     getCommand: (name: string) => {

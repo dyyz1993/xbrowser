@@ -2,7 +2,7 @@ import { firstTip } from '../plugins/_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { extractRefs, resolveRefParams, clearRefCache } from '../../src/utils/resolve-selector.js';
 import { clearAllRefs, replaceRefs } from '../../src/runtime/ref-store.js';
-import type { Page, Locator } from '../../src/browser-shim.js';
+import type { Page } from '../../src/browser-shim.js';
 
 describe('extractRefs', () => {
   it('parses single ref from aria snapshot', () => {
@@ -215,7 +215,6 @@ describe('shortest unique selector', () => {
   });
 
   it('picks shortest when multiple selectors are unique', async () => {
-    const longSelector = '[data-testid="submit-btn"]';
     const shortSelector = '#go';
     const page = {
       locator: vi.fn().mockReturnValue({

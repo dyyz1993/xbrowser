@@ -167,7 +167,6 @@ const MOCK_CAPTURES = [
 
 describe('net CLI command', () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
-  let errorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -286,7 +285,6 @@ describe('net CLI command', () => {
       },
     });
     logSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   it('net list — text mode', async () => {

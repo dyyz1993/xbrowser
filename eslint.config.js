@@ -53,6 +53,23 @@ export default [
     },
   },
   {
+    // tests/：TS parser 覆盖（否则按 JS 解析全是 parse error），规则宽松——
+    // mock 场景的类型断言豁免，保留基础正确性规则（AGENTS.md §12 测试豁免精神）
+    files: ['tests/**/*.ts'],
+    languageOptions: {
+      parser: tsparser,
+    },
+    plugins: {
+      '@typescript-eslint': tseslint,
+    },
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      'no-empty': ['error', { allowEmptyCatch: false }],
+      '@typescript-eslint/no-require-imports': 'off',
+    },
+  },
+  {
     ignores: ['dist/**', 'node_modules/**', '.xcli/plugins/node_modules/**'],
   },
 ];

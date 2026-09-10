@@ -4,9 +4,8 @@ import { firstTip } from '../plugins/_tips-helper.js';
  * 验证决策树、5 种 pattern 顺序、超时/失败处理
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { uploadFile, clickButtonByText, type UploadOptions } from '../../.xcli/plugins/shared/file-upload';
+import { uploadFile, clickButtonByText } from '../../.xcli/plugins/shared/file-upload';
 import * as fs from 'fs';
-import * as path from 'path';
 
 // Mock page
 function createMockPage() {

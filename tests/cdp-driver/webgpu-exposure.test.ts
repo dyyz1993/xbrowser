@@ -3,8 +3,8 @@
  * 对比 --disable-gpu 与默认 GPU 参数下 navigator.gpu 的暴露差异。
  * 结论写回 stealth-probe 台账。
  */
-import { describe, it, expect, afterAll, beforeAll } from 'vitest';
-import { launch, type XBBrowser, type XBPage } from '../../src/cdp-driver/index.js';
+import { describe, it, expect } from 'vitest';
+import { launch, type XBPage } from '../../src/cdp-driver/index.js';
 
 const TIMEOUT = 30_000;
 

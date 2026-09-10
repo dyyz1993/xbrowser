@@ -7,7 +7,7 @@
  * 先看清全貌，再逐个收编。
  */
 import { describe, it, expect, afterAll, beforeAll } from 'vitest';
-import { launch, buildStealthInitScript, DEFAULT_STEALTH_CONFIG, type XBBrowser, type XBPage } from '../../src/cdp-driver/index.js';
+import { launch, type XBBrowser, type XBPage } from '../../src/cdp-driver/index.js';
 
 const TEST_TIMEOUT = 30_000;
 const LAUNCH_OPTS = process.env.CDP_ENDPOINT
@@ -319,6 +319,3 @@ describe('stealth 运行时探针（S174 检测面覆盖审计）', { timeout: T
   });
 });
 
-function context_new(browser: XBBrowser): Promise<unknown> {
-  return (browser as unknown as { newContext(): Promise<unknown> }).newContext();
-}

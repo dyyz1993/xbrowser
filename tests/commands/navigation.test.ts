@@ -17,25 +17,12 @@ function createMockPage(): Page {
   } as unknown as Page;
 }
 
-function createMockContext(page: Page) {
-  return {
-    page,
-    browser: {},
-    browserContext: {
-      cookies: vi.fn().mockResolvedValue([]),
-      addCookies: vi.fn().mockResolvedValue(undefined),
-      clearCookies: vi.fn().mockResolvedValue(undefined),
-    },
-  };
-}
 
 describe('Navigation Commands', () => {
   let mockPage: Page;
-  let ctx: ReturnType<typeof createMockContext>;
 
   beforeEach(() => {
     mockPage = createMockPage();
-    ctx = createMockContext(mockPage);
   });
 
   it('goto should navigate to URL', async () => {

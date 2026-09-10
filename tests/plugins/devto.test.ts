@@ -163,6 +163,7 @@ describe('devto plugin', () => {
     it('should return success tip when logged in', async () => {
       const handler = getHandler('login');
       const page = createMockPage();
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包计数器，最终值未读但计数副作用被 mock 依赖
       let callCount = 0;
       page.locator = vi.fn(() => {
         callCount++;

@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
-import type { Browser, BrowserContext, Page } from '../../src/browser-shim.js';
 import * as fs from 'fs';
 
 // Mock daemon to avoid 17s timeouts on every page-scope command
@@ -36,9 +35,6 @@ function unwrap(result: { data: unknown }): unknown {
 }
 
 describeE2E('E2E: Browser Automation', () => {
-  let browser: Browser;
-  let context: BrowserContext;
-  let page: Page;
   let sessionName: string;
 
   beforeAll(async () => {
@@ -91,7 +87,7 @@ describeE2E('E2E: Browser Automation', () => {
   });
 
   it('should click a link element', async () => {
-    const session2 = await createSession(`${sessionName}-click`, 'https://example.com');
+    await createSession(`${sessionName}-click`, 'https://example.com');
     const result = await executeCommand('click', { selector: 'a' }, `${sessionName}-click`);
     expect(result.success).toBe(true);
     await closeSessionByName(`${sessionName}-click`);

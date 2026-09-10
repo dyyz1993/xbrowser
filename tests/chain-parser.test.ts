@@ -226,7 +226,7 @@ describe('parseCommandArgs', () => {
   });
 
   it('parses goto with named args', () => {
-    const { command, params } = parseCommandArgs('goto', [
+    const { params } = parseCommandArgs('goto', [
       '--url',
       'https://example.com',
       '--waitUntil',

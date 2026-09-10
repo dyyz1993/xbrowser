@@ -89,7 +89,7 @@ describe('extractRecording', () => {
     const yamlPath = path.join(tmpDir, 'test.yaml');
     fs.writeFileSync(yamlPath, yaml.stringify(sampleRecording));
 
-    const { summary, outputPath } = extractAndSave(yamlPath);
+    const { outputPath } = extractAndSave(yamlPath);
     expect(outputPath).toBe(path.join(tmpDir, 'test-summary.json'));
     expect(fs.existsSync(outputPath)).toBe(true);
     const json = JSON.parse(fs.readFileSync(outputPath, 'utf-8'));

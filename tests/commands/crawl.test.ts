@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeUrl, shouldSkipUrl, getBaseDomain, isSpaHashRoute, deduplicateUrls, SKIP_EXTENSIONS } from '../../src/utils/url.js';
+import { normalizeUrl, shouldSkipUrl, getBaseDomain, isSpaHashRoute, deduplicateUrls } from '../../src/utils/url.js';
 
 interface CrawlOptions {
   limit: number;

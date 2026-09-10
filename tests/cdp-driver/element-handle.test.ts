@@ -1,5 +1,5 @@
 import { describe, it, expect, afterAll, beforeAll } from 'vitest';
-import { launch, type XBBrowser, type XBPage, type XBElementHandle } from '../../src/cdp-driver/index.js';
+import { launch, type XBBrowser, type XBPage } from '../../src/cdp-driver/index.js';
 
 const TEST_TIMEOUT = 30_000;
 const CDP_ENDPOINT = process.env.CDP_ENDPOINT || '';

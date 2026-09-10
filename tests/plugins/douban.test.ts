@@ -3,13 +3,6 @@ import douban from '../../.xcli/plugins/douban/index.js';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXcli = { createSite: vi.fn(() => mockSite) };
-const mockPage = {
-  goto: vi.fn(),
-  waitForTimeout: vi.fn(),
-  evaluate: vi.fn(() => Promise.resolve(JSON.stringify([
-    { title: '星际穿越', rating: '9.4', url: 'https://movie.douban.com/subject/1889243/' },
-  ]))),
-};
 
 describe('douban plugin', () => {
   beforeEach(() => {

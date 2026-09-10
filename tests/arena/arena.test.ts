@@ -22,14 +22,6 @@ const ARCHIVE_DIR = 'output/arena';
 
 // ── 操作流 ──
 
-const ACTIONS = [
-  { type: 'fill', target: 'username', value: 'arena-user' },
-  { type: 'fill', target: 'password', value: 'arena-pass-123' },
-  { type: 'fill', target: 'email', value: 'arena@test.com' },
-  { type: 'fill', target: 'comment', value: 'arena comment' },
-  { type: 'select', target: 'role', value: 'admin' },
-  { type: 'click', target: 'submit' },
-];
 
 // ── Fallback chain ──
 
@@ -81,7 +73,7 @@ describe('录制回放竞技场', { timeout: TIMEOUT }, () => {
   afterAll(async () => {
     if (browser) await browser.close().catch(() => {});
     // 清理靶场文件
-    try { fs.unlinkSync(targetPath); } catch {}
+    try { fs.unlinkSync(targetPath); } catch { /* ignore */ }
   }, 30_000);
 
   async function setupPage(level: string, round: number) {
@@ -192,8 +184,7 @@ describe('录制回放竞技场', { timeout: TIMEOUT }, () => {
     results.push({ ...(await trySelect('role', 'admin')), target: 'role' });
     results.push({ ...(await tryClick('submit')), target: 'submit' });
 
-    const passed = results.filter(r => r.success).length;
-    const report = archive(1, 'light', results);
+    results.filter(r => r.success).length;    const report = archive(1, 'light', results);
     expect(report.healingRate).toBeGreaterThanOrEqual(60); // 至少 60% 自愈
   });
 
@@ -208,8 +199,7 @@ describe('录制回放竞技场', { timeout: TIMEOUT }, () => {
     results.push({ ...(await trySelect('role', 'admin')), target: 'role' });
     results.push({ ...(await tryClick('submit')), target: 'submit' });
 
-    const passed = results.filter(r => r.success).length;
-    const report = archive(2, 'medium', results);
+    results.filter(r => r.success).length;    const report = archive(2, 'medium', results);
     expect(report.healingRate).toBeGreaterThanOrEqual(40);
   });
 
