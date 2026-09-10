@@ -299,18 +299,80 @@ async function importCookies(items) {
 
 
 // S139：获取目标 tab——优先用 xb-task 组的最后一个 tab（后台），不抢用户焦点
+// S205：无任务组时新建后台任务 tab（自动分组）。旧版此处 fallback 到用户活跃
+// tab，导致 navigate/evaluate 直接改写用户正在看的页面——产品级事故，已移除。
+// S206：自动组标题 = 🤖 + 当前任务名（用户一眼可辨 agent 的 tab）；命令活动
+// 刷新心跳（storage.session），空闲超时由 task-idle-sweep 自动回收。
+const TASK_IDLE_MS = 10 * 60 * 1000;
+let currentTaskName = '';
+
+function isTaskGroupTitle(title) {
+  return typeof title === 'string' && (title.startsWith('🤖') || title.startsWith('xb-task-'));
+}
+
+async function touchTaskActivity() {
+  try { await chrome.storage.session.set({ taskUsedAt: Date.now() }); } catch {}
+}
+
+async function recordTaskTab(tabId) {
+  try {
+    const { taskTabs = [] } = await chrome.storage.session.get('taskTabs');
+    if (!taskTabs.includes(tabId)) await chrome.storage.session.set({ taskTabs: [...taskTabs, tabId] });
+  } catch {}
+}
+
 async function getTaskTabId() {
   const groups = await chrome.tabGroups.query({});
-  const taskGroups = groups.filter(g => g.title && g.title.startsWith('xb-task-'));
-  if (taskGroups.length > 0) {
-    // 取最后一个任务组的 tab
-    const g = taskGroups[taskGroups.length - 1];
-    const tabs = await chrome.tabs.query({ groupId: g.id });
-    if (tabs.length > 0) return tabs[tabs.length - 1].id;
+  // 显式任务组（用户经 task-open 创建）：只复用，不改名
+  const explicit = groups.filter((g) => typeof g.title === 'string' && g.title.startsWith('xb-task-'));
+  if (explicit.length > 0) {
+    const tabs = await chrome.tabs.query({ groupId: explicit[explicit.length - 1].id });
+    if (tabs.length > 0) { await touchTaskActivity(); return tabs[tabs.length - 1].id; }
   }
-  // fallback: active tab（兼容无任务组的旧用法）
-  const [active] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return active?.id;
+  // 自动任务组（🤖 前缀）：复用并把组标题刷新为当前任务名
+  const auto = groups.filter((g) => typeof g.title === 'string' && g.title.startsWith('🤖'));
+  if (auto.length > 0) {
+    const g = auto[auto.length - 1];
+    const wanted = '🤖 ' + (currentTaskName || 'xbrowser');
+    if (g.title !== wanted) { try { await chrome.tabGroups.update(g.id, { title: wanted }); } catch {} }
+    const tabs = await chrome.tabs.query({ groupId: g.id });
+    if (tabs.length > 0) { await touchTaskActivity(); return tabs[tabs.length - 1].id; }
+  }
+  // 都没有：新建后台任务 tab（about:blank 起步，navigate 会再定位）
+  const tab = await chrome.tabs.create({ url: 'about:blank', active: false });
+  await recordTaskTab(tab.id);
+  try {
+    const gid = await chrome.tabs.group({ tabIds: tab.id });
+    await chrome.tabGroups.update(gid, { title: '🤖 ' + (currentTaskName || 'xbrowser'), color: 'blue' });
+  } catch { /* tabGroups API 不可用时裸后台 tab 亦可 */ }
+  enableTaskStealth(tab.id).catch(() => {});
+  await touchTaskActivity();
+  return tab.id;
+}
+
+// S206：空闲回收——🤖 自动组内、且确属桥自建的 tab，空闲超时后自动关闭。
+// 用户 attach 入组的 tab 只 ungroup 保留（S209），绝不关闭。
+// 显式 xb-task- 组由 task-close 管理，不在此收。
+async function sweepIdleTasks() {
+  try {
+    const { taskUsedAt = 0, taskTabs = [] } = await chrome.storage.session.get(['taskUsedAt', 'taskTabs']);
+    if (!taskUsedAt || Date.now() - taskUsedAt < TASK_IDLE_MS) return;
+    const mine = new Set(taskTabs);
+    let closed = 0, ungrouped = 0;
+    for (const g of (await chrome.tabGroups.query({})).filter((g) => typeof g.title === 'string' && g.title.startsWith('🤖'))) {
+      for (const t of await chrome.tabs.query({ groupId: g.id })) {
+        if (mine.has(t.id)) {
+          await chrome.tabs.remove(t.id).catch(() => {});
+          stealthTabs.delete(t.id);
+          closed++;
+        } else {
+          await chrome.tabs.ungroup(t.id).catch(() => {});
+          ungrouped++;
+        }
+      }
+    }
+    await chrome.storage.session.set({ taskTabs: [], taskUsedAt: 0 });
+  } catch {}
 }
 
 const executors = {
@@ -349,18 +411,28 @@ const executors = {
   'task-close': async ({ name }) => {
     const groups = await chrome.tabGroups.query({});
     const targets = name
-      ? groups.filter((g) => g.title === 'xb-task-' + name)
-      : groups.filter((g) => g.title.startsWith('xb-task-'));
-    let closed = 0;
+      ? groups.filter((g) => g.title === 'xb-task-' + name || g.title === '🤖 ' + name)
+      : groups.filter((g) => isTaskGroupTitle(g.title));
+    let closed = 0, ungrouped = 0;
     for (const g of targets) {
+      const mine = new Set((await chrome.storage.session.get('taskTabs')).taskTabs || []);
       const tabs = await chrome.tabs.query({ groupId: g.id });
       for (const t of tabs) {
+        // S209：🤖 组里的用户 tab（attach 入组的）只脱组保留；自建的关闭。
+        if (g.title && g.title.startsWith('🤖') && !mine.has(t.id)) {
+          await chrome.tabs.ungroup(t.id).catch(() => {});
+          ungrouped++;
+          continue;
+        }
         await chrome.tabs.remove(t.id).catch(() => {});
         stealthTabs.delete(t.id);
+        closed++;
       }
-      closed++;
     }
-    return { closed };
+    if (targets.some((g) => g.title && g.title.startsWith('🤖'))) {
+      await chrome.storage.session.set({ taskTabs: [], taskUsedAt: 0 }).catch(() => {});
+    }
+    return { closed, ungrouped };
   },
   // S166: 可见小窗口模式（L0 真渲染）——hidden tab 有两个进程级残留：
   // rAF 帧距 ~1000ms（节流）+ trusted mousemove 大量丢弃（输入路由）。
@@ -433,10 +505,10 @@ const executors = {
   'task-list': async () => {
     const groups = await chrome.tabGroups.query({});
     const out = [];
-    for (const g of groups.filter((g) => g.title.startsWith('xb-task-'))) {
+    for (const g of groups.filter((g) => isTaskGroupTitle(g.title))) {
       const tabs = await chrome.tabs.query({ groupId: g.id });
       out.push({
-        name: g.title.slice(8),
+        name: g.title.replace(/^🤖\s*|^xb-task-/, ''),
         groupId: g.id,
         tabs: tabs.map((t) => ({ id: t.id, url: (t.url || '').slice(0, 60), title: (t.title || '').slice(0, 30) })),
       });
@@ -445,6 +517,36 @@ const executors = {
   },
 
   ping: async () => ({ pong: true, ua: navigator.userAgent, v: (chrome.runtime.getManifest ? chrome.runtime.getManifest().version : '?') }),
+  // S208：显式接管（attach）基建——查询当前活跃 tab / 激活指定 tab。
+  // 语义：agent 经 attach 拿到 tabId 后，后续命令显式带 tabId 才会落到该 tab；
+  // 未带 tabId 的命令依旧只走任务组 tab，不会意外碰用户的 tab。
+  'active-tab': async () => {
+    const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
+    return { ok: true, tabId: t?.id, url: t?.url, title: t?.title };
+  },
+  'tab-activate': async ({ tabId }) => {
+    if (tabId == null) return { ok: false, error: 'no tabId' };
+    await chrome.tabs.update(tabId, { active: true });
+    return { ok: true, tabId };
+  },
+  // S209：显式接管——把用户当前活跃 tab 打入任务组（🤖 任务名），让"agent 在操作
+  // 哪个 tab"对用户可见。用户 tab 只入组、不记"自建"：收尾（sweep/task-close）
+  // 对它只做 ungroup 保留，绝不关闭。
+  'attach': async ({ task }) => {
+    const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!t) return { ok: false, error: 'no active tab' };
+    const name = '🤖 ' + (task || 'xbrowser');
+    const groups = await chrome.tabGroups.query({});
+    let gid = null;
+    for (const g of groups) {
+      if (typeof g.title === 'string' && g.title.startsWith('🤖')) { gid = g.id; break; }
+    }
+    if (gid == null) gid = await chrome.tabs.group({ tabIds: t.id });
+    else await chrome.tabs.group({ tabIds: t.id, groupId: gid }).catch(() => {});
+    await chrome.tabGroups.update(gid, { title: name, color: 'blue' }).catch(() => {});
+    await touchTaskActivity();
+    return { ok: true, tabId: t.id, groupId: gid, url: t.url, title: t.title };
+  },
   // S170: 热更新直达通道——WS 消息在 SW 内执行，chrome.runtime.reload 可靠
   // （popup.html 页面载体的 chrome.runtime 绑定时好时坏，此执行器取代该路径）
   'ext-reload': async () => { setTimeout(() => chrome.runtime.reload(), 50); return { ok: true, reloading: true }; },
@@ -458,8 +560,24 @@ const executors = {
     const target = tabId ?? await getTaskTabId();
     if (url) {
       if (target != null) {
-        await chrome.tabs.update(target, { url, active: false });
-        return { ok: true, tabId: target };
+        // S207：任务 tab 正被用户盯着（active）且非显式指定时，另起新后台 tab
+        // 执行任务——不在用户眼皮底下换页。旧 tab 保留原样，随空闲回收。
+        let dest = target;
+        let movedAside = false;
+        if (!tabId) {
+          try {
+            const t = await chrome.tabs.get(target);
+            if (t.active) {
+              const created = await chrome.tabs.create({ url: 'about:blank', active: false });
+              await recordTaskTab(created.id);
+              try { if (t.groupId && t.groupId !== -1) await chrome.tabs.group({ tabIds: created.id, groupId: t.groupId }); } catch {}
+              dest = created.id;
+              movedAside = true;
+            }
+          } catch { /* tab 可能已被关闭，走原路径 */ }
+        }
+        await chrome.tabs.update(dest, { url, active: false });
+        return { ok: true, tabId: dest, movedAside };
       }
       const tab = await chrome.tabs.create({ url, active: false }); // 后台创建，不抢焦点
       return { ok: true, tabId: tab.id, created: true };
@@ -714,6 +832,10 @@ function connectWS() {
     let msg;
     try { msg = JSON.parse(ev.data); } catch { return; }
     const { id, cmd, args } = msg || {};
+    // S206：任务名注入（executors 内 getTaskTabId 读取），并刷新空闲心跳。
+    // S209：只读查询不续命——status/ping/task-list 等不应把空闲任务一直吊着。
+    currentTaskName = args && typeof args.task === 'string' ? args.task.trim().slice(0, 30) : '';
+    if (!READ_ONLY_CMDS.has(cmd)) touchTaskActivity();
     const reply = (payload) => { try { ws?.send(JSON.stringify({ id, ...payload })); } catch {} };
     const exec = executors[cmd];
     if (!exec) { reply({ ok: false, error: `unknown cmd: ${cmd}` }); return; }
@@ -727,15 +849,22 @@ function scheduleReconnect() {
   backoff = Math.min(backoff * 2, 15000);
 }
 
+// S209：只读命令不刷新任务心跳（避免查询把空闲回收一直吊着）
+const READ_ONLY_CMDS = new Set(['ping', 'tabs', 'url', 'task-list', 'active-tab', 'status', 'screenshot']);
+
 connectWS();
 
 // MV3 SW 生命周期兜底（S103）：SW 空闲 ~30s 被杀，setTimeout 重试随进程
 // 蒸发（实测扩展加载成功但永不连入的根因）。alarms 是 Chrome 官方的
 // 定时唤醒源 —— 每 30s 唤醒 SW，若 WS 断开则重连。
 chrome.alarms.create('ws-keepalive', { periodInMinutes: 0.5 });
+chrome.alarms.create('task-idle-sweep', { periodInMinutes: 5 });
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'ws-keepalive' && (!ws || ws.readyState > 1)) {
     connectWS();
+  }
+  if (alarm.name === 'task-idle-sweep') {
+    sweepIdleTasks();
   }
 });
 
