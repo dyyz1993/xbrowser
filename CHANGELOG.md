@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.23.1] - 2026-09-10
+
+### Added
+- **MCP Server**：`xbrowser mcp` 启动 stdio Model Context Protocol 服务器——Claude Desktop / Cursor / 任何 MCP 客户端可直接驱动浏览器。7 个工具（navigate / act / read / snapshot / screenshot / network / replay），薄壳设计直接复用 executor，JSON-RPC 2.0 协议层手写零新依赖。接入：`claude mcp add xbrowser -- xbrowser mcp`
+
 ## [1.23.0] - 2026-09-10
 
 ### Added
