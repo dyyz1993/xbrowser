@@ -3,7 +3,11 @@ name: Publish
 on:
   push:
     branches: [master]
-    paths: ['package.json']
+    paths:
+      - 'package.json'
+      - '!.xcli/**'
+      - '!tests/**'
+      - '!docs/**'
   workflow_dispatch:
 
 concurrency:
