@@ -118,7 +118,7 @@ describe('SessionReplayer scroll replay', () => {
       makeAction({
         type: 'scroll',
         value: 'down:120',
-        element: { tag: 'div', selector: '#feed' },
+        element: { tag: 'div', selector: '#feed', text: '' },
       }),
     ]);
     const exprs = evaluatedExpressions(ctx).join('\n');
@@ -131,7 +131,7 @@ describe('SessionReplayer scroll replay', () => {
       makeAction({
         type: 'scroll',
         value: 'left:90',
-        element: { tag: 'div', selector: '#feed' },
+        element: { tag: 'div', selector: '#feed', text: '' },
       }),
     ]);
     const exprs = evaluatedExpressions(ctx).join('\n');

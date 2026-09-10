@@ -65,13 +65,13 @@ describe('query commands', () => {
   it('text command should return empty string when textContent is null', async () => {
     const ctx = makeCtx({ textContent: vi.fn().mockResolvedValue(null) });
     const result = await textCommand.handler({ selector: '#empty' }, ctx as any);
-    expect(result.data).toEqual({ text: '' });
+    expect(result.data).toEqual({ text: '' } as unknown as Record<string, unknown>);
   });
 
   it('text command should get body text when no selector', async () => {
     const ctx = makeCtx();
     const result = await textCommand.handler({}, ctx as any);
-    expect(result.data).toEqual({ text: 'body text' });
+    expect(result.data).toEqual({ text: 'body text' } as unknown as Record<string, unknown>);
     expect(ctx.page.evaluate).toHaveBeenCalled();
   });
 

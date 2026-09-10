@@ -363,7 +363,7 @@ describe('csdn plugin', () => {
     it('should return articles from evaluate', async () => {
       const handler = getHandler('fetch-articles');
       const page = createMockPage();
-      page.evaluate = vi.fn(() => Promise.resolve([
+      page.evaluate = vi.fn((_fn: unknown, _arg?: unknown): Promise<unknown> => Promise.resolve([
         { title: 'Article 1', link: '/article/1', views: '100', date: '2026-01-01' },
       ]));
       const ctx = createMockCtx(page);
@@ -375,7 +375,7 @@ describe('csdn plugin', () => {
     it('should return count tip', async () => {
       const handler = getHandler('fetch-articles');
       const page = createMockPage();
-      page.evaluate = vi.fn(() => Promise.resolve([{ title: 'A1', link: '/1', views: '10', date: '2026-01-01' }]));
+      page.evaluate = vi.fn((_fn: unknown, _arg?: unknown): Promise<unknown> => Promise.resolve([{ title: 'A1', link: '/1', views: '10', date: '2026-01-01' }]));
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx);
       const tips = tipsMessages(result.tips);

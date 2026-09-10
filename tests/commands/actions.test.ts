@@ -705,7 +705,7 @@ describe('actions command', () => {
       });
       expect(parsed.success).toBe(true);
       if (parsed.success) {
-        expect(parsed.data.output).toBe('json');
+        expect((parsed.data as Record<string, unknown>).output).toBe('json');
       }
     });
 
@@ -728,7 +728,7 @@ describe('actions command', () => {
       });
       expect(parsed.success).toBe(true);
       if (parsed.success) {
-        expect(parsed.data.timeout).toBe(60);
+        expect((parsed.data as Record<string, unknown>).timeout).toBe(60);
       }
     });
 
@@ -741,7 +741,7 @@ describe('actions command', () => {
       });
       expect(parsed.success).toBe(true);
       if (parsed.success) {
-        expect(parsed.data.timeout).toBe(120);
+        expect((parsed.data as Record<string, unknown>).timeout).toBe(120);
       }
     });
 

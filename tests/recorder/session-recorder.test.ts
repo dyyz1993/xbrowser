@@ -625,9 +625,9 @@ describe('SessionRecorder', () => {
       expect(data.discoveredFilters).toHaveLength(1);
       const trigger = data.discoveredFilters?.[0].triggers[0];
       // Merged flags should all be true
-      expect(trigger.userInteracted).toBe(true);
-      expect(trigger.hasPopup).toBe(true);
-      expect(trigger.explored).toBe(true);
+      expect(trigger?.userInteracted).toBe(true);
+      expect(trigger?.hasPopup).toBe(true);
+      expect(trigger?.explored).toBe(true);
     });
 
     it('should mark popup_appear with userTriggered=false for auto-shown popups', async () => {

@@ -141,7 +141,7 @@ describe('stealth-common（S164 桥任务 tab 反检测纯逻辑）', () => {
     it('should scale move count with budget', () => {
       const short = StealthCommon.planWarmup({ w: 1280, h: 720, ms: 600 });
       const long = StealthCommon.planWarmup({ w: 1280, h: 720, ms: 5000 });
-      const movesOf = (a: unknown[]) => a.filter((x) => x.type === 'move').length;
+      const movesOf = (a: unknown[]) => a.filter((x) => (x as { type?: string }).type === 'move').length;
       expect(movesOf(long)).toBeGreaterThan(movesOf(short));
     });
 
