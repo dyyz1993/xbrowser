@@ -628,6 +628,9 @@ export async function routeCommand(
       case 'serve':
         await handleServe(cmdArgs, options, mode);
         break;
+      case 'mcp':
+        await startMcpServer();
+        break;
       case 'remote':
         await handleRemote(cmdArgs, options, mode);
         break;
@@ -1172,4 +1175,10 @@ async function handleRemote(
       outputError(`Remote execution failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
+}
+
+/** MCP server（stdio）——浏览器能力暴露为 Model Context Protocol 工具 */
+async function startMcpServer(): Promise<void> {
+  const { startMcpStdio } = await import('./mcp/server.js');
+  startMcpStdio();
 }
