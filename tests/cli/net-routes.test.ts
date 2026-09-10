@@ -284,7 +284,7 @@ describe('net CLI command', () => {
         body: { result: 'ok' },
       },
     });
-    logSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    logSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true) as typeof logSpy;
   });
 
   it('net list — text mode', async () => {

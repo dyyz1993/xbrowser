@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Page, ElementHandle } from '../src/browser-shim.js';
 import { CaptchaDetector } from '../src/captcha-detector.js';
 
-function mockElement(visible: boolean): ElementHandle<HTMLElement> {
+function mockElement(visible: boolean): ElementHandle {
   return {
     isVisible: vi.fn().mockResolvedValue(visible),
-  } as unknown as ElementHandle<HTMLElement>;
+  } as unknown as ElementHandle;
 }
 
 function createMockPage(options: {
-  elements?: Record<string, ElementHandle<HTMLElement> | null>;
+  elements?: Record<string, ElementHandle | null>;
   bodyText?: string;
 }): Page {
   return {

@@ -8,6 +8,7 @@ describe('GEO Analysis', () => {
       id: 'test1',
       query: '广东服装加工企业',
       engine: 'kimi',
+      collectedAt: new Date().toISOString(),
       timestamp: Date.now() - 86400000,
       total: 10,
       results: [],

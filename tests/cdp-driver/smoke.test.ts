@@ -19,7 +19,7 @@ const LAUNCH_OPTS = CDP_ENDPOINT
       args: ['--no-sandbox', '--disable-gpu'],
     };
 
-describe('CDP Driver Smoke Tests', { timeout: TEST_TIMEOUT, hookTimeout: 60_000 }, () => {
+describe('CDP Driver Smoke Tests', { timeout: TEST_TIMEOUT, hookTimeout: 60_000 } as never, () => {
   let browser: XBBrowser;
   let page: XBPage;
 

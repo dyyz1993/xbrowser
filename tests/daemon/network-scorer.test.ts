@@ -231,9 +231,9 @@ describe('network-scorer', () => {
   describe('scoreEntries', () => {
     it('should sort entries by score descending', () => {
       const entries = [
-        makeEntry({ id: 1, method: 'GET', resourceType: 'stylesheet', contentType: 'text/css', size: 50000, url: 'https://example.com/style.css' }),
-        makeEntry({ id: 2, method: 'POST', resourceType: 'xhr', contentType: 'application/json', size: 2048, url: 'https://example.com/api/users', body: { data: [1, 2] } }),
-        makeEntry({ id: 3, method: 'GET', resourceType: 'document', contentType: 'text/html', size: 30000, url: 'https://example.com/' }),
+        makeEntry({ id: 1, method: 'GET', resourceType: 'stylesheet', contentType: 'text/css', size: 50000, url: 'https://example.com/style.css' } as Partial<Parameters<typeof makeEntry>[0]>),
+        makeEntry({ id: 2, method: 'POST', resourceType: 'xhr', contentType: 'application/json', size: 2048, url: 'https://example.com/api/users', body: { data: [1, 2] } } as Partial<Parameters<typeof makeEntry>[0]>),
+        makeEntry({ id: 3, method: 'GET', resourceType: 'document', contentType: 'text/html', size: 30000, url: 'https://example.com/' } as Partial<Parameters<typeof makeEntry>[0]>),
       ];
       const scored = scoreEntries(entries);
       expect(scored[0].id).toBe(2);
@@ -250,7 +250,7 @@ describe('network-scorer', () => {
     });
 
     it('should preserve all original entry fields', () => {
-      const entry = makeEntry({ id: 42, url: 'https://example.com/test' });
+      const entry = makeEntry({ id: 42, url: 'https://example.com/test' } as Partial<Parameters<typeof makeEntry>[0]>);
       const scored = scoreEntries([entry]);
       expect(scored[0].id).toBe(42);
       expect(scored[0].url).toBe('https://example.com/test');

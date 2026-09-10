@@ -340,7 +340,7 @@ describe('juejin plugin', () => {
     it('should return articles array from evaluate', async () => {
       const handler = getHandler('fetch-articles');
       const page = createMockPage();
-      page.evaluate = vi.fn(() => Promise.resolve([
+      page.evaluate = vi.fn((_fn: unknown, _arg?: unknown): Promise<unknown> => Promise.resolve([
         { title: 'Post 1', url: '/post/1', views: '100', likes: '5', comments: '2', date: '2026-01-01' },
       ]));
       const ctx = createMockCtx(page);
@@ -352,7 +352,7 @@ describe('juejin plugin', () => {
     it('should return count tip with article number', async () => {
       const handler = getHandler('fetch-articles');
       const page = createMockPage();
-      page.evaluate = vi.fn(() => Promise.resolve([{ title: 'P1', url: '/1', views: '10', likes: '1', comments: '0', date: '2026-01-01' }]));
+      page.evaluate = vi.fn((_fn: unknown, _arg?: unknown): Promise<unknown> => Promise.resolve([{ title: 'P1', url: '/1', views: '10', likes: '1', comments: '0', date: '2026-01-01' }]));
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx);
       expect(tipsMessages(result.tips).some((t: string) => t.includes('1 篇'))).toBe(true);

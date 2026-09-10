@@ -7,7 +7,7 @@ const LAUNCH_OPTS = CDP_ENDPOINT
   ? { cdpEndpoint: CDP_ENDPOINT }
   : { headless: true, args: ['--no-sandbox', '--disable-gpu'] };
 
-describe('CDP Driver ElementHandle', { timeout: TEST_TIMEOUT, hookTimeout: 60_000 }, () => {
+describe('CDP Driver ElementHandle', { timeout: TEST_TIMEOUT, hookTimeout: 60_000 } as never, () => {
   let browser: XBBrowser;
   let page: XBPage;
 

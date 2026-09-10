@@ -92,7 +92,7 @@ describe('ctrip-review plugin', () => {
     it('should return fail when no review items found', async () => {
       const handler = getHandler('reviews');
       const ctx = makeCtx();
-      ctx.page.evaluate = vi.fn(() => Promise.resolve(false));
+      ctx.page.evaluate = vi.fn((_fn: unknown, _arg?: unknown): Promise<unknown> => Promise.resolve(false));
       const result = await handler({ businessId: '131888' }, ctx);
       const data = (result as Record<string, unknown>).data as Record<string, unknown>;
       expect(data).toBeNull();

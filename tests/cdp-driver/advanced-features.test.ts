@@ -19,7 +19,7 @@ const LAUNCH_OPTS = CDP_ENDPOINT
       args: ['--no-sandbox', '--disable-gpu'],
     };
 
-describe('CDP Driver Advanced Features', { timeout: TEST_TIMEOUT, hookTimeout: 60_000 }, () => {
+describe('CDP Driver Advanced Features', { timeout: TEST_TIMEOUT, hookTimeout: 60_000 } as never, () => {
   let browser: XBBrowser;
   let page: XBPage;
 

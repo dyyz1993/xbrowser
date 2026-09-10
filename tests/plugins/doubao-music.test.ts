@@ -254,7 +254,7 @@ describe('doubao music command', () => {
     it('should fail when 音乐生成 button not found', async () => {
       const handler = await getMusicHandler();
       const page = createMockPage();
-      page.evaluate.mockImplementation(() => null);
+      page.evaluate.mockImplementation((_fn: unknown, _arg?: unknown): unknown => null);
       page.evaluateHandle.mockImplementation(() => ({ asElement: () => null }));
       page.on.mockImplementation(() => {});
 

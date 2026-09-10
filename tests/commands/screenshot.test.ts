@@ -44,7 +44,7 @@ describe('Screenshot Commands', () => {
   describe('screenshot', () => {
     it('should take full page screenshot', async () => {
       const { screenshotCommand } = await import('../../src/commands/screenshot.js');
-      const result = await screenshotCommand.handler({ fullPage: true }, ctx);
+      const result = (await screenshotCommand.handler({ fullPage: true }, ctx)) as Record<string, unknown>;
       expect(ctx.page.screenshot).toHaveBeenCalledWith({ type: 'png', fullPage: true });
       expect(result).toMatchObject({
         success: true,
@@ -57,17 +57,17 @@ describe('Screenshot Commands', () => {
 
     it('should take screenshot with jpeg type', async () => {
       const { screenshotCommand } = await import('../../src/commands/screenshot.js');
-      const result = await screenshotCommand.handler({ type: 'jpeg' }, ctx);
+      const result = (await screenshotCommand.handler({ type: 'jpeg' }, ctx)) as Record<string, unknown>;
       expect(ctx.page.screenshot).toHaveBeenCalledWith({ type: 'jpeg', fullPage: false });
       expect((result as any).data.format).toBe('jpeg');
     });
 
     it('should take element screenshot with selector', async () => {
       const { screenshotCommand } = await import('../../src/commands/screenshot.js');
-      const result = await screenshotCommand.handler(
+      const result = (await screenshotCommand.handler(
         { selector: '#chart' },
         ctx
-      );
+      )) as Record<string, unknown>;
       expect(ctx.page.locator).toHaveBeenCalledWith('#chart');
       expect(result).toMatchObject({ success: true, data: { format: 'png' } });
     });
@@ -80,14 +80,14 @@ describe('Screenshot Commands', () => {
 
     it('should return base64 data in screenshot result', async () => {
       const { screenshotCommand } = await import('../../src/commands/screenshot.js');
-      const result = await screenshotCommand.handler({ base64: true }, ctx);
+      const result = (await screenshotCommand.handler({ base64: true }, ctx)) as Record<string, unknown>;
       expect(typeof (result as any).data.data).toBe('string');
       expect((result as any).data.data.length).toBeGreaterThan(0);
     });
 
     it('should return size of buffer in screenshot result', async () => {
       const { screenshotCommand } = await import('../../src/commands/screenshot.js');
-      const result = await screenshotCommand.handler({}, ctx);
+      const result = (await screenshotCommand.handler({}, ctx)) as Record<string, unknown>;
       expect((result as any).data.size).toBeGreaterThan(0);
     });
 
@@ -97,7 +97,7 @@ describe('Screenshot Commands', () => {
       // Deeply nested path whose dirs do not exist yet
       const out = join(tmp, 'a/b/c/shot.png');
       try {
-        const result = await screenshotCommand.handler({ output: out }, ctx);
+        const result = (await screenshotCommand.handler({ output: out }, ctx)) as Record<string, unknown>;
         expect(result.success).toBe(true);
         expect(existsSync(out)).toBe(true);
         expect(readFileSync(out, 'utf-8')).toBe('screenshot-data');
@@ -110,7 +110,7 @@ describe('Screenshot Commands', () => {
       const { screenshotCommand } = await import('../../src/commands/screenshot.js');
       // Root path is not writable as a file under it — ensureParentDir skips it
       // and writeFileSync throws EACCES/EISDIR. Must come back as fail, not throw.
-      const result = await screenshotCommand.handler({ output: '/' }, ctx);
+      const result = (await screenshotCommand.handler({ output: '/' }, ctx)) as Record<string, unknown>;
       expect(result.success).toBe(false);
       expect((result as any).message).toMatch(/Failed to write screenshot|Cannot create directory/);
     });
