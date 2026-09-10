@@ -27,12 +27,12 @@ describe('twitter plugin', () => {
     ['replies', '回复'],
     ['liked', '点赞'],
   ])('%s should have description', (name, keyword) => {
-    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === name);
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === name)!;
     expect(cmd[1].description).toContain(keyword);
   });
 
   it('timeline should have views/bookmarks description', () => {
-    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'timeline');
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'timeline')!;
     expect(cmd[1].description).toContain('views');
   });
 

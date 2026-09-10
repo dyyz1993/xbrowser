@@ -21,7 +21,7 @@ function extractFn(): string {
 let fnSource = '';
 
 async function resolveSelector(selector: string): Promise<string> {
-  return page.evaluate(({ fnSrc, sel }) => {
+  return page.evaluate(({ fnSrc, sel }: { fnSrc: string; sel: string }) => {
     const el = document.querySelector(sel);
     if (!el) throw new Error('Element not found: ' + sel);
     const fn = new Function('el', fnSrc + '\nreturn buildElementSelector(el);');
@@ -30,7 +30,7 @@ async function resolveSelector(selector: string): Promise<string> {
 }
 
 async function resolveSelectorForAll(selector: string): Promise<string[]> {
-  return page.evaluate(({ fnSrc, sel }) => {
+  return page.evaluate(({ fnSrc, sel }: { fnSrc: string; sel: string }) => {
     const els = document.querySelectorAll(sel);
     const fn = new Function('el', fnSrc + '\nreturn buildElementSelector(el);');
     return Array.from(els).map(el => fn(el));
@@ -136,7 +136,7 @@ describeOrSkip('buildElementSelector e2e', () => {
       browser = launched.browser;
       const ctx = await browser.newContext();
       page = await ctx.newPage();
-      await page.setContent(TEST_HTML);
+      await (page as unknown as { setContent: (h: string) => Promise<unknown> }).setContent(TEST_HTML);
     } catch (e) {
       // CI environment may not have Chromium installed — skip all tests
       console.warn('Skipping selector-resolution E2E: no Chromium available');
@@ -161,7 +161,7 @@ describeOrSkip('buildElementSelector e2e', () => {
 
     it('handles special chars in id with CSS.escape', async () => {
       const sel = await resolveSelector('[id="special.chars"]');
-      const count = await page.evaluate((s) => document.querySelectorAll(s).length, sel);
+      const count = await page.evaluate((s: string) => document.querySelectorAll(s).length, sel);
       expect(count).toBe(1);
     });
   });
@@ -181,13 +181,13 @@ describeOrSkip('buildElementSelector e2e', () => {
   describe('aria-label', () => {
     it('returns [aria-label="x"] for unique aria-label', async () => {
       const sel = await resolveSelector('[aria-label="提交表单"]');
-      const count = await page.evaluate((s) => document.querySelectorAll(s).length, sel);
+      const count = await page.evaluate((s: string) => document.querySelectorAll(s).length, sel);
       expect(count).toBe(1);
     });
 
     it('handles Chinese characters in aria-label', async () => {
       const sel = await resolveSelector('[aria-label="用户名"]');
-      const count = await page.evaluate((s) => document.querySelectorAll(s).length, sel);
+      const count = await page.evaluate((s: string) => document.querySelectorAll(s).length, sel);
       expect(count).toBe(1);
     });
   });
@@ -195,7 +195,7 @@ describeOrSkip('buildElementSelector e2e', () => {
   describe('data-testid', () => {
     it('returns [data-testid="x"] for unique testid', async () => {
       const sel = await resolveSelector('[data-testid="special.element"]');
-      const count = await page.evaluate((s) => document.querySelectorAll(s).length, sel);
+      const count = await page.evaluate((s: string) => document.querySelectorAll(s).length, sel);
       expect(count).toBe(1);
     });
 
@@ -213,7 +213,7 @@ describeOrSkip('buildElementSelector e2e', () => {
 
     it('prefers unique class over non-unique', async () => {
       const sel = await resolveSelector('.email-field');
-      const count = await page.evaluate((s) => document.querySelectorAll(s).length, sel);
+      const count = await page.evaluate((s: string) => document.querySelectorAll(s).length, sel);
       expect(count).toBe(1);
       expect(sel.length).toBeLessThanOrEqual('input.email-field'.length);
     });
@@ -238,7 +238,7 @@ describeOrSkip('buildElementSelector e2e', () => {
   describe('text content', () => {
     it('uses has-text or path for leaf element with unique text', async () => {
       const sel = await resolveSelector('#item-list li:first-child');
-      const count = await page.evaluate((s) => document.querySelectorAll(s).length, sel);
+      const count = await page.evaluate((s: string) => document.querySelectorAll(s).length, sel);
       expect(count).toBe(1);
     });
 
@@ -311,7 +311,7 @@ describeOrSkip('buildElementSelector e2e', () => {
       for (const sel of allSelectors) {
         const resolved = await resolveSelectorForAll(sel);
         for (const r of resolved) {
-          const count = await page.evaluate((s) => document.querySelectorAll(s).length, r);
+          const count = await page.evaluate((s: string) => document.querySelectorAll(s).length, r);
           expect(count).toBe(1);
         }
       }
@@ -341,13 +341,13 @@ describeOrSkip('buildElementSelector e2e', () => {
   describe('edge cases', () => {
     it('handles element with id containing dots', async () => {
       const sel = await resolveSelector('[id="special.chars"]');
-      const count = await page.evaluate((s) => document.querySelectorAll(s).length, sel);
+      const count = await page.evaluate((s: string) => document.querySelectorAll(s).length, sel);
       expect(count).toBe(1);
     });
 
     it('handles Chinese aria-label', async () => {
       const sel = await resolveSelector('[aria-label="密码"]');
-      const count = await page.evaluate((s) => document.querySelectorAll(s).length, sel);
+      const count = await page.evaluate((s: string) => document.querySelectorAll(s).length, sel);
       expect(count).toBe(1);
     });
 
@@ -359,7 +359,7 @@ describeOrSkip('buildElementSelector e2e', () => {
 
     it('cancel button resolves despite sharing .btn class', async () => {
       const sel = await resolveSelector('[name="cancel"]');
-      const count = await page.evaluate((s) => document.querySelectorAll(s).length, sel);
+      const count = await page.evaluate((s: string) => document.querySelectorAll(s).length, sel);
       expect(count).toBe(1);
     });
   });

@@ -44,7 +44,7 @@ describe('deepseek plugin', () => {
   });
 
   it('should register list command with correct config', () => {
-    const listCmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'list');
+    const listCmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'list')!;
     expect(listCmd).toBeDefined();
     const config = listCmd[1] as Record<string, unknown>;
     expect(config.description).toBe('列出所有历史会话');
@@ -52,7 +52,7 @@ describe('deepseek plugin', () => {
   });
 
   it('should register chat command with correct config', () => {
-    const chatCmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'chat');
+    const chatCmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'chat')!;
     expect(chatCmd).toBeDefined();
     const config = chatCmd[1] as Record<string, unknown>;
     expect(config.description).toBe('发送消息并等待 AI 回复');
@@ -60,7 +60,7 @@ describe('deepseek plugin', () => {
   });
 
   it('should register attach command with correct config', () => {
-    const attachCmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'attach');
+    const attachCmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'attach')!;
     expect(attachCmd).toBeDefined();
     const config = attachCmd[1] as Record<string, unknown>;
     expect(config.description).toBe('发送附件（图片/文件/URL）');
@@ -68,7 +68,7 @@ describe('deepseek plugin', () => {
   });
 
   it('should register mode command with correct config', () => {
-    const modeCmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'mode');
+    const modeCmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'mode')!;
     expect(modeCmd).toBeDefined();
     const config = modeCmd[1] as Record<string, unknown>;
     expect(config.description).toBe('切换快速模式/专家模式');
@@ -76,7 +76,7 @@ describe('deepseek plugin', () => {
   });
 
   it('should register think command with expert mode option', () => {
-    const thinkCmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'think');
+    const thinkCmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'think')!;
     expect(thinkCmd).toBeDefined();
     const config = thinkCmd[1] as Record<string, unknown>;
     expect(config.description).toBe('切换深度思考模式');
@@ -84,7 +84,7 @@ describe('deepseek plugin', () => {
   });
 
   it('should register search command with on/off state', () => {
-    const searchCmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'search');
+    const searchCmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'search')!;
     expect(searchCmd).toBeDefined();
     const config = searchCmd[1] as Record<string, unknown>;
     expect(config.description).toBe('切换智能搜索（联网搜索）');
@@ -92,14 +92,14 @@ describe('deepseek plugin', () => {
   });
 
   it('should register new command', () => {
-    const newCmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'new');
+    const newCmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'new')!;
     expect(newCmd).toBeDefined();
     const config = newCmd[1] as Record<string, unknown>;
     expect(config.scope).toBe('browser');
   });
 
   it('should register open command with title parameter', () => {
-    const openCmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'open');
+    const openCmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'open')!;
     expect(openCmd).toBeDefined();
     const config = openCmd[1] as Record<string, unknown>;
     expect(config.scope).toBe('browser');
