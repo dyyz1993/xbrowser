@@ -2,6 +2,14 @@ import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 
+const searchResult = z.array(z.object({
+  rank: z.number(),
+  title: z.string(),
+  authors: z.string(),
+  snippet: z.string(),
+  url: z.string(),
+}));
+
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -11,6 +19,7 @@ export default function (xcli: XCLIAPI): void {
     requiresLogin: false,
   });
   site.command('search', {
+    result: searchResult,
     description: 'Search Google Scholar articles',
     loginRequired: 'none',
     scope: 'project',
@@ -21,7 +30,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (p, _ctx) => {
       const url = `https://scholar.google.com/scholar?q=${encodeURIComponent(p.query)}&hl=en&as_sdt=0%2C5`;
             const html = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }).then(r => r.text());
-            const results: any[] = [];
+            const results: Record<string, unknown>[] = [];
             const titleRegex = /<h3 class="gs_rt">[^<]*<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/g;
             const snippetRegex = /<div class="gs_rs">([^<]*)<\/div>/g;
             const authorRegex = /<div class="gs_a">([^<]*)<\/div>/g;

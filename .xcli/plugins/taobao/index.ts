@@ -69,10 +69,10 @@ function interceptApi(
 
 async function checkLoginState(page: Page): Promise<boolean> {
   try {
-    const cookies = await page.context().cookies(['.taobao.com']);
+    const cookies = await page.context().cookies();
     const loginCookies = ['_m_h5_tk', 'cookie2', 'sgcookie', '_tb_token_'];
     const hasCookie = loginCookies.some((name) =>
-      cookies.some((c) => c.name === name && c.value.length > 5),
+      cookies.some((c) => (c as Record<string, string>).name === name && ((c as Record<string, string>).value || '').length > 5),
     );
     if (hasCookie) return true;
 
@@ -1501,7 +1501,7 @@ export default function (xcli: XCLIAPI): void {
             });
 
           return { coupons, promotions };
-        }) as { coupons: string[]; promotions: string[] };
+        }) as unknown as { coupons: { title: string; amount: string; condition: string }[]; promotions: string[] };
 
         return ok({ source: 'dom', itemId: params.itemId, ...data }, [
             ...ctxTips,

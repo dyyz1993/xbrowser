@@ -136,7 +136,7 @@ async function read163EmailCode(page: Page, _fromDomain: string, timeoutMs = 600
     const frames = mailPage.frames();
     let targetFrame = mailPage.mainFrame();
     for (const f of frames) {
-      if (f.url().includes('mail') || f.name().includes('frame')) {
+      if (f.url().includes('mail') || (f.name ?? '').includes('frame')) {
         targetFrame = f;
       }
     }
@@ -545,7 +545,7 @@ export default function (xcli: XCLIAPI): void {
     requiresLogin: true,
     description: '自动注册+提交外链（CDP安全模式，逐站执行）',
     isLogin: async (ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | null;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page | null;
       if (!page) return true;
       try {
         const url = page.url();

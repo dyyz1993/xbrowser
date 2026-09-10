@@ -24,7 +24,7 @@ function getCmd(name: string) {
 describe('yahoo-finance', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve(YF_RESPONSE) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(YF_RESPONSE) });
     yahooFinance(mockXcli as any);
   });
 
@@ -42,7 +42,7 @@ describe('yahoo-finance', () => {
   });
 
   it('quote 失败时返回 fail', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({ chart: { result: [] } }) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ chart: { result: [] } }) });
     const h = getCmd('quote');
     const r = await h({ symbol: 'INVALID' }, {});
     expect(JSON.stringify(r)).toContain('Could not fetch');

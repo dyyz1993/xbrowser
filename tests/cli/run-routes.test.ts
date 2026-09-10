@@ -48,7 +48,7 @@ describe('run-routes', () => {
       ],
       stoppedReason: null,
     });
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const logSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await handleRun('commands.txt');
     // Joined with `;` (sequence) so each line runs independently — NOT `&&`
     // which would short-circuit on the first failure.
@@ -67,9 +67,9 @@ describe('run-routes', () => {
       steps: [{ success: true, raw: 'goto https://example.com', data: { url: 'https://example.com' } }],
       stoppedReason: null,
     });
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const logSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await handleRun('cmd.txt');
-    expect(logSpy).toHaveBeenCalledWith('[OK] goto https://example.com');
+    expect(logSpy.mock.calls.map((c) => String(c[0])).join('')).toContain('[OK] goto https://example.com');
     logSpy.mockRestore();
   });
 
@@ -80,12 +80,12 @@ describe('run-routes', () => {
       steps: [{ success: false, raw: 'click #missing', message: 'Element not found', data: null }],
       stoppedReason: null,
     });
-    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // r17: FAIL 路径现走 outputError（非抛出，循环继续收集）——覆盖 beforeEach 的 throw 实现
+    mockOutputError.mockImplementation(() => {});
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('EXIT'); });
     await expect(handleRun('cmd.txt')).rejects.toThrow('EXIT');
-    expect(errSpy).toHaveBeenCalledWith('[FAIL] click #missing: Element not found');
+    expect(mockOutputError).toHaveBeenCalledWith(expect.stringContaining('click #missing'));
     exitSpy.mockRestore();
-    errSpy.mockRestore();
   });
 
   it('should print stopped reason when chain is stopped', async () => {
@@ -95,12 +95,11 @@ describe('run-routes', () => {
       steps: [],
       stoppedReason: 'Step failed',
     });
-    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockOutputError.mockImplementation(() => {});
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('EXIT'); });
     await expect(handleRun('cmd.txt')).rejects.toThrow('EXIT');
-    expect(errSpy).toHaveBeenCalledWith('Stopped: Step failed');
+    expect(mockOutputError).toHaveBeenCalledWith(expect.stringContaining('Step failed'));
     exitSpy.mockRestore();
-    errSpy.mockRestore();
   });
 
   it('should exit with code 1 when chain fails', async () => {
@@ -110,6 +109,7 @@ describe('run-routes', () => {
       steps: [{ success: false, raw: 'bad-cmd', message: 'fail', data: null }],
       stoppedReason: null,
     });
+    mockOutputError.mockImplementation(() => {});
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => { throw new Error('EXIT'); });
     await expect(handleRun('cmd.txt')).rejects.toThrow('EXIT');
     expect(exitSpy).toHaveBeenCalledWith(1);
@@ -138,7 +138,7 @@ describe('run-routes', () => {
       steps: [{ success: true, raw: 'title', data: { title: 'My Page', ok: true } }],
       stoppedReason: null,
     });
-    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const logSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     await handleRun('cmd.txt');
     expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('title: My Page'));
     logSpy.mockRestore();

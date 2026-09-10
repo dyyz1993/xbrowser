@@ -54,12 +54,44 @@ describe('server/router', () => {
     route = mod.route;
   });
 
-  it('handles OPTIONS request with 204 and CORS headers', async () => {
-    const res = await route('OPTIONS', '/api/v1/health', {}, null);
+  it('handles OPTIONS request with 204 and CORS headers for loopback origins', async () => {
+    const res = await route('OPTIONS', '/api/v1/health', { origin: 'http://localhost:3000' }, null);
     expect(res.statusCode).toBe(204);
     expect(res.headers).toMatchObject({
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'http://localhost:3000',
       'Access-Control-Allow-Methods': expect.any(String),
+    });
+  });
+
+  it('grants no CORS headers to non-loopback origins by default', async () => {
+    const res = await route('OPTIONS', '/api/v1/health', { origin: 'https://evil.example' }, null);
+    expect(res.statusCode).toBe(204);
+    expect(res.headers?.['Access-Control-Allow-Origin']).toBeUndefined();
+  });
+
+  it('reflects explicit allowlist origins when configured', async () => {
+    const res = await route(
+      'OPTIONS',
+      '/api/v1/health',
+      { origin: 'https://app.example' },
+      null,
+      ['https://app.example'],
+    );
+    expect(res.headers).toMatchObject({
+      'Access-Control-Allow-Origin': 'https://app.example',
+    });
+  });
+
+  it('allows wildcard only when explicitly configured', async () => {
+    const res = await route(
+      'OPTIONS',
+      '/api/v1/health',
+      { origin: 'https://anything.example' },
+      null,
+      ['*'],
+    );
+    expect(res.headers).toMatchObject({
+      'Access-Control-Allow-Origin': 'https://anything.example',
     });
   });
 
@@ -155,5 +187,143 @@ describe('server/router', () => {
     expect(res.statusCode).toBe(405);
     const body = res.body as { error: string };
     expect(body.error).toBe('METHOD_NOT_ALLOWED');
+  });
+
+  // ── Request-entry gates (origin + content-type), enforced BEFORE handlers ──
+
+  describe('origin gate', () => {
+    it('rejects disallowed Origin with 403 before any executor runs', async () => {
+      const { executeCommand } = await import('../../src/executor.js');
+      const res = await route(
+        'POST',
+        '/api/v1/exec',
+        { origin: 'https://evil.example' },
+        { command: 'screenshot' },
+      );
+      expect(res.statusCode).toBe(403);
+      expect(executeCommand).not.toHaveBeenCalled();
+    });
+
+    it('rejects disallowed Origin on GET routes too (no session listing leak)', async () => {
+      const { getAllSessions } = await import('../../src/browser.js');
+      const res = await route('GET', '/api/v1/sessions', { origin: 'https://evil.example' }, null);
+      expect(res.statusCode).toBe(403);
+      expect(getAllSessions).not.toHaveBeenCalled();
+    });
+
+    it('rejects disallowed Origin before session creation', async () => {
+      const { createSession } = await import('../../src/browser.js');
+      const res = await route(
+        'POST',
+        '/api/v1/sessions',
+        { origin: 'https://evil.example' },
+        { name: 'pwned' },
+      );
+      expect(res.statusCode).toBe(403);
+      expect(createSession).not.toHaveBeenCalled();
+    });
+
+    it('allows requests without Origin (CLI clients like xbrowser remote)', async () => {
+      const { executeCommand } = await import('../../src/executor.js');
+      const res = await route('POST', '/api/v1/exec', {}, { command: 'screenshot' });
+      expect(res.statusCode).toBe(200);
+      expect(executeCommand).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows loopback Origin and reaches the executor', async () => {
+      const { executeCommand } = await import('../../src/executor.js');
+      const res = await route(
+        'POST',
+        '/api/v1/exec',
+        { origin: 'http://localhost:3000' },
+        { command: 'screenshot' },
+      );
+      expect(res.statusCode).toBe(200);
+      expect(executeCommand).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows explicit allowlist Origin and reaches the executor', async () => {
+      const { executeCommand } = await import('../../src/executor.js');
+      const res = await route(
+        'POST',
+        '/api/v1/exec',
+        { origin: 'https://app.example' },
+        { command: 'screenshot' },
+        ['https://app.example'],
+      );
+      expect(res.statusCode).toBe(200);
+      expect(executeCommand).toHaveBeenCalledTimes(1);
+    });
+
+    it('OPTIONS preflight is exempt from the origin gate (no executor either way)', async () => {
+      const { executeCommand } = await import('../../src/executor.js');
+      const res = await route('OPTIONS', '/api/v1/exec', { origin: 'https://evil.example' }, null);
+      expect(res.statusCode).toBe(204);
+      expect(executeCommand).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('content-type gate', () => {
+    it('rejects text/plain POST with 415 before the executor runs', async () => {
+      const { executeCommand } = await import('../../src/executor.js');
+      const res = await route(
+        'POST',
+        '/api/v1/exec',
+        { 'content-type': 'text/plain' },
+        { command: 'screenshot' },
+      );
+      expect(res.statusCode).toBe(415);
+      expect(executeCommand).not.toHaveBeenCalled();
+    });
+
+    it('rejects form-urlencoded POST (HTML form CSRF surface)', async () => {
+      const { executeCommand } = await import('../../src/executor.js');
+      const res = await route(
+        'POST',
+        '/api/v1/exec',
+        { 'content-type': 'application/x-www-form-urlencoded' },
+        'command=screenshot',
+      );
+      expect(res.statusCode).toBe(415);
+      expect(executeCommand).not.toHaveBeenCalled();
+    });
+
+    it('rejects multipart/form-data POST', async () => {
+      const { executeCommand } = await import('../../src/executor.js');
+      const res = await route(
+        'POST',
+        '/api/v1/exec',
+        { 'content-type': 'multipart/form-data; boundary=x' },
+        {},
+      );
+      expect(res.statusCode).toBe(415);
+      expect(executeCommand).not.toHaveBeenCalled();
+    });
+
+    it('accepts application/json with charset parameter', async () => {
+      const { executeCommand } = await import('../../src/executor.js');
+      const res = await route(
+        'POST',
+        '/api/v1/exec',
+        { 'content-type': 'application/json; charset=utf-8' },
+        { command: 'screenshot' },
+      );
+      expect(res.statusCode).toBe(200);
+      expect(executeCommand).toHaveBeenCalledTimes(1);
+    });
+
+    it('accepts POST without Content-Type header (legacy clients)', async () => {
+      const { executeCommand } = await import('../../src/executor.js');
+      const res = await route('POST', '/api/v1/exec', {}, { command: 'screenshot' });
+      expect(res.statusCode).toBe(200);
+      expect(executeCommand).toHaveBeenCalledTimes(1);
+    });
+
+    it('GET routes are not affected by the content-type gate', async () => {
+      const { getAllSessions } = await import('../../src/browser.js');
+      const res = await route('GET', '/api/v1/sessions', { 'content-type': 'text/plain' }, null);
+      expect(res.statusCode).toBe(200);
+      expect(getAllSessions).toHaveBeenCalledTimes(1);
+    });
   });
 });

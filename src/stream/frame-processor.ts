@@ -2,8 +2,10 @@
 // 顶层静态 import 会让 daemon 启动即加载——不用直播的环境（如 CentOS 7
 // 服务器直部署，系统 libstdc++ 过旧加载失败）整个 daemon 起不来。
 // 用到直播功能时才加载，加载失败给出明确错误而不是炸掉 daemon。
-let _sharp: typeof import('sharp') | null = null;
-async function loadSharp(): Promise<typeof import('sharp')> {
+// sharp 0.35 起模块类型为纯 ESM 形状，工厂函数在 default 上，类型须取 default。
+type SharpFactory = typeof import('sharp')['default'];
+let _sharp: SharpFactory | null = null;
+async function loadSharp(): Promise<SharpFactory> {
 	if (!_sharp) {
 		try {
 			_sharp = (await import('sharp')).default;

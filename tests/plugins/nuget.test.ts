@@ -18,7 +18,7 @@ function getHandler() {
 describe('nuget plugin', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve(NUGET_RESPONSE) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(NUGET_RESPONSE) });
     plugin(mockXcli as any);
   });
 
@@ -40,7 +40,7 @@ describe('nuget plugin', () => {
   });
 
   it('无结果时返回 fail', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({ data: [] }) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ data: [] }) });
     const h = getHandler();
     const r = await h({ query: 'nonexistent' }, { page: createMockPage() });
     expect(JSON.stringify(r)).toContain('No packages matched');

@@ -118,7 +118,7 @@ async function findAndFillInput(page: Page, config: EngineConfig, text: string):
       if (count === 0) continue;
       const el = page.locator(sel).first();
       await el.waitFor({ state: 'visible', timeout: 3000 });
-      const tag = await el.evaluate((n) => n.tagName.toLowerCase());
+      const tag = await el.evaluate((n: Element) => n.tagName.toLowerCase());
       if (tag === 'textarea' || tag === 'input') {
         await el.click();
         await page.waitForTimeout(300);

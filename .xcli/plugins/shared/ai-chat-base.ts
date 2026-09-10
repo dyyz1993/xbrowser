@@ -74,9 +74,9 @@ export async function uploadFileViaDataTransfer(page: Page, absPath: string): Pr
 
     const dt = new DataTransfer();
     dt.items.add(file);
-    Object.defineProperty(fi, 'files', { value: dt.files });
+    Object.defineProperty(fi, 'files', { value: (dt.files || []) });
     fi.dispatchEvent(new Event('change', { bubbles: true }));
-    return fi.files.length > 0;
+    return (fi.files || []).length > 0;
   }, { b64data: b64, filename: path.basename(absPath), mimeType: mime }) as boolean;
 
   return result;

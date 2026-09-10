@@ -92,8 +92,8 @@ export async function handleRecord(
 
       const md = SessionRecorder.readMarkdownSummary(sessionName);
       if (md) {
-        console.log('');
-        console.log(md);
+        process.stdout.write('\n');
+        process.stdout.write(md + '\n');
       } else {
         const summary = SessionRecorder.readSummary(sessionName);
         if (summary) {
@@ -163,28 +163,28 @@ export async function handleRecord(
     }
 
     default:
-      console.log('Usage:');
-      console.log('  xbrowser record start [--url <url>] [--session <name>]');
-      console.log('  xbrowser record stop  [--session <name>]');
-      console.log('  xbrowser record status [--session <name>]');
-      console.log('  xbrowser record summary [--session <name>] [--json]');
-      console.log('  xbrowser record checkpoint --type <type> --hint "description" [--selector <sel>] [--session <name>]');
-      console.log('  xbrowser record generate-plugin [--session <name>] [--name <plugin>] [--output <dir>]');
-      console.log('');
-      console.log('Checkpoint types: dialog, captcha, login, iframe, slider, custom');
+      process.stdout.write('Usage:\n');
+      process.stdout.write('  xbrowser record start [--url <url>] [--session <name>]\n');
+      process.stdout.write('  xbrowser record stop  [--session <name>]\n');
+      process.stdout.write('  xbrowser record status [--session <name>]\n');
+      process.stdout.write('  xbrowser record summary [--session <name>] [--json]\n');
+      process.stdout.write('  xbrowser record checkpoint --type <type> --hint "description" [--selector <sel>] [--session <name>]\n');
+      process.stdout.write('  xbrowser record generate-plugin [--session <name>] [--name <plugin>] [--output <dir>]\n');
+      process.stdout.write('\n');
+      process.stdout.write('Checkpoint types: dialog, captcha, login, iframe, slider, custom\n');
   }
 }
 
 // ─── Summary printers ─────────────────────────────────────────────
 
 function printRecordingSummary(summary: RecordingSummary, sessionName: string): void {
-  console.log('');
-  console.log('=== Recording Summary ===');
-  console.log(`  Start URL: ${summary.startUrl}`);
-  console.log(`  Duration:  ${Math.round(summary.durationMs / 1000)}s`);
-  console.log(`  Actions:   ${summary.totalActions}`);
-  console.log(`  Network:   ${summary.totalNetworkRequests}`);
-  console.log(`  Steps:     ${summary.steps.length}`);
+  process.stdout.write('\n');
+  process.stdout.write('=== Recording Summary ===\n');
+  process.stdout.write(`  Start URL: ${summary.startUrl}\n`);
+  process.stdout.write(`  Duration:  ${Math.round(summary.durationMs / 1000)}s\n`);
+  process.stdout.write(`  Actions:   ${summary.totalActions}\n`);
+  process.stdout.write(`  Network:   ${summary.totalNetworkRequests}\n`);
+  process.stdout.write(`  Steps:     ${summary.steps.length}\n`);
 
   for (const step of summary.steps) {
     const a = step.action;
@@ -207,21 +207,21 @@ function printRecordingSummary(summary: RecordingSummary, sessionName: string): 
     }
     const navInfo = step.contextChanges.find(c => c.type === 'navigate');
     if (navInfo) desc += ` → navigate to ${navInfo.url?.substring(0, 80)}`;
-    console.log(`  ${step.step}. ${desc}`);
+    process.stdout.write(`  ${step.step}. ${desc}\n`);
     // Show click context (popover/dropdown items)
     if (a.clickContext) {
       const ctx = a.clickContext;
       if (ctx.appeared?.length > 0) {
         for (const popup of ctx.appeared) {
           const roleStr = popup.role ? ` [${popup.role}]` : '';
-          console.log(`      ↳ ${popup.tag}${roleStr} "${(popup.text || '').substring(0, 60)}"`);
+          process.stdout.write(`      ↳ ${popup.tag}${roleStr} "${(popup.text || '').substring(0, 60)}"\n`);
           if (popup.items?.length > 0) {
             for (const item of popup.items.slice(0, 10)) {
               const disStr = item.disabled ? ' [disabled]' : '';
-              console.log(`        • ${item.text}${disStr}`);
+              process.stdout.write(`        • ${item.text}${disStr}\n`);
             }
             if (popup.items.length > 10) {
-              console.log(`        ... and ${popup.items.length - 10} more items`);
+              process.stdout.write(`        ... and ${popup.items.length - 10} more items\n`);
             }
           }
         }
@@ -234,34 +234,34 @@ function printRecordingSummary(summary: RecordingSummary, sessionName: string): 
           if (sc.ariaSelected !== undefined) parts.push(`selected=${sc.ariaSelected}`);
           if (sc.dataState) parts.push(`state=${sc.dataState}`);
           if (parts.length > 0) {
-            console.log(`      ↳ state: <${sc.tag}> "${(sc.text || '').substring(0, 30)}" ${parts.join(', ')}`);
+            process.stdout.write(`      ↳ state: <${sc.tag}> "${(sc.text || '').substring(0, 30)}" ${parts.join(', ')}\n`);
           }
         }
       }
     }
   }
 
-  console.log('');
-  console.log(`  Files: ${SessionRecorder.getRecordingsDir(sessionName)}/`);
+  process.stdout.write('\n');
+  process.stdout.write(`  Files: ${SessionRecorder.getRecordingsDir(sessionName)}/\n`);
 
   if (summary.checkpoints && summary.checkpoints.length > 0) {
-    console.log('');
-    console.log(`  Checkpoints (${summary.checkpoints.length}):`);
+    process.stdout.write('\n');
+    process.stdout.write(`  Checkpoints (${summary.checkpoints.length}):\n`);
     for (const cp of summary.checkpoints) {
       const src = cp.source === 'auto' ? '[auto]' : '[manual]';
-      console.log(`    ${cp.id}. ${src} [${cp.type}] ${cp.hint}`);
-      if (cp.selector) console.log(`       selector: ${cp.selector}`);
+      process.stdout.write(`    ${cp.id}. ${src} [${cp.type}] ${cp.hint}\n`);
+      if (cp.selector) process.stdout.write(`       selector: ${cp.selector}\n`);
     }
   }
 }
 
 function printHumanReadableSummary(summary: RecordingSummary): void {
-  console.log(`Start URL: ${summary.startUrl}`);
-  console.log(`Recorded:  ${summary.recordedAt}`);
-  console.log(`Duration:  ${Math.round(summary.durationMs / 1000)}s`);
-  console.log(`Actions:   ${summary.totalActions}`);
-  console.log(`Network:   ${summary.totalNetworkRequests}`);
-  console.log('');
+  process.stdout.write(`Start URL: ${summary.startUrl}\n`);
+  process.stdout.write(`Recorded:  ${summary.recordedAt}\n`);
+  process.stdout.write(`Duration:  ${Math.round(summary.durationMs / 1000)}s\n`);
+  process.stdout.write(`Actions:   ${summary.totalActions}\n`);
+  process.stdout.write(`Network:   ${summary.totalNetworkRequests}\n`);
+  process.stdout.write('\n');
 
   for (const step of summary.steps) {
     const a = step.action;
@@ -282,7 +282,7 @@ function printHumanReadableSummary(summary: RecordingSummary): void {
     if (a.key) parts.push(`key=${a.key}`);
     if (a.x !== undefined && a.y !== undefined) parts.push(`@(${a.x},${a.y})`);
 
-    console.log(parts.join(' '));
+    process.stdout.write(parts.join(' ') + '\n');
 
     // Show click context (popover/dropdown items)
     if (a.clickContext) {
@@ -290,14 +290,14 @@ function printHumanReadableSummary(summary: RecordingSummary): void {
       if (ctx.appeared?.length > 0) {
         for (const popup of ctx.appeared) {
           const roleStr = popup.role ? ` [${popup.role}]` : '';
-          console.log(`    📋 ${popup.tag}${roleStr} "${(popup.text || '').substring(0, 60)}"`);
+          process.stdout.write(`    📋 ${popup.tag}${roleStr} "${(popup.text || '').substring(0, 60)}"\n`);
           if (popup.items?.length > 0) {
             for (const item of popup.items.slice(0, 10)) {
               const disStr = item.disabled ? ' [disabled]' : '';
-              console.log(`       • ${item.text}${disStr}`);
+              process.stdout.write(`       • ${item.text}${disStr}\n`);
             }
             if (popup.items.length > 10) {
-              console.log(`       ... and ${popup.items.length - 10} more items`);
+              process.stdout.write(`       ... and ${popup.items.length - 10} more items\n`);
             }
           }
         }
@@ -310,44 +310,44 @@ function printHumanReadableSummary(summary: RecordingSummary): void {
           if (sc.ariaSelected !== undefined) stateParts.push(`selected=${sc.ariaSelected}`);
           if (sc.dataState) stateParts.push(`state=${sc.dataState}`);
           if (stateParts.length > 0) {
-            console.log(`    🔄 <${sc.tag}> "${(sc.text || '').substring(0, 30)}" ${stateParts.join(', ')}`);
+            process.stdout.write(`    🔄 <${sc.tag}> "${(sc.text || '').substring(0, 30)}" ${stateParts.join(', ')}\n`);
           }
         }
       }
     }
 
     for (const net of step.network) {
-      console.log(`    → ${net.method} ${net.path} [${net.status}] ${net.resourceType}`);
+      process.stdout.write(`    → ${net.method} ${net.path} [${net.status}] ${net.resourceType}\n`);
       if (net.requestBody && typeof net.requestBody === 'object') {
         const bodyStr = JSON.stringify(net.requestBody);
         if (bodyStr.length <= 200) {
-          console.log(`      body: ${bodyStr}`);
+          process.stdout.write(`      body: ${bodyStr}\n`);
         } else {
-          console.log(`      body: ${bodyStr.substring(0, 200)}... (${bodyStr.length} bytes)`);
+          process.stdout.write(`      body: ${bodyStr.substring(0, 200)}... (${bodyStr.length} bytes)\n`);
         }
       }
     }
 
     for (const match of step.matchedInputs) {
-      console.log(`    🔗 input "${match.inputValue}" → network #${match.networkId} param "${match.paramName}"`);
+      process.stdout.write(`    🔗 input "${match.inputValue}" → network #${match.networkId} param "${match.paramName}"\n`);
     }
 
     for (const ctx of step.contextChanges) {
       if (ctx.type === 'navigate') {
-        console.log(`    ↗ navigate → ${ctx.url}`);
+        process.stdout.write(`    ↗ navigate → ${ctx.url}\n`);
       } else if (ctx.type === 'new_tab') {
-        console.log(`    ↗ new tab: ${ctx.url}`);
+        process.stdout.write(`    ↗ new tab: ${ctx.url}\n`);
       }
     }
   }
 
   if (summary.checkpoints && summary.checkpoints.length > 0) {
-    console.log('');
-    console.log(`Checkpoints (${summary.checkpoints.length}):`);
+    process.stdout.write('\n');
+    process.stdout.write(`Checkpoints (${summary.checkpoints.length}):\n`);
     for (const cp of summary.checkpoints) {
       const src = cp.source === 'auto' ? '[auto]' : '[manual]';
-      console.log(`  ${cp.id}. ${src} [${cp.type}] ${cp.hint}`);
-      if (cp.selector) console.log(`     selector: ${cp.selector}`);
+      process.stdout.write(`  ${cp.id}. ${src} [${cp.type}] ${cp.hint}\n`);
+      if (cp.selector) process.stdout.write(`     selector: ${cp.selector}\n`);
     }
   }
 }
@@ -395,9 +395,9 @@ export async function handleReplay(
   if (result.ok && mode !== 'json' && mode !== 'yaml') {
     const healed = typeof result.healed === 'number' ? result.healed : 0;
     if (healed > 0) {
-      console.log(`\nSelf-healed ${healed} action(s):`);
+      process.stdout.write(`\nSelf-healed ${healed} action(s):\n`);
       for (const d of (result.healedDetails as Array<{ index: number; strategy: string }> | undefined) ?? []) {
-        console.log(`  - step ${d.index + 1}: ${d.strategy}`);
+        process.stdout.write(`  - step ${d.index + 1}: ${d.strategy}\n`);
       }
     }
   }
@@ -410,7 +410,7 @@ export async function handleConvert(args: string[], _mode: string): Promise<void
   const outputPath = args[1];
 
   if (!filePath || !outputPath) {
-    console.error('Usage: xbrowser convert <recording.yaml> <output.{js,py,sh}>');
+    outputError('Usage: xbrowser convert <recording.yaml> <output.{js,py,sh}>');
     process.exit(1);
   }
 
@@ -425,13 +425,13 @@ export async function handleConvert(args: string[], _mode: string): Promise<void
     const content = fs.readFileSync(filePath, 'utf-8');
     recording = yaml.parse(content);
   } catch (e) {
-    console.error(`Error: Failed to read "${filePath}": ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`);
+    outputError(`Error: Failed to read "${filePath}": ${e instanceof Error ? e.message.split('\n')[0] : String(e)}`);
     process.exit(1);
   }
 
   // yaml.parse("") returns null; guard before field access
   if (recording === null || typeof recording !== 'object' || Array.isArray(recording)) {
-    console.error(`Error: "${filePath}" does not contain a valid recording (expected a YAML/JSON object with events or actions).`);
+    outputError(`Error: "${filePath}" does not contain a valid recording (expected a YAML/JSON object with events or actions).`);
     process.exit(1);
   }
 
@@ -473,16 +473,16 @@ export async function handleConvert(args: string[], _mode: string): Promise<void
   fs.chmodSync(outputPath, 0o755);
 
   const eventCount = (recordingTyped.events || []).length;
-  console.log(`Converted ${filePath} -> ${outputPath}`);
-  console.log(`  Events: ${eventCount}, Start URL: ${recordingTyped.startUrl}`);
-  console.log(`  Run: ${ext === '.py' ? 'python' : ext === '.sh' ? './' : 'node'} ${outputPath}`);
+  process.stdout.write(`Converted ${filePath} -> ${outputPath}\n`);
+  process.stdout.write(`  Events: ${eventCount}, Start URL: ${recordingTyped.startUrl}\n`);
+  process.stdout.write(`  Run: ${ext === '.py' ? 'python' : ext === '.sh' ? './' : 'node'} ${outputPath}\n`);
 }
 
 export async function handleExtract(args: string[], _mode: string): Promise<void> {
   const filePath = args[0];
 
   if (!filePath) {
-    console.error('Usage: xbrowser extract <recording.yaml>');
+    outputError('Usage: xbrowser extract <recording.yaml>');
     process.exit(1);
   }
 
@@ -491,9 +491,9 @@ export async function handleExtract(args: string[], _mode: string): Promise<void
   try {
     const { summary, outputPath } = extractAndSave(filePath);
     printExtractSummary(summary);
-    console.log(`\nSaved LLM summary: ${outputPath}`);
+    process.stdout.write(`\nSaved LLM summary: ${outputPath}\n`);
   } catch (e) {
-    console.error(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    outputError(`Error: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(1);
   }
 }
@@ -503,7 +503,7 @@ export async function handleFilter(args: string[], _mode: string, options?: Reco
   const outputPath = args[1];
 
   if (!filePath || !outputPath) {
-    console.error('Usage: xbrowser filter <input.yaml> <output.yaml> [--exclude type1,type2]');
+    outputError('Usage: xbrowser filter <input.yaml> <output.yaml> [--exclude type1,type2]');
     process.exit(1);
   }
 
@@ -519,10 +519,10 @@ export async function handleFilter(args: string[], _mode: string, options?: Reco
   try {
     const result = filterRecording(filePath, outputPath, excludeTypes);
 
-    console.log(`Filtered ${filePath} -> ${outputPath}`);
-    console.log(`  Original: ${result.originalCount}, After: ${result.filteredCount}, Removed: ${result.removed} (${result.percentage}%)`);
+    process.stdout.write(`Filtered ${filePath} -> ${outputPath}\n`);
+    process.stdout.write(`  Original: ${result.originalCount}, After: ${result.filteredCount}, Removed: ${result.removed} (${result.percentage}%)\n`);
   } catch (e) {
-    console.error(`Error: ${e instanceof Error ? e.message : String(e)}`);
+    outputError(`Error: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(1);
   }
 }
@@ -572,21 +572,21 @@ async function handleGeneratePlugin(
   }
 
   // Summary
-  console.log('');
-  console.log('=== Plugin Generated ===');
-  console.log(`  Plugin:     ${finalPluginName}`);
-  console.log(`  Domain:     ${domain}`);
-  console.log(`  Output:     ${finalOutputDir}/index.ts`);
+  process.stdout.write('\n');
+  process.stdout.write('=== Plugin Generated ===\n');
+  process.stdout.write(`  Plugin:     ${finalPluginName}\n`);
+  process.stdout.write(`  Domain:     ${domain}\n`);
+  process.stdout.write(`  Output:     ${finalOutputDir}/index.ts\n`);
   if (knowledgeMd) {
-    console.log(`  Knowledge:  ${finalOutputDir}/SITE_KNOWLEDGE.md`);
+    process.stdout.write(`  Knowledge:  ${finalOutputDir}/SITE_KNOWLEDGE.md\n`);
   }
-  console.log(`  Actions:    ${data.actions.length}`);
-  console.log(`  APIs:       ${data.network.filter(n => n.contentType.includes('json') || n.url.includes('/api/')).length}`);
-  console.log('');
-  console.log('Next steps:');
-  console.log(`  1. Review and edit:  ${finalOutputDir}/index.ts`);
-  console.log(`  2. Test:             xbrowser ${finalPluginName} <command>`);
-  console.log(`  3. Reference:        ${finalOutputDir}/SITE_KNOWLEDGE.md (for LLM)`);
+  process.stdout.write(`  Actions:    ${data.actions.length}\n`);
+  process.stdout.write(`  APIs:       ${data.network.filter(n => n.contentType.includes('json') || n.url.includes('/api/')).length}\n`);
+  process.stdout.write('\n');
+  process.stdout.write('Next steps:\n');
+  process.stdout.write(`  1. Review and edit:  ${finalOutputDir}/index.ts\n`);
+  process.stdout.write(`  2. Test:             xbrowser ${finalPluginName} <command>\n`);
+  process.stdout.write(`  3. Reference:        ${finalOutputDir}/SITE_KNOWLEDGE.md (for LLM)\n`);
 }
 
 function generatePluginCode(

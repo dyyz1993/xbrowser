@@ -1,17 +1,17 @@
 # 插件完成度看板
 
 > **自动生成，请勿手改** · 由 `lint-scripts/check-plugin-status.mjs` 生成
-> 生成时间：2026-09-01 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
+> 生成时间：2026-09-10 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
 
 ## 汇总
 
 | 指标 | 值 |
 |------|-----|
-| 插件总数 | 126 |
-| ✅ 已完成（有实现+有测试） | 97 |
-| 🟡 有实现无测试 | 18 |
+| 插件总数 | 127 |
+| ✅ 已完成（有实现+有测试） | 108 |
+| 🟡 有实现无测试 | 8 |
 | 🔴 scaffold 待实现 | 11 |
-| **当前债务** | **29** |
+| **当前债务** | **19** |
 
 > 债务 = 🟡无测试 + 🔴scaffold + ⛔加载失败。目标：债务 → 0。
 
@@ -31,30 +31,20 @@
 | tiktok | 14 | https://www.tiktok.com |
 | upwork | 14 | https://www.upwork.com |
 
-## 🟡 有实现无测试（18） — P1 优先
+## 🟡 有实现无测试（8） — P1 优先
 
 | 插件 | 行数 | 命令数 | scope |
 |------|------|--------|-------|
-| chrome-bridge | 150 | 6 | `project` |
-| github-trending | 53 | 1 | `project` |
 | goofish | 333 | 3 | `page` |
-| google-scholar | 47 | 1 | `project` |
-| login-bridge | 388 | 5 | `page`, `project` |
-| packagist | 38 | 1 | `project` |
+| login-bridge | 421 | 5 | `page`, `project` |
 | producthunt | 286 | 4 | `browser`, `page` |
-| pubmed | 47 | 1 | `project` |
-| rubygems | 39 | 1 | `project` |
-| semanticscholar | 39 | 1 | `project` |
-| smzdm | 56 | 1 | `page` |
-| stackoverflow | 43 | 1 | `project` |
-| ths | 60 | 1 | `page` |
-| tieba | 51 | 1 | `page` |
-| weread | 40 | 1 | `project` |
-| wikidata | 65 | 2 | `project` |
-| xueqiu | 64 | 2 | `project` |
-| yahoo-finance | 46 | 1 | `project` |
+| pubmed | 60 | 1 | `project` |
+| stackoverflow | 60 | 1 | `project` |
+| weread | 54 | 1 | `project` |
+| wikidata | 88 | 2 | `project` |
+| xueqiu | 90 | 2 | `project` |
 
-## ✅ 已完成（97）
+## ✅ 已完成（108）
 
 | 插件 | 命令数 | scope |
 |------|--------|-------|
@@ -77,8 +67,10 @@
 | bloomberg | 1 | `browser` |
 | booking | 1 | `browser` |
 | chatgpt | 5 | `browser`, `page` |
+| chrome-bridge | 8 | `project` |
 | claude | 5 | `browser`, `page` |
 | cmf-seats | 3 | `any`, `page` |
+| content | 3 | `page`, `project` |
 | crates | 2 | `project` |
 | csdn | 5 | `browser`, `page` |
 | ctrip | 1 | `browser` |
@@ -102,7 +94,9 @@
 | geo-analysis | 9 | `browser`, `global` |
 | gettyimages | 1 | `browser` |
 | github | 6 | `browser` |
+| github-trending | 1 | `project` |
 | google | 3 | `browser`, `cli` |
+| google-scholar | 1 | `project` |
 | hackernews | 8 | `project` |
 | hashnode | 4 | `browser`, `page` |
 | hf | 2 | `project` |
@@ -121,6 +115,7 @@
 | npm | 3 | `project` |
 | nuget | 1 | `project` |
 | p500px | 1 | `browser` |
+| packagist | 1 | `project` |
 | pexels | 1 | `browser` |
 | pinterest | 1 | `browser` |
 | pixabay | 1 | `browser` |
@@ -132,8 +127,11 @@
 | qwen | 4 | `browser` |
 | reddit | 5 | `browser` |
 | reuters | 1 | `browser` |
+| rubygems | 1 | `project` |
+| semanticscholar | 1 | `project` |
 | seo | 16 | `browser`, `project` |
 | shutterstock | 1 | `browser` |
+| smzdm | 1 | `page` |
 | spotify | 1 | `browser` |
 | stats | 6 | `browser`, `cli` |
 | steam | 1 | `browser` |
@@ -142,6 +140,8 @@
 | taobao | 11 | `browser` |
 | tdx | 1 | `project` |
 | testsuite | 1 | `page` |
+| ths | 1 | `page` |
+| tieba | 1 | `page` |
 | tumblr | 1 | `browser` |
 | twitter | 10 | `browser` |
 | udio | 6 | `browser` |
@@ -152,6 +152,7 @@
 | wikipedia | 5 | `project` |
 | wordpress | 5 | `browser`, `page` |
 | xiaohongshu | 8 | `browser` |
+| yahoo-finance | 1 | `project` |
 | youtube | 1 | `browser` |
 | yuanbao | 6 | `browser`, `page` |
 | zhihu | 8 | `browser` |

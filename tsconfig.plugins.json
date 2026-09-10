@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "sourceMap": false
+  },
+  "include": [".xcli/plugins/**/*.ts", "types/**/*"],
+  "exclude": ["node_modules", "dist", ".xcli/plugins/node_modules"]
+}

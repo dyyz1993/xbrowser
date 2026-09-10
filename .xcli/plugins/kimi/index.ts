@@ -1,4 +1,5 @@
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { PageLike } from '../shared/page-types.js';
 import { z } from 'zod/v4';
 
 /**
@@ -14,6 +15,11 @@ import { z } from 'zod/v4';
  */
 const EDITOR_SEL = ".chat-input-editor, .ProseMirror, [contenteditable='true']";
 
+const chatResult = z.object({
+  response: z.string(),
+  durationMs: z.number(),
+});
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'kimi',
@@ -24,6 +30,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('chat', {
     description: '发送消息并等待 Kimi 回复',
+    result: chatResult,
     scope: 'browser',
     parameters: z.object({
       message: z.string().describe('消息内容'),
@@ -33,8 +40,8 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser kimi chat "你好"', description: '发送消息' },
       { cmd: 'xbrowser kimi chat "分析这段代码" --timeout 120', description: '长回复加大超时' },
     ],
-    handler: async (params: { message: string; timeout?: number }, ctx: { page?: any }) => {
-      const page = ctx?.page;
+    handler: async (params: { message: string; timeout?: number }, ctx) => {
+      const page = ctx.page as PageLike | undefined;
       if (!page) throw new Error('需要浏览器页面');
 
       // 1. 确保在 kimi 首页

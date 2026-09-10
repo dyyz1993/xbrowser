@@ -3,6 +3,14 @@ import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
 
+const searchResult = z.array(z.object({
+  rank: z.number(),
+  name: z.string(),
+  reviews: z.string(),
+  price: z.string(),
+  url: z.string(),
+}));
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'dianping',
@@ -18,6 +26,7 @@ function gp(ctx: CommandContext): Page {
 
   site.command('search', {
     description: '搜索大众点评商户',
+    result: searchResult,
     loginRequired: 'none',
     scope: 'page',
     parameters: z.object({
@@ -31,7 +40,7 @@ function gp(ctx: CommandContext): Page {
             await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
             await page.waitForTimeout(2000);
             const data = await page.evaluate(() => {
-              const results: any[] = [];
+              const results: Record<string, unknown>[] = [];
               document.querySelectorAll('.shop-wrap, .shop-list li, .business-list .item').forEach((item, i) => {
                 const nameEl = item.querySelector('.shop-name a, .shop-title a, a[data-click-name]');
                 const reviewEl = item.querySelector('.review-num, .comment-count, .review-tag');

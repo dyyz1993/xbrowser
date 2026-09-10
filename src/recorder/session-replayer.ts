@@ -269,7 +269,8 @@ export class SessionReplayer {
     });
   }
 
-  private async replayAction(action: UserAction): Promise<void> {    const page = this.page!;
+  private async replayAction(action: UserAction): Promise<void> {
+    const page = this.page!;
     const timeout = this.opts.stepTimeout;
 
     switch (action.type) {
@@ -316,20 +317,37 @@ export class SessionReplayer {
       }
 
       case 'scroll': {
-        // value format "direction:distance" (encoded by the daemon on record)
-        const [dir, distStr] = (action.value || 'down:300').split(':');
-        const dist = Number(distStr) || 300;
-        const sign = dir === 'up' ? -1 : dir === 'left' ? 0 : 1;
+        // Two historical formats share this action type:
+        //  - CDP command path: value = "direction:distance" — DELTA semantics
+        //    (encoded by the daemon's recordCommandAction on record).
+        //  - page-signal path: scrollX/scrollY = window.scrollX/scrollY at
+        //    record time — ABSOLUTE offsets, replayed with scrollTo.
+        // Deltas use scrollBy; horizontal directions map to the X axis (the
+        // old code collapsed left to a no-op and right into a vertical roll).
+        // All browser expressions are interpolated strings — never serialized
+        // closures referencing Node variables (they don't survive CDP eval).
         const selector = await this.resolveAndWait(action).catch(() => undefined);
-        if (selector) {
-          await page.evaluate(`
-            (function() {
-              const el = ${queryJS(selector)};
-              if (el) el.scrollTop += ${sign * dist};
-            })()
-          `).catch(() => {});
+        if (action.value) {
+          const [dir, distStr] = action.value.split(':');
+          const dist = Number(distStr) || 300;
+          const dx = dir === 'left' ? -dist : dir === 'right' ? dist : 0;
+          const dy = dir === 'up' ? -dist : dir === 'down' ? dist : 0;
+          if (selector) {
+            await page.evaluate(`
+              (function() {
+                const el = ${queryJS(selector)};
+                if (el) { el.scrollLeft += ${dx}; el.scrollTop += ${dy}; }
+              })()
+            `).catch(() => {});
+          } else {
+            await page.evaluate(`window.scrollBy(${dx}, ${dy})`).catch(() => {});
+          }
+        } else if (typeof action.scrollX === 'number' || typeof action.scrollY === 'number') {
+          const sx = action.scrollX ?? 0;
+          const sy = action.scrollY ?? 0;
+          await page.evaluate(`window.scrollTo(${sx}, ${sy})`).catch(() => {});
         } else {
-          await page.evaluate(`window.scrollBy(0, ${sign * dist})`).catch(() => {});
+          await page.evaluate(`window.scrollBy(0, 300)`).catch(() => {});
         }
         break;
       }
@@ -542,13 +560,6 @@ export class SessionReplayer {
             form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
           }
         }, selector);
-        break;
-      }
-
-      case 'scroll': {
-        await page.evaluate(() => {
-          window.scrollBy(action.scrollX ?? 0, action.scrollY ?? 0);
-        });
         break;
       }
 

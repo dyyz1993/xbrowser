@@ -41,4 +41,10 @@ export interface HTTPServerConfig {
   port?: number;
   host?: string;
   tokens?: string[];
+  /**
+   * Explicit CORS origin allowlist for remote web clients (e.g.
+   * `['https://app.example']`, or `['*']` to opt back into wildcard).
+   * When omitted, only loopback browser origins are granted CORS.
+   */
+  corsOrigins?: string[];
 }

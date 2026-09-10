@@ -1,6 +1,15 @@
 import { tipsMessages } from './_tips-helper.js';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import plugin from '../../.xcli/plugins/csdn/index.ts';
+
+import { __setHumanizeSleeperForTests } from '../../.xcli/plugins/shared/humanize.js';
+
+// P1-4: instant sleeper so humanized pacing doesn't burn wall-clock in unit tests.
+beforeEach(() => { __setHumanizeSleeperForTests(async () => {}); });
+afterEach(() => { __setHumanizeSleeperForTests(); });
+
+
+
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -387,5 +396,16 @@ describe('csdn plugin', () => {
     const storage = { set: vi.fn(), get: vi.fn(), delete: vi.fn(), keys: vi.fn(() => []), clear: vi.fn() };
     await logoutFn({ storage });
     expect(storage.delete).toHaveBeenCalledWith('csdn_login');
+  });
+});
+
+import { randomPause } from '../../.xcli/plugins/shared/humanize.js';
+
+describe('humanize production default (P1-4 guard)', () => {
+  it('default sleeper performs a real timed delay', async () => {
+    __setHumanizeSleeperForTests(); // restore production default
+    const start = Date.now();
+    await randomPause(30, 30);
+    expect(Date.now() - start).toBeGreaterThanOrEqual(25);
   });
 });

@@ -1,5 +1,6 @@
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
-import { z } from 'zod';
+import type { PageLike } from '../shared/page-types.js';
+import { z } from 'zod/v4';
 
 /**
  * youtube 插件 — YouTube 搜索（S188 从 scaffold 实现）
@@ -30,6 +31,18 @@ const EXTRACT_SCRIPT = `(function(){
   return JSON.stringify(out);
 })()`;
 
+const searchResult = z.object({
+  query: z.string(),
+  count: z.number(),
+  videos: z.array(z.object({
+  videoId: z.string(),
+  title: z.string(),
+  url: z.string(),
+  channel: z.string(),
+  length: z.string(),
+})),
+});
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'youtube',
@@ -40,6 +53,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search', {
     description: '搜索 YouTube 视频，返回标题/链接/频道/时长',
+    result: searchResult,
     scope: 'browser',
     parameters: z.object({
       query: z.string().describe('搜索关键词'),
@@ -48,8 +62,8 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser youtube search --query "browser automation"', description: '搜索视频' },
     ],
-    handler: async (params: { query: string; limit?: number }, ctx: { page?: any }) => {
-      const page = ctx?.page;
+    handler: async (params: { query: string; limit?: number }, ctx) => {
+      const page = ctx.page as PageLike | undefined;
       if (!page) throw new Error('需要浏览器页面');
       await page.goto(
         'https://www.youtube.com/results?search_query=' + encodeURIComponent(params.query),

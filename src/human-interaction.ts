@@ -1,11 +1,10 @@
 import type { Page } from './browser-shim.js';
-import { execSync } from 'child_process';
+import { execFile } from 'child_process';
 import { WSServer } from './websocket-server.js';
 import { ScreencastCapturer } from './screencast.js';
 import { CaptchaDetector } from './captcha-detector.js';
 import { WebhookNotifier, type WebhookPayload } from './webhook.js';
 import { getCaptchaConfig } from './config.js';
-import { shellEscape } from './utils/shell-escape.js';
 
 /**
  * Options for the wait-for-human interaction flow.
@@ -68,13 +67,21 @@ export class HumanInteractionManager {
     if (!this.autoOpen) return;
 
     try {
-      const cmd =
+      const opener =
         process.platform === 'darwin'
           ? 'open'
           : process.platform === 'linux'
             ? 'xdg-open'
-            : 'start';
-      execSync(`${cmd} ${shellEscape(previewUrl)}`, { stdio: 'ignore' });
+            : 'cmd';
+      // P0-3 audit closure: argument-array invocation, no shell. On Windows
+      // 'start' is a cmd builtin, so route through cmd /c with an empty title.
+      const args =
+        process.platform === 'win32'
+          ? ['/c', 'start', '', previewUrl]
+          : [previewUrl];
+      execFile(opener, args, { timeout: 10_000 }, () => {
+        // ignore auto-open failures (browser may not exist)
+      });
     } catch {
       // ignore auto-open failures
     }

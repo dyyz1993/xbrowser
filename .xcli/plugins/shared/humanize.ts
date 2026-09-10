@@ -1,5 +1,23 @@
 import type { Page, Locator } from '../types.js';
 
+/**
+ * Injectable sleeper: production defaults to a real setTimeout (true
+ * human-like pacing). Tests swap it for an instant resolver via
+ * `__setHumanizeSleeperForTests` so humanized flows don't burn wall-clock
+ * in unit suites (P1-4).
+ */
+type Sleeper = (ms: number) => Promise<void>;
+const realSleeper: Sleeper = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+let activeSleeper: Sleeper = realSleeper;
+
+function sleep(ms: number): Promise<void> {
+  return activeSleeper(ms);
+}
+
+export function __setHumanizeSleeperForTests(fn?: Sleeper): void {
+  activeSleeper = fn ?? realSleeper;
+}
+
 function gaussianRandom(mean: number, stdDev: number): number {
   const u1 = Math.random();
   const u2 = Math.random();
@@ -13,10 +31,6 @@ function clamp(value: number, min: number, max: number): number {
 
 function randomInRange(min: number, max: number): number {
   return gaussianRandom((min + max) / 2, (max - min) / 6);
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function isCJK(char: string): boolean {
@@ -257,7 +271,7 @@ export async function humanBrowse(
 }
 
 export async function humanFill(
-  page: Page,
+  _page: Page,
   locator: Locator,
   text: string,
 ): Promise<void> {

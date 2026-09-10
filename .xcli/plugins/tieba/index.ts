@@ -3,6 +3,12 @@ import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
 
+const hotResult = z.array(z.object({
+  rank: z.number(),
+  title: z.string(),
+  url: z.string(),
+}));
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'tieba',
@@ -18,6 +24,7 @@ function gp(ctx: CommandContext): Page {
 
   site.command('hot', {
     description: '获取贴吧热帖',
+    result: hotResult,
     loginRequired: 'none',
     scope: 'page',
     parameters: z.object({
@@ -30,7 +37,7 @@ function gp(ctx: CommandContext): Page {
             await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
             await page.waitForTimeout(2000);
             const data = await page.evaluate(() => {
-              const results = [];
+              const results: { rank: number; title: string; url: string }[] = [];
               const items = document.querySelectorAll('.threadlist_title a.j_th_tit, .topic_name a, .topic-link');
               items.forEach((item, i) => {
                 const title = item.textContent?.trim();

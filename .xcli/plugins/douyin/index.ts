@@ -302,7 +302,7 @@ export default function (xcli: XCLIAPI): void {
     description: '抖音数据采集',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const page = ctx.page;
+      const page = ctx.page!;
       if (!page) return true;
       try {
         const url = page.url();
@@ -348,7 +348,7 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = ctx.page;
+        const page = ctx.page!;
         if (!page) throw new Error('需要浏览器页面');
         const tips = buildCtxTips(ctx);
 
@@ -555,33 +555,34 @@ export default function (xcli: XCLIAPI): void {
           sessionPage.off('response', onProfileResponse);
         }
 
-        if (!userProfile) {
+        const profile = userProfile as Record<string, unknown> | null;
+        if (!profile) {
           return fail('未获取到用户资料，请确认 URL 有效且已登录', tips);
         }
 
         const result = {
-          uid: s(userProfile.uid),
-          secUid: s(userProfile.sec_uid),
-          nickname: s(userProfile.nickname),
-          signature: s(userProfile.signature),
-          avatar: firstUrl(userProfile.avatar_larger),
-          homepage: `${DOUYIN_BASE}/user/${s(userProfile.sec_uid)}`,
-          ipLocation: s(userProfile.ip_location),
-          gender: n(userProfile.gender),
-          followerCount: n(userProfile.follower_count),
-          followingCount: n(userProfile.following_count),
-          awemeCount: n(userProfile.aweme_count),
-          favoritingCount: n(userProfile.favoriting_count),
-          totalFavorited: n(userProfile.total_favorited),
-          verificationType: n(userProfile.verification_type),
-          customVerify: s(userProfile.custom_verify),
-          shortId: s(userProfile.short_id),
-          uniqueId: s(userProfile.unique_id),
-          roomId: s(userProfile.room_id),
-          liveStatus: n(userProfile.live_status),
-          schoolName: s(userProfile.school_name),
-          province: s(userProfile.province),
-          city: s(userProfile.city),
+          uid: s(profile.uid),
+          secUid: s(profile.sec_uid),
+          nickname: s(profile.nickname),
+          signature: s(profile.signature),
+          avatar: firstUrl(profile.avatar_larger),
+          homepage: `${DOUYIN_BASE}/user/${s(profile.sec_uid)}`,
+          ipLocation: s(profile.ip_location),
+          gender: n(profile.gender),
+          followerCount: n(profile.follower_count),
+          followingCount: n(profile.following_count),
+          awemeCount: n(profile.aweme_count),
+          favoritingCount: n(profile.favoriting_count),
+          totalFavorited: n(profile.total_favorited),
+          verificationType: n(profile.verification_type),
+          customVerify: s(profile.custom_verify),
+          shortId: s(profile.short_id),
+          uniqueId: s(profile.unique_id),
+          roomId: s(profile.room_id),
+          liveStatus: n(profile.live_status),
+          schoolName: s(profile.school_name),
+          province: s(profile.province),
+          city: s(profile.city),
         };
 
         tips.push(`用户: ${result.nickname}`);
@@ -659,7 +660,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const tips: string[] = [];
       try {
-        const page = ctx.page;
+        const page = ctx.page!;
         if (!page) throw new Error('需要浏览器页面');
 
         let input = params.url;
@@ -717,8 +718,8 @@ export default function (xcli: XCLIAPI): void {
         }
 
         const parsed = parseVideo(detail);
-        const vid = (detail.video ?? {}) as Record<string, unknown>;
-        const music = detail.music as Record<string, unknown> | undefined;
+        const vid = ((detail as Record<string, unknown>).video ?? {}) as Record<string, unknown>;
+        const music = (detail as Record<string, unknown>).music as Record<string, unknown> | undefined;
 
         const result = {
           awemeId: parsed.awemeId,
@@ -794,7 +795,7 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = ctx.page;
+        const page = ctx.page!;
         if (!page) throw new Error('需要浏览器页面');
         const tips = buildCtxTips(ctx);
 
@@ -864,7 +865,7 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = ctx.page;
+        const page = ctx.page!;
         if (!page) throw new Error('需要浏览器页面');
         const tips = buildCtxTips(ctx);
 
@@ -943,7 +944,7 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
-        const page = ctx.page;
+        const page = ctx.page!;
         if (!page) throw new Error('需要浏览器页面');
         const tips = buildCtxTips(ctx);
 
@@ -1140,7 +1141,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const tips: string[] = [];
       try {
-        const page = ctx.page;
+        const page = ctx.page!;
         if (!page) throw new Error('需要浏览器页面');
 
         let videoUrl = params.url;
@@ -1298,7 +1299,7 @@ export default function (xcli: XCLIAPI): void {
       mode: z.string(),
     }).passthrough(),
     handler: async (params, ctx) => {
-      const page = ctx.page;
+      const page = ctx.page!;
       if (!page) throw new Error('需要浏览器页面');
       const tips = buildCtxTips(ctx);
       const waitForHuman = ctx.waitForHuman as
@@ -1426,7 +1427,7 @@ export default function (xcli: XCLIAPI): void {
           '[class*="text"]',
           'article',
           'p',
-        ].join(',')).last().textContent().then(t => t?.trim() ?? '');
+        ].join(',')).last().textContent().then((t: string | null) => t?.trim() ?? '');
       }
 
       try {
@@ -1633,7 +1634,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.login(async (ctx) => {
-    const page = ctx.page;
+    const page = ctx.page!;
     if (!page) return;
     await page.goto(DOUYIN_BASE);
     await ctx.storage.set('douyin_login', { at: Date.now() });

@@ -45,7 +45,7 @@ function mockFetch(opts: {
 
     // ID list endpoints: *stories.json
     if (/stories\.json$/.test(u)) {
-      return { json: async () => opts.ids ?? [1, 2, 3] } as unknown as Response;
+      return { ok: true, status: 200, json: async () => opts.ids ?? [1, 2, 3] } as unknown as Response;
     }
     // Single item: /item/<id>.json
     const itemMatch = u.match(/\/item\/(\d+)\.json$/);
@@ -59,12 +59,14 @@ function mockFetch(opts: {
       } else {
         item = { ...defaultItem, id };
       }
-      return { json: async () => item } as unknown as Response;
+      return { ok: true, status: 200, json: async () => item } as unknown as Response;
     }
 
     // Algolia search endpoint
     if (u.includes('hn.algolia.com')) {
       return {
+        ok: true,
+        status: 200,
         json: async () => ({
           hits: [
             { objectID: '10', title: 'Algolia Hit', points: 7, author: 'bob', num_comments: 2, url: 'https://ex.com', story_url: '' },
@@ -73,7 +75,7 @@ function mockFetch(opts: {
       } as unknown as Response;
     }
 
-    return { json: async () => null } as unknown as Response;
+    return { ok: true, status: 200, json: async () => null } as unknown as Response;
   }) as unknown as typeof fetch;
 
   return { calls };

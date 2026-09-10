@@ -2,7 +2,27 @@ import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { JsonObject } from '../shared/json-types.js';
+import { fetchJson } from '../shared/api-fetch.js';
 
+
+const searchResult = z.array(z.object({
+  rank: z.number(),
+  id: z.string(),
+  label: z.string(),
+  description: z.string(),
+  url: z.string(),
+}));
+
+const entityResult = z.object({
+  id: z.string(),
+  label: z.string(),
+  description: z.string(),
+  type: z.string(),
+  modified: z.string(),
+  propertyCount: z.number(),
+  siteLinkCount: z.number(),
+  url: z.string(),
+});
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -13,6 +33,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('search', {
     description: 'Search Wikidata entities',
+    result: searchResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -21,8 +42,9 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (p, _ctx) => {
       const url = `https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(p.query)}&language=en&format=json&limit=${p.limit || 20}`;
-            const data = await fetch(url).then(r => r.json()) as JsonObject;
-            const results = (data.search ?? []).map((r: any, i: number) => ({
+            const data = await fetchJson(url) as JsonObject;
+            interface WikidataEntity { id?: string; label?: string; description?: string; display?: { label?: { value?: string }; description?: { value?: string } } }
+            const results = ((data.search as Record<string, unknown>[] | undefined) ?? []).map((r: WikidataEntity, i: number) => ({
               rank: i + 1,
               id: r.id ?? '',
               label: r.label ?? r.display?.label?.value ?? '',
@@ -35,6 +57,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('entity', {
     description: 'Get Wikidata entity details',
+    result: entityResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -42,19 +65,19 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (p, _ctx) => {
       const url = `https://www.wikidata.org/wiki/Special:EntityData/${p.id}.json`;
-            const data = await fetch(url).then(r => r.json()) as JsonObject;
-            const entity = data?.entities?.[p.id];
+            const data = await fetchJson(url) as JsonObject;
+            const entity = (data?.entities as Record<string, unknown> | undefined)?.[p.id];
             if (!entity) return fail(`Entity "${p.id}" not found`);
-            const labels = entity.labels ?? {};
-            const descriptions = entity.descriptions ?? {};
-            const claims = entity.claims ?? {};
-            const sitelinks = entity.sitelinks ?? {};
+            const labels = (entity as Record<string, unknown>).labels ?? {};
+            const descriptions = (entity as Record<string, unknown>).descriptions ?? {};
+            const claims = (entity as Record<string, unknown>).claims ?? {};
+            const sitelinks = (entity as Record<string, unknown>).sitelinks ?? {};
             return ok({
               id: p.id,
-              label: labels.en?.value ?? Object.values(labels)[0]?.value ?? '',
-              description: descriptions.en?.value ?? Object.values(descriptions)[0]?.value ?? '',
-              type: entity.type ?? '',
-              modified: entity.modified ?? '',
+              label: (labels as Record<string, { value?: string }>).en?.value ?? (Object.values(labels)[0] as { value?: string } | undefined)?.value ?? '',
+              description: (descriptions as Record<string, { value?: string }>).en?.value ?? (Object.values(descriptions)[0] as { value?: string } | undefined)?.value ?? '',
+              type: (entity as Record<string, unknown>).type ?? '',
+              modified: (entity as Record<string, unknown>).modified ?? '',
               propertyCount: Object.keys(claims).length,
               siteLinkCount: Object.keys(sitelinks).length,
               url: `https://www.wikidata.org/wiki/${p.id}`,

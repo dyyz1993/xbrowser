@@ -43,7 +43,7 @@ export default function (api: XCLIAPI): void {
     description: '携程景点评论爬取',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | null;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page | null;
       if (!page) return true;
       try {
         const url = page.url();

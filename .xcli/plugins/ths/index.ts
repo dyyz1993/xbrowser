@@ -3,6 +3,14 @@ import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
 
+const hotRankResult = z.array(z.object({
+  rank: z.string(),
+  name: z.string(),
+  changePercent: z.string(),
+  heat: z.string(),
+  tags: z.string(),
+}));
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'ths',
@@ -18,6 +26,7 @@ function gp(ctx: CommandContext): Page {
 
   site.command('hot-rank', {
     description: '同花顺热股榜',
+    result: hotRankResult,
     loginRequired: 'none',
     scope: 'page',
     parameters: z.object({
@@ -28,9 +37,9 @@ function gp(ctx: CommandContext): Page {
             await page.goto('https://eq.10jqka.com.cn/webpage/ths-hot-list/index.html?showStatusBar=true', { waitUntil: 'networkidle', timeout: 30000 });
             await page.waitForTimeout(3000);
             const data = await page.evaluate(() => {
-              const cleanText = (el) => (el?.textContent || '').replace(/\s+/g, ' ').trim();
+              const cleanText = (el: Element | null) => (el?.textContent || '').replace(/\s+/g, ' ').trim();
               const cards = document.querySelectorAll('div.pt-22.pb-24.bgc-white.border');
-              const results = [];
+              const results: { rank: string; name: string; changePercent: string; heat: string; tags: string }[] = [];
               const seen = new Set();
               cards.forEach((card, idx) => {
                 const row = card.querySelector('div.flex.bgc-white');

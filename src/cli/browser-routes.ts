@@ -122,7 +122,7 @@ export async function handleBrowserCommand(
         }
         outputResult({ command: cmdDef.name, description: cmdDef.description, scope: cmdDef.scope, parameters: paramsList }, mode);
       } else {
-        console.log(helpGenerator.generate(cmdDef as Parameters<typeof helpGenerator.generate>[0], { color: true, emoji: false }));
+        process.stdout.write(helpGenerator.generate(cmdDef as Parameters<typeof helpGenerator.generate>[0], { color: true, emoji: false }));
       }
     } else {
       outputError(`Unknown command: ${command}`);
@@ -566,7 +566,7 @@ export async function handleBrowserCommand(
 	        ? `可能未连接到浏览器。请确认 ${cdpEndpoint} 上有 Chrome 运行（--remote-debugging-port）。`
 	        : '可能未连接到浏览器。请使用 --cdp <endpoint> 连接，或安装 cdp-tunnel 复用已有 Chrome。';
 	      outputResult(result.data, mode);
-	      console.error(`\n  ⚠️  ${hint}`);
+	      outputError(`\n  ⚠️  ${hint}`);
 	      process.exit(1);
 	    } else {
       outputResult(result.data, mode);
@@ -592,7 +592,7 @@ export async function handleBrowserCommand(
     try {
       mkdirSync(dirname(outputFile), { recursive: true });
       writeFileSync(outputFile, content, 'utf-8');
-      console.log(`\n  📄 Written to ${outputFile}`);
+      process.stdout.write(`\n  📄 Written to ${outputFile}\n`);
     } catch (err) {
       outputError(`Failed to write --output "${outputFile}": ${err instanceof Error ? err.message : String(err)}`);
     }

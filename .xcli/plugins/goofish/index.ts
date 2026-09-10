@@ -26,7 +26,7 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page } from '../../types.js';
+import type { Page } from '../types.js';
 
 /** 在页面上找文字匹配的可见叶子元素，返回中心坐标 */
 async function findTextCenter(page: Page, text: string): Promise<{ x: number; y: number } | null> {
@@ -127,7 +127,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser goofish search --keyword "相机" --sort price-asc', description: '搜索相机并按价格升序' },
     ],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as Page | undefined;
+      const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
       if (!page) return fail('需要浏览器页面');
 
       // 1. 打开搜索结果页
@@ -236,7 +236,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser goofish detail --item-id 123456789', description: '打开商品详情' },
     ],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as Page | undefined;
+      const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
       if (!page) return fail('需要浏览器页面');
 
       const url = `https://www.goofish.com/item?id=${encodeURIComponent(params.itemId)}`;
@@ -259,7 +259,7 @@ export default function (xcli: XCLIAPI): void {
       `);
 
       return ok(
-        { itemId: params.itemId, url, ...detail },
+        { itemId: params.itemId, url, ...(detail as Record<string, unknown>) },
         [`已打开商品 ${params.itemId} 的详情页`],
       );
     },
@@ -288,7 +288,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser goofish order --item-id 123456789', description: '打开商品下单页' },
     ],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as Page | undefined;
+      const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
       if (!page) return fail('需要浏览器页面');
 
       const url = `https://www.goofish.com/create-order?itemId=${encodeURIComponent(params.itemId)}`;
@@ -315,10 +315,10 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.login(async (ctx) => {
-    const page = (ctx as Record<string, unknown>).page as Page | undefined;
+    const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
     if (!page) return;
     // 引导用户在 viewer 中扫码登录
-    const waitForHuman = (ctx as Record<string, unknown>).waitForHuman as
+    const waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as
       | ((opts: { reason: string; timeout?: number }) => Promise<{ solved: boolean }>)
       | undefined;
     if (waitForHuman) {

@@ -40,24 +40,24 @@ export async function handleNetCommand(args: string[], options: Record<string, u
         if (mode === 'json') {
           outputResult(result, mode);
         } else {
-          console.log(`\n  Network captures (session: ${netSession})`);
-          console.log(`  Total: ${result.total}, Showing: ${result.captures.length}\n`);
+          process.stdout.write(`\n  Network captures (session: ${netSession})`);
+          process.stdout.write(`  Total: ${result.total}, Showing: ${result.captures.length}\n`);
           for (const c of result.captures) {
             const statusColor = c.status < 300 ? '\x1b[32m' : c.status < 400 ? '\x1b[33m' : '\x1b[31m';
             const reset = '\x1b[0m';
-            console.log(`  #${c.id} ${c.method.padEnd(6)} ${statusColor}${c.status}${reset} ${c.resourceType.padEnd(10)} ${c.path}`);
+            process.stdout.write(`  #${c.id} ${c.method.padEnd(6)} ${statusColor}${c.status}${reset} ${c.resourceType.padEnd(10)} ${c.path}\n`);
             if (c.size > 0) {
               const sizeStr = c.size > 1024 ? `${(c.size / 1024).toFixed(1)}KB` : `${c.size}B`;
-              console.log(`         ${c.contentType.split(';')[0]} ${sizeStr}`);
+              process.stdout.write(`         ${c.contentType.split(';')[0]} ${sizeStr}\n`);
             }
           }
-          console.log('');
+          process.stdout.write('\n');
         }
         break;
       }
       case 'clear': {
         await forwardNetworkClear(netSession);
-        console.log(`Network captures cleared for session: ${netSession}`);
+        process.stdout.write(`Network captures cleared for session: ${netSession}\n`);
         break;
       }
       case 'top': {
@@ -79,19 +79,19 @@ export async function handleNetCommand(args: string[], options: Record<string, u
         if (mode === 'json') {
           outputResult(result, mode);
         } else {
-          console.log(`\n  Top valued requests (session: ${netSession})`);
-          console.log(`  Showing: ${result.entries.length}\n`);
+          process.stdout.write(`\n  Top valued requests (session: ${netSession})`);
+          process.stdout.write(`  Showing: ${result.entries.length}\n`);
           for (const e of result.entries) {
             const scoreColor = e.score >= 50 ? '\x1b[32m' : e.score >= 20 ? '\x1b[33m' : '\x1b[90m';
             const reset = '\x1b[0m';
             const methodStr = e.method.padEnd(6);
             const scoreStr = `${scoreColor}${e.score.toString().padStart(3)}${reset}`;
-            console.log(`  ${scoreStr} ${methodStr} ${e.status} ${e.resourceType.padEnd(10)} ${e.path}`);
+            process.stdout.write(`  ${scoreStr} ${methodStr} ${e.status} ${e.resourceType.padEnd(10)} ${e.path}\n`);
             if (e.scoreBreakdown.content > 0) {
-              console.log(`         ${e.contentType.split(';')[0]} ${e.size > 1024 ? (e.size / 1024).toFixed(1) + 'KB' : e.size + 'B'}`);
+              process.stdout.write(`         ${e.contentType.split(';')[0]} ${e.size > 1024 ? (e.size / 1024).toFixed(1) + 'KB' : e.size + 'B'}\n`);
             }
           }
-          console.log('');
+          process.stdout.write('\n');
         }
         break;
       }
@@ -100,14 +100,14 @@ export async function handleNetCommand(args: string[], options: Record<string, u
         if (mode === 'json') {
           outputResult(logResult, mode);
         } else {
-          console.log(`\n  Command log (session: ${netSession})`);
-          console.log(`  Total: ${logResult.commands.length}\n`);
+          process.stdout.write(`\n  Command log (session: ${netSession})`);
+          process.stdout.write(`  Total: ${logResult.commands.length}\n`);
           for (const cmd of logResult.commands) {
             const ts = new Date(cmd.timestamp).toISOString().substring(11, 19);
             const paramsStr = Object.entries(cmd.params).map(([k, v]) => `${k}=${v}`).join(' ');
-            console.log(`  #${cmd.id} [${ts}] ${cmd.command} ${paramsStr}`);
+            process.stdout.write(`  #${cmd.id} [${ts}] ${cmd.command} ${paramsStr}\n`);
           }
-          console.log('');
+          process.stdout.write('\n');
         }
         break;
       }
@@ -123,25 +123,25 @@ export async function handleNetCommand(args: string[], options: Record<string, u
           outputResult(aroundResult, mode);
         } else {
           if (!aroundResult) {
-            console.log('  No command found with that ID');
+            process.stdout.write('  No command found with that ID\n');
             break;
           }
           const cmd = aroundResult.command as { id: number; timestamp: number; command: string };
           const ts = new Date(cmd.timestamp).toISOString().substring(11, 19);
-          console.log(`\n  Command: #${cmd.id} [${ts}] ${cmd.command}`);
-          console.log(`  Window: ±${windowMs}ms\n`);
+          process.stdout.write(`\n  Command: #${cmd.id} [${ts}] ${cmd.command}`);
+          process.stdout.write(`  Window: ±${windowMs}ms\n`);
           const before = (aroundResult.before as Array<Record<string, unknown>>);
           const after = (aroundResult.after as Array<Record<string, unknown>>);
-          console.log(`  BEFORE (${before.length} requests):`);
+          process.stdout.write(`  BEFORE (${before.length} requests):\n`);
           for (const r of before.slice(0, 5)) {
-            console.log(`    ${r.method} ${r.status} ${String(r.resourceType).padEnd(10)} ${r.path}`);
+            process.stdout.write(`    ${r.method} ${r.status} ${String(r.resourceType).padEnd(10)} ${r.path}\n`);
           }
-          console.log(`\n  AFTER (${aroundResult.afterCount as number} requests):`);
+          process.stdout.write(`\n  AFTER (${aroundResult.afterCount as number} requests):`);
           for (const r of after.slice(0, 10)) {
             const highlight = r.method !== 'GET' ? ' ←' : '';
-            console.log(`    ${String(r.method).padEnd(6)} ${r.status} ${String(r.resourceType).padEnd(10)} ${r.path}${highlight}`);
+            process.stdout.write(`    ${String(r.method).padEnd(6)} ${r.status} ${String(r.resourceType).padEnd(10)} ${r.path}${highlight}\n`);
           }
-          console.log('');
+          process.stdout.write('\n');
         }
         break;
       }
@@ -154,8 +154,8 @@ export async function handleNetCommand(args: string[], options: Record<string, u
         if (mode === 'json') {
           outputResult(result, mode);
         } else {
-          console.log(`\n  API Reusability Analysis (session: ${netSession})`);
-          console.log(`  Total: ${result.total}, Analyzed: ${result.analyzed.length}\n`);
+          process.stdout.write(`\n  API Reusability Analysis (session: ${netSession})`);
+          process.stdout.write(`  Total: ${result.total}, Analyzed: ${result.analyzed.length}\n`);
 
           const groups: Record<string, AnalyzedEntry[]> = { high: [], medium: [], low: [], unknown: [] };
           for (const e of result.analyzed) {
@@ -167,16 +167,16 @@ export async function handleNetCommand(args: string[], options: Record<string, u
             if (!items?.length) continue;
             const color = level === 'high' ? '\x1b[32m' : level === 'medium' ? '\x1b[33m' : level === 'low' ? '\x1b[31m' : '\x1b[90m';
             const reset = '\x1b[0m';
-            console.log(`  ${color}${level.toUpperCase()}${reset} (${items.length})`);
+            process.stdout.write(`  ${color}${level.toUpperCase()}${reset} (${items.length})\n`);
             for (const e of items.slice(0, 5)) {
               const scoreStr = `[${e.reusability.score.toString().padStart(3)}]`;
-              console.log(`    ${e.method.padEnd(6)} ${e.status} ${scoreStr} ${e.path}`);
+              process.stdout.write(`    ${e.method.padEnd(6)} ${e.status} ${scoreStr} ${e.path}\n`);
               if (e.reusability.reasons.length > 0) {
-                console.log(`           ${e.reusability.reasons.join(', ')}`);
+                process.stdout.write(`           ${e.reusability.reasons.join(', ')}\n`);
               }
             }
-            if (items.length > 5) console.log(`    ... and ${items.length - 5} more`);
-            console.log('');
+            if (items.length > 5) process.stdout.write(`    ... and ${items.length - 5} more\n`);
+            process.stdout.write('\n');
           }
         }
         break;
@@ -195,10 +195,10 @@ export async function handleNetCommand(args: string[], options: Record<string, u
         if (mode === 'json') {
           outputResult(result, mode);
         } else {
-          console.log(`\n  ${result.method} ${result.url}`);
-          console.log(`  Headers: ${result.headerCount}, Body: ${result.hasBody}\n`);
-          console.log(result.command as string);
-          console.log('');
+          process.stdout.write(`\n  ${result.method} ${result.url}`);
+          process.stdout.write(`  Headers: ${result.headerCount}, Body: ${result.hasBody}\n`);
+          process.stdout.write(result.command as string + '\n');
+          process.stdout.write('\n');
         }
         break;
       }
@@ -216,25 +216,25 @@ export async function handleNetCommand(args: string[], options: Record<string, u
         if (mode === 'json') {
           outputResult(result, mode);
         } else {
-          console.log(`\n  Replay Result`);
-          console.log(`  ${(result.curlCommand as string)?.split('\n')[0]?.trim()}\n`);
+          process.stdout.write(`\n  Replay Result`);
+          process.stdout.write(`  ${(result.curlCommand as string)?.split('\n')[0]?.trim()}\n`);
           const replay = result.replay as Record<string, unknown> | undefined;
           if (replay?.error) {
-            console.log(`  \x1b[31mFAILED\x1b[0m: ${replay.error}`);
+            process.stdout.write(`  \x1b[31mFAILED\x1b[0m: ${replay.error}\n`);
           } else if (replay) {
             const statusColor = (replay.status as number) && (replay.status as number) < 300 ? '\x1b[32m' : '\x1b[31m';
             const status = replay.status as number;
             const size = replay.size as number;
             const duration = replay.duration as number;
-            console.log(`  Status: ${statusColor}${status}\x1b[0m ${replay.statusText}`);
-            console.log(`  Size: ${size > 1024 ? (size / 1024).toFixed(1) + 'KB' : size + 'B'}`);
-            console.log(`  Duration: ${duration}ms`);
-            console.log(`  Body Match: ${replay.bodyMatch ? '\x1b[32mYes\x1b[0m' : '\x1b[33mNo\x1b[0m'}`);
+            process.stdout.write(`  Status: ${statusColor}${status}\x1b[0m ${replay.statusText}\n`);
+            process.stdout.write(`  Size: ${size > 1024 ? (size / 1024).toFixed(1) + 'KB' : size + 'B'}\n`);
+            process.stdout.write(`  Duration: ${duration}ms\n`);
+            process.stdout.write(`  Body Match: ${replay.bodyMatch ? '\x1b[32mYes\x1b[0m' : '\x1b[33mNo\x1b[0m'}\n`);
             if (status && status >= 400) {
-              console.log(`  \x1b[33m⚠ API may require fresh signature/token\x1b[0m`);
+              process.stdout.write(`  \x1b[33m⚠ API may require fresh signature/token\x1b[0m\n`);
             }
           }
-          console.log('');
+          process.stdout.write('\n');
         }
         break;
       }
@@ -261,35 +261,35 @@ export async function handleNetCommand(args: string[], options: Record<string, u
           outputResult(result, mode);
         } else {
           const c = result.capture;
-          console.log(`\n  Request #${c.id}`);
-          console.log(`  ${c.method} ${c.url}`);
-          console.log(`  Status: ${c.status} | Size: ${c.size}B | Type: ${c.contentType}`);
-          console.log(`  Resource: ${c.resourceType}`);
+          process.stdout.write(`\n  Request #${c.id}`);
+          process.stdout.write(`  ${c.method} ${c.url}\n`);
+          process.stdout.write(`  Status: ${c.status} | Size: ${c.size}B | Type: ${c.contentType}\n`);
+          process.stdout.write(`  Resource: ${c.resourceType}\n`);
           if (c.requestHeaders) {
-            console.log(`\n  Request Headers:`);
+            process.stdout.write(`\n  Request Headers:`);
             for (const [k, v] of Object.entries(c.requestHeaders)) {
-              console.log(`    ${k}: ${String(v).substring(0, 100)}`);
+              process.stdout.write(`    ${k}: ${String(v).substring(0, 100)}\n`);
             }
           }
           if (c.requestBody !== undefined) {
-            console.log(`\n  Request Body:`);
+            process.stdout.write(`\n  Request Body:`);
             const bodyStr = typeof c.requestBody === 'string' ? c.requestBody : JSON.stringify(c.requestBody, null, 2);
             const lines = bodyStr.split('\n').slice(0, 20);
-            for (const line of lines) console.log(`    ${line}`);
-            if (bodyStr.split('\n').length > 20) console.log('    ...');
+            for (const line of lines) process.stdout.write(`    ${line}\n`);
+            if (bodyStr.split('\n').length > 20) process.stdout.write('    ...');
           }
-          console.log(`\n  Response Headers:`);
+          process.stdout.write(`\n  Response Headers:`);
           for (const [k, v] of Object.entries(c.headers)) {
-            console.log(`    ${k}: ${String(v).substring(0, 100)}`);
+            process.stdout.write(`    ${k}: ${String(v).substring(0, 100)}\n`);
           }
           if (c.body !== undefined) {
-            console.log(`\n  Response Body:`);
+            process.stdout.write(`\n  Response Body:`);
             const bodyStr = typeof c.body === 'string' ? c.body : JSON.stringify(c.body, null, 2);
             const lines = bodyStr.split('\n').slice(0, 20);
-            for (const line of lines) console.log(`    ${line}`);
-            if (bodyStr.split('\n').length > 20) console.log('    ...');
+            for (const line of lines) process.stdout.write(`    ${line}\n`);
+            if (bodyStr.split('\n').length > 20) process.stdout.write('    ...');
           }
-          console.log('');
+          process.stdout.write('\n');
         }
         break;
       }
@@ -297,14 +297,14 @@ export async function handleNetCommand(args: string[], options: Record<string, u
         const id = parseInt(args[1] || '0', 10);
         if (!id) { outputError('Usage: xbrowser net like <id>'); break; }
         await forwardNetworkLike(netSession, id);
-        console.log(`Marked #${id} as useful`);
+        process.stdout.write(`Marked #${id} as useful\n`);
         break;
       }
       case 'dislike': {
         const id = parseInt(args[1] || '0', 10);
         if (!id) { outputError('Usage: xbrowser net dislike <id>'); break; }
         await forwardNetworkDislike(netSession, id);
-        console.log(`Marked #${id} as not useful`);
+        process.stdout.write(`Marked #${id} as not useful\n`);
         break;
       }
       case 'export': {
@@ -313,7 +313,7 @@ export async function handleNetCommand(args: string[], options: Record<string, u
         const lang = (options.lang as string) || 'ts';
         const result = await forwardNetworkExport(netSession, id, lang) as { error?: string; code: string };
         if (result.error) { outputError(result.error); break; }
-        console.log(result.code);
+        process.stdout.write(result.code as string + '\n');
         break;
       }
       default:

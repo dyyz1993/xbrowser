@@ -2,7 +2,40 @@ import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { JsonObject } from '../shared/json-types.js';
+import { fetchJson } from '../shared/api-fetch.js';
 
+
+const searchResult = z.array(z.object({
+  rank: z.number(),
+  name: z.string(),
+  version: z.string(),
+  description: z.string(),
+  url: z.string(),
+}));
+
+const packageResult = z.object({
+  name: z.string(),
+  version: z.string(),
+  summary: z.string(),
+  description: z.string(),
+  author: z.string(),
+  authorEmail: z.string(),
+  license: z.string(),
+  homePage: z.string(),
+  projectUrls: z.string(),
+  requiresPython: z.string(),
+  requiresDist: z.string(),
+  classifiers: z.string(),
+  downloads: z.number(),
+  releases: z.number(),
+});
+
+const downloadsResult = z.object({
+  package: z.string(),
+  lastDay: z.number(),
+  lastWeek: z.number(),
+  lastMonth: z.number(),
+});
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -13,6 +46,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('search', {
     description: 'Search PyPI packages by keyword',
+    result: searchResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -45,6 +79,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('package', {
     description: 'Get PyPI package details',
+    result: packageResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -52,29 +87,30 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (p, _ctx) => {
       const url = `https://pypi.org/pypi/${encodeURIComponent(p.name)}/json`;
-            const data = await fetch(url).then(r => r.json()) as JsonObject;
-            if (data.message && data.message.includes('Not Found')) return fail(`Package "${p.name}" not found`);
-            const info = data.info ?? {};
+            const data = await fetchJson(url) as JsonObject;
+            if (data.message && (data.message as unknown as string).includes('Not Found')) return fail(`Package "${p.name}" not found`);
+            const info = (data.info as Record<string, unknown> | undefined) ?? {};
             return ok({
               name: info.name ?? p.name,
               version: info.version ?? '',
               summary: info.summary ?? '',
-              description: (info.description ?? '').slice(0, 500) + (info.description?.length > 500 ? '...' : ''),
+              description: ((info.description as string | undefined) ?? '').slice(0, 500) + (((info.description as string | undefined)?.length ?? 0) > 500 ? '...' : ''),
               author: info.author ?? '',
               authorEmail: info.author_email ?? '',
               license: info.license ?? '',
               homePage: info.home_page ?? '',
               projectUrls: info.project_urls ? Object.entries(info.project_urls).map(([k, v]) => `${k}: ${v}`).join('\n') : '',
               requiresPython: info.requires_python ?? '',
-              requiresDist: (info.requires_dist ?? []).join(', '),
-              classifiers: (info.classifiers ?? []).slice(0, 10).join(', '),
-              downloads: info.downloads?.last_month ?? 0,
-              releases: Object.keys(data.releases ?? {}).length,
+              requiresDist: ((info.requires_dist as string[] | undefined) ?? []).join(', '),
+              classifiers: ((info.classifiers as string[] | undefined) ?? []).slice(0, 10).join(', '),
+              downloads: (info.downloads as Record<string, number> | undefined)?.last_month ?? 0,
+              releases: Object.keys((data.releases as Record<string, unknown> | undefined) ?? {}).length,
             });
     },
   });
   site.command('downloads', {
     description: 'Get PyPI package download stats',
+    result: downloadsResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -82,13 +118,13 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (p, _ctx) => {
       const url = `https://pypistats.org/api/packages/${p.name.toLowerCase()}/recent`;
-            const data = await fetch(url).then(r => r.json()) as JsonObject;
+            const data = await fetchJson(url) as JsonObject;
             if (data.error) return fail(`Error: ${data.error}`);
             return ok({
               package: p.name,
-              lastDay: data.data?.last_day ?? 0,
-              lastWeek: data.data?.last_week ?? 0,
-              lastMonth: data.data?.last_month ?? 0,
+              lastDay: (data.data as Record<string, number> | undefined)?.last_day ?? 0,
+              lastWeek: (data.data as Record<string, number> | undefined)?.last_week ?? 0,
+              lastMonth: (data.data as Record<string, number> | undefined)?.last_month ?? 0,
             });
     },
   });

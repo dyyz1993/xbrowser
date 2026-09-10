@@ -20,7 +20,7 @@ describe('rubygems', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     ({ mockSite: site, mockXcli: xcli } = makeMock());
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve([
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve([
       { name: 'rails', version: '7.1.0', description: 'Ruby web framework', downloads: 500000000, authors: 'David Heinemeier Hansson' },
     ]) });
     rubygems(xcli);
@@ -33,7 +33,7 @@ describe('rubygems', () => {
     expect(JSON.stringify(r)).toContain('rails');
   });
   it('无结果返回 fail', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve([]) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve([]) });
     const r = await getCmd(site, 'search')({ query: 'none', limit: 20 }, {});
     expect(JSON.stringify(r)).toContain('No gems matched');
   });
@@ -44,7 +44,7 @@ describe('semanticscholar', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     ({ mockSite: site, mockXcli: xcli } = makeMock());
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({ data: [
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ data: [
       { paperId: 'p1', title: 'Attention Is All You Need', year: 2017, authors: [{ name: 'Vaswani' }], citationCount: 100000, externalIds: { DOI: '10.1234/attention' } },
     ] }) });
     semanticscholar(xcli);
@@ -57,7 +57,7 @@ describe('semanticscholar', () => {
     expect(JSON.stringify(r)).toContain('Attention Is All You Need');
   });
   it('无结果返回 fail', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({ data: [] }) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ data: [] }) });
     const r = await getCmd(site, 'search')({ query: 'none', limit: 20 }, {});
     expect(JSON.stringify(r)).toContain('No papers matched');
   });
@@ -68,7 +68,7 @@ describe('stackoverflow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     ({ mockSite: site, mockXcli: xcli } = makeMock());
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({ items: [
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ items: [
       { title: 'How to use CSS flexbox', score: 500, answer_count: 3, view_count: 100000, tags: ['css','flexbox'], owner: { display_name: 'user1' }, is_answered: true, accepted_answer_id: 12345, creation_date: 1700000000, link: 'https://stackoverflow.com/q/12345' },
     ] }) });
     stackoverflow(xcli);
@@ -81,7 +81,7 @@ describe('stackoverflow', () => {
     expect(JSON.stringify(r)).toContain('flexbox');
   });
   it('无结果返回 fail', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({ items: [] }) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ items: [] }) });
     const r = await getCmd(site, 'search')({ query: 'none', limit: 20 }, {});
     expect(JSON.stringify(r)).toContain('No questions matched');
   });
@@ -92,7 +92,7 @@ describe('weread', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     ({ mockSite: site, mockXcli: xcli } = makeMock());
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({ books: [
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ books: [
       { bookId: 'wr123', title: '三体', author: '刘慈欣', intro: '科幻小说', cover: 'https://cover.jpg', category: '小说' },
     ] }) });
     weread(xcli);
@@ -105,7 +105,7 @@ describe('weread', () => {
     expect(JSON.stringify(r)).toContain('三体');
   });
   it('无结果返回 fail', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({ books: [] }) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ books: [] }) });
     const r = await getCmd(site, 'search')({ query: 'none', limit: 20 }, {});
     expect(JSON.stringify(r)).toContain('未找到');
   });

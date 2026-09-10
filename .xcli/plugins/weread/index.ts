@@ -2,7 +2,19 @@ import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { JsonObject } from '../shared/json-types.js';
+import { fetchJson } from '../shared/api-fetch.js';
 
+
+const searchResult = z.array(z.object({
+  rank: z.number(),
+  bookId: z.string(),
+  title: z.string(),
+  author: z.string(),
+  intro: z.string(),
+  cover: z.string(),
+  category: z.string(),
+  url: z.string(),
+}));
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -13,6 +25,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('search', {
     description: '搜索微信读书图书',
+    result: searchResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -21,10 +34,11 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (p, _ctx) => {
       const url = `https://weread.qq.com/web/search?q=${encodeURIComponent(p.query)}`;
-            const data = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://weread.qq.com/' } }).then(r => r.json()) as JsonObject;
-            const books = data?.books ?? data?.data?.books ?? [];
+            const data = await fetchJson(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Referer': 'https://weread.qq.com/' } }) as JsonObject;
+            const books = (((data as Record<string, { books?: unknown[] }> | undefined)?.books ?? (data as Record<string, Record<string, { books?: unknown[] }>> | undefined)?.data?.books) ?? []) as Record<string, unknown>[];
             if (books.length === 0) return fail(`未找到 "${p.query}" 的相关图书`);
-            return ok(books.slice(0, p.limit || 20).map((b: any, i: number) => ({
+            interface WeReadBook { bookId?: string; title?: string; author?: string; intro?: string; cover?: string; category?: string; cat?: string }
+            return ok(books.slice(0, p.limit || 20).map((b: WeReadBook, i: number) => ({
               rank: i + 1,
               bookId: b.bookId ?? '',
               title: b.title ?? '',

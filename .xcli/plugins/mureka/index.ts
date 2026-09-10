@@ -82,13 +82,13 @@ async function setReactInput(page: Page, selector: string, value: string): Promi
   }, { sel: selector, val: value });
 }
 
-function mapSong(item: Record<string, unknown>) {
+function mapSong(item: Record<string, unknown>): Record<string, unknown> | Record<string, unknown>[] | null {
   // Mureka API: feed item 包含 songs 数组，需要展平
   // 或者直接是 song 对象
   if ((item as Record<string, unknown>).songs) {
     // 这是一个 feed item，提取 songs
     const songs = (item as Record<string, unknown>).songs as Array<Record<string, unknown>>;
-    return songs.map(s => mapSong(s));
+    return songs.flatMap((s: Record<string, unknown>): Record<string, unknown>[] => { const r = mapSong(s); return r == null ? [] : Array.isArray(r) ? r : [r]; });
   }
   // 这是一个单独的 song 对象
   const mp3Url = (item.mp3_url || item.audio_url || item.play_url || '') as string;
@@ -308,11 +308,11 @@ export default function (xcli: XCLIAPI): void {
           } catch { return []; }
         }) as Array<Record<string, unknown>>;
 
-        const songs = feedItems.slice(0, params.limit!).flatMap(mapSong);
-        const withUrl = songs.filter(s => s.audioUrl);
+        const songs: Record<string, unknown>[] = (feedItems as Record<string, unknown>[]).slice(0, params.limit!).flatMap((it: Record<string, unknown>) => { const r = mapSong(it); return r == null ? [] : Array.isArray(r) ? r : [r]; });
+        const withUrl = songs.filter((s: Record<string, unknown>) => s.audioUrl);
 
         const extraTips: string[] = [];
-        if (withUrl.some(s => s.audioUrl?.includes('static-web.mureka.cn'))) {
+        if (withUrl.some((s: Record<string, unknown>) => (s.audioUrl as string | undefined)?.includes('static-web.mureka.cn'))) {
           extraTips.push('💡 提示: 音频下载可能需要消耗 20 金币(V9模型)或免费(V8模型)，使用 xbrowser mureka download --url "URL" --cdp 9221 查看');
         }
 
@@ -321,7 +321,7 @@ export default function (xcli: XCLIAPI): void {
           [
             ...tips,
             `共 ${songs.length} 首，${withUrl.length} 首可播放`,
-            ...withUrl.slice(0, 3).map(s => `🎵 ${s.title || '未命名'} → ${s.audioUrl}`),
+            ...withUrl.slice(0, 3).map((s: Record<string, unknown>) => `🎵 ${s.title || '未命名'} → ${s.audioUrl}`),
             ...extraTips,
             `📚 找到 ${songs.length} 首歌曲`,
           ],
@@ -687,10 +687,10 @@ export default function (xcli: XCLIAPI): void {
           }
 
           if (pollResult.length > 0) {
-            const songs = pollResult.flatMap(mapSong);
-            const withUrl = songs.filter(s => s.audioUrl);
+            const songs: Record<string, unknown>[] = (pollResult as Record<string, unknown>[]).flatMap((it: Record<string, unknown>) => { const r = mapSong(it); return r == null ? [] : Array.isArray(r) ? r : [r]; });
+            const withUrl = songs.filter((s: Record<string, unknown>) => s.audioUrl);
             const extraTips: string[] = [];
-            if (withUrl.some(s => s.audioUrl?.includes('static-web.mureka.cn'))) {
+            if (withUrl.some((s: Record<string, unknown>) => (s.audioUrl as string | undefined)?.includes('static-web.mureka.cn'))) {
               extraTips.push('💡 音频下载: xbrowser mureka download --url "URL" --cdp 9221');
             }
 
@@ -699,7 +699,7 @@ export default function (xcli: XCLIAPI): void {
               [
                 ...tips,
                 `✅ 生成完成！共 ${songs.length} 首${withUrl.length > 0 ? `，${withUrl.length} 首可播放` : ''}`,
-                ...withUrl.slice(0, 2).map(s => `🎵 ${s.title || '未命名'} → ${s.audioUrl}`),
+                ...withUrl.slice(0, 2).map((s: Record<string, unknown>) => `🎵 ${s.title || '未命名'} → ${s.audioUrl}`),
                 '💡 URL 有时效，建议尽快下载',
                 ...extraTips,
               ],
@@ -782,8 +782,8 @@ export default function (xcli: XCLIAPI): void {
           );
         }
 
-        const songs = feedItems.slice(0, 5).flatMap(mapSong);
-        const statusSummary = songs.map(s => `${s.title || '未命名'}[${s.status}]`).join(', ');
+        const songs: Record<string, unknown>[] = (feedItems as Record<string, unknown>[]).slice(0, 5).flatMap((it: Record<string, unknown>) => { const r = mapSong(it); return r == null ? [] : Array.isArray(r) ? r : [r]; });
+        const statusSummary = songs.map((s: Record<string, unknown>) => `${s.title || '未命名'}[${s.status}]`).join(', ');
 
     return ok(
           { songs },
@@ -911,15 +911,15 @@ export default function (xcli: XCLIAPI): void {
           );
         }
 
-        const songs = feedItems.slice(0, params.limit!).flatMap(mapSong);
-        const withUrl = songs.filter(s => s.audioUrl);
+        const songs: Record<string, unknown>[] = (feedItems as Record<string, unknown>[]).slice(0, params.limit!).flatMap((it: Record<string, unknown>) => { const r = mapSong(it); return r == null ? [] : Array.isArray(r) ? r : [r]; });
+        const withUrl = songs.filter((s: Record<string, unknown>) => s.audioUrl);
 
     return ok(
           { songs },
           [
             ...tips,
             `共 ${songs.length} 首，${withUrl.length} 首可播放`,
-            ...withUrl.slice(0, 3).map(s => `🎵 ${s.title || '未命名'} [${s.status}] → ${s.audioUrl}`),
+            ...withUrl.slice(0, 3).map((s: Record<string, unknown>) => `🎵 ${s.title || '未命名'} [${s.status}] → ${s.audioUrl}`),
             '💡 URL 有时效，建议尽快下载',
             `✅ 获取到 ${withUrl.length} 首可播放音乐`,
           ],

@@ -2,7 +2,18 @@ import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { JsonObject } from '../shared/json-types.js';
+import { fetchJson } from '../shared/api-fetch.js';
 
+
+const searchResult = z.array(z.object({
+  rank: z.number(),
+  name: z.string(),
+  version: z.string(),
+  description: z.string(),
+  downloads: z.number(),
+  authors: z.string(),
+  url: z.string(),
+}));
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -13,6 +24,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('search', {
     description: 'Search RubyGems packages',
+    result: searchResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -21,10 +33,11 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (p, _ctx) => {
       const url = `https://rubygems.org/api/v1/search.json?query=${encodeURIComponent(p.query)}`;
-            const data = await fetch(url).then(r => r.json()) as JsonObject;
+            const data = await fetchJson(url) as JsonObject;
             const gems = Array.isArray(data) ? data : [];
             if (gems.length === 0) return fail(`No gems matched "${p.query}"`);
-            return ok(gems.slice(0, p.limit).map((g: any, i: number) => ({
+            interface GemRow { name?: string; version?: string; current_version?: string; description?: string; info?: string; downloads?: number; authors?: string }
+            return ok(gems.slice(0, p.limit).map((g: GemRow, i: number) => ({
               rank: i + 1,
               name: g.name ?? '',
               version: g.version ?? g.current_version ?? '',

@@ -11,7 +11,7 @@ function getHandler(name: string): (...args: unknown[]) => Promise<unknown> {
 }
 
 function mockJsonFetch(responder: unknown): void {
-  globalThis.fetch = vi.fn(async () => ({ json: async () => responder }) as unknown as Response) as unknown as typeof fetch;
+  globalThis.fetch = vi.fn(async () => ({ ok: true, status: 200, json: async () => responder }) as unknown as Response) as unknown as typeof fetch;
 }
 
 const ALL_COMMANDS = ['formula', 'cask'];

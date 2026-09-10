@@ -2,7 +2,27 @@ import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { JsonObject } from '../shared/json-types.js';
+import { fetchJson } from '../shared/api-fetch.js';
 
+
+const formulaResult = z.array(z.object({
+  rank: z.number(),
+  name: z.string(),
+  description: z.string(),
+  version: z.string(),
+  license: z.string(),
+  analytics: z.string(),
+  url: z.string(),
+}));
+
+const caskResult = z.array(z.object({
+  rank: z.number(),
+  name: z.string(),
+  description: z.string(),
+  version: z.string(),
+  homepage: z.string(),
+  url: z.string(),
+}));
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -13,6 +33,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('formula', {
     description: 'Search Homebrew formulae',
+    result: formulaResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -20,13 +41,14 @@ export default function (xcli: XCLIAPI): void {
             limit: z.coerce.number().optional().default(20).describe('Max results')
     }),
     handler: async (p, _ctx) => {
-      const data = await fetch('https://formulae.brew.sh/api/formula.json').then(r => r.json()) as JsonObject;
+      const data = await fetchJson('https://formulae.brew.sh/api/formula.json') as JsonObject;
             const query = (p.query || '').toLowerCase();
             const formulae = Array.isArray(data) ? data : [];
+            interface BrewFormula { name?: string; desc?: string; versions?: { stable?: string }; license?: string; analytics?: { install?: { '30d'?: number } } }
             const results = formulae
-              .filter((f: any) => !query || (f.name ?? '').toLowerCase().includes(query) || (f.desc ?? '').toLowerCase().includes(query))
+              .filter((f: BrewFormula) => !query || (f.name ?? '').toLowerCase().includes(query) || (f.desc ?? '').toLowerCase().includes(query))
               .slice(0, p.limit || 20)
-              .map((f: any, i: number) => ({
+              .map((f: BrewFormula, i: number) => ({
                 rank: i + 1,
                 name: f.name ?? '',
                 description: f.desc ?? '',
@@ -41,6 +63,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('cask', {
     description: 'Search Homebrew casks (GUI apps)',
+    result: caskResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -48,13 +71,13 @@ export default function (xcli: XCLIAPI): void {
             limit: z.coerce.number().optional().default(20).describe('Max results')
     }),
     handler: async (p, _ctx) => {
-      const data = await fetch('https://formulae.brew.sh/api/cask.json').then(r => r.json()) as JsonObject;
+      const data = await fetchJson('https://formulae.brew.sh/api/cask.json') as JsonObject;
             const query = (p.query || '').toLowerCase();
             const casks = Array.isArray(data) ? data : [];
             const results = casks
-              .filter((c: any) => !query || (c.name ?? []).some((n: string) => n.toLowerCase().includes(query)) || (c.desc ?? '').toLowerCase().includes(query))
+              .filter((c: { name?: string[]; desc?: string; token?: string }) => !query || (c.name ?? []).some((n: string) => n.toLowerCase().includes(query)) || (c.desc ?? '').toLowerCase().includes(query))
               .slice(0, p.limit || 20)
-              .map((c: any, i: number) => ({
+              .map((c: { name?: string[]; token?: string; desc?: string; version?: string; homepage?: string }, i: number) => ({
                 rank: i + 1,
                 name: (c.name ?? [])[0] ?? c.token ?? '',
                 description: c.desc ?? '',
