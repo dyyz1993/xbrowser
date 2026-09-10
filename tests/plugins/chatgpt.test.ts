@@ -122,7 +122,7 @@ describe('chatgpt plugin', () => {
     it('should return conversations from evaluate', async () => {
       const handler = getHandler('list');
       const page = createMockPage();
-      page.evaluate = vi.fn(() => Promise.resolve([
+      page.evaluate = vi.fn((_fn: unknown, _arg?: unknown): Promise<unknown> => Promise.resolve([
         { index: 0, title: 'Conversation 1', url: 'https://chatgpt.com/c/1' },
         { index: 1, title: 'Conversation 2', url: 'https://chatgpt.com/c/2' },
       ]));
@@ -136,7 +136,7 @@ describe('chatgpt plugin', () => {
     it('should include count in tips', async () => {
       const handler = getHandler('list');
       const page = createMockPage();
-      page.evaluate = vi.fn(() => Promise.resolve([
+      page.evaluate = vi.fn((_fn: unknown, _arg?: unknown): Promise<unknown> => Promise.resolve([
         { index: 0, title: 'Conv1', url: 'https://chatgpt.com/c/1' },
       ]));
       const ctx = createMockCtx(page);
@@ -148,7 +148,7 @@ describe('chatgpt plugin', () => {
     it('should return fail on error', async () => {
       const handler = getHandler('list');
       const page = createMockPage();
-      page.evaluate = vi.fn(() => Promise.reject(new Error('evaluate failed')));
+      page.evaluate = vi.fn((_fn: unknown, _arg?: unknown): Promise<unknown> => Promise.reject(new Error('evaluate failed')));
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx) as Record<string, unknown>;
       expect(result.success).toBe(false);
@@ -165,7 +165,7 @@ describe('chatgpt plugin', () => {
     it('should return created true on success', async () => {
       const handler = getHandler('new');
       const page = createMockPage();
-      page.evaluate = vi.fn(() => Promise.resolve('clicked'));
+      page.evaluate = vi.fn((_fn: unknown, _arg?: unknown): Promise<unknown> => Promise.resolve('clicked'));
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx) as Record<string, unknown>;
       const data = result.data as Record<string, unknown>;
@@ -186,7 +186,7 @@ describe('chatgpt plugin', () => {
     it('should include "已创建新对话" tip on success', async () => {
       const handler = getHandler('new');
       const page = createMockPage();
-      page.evaluate = vi.fn(() => Promise.resolve('clicked'));
+      page.evaluate = vi.fn((_fn: unknown, _arg?: unknown): Promise<unknown> => Promise.resolve('clicked'));
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx) as Record<string, unknown>;
       const tips = tipsMessages(result.tips);
@@ -205,7 +205,7 @@ describe('chatgpt plugin', () => {
     it('should return opened title when conversation found', async () => {
       const handler = getHandler('open');
       const page = createMockPage();
-      page.evaluate = vi.fn(() => Promise.resolve({ found: true, title: 'My Chat' }));
+      page.evaluate = vi.fn((_fn: unknown, _arg?: unknown): Promise<unknown> => Promise.resolve({ found: true, title: 'My Chat' }));
       const ctx = createMockCtx(page);
       const result = await handler({ title: 'My' }, ctx) as Record<string, unknown>;
       const data = result.data as Record<string, unknown>;
@@ -215,7 +215,7 @@ describe('chatgpt plugin', () => {
     it('should return fail when conversation not found', async () => {
       const handler = getHandler('open');
       const page = createMockPage();
-      page.evaluate = vi.fn(() => Promise.resolve({ found: false, title: '' }));
+      page.evaluate = vi.fn((_fn: unknown, _arg?: unknown): Promise<unknown> => Promise.resolve({ found: false, title: '' }));
       const ctx = createMockCtx(page);
       const result = await handler({ title: 'Nonexistent' }, ctx) as Record<string, unknown>;
       expect(result.success).toBe(false);
@@ -257,7 +257,7 @@ describe('chatgpt plugin', () => {
       const handler = getHandler('attach');
       const page = createMockPage();
       // Mock evaluate for ensurePage login check + fillInput
-      page.evaluate = vi.fn(() => Promise.resolve(true));
+      page.evaluate = vi.fn((_fn: unknown, _arg?: unknown): Promise<unknown> => Promise.resolve(true));
       page.locator = vi.fn(() => ({
         first: vi.fn(() => ({
           count: vi.fn(() => Promise.resolve(1)),
@@ -279,7 +279,7 @@ describe('chatgpt plugin', () => {
     it('should return fail when file does not exist', async () => {
       const handler = getHandler('attach');
       const page = createMockPage();
-      page.evaluate = vi.fn(() => Promise.resolve(true));
+      page.evaluate = vi.fn((_fn: unknown, _arg?: unknown): Promise<unknown> => Promise.resolve(true));
       const ctx = createMockCtx(page);
       const result = await handler({ type: 'image', path: '/nonexistent/file.png' }, ctx) as Record<string, unknown>;
       expect(result.success).toBe(false);

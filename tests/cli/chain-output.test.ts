@@ -19,7 +19,7 @@ describe('printChainResult', () => {
   it('should print OK for successful steps', () => {
     const result: ChainExecutionResult = {
       success: true,
-      steps: [{ success: true, raw: 'goto http://x.com', data: null, duration: 100 }],
+      steps: [{ command: 'goto', success: true, raw: 'goto http://x.com', data: null, duration: 100 }],
       totalDuration: 100,
     };
     printChainResult(result);
@@ -31,6 +31,7 @@ describe('printChainResult', () => {
       success: true,
       steps: [
         {
+          command: 'screenshot',
           success: true,
           raw: 'screenshot',
           data: { ok: true, path: '/tmp/s.png', size: 1024 },
@@ -49,7 +50,7 @@ describe('printChainResult', () => {
     const result: ChainExecutionResult = {
       success: true,
       steps: [
-        { success: true, raw: 'click #btn', data: { ok: true, clicked: true }, duration: 10 },
+        { command: 'click', success: true, raw: 'click #btn', data: { ok: true, clicked: true }, duration: 10 },
       ],
       totalDuration: 10,
     };
@@ -63,7 +64,7 @@ describe('printChainResult', () => {
     const result: ChainExecutionResult = {
       success: false,
       steps: [
-        { success: false, raw: 'click #missing', data: null, message: 'not found', duration: 5 },
+        { command: 'click', success: false, raw: 'click #missing', data: null, message: 'not found', duration: 5 },
       ],
       totalDuration: 5,
     };
@@ -101,7 +102,7 @@ describe('printChainResultBrief', () => {
     const result: ChainExecutionResult = {
       success: true,
       steps: [
-        { success: true, raw: 'goto http://x.com', data: { url: 'x' }, duration: 100 },
+        { command: 'goto', success: true, raw: 'goto http://x.com', data: { url: 'x' }, duration: 100 },
       ],
       totalDuration: 100,
     };
@@ -114,7 +115,7 @@ describe('printChainResultBrief', () => {
     const result: ChainExecutionResult = {
       success: false,
       steps: [
-        { success: false, raw: 'click #x', data: null, message: 'err', duration: 5 },
+        { command: 'click', success: false, raw: 'click #x', data: null, message: 'err', duration: 5 },
       ],
       totalDuration: 5,
     };

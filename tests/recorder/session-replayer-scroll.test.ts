@@ -16,7 +16,7 @@ import { SessionReplayer } from '../../src/recorder/session-replayer.js';
 import type { UserAction } from '../../src/recorder/session-recorder.js';
 
 function createMockPage() {
-  const evaluateFn = vi.fn(async () => {});
+  const evaluateFn = vi.fn(async (_expr: unknown) => {});
   const waitForSelectorFn = vi.fn(async () => {});
   const gotoFn = vi.fn(async () => {});
 

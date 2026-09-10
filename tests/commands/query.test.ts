@@ -42,7 +42,7 @@ describe('query commands', () => {
 
   it('html command should get inner HTML for selector', async () => {
     const ctx = makeCtx();
-    const result = await htmlCommand.handler({ selector: '#main' }, ctx as any);
+    const result = (await htmlCommand.handler({ selector: '#main' }, ctx as any)) as Record<string, unknown>;
     expect(result.data).toEqual({ html: '<div>hello</div>' });
     expect(result.success).toBe(true);
     expect(ctx.page.innerHTML).toHaveBeenCalledWith('#main');
@@ -50,14 +50,14 @@ describe('query commands', () => {
 
   it('html command should get full page content when no selector', async () => {
     const ctx = makeCtx();
-    const result = await htmlCommand.handler({}, ctx as any);
+    const result = (await htmlCommand.handler({}, ctx as any)) as Record<string, unknown>;
     expect(result.data).toEqual({ html: '<html><body>full</body></html>' });
     expect(ctx.page.content).toHaveBeenCalled();
   });
 
   it('text command should get text content for selector', async () => {
     const ctx = makeCtx();
-    const result = await textCommand.handler({ selector: '#content' }, ctx as any);
+    const result = (await textCommand.handler({ selector: '#content' }, ctx as any)) as Record<string, unknown>;
     expect(result.data).toEqual({ text: 'hello text' });
     expect(ctx.page.textContent).toHaveBeenCalledWith('#content');
   });
