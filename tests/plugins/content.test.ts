@@ -65,9 +65,9 @@ describe('content plugin', () => {
     it('should list all built-in cases with metadata', async () => {
       const result = (await getHandler('cases')({}, {})) as { success: boolean; data: { total: number; cases: Array<{ slug: string; langs: string[] }> } };
       expect(result.success).toBe(true);
-      expect(result.data.total).toBe(3);
+      expect(result.data.total).toBe(4);
       const slugs = result.data.cases.map((c) => c.slug);
-      expect(slugs).toEqual(expect.arrayContaining(['self-healing-replay', 'cli-for-ai-agents', 'stealth-automation']));
+      expect(slugs).toEqual(expect.arrayContaining(['self-healing-replay', 'cli-for-ai-agents', 'stealth-automation', 'mcp-server']));
       for (const c of result.data.cases) {
         expect(c.langs).toEqual(expect.arrayContaining(['en', 'zh']));
       }
@@ -151,7 +151,7 @@ describe('content plugin', () => {
   describe('exported helpers', () => {
     it('listCases should read real case directory', () => {
       expect(CASES_DIR).toContain('cases');
-      expect(listCases().length).toBe(3);
+      expect(listCases().length).toBe(4);
     });
 
     it('renderTemplate should leave unknown vars untouched', () => {

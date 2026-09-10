@@ -1,0 +1,20 @@
+{
+  "slug": "mcp-server",
+  "title": {
+    "en": "Your CLI Tool Needs an MCP Server: Shipping One in a Day, Protocol by Hand",
+    "zh": "你的 CLI 工具为什么需要 MCP：一天之内手写协议层上线七个浏览器工具"
+  },
+  "description": {
+    "en": "Why we hand-wrote the MCP JSON-RPC layer instead of pulling the SDK, the thin-shell design that reuses the existing executor, and the two real bugs the first smoke run exposed (stdin interception and shutdown races).",
+    "zh": "为什么手写 MCP JSON-RPC 协议层而不拉 SDK、复用现有 executor 的薄壳设计、以及首轮冒烟暴露的两个真实 bug（stdin 拦截与退出竞态）。"
+  },
+  "langs": ["en", "zh"],
+  "platforms": {
+    "en": ["devto", "medium", "hashnode"],
+    "zh": ["juejin", "csdn", "zhihu"]
+  },
+  "tags": {
+    "en": "typescript,ai,webdev,mcp",
+    "zh": "AI编程,前端,自动化,工程效率"
+  }
+}
