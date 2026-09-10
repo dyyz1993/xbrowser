@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { ExecutionHook } from '../src/hooks/types.js';
+import type { ExecutionHook } from '../src/hooks/loader.js';
 
 describe('loadHooks', () => {
   const originalEnv = process.env.XBROWSER_HOOKS;
@@ -177,7 +177,7 @@ describe('screenshotHook', () => {
 
   it('should not have onBeforeCommand defined', async () => {
     const { screenshotHook } = await import('../src/hooks/screenshot.js');
-    expect(screenshotHook.onBeforeCommand).toBeUndefined();
+    expect((screenshotHook as unknown as Record<string, unknown>).onBeforeCommand).toBeUndefined();
   });
 
   it('should use jpeg type for smaller size', async () => {

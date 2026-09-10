@@ -222,7 +222,7 @@ describeOrSkip('buildElementSelector e2e', () => {
       const sels = await resolveSelectorForAll('.card-title');
       expect(sels).toHaveLength(3);
       for (const s of sels) {
-        const count = await page.evaluate((sel) => document.querySelectorAll(sel).length, s);
+        const count = await page.evaluate((sel: string) => document.querySelectorAll(sel).length, s);
         expect(count).toBe(1);
       }
       expect(new Set(sels).size).toBe(3);

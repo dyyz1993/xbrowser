@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { AgentObservation } from '../../src/runtime/types.js';
 import type { Page } from '../../src/browser-shim.js';
 import { actOnPage, buildSelectorMap, formatObservationCompact, observePage, waitForPage } from '../../src/runtime/agent-runtime.js';
 import { clearAllRefs } from '../../src/runtime/ref-store.js';
@@ -46,7 +47,7 @@ describe('agent runtime', () => {
   });
 
   it('formats compact observation output with selector map', async () => {
-    const observation = {
+    const observation: AgentObservation = {
       url: 'https://example.com/login',
       title: 'Login',
       screenHash: 'abc123',

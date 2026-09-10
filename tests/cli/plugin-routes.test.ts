@@ -96,14 +96,15 @@ function createMockSiteWithSearch(_items: Array<Record<string, unknown>> = []) {
   };
 }
 
-function setupMockLoaderWithSites(sites: unknown[] = []) {
+function setupMockLoaderWithSites(sites: Record<string, unknown>[] = []) {
   mockGetPluginLoader.mockResolvedValue({
     getCore: () => ({
       loader: {
-        getSites: () => sites,
+        getSites: () => sites as never[],
       },
     }),
     reloadPlugin: mockReloadPlugin,
+    getPluginContract: mockGetPluginContract,
   });
 }
 
@@ -254,6 +255,7 @@ describe('plugin-routes', () => {
             getSites: () => [],
           },
         }),
+        reloadPlugin: vi.fn(async () => undefined),
         getPluginContract: mockGetPluginContract,
       });
     });
@@ -441,7 +443,7 @@ describe('plugin-routes', () => {
     it('should fallback to npm when plugin search returns empty', async () => {
       const { NPMSearcher } = await import('../../src/plugin/npm-search.js');
       vi.mocked(NPMSearcher.search).mockResolvedValueOnce([
-        { name: 'npm-plugin', description: 'From npm', version: '2.0.0' },
+        { name: 'npm-plugin', description: 'From npm', version: '2.0.0', date: '2026-01-01' },
       ]);
 
       await handlePlugin(['search', 'test'], {}, 'json');

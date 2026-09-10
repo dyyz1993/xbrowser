@@ -153,7 +153,7 @@ describe('server/router', () => {
 
   it('returns 404 for POST /api/v1/exec with unknown command', async () => {
     const { getCommand } = await import('../../src/commands/index.js');
-    vi.mocked(getCommand).mockReturnValueOnce(null);
+    vi.mocked(getCommand).mockReturnValueOnce(null as unknown as Awaited<ReturnType<typeof getCommand>>);
 
     const res = await route('POST', '/api/v1/exec', {}, { command: 'nonexistent' });
     expect(res.statusCode).toBe(404);

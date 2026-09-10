@@ -15,7 +15,7 @@ function makeCtx(overrides: Record<string, unknown> = {}) {
     page: {
       goto: vi.fn(),
       waitForTimeout: vi.fn(),
-      evaluate: vi.fn(() => [
+      evaluate: vi.fn((_fn: unknown, _arg?: unknown): unknown => [
         { userName: 'user1', content: 'great', score: '5', time: '2024-01-01', ipLocation: '上海' },
       ]),
       url: vi.fn(() => 'https://you.ctrip.com/sight/131888.html'),

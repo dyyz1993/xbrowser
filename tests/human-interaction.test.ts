@@ -1,6 +1,4 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { EventEmitter } from 'events';
-
 const mockPage = {
   url: vi.fn().mockReturnValue('https://example.com'),
   screenshot: vi.fn().mockResolvedValue(Buffer.from('fake')),

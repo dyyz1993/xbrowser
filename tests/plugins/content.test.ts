@@ -77,12 +77,12 @@ describe('content plugin', () => {
   // ─── draft 命令 ───
   describe('draft command', () => {
     it('should fail on unknown case', async () => {
-      const result = (await getHandler('draft')({ case: 'no-such-case' }, {})) as { ok: boolean };
+      const result = (await getHandler('draft')({ case: 'no-such-case' }, {})) as { success: boolean; data: unknown; tips: unknown[] };
       expect(result.success).toBe(false);
     });
 
     it('should fail on unsupported lang', async () => {
-      const result = (await getHandler('draft')({ case: 'self-healing-replay', lang: 'jp' }, {})) as { ok: boolean };
+      const result = (await getHandler('draft')({ case: 'self-healing-replay', lang: 'jp' }, {})) as { success: boolean; data: unknown; tips: unknown[] };
       expect(result.success).toBe(false);
     });
 
@@ -142,7 +142,7 @@ describe('content plugin', () => {
 
     it('should not crash when driver lacks setViewportSize', async () => {
       const page = { goto: vi.fn(), screenshot: vi.fn() };
-      const result = (await getHandler('cover')({ title: 't' }, { page })) as { ok: boolean };
+      const result = (await getHandler('cover')({ title: 't' }, { page })) as { success: boolean; data: unknown; tips: unknown[] };
       expect(result.success).toBe(true);
     });
   });

@@ -59,7 +59,7 @@ describe('douyin plugin', () => {
     });
 
     it('should return user info via XHR interception', async () => {
-      let responseHandler: ((res: any) => Promise<void>) | null = null;
+      let responseHandler: (res: any) => Promise<void> = async () => {};
       const mockPage = createMockPage();
       mockPage.on = vi.fn().mockImplementation((event: string, handler: any) => {
         if (event === 'response') {

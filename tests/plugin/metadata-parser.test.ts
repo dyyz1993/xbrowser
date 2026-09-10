@@ -232,7 +232,7 @@ describe('PluginMetadataParser', () => {
         author: 'Test Author',
       };
 
-      const errors = PluginMetadataParser.validateMetadata(metadata);
+      const errors = PluginMetadataParser.validateMetadata(metadata as Parameters<typeof PluginMetadataParser.validateMetadata>[0]);
 
       expect(errors).toEqual([]);
     });
@@ -242,7 +242,7 @@ describe('PluginMetadataParser', () => {
         name: 'Test Plugin',
       };
 
-      const errors = PluginMetadataParser.validateMetadata(metadata);
+      const errors = PluginMetadataParser.validateMetadata(metadata as Parameters<typeof PluginMetadataParser.validateMetadata>[0]);
 
       expect(errors).toContain('id is required');
       expect(errors).toContain('description is required');

@@ -8,6 +8,14 @@ if [ $? -ne 0 ]; then
 fi
 echo "✅ Typecheck passed"
 
+echo "🔍 [pre-commit] Running tests typecheck..."
+npx tsc -p tsconfig.tests.json --noEmit
+if [ $? -ne 0 ]; then
+  echo "❌ Tests typecheck failed. Fix type errors in tests/ before committing."
+  exit 1
+fi
+echo "✅ Tests typecheck passed"
+
 echo "🔍 [pre-commit] Running ESLint..."
 npx eslint src/ bin/ tests/ --ext .ts --max-warnings 0
 if [ $? -ne 0 ]; then

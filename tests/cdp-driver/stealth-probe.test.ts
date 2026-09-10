@@ -23,7 +23,7 @@ describe('stealth 运行时探针（S174 检测面覆盖审计）', { timeout: T
     const result = await launch(LAUNCH_OPTS);
     browser = result.browser;
     const context = await context_new(browser);
-    page = await context.newPage();
+    page = await (context as unknown as { newPage(): Promise<XBPage> }).newPage();
     await page.goto('data:text/html,<html><title>probe</title><body>ok</body></html>');
 
     const expr = `(async()=>{
