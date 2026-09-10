@@ -39,7 +39,7 @@ describe('packagist', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     const m = makeMock(); site = m.mockSite; xcli = m.mockXcli;
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({ results: [
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ results: [
       { name: 'vendor/pkg', description: 'A test pkg', downloads: 100, favers: 5 },
     ] }) });
     packagist(xcli);
@@ -52,7 +52,7 @@ describe('packagist', () => {
     expect(JSON.stringify(r)).toContain('vendor/pkg');
   });
   it('无结果返回 fail', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({ results: [] }) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ results: [] }) });
     const r = await getCmd(site, 'search')({ query: 'none', limit: 20 }, {});
     expect(JSON.stringify(r)).toContain('No packages matched');
   });
@@ -94,15 +94,15 @@ describe('pubmed', () => {
   });
   it('search 返回文献列表', async () => {
     global.fetch = vi.fn()
-      .mockResolvedValueOnce({ json: () => Promise.resolve({ esearchresult: { idlist: ['123'] } }) })
-      .mockResolvedValueOnce({ json: () => Promise.resolve({ result: {
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ esearchresult: { idlist: ['123'] } }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ result: {
         '123': { title: 'Cancer Research', authors: [{ name: 'Smith J' }], fulljournalname: 'Nature', pubdate: '2026-01-01', elocationid: 'doi:123' },
       } }) });
     const r = await getCmd(site, 'search')({ query: 'cancer', limit: 20 }, {});
     expect(JSON.stringify(r)).toContain('Cancer Research');
   });
   it('无结果返回 fail', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({ esearchresult: { idlist: [] } }) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ esearchresult: { idlist: [] } }) });
     const r = await getCmd(site, 'search')({ query: 'none', limit: 20 }, {});
     expect(JSON.stringify(r)).toContain('No articles matched');
   });

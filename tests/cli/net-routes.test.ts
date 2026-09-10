@@ -285,7 +285,7 @@ describe('net CLI command', () => {
         body: { result: 'ok' },
       },
     });
-    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    logSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 

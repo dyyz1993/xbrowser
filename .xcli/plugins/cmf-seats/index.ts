@@ -116,8 +116,8 @@ export default function(api: XCLIAPI): void {
         // 按关键词过滤
         if (params.keyword) {
           reviews = reviews.filter((r: Record<string, unknown>) => 
-            (r.content as string || '').toLowerCase().includes(params.keyword.toLowerCase()) ||
-            ((r.keywords as string[]) || []).some((k: string) => k.toLowerCase().includes(params.keyword.toLowerCase()))
+            (r.content as string || '').toLowerCase().includes(String(params.keyword ?? '').toLowerCase()) ||
+            ((r.keywords as string[]) || []).some((k: string) => k.toLowerCase().includes(String(params.keyword ?? '').toLowerCase()))
           );
         }
 

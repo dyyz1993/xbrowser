@@ -2,6 +2,16 @@ import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 
+const reposResult = z.array(z.object({
+  rank: z.number(),
+  author: z.string(),
+  name: z.string(),
+  description: z.string(),
+  language: z.string(),
+  stars: z.string(),
+  url: z.string(),
+}));
+
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -12,6 +22,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('repos', {
     description: 'Get trending repositories on GitHub',
+    result: reposResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -24,7 +35,7 @@ export default function (xcli: XCLIAPI): void {
             const since = p.since || 'daily';
             const url = `https://github.com/trending${lang}?since=${since}`;
             const html = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }).then(r => r.text());
-            const results: any[] = [];
+            const results: Record<string, unknown>[] = [];
             const repoRegex = /<h2[^>]*class="[^"]*h3 lh-condensed[^"]*">[\s\S]*?<a[^>]*href="\/([^"]+)"[^>]*>/g;
             const descRegex = /<p[^>]*class="[^"]*col-9 color-fg-muted[^"]*"[^>]*>([\s\S]*?)<\/p>/g;
             const langRegex = /<span[^>]*itemprop="programmingLanguage"[^>]*>([^<]*)<\/span>/g;

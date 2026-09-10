@@ -1372,6 +1372,7 @@ export default function (xcli: XCLIAPI): void {
           tips.push(`📁 视频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`);
           return ok({ taskId: params.task, url: videoUrl, localPath: downloaded.localPath }, tips);
         }
+        return ok({ taskId: params.task }, tips);
       } catch {
         return fail('未知错误', ['获取视频结果失败']);
       }
@@ -2101,7 +2102,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao cloud-drive --list', description: '列出云盘文件' },
     ],
     result: z.object({ files: z.array(z.record(z.string(), z.any())), total: z.number() }).passthrough(),
-    handler: async (params, ctx) => {
+    handler: async (_params, ctx) => {
       try {
         const page = ctx.page;
         if (!page) throw new Error("需要浏览器页面");

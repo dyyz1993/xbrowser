@@ -46,7 +46,7 @@ async function wanxApi(
       credentials: 'include',
       body: JSON.stringify(payload),
     }).then(function (r) { return r.json(); });
-  }, { url: `${API_BASE}${apiPath}`, payload: body }) as Promise<Record<string, unknown>>;
+  }, { url: `${API_BASE}${apiPath}`, payload: body }) as unknown as Promise<Record<string, unknown>>;
 }
 
 async function uploadImageToOss(page: Page, filePath: string): Promise<string> {

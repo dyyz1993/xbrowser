@@ -186,7 +186,7 @@ describe('record-routes', () => {
         steps: [],
       });
 
-      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const logSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
       await handleRecord(['stop'], {}, 'text');
 
       expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Recording Summary'));
@@ -276,7 +276,7 @@ describe('record-routes', () => {
 
     // --- unknown subcommand ---
     it('should print usage for unknown record subcommand', async () => {
-      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const logSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
       await handleRecord(['unknown'], {}, 'text');
       expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Usage'));
       logSpy.mockRestore();
@@ -313,7 +313,7 @@ describe('record-routes', () => {
     });
 
     it('should print self-heal summary in text mode', async () => {
-      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const logSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
       mockForwardReplay.mockResolvedValue({
         ok: true,
         success: true,
@@ -403,7 +403,7 @@ describe('record-routes', () => {
         generateBashScript: () => 'echo test',
       }));
 
-      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const logSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
       await handleConvert(['rec.yaml', 'out.js'], 'text');
       expect(mockFsWriteFileSync).toHaveBeenCalledWith('out.js', expect.any(String));
       expect(mockFsChmodSync).toHaveBeenCalledWith('out.js', 0o755);
@@ -446,7 +446,7 @@ describe('record-routes', () => {
 
     it('should extract and save summary', async () => {
       mockExtractAndSave.mockReturnValue({ summary: { startUrl: 'https://a.com' }, outputPath: '/tmp/out.md' });
-      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const logSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
       await handleExtract(['rec.yaml'], 'text');
       expect(mockExtractAndSave).toHaveBeenCalledWith('rec.yaml');
       expect(mockPrintExtractSummary).toHaveBeenCalledWith({ startUrl: 'https://a.com' });
@@ -464,7 +464,7 @@ describe('record-routes', () => {
     it('should filter recording and output result', async () => {
       mockParseExcludeTypes.mockReturnValue(['click']);
       mockFilterRecording.mockReturnValue({ originalCount: 10, filteredCount: 5, removed: 5, percentage: 50 });
-      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const logSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
       await handleFilter(['in.yaml', 'out.yaml', '--exclude-types=click'], 'text');
       expect(mockFilterRecording).toHaveBeenCalledWith('in.yaml', 'out.yaml', ['click']);
       expect(logSpy).toHaveBeenCalledWith(expect.stringContaining('Filtered'));

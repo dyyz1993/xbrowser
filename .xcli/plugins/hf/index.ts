@@ -2,7 +2,27 @@ import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { JsonObject } from '../shared/json-types.js';
+import { fetchJson } from '../shared/api-fetch.js';
 
+
+const modelsResult = z.array(z.object({
+  rank: z.number(),
+  modelId: z.string(),
+  pipelineTag: z.string(),
+  downloads: z.number(),
+  likes: z.number(),
+  lastModified: z.string(),
+  url: z.string(),
+}));
+
+const datasetsResult = z.array(z.object({
+  rank: z.number(),
+  id: z.string(),
+  downloads: z.number(),
+  likes: z.number(),
+  lastModified: z.string(),
+  url: z.string(),
+}));
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -13,6 +33,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('models', {
     description: 'Search Hugging Face models',
+    result: modelsResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -21,10 +42,18 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (p, _ctx) => {
       const url = `https://huggingface.co/api/models?search=${encodeURIComponent(p.query)}&sort=downloads&direction=-1&limit=${p.limit || 20}`;
-            const data = await fetch(url, { headers: { 'User-Agent': 'xbrowser/1.0' } }).then(r => r.json()) as JsonObject;
+            const data = await fetchJson(url, { headers: { 'User-Agent': 'xbrowser/1.0' } }) as JsonObject;
             const models = Array.isArray(data) ? data : [];
             if (models.length === 0) return fail(`No models matched "${p.query}"`);
-            return ok(models.slice(0, p.limit).map((m: any, i: number) => ({
+            interface HfModel {
+              modelId?: string;
+              id?: string;
+              pipeline_tag?: string;
+              downloads?: number;
+              likes?: number;
+              lastModified?: string;
+            }
+            return ok(models.slice(0, p.limit).map((m: HfModel, i: number) => ({
               rank: i + 1,
               modelId: m.modelId ?? m.id ?? '',
               pipelineTag: m.pipeline_tag ?? '',
@@ -37,6 +66,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('datasets', {
     description: 'Search Hugging Face datasets',
+    result: datasetsResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -45,10 +75,16 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (p, _ctx) => {
       const url = `https://huggingface.co/api/datasets?search=${encodeURIComponent(p.query)}&sort=downloads&direction=-1&limit=${p.limit || 20}`;
-            const data = await fetch(url, { headers: { 'User-Agent': 'xbrowser/1.0' } }).then(r => r.json()) as JsonObject;
+            const data = await fetchJson(url, { headers: { 'User-Agent': 'xbrowser/1.0' } }) as JsonObject;
             const datasets = Array.isArray(data) ? data : [];
             if (datasets.length === 0) return fail(`No datasets matched "${p.query}"`);
-            return ok(datasets.slice(0, p.limit).map((d: any, i: number) => ({
+            interface HfDataset {
+              id?: string;
+              downloads?: number;
+              likes?: number;
+              lastModified?: string;
+            }
+            return ok(datasets.slice(0, p.limit).map((d: HfDataset, i: number) => ({
               rank: i + 1,
               id: d.id ?? '',
               downloads: d.downloads ?? 0,

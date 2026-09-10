@@ -15,9 +15,9 @@ function mockJsonFetch(map: Record<string, unknown>): void {
   globalThis.fetch = vi.fn(async (url: string | URL | Request) => {
     const u = typeof url === 'string' ? url : url.toString();
     for (const key of Object.keys(map)) {
-      if (u.includes(key)) return { json: async () => map[key] } as unknown as Response;
+      if (u.includes(key)) return { ok: true, status: 200, json: async () => map[key] } as unknown as Response;
     }
-    return { json: async () => ({}) } as unknown as Response;
+    return { ok: true, status: 200, json: async () => ({}) } as unknown as Response;
   }) as unknown as typeof fetch;
 }
 

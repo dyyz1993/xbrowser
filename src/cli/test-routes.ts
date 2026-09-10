@@ -10,10 +10,39 @@
  * 执行指令后对比实际输出，报告差异。
  */
 
-import { execSync } from 'child_process';
+import { execFile } from 'child_process';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { getPluginLoader } from '../utils/plugin-singleton.js';
+import { outputError } from './output.js';
+
+interface CliExecResult {
+  stdout: string;
+  stderr: string;
+  error: Error | null;
+}
+
+/**
+ * Run the xbrowser CLI via execFile with an argument array — no shell, no
+ * concatenation. User-supplied plugin/command/args/cdp travel as discrete
+ * array elements, so shell metacharacters can never reparse (P0-3b).
+ */
+function execCli(args: string[]): Promise<CliExecResult> {
+  return new Promise((resolvePromise) => {
+    execFile(
+      'npx',
+      args,
+      { timeout: 65000, env: { ...process.env, FORCE_COLOR: '0' } },
+      (err: Error | null, stdout: string | Buffer, stderr: string | Buffer) => {
+        resolvePromise({
+          stdout: typeof stdout === 'string' ? stdout : (stdout?.toString('utf-8') ?? ''),
+          stderr: typeof stderr === 'string' ? stderr : (stderr?.toString('utf-8') ?? ''),
+          error: err ?? null,
+        });
+      }
+    );
+  });
+}
 
 function findPluginPath(plugin: string): string {
   const candidates = [
@@ -107,25 +136,18 @@ function extractSchema(plugin: string, command: string): SchemaField[] | null {
  */
 async function runTest(plugin: string, command: string, cmdArgs: string[], options: Record<string, unknown>): Promise<Record<string, unknown>> {
   const cdp = options.cdp || options.cdpEndpoint || 'http://localhost:9221';
-  const argsStr = cmdArgs.filter(a => !a.startsWith('--cdp')).join(' ');
+  const passthroughArgs = cmdArgs.filter(a => !a.startsWith('--cdp'));
 
   // 1. 提取 schema
   const schema = extractSchema(plugin, command);
 
-  // 2. 执行指令
-  const fullCmd = `npx xbrowser ${plugin} ${command} ${argsStr} --cdp ${cdp} --json --timeout 60000`;
-  let stdout = '';
-  try {
-    stdout = execSync(fullCmd, {
-      timeout: 65000,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, FORCE_COLOR: '0' },
-    });
-  } catch (e) {
-    const err = e as { stdout?: Buffer; stderr?: Buffer; message?: string };
-    stdout = (err.stdout?.toString() || '');
-
+  // 2. 执行指令 — execFile 参数数组，用户输入逐元素隔离，无 shell 拼接
+  const cliArgs = [
+    'xbrowser', plugin, command, ...passthroughArgs,
+    '--cdp', String(cdp), '--json', '--timeout', '60000',
+  ];
+  const { stdout, stderr, error } = await execCli(cliArgs);
+  if (error) {
     // 解析 stdout 中的 JSON（含 LOGIN_REQUIRED 等正常响应）
     const jsonLine = stdout.split('\n').find(l => {
       try { JSON.parse(l); return true; } catch { return false; }
@@ -141,11 +163,10 @@ async function runTest(plugin: string, command: string, cmdArgs: string[], optio
     }
 
     // 检查 CAPTCHA
-    const stderr = (err.stderr?.toString() || '');
     if (stdout.includes('captcha') || stderr.includes('captcha') || stdout.includes('CAPTCHA')) {
       return { status: 'CAPTCHA', message: '检测到验证码', viewerUrl: 'http://localhost:9224/preview/default' };
     }
-    return { status: 'EXEC_ERROR', message: (err.message || '').slice(0, 200) || '执行失败' };
+    return { status: 'EXEC_ERROR', message: (error.message || '').slice(0, 200) || '执行失败' };
   }
 
   // 3. 解析 JSON 输出（跨多行）
@@ -235,8 +256,8 @@ export async function handleTest(
   const command = cmdArgs[1];
 
   if (!plugin || !command) {
-    console.error('用法: xbrowser test <plugin> <command> [参数...]');
-    console.error('示例: xbrowser test doubao list --cdp 9221');
+    outputError('用法: xbrowser test <plugin> <command> [参数...]');
+    outputError('示例: xbrowser test doubao list --cdp 9221');
     return;
   }
 
@@ -245,13 +266,13 @@ export async function handleTest(
   const internalLoader = loader.getCore().loader;
   const site = internalLoader.getSite(plugin);
   if (!site) {
-    console.error(`插件 "${plugin}" 不存在`);
+    outputError(`插件 "${plugin}" 不存在`);
     return;
   }
 
   const cmdEntry = site.getCommand(command);
   if (!cmdEntry) {
-    console.error(`指令 "${command}" 不存在`);
+    outputError(`指令 "${command}" 不存在`);
     return;
   }
 
@@ -263,7 +284,7 @@ export async function handleTest(
 
   // 输出结果
   if (mode === 'json') {
-    console.log(JSON.stringify(result, null, 2));
+    process.stdout.write(JSON.stringify(result, null, 2) + '\n');
     return;
   }
 
@@ -275,21 +296,21 @@ export async function handleTest(
   const status = String(r.status);
   const icon = icons[status] || '❓';
 
-  console.log(`\n${icon}  ${plugin}.${command}`);
-  console.log(`   状态: ${status}`);
+  process.stdout.write(`\n${icon}  ${plugin}.${command}\n`);
+  process.stdout.write(`   状态: ${status}\n`);
   if (status === 'OK') {
-    if (r.count) console.log(`   数据: ${r.count} 项`);
-    if (r.data) console.log(`   预览: ${String(r.data).slice(0, 150)}`);
+    if (r.count) process.stdout.write(`   数据: ${r.count} 项\n`);
+    if (r.data) process.stdout.write(`   预览: ${String(r.data).slice(0, 150)}\n`);
   } else if (status === 'LOGIN_REQUIRED' || status === 'CAPTCHA') {
-    console.log(`   信息: ${String(r.message)}`);
-    console.log(`   Viewer: ${String(r.viewerUrl)}`);
+    process.stdout.write(`   信息: ${String(r.message)}\n`);
+    process.stdout.write(`   Viewer: ${String(r.viewerUrl)}`);
   } else if (status === 'SCHEMA_ERROR') {
     const errs = r.errors as string[] | undefined;
-    if (errs) console.log(`   错误: ${errs.join('; ')}`);
+    if (errs) process.stdout.write(`   错误: ${errs.join('; ')}\n`);
   } else if (['NO_DATA', 'BLOCKED'].includes(status)) {
-    console.log(`   信息: ${String(r.message)}`);
-    if (r.viewerUrl) console.log(`   Viewer: ${String(r.viewerUrl)}`);
+    process.stdout.write(`   信息: ${String(r.message)}\n`);
+    if (r.viewerUrl) process.stdout.write(`   Viewer: ${String(r.viewerUrl)}\n`);
   } else {
-    console.log(`   信息: ${String(r.message)}`);
+    process.stdout.write(`   信息: ${String(r.message)}\n`);
   }
 }

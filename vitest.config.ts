@@ -14,6 +14,11 @@ export default defineConfig({
       'tests/e2e/**',
       'tests/cli/daemon-session.test.ts',
       'tests/human-interaction.test.ts',
+      // P1-5: full production arena (~634s, 39 cases) runs nightly via
+      // `npm run test:arena` (vitest.arena.config.ts) and CI cron — keeping it
+      // out of the default PR run keeps core feedback under ~5 minutes while
+      // tests/arena/arena.test.ts (8 cases) stays in as the smoke guard.
+      'tests/arena/arena-production.test.ts',
     ],
     coverage: {
       provider: 'v8',

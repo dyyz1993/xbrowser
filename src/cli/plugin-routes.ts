@@ -249,19 +249,19 @@ async function handleSearch(
     outputEnvelope({ success: true, data: { results: deduped, total: deduped.length } }, { command: 'plugin search' }, mode);
   } else {
     if (deduped.length === 0) {
-      console.log('No plugins found');
+      process.stdout.write('No plugins found\n');
       return;
     }
     for (const r of deduped) {
       const src = r.source === 'marketplace' ? '[marketplace]' : r.source === 'local' ? '[local]' : '[npm]';
       const slug = r.slug ? ` (${r.slug})` : '';
-      console.log(`  ${src} ${r.name}${slug}`);
-      if (r.description) console.log(`    ${r.description}`);
-      if (r.version) console.log(`    Version: ${r.version}`);
-      if (r.downloads) console.log(`    Downloads: ${r.downloads}`);
-      console.log('');
+      process.stdout.write(`  ${src} ${r.name}${slug}\n`);
+      if (r.description) process.stdout.write(`    ${r.description}\n`);
+      if (r.version) process.stdout.write(`    Version: ${r.version}\n`);
+      if (r.downloads) process.stdout.write(`    Downloads: ${r.downloads}\n`);
+      process.stdout.write('\n');
     }
-    console.log(`Total: ${deduped.length} plugins`);
+    process.stdout.write(`Total: ${deduped.length} plugins\n`);
   }
 }
 
@@ -286,14 +286,14 @@ async function handlePluginInfo(
         outputEnvelope({ success: true, data: { source: 'marketplace', ...d } }, { command: 'plugin info' }, mode);
         return;
       }
-      console.log(`名称: ${d.name || ''}`);
-      console.log(`版本: ${d.version || ''}`);
-      console.log(`描述: ${d.description || ''}`);
-      console.log(`作者: ${d.author || ''}`);
-      console.log(`命令: ${((d.commands || []) as string[]).join(', ')}`);
-      console.log(`下载量: ${d.downloads || 0}`);
-      console.log(`标签: ${((d.tags || []) as string[]).join(', ')}`);
-      console.log(`网站: ${((d.sites || []) as string[]).join(', ')}`);
+      process.stdout.write(`名称: ${d.name || ''}\n`);
+      process.stdout.write(`版本: ${d.version || ''}\n`);
+      process.stdout.write(`描述: ${d.description || ''}\n`);
+      process.stdout.write(`作者: ${d.author || ''}\n`);
+      process.stdout.write(`命令: ${((d.commands || []) as string[]).join(', ')}\n`);
+      process.stdout.write(`下载量: ${d.downloads || 0}\n`);
+      process.stdout.write(`标签: ${((d.tags || []) as string[]).join(', ')}\n`);
+      process.stdout.write(`网站: ${((d.sites || []) as string[]).join(', ')}\n`);
       return;
     }
   } catch {
@@ -314,19 +314,19 @@ async function handlePluginInfo(
           outputEnvelope({ success: true, data: { source: 'npm', name: pkg.name, version: latest, description: pkg.description } }, { command: 'plugin info' }, mode);
           return;
         }
-        console.log(`名称: ${pkg.name || ''}`);
-        console.log(`版本: ${latest}`);
-        console.log(`描述: ${pkg.description || ''}`);
+        process.stdout.write(`名称: ${pkg.name || ''}\n`);
+        process.stdout.write(`版本: ${latest}\n`);
+        process.stdout.write(`描述: ${pkg.description || ''}\n`);
         const author = pkg.author as { name?: string } | string | undefined;
-        console.log(`作者: ${typeof author === 'string' ? author : author?.name || ''}`);
-        console.log(`关键词: ${((pkg.keywords || []) as string[]).join(', ')}`);
-        console.log(`许可证: ${pkg.license || ''}`);
+        process.stdout.write(`作者: ${typeof author === 'string' ? author : author?.name || ''}\n`);
+        process.stdout.write(`关键词: ${((pkg.keywords || []) as string[]).join(', ')}\n`);
+        process.stdout.write(`许可证: ${pkg.license || ''}\n`);
         return;
       }
     }
-    console.error(`插件 '${slug}' 未找到`);
+    outputError(`插件 '${slug}' 未找到`);
   } catch (err) {
-    console.error('查询失败:', errMsg(err));
+    outputError('查询失败: ' + errMsg(err));
   }
 }
 
@@ -360,33 +360,33 @@ async function handlePluginSchema(
 }
 
 function printPluginContract(contract: PluginContract): void {
-  console.log(`${contract.plugin.name} contract v${contract.version}`);
-  if (contract.plugin.description) console.log(contract.plugin.description);
-  console.log('');
+  process.stdout.write(`${contract.plugin.name} contract v${contract.version}\n`);
+  if (contract.plugin.description) process.stdout.write(contract.plugin.description + '\n');
+  process.stdout.write('\n');
   for (const command of contract.commands) {
     printCommandContract(contract.plugin.name, command);
   }
 }
 
 function printCommandContract(pluginName: string, command: PluginCommandContract): void {
-  console.log(`${pluginName} ${command.name}`);
-  if (command.description) console.log(`  ${command.description}`);
-  console.log(`  scope: ${command.scope}`);
+  process.stdout.write(`${pluginName} ${command.name}\n`);
+  if (command.description) process.stdout.write(`  ${command.description}\n`);
+  process.stdout.write(`  scope: ${command.scope}\n`);
   if (command.capabilities.length > 0) {
-    console.log(`  capabilities: ${command.capabilities.join(', ')}`);
+    process.stdout.write(`  capabilities: ${command.capabilities.join(', ')}\n`);
   }
   if (command.positional.length > 0) {
-    console.log(`  positional: ${command.positional.join(', ')}`);
+    process.stdout.write(`  positional: ${command.positional.join(', ')}\n`);
   }
   if (command.form.fields.length > 0) {
-    console.log('  fields:');
+    process.stdout.write('  fields:\n');
     for (const field of command.form.fields) {
       const required = field.required ? 'required' : 'optional';
       const choices = field.enum ? ` [${field.enum.join('|')}]` : '';
-      console.log(`    --${field.name}: ${field.type}/${field.widget} ${required}${choices}`);
+      process.stdout.write(`    --${field.name}: ${field.type}/${field.widget} ${required}${choices}\n`);
     }
   }
-  console.log('');
+  process.stdout.write('\n');
 }
 
 export async function handlePlugin(
@@ -483,24 +483,24 @@ export async function handlePlugin(
         outputEnvelope({ success: true, data: { plugins: enrichedPlugins } }, { command: 'plugin list' }, mode);
       } else {
         if (enrichedPlugins.length === 0) {
-          console.log('No plugins installed');
+          process.stdout.write('No plugins installed\n');
           return;
         }
         for (const p of enrichedPlugins) {
           const loginTag = p.hasLogin ? (p.loggedIn ? ' [logged in]' : ' [need login]') : '';
           if (p.version && p.description) {
-            console.log(`${p.name} (${p.version}) - ${p.description}${loginTag}`);
+            process.stdout.write(`${p.name} (${p.version}) - ${p.description}${loginTag}\n`);
           } else {
-            console.log(`${p.name}${loginTag}`);
+            process.stdout.write(`${p.name}${loginTag}\n`);
           }
           if (p.commands && p.commands.length > 0) {
-            console.log(`  ${p.commands.join(', ')}`);
+            process.stdout.write(`  ${p.commands.join(', ')}\n`);
           }
           if (p.requiresLoginCommands.length > 0) {
-            console.log(`  requires login: ${p.requiresLoginCommands.join(', ')}`);
+            process.stdout.write(`  requires login: ${p.requiresLoginCommands.join(', ')}\n`);
           }
         }
-        console.log(`\nTotal: ${enrichedPlugins.length} plugins`);
+        process.stdout.write(`\nTotal: ${enrichedPlugins.length} plugins`);
       }
       break;
     }
@@ -539,7 +539,7 @@ export async function handlePlugin(
       );
       break;
     default:
-      console.log(handlePluginHelp());
+      process.stdout.write(handlePluginHelp() + '\n');
   }
 }
 
@@ -586,6 +586,6 @@ export function handleDaemon(
       break;
     }
     default:
-      console.log('Daemon starts automatically. No manual action needed.');
+      process.stdout.write('Daemon starts automatically. No manual action needed.\n');
   }
 }

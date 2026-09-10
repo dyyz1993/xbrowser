@@ -56,3 +56,43 @@ export function validateAuth(authHeader: string | undefined, validTokens: string
 export function isAuthRequired(validTokens: string[]): boolean {
   return validTokens.length > 0;
 }
+
+const IPV6_LOOPBACK = new Set(['::1', '0:0:0:0:0:0:0:1']);
+
+/**
+ * Check whether a bind host is a loopback address.
+ *
+ * Accepts `localhost`, the whole 127.0.0.0/8 range, and IPv6 `::1`
+ * (with or without brackets). Wildcard binds (`0.0.0.0`, `::`) are NOT
+ * loopback — they listen on every interface and are treated as remote.
+ *
+ * @param host - The host string the server would bind to.
+ * @returns `true` if the host only accepts loopback connections.
+ */
+export function isLoopbackHost(host: string): boolean {
+  const h = host.trim().toLowerCase().replace(/^\[/, '').replace(/\]$/, '');
+  if (h === 'localhost') return true;
+  if (IPV6_LOOPBACK.has(h)) return true;
+  const ipv4 = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  return ipv4 !== null && ipv4[1] === '127';
+}
+
+/**
+ * Check whether a browser Origin header value points at a loopback host.
+ *
+ * Used by the CORS policy: by default only loopback browser origins
+ * (a local dev page served from localhost or 127.0.0.1, any port) may
+ * call the API; anything else needs an explicit allowlist entry.
+ *
+ * @param origin - The raw `Origin` request header value.
+ * @returns `true` if the origin is an http(s) URL with a loopback hostname.
+ */
+export function isLoopbackOrigin(origin: string): boolean {
+  try {
+    const url = new URL(origin);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    return isLoopbackHost(url.hostname);
+  } catch {
+    return false;
+  }
+}

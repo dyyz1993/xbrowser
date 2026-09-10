@@ -2,6 +2,36 @@ import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 
+const searchResult = z.array(z.object({
+  rank: z.number(),
+  id: z.string(),
+  title: z.string(),
+  authors: z.string(),
+  summary: z.string(),
+  published: z.string(),
+  url: z.string(),
+}));
+
+const recentResult = z.array(z.object({
+  rank: z.number(),
+  id: z.string(),
+  title: z.string(),
+  authors: z.string(),
+  published: z.string(),
+}));
+
+const paperResult = z.object({
+  id: z.string(),
+  title: z.string(),
+  authors: z.string(),
+  summary: z.string(),
+  published: z.string(),
+  updated: z.string(),
+  categories: z.string(),
+  link: z.string(),
+  pdf: z.string(),
+});
+
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -12,6 +42,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('search', {
     description: 'Search arXiv papers by keyword',
+    result: searchResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -21,7 +52,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (p, _ctx) => {
       const url = `https://export.arxiv.org/api/query?search_query=all:${encodeURIComponent(p.query)}&max_results=${p.limit || 20}&sortBy=relevance&sortOrder=descending`;
             const xml = await fetch(url).then(r => r.text());
-            const results: any[] = [];
+            const results: Record<string, unknown>[] = [];
             const entryRegex = /<entry>[\s\S]*?<\/entry>/g;
             let m;
             while ((m = entryRegex.exec(xml)) !== null) {
@@ -40,6 +71,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('paper', {
     description: 'Get arXiv paper details by ID',
+    result: paperResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -63,6 +95,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('recent', {
     description: 'Get recent arXiv papers by category',
+    result: recentResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -73,7 +106,7 @@ export default function (xcli: XCLIAPI): void {
       const cat = p.category || 'cs.AI';
             const url = `https://export.arxiv.org/api/query?search_query=cat:${cat}&max_results=${p.limit || 20}&sortBy=submittedDate&sortOrder=descending`;
             const xml = await fetch(url).then(r => r.text());
-            const results: any[] = [];
+            const results: Record<string, unknown>[] = [];
             const entryRegex = /<entry>[\s\S]*?<\/entry>/g;
             let m;
             while ((m = entryRegex.exec(xml)) !== null) {

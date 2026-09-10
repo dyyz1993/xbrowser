@@ -10,7 +10,7 @@ export default function (xcli: XCLIAPI): void {
     description: '堆糖 - 美好生活研究所',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | null;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page | null;
       if (!page) return true;
       try {
         const url = page.url();

@@ -142,6 +142,34 @@ function cookieDomainMatches(cookieDomain: string, site: string): boolean {
   return d === site.toLowerCase() || d.endsWith('.' + site.toLowerCase());
 }
 
+const serveResult = z.object({
+  port: z.number(),
+  storedCookies: z.number(),
+});
+
+const saveResult = z.object({
+  domains: z.array(z.string()),
+  total: z.number(),
+  at: z.string().nullable(),
+});
+
+const applyResult = z.object({
+  applied: z.number(),
+  site: z.string(),
+});
+
+const importResult = z.object({
+  imported: z.number(),
+  site: z.string(),
+  via: z.string(),
+});
+
+const launchResult = z.object({
+  pid: z.number(),
+  port: z.number(),
+  profile: z.string(),
+});
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'login-bridge',
@@ -153,6 +181,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('serve', {
     description: '启动 bridge HTTP 服务（9355，接收 Chrome 插件推送）',
+    result: serveResult,
     scope: 'project',
     requiresLogin: false,
     parameters: z.object({}),
@@ -182,13 +211,14 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('save', {
     description: '从 bridge 拉取最新登录态并归档到本地（.xbrowser/login-bridge-store.json 即档案）',
+    result: saveResult,
     scope: 'project',
     requiresLogin: false,
     parameters: z.object({}),
     handler: async () => {
       const store = loadStore();
       const domains = Object.keys(store);
-      const total = Object.values(store).reduce((s, v) => s + v.cookies.length, 0);
+      const total = Object.values(store).reduce((s, v) => s + (Array.isArray(v?.cookies) ? v.cookies.length : 0), 0);
       return ok({ domains, total, at: store['*']?.at || null }, [
         total ? `库存 ${total} 条 cookie（${domains.join(', ')}）` : '库存为空 — 先在 Chrome 插件里点「导出」',
       ]);
@@ -197,6 +227,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('apply', {
     description: '把归档的 cookie 注入当前会话页面（--site 过滤域名）',
+    result: applyResult,
     scope: 'page',
     requiresLogin: false,
     parameters: z.object({
@@ -210,7 +241,7 @@ export default function (xcli: XCLIAPI): void {
       const all: CookieItem[] = Object.entries(store)
         .filter(([k]) => !p.site || k === p.site || k === '*')
         .flatMap(([, v]) => v.cookies || []);
-      const matched = p.site ? all.filter((c: any) => cookieDomainMatches(String(c.domain), p.site!)) : all;
+      const matched = p.site ? all.filter((c: { domain?: unknown }) => cookieDomainMatches(String(c.domain), p.site!)) : all;
       if (!matched.length) return fail(`无匹配 cookie（site=${p.site || '*'}）— 先在 Chrome 插件里导出`);
 
       // 通过 CDP Storage.setCookies 注入（page._cdpSend；evaluate 无法设 httpOnly）
@@ -240,6 +271,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('import-from-chrome', {
     description: '从 Google Chrome 导入登录态（Chrome 运行中即可，经 hack-browser-data 解密）',
+    result: importResult,
     scope: 'project',
     requiresLogin: false,
     parameters: z.object({
@@ -332,6 +364,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('launch', {
     description: '用固定 profile 启动 Chromium（登录态持久化在 ~/.xbrowser/chrome-profile）',
+    result: launchResult,
     scope: 'project',
     requiresLogin: false,
     parameters: z.object({

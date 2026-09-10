@@ -1,5 +1,6 @@
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
-import { z } from 'zod';
+import type { PageLike } from '../shared/page-types.js';
+import { z } from 'zod/v4';
 
 /**
  * booking 插件 — Booking.com 酒店搜索（S189 复醒实现）
@@ -13,6 +14,17 @@ import { z } from 'zod';
 
 const CARD_SEL = '[data-testid="property-card"]';
 
+const searchResult = z.object({
+  destination: z.string(),
+  count: z.number(),
+  hotels: z.array(z.object({
+  name: z.string(),
+  price: z.string(),
+  score: z.string(),
+  url: z.string(),
+})),
+});
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'booking',
@@ -23,6 +35,7 @@ export default function (xcli: XCLIAPI): void {
 
   site.command('search', {
     description: '搜索 Booking.com 酒店，返回名称/评分/价格',
+    result: searchResult,
     scope: 'browser',
     parameters: z.object({
       destination: z.string().describe('目的地（城市名，如 Tokyo）'),
@@ -34,8 +47,8 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser booking search --destination Tokyo', description: '搜索东京酒店' },
       { cmd: 'xbrowser booking search --destination Tokyo --checkin 2026-10-01 --checkout 2026-10-03', description: '带日期搜索' },
     ],
-    handler: async (params: { destination: string; limit?: number; checkin?: string; checkout?: string }, ctx: { page?: any }) => {
-      const page = ctx?.page;
+    handler: async (params: { destination: string; limit?: number; checkin?: string; checkout?: string }, ctx) => {
+      const page = ctx.page as PageLike | undefined;
       if (!page) throw new Error('需要浏览器页面');
 
       // 构造搜索 URL（checkin/checkout 可选）

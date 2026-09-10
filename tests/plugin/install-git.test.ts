@@ -1,12 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'fs';
-import { resolve } from 'path';
-import { tmpdir } from 'os';
-
-const TEST_DIR = resolve(tmpdir(), 'xbrowser-test-git');
 
 vi.mock('node:child_process', () => ({
-  execSync: vi.fn(),
+  execFile: vi.fn(),
 }));
 
 vi.mock('node:fs', () => ({
@@ -27,49 +22,149 @@ vi.mock('@dyyz1993/xcli-core', () => ({
   helpGenerator: vi.fn(() => ({ generate: vi.fn() })),
 }));
 
-import { installFromGit } from '../../src/plugin/install-sources/git.js';
-import { execSync } from 'node:child_process';
+import { installFromGit, isValidGitUrl } from '../../src/plugin/install-sources/git.js';
+import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import { verifyPlugin } from '@dyyz1993/xcli-core';
+
+/** execFile mock that finds the callback by position-agnostic argument scan. */
+function mockExecFileSuccess(): void {
+  vi.mocked(execFile).mockImplementation(((...callArgs: unknown[]) => {
+    const cb = callArgs.find((a) => typeof a === 'function') as unknown as (
+      err: Error | null,
+      stdout: string,
+      stderr: string
+    ) => void;
+    cb(null, '', '');
+  }) as unknown as typeof execFile);
+}
 
 describe('install-sources/git', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockExecFileSuccess();
     vi.mocked(fs.existsSync).mockReturnValue(false);
     vi.mocked(fs.cpSync).mockImplementation(() => {});
     vi.mocked(fs.rmSync).mockImplementation(() => {});
     vi.mocked(fs.writeFileSync).mockImplementation(() => {});
     vi.mocked(fs.readFileSync).mockReturnValue('{}');
     vi.mocked(fs.mkdirSync).mockImplementation(() => '');
+    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it('should install plugin from git URL', async () => {
-    vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
-    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
+  // ── P0-3: URL validation (defense before any git invocation) ──
 
-    const result = await installFromGit(
-      'https://github.com/user/plugin.git',
-      'my-plugin',
-      '/tmp/target'
-    );
+  describe('isValidGitUrl', () => {
+    it('accepts https git URLs', () => {
+      expect(isValidGitUrl('https://github.com/user/plugin.git')).toBe(true);
+      expect(isValidGitUrl('https://gitlab.com/group/sub/repo.git')).toBe(true);
+    });
 
-    expect(result.id).toBe('my-plugin');
-    expect(result.name).toBe('my-plugin');
-    expect(result.source).toBe('git');
-    expect(result.path).toBe('/tmp/target');
-    expect(execSync).toHaveBeenCalledWith(
-      expect.stringContaining('git clone --depth 1'),
-      { stdio: 'pipe' }
-    );
-    expect(fs.cpSync).toHaveBeenCalled();
+    it('accepts git://, git+https://, git+ssh://, ssh:// and scp-style URLs', () => {
+      expect(isValidGitUrl('git://github.com/user/plugin.git')).toBe(true);
+      expect(isValidGitUrl('git+https://github.com/user/plugin.git')).toBe(true);
+      expect(isValidGitUrl('git+ssh://git@github.com/user/plugin.git')).toBe(true);
+      expect(isValidGitUrl('ssh://git@github.com/user/plugin.git')).toBe(true);
+      expect(isValidGitUrl('git@github.com:user/plugin.git')).toBe(true);
+    });
+
+    it('rejects URLs starting with a dash (git option injection)', () => {
+      expect(isValidGitUrl('--upload-pack=touch /tmp/pwn')).toBe(false);
+      expect(isValidGitUrl('-u/bin/sh')).toBe(false);
+    });
+
+    it('rejects shell metacharacters: quotes, semicolons, backticks, backslashes', () => {
+      expect(isValidGitUrl('https://x.com/a.git"; rm -rf ~')).toBe(false);
+      expect(isValidGitUrl("https://x.com/a.git'; id")).toBe(false);
+      expect(isValidGitUrl('https://x.com/a.git;id')).toBe(false);
+      expect(isValidGitUrl('https://x.com/`id`.git')).toBe(false);
+      expect(isValidGitUrl('https://x.com/a\\;b.git')).toBe(false);
+    });
+
+    it('rejects newlines and other control characters', () => {
+      expect(isValidGitUrl('https://x.com/a.git\nrm -rf /tmp')).toBe(false);
+      expect(isValidGitUrl('https://x.com/a.git\rid')).toBe(false);
+      expect(isValidGitUrl('https://x.com/a\u0000.git')).toBe(false);
+    });
+
+    it('rejects disallowed protocols and non-URLs', () => {
+      expect(isValidGitUrl('file:///etc/passwd')).toBe(false);
+      expect(isValidGitUrl('http://github.com/user/plugin.git')).toBe(false);
+      expect(isValidGitUrl('ftp://x.com/a.git')).toBe(false);
+      expect(isValidGitUrl('')).toBe(false);
+      expect(isValidGitUrl('not a url')).toBe(false);
+    });
+
+    it('rejects URLs with spaces', () => {
+      expect(isValidGitUrl('https://x.com/a b.git')).toBe(false);
+    });
   });
 
+  // ── P0-3: shell-free clone invocation ──
+
+  it('clones via execFile argument array, never a shell string', async () => {
+    await installFromGit('https://github.com/user/plugin.git', 'my-plugin', '/tmp/target');
+
+    expect(execFile).toHaveBeenCalledTimes(1);
+    const call = vi.mocked(execFile).mock.calls[0];
+    expect(call[0]).toBe('git');
+    expect(call[1]).toEqual(
+      expect.arrayContaining(['clone', '--depth', '1', 'https://github.com/user/plugin.git'])
+    );
+    // URL must be passed as a single argument — no concatenation surface
+    const urlArg = (call[1] as string[]).find((a) => a.includes('github.com'));
+    expect(urlArg).toBe('https://github.com/user/plugin.git');
+  });
+
+  it('uses -- separator so a URL can never be parsed as a git option', async () => {
+    await installFromGit('https://github.com/user/plugin.git', 'p', '/tmp/p');
+    const args = vi.mocked(execFile).mock.calls[0][1] as string[];
+    const sepIdx = args.indexOf('--');
+    const urlIdx = args.indexOf('https://github.com/user/plugin.git');
+    expect(sepIdx).toBeGreaterThan(-1);
+    expect(urlIdx).toBeGreaterThan(sepIdx);
+  });
+
+  it('rejects malicious URLs before invoking git at all', async () => {
+    const malicious = [
+      'https://x.com/a.git"; rm -rf ~',
+      'https://x.com/a.git;id',
+      '--upload-pack=touch /tmp/pwn',
+      'https://x.com/a.git\nrm -rf /tmp',
+      'file:///etc/passwd',
+    ];
+    for (const url of malicious) {
+      await expect(installFromGit(url, 'evil', '/tmp/evil')).rejects.toThrow(/Invalid git URL/i);
+    }
+    expect(execFile).not.toHaveBeenCalled();
+  });
+
+  it('surfaces git stderr in the failure message', async () => {
+    vi.mocked(execFile).mockImplementation(((...callArgs: unknown[]) => {
+      const cb = callArgs.find((a) => typeof a === 'function') as unknown as (
+        err: Error | null,
+        stdout: string,
+        stderr: string
+      ) => void;
+      cb(
+        new Error('Command failed: git clone'),
+        '',
+        "fatal: repository 'https://github.com/nonexist/repo.git' not found"
+      );
+    }) as unknown as typeof execFile);
+
+    await expect(
+      installFromGit('https://github.com/nonexist/repo.git', 'nope', '/tmp/nope')
+    ).rejects.toThrow('not found');
+  });
+
+  // ── preserved install behaviors ──
+
   it('should throw when plugin verification fails', async () => {
-    vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
     vi.mocked(verifyPlugin).mockReturnValue({
       valid: false,
       error: 'No index.ts or index.js entry point found',
@@ -81,20 +176,7 @@ describe('install-sources/git', () => {
     ).rejects.toThrow('Invalid git plugin: No index.ts or index.js entry point found');
   });
 
-  it('should throw when git clone fails', async () => {
-    vi.mocked(execSync).mockImplementation(() => {
-      throw new Error("fatal: repository 'https://github.com/nonexist/repo.git' not found");
-    });
-
-    await expect(
-      installFromGit('https://github.com/nonexist/repo.git', 'nope', '/tmp/nope')
-    ).rejects.toThrow('not found');
-  });
-
   it('should remove .git directory after cloning', async () => {
-    vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
-    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
-
     await installFromGit('https://github.com/user/g.git', 'g', '/tmp/g');
 
     expect(fs.rmSync).toHaveBeenCalledWith(
@@ -104,8 +186,6 @@ describe('install-sources/git', () => {
   });
 
   it('should add _gitSource to package.json', async () => {
-    const gitUrl = 'https://github.com/user/meta-plugin.git';
-    vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
     vi.mocked(fs.existsSync).mockImplementation((p: unknown) => {
       const path = String(p);
       return path.endsWith('package.json');
@@ -113,9 +193,8 @@ describe('install-sources/git', () => {
     vi.mocked(fs.readFileSync).mockReturnValue(
       JSON.stringify({ name: 'meta-plugin', version: '1.0.0' })
     );
-    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
-    await installFromGit(gitUrl, 'meta-plugin', '/tmp/meta');
+    await installFromGit('https://github.com/user/meta-plugin.git', 'meta-plugin', '/tmp/meta');
 
     expect(fs.writeFileSync).toHaveBeenCalledWith(
       expect.stringContaining('package.json'),
@@ -124,7 +203,6 @@ describe('install-sources/git', () => {
   });
 
   it('should not overwrite existing _gitSource', async () => {
-    vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
     vi.mocked(fs.existsSync).mockImplementation((p: unknown) => {
       const path = String(p);
       return path.endsWith('package.json');
@@ -132,7 +210,6 @@ describe('install-sources/git', () => {
     vi.mocked(fs.readFileSync).mockReturnValue(
       JSON.stringify({ name: 'g', _gitSource: { url: 'original-url' } })
     );
-    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     await installFromGit('https://github.com/user/new.git', 'g', '/tmp/g');
 
@@ -143,7 +220,6 @@ describe('install-sources/git', () => {
   });
 
   it('should include warnings from verifyPlugin', async () => {
-    vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
     vi.mocked(verifyPlugin).mockReturnValue({
       valid: true,
       warnings: ['No package.json found'],
@@ -160,8 +236,6 @@ describe('install-sources/git', () => {
 
   it('should overwrite existing target directory', async () => {
     vi.mocked(fs.existsSync).mockReturnValue(true);
-    vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
-    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     const result = await installFromGit(
       'https://github.com/user/ow.git',
@@ -174,9 +248,6 @@ describe('install-sources/git', () => {
   });
 
   it('should set installedAt as valid ISO string', async () => {
-    vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
-    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
-
     const before = new Date().toISOString();
     const result = await installFromGit(
       'https://github.com/user/time.git',
@@ -191,25 +262,34 @@ describe('install-sources/git', () => {
   });
 
   it('should use --depth 1 for shallow clone', async () => {
-    vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
-    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
-
     await installFromGit('https://github.com/user/shallow.git', 'shallow', '/tmp/shallow');
 
-    expect(execSync).toHaveBeenCalledWith(
-      expect.stringContaining('--depth 1'),
-      { stdio: 'pipe' }
-    );
+    const args = vi.mocked(execFile).mock.calls[0][1] as string[];
+    expect(args).toContain('--depth');
+    expect(args[args.indexOf('--depth') + 1]).toBe('1');
   });
 
   it('should skip package.json update when no package.json exists', async () => {
-    vi.mocked(execSync).mockReturnValue(Buffer.alloc(0));
     vi.mocked(fs.existsSync).mockReturnValue(false);
-    vi.mocked(verifyPlugin).mockReturnValue({ valid: true, warnings: [] });
 
     const result = await installFromGit('https://github.com/user/nopkg.git', 'nopkg', '/tmp/nopkg');
 
     expect(result.id).toBe('nopkg');
     expect(fs.readFileSync).not.toHaveBeenCalled();
+  });
+
+  it('cleans up the temp directory even when clone fails', async () => {
+    vi.mocked(execFile).mockImplementation(((...callArgs: unknown[]) => {
+      const cb = callArgs.find((a) => typeof a === 'function') as unknown as (
+        err: Error | null
+      ) => void;
+      cb(new Error('clone failed'));
+    }) as unknown as typeof execFile);
+
+    const { safeCleanup } = await import('@dyyz1993/xcli-core');
+    await expect(
+      installFromGit('https://github.com/user/gone.git', 'gone', '/tmp/gone')
+    ).rejects.toThrow('clone failed');
+    expect(safeCleanup).toHaveBeenCalled();
   });
 });

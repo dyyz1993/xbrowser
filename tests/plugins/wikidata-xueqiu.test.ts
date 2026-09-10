@@ -18,7 +18,7 @@ describe('wikidata', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     ({ mockSite: site, mockXcli: xcli } = makeMock());
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({ search: [
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ search: [
       { id: 'Q42', label: 'Douglas Adams', description: 'English writer and humorist' },
     ] }) });
     wikidata(xcli);
@@ -32,12 +32,12 @@ describe('wikidata', () => {
     expect(JSON.stringify(r)).toContain('Q42');
   });
   it('无结果返回 fail', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({ search: [] }) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ search: [] }) });
     const r = await getCmd(site, 'search')({ query: 'none', limit: 20 }, {});
     expect(JSON.stringify(r)).toContain('No Wikidata entities matched');
   });
   it('entity 命令返回实体详情', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({
       entities: { Q42: { id: 'Q42', labels: { en: { value: 'Douglas Adams' } } } },
     }) });
     const r = await getCmd(site, 'entity')({ id: 'Q42' }, {});
@@ -54,7 +54,7 @@ describe('xueqiu', () => {
   });
 
   it('quote 返回股票行情', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({
       data: [{ symbol: 'SH600519', name: '贵州茅台', current: 1700, percent: 2.5, high: 1720, low: 1680, open: 1690, volume: 3000000, amount: 5100000000, timestamp: 1700000000000 }],
     }) });
     const h = getCmd(site, 'quote');
@@ -63,7 +63,7 @@ describe('xueqiu', () => {
   });
 
   it('hot 返回热门股票', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({
       items: [{ symbol: 'SH600519', name: '贵州茅台' }],
     }) });
     const h = getCmd(site, 'hot');

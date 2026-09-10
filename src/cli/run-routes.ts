@@ -33,21 +33,21 @@ export async function handleRun(
 
   for (const step of chainResult.steps) {
     if (step.success) {
-      console.log(`[OK] ${step.raw}`);
+      process.stdout.write(`[OK] ${step.raw}\n`);
       if (step.data && typeof step.data === 'object') {
         const d = step.data as Record<string, unknown>;
         for (const [k, v] of Object.entries(d)) {
           if (k !== 'ok')
-            console.log(`     ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+            process.stdout.write(`     ${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}\n`);
         }
       }
     } else {
-      console.error(`[FAIL] ${step.raw}: ${step.message}`);
+      outputError(`[FAIL] ${step.raw}: ${step.message}`);
     }
   }
 
   if (chainResult.stoppedReason) {
-    console.error(`Stopped: ${chainResult.stoppedReason}`);
+    outputError(`Stopped: ${chainResult.stoppedReason}`);
   }
 
   if (!chainResult.success) process.exit(1);

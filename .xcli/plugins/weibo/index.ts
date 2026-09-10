@@ -10,7 +10,7 @@ export default function (xcli: XCLIAPI): void {
     description: '微博 - 社交媒体发布与图片搜索',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | null;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page | null;
       if (!page) return true;
       try {
         const url = page.url();

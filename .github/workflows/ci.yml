@@ -121,6 +121,7 @@ jobs:
 
   arena-nightly:
     # P1-5: full production arena (~634s) — nightly + manual, NOT per-PR
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     name: arena-nightly
     runs-on: ubuntu-latest
     timeout-minutes: 40

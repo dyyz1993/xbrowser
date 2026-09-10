@@ -564,7 +564,7 @@ export async function routeCommand(
       replay: 'replay <file> [--slow-mo <ms>] [--stop-on-error]',
       create: 'create <name> [--template static|dynamic|login|api]',
       run: 'run <file>',
-      serve: 'serve [--port <port>] [--token <token>]',
+      serve: 'serve [--port <port>] [--host <host>] [--token <token>] [--cors-origins <csv>]',
       remote: 'remote <url> [command] [--token <token>]',
       convert: 'convert <file> [--to js|py|sh]',
       extract: 'extract <file> [--format json|yaml]',
@@ -1010,8 +1010,13 @@ async function handleServe(
 ): Promise<void> {
   const port = options.port ? Number(options.port) : undefined;
   const token = options.token as string | undefined;
+  const host = options.host as string | undefined;
+  const corsOriginsRaw = options['cors-origins'] as string | undefined;
+  const corsOrigins = corsOriginsRaw
+    ? corsOriginsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+    : undefined;
 
-  const httpServer = new HTTPServer({ port, tokens: token ? [token] : undefined });
+  const httpServer = new HTTPServer({ port, host, tokens: token ? [token] : undefined, corsOrigins });
 
   process.on('SIGINT', async () => {
     await httpServer.stop();

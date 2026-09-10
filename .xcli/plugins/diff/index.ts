@@ -55,7 +55,7 @@ export default function (xcli: XCLIAPI): void {
         const diffPercentage = (diffPixels / totalPixels) * 100;
         ctxCanvas.putImageData(diffImageData, 0, 0); const diffBase64 = canvas.toDataURL('image/png').split(',')[1];
         return { diffPercentage, diffPixels, totalPixels, diffBase64 };
-      }, { currentBase64: currentBuffer.toString('base64'), baselineBase64: baselineBuffer.toString('base64'), threshold: p.threshold }) as { diffPercentage: number; diffPixels: number; totalPixels: number; diffBase64: string };
+      }, { currentBase64: (currentBuffer as Buffer).toString('base64'), baselineBase64: baselineBuffer.toString('base64'), threshold: p.threshold }) as { diffPercentage: number; diffPixels: number; totalPixels: number; diffBase64: string };
       const passed = comparison.diffPercentage <= p.threshold * 100;
       if (p.output && comparison.diffBase64) { const { writeFileSync } = await import('node:fs'); writeFileSync(p.output, Buffer.from(comparison.diffBase64, 'base64')); }
       return ok({ passed, diffPercentage: Math.round(comparison.diffPercentage * 100) / 100, diffPixels: comparison.diffPixels, totalPixels: comparison.totalPixels, threshold: p.threshold, message: passed ? `Visual test passed (${comparison.diffPercentage.toFixed(2)}% diff <= ${p.threshold * 100}% threshold)` : `Visual test FAILED (${comparison.diffPercentage.toFixed(2)}% diff > ${p.threshold * 100}% threshold)`, diffImage: p.output || '(not saved)' });

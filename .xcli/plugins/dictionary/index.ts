@@ -3,6 +3,31 @@ import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { JsonObject } from '../shared/json-types.js';
 import { asJsonArray } from '../shared/json-types.js';
+import { fetchJson } from '../shared/api-fetch.js';
+
+const searchResult = z.object({
+  word: z.string(),
+  phonetic: z.string(),
+  meanings: z.array(z.object({
+    partOfSpeech: z.string(),
+    definitions: z.string(),
+    synonyms: z.string(),
+  })),
+  audio: z.string(),
+  sourceUrls: z.string(),
+});
+
+const synonymsResult = z.object({
+  word: z.string(),
+  synonyms: z.array(z.string()),
+  count: z.number(),
+});
+
+const examplesResult = z.object({
+  word: z.string(),
+  examples: z.array(z.string()),
+  count: z.number(),
+});
 
 
 export default function (xcli: XCLIAPI): void {
@@ -13,6 +38,7 @@ export default function (xcli: XCLIAPI): void {
     requiresLogin: false,
   });
   site.command('search', {
+    result: searchResult,
     description: 'Look up a word definition',
     loginRequired: 'none',
     scope: 'project',
@@ -20,7 +46,7 @@ export default function (xcli: XCLIAPI): void {
       word: z.string().describe('Word to look up')
     }),
     handler: async (p, _ctx) => {
-      const data = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(p.word)}`).then(r => r.json()) as JsonObject | JsonObject[];
+      const data = await fetchJson(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(p.word)}`, { checkStatus: false }) as JsonObject | JsonObject[];
             if (typeof data === 'object' && !Array.isArray(data) && data.title === 'No Definitions Found') return fail(`No definitions found for "${p.word}"`);
             const entry: JsonObject = Array.isArray(data) ? data[0] : data;
             const meanings = asJsonArray(entry.meanings).map((m) => ({
@@ -39,13 +65,14 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('synonyms', {
     description: 'Get synonyms for a word',
+    result: synonymsResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
       word: z.string().describe('Word to find synonyms for')
     }),
     handler: async (p, _ctx) => {
-      const data = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(p.word)}`).then(r => r.json()) as JsonObject | JsonObject[];
+      const data = await fetchJson(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(p.word)}`, { checkStatus: false }) as JsonObject | JsonObject[];
             if (typeof data === 'object' && !Array.isArray(data) && data.title === 'No Definitions Found') return fail(`No results for "${p.word}"`);
             const entry: JsonObject = Array.isArray(data) ? data[0] : data;
             const allSynonyms = new Set<string>();
@@ -58,6 +85,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('examples', {
     description: 'Get example sentences for a word',
+    result: examplesResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -65,7 +93,7 @@ export default function (xcli: XCLIAPI): void {
             limit: z.coerce.number().optional().default(10).describe('Max examples')
     }),
     handler: async (p, _ctx) => {
-      const data = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(p.word)}`).then(r => r.json()) as JsonObject | JsonObject[];
+      const data = await fetchJson(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(p.word)}`, { checkStatus: false }) as JsonObject | JsonObject[];
             if (typeof data === 'object' && !Array.isArray(data) && data.title === 'No Definitions Found') return fail(`No results for "${p.word}"`);
             const entry: JsonObject = Array.isArray(data) ? data[0] : data;
             const examples: string[] = [];

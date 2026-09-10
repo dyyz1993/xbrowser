@@ -599,7 +599,7 @@ export default function (xcli: XCLIAPI): void {
         await page.goto(match.entryUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForTimeout(2000);
 
-        await ctx.waitForHuman({ reason: `完成 ${match.name} 登录`, timeout: 300000 });
+        await ctx.waitForHuman?.({ reason: `完成 ${match.name} 登录`, timeout: 300000 });
 
         await page.goto(match.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await page.waitForTimeout(2000);
@@ -1044,7 +1044,7 @@ export default function (xcli: XCLIAPI): void {
             for (let i = 0; i < count; i++) {
               const text = await options.nth(i).textContent();
               if (text && (text.toLowerCase().includes('share') || text.toLowerCase().includes('something'))) {
-                await purposeSelect.selectOption({ index: i });
+                await purposeSelect.selectOption(i);
                 break;
               }
             }

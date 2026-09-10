@@ -2,7 +2,19 @@ import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { JsonObject } from '../shared/json-types.js';
+import { fetchJson } from '../shared/api-fetch.js';
 
+
+const searchResult = z.array(z.object({
+  rank: z.number(),
+  id: z.string(),
+  version: z.string(),
+  description: z.string(),
+  authors: z.string(),
+  downloads: z.number(),
+  tags: z.string(),
+  url: z.string(),
+}));
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -13,6 +25,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('search', {
     description: 'Search NuGet packages',
+    result: searchResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -21,10 +34,11 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (p, _ctx) => {
       const url = `https://azuresearch-usnc.nuget.org/query?q=${encodeURIComponent(p.query)}&prerelease=false&skip=0&take=${p.limit || 20}`;
-            const data = await fetch(url).then(r => r.json()) as JsonObject;
-            const packages = data?.data ?? [];
+            const data = await fetchJson(url) as JsonObject;
+            const packages = (data?.data as Record<string, unknown>[] | undefined) ?? [];
             if (packages.length === 0) return fail(`No packages matched "${p.query}"`);
-            return ok(packages.slice(0, p.limit).map((pkg: any, i: number) => ({
+            interface NugetPackage { id?: string; version?: string; description?: string; authors?: string[]; totalDownloads?: number; tags?: string[] }
+            return ok(packages.slice(0, p.limit).map((pkg: NugetPackage, i: number) => ({
               rank: i + 1,
               id: pkg.id ?? '',
               version: pkg.version ?? '',

@@ -2,7 +2,17 @@ import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { JsonObject } from '../shared/json-types.js';
+import { fetchJson } from '../shared/api-fetch.js';
 
+
+const searchResult = z.array(z.object({
+  rank: z.number(),
+  name: z.string(),
+  description: z.string(),
+  downloads: z.number(),
+  favers: z.number(),
+  url: z.string(),
+}));
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -13,6 +23,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('search', {
     description: 'Search Packagist packages',
+    result: searchResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -21,10 +32,11 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (p, _ctx) => {
       const url = `https://packagist.org/search.json?q=${encodeURIComponent(p.query)}&per_page=${p.limit || 20}`;
-            const data = await fetch(url).then(r => r.json()) as JsonObject;
-            const results = data?.results ?? [];
+            const data = await fetchJson(url) as JsonObject;
+            const results = (data?.results as Record<string, unknown>[] | undefined) ?? [];
             if (results.length === 0) return fail(`No packages matched "${p.query}"`);
-            return ok(results.slice(0, p.limit).map((r: any, i: number) => ({
+            interface PackagistResult { name?: string; description?: string; downloads?: number; favers?: number }
+            return ok(results.slice(0, p.limit).map((r: PackagistResult, i: number) => ({
               rank: i + 1,
               name: r.name ?? '',
               description: r.description ?? '',

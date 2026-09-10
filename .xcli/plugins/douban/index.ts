@@ -3,6 +3,14 @@ import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
 
+const searchResult = z.array(z.object({
+  rank: z.number(),
+  title: z.string(),
+  rating: z.string(),
+  abstract: z.string(),
+  url: z.string(),
+}));
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'douban',
@@ -17,6 +25,7 @@ function gp(ctx: CommandContext): Page {
 }
 
   site.command('search', {
+    result: searchResult,
     description: '搜索豆瓣电影、图书或音乐',
     loginRequired: 'none',
     scope: 'page',
@@ -33,7 +42,7 @@ function gp(ctx: CommandContext): Page {
             await page.goto(searchUrl, { waitUntil: 'networkidle', timeout: 30000 });
             await page.waitForTimeout(2000);
             const data = await page.evaluate(() => {
-              const results = [];
+              const results: { rank: number; title: string; rating: string; abstract: string; url: string }[] = [];
               const items = document.querySelectorAll('.item, .result, .sc-bZQynM, .sc-fqkvVR');
               items.forEach((item, i) => {
                 const titleEl = item.querySelector('.title a, .hd a, a[href*="subject"]');

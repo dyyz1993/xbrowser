@@ -83,6 +83,6 @@ export async function handleSession(
       break;
     }
     default:
-      console.log(handleSessionHelp());
+      process.stdout.write(handleSessionHelp() + '\n');
   }
 }

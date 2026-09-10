@@ -336,11 +336,11 @@ describe('plugin-routes', () => {
 
   describe('handlePlugin - default', () => {
     it('should show help for unknown subcommand', async () => {
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const consoleSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
       await handlePlugin(['unknown-sub'], {}, 'text');
 
-      expect(consoleSpy).toHaveBeenCalledWith('plugin help text');
+      expect(consoleSpy.mock.calls.map((c) => String(c[0])).join('')).toContain('plugin help text');
       consoleSpy.mockRestore();
     });
   });
@@ -353,13 +353,13 @@ describe('plugin-routes', () => {
 
   describe('handleDaemon', () => {
     it('should show usage for unknown daemon subcommand', () => {
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      const consoleSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
 
       handleDaemon(['unknown'], {}, 'text');
 
-        expect(consoleSpy).toHaveBeenCalledWith(
-          'Daemon starts automatically. No manual action needed.'
-        );
+        expect(
+          consoleSpy.mock.calls.map((c) => String(c[0])).join(''),
+        ).toContain('Daemon starts automatically. No manual action needed.');
       consoleSpy.mockRestore();
     });
 
@@ -411,29 +411,31 @@ describe('plugin-routes', () => {
       });
       setupMockLoaderWithSites([createMockSiteWithSearch()]);
 
-      const logs: string[] = [];
-      const origLog = console.log;
-      console.log = (...args: unknown[]) => logs.push(args.join(' '));
+      const captured: string[] = [];
+      const origWrite = process.stdout.write;
+      process.stdout.write = ((chunk: unknown) => { captured.push(String(chunk)); return true; }) as typeof process.stdout.write;
 
       await handlePlugin(['search', 'test'], {}, 'text');
 
-      console.log = origLog;
-      expect(logs.some(l => l.includes('text-plugin'))).toBe(true);
-      expect(logs.some(l => l.includes('Total:'))).toBe(true);
+      process.stdout.write = origWrite;
+      const output = captured.join('');
+      expect(output.includes('text-plugin')).toBe(true);
+      expect(output.includes('Total:')).toBe(true);
     });
 
     it('should show "No plugins found" when search returns empty', async () => {
       const { NPMSearcher } = await import('../../src/plugin/npm-search.js');
       vi.mocked(NPMSearcher.search).mockResolvedValueOnce([]);
 
-      const logs: string[] = [];
-      const origLog = console.log;
-      console.log = (...args: unknown[]) => logs.push(args.join(' '));
+      const captured: string[] = [];
+      const origWrite = process.stdout.write;
+      process.stdout.write = ((chunk: unknown) => { captured.push(String(chunk)); return true; }) as typeof process.stdout.write;
 
       await handlePlugin(['search', 'nonexistent'], {}, 'text');
 
-      console.log = origLog;
-      expect(logs.some(l => l.includes('No plugins found'))).toBe(true);
+      process.stdout.write = origWrite;
+      const output = captured.join('');
+      expect(output.includes('No plugins found')).toBe(true);
     });
 
     it('should fallback to npm when plugin search returns empty', async () => {

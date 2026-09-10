@@ -468,7 +468,7 @@ export default function (xcli: XCLIAPI): void {
     description: '知乎 - 知识问答与内容采集 (DA 93)',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | null;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page | null;
       if (!page) return true;
       try {
         const url = page.url();

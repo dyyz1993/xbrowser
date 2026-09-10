@@ -30,6 +30,8 @@ describe('bbc plugin', () => {
   it('正常返回新闻列表', async () => {
     vi.stubEnv('NEWSAPI_KEY', 'test-key');
     global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
       json: () => Promise.resolve({
         status: 'ok',
         articles: [
@@ -51,6 +53,8 @@ describe('bbc plugin', () => {
   it('API 返回非 ok 时返回 fail', async () => {
     vi.stubEnv('NEWSAPI_KEY', 'test-key');
     global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
       json: () => Promise.resolve({ status: 'error' }),
     });
     const h = getHandler();

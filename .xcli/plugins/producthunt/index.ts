@@ -31,7 +31,7 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser producthunt login', description: '登录 Product Hunt' }],
-    handler: async (params, ctx) => {
+    handler: async (_params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 

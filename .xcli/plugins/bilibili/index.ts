@@ -10,7 +10,7 @@ export default function (xcli: XCLIAPI): void {
     description: 'B站 - 视频搜索、动态发布、评论、点赞与图片搜索',
     requiresLogin: false,
     isLogin: async (ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | null;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page | null;
       if (!page) return false;
       try {
         const url = page.url();
@@ -76,7 +76,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(3000);
 
         const videos = await page.evaluate((limit) => {
-          var items = [];
+          var items: { title: string; author: string; playCount: string; duration: string; link: string; cover: string }[] = [];
           var cards = document.querySelectorAll('.bili-video-card, .video-list-item, .video-card');
           cards.forEach(function(card) {
             if (items.length >= limit) return;
@@ -93,8 +93,8 @@ export default function (xcli: XCLIAPI): void {
               author: authorEl ? (authorEl.textContent || '').trim() : '',
               playCount: playEl ? (playEl.textContent || '').trim() : '',
               duration: durationEl ? (durationEl.textContent || '').trim() : '',
-              link: videoLink ? videoLink.href : '',
-              cover: coverEl ? coverEl.src : '',
+              link: videoLink ? (videoLink as HTMLAnchorElement).href : '',
+              cover: coverEl ? (coverEl as HTMLImageElement).src : '',
             });
           });
           return items;
@@ -278,7 +278,7 @@ export default function (xcli: XCLIAPI): void {
         // 先检查登录态：B 站未登录时点赞会弹登录框
         const isLoggedIn = await page.evaluate(() => {
           var loginModal = document.querySelector('.bili-mini-login-wrapper, [class*="login-modal"], [class*="login-mask"]');
-          if (loginModal && loginModal.offsetParent !== null) return false;
+          if (loginModal && (loginModal as HTMLElement).offsetParent !== null) return false;
           return !!document.querySelector('[class*="avatar"],[class*="user-info"],[class*="logged-in"],.header-info__user,.bili-avatar');
         });
         if (!isLoggedIn) {
@@ -308,7 +308,7 @@ export default function (xcli: XCLIAPI): void {
               var btn = btns[i];
               if (btn.classList.contains('active') || btn.classList.contains('on')) continue;
               var parent = btn.closest('button, [class*="toolbar"]');
-              if (parent && parent.offsetParent !== null) { parent.click(); return true; }
+              if (parent && (parent as HTMLElement).offsetParent !== null) { (parent as HTMLElement).click(); return true; }
             }
             return false;
           });
@@ -319,7 +319,7 @@ export default function (xcli: XCLIAPI): void {
         // 点击后验证：检查是否弹出了登录框
         const loginPopup = await page.evaluate(() => {
           var modal = document.querySelector('.bili-mini-login-wrapper, [class*="login-modal"], [class*="login-mask"], [class*="login-dialog"]');
-          return modal && modal.offsetParent !== null;
+          return modal && (modal as HTMLElement).offsetParent !== null;
         });
         if (loginPopup) {
           return fail('LOGIN_REQUIRED: 点击点赞后弹出登录框，请先登录 B站', tips);
@@ -364,36 +364,36 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(1000);
 
         const results = await page.evaluate((limit) => {
-          var images = [];
+          var images: { title: string; thumbnailUrl: string; sourceUrl: string | null; width: number; height: number }[] = [];
 
           document.querySelectorAll('img[src*="hdslb"], img[src*="bilivideo"], img[src*="hdslb.com"]').forEach(function(img, idx) {
             if (idx >= limit) return;
-            if (img.naturalWidth < 80) return;
-            var src = img.src || '';
+            if ((img as HTMLImageElement).naturalWidth < 80) return;
+            var src = (img as HTMLImageElement).src || '';
             if (src.indexOf('avatar') > -1 || src.indexOf('icon') > -1 || src.indexOf('logo') > -1) return;
             var closestA = img.closest('a');
             images.push({
-              title: img.alt || '',
+              title: (img as HTMLImageElement).alt || '',
               thumbnailUrl: src,
               sourceUrl: closestA ? closestA.getAttribute('href') : '',
-              width: img.naturalWidth,
-              height: img.naturalHeight,
+              width: (img as HTMLImageElement).naturalWidth,
+              height: (img as HTMLImageElement).naturalHeight,
             });
           });
 
           if (images.length === 0) {
             document.querySelectorAll('.bili-video-card img, .video-card img').forEach(function(img, idx) {
               if (idx >= limit) return;
-              if (img.naturalWidth < 80) return;
-              var src = img.src || '';
+              if ((img as HTMLImageElement).naturalWidth < 80) return;
+              var src = (img as HTMLImageElement).src || '';
               if (src.indexOf('avatar') > -1 || src.indexOf('icon') > -1 || src.indexOf('logo') > -1) return;
               var closestA = img.closest('a');
               images.push({
-                title: img.alt || '',
+                title: (img as HTMLImageElement).alt || '',
                 thumbnailUrl: src,
                 sourceUrl: closestA ? closestA.getAttribute('href') : '',
-                width: img.naturalWidth,
-                height: img.naturalHeight,
+                width: (img as HTMLImageElement).naturalWidth,
+                height: (img as HTMLImageElement).naturalHeight,
               });
             });
           }

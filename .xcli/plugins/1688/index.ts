@@ -275,7 +275,7 @@ export default function (xcli: XCLIAPI): void {
     description: '1688阿里巴巴 - 店铺信息、商品列表、商品详情、搜索采集',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      const page = (ctx as Record<string, unknown>).page as import('../types').Page | null;
+      const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page | null;
       if (!page) return true;
       try {
         const url = page.url();

@@ -3,6 +3,7 @@ import { errMsg } from '../utils/error.js';
 import { executeCommand, executeChain } from '../executor.js';
 import { findSession, findOrRestoreSession, getAllSessions, createSession, closeSessionByName } from '../browser.js';
 import { getCommand, getAllCommands } from '../commands/index.js';
+import { isLoopbackOrigin } from './auth.js';
 import type { APIRequest, APIResponse } from './types.js';
 
 type RouteHandler = (req: APIRequest) => Promise<APIResponse>;
@@ -14,8 +15,7 @@ interface Route {
   handler: RouteHandler;
 }
 
-const CORS_HEADERS: Record<string, string> = {
-  'Access-Control-Allow-Origin': '*',
+const CORS_BASE_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 };
@@ -78,8 +78,63 @@ function jsonResponse(statusCode: number, body: unknown, extraHeaders?: Record<s
   return {
     statusCode,
     body,
-    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json', ...extraHeaders },
+    headers: { 'Content-Type': 'application/json', ...extraHeaders },
   };
+}
+
+/**
+ * Compute the CORS headers a response should carry for the given request
+ * origin.
+ *
+ * Default policy: only loopback browser origins (a local dev page on
+ * localhost or 127.0.0.1, any port) are reflected back. Remote web clients
+ * must be listed in an explicit allowlist; `*` re-enables the wildcard only
+ * as an explicit opt-in. Unapproved origins get no
+ * `Access-Control-Allow-Origin` header at all, so browsers block them.
+ */
+function corsHeadersFor(
+  origin: string | undefined,
+  explicitOrigins?: string[],
+): Record<string, string> {
+  if (!origin || !isOriginAllowed(origin, explicitOrigins)) return {};
+  return {
+    'Access-Control-Allow-Origin': origin,
+    Vary: 'Origin',
+    ...CORS_BASE_HEADERS,
+  };
+}
+
+/**
+ * Whether a request Origin may reach the handlers under the current policy.
+ *
+ * Shared by the CORS layer and the server-side origin gate: CORS headers
+ * only stop well-behaved browsers — curl and other non-browser clients
+ * ignore them, so disallowed origins must be rejected before any handler
+ * (session creation, command execution) is invoked.
+ */
+function isOriginAllowed(origin: string, explicitOrigins?: string[]): boolean {
+  if (explicitOrigins && explicitOrigins.length > 0) {
+    return explicitOrigins.includes('*') || explicitOrigins.includes(origin);
+  }
+  return isLoopbackOrigin(origin);
+}
+
+/**
+ * Whether a Content-Type header names JSON. Parameters (charset etc.) are
+ * tolerated; the check is on the media type only.
+ */
+function isJsonContentType(contentType: string): boolean {
+  return contentType.toLowerCase().split(';')[0].trim() === 'application/json';
+}
+
+function applyCorsHeaders(
+  response: APIResponse,
+  origin: string | undefined,
+  corsOrigins?: string[],
+): APIResponse {
+  const cors = corsHeadersFor(origin, corsOrigins);
+  if (Object.keys(cors).length === 0) return response;
+  return { ...response, headers: { ...cors, ...(response.headers ?? {}) } };
 }
 
 function errorResponse(statusCode: number, error: string, message: string): APIResponse {
@@ -257,12 +312,14 @@ export function isHealthCheckPath(pathname: string): boolean {
  *
  * Parses the URL, matches against registered routes, and delegates to the
  * appropriate handler. Returns a 404 for unmatched routes and a 405 for
- * method mismatches.
+ * method mismatches. Applies the CORS policy to every response based on
+ * the request's `Origin` header.
  *
  * @param method - The HTTP method (GET, POST, DELETE, OPTIONS).
  * @param url - The full request URL including query string.
  * @param headers - Request headers.
  * @param body - Parsed request body.
+ * @param corsOrigins - Optional explicit CORS allowlist; defaults to loopback origins only.
  * @returns An {@link APIResponse} from the matched handler or an error response.
  */
 export async function route(
@@ -270,13 +327,52 @@ export async function route(
   url: string,
   headers: Record<string, string | undefined>,
   body: unknown,
+  corsOrigins?: string[],
+): Promise<APIResponse> {
+  const response = await routeInner(method, url, headers, body, corsOrigins);
+  return applyCorsHeaders(response, headers.origin, corsOrigins);
+}
+
+async function routeInner(
+  method: string,
+  url: string,
+  headers: Record<string, string | undefined>,
+  body: unknown,
+  corsOrigins?: string[],
 ): Promise<APIResponse> {
   const parsedUrl = new URL(url, 'http://localhost');
   const pathname = parsedUrl.pathname;
   const query = parseQueryString(parsedUrl.search);
 
   if (method === 'OPTIONS') {
+    // Preflights execute nothing; exempt them from the origin gate (the
+    // missing ACAO header already makes the browser drop the real request).
     return jsonResponse(204, null);
+  }
+
+  // Origin gate — reject BEFORE any handler runs. CORS headers only stop
+  // browsers; non-browser clients ignore them entirely. Requests carrying
+  // an Origin the policy disapproves never reach session creation or
+  // command execution. Requests WITHOUT an Origin (CLI clients such as
+  // `xbrowser remote`, curl) pass — browsers always send Origin on
+  // cross-origin writes, so a missing Origin is not a browser attack.
+  if (headers.origin && !isOriginAllowed(headers.origin, corsOrigins)) {
+    return errorResponse(403, 'FORBIDDEN', `Origin ${headers.origin} is not allowed to call this API`);
+  }
+
+  // Content-Type gate for body-bearing methods — HTML forms can only send
+  // text/plain, urlencoded or multipart, never application/json; rejecting
+  // those closes the form-based CSRF surface. Missing Content-Type passes
+  // for legacy-client compatibility (the body still must parse as JSON).
+  if (method === 'POST' || method === 'PUT') {
+    const contentType = headers['content-type'];
+    if (contentType && !isJsonContentType(contentType)) {
+      return errorResponse(
+        415,
+        'UNSUPPORTED_MEDIA_TYPE',
+        `Content-Type must be application/json, got "${contentType}"`,
+      );
+    }
   }
 
   const match = matchRoute(method, pathname);
@@ -313,18 +409,20 @@ export async function route(
  * @param req - The native Node.js incoming message.
  * @param res - The native Node.js server response.
  * @param validateAuthFn - Optional auth validation function; called for non-health-check routes.
+ * @param corsOrigins - Optional explicit CORS allowlist; defaults to loopback origins only.
  */
 export async function handleRequest(
   req: IncomingMessage,
   res: ServerResponse,
   validateAuthFn?: (authHeader: string | undefined) => boolean,
+  corsOrigins?: string[],
 ): Promise<void> {
   const url = req.url || '/';
   const method = (req.method || 'GET').toUpperCase();
   const pathname = new URL(url, 'http://localhost').pathname;
 
   if (method === 'OPTIONS') {
-    const response = await route(method, url, headersToObject(req.headers), null);
+    const response = await route(method, url, headersToObject(req.headers), null, corsOrigins);
     writeResponse(res, response);
     return;
   }
@@ -332,7 +430,12 @@ export async function handleRequest(
   if (validateAuthFn && !isHealthCheckPath(pathname)) {
     const authHeader = req.headers['authorization'];
     if (!validateAuthFn(authHeader)) {
-      writeResponse(res, errorResponse(401, 'UNAUTHORIZED', 'Invalid or missing authentication token'));
+      const denied = applyCorsHeaders(
+        errorResponse(401, 'UNAUTHORIZED', 'Invalid or missing authentication token'),
+        req.headers.origin,
+        corsOrigins,
+      );
+      writeResponse(res, denied);
       return;
     }
   }
@@ -342,7 +445,7 @@ export async function handleRequest(
     body = await readBody(req);
   }
 
-  const response = await route(method, url, headersToObject(req.headers), body);
+  const response = await route(method, url, headersToObject(req.headers), body, corsOrigins);
   writeResponse(res, response);
 }
 

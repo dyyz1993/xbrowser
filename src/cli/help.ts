@@ -93,7 +93,7 @@ Commands:
   plugin list                       List plugins
   plugin reload <name>              Reload plugin
   create <name> --template <type>   Create plugin
-  serve [--port <port>] [--token <t>] Start HTTP server
+  serve [--port <p>] [--host <h>] [--token <t>] [--cors-origins <csv>] Start HTTP server (loopback by default)
   remote <url> [command] [--token <t>] Execute on remote server
   run <file>                        Execute commands from file
   viewer [--name <n>]               Generate viewer URL

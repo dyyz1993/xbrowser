@@ -55,11 +55,17 @@ function request(
 
 const servers: HTTPServer[] = [];
 
-async function createTestServer(config?: { port?: number; tokens?: string[] }) {
+async function createTestServer(config?: {
+  port?: number;
+  tokens?: string[];
+  hostOverride?: string;
+  corsOrigins?: string[];
+}) {
   const server = new HTTPServer({
-    host: '127.0.0.1',
+    host: config?.hostOverride ?? '127.0.0.1',
     port: config?.port ?? randomPort(),
     tokens: config?.tokens,
+    corsOrigins: config?.corsOrigins,
   });
   servers.push(server);
   const addr = await server.start();
@@ -150,5 +156,94 @@ describe('HTTPServer', () => {
     const { port } = await createTestServer({ tokens: ['my-secret'] });
     const res = await request(port, 'GET', '/api/v1/health');
     expect(res.statusCode).toBe(200);
+  });
+
+  // ── P0-1: secure defaults ──
+
+  it('defaults to loopback host when host is not configured', async () => {
+    const server = new HTTPServer({ port: randomPort() });
+    servers.push(server);
+    const addr = await server.start();
+    expect(addr.host).toBe('127.0.0.1');
+  });
+
+  it('refuses to start on non-loopback host without a token', async () => {
+    const server = new HTTPServer({ host: '0.0.0.0', port: randomPort() });
+    await expect(server.start()).rejects.toThrow(/token/i);
+    expect(server.getAddress()).toBeNull();
+  });
+
+  it('starts on non-loopback host with a token; protected routes reject missing auth', async () => {
+    const { port } = await createTestServer({ tokens: ['my-secret'], hostOverride: '0.0.0.0' });
+    const noAuth = await request(port, 'GET', '/api/v1/commands');
+    expect(noAuth.statusCode).toBe(401);
+    const withAuth = await request(port, 'GET', '/api/v1/commands', {
+      Authorization: 'Bearer my-secret',
+    });
+    expect(withAuth.statusCode).toBe(200);
+  });
+
+  it('health endpoint leaks no session or command data', async () => {
+    const { port } = await createTestServer();
+    const res = await request(port, 'GET', '/api/v1/health');
+    expect(res.body).toEqual({ status: 'ok', timestamp: expect.any(String) });
+  });
+
+  // ── P0-1: CORS policy ──
+
+  it('reflects loopback browser origins by default', async () => {
+    const { port } = await createTestServer();
+    const res = await request(port, 'GET', '/api/v1/health', {
+      Origin: 'http://localhost:3000',
+    });
+    expect(res.headers['access-control-allow-origin']).toBe('http://localhost:3000');
+  });
+
+  it('does not grant CORS to arbitrary web origins by default', async () => {
+    const { port } = await createTestServer();
+    const res = await request(port, 'GET', '/api/v1/health', {
+      Origin: 'https://evil.example',
+    });
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
+  it('honors an explicit CORS allowlist for remote web clients', async () => {
+    const { port } = await createTestServer({ corsOrigins: ['https://app.example'] });
+    const allowed = await request(port, 'GET', '/api/v1/health', {
+      Origin: 'https://app.example',
+    });
+    expect(allowed.headers['access-control-allow-origin']).toBe('https://app.example');
+    const denied = await request(port, 'GET', '/api/v1/health', {
+      Origin: 'https://other.example',
+    });
+    expect(denied.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
+  // ── Entry gates over real HTTP ──
+
+  it('rejects disallowed Origin with 403 at the HTTP layer', async () => {
+    const { port } = await createTestServer();
+    const res = await request(port, 'POST', '/api/v1/sessions', {
+      Origin: 'https://evil.example',
+    }, { name: 'pwned' });
+    expect(res.statusCode).toBe(403);
+  });
+
+  it('rejects text/plain POST with 415 at the HTTP layer', async () => {
+    const { port } = await createTestServer();
+    const res = await request(port, 'POST', '/api/v1/sessions', {
+      'Content-Type': 'text/plain',
+    }, JSON.stringify({ name: 'pwned' }));
+    expect(res.statusCode).toBe(415);
+  });
+
+  it('keeps serving no-Origin JSON clients end to end', async () => {
+    const { port } = await createTestServer();
+    // Bad-request shape on purpose: proves the request traversed the gates
+    // and reached the handler (400 from validation, not 403/415 from gates).
+    const res = await request(port, 'POST', '/api/v1/sessions', {
+      'Content-Type': 'application/json',
+    }, { nonsense: true });
+    expect(res.statusCode).toBe(400);
   });
 });

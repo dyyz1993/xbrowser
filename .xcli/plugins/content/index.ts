@@ -232,7 +232,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser "set-viewport 1200 630 && content cover --title \\"Self-Healing Replay\\" --output cover.png"', description: '链式设定视口后生成封面' },
     ],
     handler: async (params, ctx) => {
-      const page = (ctx as Record<string, unknown>).page as Page | undefined;
+      const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
       if (!page) throw new Error('需要浏览器页面');
 
       const width = params.width ?? 1200;

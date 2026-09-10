@@ -2,7 +2,41 @@ import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { JsonObject } from '../shared/json-types.js';
+import { fetchJson } from '../shared/api-fetch.js';
 
+/** HN API item shape (top/new/best/ask stories share this form). */
+interface HnItem {
+  id?: number;
+  title?: string;
+  score?: number;
+  by?: string;
+  descendants?: number;
+  url?: string;
+  time?: number;
+  text?: string;
+}
+
+
+const storiesResult = z.array(z.object({
+  rank: z.number(),
+  id: z.number(),
+  title: z.string(),
+  score: z.number(),
+  author: z.string(),
+  comments: z.number(),
+  url: z.string(),
+}));
+
+const readResult = z.object({
+  id: z.number(),
+  title: z.string(),
+  text: z.string(),
+  score: z.number(),
+  author: z.string(),
+  comments: z.number(),
+  url: z.string(),
+  type: z.string(),
+});
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -13,21 +47,22 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('top', {
     description: 'Hacker News top stories',
+    result: storiesResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
       limit: z.coerce.number().optional().default(20).describe('Number of stories')
     }),
     handler: async (p, _ctx) => {
-      const topIds = await fetch('https://hacker-news.firebaseio.com/v0/topstories.json').then(r => r.json());
+      const topIds = await fetchJson('https://hacker-news.firebaseio.com/v0/topstories.json');
             const ids = (topIds as number[]).slice(0, Math.min((p.limit || 20) + 10, 50));
-            const items = await Promise.all(
-              ids.map((id: number) => fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`).then(r => r.json()))
-            );
+            const items = (await Promise.all(
+              ids.map((id: number) => fetchJson(`https://hacker-news.firebaseio.com/v0/item/${id}.json`))
+            )) as HnItem[];
             const results = items
-              .filter((item: any) => item && item.title && !item.deleted && !item.dead)
+              .filter((item: { title?: unknown; deleted?: unknown; dead?: unknown }) => item && item.title && !item.deleted && !item.dead)
               .slice(0, p.limit)
-              .map((item: any, i: number) => ({
+              .map((item: HnItem, i: number) => ({
                 rank: i + 1,
                 id: item.id,
                 title: item.title,
@@ -41,21 +76,22 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('new', {
     description: 'Hacker News new stories',
+    result: storiesResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
       limit: z.coerce.number().optional().default(20).describe('Number of stories')
     }),
     handler: async (p, _ctx) => {
-      const newIds = await fetch('https://hacker-news.firebaseio.com/v0/newstories.json').then(r => r.json());
+      const newIds = await fetchJson('https://hacker-news.firebaseio.com/v0/newstories.json');
             const ids = (newIds as number[]).slice(0, Math.min((p.limit || 20) + 10, 50));
-            const items = await Promise.all(
-              ids.map((id: number) => fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`).then(r => r.json()))
-            );
+            const items = (await Promise.all(
+              ids.map((id: number) => fetchJson(`https://hacker-news.firebaseio.com/v0/item/${id}.json`))
+            )) as HnItem[];
             const results = items
-              .filter((item: any) => item && item.title && !item.deleted && !item.dead)
+              .filter((item: { title?: unknown; deleted?: unknown; dead?: unknown }) => item && item.title && !item.deleted && !item.dead)
               .slice(0, p.limit)
-              .map((item: any, i: number) => ({
+              .map((item: HnItem, i: number) => ({
                 rank: i + 1,
                 id: item.id,
                 title: item.title,
@@ -69,21 +105,22 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('best', {
     description: 'Hacker News best stories',
+    result: storiesResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
       limit: z.coerce.number().optional().default(20).describe('Number of stories')
     }),
     handler: async (p, _ctx) => {
-      const bestIds = await fetch('https://hacker-news.firebaseio.com/v0/beststories.json').then(r => r.json());
+      const bestIds = await fetchJson('https://hacker-news.firebaseio.com/v0/beststories.json');
             const ids = (bestIds as number[]).slice(0, Math.min((p.limit || 20) + 10, 50));
-            const items = await Promise.all(
-              ids.map((id: number) => fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`).then(r => r.json()))
-            );
+            const items = (await Promise.all(
+              ids.map((id: number) => fetchJson(`https://hacker-news.firebaseio.com/v0/item/${id}.json`))
+            )) as HnItem[];
             const results = items
-              .filter((item: any) => item && item.title && !item.deleted && !item.dead)
+              .filter((item: { title?: unknown; deleted?: unknown; dead?: unknown }) => item && item.title && !item.deleted && !item.dead)
               .slice(0, p.limit)
-              .map((item: any, i: number) => ({
+              .map((item: HnItem, i: number) => ({
                 rank: i + 1,
                 id: item.id,
                 title: item.title,
@@ -97,21 +134,22 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('ask', {
     description: 'Hacker News Ask HN stories',
+    result: storiesResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
       limit: z.coerce.number().optional().default(20).describe('Number of stories')
     }),
     handler: async (p, _ctx) => {
-      const topIds = await fetch('https://hacker-news.firebaseio.com/v0/askstories.json').then(r => r.json());
+      const topIds = await fetchJson('https://hacker-news.firebaseio.com/v0/askstories.json');
             const ids = (topIds as number[]).slice(0, Math.min((p.limit || 20) + 10, 50));
-            const items = await Promise.all(
-              ids.map((id: number) => fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`).then(r => r.json()))
-            );
+            const items = (await Promise.all(
+              ids.map((id: number) => fetchJson(`https://hacker-news.firebaseio.com/v0/item/${id}.json`))
+            )) as HnItem[];
             const results = items
-              .filter((item: any) => item && item.title && !item.deleted && !item.dead)
+              .filter((item: { title?: unknown; deleted?: unknown; dead?: unknown }) => item && item.title && !item.deleted && !item.dead)
               .slice(0, p.limit)
-              .map((item: any, i: number) => ({
+              .map((item: HnItem, i: number) => ({
                 rank: i + 1,
                 id: item.id,
                 title: item.title,
@@ -125,21 +163,22 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('show', {
     description: 'Hacker News Show HN stories',
+    result: storiesResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
       limit: z.coerce.number().optional().default(20).describe('Number of stories')
     }),
     handler: async (p, _ctx) => {
-      const topIds = await fetch('https://hacker-news.firebaseio.com/v0/showstories.json').then(r => r.json());
+      const topIds = await fetchJson('https://hacker-news.firebaseio.com/v0/showstories.json');
             const ids = (topIds as number[]).slice(0, Math.min((p.limit || 20) + 10, 50));
-            const items = await Promise.all(
-              ids.map((id: number) => fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`).then(r => r.json()))
-            );
+            const items = (await Promise.all(
+              ids.map((id: number) => fetchJson(`https://hacker-news.firebaseio.com/v0/item/${id}.json`))
+            )) as HnItem[];
             const results = items
-              .filter((item: any) => item && item.title && !item.deleted && !item.dead)
+              .filter((item: { title?: unknown; deleted?: unknown; dead?: unknown }) => item && item.title && !item.deleted && !item.dead)
               .slice(0, p.limit)
-              .map((item: any, i: number) => ({
+              .map((item: HnItem, i: number) => ({
                 rank: i + 1,
                 id: item.id,
                 title: item.title,
@@ -153,21 +192,22 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('jobs', {
     description: 'Hacker News job stories',
+    result: storiesResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
       limit: z.coerce.number().optional().default(20).describe('Number of stories')
     }),
     handler: async (p, _ctx) => {
-      const topIds = await fetch('https://hacker-news.firebaseio.com/v0/jobstories.json').then(r => r.json());
+      const topIds = await fetchJson('https://hacker-news.firebaseio.com/v0/jobstories.json');
             const ids = (topIds as number[]).slice(0, Math.min((p.limit || 20) + 10, 50));
-            const items = await Promise.all(
-              ids.map((id: number) => fetch(`https://hacker-news.firebaseio.com/v0/item/${id}.json`).then(r => r.json()))
-            );
+            const items = (await Promise.all(
+              ids.map((id: number) => fetchJson(`https://hacker-news.firebaseio.com/v0/item/${id}.json`))
+            )) as HnItem[];
             const results = items
-              .filter((item: any) => item && item.title && !item.deleted && !item.dead)
+              .filter((item: { title?: unknown; deleted?: unknown; dead?: unknown }) => item && item.title && !item.deleted && !item.dead)
               .slice(0, p.limit)
-              .map((item: any, i: number) => ({
+              .map((item: HnItem, i: number) => ({
                 rank: i + 1,
                 id: item.id,
                 title: item.title,
@@ -181,6 +221,7 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('search', {
     description: 'Search Hacker News stories by keyword (via Algolia)',
+    result: storiesResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
@@ -189,9 +230,9 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (p, _ctx) => {
       const url = `https://hn.algolia.com/api/v1/search?query=${encodeURIComponent(p.query)}&hitsPerPage=${p.limit || 20}`;
-            const data = await fetch(url).then(r => r.json()) as JsonObject;
-            const hits = data.hits || [];
-            const results = hits.map((hit: any, i: number) => ({
+            const data = await fetchJson(url) as JsonObject;
+            const hits = ((data as Record<string, unknown>).hits as unknown[] | undefined) || [];
+            const results = (hits as Record<string, unknown>[]).map((hit: { objectID?: string | number; title?: string; points?: number; author?: string; num_comments?: number; url?: string; story_url?: string }, i: number) => ({
               rank: i + 1,
               id: hit.objectID,
               title: hit.title,
@@ -205,13 +246,14 @@ export default function (xcli: XCLIAPI): void {
   });
   site.command('read', {
     description: 'Read a Hacker News story/item by ID',
+    result: readResult,
     loginRequired: 'none',
     scope: 'project',
     parameters: z.object({
       id: z.coerce.number().describe('Item ID')
     }),
     handler: async (p, _ctx) => {
-      const item = await fetch(`https://hacker-news.firebaseio.com/v0/item/${p.id}.json`).then(r => r.json()) as JsonObject;
+      const item = await fetchJson(`https://hacker-news.firebaseio.com/v0/item/${p.id}.json`) as JsonObject;
             if (!item) return fail(`Item ${p.id} not found`);
             return ok({
               id: item.id,

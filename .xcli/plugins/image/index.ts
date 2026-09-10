@@ -150,12 +150,12 @@ export default function (xcli: XCLIAPI): void {
 
       if (isCDP) {
         const result = await launch({ cdpEndpoint: ctx.cdpEndpoint as string });
-        browser = result.browser;
-        context = result.browser.contexts()[0] || await result.browser.newContext();
+        browser = result.browser as unknown as import('../types.js').Browser;
+        context = (result.browser.contexts()[0] || await result.browser.newContext()) as unknown as import('../types.js').BrowserContext;
       } else {
         const result = await launch({ headless: true });
-        browser = result.browser;
-        context = await browser.newContext();
+        browser = result.browser as unknown as import('../types.js').Browser;
+        context = await browser.newContext() as unknown as import('../types.js').BrowserContext;
       }
 
       try {

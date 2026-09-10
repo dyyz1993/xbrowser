@@ -20,7 +20,7 @@ function getHandler() {
 describe('maven plugin', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve(MAVEN_RESPONSE) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(MAVEN_RESPONSE) });
     plugin(mockXcli as any);
   });
 
@@ -42,7 +42,7 @@ describe('maven plugin', () => {
   });
 
   it('无结果时返回 fail', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ json: () => Promise.resolve({ response: { docs: [] } }) });
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ response: { docs: [] } }) });
     const h = getHandler();
     const r = await h({ query: 'nonexistent' }, { page: createMockPage() });
     expect(JSON.stringify(r)).toContain('No artifacts matched');

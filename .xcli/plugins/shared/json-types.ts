@@ -1,3 +1,4 @@
+export type JsonArray = JsonValue[];
 /**
  * 动态 JSON 响应的宽松类型。
  *
@@ -13,13 +14,13 @@
  * 此类型用于「结构不固定、只需逐字段兜底」的场景。
  */
 
-/** 任意 JSON 对象：字符串键，值为 JsonValue */
-export type JsonObject = Record<string, JsonValue>;
+/** 任意 JSON 对象：字符串键，值宽松为 unknown（字段访问即 unknown，逐字段兜底） */
+export interface JsonObject { [key: string]: unknown }
 
 /** 任意 JSON 值 */
-export type JsonValue = string | number | boolean | null | JsonObject | JsonValue[];
+export type JsonValue = null | boolean | number | string | JsonArray;
 
 /** 断言为对象数组（常见于 results/list 字段） */
-export function asJsonArray(v: JsonValue | undefined): JsonObject[] {
-  return Array.isArray(v) ? (v as JsonObject[]) : [];
+export function asJsonArray(v: unknown): JsonObject[] {
+  return Array.isArray(v) ? (v as unknown as JsonObject[]) : [];
 }

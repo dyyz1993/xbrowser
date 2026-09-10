@@ -24,10 +24,10 @@ function mockFetch(map: Record<string, unknown>): void {
         if (typeof val === 'string') {
           return { text: async () => val } as unknown as Response;
         }
-        return { json: async () => val } as unknown as Response;
+        return { ok: true, status: 200, json: async () => val } as unknown as Response;
       }
     }
-    return { json: async () => ({}), text: async () => '' } as unknown as Response;
+    return { ok: true, status: 200, json: async () => ({}), text: async () => '' } as unknown as Response;
   }) as unknown as typeof fetch;
 }
 

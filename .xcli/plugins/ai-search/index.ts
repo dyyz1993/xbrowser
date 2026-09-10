@@ -255,11 +255,11 @@ async function fillContentEditable(page: Page, selector: string, text: string): 
     const currentText = await el.evaluate((node: HTMLElement) => node.textContent || '');
     if ((currentText as string).trim().length > 0) return true;
   } catch { /* fallback */ }
-  await el.evaluate((node: HTMLElement, t: string) => {
-    node.textContent = t;
+  await el.evaluate((node: HTMLElement) => {
+    node.textContent = text;
     node.dispatchEvent(new Event('input', { bubbles: true }));
     node.dispatchEvent(new Event('change', { bubbles: true }));
-  }, text);
+  });
   return true;
 }
 
@@ -285,7 +285,7 @@ async function findAndFillInput(page: Page, config: EngineConfig, text: string):
       if (count === 0) continue;
       const el = page.locator(sel).first();
       await el.waitFor({ state: 'visible', timeout: 3000 });
-      const tag = await el.evaluate((n) => n.tagName.toLowerCase());
+      const tag = await el.evaluate((n: Element) => n.tagName.toLowerCase());
       if (tag === 'textarea' || tag === 'input') {
         await el.click();
         await page.waitForTimeout(300);
@@ -455,11 +455,11 @@ async function createBrowserContext(cdpEndpoint?: string): Promise<{ browser: im
   let context: import('../types').BrowserContext;
   if (cdpEndpoint) {
     const result = await launch({ cdpEndpoint });
-    browser = result.browser;
-    context = result.browser.contexts()[0] || await result.browser.newContext();
+    browser = result.browser as unknown as import('../types.js').Browser;
+    context = (result.browser.contexts()[0] || await result.browser.newContext()) as unknown as import('../types.js').BrowserContext;
   } else {
     const result = await launch({ headless: true });
-    browser = result.browser;
+    browser = result.browser as unknown as import('../types.js').Browser;
     context = await browser.newContext({ userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36', viewport: { width: 1920, height: 1080 } });
   }
   return { browser, context };

@@ -69,7 +69,8 @@ describe('npm plugin', () => {
       const handler = getHandler('search');
       await handler({ query: 'react', limit: 20 }, {});
       expect(fetch).toHaveBeenCalledWith(
-        expect.stringContaining('registry.npmjs.org/-/v1/search')
+        expect.stringContaining('registry.npmjs.org/-/v1/search'),
+        expect.anything() // fetchJson init: { signal: AbortSignal.timeout(...) }
       );
       expect(String(vi.mocked(fetch).mock.calls[0][0])).toContain(
         encodeURIComponent('react')

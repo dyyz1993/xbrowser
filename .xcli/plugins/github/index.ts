@@ -83,7 +83,7 @@ export default function (xcli: XCLIAPI): void {
         const checkbox = page.locator(
           '#user_profile_hireable, input[name="user[hireable]"], input[type="checkbox"][name*="hireable"]'
         ).first();
-        const isChecked = await checkbox.evaluate(el => (el as HTMLInputElement).checked).catch(() => false);
+        const isChecked = await checkbox.evaluate(el => (el as unknown as HTMLInputElement).checked).catch(() => false);
         if (params.hireable !== isChecked) {
           await checkbox.click();
         }
@@ -134,7 +134,7 @@ export default function (xcli: XCLIAPI): void {
       let filled = false;
       for (let i = 0; i < count; i++) {
         const input = socialInputs.nth(i);
-        const value = await input.evaluate(el => (el as HTMLInputElement).value).catch(() => '');
+        const value = await input.evaluate(el => (el as unknown as HTMLInputElement).value).catch(() => '');
         if (!value) {
           await input.fill(params.url);
           filled = true;
@@ -376,7 +376,7 @@ export default function (xcli: XCLIAPI): void {
         const readmeCheckbox = page.locator(
           '#repository_auto_init, input[name="repository[auto_init]"], label:has-text("README") input[type="checkbox"]'
         ).first();
-        const isChecked = await readmeCheckbox.evaluate(el => (el as HTMLInputElement).checked).catch(() => false);
+        const isChecked = await readmeCheckbox.evaluate(el => (el as unknown as HTMLInputElement).checked).catch(() => false);
         if (!isChecked) {
           await readmeCheckbox.click();
         }

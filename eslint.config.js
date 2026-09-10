@@ -49,7 +49,7 @@ export default [
       'xbrowser-rules': xbrowserRules,
     },
     rules: {
-      'xbrowser-rules/no-raw-output': 'error',
+      'xbrowser-rules/no-raw-output': ['error', { allowFiles: [], allowMethods: ['process.stdout.write'] }],
     },
   },
   {
