@@ -97,7 +97,9 @@ function checkAgentsNumbers() {
   const pluginMatch = content.match(/\*\*插件主目录\*\*（(\d+)\s*个/);
   if (pluginMatch) {
     const actualPlugins = readdirSync(resolve(ROOT, '.xcli/plugins'), { withFileTypes: true })
-      .filter(d => d.isDirectory() && d.name !== 'shared' && d.name !== 'testsuite')
+      // 排除非插件目录：shared/testsuite 是公共资产；node_modules 是插件安装的副产物
+      // （git 不跟踪，有它的机器会被误计一个插件，导致本地与 CI 计数不一致）
+      .filter(d => d.isDirectory() && d.name !== 'shared' && d.name !== 'testsuite' && d.name !== 'node_modules')
       .length;
     if (Number(pluginMatch[1]) !== actualPlugins) {
       errors.push(`❌ AGENTS.md: plugin count is ${pluginMatch[1]}, actual is ${actualPlugins}`);
