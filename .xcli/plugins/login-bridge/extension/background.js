@@ -311,13 +311,13 @@ function isTaskGroupTitle(title) {
 }
 
 async function touchTaskActivity() {
-  try { await chrome.storage.session.set({ taskUsedAt: Date.now() }); } catch {}
+  try { await chrome.storage.local.set({ taskUsedAt: Date.now() }); } catch {}
 }
 
 async function recordTaskTab(tabId) {
   try {
-    const { taskTabs = [] } = await chrome.storage.session.get('taskTabs');
-    if (!taskTabs.includes(tabId)) await chrome.storage.session.set({ taskTabs: [...taskTabs, tabId] });
+    const { taskTabs = [] } = await chrome.storage.local.get('taskTabs');
+    if (!taskTabs.includes(tabId)) await chrome.storage.local.set({ taskTabs: [...taskTabs, tabId] });
   } catch {}
 }
 
@@ -355,7 +355,7 @@ async function getTaskTabId() {
 // 显式 xb-task- 组由 task-close 管理，不在此收。
 async function sweepIdleTasks() {
   try {
-    const { taskUsedAt = 0, taskTabs = [] } = await chrome.storage.session.get(['taskUsedAt', 'taskTabs']);
+    const { taskUsedAt = 0, taskTabs = [] } = await chrome.storage.local.get(['taskUsedAt', 'taskTabs']);
     if (!taskUsedAt || Date.now() - taskUsedAt < TASK_IDLE_MS) return;
     const mine = new Set(taskTabs);
     let closed = 0, ungrouped = 0;
@@ -371,7 +371,7 @@ async function sweepIdleTasks() {
         }
       }
     }
-    await chrome.storage.session.set({ taskTabs: [], taskUsedAt: 0 });
+    await chrome.storage.local.set({ taskTabs: [], taskUsedAt: 0 });
   } catch {}
 }
 
@@ -415,7 +415,7 @@ const executors = {
       : groups.filter((g) => isTaskGroupTitle(g.title));
     let closed = 0, ungrouped = 0;
     for (const g of targets) {
-      const mine = new Set((await chrome.storage.session.get('taskTabs')).taskTabs || []);
+      const mine = new Set((await chrome.storage.local.get('taskTabs')).taskTabs || []);
       const tabs = await chrome.tabs.query({ groupId: g.id });
       for (const t of tabs) {
         // S209：🤖 组里的用户 tab（attach 入组的）只脱组保留；自建的关闭。
@@ -430,7 +430,7 @@ const executors = {
       }
     }
     if (targets.some((g) => g.title && g.title.startsWith('🤖'))) {
-      await chrome.storage.session.set({ taskTabs: [], taskUsedAt: 0 }).catch(() => {});
+      await chrome.storage.local.set({ taskTabs: [], taskUsedAt: 0 }).catch(() => {});
     }
     return { closed, ungrouped };
   },
@@ -851,6 +851,28 @@ function scheduleReconnect() {
 
 // S209：只读命令不刷新任务心跳（避免查询把空闲回收一直吊着）
 const READ_ONLY_CMDS = new Set(['ping', 'tabs', 'url', 'task-list', 'active-tab', 'status', 'screenshot']);
+
+// S210：启动对账——storage.local 的注册表跨浏览器会话持久，但浏览器重启后
+// tabId 全部失效。SW 首次唤醒时核对：注册表里的 tab 若已不存在（或已不属于
+// 🤖 组）则清账，避免"幽灵注册"让 task-close 误关不相关 tab。
+async function reconcileTaskTabs() {
+  try {
+    const { taskTabs = [] } = await chrome.storage.local.get('taskTabs');
+    if (taskTabs.length === 0) return;
+    const alive = new Set((await chrome.tabs.query({})).map((t) => t.id));
+    const groups = await chrome.tabGroups.query({});
+    const autoIds = new Set();
+    for (const g of groups.filter((g) => typeof g.title === 'string' && g.title.startsWith('\u{1F916}'))) {
+      for (const t of await chrome.tabs.query({ groupId: g.id })) autoIds.add(t.id);
+    }
+    // 存活且仍在 🤖 组内的 tab 才保留注册；其余清出（tab 已死 / 被用户拖出组）
+    const keep = taskTabs.filter((id) => alive.has(id) && autoIds.has(id));
+    if (keep.length !== taskTabs.length) {
+      await chrome.storage.local.set({ taskTabs: keep });
+    }
+  } catch {}
+}
+reconcileTaskTabs();
 
 connectWS();
 
