@@ -55,7 +55,7 @@ describe('doubao plugin', () => {
   });
 
   it('should register list command with correct config', () => {
-    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'list');
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'list')!;
     expect(cmd).toBeDefined();
     const config = cmd[1] as Record<string, unknown>;
     expect(config.description).toBe('列出所有历史会话');
@@ -63,7 +63,7 @@ describe('doubao plugin', () => {
   });
 
   it('should register chat command with correct config', () => {
-    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'chat');
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'chat')!;
     expect(cmd).toBeDefined();
     const config = cmd[1] as Record<string, unknown>;
     expect(config.description).toContain('发送消息');
@@ -71,7 +71,7 @@ describe('doubao plugin', () => {
   });
 
   it('should register image command with correct config', () => {
-    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'image');
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'image')!;
     expect(cmd).toBeDefined();
     const config = cmd[1] as Record<string, unknown>;
     expect(config.description).toContain('文生图');
@@ -84,7 +84,7 @@ describe('doubao plugin', () => {
   });
 
   it('should register video command with async task pattern', () => {
-    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'video');
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'video')!;
     expect(cmd).toBeDefined();
     const config = cmd[1] as Record<string, unknown>;
     expect(config.description).toContain('视频生成');
@@ -92,7 +92,7 @@ describe('doubao plugin', () => {
   });
 
   it('should register video-status command', () => {
-    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'video-status');
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'video-status')!;
     expect(cmd).toBeDefined();
     const config = cmd[1] as Record<string, unknown>;
     expect(config.description).toContain('状态');
@@ -100,7 +100,7 @@ describe('doubao plugin', () => {
   });
 
   it('should register music command with async task pattern', () => {
-    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'music');
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'music')!;
     expect(cmd).toBeDefined();
     const config = cmd[1] as Record<string, unknown>;
     expect(config.description).toContain('音乐生成');
@@ -111,7 +111,7 @@ describe('doubao plugin', () => {
   });
 
   it('should register upload command', () => {
-    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'upload');
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'upload')!;
     expect(cmd).toBeDefined();
     const config = cmd[1] as Record<string, unknown>;
     expect(config.description).toContain('上传');
@@ -119,7 +119,7 @@ describe('doubao plugin', () => {
   });
 
   it('should register cloud-drive command', () => {
-    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'cloud-drive');
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'cloud-drive')!;
     expect(cmd).toBeDefined();
     const config = cmd[1] as Record<string, unknown>;
     expect(config.description).toContain('云盘');
@@ -127,7 +127,7 @@ describe('doubao plugin', () => {
   });
 
   it('should register mode command', () => {
-    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'mode');
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'mode')!;
     expect(cmd).toBeDefined();
     const config = cmd[1] as Record<string, unknown>;
     expect(config.description).toContain('模型');
@@ -135,7 +135,7 @@ describe('doubao plugin', () => {
   });
 
   it('should register search command', () => {
-    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'search');
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'search')!;
     expect(cmd).toBeDefined();
     const config = cmd[1] as Record<string, unknown>;
     expect(config.description).toContain('搜索');
@@ -143,7 +143,7 @@ describe('doubao plugin', () => {
   });
 
   it('should register attach command', () => {
-    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'attach');
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'attach')!;
     expect(cmd).toBeDefined();
     const config = cmd[1] as Record<string, unknown>;
     expect(config.description).toContain('附件');
@@ -191,7 +191,7 @@ describe('doubao plugin', () => {
   });
 
   it('image command should accept --ref parameter for reference image', () => {
-    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'image');
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'image')!;
     expect(cmd).toBeDefined();
     const config = cmd[1] as Record<string, unknown>;
     const params = config.parameters as { shape?: Record<string, unknown> };

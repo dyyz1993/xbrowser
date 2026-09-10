@@ -30,6 +30,7 @@ vi.mock('../src/cdp-driver/index.js', () => {
 
 import douyinPlugin from '../.xcli/plugins/douyin/index.js';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
+// @ts-expect-error -- _mock* 由 vi.mock 工厂运行时注入导出，静态类型面不存在
 import { _mockBrowser, _mockContext, _mockPage } from '../src/cdp-driver/index.js';
 
       // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
@@ -214,7 +215,7 @@ describe('Douyin Plugin', () => {
 
     it('should collect videos from response', async () => {
        
-      let responseHandler: ((res: any) => Promise<void>) | null = null;
+      let responseHandler: (res: any) => Promise<void> = async () => {};
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
           responseHandler = handler;
@@ -247,7 +248,7 @@ describe('Douyin Plugin', () => {
 
     it('should deduplicate videos by ID', async () => {
        
-      let responseHandler: ((res: any) => Promise<void>) | null = null;
+      let responseHandler: (res: any) => Promise<void> = async () => {};
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
           responseHandler = handler;
@@ -304,7 +305,7 @@ describe('Douyin Plugin', () => {
 
     it('should include CDP warning in tips without CDP connection', async () => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
-      let responseHandler: ((res: any) => Promise<void>) | null = null;
+      let responseHandler: (res: any) => Promise<void> = async () => {};
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
           responseHandler = handler;
@@ -322,7 +323,7 @@ describe('Douyin Plugin', () => {
 
     it('should collect comments from response', async () => {
        
-      let responseHandler: ((res: any) => Promise<void>) | null = null;
+      let responseHandler: (res: any) => Promise<void> = async () => {};
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
           responseHandler = handler;
@@ -366,7 +367,7 @@ describe('Douyin Plugin', () => {
 
     it('should parse comments correctly', async () => {
        
-      let responseHandler: ((res: any) => Promise<void>) | null = null;
+      let responseHandler: (res: any) => Promise<void> = async () => {};
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
           responseHandler = handler;
@@ -413,7 +414,7 @@ describe('Douyin Plugin', () => {
 
     it('should deduplicate comments by ID', async () => {
        
-      let responseHandler: ((res: any) => Promise<void>) | null = null;
+      let responseHandler: (res: any) => Promise<void> = async () => {};
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
           responseHandler = handler;
@@ -443,7 +444,7 @@ describe('Douyin Plugin', () => {
 
     it('should isolate different sessions', async () => {
       // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
-      let responseHandler: ((res: any) => Promise<void>) | null = null;
+      let responseHandler: (res: any) => Promise<void> = async () => {};
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
           responseHandler = handler;
@@ -495,7 +496,7 @@ describe('Douyin Plugin', () => {
 
     it('should collect user favorites', async () => {
        
-      let responseHandler: ((res: any) => Promise<void>) | null = null;
+      let responseHandler: (res: any) => Promise<void> = async () => {};
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
           responseHandler = handler;
@@ -548,7 +549,7 @@ describe('Douyin Plugin', () => {
 
     it('should get user profile via XHR interception', async () => {
        
-      let responseHandler: ((res: any) => Promise<void>) | null = null;
+      let responseHandler: (res: any) => Promise<void> = async () => {};
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
           responseHandler = handler;
@@ -599,7 +600,7 @@ describe('Douyin Plugin', () => {
 
     it('should get video detail via XHR interception', async () => {
        
-      let responseHandler: ((res: any) => Promise<void>) | null = null;
+      let responseHandler: (res: any) => Promise<void> = async () => {};
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
           responseHandler = handler;
@@ -652,7 +653,7 @@ describe('Douyin Plugin', () => {
     it('should handle invalid JSON in response', async () => {
       const videosCommand = registeredCommands.get('videos');
        
-      let responseHandler: ((res: any) => Promise<void>) | null = null;
+      let responseHandler: (res: any) => Promise<void> = async () => {};
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
           responseHandler = handler;
@@ -678,7 +679,7 @@ describe('Douyin Plugin', () => {
     it('should handle malformed comment data', async () => {
       const commentsCommand = registeredCommands.get('comments');
        
-      let responseHandler: ((res: any) => Promise<void>) | null = null;
+      let responseHandler: (res: any) => Promise<void> = async () => {};
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
           responseHandler = handler;
@@ -715,7 +716,7 @@ describe('Douyin Plugin', () => {
         statistics: null,
       };
 
-      const stats = item.statistics ?? {};
+      const stats = (item.statistics ?? {}) as Record<string, unknown>;
       expect(n(stats.digg_count)).toBe(0);
     });
 
@@ -738,7 +739,7 @@ describe('Douyin Plugin', () => {
         video: null,
       };
 
-      const vid = item.video ?? {};
+      const vid = (item.video ?? {}) as Record<string, unknown>;
       expect(n(vid.width)).toBe(0);
       expect(n(vid.height)).toBe(0);
     });
