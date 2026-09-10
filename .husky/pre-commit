@@ -9,7 +9,7 @@ fi
 echo "✅ Typecheck passed"
 
 echo "🔍 [pre-commit] Running ESLint..."
-npx eslint src/ bin/ --ext .ts --max-warnings 0
+npx eslint src/ bin/ tests/ --ext .ts --max-warnings 0
 if [ $? -ne 0 ]; then
   echo "❌ ESLint check failed. Fix all errors and warnings before committing."
   exit 1

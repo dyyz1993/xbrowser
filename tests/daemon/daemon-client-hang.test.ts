@@ -62,7 +62,7 @@ describe('ensureDaemonRunning — CLI hang prevention', () => {
     });
 
     const { forwardSessionList } = await importFresh();
-    const result = await forwardSessionList();
+    await forwardSessionList();
 
     expect(callCount).toBeGreaterThanOrEqual(3);
     expect(mockStartDaemon).not.toHaveBeenCalled();

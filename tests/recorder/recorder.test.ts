@@ -10,7 +10,6 @@ import type { Page } from '../../src/browser-shim.js';
 const TEST_DIR = resolve(tmpdir(), 'xbrowser-test-recorder');
 
 function createMockPage(events: unknown[] = []): Page {
-  let evalCallback: ((script: string) => Promise<unknown>) = async () => events;
 
   return {
     url: vi.fn().mockReturnValue('https://example.com'),

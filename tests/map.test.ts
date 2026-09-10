@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deduplicateUrls, normalizeUrl, getHostname, getRootDomain, isSameDomain } from '../src/commands/map.js';
+import { deduplicateUrls, normalizeUrl, getHostname, isSameDomain } from '../src/commands/map.js';
 
 describe('deduplicateUrls', () => {
   it('should deduplicate identical URLs', () => {

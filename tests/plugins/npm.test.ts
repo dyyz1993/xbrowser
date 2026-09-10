@@ -109,7 +109,7 @@ describe('npm plugin', () => {
       let calls = 0;
       vi.stubGlobal(
         'fetch',
-        vi.fn(async (url: string) => {
+        vi.fn(async (_url: string) => {
           calls++;
           const payload =
             calls === 1

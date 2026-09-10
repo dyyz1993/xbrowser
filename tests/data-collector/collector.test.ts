@@ -3,7 +3,6 @@ import { mkdtempSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { DataCollector } from '../../src/data-collector/collector.js';
-import type { CollectResult } from '../../src/data-collector/types.js';
 
 let tempDir: string;
 

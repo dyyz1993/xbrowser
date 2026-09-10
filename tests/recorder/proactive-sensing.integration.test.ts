@@ -48,7 +48,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (browser) {
-    try { await browser.close(); } catch {}
+    try { await browser.close(); } catch { /* ignore */ }
   }
   if (server) await new Promise<void>((r) => server.close(() => r()));
 });

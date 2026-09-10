@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { XBrowserPluginLoader } from '../../src/plugin/loader.js';
 import { PluginInstaller } from '../../src/plugin/installer.js';
 import { mkdirSync, rmSync, existsSync, writeFileSync } from 'fs';

@@ -27,6 +27,7 @@ function createMockPage(url = 'https://example.com') {
   return {
     url: vi.fn(() => currentUrl),
     goto: vi.fn(async () => { currentUrl = url; }),
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
     evaluate: vi.fn(async (script: unknown) => {
       // Return empty array for recorder polling
       return [];
@@ -248,6 +249,7 @@ describe('SessionRecorder', () => {
         element: { tag: 'input', selector: '#input', text: '', strategy: 'id', confidence: 'high' },
       });
 
+       
       const { data, summary } = await recorder.stop();
 
       expect(data).toHaveProperty('actions');
@@ -305,6 +307,7 @@ describe('SessionRecorder', () => {
         element: { tag: 'button', selector: '#submit', text: 'Submit', strategy: 'id', confidence: 'high' },
       });
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
       const { data, summary } = await recorder.stop();
 
       expect(summary.steps).toHaveLength(2);
@@ -317,6 +320,7 @@ describe('SessionRecorder', () => {
   describe('edge cases', () => {
     it('should handle stop without any actions', async () => {
       await startRecording('https://example.com');
+       
       const { data, summary } = await recorder.stop();
       expect(data.actions).toEqual([]);
       expect(summary.totalActions).toBe(0);

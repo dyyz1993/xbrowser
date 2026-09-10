@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/booking/index.js';
 
-const CARD_SEL_WRAP = "[data-testid='property-card']";
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXcli = { createSite: vi.fn(() => mockSite) };

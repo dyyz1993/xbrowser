@@ -12,9 +12,7 @@ import {
   type SiteKnowledge,
   type RecordingData,
 } from '../../src/recorder/site-knowledge.js';
-import { existsSync, rmSync, mkdirSync } from 'fs';
-import { homedir } from 'os';
-import { join } from 'path';
+import { rmSync } from 'fs';
 
 // ── Helpers ───────────────────────────────────────────────────
 

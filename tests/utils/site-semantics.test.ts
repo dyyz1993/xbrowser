@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { extractSemanticElements, extractDomain, saveSemantics, loadSemantics, getSemanticsPath, shouldInvokeLLM, analyzeWithLLM } from '../../src/utils/site-semantics.js';
+import { extractSemanticElements, extractDomain, saveSemantics, loadSemantics, shouldInvokeLLM, analyzeWithLLM } from '../../src/utils/site-semantics.js';
 import { existsSync, rmSync, mkdirSync } from 'fs';
-import { dirname } from 'path';
 
 let mockExecFileCallback: ((err: Error | null, stdout: string, stderr: string) => void) | null = null;
 
@@ -15,7 +14,6 @@ vi.mock('child_process', () => ({
   }),
 }));
 
-const MOCK_DIR = '/tmp/xbrowser-test-semantics';
 
 describe('extractSemanticElements', () => {
   it('extracts interactive elements from aria snapshot', () => {

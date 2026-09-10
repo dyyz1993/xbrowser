@@ -3,7 +3,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const {
   mockOutputEnvelope,
   mockOutputError,
-  mockOpenSession,
   mockCloseSession,
   mockListSessions,
   mockHandleSessionHelp,

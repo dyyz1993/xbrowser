@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { PluginMetadataParser } from '../../src/plugin/metadata-parser.js';
 import type { NPMPluginSearchResult } from '../../src/plugin/types.js';
 import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';

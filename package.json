@@ -72,7 +72,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "lint": "eslint src/ bin/ --ext .ts",
+    "lint": "eslint src/ bin/ tests/ --ext .ts",
     "lint:plugins": "eslint .xcli/plugins/ --ext .ts --max-warnings 0",
     "lint:plugin-contract": "node lint-scripts/check-plugin-contract.mjs && node lint-scripts/check-plugin-status.mjs",
     "lint:plugin-status": "node lint-scripts/check-plugin-status.mjs --update",

@@ -48,15 +48,15 @@ function createMockPage() {
     }),
     waitForTimeout: vi.fn(async (_ms?: number) => {}),
     waitForSelector: vi.fn(async () => null),
-    waitForResponse: vi.fn(async (predicate: (resp: unknown) => boolean) => {
+    waitForResponse: vi.fn(async (_predicate: (resp: unknown) => boolean) => {
       return { json: async () => ({ code: 0, data: {} }) };
     }),
     waitForFunction: vi.fn(async () => {}),
-    evaluate: vi.fn((fn: EvaluateFn | string, ...args: unknown[]) => {
+    evaluate: vi.fn((fn: EvaluateFn | string, ..._args: unknown[]) => {
       if (typeof fn === 'string') return {};
       return {};
     }),
-    evaluateHandle: vi.fn((fn: EvaluateFn | string, ...args: unknown[]) => {
+    evaluateHandle: vi.fn((_fn: EvaluateFn | string, ..._args: unknown[]) => {
       return { asElement: () => null };
     }),
     mouse: {
@@ -122,16 +122,6 @@ function setupEvalHandle(page: MockPage, elements: Record<string, MockElement | 
   });
 }
 
-function setupEval(page: MockPage, results: Record<string, unknown>) {
-  page.evaluate.mockImplementation((fn: unknown, ...args: unknown[]) => {
-    const fnStr = typeof fn === 'function' ? fn.toString() : '';
-    const argStr = args.map(a => String(a)).join('|');
-    for (const [key, val] of Object.entries(results)) {
-      if (fnStr.includes(key) || argStr.includes(key)) return val;
-    }
-    return null;
-  });
-}
 
 const SEND_EL = createMockElement({ textContent: '发送', boundingBox: () => ({ x: 100, y: 100, width: 40, height: 20 }) });
 const MUSIC_EL = createMockElement({ textContent: '音乐生成', boundingBox: () => ({ x: 900, y: 862, width: 64, height: 32 }) });

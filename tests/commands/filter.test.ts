@@ -5,7 +5,6 @@ import * as os from 'os';
 import {
   filterRecording,
   parseExcludeTypes,
-  DEFAULT_EXCLUDE_TYPES,
 } from '../../src/commands/filter.js';
 import type { Recording } from '../../src/commands/definitions.js';
 

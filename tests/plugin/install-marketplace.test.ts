@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { existsSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'fs';
-import { resolve, join } from 'path';
+import { existsSync, mkdirSync, writeFileSync, rmSync } from 'fs';
+import { resolve } from 'path';
 import { tmpdir } from 'os';
 import { gzipSync } from 'zlib';
 
@@ -10,7 +10,6 @@ const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
 
 // Track temp dirs so downloadToFile mock can write to the correct path
-let capturedTmpDir = '';
 
 vi.mock('@dyyz1993/xcli-core', () => ({
   downloadToFile: vi.fn().mockImplementation(async (_url: string, filePath: string) => {
@@ -38,7 +37,6 @@ import { installFromMarketplace } from '../../src/plugin/install-sources/marketp
 import {
   downloadToFile,
   extractTarGz,
-  flattenPackageRoot,
   verifyPlugin,
 } from '@dyyz1993/xcli-core';
 import { getMarketplaceUrl } from '../../src/config.js';
@@ -67,22 +65,7 @@ function setupManifestDownloadWithFiles(files: Array<{ path: string; content: st
  * Setup downloadToFile mock to write a non-manifest tarball (raw bytes).
  * This will fall through to extractTarGz path.
  */
-function setupNonManifestDownload(rawContent: Buffer): void {
-  vi.mocked(downloadToFile).mockImplementation(async (_url: string, filePath: string) => {
-    writeFileSync(filePath, rawContent);
-  });
-}
 
-function setupExtractMockWithFiles(_extractDir: string): void {
-  vi.mocked(extractTarGz).mockImplementation((_tarball: string, target: string) => {
-    mkdirSync(target, { recursive: true });
-    writeFileSync(resolve(target, 'index.ts'), 'export default {}');
-    writeFileSync(
-      resolve(target, 'package.json'),
-      JSON.stringify({ name: 'test-pkg' })
-    );
-  });
-}
 
 describe('install-sources/marketplace', () => {
   let pluginsDir: string;

@@ -29,9 +29,6 @@ describe('stealth 覆写点自动审计（S172）', () => {
   ];
 
   // 覆写点正则：`obj.prop = function` 形式的实例赋值（排除原型赋值/局部变量）
-  const OBJ_PROPS = [
-    'document', 'navigator', 'performance', 'speechSynthesis', 'screen', 'Notification',
-  ];
 
   function instanceOverrides(): Array<{ obj: string; prop: string }> {
     const out: Array<{ obj: string; prop: string }> = [];

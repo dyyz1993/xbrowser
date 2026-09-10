@@ -32,11 +32,13 @@ import douyinPlugin from '../.xcli/plugins/douyin/index.js';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { _mockBrowser, _mockContext, _mockPage } from '../src/cdp-driver/index.js';
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
 const mockBrowser = _mockBrowser as typeof _mockBrowser & {
   close: ReturnType<typeof vi.fn>;
   newContext: ReturnType<typeof vi.fn>;
   contexts: ReturnType<typeof vi.fn>;
 };
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
 const mockContext = _mockContext as typeof _mockContext & {
   close: ReturnType<typeof vi.fn>;
   newPage: ReturnType<typeof vi.fn>;
@@ -202,6 +204,7 @@ describe('Douyin Plugin', () => {
     });
 
     it('should return error result without browser page', async () => {
+       
       const result = await commandConfig.handler(
         { url: 'https://www.douyin.com/user/test', maxPages: 2 },
         {}
@@ -210,6 +213,7 @@ describe('Douyin Plugin', () => {
     });
 
     it('should collect videos from response', async () => {
+       
       let responseHandler: ((res: any) => Promise<void>) | null = null;
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
@@ -242,6 +246,7 @@ describe('Douyin Plugin', () => {
     });
 
     it('should deduplicate videos by ID', async () => {
+       
       let responseHandler: ((res: any) => Promise<void>) | null = null;
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
@@ -272,6 +277,7 @@ describe('Douyin Plugin', () => {
     it('should stop when no new videos for 3 consecutive pages', async () => {
       mockPage.on.mockImplementation(() => {});
 
+       
       const result = await commandConfig.handler(
         { url: 'https://www.douyin.com/user/test', maxPages: 10 },
         { page: mockPage }
@@ -297,6 +303,7 @@ describe('Douyin Plugin', () => {
     });
 
     it('should include CDP warning in tips without CDP connection', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
       let responseHandler: ((res: any) => Promise<void>) | null = null;
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
@@ -304,6 +311,7 @@ describe('Douyin Plugin', () => {
         }
       });
 
+       
       const result = await commandConfig.handler(
         { awemeId: '123456', maxPages: 1 },
         { page: mockPage }
@@ -313,6 +321,7 @@ describe('Douyin Plugin', () => {
     });
 
     it('should collect comments from response', async () => {
+       
       let responseHandler: ((res: any) => Promise<void>) | null = null;
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
@@ -340,6 +349,7 @@ describe('Douyin Plugin', () => {
         }),
       };
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
       const result = await commandConfig.handler(
         { awemeId: '123456', maxPages: 1 },
         { page: mockPage, cdpEndpoint: 'ws://localhost:9222', sessionId: 'test-session' }
@@ -355,6 +365,7 @@ describe('Douyin Plugin', () => {
     });
 
     it('should parse comments correctly', async () => {
+       
       let responseHandler: ((res: any) => Promise<void>) | null = null;
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
@@ -390,6 +401,7 @@ describe('Douyin Plugin', () => {
         }),
       };
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
       const result = await commandConfig.handler(
         { awemeId: '123456', maxPages: 1 },
         { page: mockPage, cdpEndpoint: 'ws://localhost:9222', sessionId: 'test' }
@@ -400,6 +412,7 @@ describe('Douyin Plugin', () => {
     });
 
     it('should deduplicate comments by ID', async () => {
+       
       let responseHandler: ((res: any) => Promise<void>) | null = null;
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
@@ -418,6 +431,7 @@ describe('Douyin Plugin', () => {
         }),
       };
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
       const result = await commandConfig.handler(
         { awemeId: '123456', maxPages: 1 },
         { page: mockPage, cdpEndpoint: 'ws://localhost:9222' }
@@ -428,6 +442,7 @@ describe('Douyin Plugin', () => {
     });
 
     it('should isolate different sessions', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
       let responseHandler: ((res: any) => Promise<void>) | null = null;
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
@@ -466,6 +481,7 @@ describe('Douyin Plugin', () => {
     it('should navigate to user favorites page', async () => {
       mockPage.on.mockImplementation(() => {});
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
       const result = await commandConfig.handler(
         { uid: 'user123', maxPages: 1 },
         { page: mockPage, cdpEndpoint: 'ws://localhost:9222' }
@@ -478,6 +494,7 @@ describe('Douyin Plugin', () => {
     });
 
     it('should collect user favorites', async () => {
+       
       let responseHandler: ((res: any) => Promise<void>) | null = null;
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
@@ -503,6 +520,7 @@ describe('Douyin Plugin', () => {
         }),
       };
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
       const result = await commandConfig.handler(
         { uid: 'user123', maxPages: 1 },
         { page: mockPage, cdpEndpoint: 'ws://localhost:9222' }
@@ -529,6 +547,7 @@ describe('Douyin Plugin', () => {
     });
 
     it('should get user profile via XHR interception', async () => {
+       
       let responseHandler: ((res: any) => Promise<void>) | null = null;
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
@@ -579,6 +598,7 @@ describe('Douyin Plugin', () => {
     });
 
     it('should get video detail via XHR interception', async () => {
+       
       let responseHandler: ((res: any) => Promise<void>) | null = null;
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
@@ -631,6 +651,7 @@ describe('Douyin Plugin', () => {
 
     it('should handle invalid JSON in response', async () => {
       const videosCommand = registeredCommands.get('videos');
+       
       let responseHandler: ((res: any) => Promise<void>) | null = null;
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
@@ -656,6 +677,7 @@ describe('Douyin Plugin', () => {
 
     it('should handle malformed comment data', async () => {
       const commentsCommand = registeredCommands.get('comments');
+       
       let responseHandler: ((res: any) => Promise<void>) | null = null;
       mockPage.on.mockImplementation((event: string, handler: any) => {
         if (event === 'response') {
@@ -674,6 +696,7 @@ describe('Douyin Plugin', () => {
         }),
       };
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
       const result = await commentsCommand.handler(
         { awemeId: 'vid123', maxPages: 1 },
         { page: mockPage, cdpEndpoint: 'ws://localhost:9222' }

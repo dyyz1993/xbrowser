@@ -12,9 +12,7 @@ import {
   parseExcludeTypes,
 } from '../../src/index.js';
 import type { Recording } from '../../src/index.js';
-import * as fs from 'fs';
 import * as path from 'path';
-import * as yaml from 'yaml';
 
 const FIXTURES_DIR = path.resolve(__dirname, '../fixtures');
 
@@ -121,12 +119,6 @@ describe('E2E: Convert recording to scripts', () => {
       ],
     };
 
-    const recordingWithEnter: Recording = {
-      startUrl: 'https://example.com',
-      events: [
-        { type: 'keydown', data: { key: 'Enter' }, timestamp: 1000 },
-      ],
-    };
 
   it('should generate a valid JavaScript replay script', () => {
     const script = generateJSScript(recording);

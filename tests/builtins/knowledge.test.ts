@@ -47,14 +47,12 @@ const mockKnowledge = {
 
 describe('knowledge builtin', () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
-  let errSpy: ReturnType<typeof vi.spyOn>;
-  let exitSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-    exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
       throw new Error(`EXIT_${code}`);
     }) as never);
   });

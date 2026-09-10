@@ -18,7 +18,7 @@ describe('ai-search-engines', () => {
     });
 
     it('each engine config should have required fields', () => {
-      for (const [key, config] of Object.entries(ENGINE_CONFIGS)) {
+      for (const [, config] of Object.entries(ENGINE_CONFIGS)) {
         expect(config.name).toBeTruthy();
         expect(config.url).toBeTruthy();
         expect(config.input.selectors.length).toBeGreaterThan(0);

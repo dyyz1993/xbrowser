@@ -1,3 +1,4 @@
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('@dyyz1993/xcli-core', () => ({
@@ -105,6 +106,7 @@ function mockExit() {
   };
 }
 
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
 function suppressExit(fn: () => Promise<void>): Promise<void> {
   return fn().catch(() => {});
 }
@@ -151,6 +153,7 @@ describe('router', () => {
   });
 
   it('shows help with --help flag', async () => {
+       
     const { showMainHelp } = await import('../src/cli/help.js');
     const exit = mockExit();
 
@@ -164,6 +167,7 @@ describe('router', () => {
   });
 
   it('shows help when no args', async () => {
+       
     const { showMainHelp } = await import('../src/cli/help.js');
     const exit = mockExit();
 
@@ -266,6 +270,7 @@ describe('router', () => {
   });
 
   it('routes help subcommand to showMainHelp', async () => {
+       
     const { showMainHelp } = await import('../src/cli/help.js');
     await routeCommand(['help']);
     expect(showMainHelp).toHaveBeenCalled();
@@ -643,6 +648,7 @@ describe('router', () => {
     const mod = await import('../src/router.js');
     routeCommand = mod.routeCommand;
 
+       
     const { showMainHelp } = await import('../src/cli/help.js');
     await routeCommand(['unknownsite', '--help']);
     expect(showMainHelp).toHaveBeenCalled();
@@ -732,6 +738,7 @@ describe('router', () => {
   });
 
   it('handles --h short flag as help via no-args path', async () => {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
     const { showMainHelp } = await import('../src/cli/help.js');
     const exit = mockExit();
 

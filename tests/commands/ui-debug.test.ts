@@ -437,12 +437,8 @@ describe('UI Debug Commands', () => {
   });
 
   describe('perfCheckCommand', () => {
-    let mockPage: Page;
-    let ctx: BrowserCommandContext;
 
     beforeEach(() => {
-      mockPage = createMockPage();
-      ctx = createMockContext(mockPage);
     });
 
     it('should return performance metrics', async () => {
@@ -560,12 +556,8 @@ describe('UI Debug Commands', () => {
   });
 
   describe('healthCheckCommand', () => {
-    let mockPage: Page;
-    let ctx: BrowserCommandContext;
 
     beforeEach(() => {
-      mockPage = createMockPage();
-      ctx = createMockContext(mockPage);
     });
 
     it('should navigate to URL when provided', async () => {

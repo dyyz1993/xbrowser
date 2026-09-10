@@ -76,7 +76,7 @@ afterAll(async () => {
   for (const s of servers) {
     try {
       await s.stop();
-    } catch {}
+    } catch { /* ignore */ }
   }
 });
 
