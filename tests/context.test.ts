@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { BrowserCommandContext } from '../src/context.js';
 
 const { mockHumanInteractionManager } = vi.hoisted(() => ({
   mockHumanInteractionManager: vi.fn(),
@@ -17,12 +18,8 @@ import {
 } from '../src/context.js';
 
 describe('context', () => {
-  const makeCtx = (overrides: Record<string, unknown> = {}) => ({
-    page: null as any,
-    browser: null as any,
-    browserContext: {} as any,
-    ...overrides,
-  });
+  const makeCtx = (overrides: Record<string, unknown> = {}): BrowserCommandContext =>
+    ({ page: null, browser: null, browserContext: {}, ...overrides }) as unknown as BrowserCommandContext;
 
   describe('checkBrowserScope', () => {
     it('should return null for project scope', () => {
@@ -82,7 +79,7 @@ describe('context', () => {
       mockHumanInteractionManager.mockImplementation(() => mockManager);
 
       attachWaitForHuman(ctx as any, mockGetOrCreate);
-      expect(ctx.waitForHuman).toBeDefined();
+      expect((ctx as unknown as { waitForHuman?: unknown }).waitForHuman).toBeDefined();
     });
 
     it('should throw when waitForHuman called without page', async () => {

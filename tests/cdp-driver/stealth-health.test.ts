@@ -87,7 +87,7 @@ describe('stealth init script health', () => {
     ctx.self = ctx;
     ctx.window = ctx;
     try {
-      vm.runInNewContext(script, ctx as vm.Context);
+      vm.runInNewContext(script, ctx as import('node:vm').Context);
       // 脚本执行不抛异常 = 全部 try 段至少安全通过
       expect(true).toBe(true);
     } catch (e) {

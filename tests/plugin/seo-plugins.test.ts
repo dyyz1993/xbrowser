@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { XBrowserPluginLoader } from '../../src/plugin/loader.js';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 describe('SEO Plugins - Blogger', () => {
   let loader: XBrowserPluginLoader;

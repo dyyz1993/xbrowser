@@ -21,7 +21,7 @@ vi.mock('../../src/executor.js', () => ({
 }));
 
 vi.mock('../../src/utils/selector.js', () => ({
-  normalizeSelector: (...args: unknown[]) => mockNormalizeSelector(...args),
+  normalizeSelector: (...args: Parameters<typeof mockNormalizeSelector>) => mockNormalizeSelector(...args),
 }));
 
 import { handleBrowserCommand } from '../../src/cli/browser-routes.js';

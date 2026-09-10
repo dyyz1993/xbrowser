@@ -57,8 +57,8 @@ vi.mock('../../src/recorder/session-recorder.js', () => {
     addManualCheckpoint: vi.fn(),
     recordCommandAction: vi.fn(),
   }));
-  MockSessionRecorder.readData = vi.fn().mockReturnValue(null);
-  MockSessionRecorder.readSummary = vi.fn().mockReturnValue(null);
+  (MockSessionRecorder as unknown as Record<string, ReturnType<typeof vi.fn>>).readData = vi.fn().mockReturnValue(null);
+  (MockSessionRecorder as unknown as Record<string, ReturnType<typeof vi.fn>>).readSummary = vi.fn().mockReturnValue(null);
   return { SessionRecorder: MockSessionRecorder };
 });
 

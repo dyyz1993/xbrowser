@@ -108,8 +108,8 @@ describe('chrome-bridge plugin', () => {
   });
 
   it('exec normalizes object args (CLI parsePluginParams output) instead of [object Object]', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ ok: true, data: { pong: true } }) }));
-    global.fetch = fetchMock;
+    const fetchMock = vi.fn((_url: unknown, _init?: unknown): Promise<{ json(): Promise<unknown> }> => Promise.resolve({ json: () => Promise.resolve({ ok: true, data: { pong: true } }) }));
+    global.fetch = fetchMock as unknown as typeof fetch;
     const { site, xcli } = makeMock();
     chromeBridge(xcli as never);
     const handler = getCmd(site, 'exec');
@@ -120,8 +120,8 @@ describe('chrome-bridge plugin', () => {
   });
 
   it('cdp passes object params through without double-JSON.parse drop', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ ok: true, data: {} }) }));
-    global.fetch = fetchMock;
+    const fetchMock = vi.fn((_url: unknown, _init?: unknown): Promise<{ json(): Promise<unknown> }> => Promise.resolve({ json: () => Promise.resolve({ ok: true, data: {} }) }));
+    global.fetch = fetchMock as unknown as typeof fetch;
     const { site, xcli } = makeMock();
     chromeBridge(xcli as never);
     const handler = getCmd(site, 'cdp');
@@ -132,8 +132,8 @@ describe('chrome-bridge plugin', () => {
   });
 
   it('exec still accepts string args (legacy direct-HTTP style)', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ ok: true, data: {} }) }));
-    global.fetch = fetchMock;
+    const fetchMock = vi.fn((_url: unknown, _init?: unknown): Promise<{ json(): Promise<unknown> }> => Promise.resolve({ json: () => Promise.resolve({ ok: true, data: {} }) }));
+    global.fetch = fetchMock as unknown as typeof fetch;
     const { site, xcli } = makeMock();
     chromeBridge(xcli as never);
     const handler = getCmd(site, 'exec');
@@ -143,8 +143,8 @@ describe('chrome-bridge plugin', () => {
   });
 
   it('exec injects --task into args for tab-group naming', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ ok: true, data: {} }) }));
-    global.fetch = fetchMock;
+    const fetchMock = vi.fn((_url: unknown, _init?: unknown): Promise<{ json(): Promise<unknown> }> => Promise.resolve({ json: () => Promise.resolve({ ok: true, data: {} }) }));
+    global.fetch = fetchMock as unknown as typeof fetch;
     const { site, xcli } = makeMock();
     chromeBridge(xcli as never);
     const handler = getCmd(site, 'exec');
@@ -157,8 +157,8 @@ describe('chrome-bridge plugin', () => {
   });
 
   it('exec injects --tab-id for explicit attach routing', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve({ json: () => Promise.resolve({ ok: true, data: {} }) }));
-    global.fetch = fetchMock;
+    const fetchMock = vi.fn((_url: unknown, _init?: unknown): Promise<{ json(): Promise<unknown> }> => Promise.resolve({ json: () => Promise.resolve({ ok: true, data: {} }) }));
+    global.fetch = fetchMock as unknown as typeof fetch;
     const { site, xcli } = makeMock();
     chromeBridge(xcli as never);
     const handler = getCmd(site, 'exec');
@@ -171,10 +171,10 @@ describe('chrome-bridge plugin', () => {
   });
 
   it('attach groups the active tab and returns takeover info', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve({
+    const fetchMock = vi.fn((_url: unknown, _init?: unknown): Promise<{ json(): Promise<unknown> }> => Promise.resolve({
       json: () => Promise.resolve({ ok: true, data: { tabId: 42, groupId: 7, url: 'https://x.test/form', title: '表单' } }),
     }));
-    global.fetch = fetchMock;
+    global.fetch = fetchMock as unknown as typeof fetch;
     const { site, xcli } = makeMock();
     chromeBridge(xcli as never);
     const handler = getCmd(site, 'attach');
@@ -188,10 +188,10 @@ describe('chrome-bridge plugin', () => {
   });
 
   it('finish closes self-built tabs and reports ungrouped user tabs', async () => {
-    const fetchMock = vi.fn(() => Promise.resolve({
+    const fetchMock = vi.fn((_url: unknown, _init?: unknown): Promise<{ json(): Promise<unknown> }> => Promise.resolve({
       json: () => Promise.resolve({ ok: true, data: { closed: 2, ungrouped: 1 } }),
     }));
-    global.fetch = fetchMock;
+    global.fetch = fetchMock as unknown as typeof fetch;
     const { site, xcli } = makeMock();
     chromeBridge(xcli as never);
     const handler = getCmd(site, 'finish');

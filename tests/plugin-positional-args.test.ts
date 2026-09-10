@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { z } from 'zod';
+import { z } from 'zod';  // extractPositionalNames 读 v3 schema 内部结构（_def），保持 v3
 
 function extractPositionalNames(schema: z.ZodObject<Record<string, z.ZodTypeAny>>): string[] {
   const names: string[] = [];
