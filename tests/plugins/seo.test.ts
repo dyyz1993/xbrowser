@@ -11,7 +11,7 @@ function getHandler(name: string): Function {
 }
 
 function mockFetchOk(body: string, status = 200, statusText = 'OK') {
-  return vi.fn(() =>
+  return vi.fn((_url: unknown, _init?: unknown) =>
     Promise.resolve({
       ok: status >= 200 && status < 300,
       status,

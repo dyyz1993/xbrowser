@@ -39,7 +39,7 @@ vi.mock('../src/recorder/session-recorder.js', () => ({
   SessionRecorder: { cleanup: vi.fn() },
 }));
 
-const mockGetSite = vi.fn(() => null);
+const mockGetSite = vi.fn((_cmd: string): unknown => null);
 
 // Mock daemon modules so tests don't wait for real daemon timeouts
 const mockIsDaemonRunning = vi.fn().mockResolvedValue(false);
