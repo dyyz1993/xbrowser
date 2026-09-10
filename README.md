@@ -474,6 +474,19 @@ project > browser > page > element
 Error: 需要活跃的页面，请先执行 xbrowser goto <url>
 ```
 
+## MCP Server（AI Agent 接入）
+
+xbrowser 内置 Model Context Protocol 服务器——让 Claude Desktop / Cursor / 任何 MCP 客户端直接使用浏览器能力：
+
+```bash
+# 注册到 Claude Code
+claude mcp add xbrowser -- xbrowser mcp
+
+# 或手动配置（stdio）：command: xbrowser, args: ["mcp"]
+```
+
+7 个工具：`browser_navigate` / `browser_act` / `browser_read` / `browser_snapshot`（accessibility tree，token 友好）/ `browser_screenshot` / `browser_network` / `browser_replay`（自愈回放）。协议冒烟：`node scripts/mcp-smoke.mjs`。
+
 ## 插件系统
 
 ### 插件加载顺序
