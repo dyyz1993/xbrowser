@@ -1,0 +1,20 @@
+{
+  "slug": "cli-for-ai-agents",
+  "title": {
+    "en": "Why AI Agents Need a Browser CLI, Not Another SDK",
+    "zh": "为什么 AI Agent 需要的是浏览器 CLI，而不是又一个 SDK"
+  },
+  "description": {
+    "en": "Coding agents already speak shell fluently. A browser automation CLI with JSON output, command chains, and 130+ site plugins turns that fluency into full browser control — no glue code, no new protocol.",
+    "zh": "Coding Agent 早已精通 shell。一个带 JSON 输出、命令链和 130+ 站点插件的浏览器 CLI，把这份精通直接变成完整的浏览器控制——零粘合代码，不引入新协议。"
+  },
+  "langs": ["en", "zh"],
+  "platforms": {
+    "en": ["devto", "medium", "hashnode"],
+    "zh": ["juejin", "csdn", "zhihu"]
+  },
+  "tags": {
+    "en": "ai,typescript,webdev,devtools",
+    "zh": "AI编程,前端,自动化,工程效率"
+  }
+}

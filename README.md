@@ -1,6 +1,6 @@
 # xbrowser
 
-> **Browser automation CLI** for web scraping, headless browsing, SEO analysis, and AI agent workflows. 51 commands, 75 plugins. A command-line alternative to Playwright, Puppeteer, and Selenium — **no code required**.
+> **Browser automation CLI** for web scraping, headless browsing, SEO analysis, and AI agent workflows. 57 commands, 132 plugins. A command-line alternative to Playwright, Puppeteer, and Selenium — **no code required**.
 
 [![CI Status](https://github.com/dyyz1993/xbrowser/workflows/CI/badge.svg)](https://github.com/dyyz1993/xbrowser/actions)
 [![codecov](https://codecov.io/gh/dyyz1993/xbrowser/branch/master/graph/badge.svg)](https://codecov.io/gh/dyyz1993/xbrowser)
@@ -9,7 +9,7 @@
 
 ## 特性
 
-- **51 浏览器命令** — 导航、交互、查询、存储、截图，覆盖常见自动化场景
+- **57 浏览器命令** — 导航、交互、查询、存储、截图，覆盖常见自动化场景
 - **命令链** — 用 `&&`、`,`、`+`、`->`、`;` 串联多个命令，一行搞定复杂流程
 - **管道 & Heredoc** — 支持 stdin 管道和 heredoc 批量执行
 - **录制 / 回放** — 录制浏览器操作为 YAML，随时回放，可转换为 JS/Python/Bash 脚本
@@ -56,6 +56,22 @@ xbrowser devto publish --file article.md
 xbrowser juejin publish --file article.md
 # (Each platform has its own plugin — run `xbrowser plugin list` to see available)
 ```
+
+**Content Marketing — xbrowser promotes itself (dogfooding)**
+```bash
+# Browse the built-in promo case library (self-healing replay, CLI for AI agents, stealth…)
+xbrowser content cases
+
+# Render a case into a platform-ready article (en/zh, {{VAR}} substituted)
+xbrowser content draft --case self-healing-replay --lang zh
+
+# Render an OG cover image with the browser itself — zero imaging libraries
+xbrowser "set-viewport 1200 630 && content cover --title 'Self-Healing Replay' --output cover.png"
+
+# Publish through any of the 18 platform plugins
+xbrowser devto publish --file output/content/self-healing-replay-en.md --tags "typescript,automation"
+```
+The full write → cover → publish loop that promotes xbrowser is itself built on xbrowser commands.
 
 ## 快速开始
 
@@ -546,6 +562,7 @@ xbrowser 自带以下插件：
 | **douyin** | `ai-summary`, `user-info`, `video-info` | 抖音视频信息提取 |
 | **github** | `update-profile`, `add-social-link`, `create-gist`, `get-profile` | GitHub 个人资料管理 |
 | **web-automation** | `extract`, `paginate`, `fill-and-submit`, `screenshot` | 通用 Web 自动化工具 |
+| **content** | `cases`, `draft`, `cover` | 内容营销：内置推广 case 渲染成文 + 浏览器自渲染封面 |
 
 使用插件命令：
 
@@ -884,7 +901,7 @@ xbrowser/
 | **Setup** | `npm i -g` — 0 config | Install + browser download | Install + browser download | Install + WebDriver + drivers |
 | **Web Scraping** | Built-in (`scrape`, `crawl`, `map`) | Write custom scripts | Write custom scripts | Write custom scripts |
 | **Search** | Built-in multi-engine (`search`) | No | No | No |
-| **Plugin Ecosystem** | 75 plugins | Limited | Limited | No |
+| **Plugin Ecosystem** | 132 plugins | Limited | Limited | No |
 | **No Code Required** | ✅ CLI commands | ❌ Must write JS/TS | ❌ Must write JS/TS | ❌ Must write code |
 | **Headless Mode** | ✅ Default | ✅ | ✅ | ✅ |
 | **Record/Replay** | ✅ Built-in (`record`/`replay`) | ✅ Codegen | ❌ | ❌ |

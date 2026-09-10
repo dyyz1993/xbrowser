@@ -1,0 +1,20 @@
+{
+  "slug": "self-healing-replay",
+  "title": {
+    "en": "Your Browser Automation Breaks When the Site Changes. Mine Heals Itself.",
+    "zh": "网站一改版自动化脚本就废？聊聊自愈回放的完整设计"
+  },
+  "description": {
+    "en": "A deep dive into building a deterministic self-healing replay engine on top of CDP: seven-layer selector resolution, fingerprint grading, coordinate fallback, and a knowledge base that remembers heals across runs.",
+    "zh": "在 CDP 上构建确定性自愈回放引擎的深度实战：七层选择器解析、指纹软硬分级、坐标兜底与跨运行知识复用。"
+  },
+  "langs": ["en", "zh"],
+  "platforms": {
+    "en": ["devto", "medium", "hashnode"],
+    "zh": ["juejin", "csdn", "zhihu"]
+  },
+  "tags": {
+    "en": "typescript,webdev,automation,testing",
+    "zh": "前端,自动化,测试,工程效率"
+  }
+}

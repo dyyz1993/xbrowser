@@ -1,0 +1,20 @@
+{
+  "slug": "stealth-automation",
+  "title": {
+    "en": "What I Learned Building a Stealth Layer on Top of Chrome DevTools Protocol",
+    "zh": "CDP 反检测实战：UA-CH、原型逃逸与 19 层打断源压制"
+  },
+  "description": {
+    "en": "Production sites detect synthetic events, probe navigator quirks, and interrupt automation with native dialogs. A field guide from months of attack-defense testing: UA-CH profile shims, prototype-escape seals, an interruption-suppression matrix, and the lines we refuse to cross.",
+    "zh": "生产站点会识别合成事件、探测 navigator 特征、用原生对话框打断自动化。来自数月攻防实测的野战手册：UA-CH 档案垫片、原型逃逸封堵、打断源压制矩阵，以及我们不越过的红线。"
+  },
+  "langs": ["en", "zh"],
+  "platforms": {
+    "en": ["devto", "medium", "hashnode"],
+    "zh": ["juejin", "csdn", "zhihu"]
+  },
+  "tags": {
+    "en": "typescript,webdev,security,automation",
+    "zh": "前端,自动化,爬虫,安全"
+  }
+}
