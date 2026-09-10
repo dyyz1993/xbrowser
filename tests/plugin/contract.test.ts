@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
+import { z } from 'zod';  // 表单推断被测对象绑定 v3 schema 结构（_def），v4 结构不同——保持 v3
 import { buildCommandContract, buildPluginContract, fieldsFromZodObject } from '../../src/plugin/contract.js';
 
 describe('plugin contract', () => {

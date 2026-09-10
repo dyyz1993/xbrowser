@@ -42,7 +42,7 @@ describe('ScreencastCapturer', () => {
     mockPage.viewportSize.mockReturnValue({ width: 1280, height: 720 });
 
     const capturer = new ScreencastCapturer({ quality: 90 });
-    const frame = await capturer.captureFrame(mockPage as any, 'session-1');
+    const frame = await (capturer as unknown as { captureFrame: (p: unknown, s: string) => Promise<Record<string, unknown>> }).captureFrame(mockPage, 'session-1');
 
     expect(frame.sessionId).toBe('session-1');
     expect(frame.url).toBe('https://example.com');

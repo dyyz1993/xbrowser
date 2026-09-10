@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { z } from 'zod';
+import { z } from 'zod/v4';
 
 const hoisted = vi.hoisted(() => {
   const mockBrowserPage = {

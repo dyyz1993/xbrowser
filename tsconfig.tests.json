@@ -4,7 +4,9 @@
     "noEmit": true,
     "moduleResolution": "bundler",
     "module": "esnext",
-    "allowImportingTsExtensions": true
+    "allowImportingTsExtensions": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
   },
   "include": ["src/**/*.ts", "bin/**/*.ts", "types/**/*.ts", "tests/**/*.ts"]
 }

@@ -5,10 +5,10 @@ import plugin from '../../.xcli/plugins/claude/index.ts';
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
 
-function getHandler(name: string): (...args: unknown[]) => Promise<unknown> {
+function getHandler(name: string): (params: Record<string, unknown>, ctx: unknown) => Promise<any> {
   const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === name);
   if (!call) throw new Error(`Command "${name}" not found`);
-  return call[1].handler;
+  return call[1].handler as (params: Record<string, unknown>, ctx: unknown) => Promise<any>;
 }
 
 function createMockPage() {

@@ -131,7 +131,7 @@ describe('Daemon API', () => {
 
       // Simulate spawn error
       if (errorHandler) {
-        setImmediate(() => errorHandler(new Error('spawn failed')));
+        setImmediate(() => errorHandler?.(new Error('spawn failed')));
       }
       await expect(promise).rejects.toThrow('spawn failed');
     });

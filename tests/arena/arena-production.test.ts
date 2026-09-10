@@ -1142,7 +1142,7 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
         page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
         actionRetry: true,
         healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-off-${tag}-${Date.now()}`),
-        onError: (a, e) => console.log(`[env-E4 ${tag}] step-err (${a.selector}): ${e.message.slice(0, 110)}`),
+        onError: (a, e) => console.log(`[env-E4 ${tag}] step-err (${a.element?.selector}): ${e.message.slice(0, 110)}`),
       });
 
       // 红：offline 全程——fetch 失败，元素不出现，fill 失败但有界（不挂起）
@@ -1376,7 +1376,7 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     const mk = () => new SessionReplayer({
       page, selfHealing: true, stepDelay: 50, stepTimeout: 3000,
       healKnowledgeDir: path.join(os.tmpdir(), `heal-kb-sto-${Date.now()}`),
-      onError: (a, e) => console.log(`[env-E9 red] step-err (${a.selector}): ${e.message.slice(0, 100)}`),
+      onError: (a, e) => console.log(`[env-E9 red] step-err (${a.element?.selector}): ${e.message.slice(0, 100)}`),
     });
 
     // 红：存储清空变异（storage.clear 三连 + cookies）→ 页面渲染 login 分支

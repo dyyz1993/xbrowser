@@ -28,7 +28,7 @@ describe('launchChrome — Chrome not found guidance', () => {
     delete process.env.XBROWSER_CHROMIUM_PATH;
     vi.clearAllMocks();
     // existsSync is already mocked to return false at top level; keep it false.
-    existsSyncSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false);
+    existsSyncSpy = vi.spyOn(fs, 'existsSync').mockReturnValue(false) as typeof existsSyncSpy;
   });
 
   afterEach(() => {

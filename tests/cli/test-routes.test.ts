@@ -56,8 +56,8 @@ describe('test-routes handleTest', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCliSuccess('');
-    outSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
-    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    outSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true) as typeof outSpy;
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {}) as typeof errSpy;
   });
 
   it('should print usage when plugin or command missing', async () => {

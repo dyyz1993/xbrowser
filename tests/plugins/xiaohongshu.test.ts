@@ -5,9 +5,9 @@ import plugin from '../../.xcli/plugins/xiaohongshu/index.ts';
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
 
-function getHandler(name: string): Function {
+function getHandler(name: string): (params: Record<string, unknown>, ctx: unknown) => Promise<any> {
   const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === name);
-  return call![1].handler;
+  return call![1].handler as (params: Record<string, unknown>, ctx: unknown) => Promise<any>;
 }
 
 function makeResponse(url: string, body: unknown) {

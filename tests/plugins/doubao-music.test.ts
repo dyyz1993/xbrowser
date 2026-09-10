@@ -126,13 +126,13 @@ function setupEvalHandle(page: MockPage, elements: Record<string, MockElement | 
 const SEND_EL = createMockElement({ textContent: '发送', boundingBox: () => ({ x: 100, y: 100, width: 40, height: 20 }) });
 const MUSIC_EL = createMockElement({ textContent: '音乐生成', boundingBox: () => ({ x: 900, y: 862, width: 64, height: 32 }) });
 
-async function getMusicHandler(): Promise<(...args: unknown[]) => Promise<unknown>> {
+async function getMusicHandler(): Promise<(params: Record<string, unknown>, ctx: unknown) => Promise<any>> {
   vi.clearAllMocks();
   const plugin = (await import('../../.xcli/plugins/doubao/index.ts')).default;
   plugin(mockXCLI as unknown as Parameters<typeof plugin>[0]);
   const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'music');
   if (!call) throw new Error('music command not registered');
-  return call[1].handler;
+  return call[1].handler as (params: Record<string, unknown>, ctx: unknown) => Promise<any>;
 }
 
 describe('doubao music command', () => {
