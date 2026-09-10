@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.23.0] - 2026-09-10
+
+### Added
+- **content 内容营销插件**：`xbrowser content cases/draft/cover`——内置自推广 case 库（自愈回放/CLI for AI agents/stealth，中英双语），模板渲染 + 浏览器自渲染 OG 封面（零绘图库），与 18 个平台 publish 插件正交组合
+- **chrome-bridge attach/finish 显式接管生命周期**：`attach --task "任务名"` 把用户当前 tab 打入 🤖 任务分组（可见标签），后续命令 `--tab-id` 显式路由；`finish` 收尾——桥自建 tab 关闭、用户 tab 只脱组保留绝不关闭
+- **🤖 任务分组与空闲回收**：桥的命令自动落入带任务名的后台 tab 分组，10 分钟空闲自动回收；S207 防当面换页（用户盯着任务 tab 时另起新 tab 执行）
+- **quality gates 双盲区根治**：tests/（256 文件）首次纳入 ESLint 与 typecheck 覆盖，458 处存量债务清零，`typecheck:tests` 接入 pre-commit 与 CI
+
+### Fixed
+- **chrome-bridge --args JSON 丢参**：CLI 层 parsePluginParams 把 JSON 解析成对象后 handler 拼成 `[object Object]`（cdp 分支静默丢参）——双形态归一化修复
+- **桥接管用户 tab 事故**（S205）：无任务组时 navigate/evaluate 直接改写用户正在看的页面——永不 fallback 到用户活跃 tab
+- **幽灵依赖**：`.xcli/plugins/node_modules` 反复带回 xcli-core 0.9.x 旧版（ensure-deps 声明 ^0.9.2 永不升级）→ 升 ^0.19.0 根治
+
 ## [1.9.9] - 2026-07-24
 
 ### Added
