@@ -79,6 +79,7 @@
     "stealth:check": "vitest run tests/cdp-driver/stealth-health.test.ts tests/cdp-driver/stealth-audit.test.ts tests/cdp-driver/stealth-probe.test.ts",
     "lint:docs": "node lint-scripts/check-docs-consistency.mjs",
     "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
     "typecheck:plugins": "tsc -p tsconfig.plugins.json --noEmit",
     "start": "node dist/cli.js",
     "test": "vitest run",
