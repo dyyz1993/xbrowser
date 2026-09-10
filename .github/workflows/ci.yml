@@ -5,6 +5,9 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  schedule:
+    # nightly arena at 18:30 UTC (P1-5)
+    - cron: '30 18 * * *'
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -28,7 +31,52 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run typecheck:plugins
       - run: npm run lint
+      - run: npm run lint:plugins
+      - run: npm run lint:plugin-contract
+      # 与 husky pre-commit 同源的文档一致性检查（防 --no-verify 绕过）
+      - run: npm run lint:docs
+
+  commit-lint:
+    # 与 husky commit-msg 同源的提交信息格式检查（防 --no-verify 绕过：
+    # 本地钩子可被跳过，CI 是不可绕的最后一道）。
+    name: commit-message-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check commit message format
+        run: |
+          set -e
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            RANGE="${{ github.event.pull_request.base.sha }}..${{ github.sha }}"
+          else
+            BEFORE="${{ github.event.before }}"
+            if [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              RANGE="${{ github.sha }}~1..${{ github.sha }}"
+            else
+              RANGE="${BEFORE}..${{ github.sha }}"
+            fi
+          fi
+          echo "Checking range: $RANGE"
+          FAIL=0
+          for sha in $(git rev-list "$RANGE"); do
+            MSG=$(git log -1 --format=%s "$sha")
+            # GitHub 自动生成的 merge commit 豁免
+            case "$MSG" in "Merge "*) echo "⏭ skip merge: $MSG"; continue;; esac
+            if ! echo "$MSG" | grep -qE "^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\(.+\))?: .{1,80}"; then
+              echo "❌ [$sha] 非 conventional 格式: $MSG"; FAIL=1
+            fi
+            LEN=$(echo -n "$MSG" | wc -c | tr -d ' ')
+            if [ "$LEN" -gt 100 ]; then
+              echo "❌ [$sha] 首行过长（$LEN>100）: $MSG"; FAIL=1
+            fi
+            echo "✓ [$sha] $MSG"
+          done
+          exit $FAIL
 
   test:
     runs-on: ubuntu-latest
@@ -70,6 +118,36 @@ jobs:
         with:
           name: coverage-report-${{ matrix.node-version }}
           path: ./coverage/
+
+  arena-nightly:
+    # P1-5: full production arena (~634s) — nightly + manual, NOT per-PR
+    name: arena-nightly
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+      - run: npm run build
+      - run: npm link
+      - run: npm run test:arena
+        env:
+          XBROWSER_CHROMIUM_PATH: ''
+      - name: Upload arena diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arena-failure-diagnostics
+          path: |
+            ~/.xbrowser/sessions/**/*.json
+            output/
+          if-no-files-found: ignore
+          retention-days: 7
 
   build:
     runs-on: ubuntu-latest
