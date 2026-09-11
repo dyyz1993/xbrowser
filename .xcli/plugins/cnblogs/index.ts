@@ -94,14 +94,20 @@ export default function (xcli: XCLIAPI): void {
       await humanFill(page, titleInput, params.title);
 
       // 博客园 Markdown 编辑器：#Editor_Markdown（textarea）或 CodeMirror 包装
-      const cm = await page.$('#Editor_Markdown .CodeMirror, .CodeMirror');
-      if (cm) {
-        const bodyArea = page.locator('#Editor_Markdown .CodeMirror textarea, .CodeMirror textarea').first();
-        await humanFill(page, bodyArea, content);
-      } else {
+      // 博客园编辑器是 TinyMCE：内容必须经 tinymce.setContent 写入（实测 native setter + input 事件不进编辑器状态）
+      const filled = await page.evaluate((md: string) => {
+        const w = window as unknown as { tinymce?: { get(id: string): { setContent(c: string): void } | null; activeEditor: { setContent(c: string): void } | null } };
+        if (typeof w.tinymce === 'undefined') return 'no-tinymce';
+        const ed = w.tinymce.get('Editor_Edit_EditorBody') || w.tinymce.activeEditor;
+        if (!ed) return 'no-editor';
+        ed.setContent(md);
+        return 'ok';
+      }, content).catch(() => 'eval-error') as string;
+      if (filled !== 'ok') {
+        // 兜底：非 TinyMCE 形态走 textarea
         const bodyInput = page.locator('#Editor_Markdown, textarea[name*="markdown"], textarea').first();
         if (!(await bodyInput.isVisible().catch(() => false))) {
-          return fail('正文编辑器未找到');
+          return fail(`正文编辑器写入失败（${filled}）`);
         }
         await humanFill(page, bodyInput, content);
       }
