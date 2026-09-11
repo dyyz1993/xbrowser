@@ -1,3 +1,4 @@
+import { classifyFailure } from './fail-codes.js';
 import {
   ok,
   fail,
@@ -110,6 +111,7 @@ export interface ExecutionResult {
   duration: number;
   tips?: Tip[];
   hookOutputs?: HookOutput[];
+  error?: { code: string; level: string };
 }
 
 /**
@@ -477,7 +479,10 @@ export async function executeCommand(
       if (isSuccess) {
         return { ...ok(raw.data, merged.length > 0 ? merged : raw.tips), duration, ...(hookOutputs ? { hookOutputs } : {}) };
       }
-      return { success: false, data: raw.data, message: raw.message, tips: mergedOrRaw, duration, ...(hookOutputs ? { hookOutputs } : {}) };
+      // M1: 结构化失败码——所有命令失败自动附带 error.{code,level}（阶梯路由依据）
+      const fc = classifyFailure(raw.message);
+      return { success: false, data: raw.data, message: raw.message, tips: mergedOrRaw, duration,
+        error: { code: fc.code, level: fc.level }, ...(hookOutputs ? { hookOutputs } : {}) };
     }
 
     const smartTipNormalized = normalizeTips(smartTips);
