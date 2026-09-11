@@ -1,0 +1,23 @@
+{
+  "name": "xbrowser-plugin-segmentfault",
+  "version": "1.0.0",
+  "description": "SegmentFault 思否 - 中文技术问答/博客平台发布 (DA 70+, 技术内容权重高)",
+  "main": "index.ts",
+  "type": "module",
+  "license": "MIT",
+  "author": "dyyz1993",
+  "keywords": ["xbrowser", "xbrowser-plugin", "segmentfault", "blog-publish"],
+  "dependencies": { "zod": "^3.24.0" },
+  "peerDependencies": { "@dyyz1993/xcli-core": ">=1.0.0" },
+  "xbrowser": {
+    "name": "segmentfault",
+    "slug": "segmentfault",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "SegmentFault 思否 - 中文技术问答/博客平台发布 (DA 70+, 技术内容权重高)",
+    "site": "https://segmentfault.com",
+    "requiresLogin": true,
+    "commands": ["login", "draft", "publish"],
+    "tags": ["segmentfault", "blog", "publish", "seo"]
+  }
+}

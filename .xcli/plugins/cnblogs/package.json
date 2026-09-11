@@ -1,0 +1,23 @@
+{
+  "name": "xbrowser-plugin-cnblogs",
+  "version": "1.0.0",
+  "description": "博客园 - 老牌中文技术博客平台发布 (DA 80+, 百度权重极高)",
+  "main": "index.ts",
+  "type": "module",
+  "license": "MIT",
+  "author": "dyyz1993",
+  "keywords": ["xbrowser", "xbrowser-plugin", "cnblogs", "blog-publish"],
+  "dependencies": { "zod": "^3.24.0" },
+  "peerDependencies": { "@dyyz1993/xcli-core": ">=1.0.0" },
+  "xbrowser": {
+    "name": "cnblogs",
+    "slug": "cnblogs",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "博客园 - 老牌中文技术博客平台发布 (DA 80+, 百度权重极高)",
+    "site": "https://www.cnblogs.com",
+    "requiresLogin": true,
+    "commands": ["login", "draft", "publish"],
+    "tags": ["cnblogs", "blog", "publish", "seo"]
+  }
+}
