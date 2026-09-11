@@ -7,8 +7,8 @@
 
 | 指标 | 值 |
 |------|-----|
-| 插件总数 | 129 |
-| ✅ 已完成（有实现+有测试） | 108 |
+| 插件总数 | 131 |
+| ✅ 已完成（有实现+有测试） | 110 |
 | 🟡 有实现无测试 | 10 |
 | 🔴 scaffold 待实现 | 11 |
 | **当前债务** | **21** |
@@ -35,18 +35,18 @@
 
 | 插件 | 行数 | 命令数 | scope |
 |------|------|--------|-------|
-| cnblogs | 182 | 3 | `browser`, `page` |
+| 51cto | 130 | 3 | `browser`, `page` |
 | goofish | 333 | 3 | `page` |
 | login-bridge | 421 | 5 | `page`, `project` |
+| oschina | 126 | 3 | `browser`, `page` |
 | producthunt | 286 | 4 | `browser`, `page` |
 | pubmed | 60 | 1 | `project` |
-| segmentfault | 223 | 3 | `browser`, `page` |
 | stackoverflow | 60 | 1 | `project` |
 | weread | 54 | 1 | `project` |
 | wikidata | 88 | 2 | `project` |
 | xueqiu | 90 | 2 | `project` |
 
-## ✅ 已完成（108）
+## ✅ 已完成（110）
 
 | 插件 | 命令数 | scope |
 |------|--------|-------|
@@ -72,6 +72,7 @@
 | chrome-bridge | 8 | `project` |
 | claude | 5 | `browser`, `page` |
 | cmf-seats | 3 | `any`, `page` |
+| cnblogs | 3 | `browser`, `page` |
 | content | 3 | `page`, `project` |
 | crates | 2 | `project` |
 | csdn | 5 | `browser`, `page` |
@@ -130,6 +131,7 @@
 | reddit | 5 | `browser` |
 | reuters | 1 | `browser` |
 | rubygems | 1 | `project` |
+| segmentfault | 3 | `browser`, `page` |
 | semanticscholar | 1 | `project` |
 | seo | 16 | `browser`, `project` |
 | shutterstock | 1 | `browser` |
