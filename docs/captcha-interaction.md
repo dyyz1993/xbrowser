@@ -57,6 +57,7 @@ $ xbrowser github publish --auto-open
 ### 环境变量
 ```bash
 XBROWSER_NOTIFY_URL=https://hooks.slack.com/xxx    # Webhook 通知地址
+XBROWSER_NOTIFY_URL=https://api.drel.app/<token>   # Drel iOS 推送（自动转 {title,body,url} 格式，手机直接收推送）
 XBROWSER_AUTO_OPEN=true                              # 自动打开 preview
 XBROWSER_CAPTCHA_TIMEOUT=120                          # 超时秒数（0=无限等待）
 XBROWSER_PREVIEW_PORT=9223                            # Preview 端口
