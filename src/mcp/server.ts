@@ -8,10 +8,14 @@
  *   xbrowser mcp                      # 前台运行（stdio）
  *   claude mcp add xbrowser -- xbrowser mcp
  *
- * 工具集（7 个）：
+ * 工具集（9 个）：
  *   browser_navigate / browser_act / browser_read / browser_snapshot /
  *   browser_screenshot / browser_network / browser_replay
+ *   heal_kb_read / heal_kb_write
  */
+import { homedir } from 'os';
+import { join } from 'path';
+import { mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { executeChain } from '../executor.js';
 import { executeCommand } from '../executor.js';
 
@@ -23,7 +27,8 @@ interface McpTool {
   inputSchema: Record<string, unknown>;
 }
 
-const TOOLS: McpTool[] = [
+/** 工具定义表（导出供测试断言） */
+export const TOOLS: McpTool[] = [
   {
     name: 'browser_navigate',
     description:
@@ -131,13 +136,116 @@ const TOOLS: McpTool[] = [
       required: ['file'],
     },
   },
+  {
+    name: 'heal_kb_read',
+    description:
+      'Read the self-healing selector knowledge base for a domain. ' +
+      'Returns known broken→fixed selector mappings the replay engine uses to resolve ' +
+      'known-broken selectors at zero cost. Returns an empty entry set when the domain ' +
+      'has no knowledge file (not an error).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        domain: {
+          type: 'string',
+          description: 'Site hostname, e.g. example.com. A trailing .json suffix is accepted as-is.',
+        },
+      },
+      required: ['domain'],
+    },
+  },
+  {
+    name: 'heal_kb_write',
+    description:
+      'Record a broken→fixed selector mapping into the self-healing knowledge base for a domain. ' +
+      'Merges with existing entries (other keys are preserved). Replay consumes these entries, ' +
+      'so pre-seeding fixes makes replays survive site redesigns. Optional note documents the fix.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        domain: { type: 'string', description: 'Site hostname, e.g. example.com' },
+        broken: { type: 'string', description: 'The broken selector (entry key)' },
+        fixed: { type: 'string', description: 'The working replacement selector' },
+        note: { type: 'string', description: 'Optional note about why/how the selector was fixed' },
+      },
+      required: ['domain', 'broken', 'fixed'],
+    },
+  },
 ];
+
+// ── heal 知识库读写（与 SessionReplayer 的 heals-<domain>.json 同构） ──
+// SessionReplayer 的读写是类私有方法，这里实现等价逻辑；路径规则必须一致，
+// 否则 MCP 写入的条目回放时读不到（AGENTS.md §20.6 known-heal 链路）。
+
+/** 单条 heal 知识（字段与 SessionReplayer.persistHealKnowledge 写入的结构一致） */
+interface HealKbEntry {
+  healed: string;
+  strategy: string;
+  lastSeen: string;
+  hits: number;
+  note?: string;
+}
+
+type HealKbData = Record<string, HealKbEntry>;
+
+/** 知识库目录：默认 ~/.xbrowser/knowledge，XBROWSER_HEAL_KB_DIR 可覆盖（测试/冒烟用） */
+function healKbDir(): string {
+  return process.env.XBROWSER_HEAL_KB_DIR || join(homedir(), '.xbrowser', 'knowledge');
+}
+
+/** 路径规则与 SessionReplayer.healKnowledgeFile 一致：heals-<domain>.json；domain 已含 .json 后缀时不再追加 */
+export function healKbFile(domain: string): string {
+  const suffix = domain.endsWith('.json') ? domain : `${domain}.json`;
+  return join(healKbDir(), `heals-${suffix}`);
+}
+
+/** domain 直接拼进文件名，拒绝路径穿越（replayer 侧来源是 URL hostname，天然安全） */
+function assertSafeDomain(domain: string): void {
+  if (!domain || domain.includes('..') || /[\\/]/.test(domain)) {
+    throw new Error(`invalid domain: ${JSON.stringify(domain)}`);
+  }
+}
+
+function readHealKb(domain: string): HealKbData {
+  assertSafeDomain(domain);
+  try {
+    return JSON.parse(readFileSync(healKbFile(domain), 'utf8')) as HealKbData;
+  } catch {
+    return {}; // 文件不存在 / 损坏 → 空知识库（与 readHealFile 行为一致）
+  }
+}
+
+/** 合并写入一条 broken→fixed 映射；保留既有条目，TTL 简化为记录 timestamp */
+export function writeHealKb(
+  domain: string,
+  broken: string,
+  fixed: string,
+  note?: string,
+): { ok: boolean; domain: string; file: string; entry: HealKbEntry; totalEntries: number } {
+  assertSafeDomain(domain);
+  if (!broken || !fixed) throw new Error('broken and fixed selectors are required');
+  const file = healKbFile(domain);
+  const data = readHealKb(domain);
+  const prev = data[broken];
+  const entry: HealKbEntry = {
+    healed: fixed,
+    strategy: 'manual',
+    lastSeen: new Date().toISOString(),
+    hits: (prev?.hits ?? 0) + 1,
+    ...(note !== undefined ? { note } : {}),
+  };
+  data[broken] = entry;
+  mkdirSync(healKbDir(), { recursive: true });
+  writeFileSync(file, JSON.stringify(data, null, 2));
+  return { ok: true, domain, file, entry, totalEntries: Object.keys(data).length };
+}
 
 // ── 工具实现（复用 executor，薄壳） ─────────────────────────
 
 const DEFAULT_SESSION = 'mcp';
 
-async function runTool(name: string, args: Record<string, unknown>): Promise<{ content: Array<{ type: string; text: string }> }> {
+/** 单工具执行入口（导出供测试直接驱动；协议层经 handleRequest 调用） */
+export async function runTool(name: string, args: Record<string, unknown>): Promise<{ content: Array<{ type: string; text: string }> }> {
   const session = (args.session as string) || DEFAULT_SESSION;
   const sessionOpts = { sessionName: session };
   const text = (v: unknown) => ({ content: [{ type: 'text', text: JSON.stringify(v, null, 2) }] });
@@ -186,6 +294,16 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<{ c
         ...(typeof args.slowMo === 'number' ? { slowMo: args.slowMo } : {}),
       };
       const result = await executeCommand('replay', params, session, {});
+      return text(result);
+    }
+    case 'heal_kb_read': {
+      const domain = args.domain as string;
+      const entries = readHealKb(domain);
+      return text({ domain, file: healKbFile(domain), entries });
+    }
+    case 'heal_kb_write': {
+      const note = typeof args.note === 'string' ? args.note : undefined;
+      const result = writeHealKb(args.domain as string, args.broken as string, args.fixed as string, note);
       return text(result);
     }
     default:

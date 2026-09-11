@@ -33,7 +33,7 @@ const timer = setInterval(() => {
         pass++;
       } else if (d.id === 2) {
         const names = d.result.tools.map((t) => t.name);
-        if (names.length !== 7) throw new Error(`expect 7 tools, got ${names.length}`);
+        if (names.length !== 9) throw new Error(`expect 9 tools, got ${names.length}`);
         console.log('✓ tools/list:', names.join(', '));
         pass++;
       } else if (d.id === 3) {

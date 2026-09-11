@@ -485,7 +485,7 @@ claude mcp add xbrowser -- xbrowser mcp
 # 或手动配置（stdio）：command: xbrowser, args: ["mcp"]
 ```
 
-7 个工具：`browser_navigate` / `browser_act` / `browser_read` / `browser_snapshot`（accessibility tree，token 友好）/ `browser_screenshot` / `browser_network` / `browser_replay`（自愈回放）。协议冒烟：`node scripts/mcp-smoke.mjs`。
+9 个工具：`browser_navigate` / `browser_act` / `browser_read` / `browser_snapshot`（accessibility tree，token 友好）/ `browser_screenshot` / `browser_network` / `browser_replay`（自愈回放）/ `heal_kb_read` / `heal_kb_write`（读写自愈知识库 `~/.xbrowser/knowledge/heals-<domain>.json`，ION worker 可预置 broken→fixed 选择器映射）。协议冒烟：`node scripts/mcp-smoke.mjs`；heal-KB 冒烟：`node scripts/heal-kb-smoke.mjs`。
 
 ## 插件系统
 
