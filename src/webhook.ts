@@ -1,3 +1,5 @@
+import * as os from 'node:os';
+
 /**
  * Payload sent to a webhook endpoint for lifecycle events.
  */
@@ -37,6 +39,10 @@ export class WebhookNotifier {
    */
   async notify(payload: WebhookPayload): Promise<boolean> {
     if (!this.url) return false;
+    // lanify 仅对 Drel 推送端点生效（手机要打开链接）；普通 webhook 消费方是服务器
+    if (this.isDrelEndpoint(this.url)) {
+      payload = { ...payload, previewUrl: this.lanify(payload.previewUrl) };
+    }
 
     try {
       // Drel（api.drel.app）等移动推送端点期望 {title, body, url} 简单格式；
@@ -54,6 +60,20 @@ export class WebhookNotifier {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * previewUrl 里的 localhost/127.0.0.1 替换为本机局域网 IPv4——
+   * 推送目标是手机，localhost 在手机上不可达；同一 Wi-Fi 下局域网 IP 可达。
+   */
+  private lanify(url?: string): string | undefined {
+    if (!url) return url;
+    if (!url.includes('localhost') && !url.includes('127.0.0.1')) return url;
+    const ips = Object.values(os.networkInterfaces())
+      .flat()
+      .filter((i): i is import("node:os").NetworkInterfaceInfo => !!i && i.family === "IPv4" && !i.internal);
+    if (!ips.length) return url;
+    return url.replace('localhost', ips[0].address).replace('127.0.0.1', ips[0].address);
   }
 
   /** Drel 推送端点识别（api.drel.app/<token>） */
