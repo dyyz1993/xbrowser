@@ -1,0 +1,12 @@
+{
+  "name": "xbrowser-plugin-51cto",
+  "version": "1.0.0",
+  "description": "51CTO - IT技术/运维/认证社区发布 (DA 65+)",
+  "main": "index.ts", "type": "module", "license": "MIT", "author": "dyyz1993",
+  "keywords": ["xbrowser", "xbrowser-plugin", "51cto", "blog-publish"],
+  "dependencies": { "zod": "^3.24.0" },
+  "peerDependencies": { "@dyyz1993/xcli-core": ">=1.0.0" },
+  "xbrowser": { "name": "51cto", "slug": "51cto", "version": "1.0.0", "author": "dyyz1993",
+    "description": "51CTO - IT技术/运维/认证社区发布", "site": "https://www.51cto.com",
+    "requiresLogin": true, "commands": ["login", "draft", "publish"], "tags": ["51cto","blog","publish","ops"] }
+}
