@@ -1,17 +1,17 @@
 # 插件完成度看板
 
 > **自动生成，请勿手改** · 由 `lint-scripts/check-plugin-status.mjs` 生成
-> 生成时间：2026-09-10 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
+> 生成时间：2026-09-11 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
 
 ## 汇总
 
 | 指标 | 值 |
 |------|-----|
-| 插件总数 | 127 |
+| 插件总数 | 129 |
 | ✅ 已完成（有实现+有测试） | 108 |
-| 🟡 有实现无测试 | 8 |
+| 🟡 有实现无测试 | 10 |
 | 🔴 scaffold 待实现 | 11 |
-| **当前债务** | **19** |
+| **当前债务** | **21** |
 
 > 债务 = 🟡无测试 + 🔴scaffold + ⛔加载失败。目标：债务 → 0。
 
@@ -31,14 +31,16 @@
 | tiktok | 14 | https://www.tiktok.com |
 | upwork | 14 | https://www.upwork.com |
 
-## 🟡 有实现无测试（8） — P1 优先
+## 🟡 有实现无测试（10） — P1 优先
 
 | 插件 | 行数 | 命令数 | scope |
 |------|------|--------|-------|
+| cnblogs | 182 | 3 | `browser`, `page` |
 | goofish | 333 | 3 | `page` |
 | login-bridge | 421 | 5 | `page`, `project` |
 | producthunt | 286 | 4 | `browser`, `page` |
 | pubmed | 60 | 1 | `project` |
+| segmentfault | 223 | 3 | `browser`, `page` |
 | stackoverflow | 60 | 1 | `project` |
 | weread | 54 | 1 | `project` |
 | wikidata | 88 | 2 | `project` |
