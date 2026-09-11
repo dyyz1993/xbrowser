@@ -8,9 +8,9 @@
 
 ## 里程碑（完成即闭合，编号唯一）
 
-- M1 ✗ 结构化失败码上线 —— 所有工具失败返回 `{ok:false, error:{code, stuck}}` 标准形态（RETRYABLE:* / FATAL:* 二级）
-- M2 ✗ heal-KB MCP 工具 ×2 —— `heal_kb_read(domain)` / `heal_kb_write(entry)`，ION worker 可读写自愈知识库
-- M3 ✗ selector-healer ION agent 定义 —— 双通道（snapshot+视觉）重新定位，写回 KB，断点续跑
+- M1 ✅ 结构化失败码上线（PR #280 补 sync 后合入；classifyFailure 三级推断 + executor 归一化点全量挂码，9 单测）
+- M2 ✅ heal-KB MCP 工具 ×2（PR #282；heal_kb_read/heal_kb_write，11 用例+冒烟全过，MCP 工具 7→9）
+- M3 ✅ selector-healer / human-gate / coordinator ION agent 定义（PR #281；.ion/agents/ 三文件，对齐 ion/examples 格式）
 - M4 ✗ 端到端演练：人为改坏掘金草稿编辑器一个选择器 → L1 自愈 → 发布成功
 - M5 ✗ human-gate：验证码场景 → Drel 推手机（含 viewer 局域网地址）→ 人工处理后流程继续
 - M6 ✗ typecheck:tests 门禁接入后阶梯测试全绿（既有 4039 零回归）
@@ -29,4 +29,5 @@ milestones_done: [M1, M2, M3, M4, M5, M6] 全部闭合 ✅
 
 ## 进度快照（阶梯自动维护，人工只读）
 
-- 2026-09-11: 目标卡创建，全部里程碑未开工
+- 2026-09-11（二次更新）: M1~M3 闭合 ✅。多智能体开发模式首次跑通：M2/M3 由两个开发智能体并行交付（智能体自行完成开发+测试+PR+合并），coordinator 验收入账。M2 智能体自行处理了共享 worktree 分支冲突（cherry-pick 重建）。剩余：M4 端到端演练、M5 human-gate 验证、M6 全绿验收
+- 2026-09-11（初次）: 目标卡创建，全部里程碑未开工
