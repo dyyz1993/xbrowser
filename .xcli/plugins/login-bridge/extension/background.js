@@ -321,6 +321,32 @@ async function recordTaskTab(tabId) {
   } catch {}
 }
 
+// S212：「No current window」修复——SW 上下文里 tabs.create 不带 windowId 时
+// 默认落"当前窗口"，而 SW 无前台焦点窗口时（窗口焦点丢失/刚重启/多 profile）
+// Chrome 直接抛 "No current window"。显式解析 windowId 兜底。
+async function pickWindowId() {
+  try {
+    const lf = await chrome.windows.getLastFocused();
+    if (lf && lf.id !== undefined) return lf.id;
+  } catch {}
+  try {
+    const all = await chrome.windows.getAll({ windowTypes: ['normal'] });
+    if (all.length > 0) return all[0].id;
+  } catch {}
+  return undefined;
+}
+async function safeCreateTab(opts) {
+  try {
+    return await chrome.tabs.create(opts);
+  } catch (e) {
+    if (/current window/i.test(String(e))) {
+      const windowId = await pickWindowId();
+      if (windowId !== undefined) return await chrome.tabs.create({ ...opts, windowId });
+    }
+    throw e;
+  }
+}
+
 async function getTaskTabId() {
   const groups = await chrome.tabGroups.query({});
   // 显式任务组（用户经 task-open 创建）：只复用，不改名
@@ -339,7 +365,7 @@ async function getTaskTabId() {
     if (tabs.length > 0) { await touchTaskActivity(); return tabs[tabs.length - 1].id; }
   }
   // 都没有：新建后台任务 tab（about:blank 起步，navigate 会再定位）
-  const tab = await chrome.tabs.create({ url: 'about:blank', active: false });
+  const tab = await safeCreateTab({ url: 'about:blank', active: false });
   await recordTaskTab(tab.id);
   try {
     const gid = await chrome.tabs.group({ tabIds: tab.id });
@@ -568,7 +594,7 @@ const executors = {
           try {
             const t = await chrome.tabs.get(target);
             if (t.active) {
-              const created = await chrome.tabs.create({ url: 'about:blank', active: false });
+              const created = await safeCreateTab({ url: 'about:blank', active: false });
               await recordTaskTab(created.id);
               try { if (t.groupId && t.groupId !== -1) await chrome.tabs.group({ tabIds: created.id, groupId: t.groupId }); } catch {}
               dest = created.id;
@@ -775,6 +801,7 @@ const executors = {
   // S161：tabId 感知截图——captureVisibleTab 只能截激活 tab（会截到用户正在看的页面），
   // 指定 tabId 时改用 debugger Page.captureScreenshot（后台 tab 也能截，截完立即 detach）
   screenshot: async ({ tabId }) => {
+    const wid = await pickWindowId(); // S212：显式窗口，免「No current window」
     if (tabId != null) {
       const persistent = stealthTabs.has(tabId); // S164
       return new Promise((resolve) => {
@@ -793,7 +820,7 @@ const executors = {
         chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
           chrome.debugger.attach(dbg, '1.3', () => {
             if (chrome.runtime.lastError) {
-              const url = chrome.tabs.captureVisibleTab(null, { format: 'png' });
+              const url = chrome.tabs.captureVisibleTab(wid ?? null, { format: 'png' });
               url.then(u => resolve({ ok: true, fallback: 'visible', fullLength: u.length, base64: u.split(',')[1] }));
               return;
             }
@@ -802,7 +829,7 @@ const executors = {
         });
       });
     }
-    const url = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
+    const url = await chrome.tabs.captureVisibleTab(wid ?? null, { format: 'png' });
     return { ok: true, dataUrl: url.slice(0, 100), fullLength: url.length, base64: url.split(',')[1] };
   },
 
@@ -818,6 +845,7 @@ const executors = {
 
 let ws = null;
 let backoff = 1000;
+let wsStartedAt = 0;
 
 function badge(text, color) {
   try { chrome.action.setBadgeText({ text }); if (color) chrome.action.setBadgeBackgroundColor({ color }); } catch {}
@@ -825,12 +853,18 @@ function badge(text, color) {
 
 function connectWS() {
   try { ws = new WebSocket(WS_BRIDGE); } catch { scheduleReconnect(); return; }
-  ws.onopen = () => { backoff = 1000; badge('ON', '#238636'); };
+  wsStartedAt = Date.now();
+  ws.onopen = () => {
+    backoff = 1000; badge('ON', '#238636');
+    // S212：上报扩展身份 → 服务端持久化 extId（revive 命令据此开 popup 页唤醒死透的 SW）
+    try { ws.send(JSON.stringify({ hello: true, extId: chrome.runtime.id, v: chrome.runtime.getManifest ? chrome.runtime.getManifest().version : '?' })); } catch {}
+  };
   ws.onclose = () => { ws = null; badge('off', '#8b949e'); scheduleReconnect(); };
   ws.onerror = () => { try { ws.close(); } catch {} };
   ws.onmessage = async (ev) => {
     let msg;
     try { msg = JSON.parse(ev.data); } catch { return; }
+    if (msg.ka) return; // S212：bridge 心跳帧——收到即已重置 SW 空闲计时，无需回复
     const { id, cmd, args } = msg || {};
     // S206：任务名注入（executors 内 getTaskTabId 读取），并刷新空闲心跳。
     // S209：只读查询不续命——status/ping/task-list 等不应把空闲任务一直吊着。
@@ -882,8 +916,12 @@ connectWS();
 chrome.alarms.create('ws-keepalive', { periodInMinutes: 0.5 });
 chrome.alarms.create('task-idle-sweep', { periodInMinutes: 5 });
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'ws-keepalive' && (!ws || ws.readyState > 1)) {
-    connectWS();
+  if (alarm.name === 'ws-keepalive') {
+    // S212 三态自愈：断开→重连；卡在 CONNECTING >15s（半开 TCP，onclose 永不触发，
+    // 旧代码 readyState 0 会永远跳过重连——SW 死透的根因之一）→ 强制 close 让
+    // onclose 接管退避重连
+    if (!ws || ws.readyState > 1) connectWS();
+    else if (ws.readyState === 0 && Date.now() - wsStartedAt > 15000) { try { ws.close(); } catch {} }
   }
   if (alarm.name === 'task-idle-sweep') {
     sweepIdleTasks();

@@ -62,6 +62,23 @@ xbrowser chrome-bridge exec --cmd screenshot                    # 可视区截�
 
 ## 已知边界
 
-- MV3 SW 空闲约 30s 被杀：已用 `chrome.alarms` 每 30s 唤醒重连（断线徽标变 `off` 灰，自动恢复）
+- MV3 SW 空闲约 30s 被杀：`chrome.alarms` 每 30s 唤醒重连 + bridge 每 25s 双心跳（协议 ping/pong 探死连接、应用层 ka 帧给 SW 续命，S212）+ CONNECTING 卡死 15s 强制重连——SW 死透时用 `xbrowser chrome-bridge revive` 一键唤醒
 - click 是合成事件（isTrusted=false）——需要 trusted 事件的场景后续走 `chrome.debugger` 通道
 - Chromium 137+ 必须手动装扩展（见上）；装好后 Secure Preferences 正确签名，不会被清除
+
+
+## SW 死透自愈（S212）
+
+扩展 SW 彻底死亡（连接清空 + 保活闹钟失效）时：
+
+```bash
+xbrowser chrome-bridge revive          # 打开扩展 popup 页唤醒 SW，轮询等待重连（默认 20s）
+xbrowser chrome-bridge status          # 看 lastDisconnectAt / ext 身份 / 客户端 lastSeen
+```
+
+三重防线：
+1. **应用层 ka 帧**（bridge→扩展，25s）：MV3 SW 收到 WS 消息才重置空闲计时——活着就不会死
+2. **协议 ping/pong 探死**（25s × 2 轮未 pong → terminate）：死连接秒级清除，挂起请求立即失败
+3. **revive 命令**：真死透了开 popup 页物理唤醒（扩展 ID 自动记忆于 `~/.xbrowser/chrome-bridge-ext.json`）
+
+日志：`~/.xbrowser/logs/chrome-bridge.log`（connect/disconnect/hello/exec 耗时/超时/ka-drop/no-client 心跳全落盘）

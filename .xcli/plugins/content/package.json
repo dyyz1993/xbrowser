@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-content",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "内容营销：内置 xbrowser 自推广 case 库，渲染平台就绪文章 + 浏览器自渲染 OG 封面",
   "main": "index.ts",
   "type": "module",
@@ -21,7 +21,7 @@
   "xbrowser": {
     "name": "content",
     "slug": "content",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "author": "dyyz1993",
     "description": "内容营销：把内置推广 case 渲染成平台就绪的文章 + 浏览器自渲染封面（自推广闭环）",
     "site": "https://xbrowser.dev",

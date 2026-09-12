@@ -22,7 +22,7 @@ afterAll(() => {
 function createMockPage() {
   return {
     goto: vi.fn(),
-    screenshot: vi.fn(),
+    screenshot: vi.fn(async () => Buffer.from('fake-png-bytes')),
     setViewportSize: vi.fn(),
   };
 }
@@ -134,14 +134,16 @@ describe('content plugin', () => {
       expect(page.setViewportSize).toHaveBeenCalledWith({ width: 1200, height: 630 });
       const gotoArg = (page.goto.mock.calls[0] as unknown[])[0] as string;
       expect(gotoArg).toMatch(/^file:\/\/.+\.html$/);
-      expect(page.screenshot).toHaveBeenCalledWith({ path: path.resolve(out) });
+      expect(page.screenshot).toHaveBeenCalledWith({ type: 'png' });
+      // 驱动返回 Buffer，插件负责落盘——文件必须真实存在
+      expect(fs.existsSync(path.resolve(out))).toBe(true);
       const html = fs.readFileSync(gotoArg.replace('file://', ''), 'utf8');
       expect(html).toContain('Self-Healing Replay');
       expect(html).toContain('sub text');
     });
 
     it('should not crash when driver lacks setViewportSize', async () => {
-      const page = { goto: vi.fn(), screenshot: vi.fn() };
+      const page = { goto: vi.fn(), screenshot: vi.fn(async () => Buffer.from('x')) };
       const result = (await getHandler('cover')({ title: 't' }, { page })) as { success: boolean; data: unknown; tips: unknown[] };
       expect(result.success).toBe(true);
     });

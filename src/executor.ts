@@ -665,7 +665,20 @@ export async function executeChain(
           }
 
           const pluginArgs = cmdArgs.slice(1);
-          const pluginParams = parsePluginParams(pluginArgs, cmdEntry.parameters!);
+          // safeParse 必须在此重跑：CLI 侧的 zod 默认值填充只覆盖内置命令路径，
+          // daemon 转发的插件 handler 直接吃 parsePluginParams 原始输出——
+          // 跳过 schema 意味着 zod .default() 全部失效（实测 baidu search
+          // 的 pages 变 undefined）。只回填缺失键（默认值），不整体替换——
+          // zod 默认会剥掉 schema 外的键（session 等全局选项不能丢）。
+          let pluginParams = parsePluginParams(pluginArgs, cmdEntry.parameters!);
+          if (cmdEntry.parameters) {
+            const schemaCheck = cmdEntry.parameters.safeParse(pluginParams);
+            if (schemaCheck.success) {
+              for (const [k, v] of Object.entries(schemaCheck.data as Record<string, unknown>)) {
+                if (!(k in pluginParams)) pluginParams[k] = v;
+              }
+            }
+          }
 
           const pluginCtx = {
             args: pluginArgs,
