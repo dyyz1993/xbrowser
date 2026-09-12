@@ -57,6 +57,26 @@ describe('XBrowserPluginLoader', () => {
     const plugins = await loader.scanAndLoad();
     expect(Array.isArray(plugins)).toBe(true);
   });
+
+  it('resolveSiteName maps directory name to site name (alias fallback)', async () => {
+    // 复刻 alibaba-1688 实测案例：目录名与 site.name 不一致时，
+    // 用户按 plugin list 显示的目录名敲命令也应命中
+    const pluginDir = resolve(TEST_DIR, '.xcli/plugins', 'alibaba-1688');
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(resolve(pluginDir, 'package.json'), JSON.stringify({
+      name: 'test-alibaba', version: '1.0.0', main: 'index.ts', type: 'module',
+      xbrowser: { name: 'alibaba-1688', slug: 'alibaba-1688', version: '1.0.0', description: 't' },
+    }));
+    writeFileSync(resolve(pluginDir, 'index.ts'), [
+      "export default function (api: { createSite: (c: Record<string, unknown>) => void }) {",
+      "  api.createSite({ name: '1688', url: 'https://1688.com', description: 't' });",
+      "}",
+    ].join('\n'));
+    await loader.scanAndLoad();
+    expect(loader.resolveSiteName('1688')).toBe('1688');           // 直查命中原样返回
+    expect(loader.resolveSiteName('alibaba-1688')).toBe('1688');    // 目录名 → site 名
+    expect(loader.resolveSiteName('no-such-plugin')).toBeUndefined();
+  });
 });
 
 describe('PluginInstaller', () => {

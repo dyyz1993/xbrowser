@@ -6,7 +6,7 @@ import {
   type XCLIAPI,
   type CoreConfig,
 } from '@dyyz1993/xcli-core';
-import { resolve } from 'path';
+import { resolve, basename, dirname } from 'path';
 import { existsSync, readdirSync } from 'fs';
 import { homedir } from 'os';
 import { PluginMetadataParser } from './metadata-parser.js';
@@ -38,6 +38,8 @@ export class XBrowserPluginLoader {
   private core: Core;
   private loader: PluginLoader;
   private options: PluginLoaderOptions;
+  /** 目录名 → 该插件注册的 site 名（site.name ≠ 目录名时的命令别名兜底） */
+  private dirSiteAliases = new Map<string, string>();
 
   constructor(options?: PluginLoaderOptions) {
     patchLoginRequired();
@@ -84,8 +86,31 @@ export class XBrowserPluginLoader {
     return this.loader.getLoadedPlugins();
   }
 
+  /**
+   * 目录名别名兜底（小白用户实测踩坑）：`plugin list` 显示目录名，但命令路由
+   * 按 site.name 匹配——两者不一致时（如目录 alibaba-1688、site 名 1688），
+   * 用户按 list 显示的名字敲命令会 "Unknown command"。映射在 scanAndLoad/
+   * loadPlugin 时通过加载前后 site 快照 diff 记录（instance.siteName 返回的是
+   * 插件 id 而非 site 名，不可用）。
+   */
+  resolveSiteName(name: string): string | undefined {
+    if (this.core.loader.getSite(name)) return name;
+    const aliased = this.dirSiteAliases.get(name);
+    if (aliased && this.core.loader.getSite(aliased)) return aliased;
+    return undefined;
+  }
+
+  /** 记录一次插件加载引入的 site：加载前后快照 diff（同插件可注册多个 site） */
+  private recordSiteAliases(pluginDirName: string, before: Set<string>): void {
+    for (const site of this.core.loader.getSites()) {
+      if (!before.has(site.name)) this.dirSiteAliases.set(pluginDirName, site.name);
+    }
+  }
+
   getPluginContract(siteName: string, commandName?: string): PluginContract | PluginCommandContract | undefined {
-    const site = this.core.loader.getSite(siteName);
+    const resolved = this.resolveSiteName(siteName);
+    if (!resolved) return undefined;
+    const site = this.core.loader.getSite(resolved);
     if (!site) return undefined;
     const contract = buildPluginContract(site);
     if (!commandName) return contract;
@@ -93,7 +118,10 @@ export class XBrowserPluginLoader {
   }
 
   async loadPlugin(pluginPath: string, id?: string): Promise<PluginInstance> {
-    return this.loader.loadPlugin(pluginPath, id);
+    const before = new Set(this.core.loader.getSites().map((s) => s.name));
+    const instance = await this.loader.loadPlugin(pluginPath, id);
+    this.recordSiteAliases(basename(dirname(pluginPath)), before);
+    return instance;
   }
 
   async unloadPlugin(id: string): Promise<void> {

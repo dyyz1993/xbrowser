@@ -621,7 +621,10 @@ export async function executeChain(
 
         const loader = await getPluginLoader();
         const internalLoader = loader.getCore().loader;
-        const site = internalLoader.getSite(cmdName);
+        // 目录名别名兜底（与 router 同源修复）：链式命令里的插件名按
+        // plugin list 显示的目录名敲也应命中（如 alibaba-1688 → 1688）
+        const resolvedName = loader.resolveSiteName(cmdName);
+        const site = resolvedName ? internalLoader.getSite(resolvedName) : undefined;
 
         if (site) {
           const subCommand = cmdArgs[0];
