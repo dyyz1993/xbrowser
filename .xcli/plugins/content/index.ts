@@ -237,7 +237,11 @@ export default function (xcli: XCLIAPI): void {
 
       const width = params.width ?? 1200;
       const height = params.height ?? 630;
-      const outPath = path.resolve(params.output ?? path.join('output', 'content', `cover-${Date.now()}.png`));
+      // 默认路径锚定 ~/.xbrowser：daemon 常驻在它首次启动的目录，相对路径会
+      // 落进无关项目（实测踩坑）。显式 --output 的相对路径同样按家目录解析。
+      const outPath = path.resolve(
+        params.output ?? path.join(os.homedir(), '.xbrowser', 'output', 'content', `cover-${Date.now()}.png`)
+      );
       fs.mkdirSync(path.dirname(outPath), { recursive: true });
 
       // 视口若可编程设置则直接设；否则靠命令链前置 set-viewport
@@ -250,7 +254,10 @@ export default function (xcli: XCLIAPI): void {
       fs.writeFileSync(htmlPath, renderCoverHtml(params.title, params.subtitle ?? ''), 'utf8');
 
       await page.goto(`file://${htmlPath}`);
-      await page.screenshot({ path: outPath });
+      // 自研 CDP 驱动的 screenshot() 只返回 Buffer、忽略 path 选项（与 Playwright
+      // 语义不同）——必须自己写文件，否则返回了路径但文件不存在（实测踩坑）。
+      const png = (await page.screenshot({ type: 'png' })) as Buffer;
+      fs.writeFileSync(outPath, png);
 
       const tips: string[] = [`封面已保存：${outPath}（${width}×${height}）`];
       if (typeof vp.setViewportSize !== 'function') {

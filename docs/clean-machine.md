@@ -108,6 +108,31 @@ tail ~/.xbrowser/logs/chrome-bridge.log   # 全程日志
 | douyin 缺 shared 依赖 | ✅ 已修（shared 目录同步） |
 | steam 源码语法错（marketplace 旧版） | ✅ 已修（同步新版；marketplace 待更新） |
 | 插件 zod 默认值在 daemon 路径失效 | ✅ 根修（executor/router 补 safeParse，随下个 npm 版本发布） |
+| content cover 路径错+文件不存在 | ✅ 已修（Buffer 自落盘 + 路径锚定 ~/.xbrowser，v1.0.2） |
 | baidu search headless 0 结果 | ⚠️ 已知风控，走 --cdp 真 Chrome |
 | zhihu trending headless 空结果 | ⚠️ 已知风控，同上 |
-| marketplace 覆盖 20/137，核心管线插件未上架 | 🚧 待发布 |
+| 核心管线插件未上架 | ✅ 已上 npm：chrome-bridge@1.1.1 / login-bridge@1.4.3 / content@1.0.2 |
+
+## 8. 插件开发者：提交插件到官方渠道
+
+插件发布的官方通道是 **npm**（内置 marketplace publisher 已移除）：
+
+```bash
+cd my-plugin/
+# package.json 必须含 xbrowser 元数据（name/slug/version/commands...）
+# 注意：npm "version" 与 xbrowser.version 两个字段要保持一致——
+# plugin list 显示的是 xbrowser.version，不同步会出现"装了新版显示旧版"的假象
+npm publish --access public
+```
+
+用户侧安装（短名即可，安装器自动补全候选名）：
+
+```bash
+xbrowser plugin install chrome-bridge   # → 解析到 npm 包 xbrowser-plugin-chrome-bridge
+xbrowser plugin install chrome-bridge --force   # 已装时强制升级
+```
+
+**已知 UX 细节**：
+- 传完整 npm 包名（`xbrowser-plugin-chrome-bridge`）会因候选名双重前缀而 404——用短名
+- `xbrowser plugin install` 默认先查 marketplace 再回退 npm；`--from-marketplace` 强制走官网
+- npm 刚发布后立刻装可能撞 registry 传播延迟，等几十秒重试
