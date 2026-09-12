@@ -24,7 +24,17 @@ const statusResult = z.object({
   port: z.number(),
   clients: z.array(z.object({
     connectedAt: z.union([z.number(), z.string()]),
+    lastSeen: z.union([z.number(), z.string()]).optional(),
   })),
+  lastDisconnectAt: z.union([z.number(), z.string(), z.null()]).optional(),
+  ext: z.object({ extId: z.string(), v: z.string(), at: z.number() }).optional(),
+});
+
+const reviveResult = z.object({
+  revived: z.boolean(),
+  alreadyConnected: z.boolean().optional(),
+  clients: z.number().optional(),
+  extId: z.string().optional(),
 });
 
 const execResult = z.object({
@@ -87,7 +97,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.command('status', {
-    description: '查看通道状态（server/已连接扩展）',
+    description: '查看通道状态（server/已连接扩展/最近断连/扩展身份）',
     scope: 'project',
     result: statusResult,
     parameters: z.object({}),
@@ -95,6 +105,66 @@ export default function (xcli: XCLIAPI): void {
       const r = await fetch('http://127.0.0.1:9347/status').then(r => r.json()).catch(() => null);
       if (!r) return fail('bridge 未启动：先跑 xbrowser chrome-bridge serve');
       return ok(r);
+    },
+  });
+
+  site.command('revive', {
+    description: '唤醒死透的扩展 SW（bridge 无扩展连接时打开扩展 popup 页触发重连；仅新增一个标签页，不碰已有 tab）',
+    result: reviveResult,
+    scope: 'project',
+    parameters: z.object({
+      extId: z.string().optional().describe('扩展 ID（缺省读 bridge 记录的扩展上次上报值）'),
+      timeout: z.number().optional().describe('等待重连秒数（默认 20）'),
+    }),
+    examples: [
+      { cmd: 'xbrowser chrome-bridge revive', description: 'SW 死透时一键唤醒' },
+      { cmd: 'xbrowser chrome-bridge revive --extId gbcnimkcelaacnapfjdejomoclgepnph', description: '手动指定扩展 ID' },
+    ],
+    handler: async (params) => {
+      const st = await fetch('http://127.0.0.1:9347/status').then(r => r.json()).catch(() => null) as { clients?: unknown[] } | null;
+      if (!st) return fail('bridge 未启动：先跑 xbrowser chrome-bridge serve');
+      if (st.clients && st.clients.length > 0) {
+        return ok({ revived: true, alreadyConnected: true, clients: st.clients.length }, ['扩展已连接，无需唤醒']);
+      }
+      // 扩展 ID：参数 > bridge hello 记录（扩展每次连上上报，S212）
+      let extId = params.extId;
+      if (!extId) {
+        const { readFileSync } = await import('node:fs');
+        const { homedir } = await import('node:os');
+        const { join } = await import('node:path');
+        try {
+          const meta = JSON.parse(readFileSync(join(homedir(), '.xbrowser', 'chrome-bridge-ext.json'), 'utf8')) as { extId?: string };
+          extId = meta.extId;
+        } catch { /* 无记录时走参数缺失 fail */ }
+      }
+      if (!extId) return fail('未知扩展 ID：扩展连上 bridge 一次后会自动记住；或传 --extId <id>（chrome://extensions 可查）');
+
+      // 三平台开扩展 popup 页：SW 死透（连接清空+保活闹钟失效）时唯一零 GUI 复活路径
+      const url = `chrome-extension://${extId}/popup.html`;
+      const { execFile } = await import('node:child_process');
+      await new Promise<void>((resolve) => {
+        // execFile 回调吞错是刻意的：开页失败/超时由下方轮询兜底判定，不在这一步报
+        const done = () => resolve();
+        if (process.platform === 'darwin') {
+          execFile('osascript', ['-e', `tell application "Google Chrome" to open location "${url}"`], { timeout: 8000 }, () => done());
+        } else if (process.platform === 'win32') {
+          // P0-3：win32 必须 cmd /c start '' url —— 空 title 占位，否则 URL 被当窗口标题
+          execFile('cmd', ['/c', 'start', '', url], { timeout: 8000 }, () => done());
+        } else {
+          execFile('xdg-open', [url], { timeout: 8000 }, () => done());
+        }
+      });
+
+      // 轮询等扩展 hello 重连
+      const deadline = Date.now() + (params.timeout ?? 20) * 1000;
+      while (Date.now() < deadline) {
+        await new Promise(r => setTimeout(r, 1500));
+        const s = await fetch('http://127.0.0.1:9347/status').then(r => r.json()).catch(() => null) as { clients?: unknown[] } | null;
+        if (s?.clients && s.clients.length > 0) {
+          return ok({ revived: true, clients: s.clients.length, extId }, [`扩展 SW 已唤醒重连（${s.clients.length} 个连接）`]);
+        }
+      }
+      return fail(`等待重连超时（${params.timeout ?? 20}s）`, ['手动 chrome://extensions 刷新扩展', '日志：~/.xbrowser/logs/chrome-bridge.log']);
     },
   });
 

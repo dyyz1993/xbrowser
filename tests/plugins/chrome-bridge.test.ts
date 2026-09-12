@@ -33,18 +33,40 @@ vi.mock('child_process', () => ({
   spawn: (...args: unknown[]) => (globalThis as unknown as { __spawnSpy: ReturnType<typeof vi.fn> }).__spawnSpy(...(args as [])),
 }));
 
+// S212 revive：execFile 必须拦下（不能真开浏览器），fs 决定扩展 ID 记录是否存在。
+// 注意：vitest 把 'child_process' 与 'node:child_process' 别名到同一模块——
+// 两个 specifier 的 mock 必须同形（都导出 spawn+execFile），否则互相遮蔽
+const execFileSpy = vi.fn((_cmd: string, _args: unknown[], _opts: unknown, cb: (e: null, o: string, e2: string) => void) => {
+  cb(null, '', '');
+});
+vi.mock('node:child_process', () => ({
+  spawn: (...args: unknown[]) => (globalThis as unknown as { __spawnSpy: ReturnType<typeof vi.fn> }).__spawnSpy(...(args as [])),
+  execFile: (cmd: string, a2: unknown[], o: unknown, cb: (e: null, ou: string, er: string) => void): void => {
+    (globalThis as unknown as { __execFileSpy: typeof execFileSpy }).__execFileSpy(cmd, a2, o, cb);
+  },
+}));
+vi.mock('node:fs', () => ({
+  readFileSync: () => {
+    const mode = (globalThis as unknown as { __fsRead: string }).__fsRead;
+    if (mode === 'THROW') throw new Error('ENOENT');
+    return mode;
+  },
+}));
+
 describe('chrome-bridge plugin', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
     (globalThis as unknown as { __spawnSpy: ReturnType<typeof vi.fn> }).__spawnSpy = spawnSpy;
+    (globalThis as unknown as { __execFileSpy: typeof execFileSpy }).__execFileSpy = execFileSpy;
+    (globalThis as unknown as { __fsRead: string }).__fsRead = 'THROW';
   });
 
-  it('registers all six commands', () => {
+  it('registers all seven commands', () => {
     const { site, xcli } = makeMock();
     chromeBridge(xcli as never);
     expect(xcli.createSite).toHaveBeenCalledWith(expect.objectContaining({ name: 'chrome-bridge' }));
-    for (const name of ['serve', 'status', 'exec', 'cdp', 'task', 'open']) {
+    for (const name of ['serve', 'status', 'revive', 'exec', 'cdp', 'task', 'open']) {
       expect(site.command).toHaveBeenCalledWith(name, expect.anything());
     }
   });
@@ -208,5 +230,59 @@ describe('chrome-bridge plugin', () => {
     const names = site.command.mock.calls.map((c: unknown[]) => c[0]);
     expect(names).toContain('attach');
     expect(names).toContain('finish');
+  });
+
+  describe('revive (S212)', () => {
+    it('fails fast when bridge is down', async () => {
+      mockFetchSequence([{ ok: false }]);
+      const { site, xcli } = makeMock();
+      chromeBridge(xcli as never);
+      const handler = getCmd(site, 'revive');
+      const r = JSON.stringify(await handler({}, {}));
+      expect(r).toContain('bridge');
+      expect(execFileSpy).not.toHaveBeenCalled();
+    });
+
+    it('no-ops as already-connected when clients present', async () => {
+      mockFetchSequence([{ json: () => Promise.resolve({ running: true, port: 9346, clients: [{ connectedAt: 1 }] }) }]);
+      const { site, xcli } = makeMock();
+      chromeBridge(xcli as never);
+      const handler = getCmd(site, 'revive');
+      const r = JSON.stringify(await handler({}, {}));
+      expect(r).toContain('alreadyConnected');
+      expect(execFileSpy).not.toHaveBeenCalled();
+    });
+
+    it('fails with guidance when extId unknown (no record, no arg)', async () => {
+      mockFetchSequence([{ json: () => Promise.resolve({ running: true, port: 9346, clients: [] }) }]);
+      (globalThis as unknown as { __fsRead: string }).__fsRead = 'THROW';
+      const { site, xcli } = makeMock();
+      chromeBridge(xcli as never);
+      const handler = getCmd(site, 'revive');
+      const r = JSON.stringify(await handler({}, {}));
+      expect(r).toContain('扩展 ID');
+      expect(execFileSpy).not.toHaveBeenCalled();
+    });
+
+    it('opens extension popup page and polls until the SW reconnects', async () => {
+      (globalThis as unknown as { __fsRead: string }).__fsRead = JSON.stringify({ extId: 'abc123', v: '1.4.2', at: 1 });
+      // 首查无客户端 → 触发开 popup → 轮询第二次发现有连接
+      const responses = [
+        { json: () => Promise.resolve({ running: true, port: 9346, clients: [] }) },
+        { json: () => Promise.resolve({ running: true, port: 9346, clients: [{ connectedAt: 2 }] }) },
+      ];
+      global.fetch = vi.fn().mockImplementation(() => Promise.resolve(responses.shift()));
+      const { site, xcli } = makeMock();
+      chromeBridge(xcli as never);
+      const handler = getCmd(site, 'revive');
+      const r = JSON.stringify(await handler({ timeout: 10 }, {}));
+      expect(r).toContain('"revived":true');
+      expect(r).toContain('abc123');
+      expect(execFileSpy).toHaveBeenCalled();
+      const launcher = execFileSpy.mock.calls[0][0] as string;
+      const args = JSON.stringify(execFileSpy.mock.calls[0][1]);
+      expect(['osascript', 'cmd', 'xdg-open']).toContain(launcher);
+      expect(args).toContain('chrome-extension://abc123/popup.html');
+    }, 15_000);
   });
 });

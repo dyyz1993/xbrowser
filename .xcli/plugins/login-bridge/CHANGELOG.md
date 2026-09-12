@@ -31,3 +31,13 @@
 
 ### Fixed（1.4.1）
 - 端到端验证 ext-reload：bridge 命令 → SW 重启 → ping 带磁盘版本号，8 秒闭环零 GUI
+
+## [1.4.2] - 2026-09-12
+
+### Fixed
+- 「No current window」：SW 上下文 tabs.create/captureVisibleTab 显式解析 windowId（getLastFocused → 首个 normal 窗口兜底），不再依赖"当前窗口"隐式语义
+
+### Added
+- WS 连上即上报 hello（extId + 版本）→ bridge 持久化 `~/.xbrowser/chrome-bridge-ext.json`（revive 命令据此唤醒）
+- CONNECTING 卡死 >15s 强制 close 重连（半开 TCP 时 onclose 永不触发，是 SW 死透根因之一）
+- 应用层 ka 帧早退处理（配合 bridge 25s 心跳给 SW 续命）
