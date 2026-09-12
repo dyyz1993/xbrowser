@@ -64,20 +64,24 @@ export default function (xcli: XCLIAPI): void {
       if (!content && params.file) { const { readFileSync } = await import('node:fs'); content = readFileSync(params.file, 'utf8'); }
       if (!content) return fail('必须提供 --content 或 --file 参数');
 
-      await page.goto('https://my.oschina.net/u/xxx/blog/write', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
-      await page.goto('https://www.oschina.net/blog/write', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+      // oschina 写作页：my.oschina.net/u/<uid>/blog/ai-write（TipTap/ProseMirror 编辑器）
+      await page.goto('https://my.oschina.net/u/1998814/blog/ai-write', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
       await page.waitForLoadState('domcontentloaded');
       await randomPause(1500, 3000);
 
-      const titleInput = page.locator('input[name="title"], #blogTitle, input[placeholder*="标题"]').first();
+      const titleInput = page.locator('input[placeholder*="标题"]').first();
       if (!(await titleInput.isVisible().catch(() => false))) return fail('标题输入框未找到');
       await humanFill(page, titleInput, params.title);
       await randomPause(500, 1000);
-      const bodyArea = page.locator('#blogContent, textarea[name="content"], .CodeMirror, textarea').first();
-      if (!(await bodyArea.isVisible().catch(() => false))) return fail('正文编辑器未找到');
-      await humanFill(page, bodyArea, content);
+      // TipTap 编辑器：点击聚焦后用 CDP insertText 输入
+      const editor = page.locator('.tiptap.ProseMirror').first();
+      if (!(await editor.isVisible().catch(() => false))) return fail('TipTap 编辑器未找到');
+      await editor.click().catch(() => {});
+      await randomPause(300, 600);
+      await page.keyboard.insertText(content);
+      await randomPause(500, 800);
 
-      return ok({ title: params.title, saved: true, url: page.url() }, [...tips, '内容已填入编辑器']);
+      return ok({ title: params.title, saved: true, url: page.url() }, [...tips, '内容已填入编辑器（OSC 智写平台）']);
     },
   });
 
@@ -98,26 +102,28 @@ export default function (xcli: XCLIAPI): void {
       if (!content && params.file) { const { readFileSync } = await import('node:fs'); content = readFileSync(params.file, 'utf8'); }
       if (!content) return fail('必须提供 --content 或 --file 参数');
 
-      await page.goto('https://www.oschina.net/blog/write', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+      await page.goto('https://my.oschina.net/u/1998814/blog/ai-write', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
       await page.waitForLoadState('domcontentloaded');
       await randomPause(1500, 3000);
 
-      const titleInput = page.locator('input[name="title"], #blogTitle, input[placeholder*="标题"]').first();
+      const titleInput = page.locator('input[placeholder*="标题"]').first();
       if (!(await titleInput.isVisible().catch(() => false))) return fail('标题输入框未找到');
       await humanFill(page, titleInput, params.title);
       await randomPause(500, 1000);
-      const bodyArea = page.locator('#blogContent, textarea[name="content"], .CodeMirror, textarea').first();
-      if (!(await bodyArea.isVisible().catch(() => false))) return fail('正文编辑器未找到');
-      await humanFill(page, bodyArea, content);
-      await randomPause(800, 1500);
+      const editor = page.locator('.tiptap.ProseMirror').first();
+      if (!(await editor.isVisible().catch(() => false))) return fail('TipTap 编辑器未找到');
+      await editor.click().catch(() => {});
+      await randomPause(300, 600);
+      await page.keyboard.insertText(content);
+      await randomPause(500, 800);
 
-      const pubBtn = page.locator('button:has-text("发布"), input[value="发布"]').first();
+      const pubBtn = page.locator('button:has-text("发布文章")').first();
       if (!(await pubBtn.isVisible().catch(() => false))) return fail('发布按钮未找到');
       await pubBtn.click().catch(() => {});
       await page.waitForLoadState('domcontentloaded').catch(() => {});
       await randomPause(3000, 5000);
       const url = page.url();
-      const published = /\/blog\/\d+/.test(url);
+      const published = !url.includes('ai-write');
       if (!params.keepAlive) await page.waitForTimeout(1000);
       return ok({ title: params.title, published, url }, [...tips, published ? '发布成功' : '已点击发布，请人工确认']);
     },
