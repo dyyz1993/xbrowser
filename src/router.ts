@@ -817,6 +817,18 @@ export async function routeCommand(
             params._target = options.target;
           }
 
+          // 转发前补齐 zod 默认值：daemon 侧可能不会补 .default()。
+          // 只回填缺失键、不整体替换——zod 会剥 schema 外的键（session 等
+          // 全局选项必须保留在 params 里）。
+          if (cmdEntry.parameters) {
+            const schemaFill = cmdEntry.parameters.safeParse(params);
+            if (schemaFill.success) {
+              for (const [k, v] of Object.entries(schemaFill.data as Record<string, unknown>)) {
+                if (!(k in params)) (params as Record<string, unknown>)[k] = v;
+              }
+            }
+          }
+
           const needsBrowser = cmdEntry.scope === 'page' || cmdEntry.scope === 'browser';
           if (needsBrowser && !process.env.XBROWSER_DAEMON_WORKER) {
             const { forwardPluginExec } = await import('./client/daemon-client.js');
