@@ -252,8 +252,12 @@ export default function (xcli: XCLIAPI): void {
       } else {
         argsStr = typeof argsRaw === 'string' ? argsRaw : JSON.stringify(argsRaw ?? {});
       }
-      const qs = `cmd=${encodeURIComponent(params.cmd)}&args=${encodeURIComponent(argsStr)}` + (params.client ? `&client=${encodeURIComponent(params.client)}` : '');
-      const r = await fetch(`http://127.0.0.1:9347/exec?${qs}`).then(r => r.json()).catch(() => null);
+      // S212：大参数（base64 图片等）必须走 POST body——GET query 在 URL 超长时
+      // 直接连接失败，症状是「bridge 未启动」（实为 URL 上限，与 attach/cdp 同修）
+      const r = await fetch('http://127.0.0.1:9347/exec' + (params.client ? `?client=${encodeURIComponent(params.client)}` : ''), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cmd: params.cmd, args: JSON.parse(argsStr) as Record<string, unknown> }),
+      }).then(r => r.json()).catch(() => null);
       if (!r) return fail('bridge 未启动或无扩展连接');
       return r.ok === true ? ok({ cmd: params.cmd, result: r.data }) : fail(r.error || 'extension error');
     },
@@ -333,8 +337,11 @@ export default function (xcli: XCLIAPI): void {
     }),
     examples: [{ cmd: 'xbrowser chrome-bridge open https://example.com', description: '打开页面' }],
     handler: async (params) => {
-      const qs = `cmd=navigate&args=${encodeURIComponent(JSON.stringify({ url: params.url, ...(params.task ? { task: params.task } : {}), ...(params.tabId != null ? { tabId: params.tabId } : {}) }))}` + ((params as Record<string, unknown>).client ? `&client=${encodeURIComponent(String((params as Record<string, unknown>).client))}` : '');
-      const r = await fetch(`http://127.0.0.1:9347/exec?${qs}`).then(r => r.json()).catch(() => null);
+      // S212：与 exec 同修——POST body 传参，免 URL 长度上限
+      const r = await fetch('http://127.0.0.1:9347/exec', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cmd: 'navigate', args: { url: params.url, ...(params.task ? { task: params.task } : {}), ...(params.tabId != null ? { tabId: params.tabId } : {}) } }),
+      }).then(r => r.json()).catch(() => null);
       if (!r) return fail('bridge 未启动或无扩展连接');
       return r.ok === true ? ok({ url: params.url, result: r.data }) : fail(r.error || 'extension error');
     },

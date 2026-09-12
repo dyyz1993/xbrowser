@@ -136,9 +136,12 @@ describe('chrome-bridge plugin', () => {
     chromeBridge(xcli as never);
     const handler = getCmd(site, 'exec');
     await handler({ cmd: 'evaluate', args: { expression: '1+1' } }, {});
-    const calledUrl = fetchMock.mock.calls[0][0] as string;
-    expect(calledUrl).not.toContain('[object Object]');
-    expect(calledUrl).toContain(encodeURIComponent('{"expression":"1+1"}'));
+    const init = fetchMock.mock.calls[0][1] as { method: string; body: string };
+    expect(init.method).toBe('POST');
+    expect(init.body).not.toContain('[object Object]');
+    const body = JSON.parse(init.body) as { cmd: string; args: { expression?: string } };
+    expect(body.cmd).toBe('evaluate');
+    expect(body.args.expression).toBe('1+1');
   });
 
   it('cdp passes object params through without double-JSON.parse drop', async () => {
@@ -160,8 +163,10 @@ describe('chrome-bridge plugin', () => {
     chromeBridge(xcli as never);
     const handler = getCmd(site, 'exec');
     await handler({ cmd: 'navigate', args: '{"url":"https://example.com"}' }, {});
-    const calledUrl = fetchMock.mock.calls[0][0] as string;
-    expect(calledUrl).toContain(encodeURIComponent('{"url":"https://example.com"}'));
+    const init = fetchMock.mock.calls[0][1] as { body: string };
+    const body = JSON.parse(init.body) as { cmd: string; args: { url?: string } };
+    expect(body.cmd).toBe('navigate');
+    expect(body.args.url).toBe('https://example.com');
   });
 
   it('exec injects --task into args for tab-group naming', async () => {
@@ -171,11 +176,10 @@ describe('chrome-bridge plugin', () => {
     chromeBridge(xcli as never);
     const handler = getCmd(site, 'exec');
     await handler({ cmd: 'navigate', args: '{"url":"https://example.com"}', task: '发草稿' }, {});
-    const calledUrl = fetchMock.mock.calls[0][0] as string;
-    const decoded = decodeURIComponent((calledUrl.match(/args=([^&]+)/) ?? [''])[1]);
-    const parsed = JSON.parse(decoded) as { url?: string; task?: string };
-    expect(parsed.url).toBe('https://example.com');
-    expect(parsed.task).toBe('发草稿');
+    const init = fetchMock.mock.calls[0][1] as { body: string };
+    const body = JSON.parse(init.body) as { cmd: string; args: { url?: string; task?: string } };
+    expect(body.args.url).toBe('https://example.com');
+    expect(body.args.task).toBe('发草稿');
   });
 
   it('exec injects --tab-id for explicit attach routing', async () => {
@@ -185,11 +189,10 @@ describe('chrome-bridge plugin', () => {
     chromeBridge(xcli as never);
     const handler = getCmd(site, 'exec');
     await handler({ cmd: 'evaluate', args: { expression: '1+1' }, tabId: 885225922 }, {});
-    const calledUrl = fetchMock.mock.calls[0][0] as string;
-    const decoded = decodeURIComponent((calledUrl.match(/args=([^&]+)/) ?? [''])[1]);
-    const parsed = JSON.parse(decoded) as { expression?: string; tabId?: number };
-    expect(parsed.expression).toBe('1+1');
-    expect(parsed.tabId).toBe(885225922);
+    const init = fetchMock.mock.calls[0][1] as { body: string };
+    const body = JSON.parse(init.body) as { args: { expression?: string; tabId?: number } };
+    expect(body.args.expression).toBe('1+1');
+    expect(body.args.tabId).toBe(885225922);
   });
 
   it('attach groups the active tab and returns takeover info', async () => {
