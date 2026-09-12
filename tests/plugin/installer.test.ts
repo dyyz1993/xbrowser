@@ -71,7 +71,10 @@ describe('PluginInstaller', () => {
       mkdirSync(localPath, { recursive: true });
       writeFileSync(resolve(localPath, 'index.ts'), 'export default {}');
 
-      vi.mocked(installFromLocal).mockResolvedValueOnce(makePlugin({ source: 'local' }));
+      vi.mocked(installFromLocal).mockImplementationOnce(async (_s: string, _n: string, target: string) => {
+        writeFileSync(resolve(target, 'index.ts'), 'export default {}');
+        return makePlugin({ source: 'local' });
+      });
 
       const installer = new PluginInstaller(pluginsDir);
       const result = await installer.install(localPath);
@@ -81,7 +84,10 @@ describe('PluginInstaller', () => {
     });
 
     it('should detect npm source and call installFromNpm', async () => {
-      vi.mocked(installFromNpm).mockResolvedValueOnce(makePlugin({ source: 'npm' }));
+      vi.mocked(installFromNpm).mockImplementationOnce(async (_s: string, _n: string, target: string) => {
+        writeFileSync(resolve(target, 'index.ts'), 'export default {}');
+        return makePlugin({ source: 'npm' });
+      });
 
       const installer = new PluginInstaller(pluginsDir);
       const result = await installer.install('some-npm-package');
@@ -91,7 +97,10 @@ describe('PluginInstaller', () => {
     });
 
     it('should detect git source and call installFromGit', async () => {
-      vi.mocked(installFromGit).mockResolvedValueOnce(makePlugin({ source: 'git' }));
+      vi.mocked(installFromGit).mockImplementationOnce(async (_s: string, _n: string, target: string) => {
+        writeFileSync(resolve(target, 'index.ts'), 'export default {}');
+        return makePlugin({ source: 'git' });
+      });
 
       const installer = new PluginInstaller(pluginsDir);
       const result = await installer.install('https://github.com/user/repo.git');
@@ -101,7 +110,10 @@ describe('PluginInstaller', () => {
     });
 
     it('should detect url source and call installFromUrl', async () => {
-      vi.mocked(installFromUrl).mockResolvedValueOnce(makePlugin({ source: 'url' }));
+      vi.mocked(installFromUrl).mockImplementationOnce(async (_s: string, _n: string, target: string) => {
+        writeFileSync(resolve(target, 'index.ts'), 'export default {}');
+        return makePlugin({ source: 'url' });
+      });
 
       const installer = new PluginInstaller(pluginsDir);
       const result = await installer.install('https://example.com/plugin.tar.gz');
@@ -129,7 +141,10 @@ describe('PluginInstaller', () => {
       const existingDir = resolve(pluginsDir, 'my-plugin');
       mkdirSync(existingDir, { recursive: true });
 
-      vi.mocked(installFromLocal).mockResolvedValueOnce(makePlugin());
+      vi.mocked(installFromLocal).mockImplementationOnce(async (_s: string, _n: string, target: string) => {
+        writeFileSync(resolve(target, 'index.ts'), 'export default {}');
+        return makePlugin();
+      });
 
       const installer = new PluginInstaller(pluginsDir);
       await expect(
@@ -142,7 +157,10 @@ describe('PluginInstaller', () => {
       mkdirSync(localPath, { recursive: true });
       writeFileSync(resolve(localPath, 'index.ts'), 'export default {}');
 
-      vi.mocked(installFromLocal).mockResolvedValueOnce(makePlugin({ name: 'custom-name' }));
+      vi.mocked(installFromLocal).mockImplementationOnce(async (_s: string, _n: string, target: string) => {
+        writeFileSync(resolve(target, 'index.ts'), 'export default {}');
+        return makePlugin({ name: 'custom-name' });
+      });
 
       const installer = new PluginInstaller(pluginsDir);
       await installer.install(localPath, { name: 'custom-name' });
@@ -262,7 +280,10 @@ describe('PluginInstaller', () => {
 
   describe('detectSourceType (private, tested via install)', () => {
     it('should detect git for github.com URL', async () => {
-      vi.mocked(installFromGit).mockResolvedValueOnce(makePlugin({ source: 'git' }));
+      vi.mocked(installFromGit).mockImplementationOnce(async (_s: string, _n: string, target: string) => {
+        writeFileSync(resolve(target, 'index.ts'), 'export default {}');
+        return makePlugin({ source: 'git' });
+      });
 
       const installer = new PluginInstaller(pluginsDir);
       await installer.install('https://github.com/user/repo.git');
@@ -271,7 +292,10 @@ describe('PluginInstaller', () => {
     });
 
     it('should detect url for http URL without .git', async () => {
-      vi.mocked(installFromUrl).mockResolvedValueOnce(makePlugin({ source: 'url' }));
+      vi.mocked(installFromUrl).mockImplementationOnce(async (_s: string, _n: string, target: string) => {
+        writeFileSync(resolve(target, 'index.ts'), 'export default {}');
+        return makePlugin({ source: 'url' });
+      });
 
       const installer = new PluginInstaller(pluginsDir);
       await installer.install('https://example.com/plugin.tar.gz');
@@ -282,7 +306,10 @@ describe('PluginInstaller', () => {
 
   describe('deriveName (private, tested via install)', () => {
     it('should derive name from npm scoped package', async () => {
-      vi.mocked(installFromNpm).mockResolvedValueOnce(makePlugin({ name: 'scoped-plugin' }));
+      vi.mocked(installFromNpm).mockImplementationOnce(async (_s: string, _n: string, target: string) => {
+        writeFileSync(resolve(target, 'index.ts'), 'export default {}');
+        return makePlugin({ name: 'scoped-plugin' });
+      });
 
       const installer = new PluginInstaller(pluginsDir);
       await installer.install('@scope/scoped-plugin');
@@ -295,7 +322,10 @@ describe('PluginInstaller', () => {
     });
 
     it('should derive name from git URL', async () => {
-      vi.mocked(installFromGit).mockResolvedValueOnce(makePlugin({ name: 'repo' }));
+      vi.mocked(installFromGit).mockImplementationOnce(async (_s: string, _n: string, target: string) => {
+        writeFileSync(resolve(target, 'index.ts'), 'export default {}');
+        return makePlugin({ name: 'repo' });
+      });
 
       const installer = new PluginInstaller(pluginsDir);
       await installer.install('https://github.com/user/repo.git');

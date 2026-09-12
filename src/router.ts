@@ -661,7 +661,17 @@ export async function routeCommand(
         // Check plugin site BEFORE chain parsing to avoid --content with +/, being misinterpreted
         const loader = await getPluginLoader();
         const internalLoader = loader.getCore().loader;
-        const site = internalLoader.getSite(command);
+        // 目录名别名兜底：plugin list 显示目录名，路由按 site.name 匹配——
+        // 不一致时（目录 alibaba-1688 / site 名 1688）按 list 显示名敲命令
+        // 不该 404。resolveSiteName 把目录名解析为真实 site 名。
+        const resolvedSiteName = loader.resolveSiteName(command);
+        const site = resolvedSiteName ? internalLoader.getSite(resolvedSiteName) : undefined;
+        if (site && resolvedSiteName !== command) {
+          // 告知真实命令名，帮用户下次直敲（json 模式保持机器可读不注入提示）
+          if (mode !== 'json' && mode !== 'yaml') {
+            process.stderr.write(`ℹ️ "${command}" 的命令名是 "${resolvedSiteName}"（插件目录名与站点名不一致，已自动映射）\n`);
+          }
+        }
 
         // Only fall through to chain parsing if NOT a registered plugin site
         if (!site) {

@@ -69,6 +69,8 @@ vi.mock('../src/plugin/loader.js', () => {
       },
     }),
     scanAndLoad: vi.fn(),
+    // 别名兜底（router 目录名→site 名）；getSite 恒 null → 恒 undefined 透传
+    resolveSiteName: vi.fn(() => undefined),
   };
   return {
     XBrowserPluginLoader: vi.fn(() => mockLoader),
@@ -610,6 +612,7 @@ describe('router', () => {
           },
         }),
         scanAndLoad: vi.fn(),
+        resolveSiteName: vi.fn((n: string) => n),
       };
       return {
         XBrowserPluginLoader: vi.fn(() => mockLoader),
@@ -639,6 +642,7 @@ describe('router', () => {
           },
         }),
         scanAndLoad: vi.fn(),
+        resolveSiteName: vi.fn((n: string) => n),
       };
       return {
         XBrowserPluginLoader: vi.fn(() => mockLoader),
@@ -673,6 +677,7 @@ describe('router', () => {
           },
         }),
         scanAndLoad: vi.fn(),
+        resolveSiteName: vi.fn((n: string) => n),
       };
       return {
         XBrowserPluginLoader: vi.fn(() => mockLoader),
@@ -794,6 +799,7 @@ describe('router', () => {
           loader: { getSite: vi.fn(() => null) },
         }),
         scanAndLoad: vi.fn(),
+        resolveSiteName: vi.fn((n: string) => n),
       };
       return { XBrowserPluginLoader: vi.fn(() => mockLoader) };
     });
@@ -825,6 +831,7 @@ describe('router', () => {
           loader: { getSite: vi.fn(() => null) },
         }),
         scanAndLoad: vi.fn(),
+        resolveSiteName: vi.fn((n: string) => n),
       };
       return { XBrowserPluginLoader: vi.fn(() => mockLoader) };
     });
@@ -856,6 +863,7 @@ describe('router', () => {
           loader: { getSite: vi.fn(() => null) },
         }),
         scanAndLoad: vi.fn(),
+        resolveSiteName: vi.fn((n: string) => n),
       };
       return { XBrowserPluginLoader: vi.fn(() => mockLoader) };
     });
@@ -883,6 +891,7 @@ describe('router', () => {
           loader: { getSite: vi.fn(() => null) },
         }),
         scanAndLoad: vi.fn(),
+        resolveSiteName: vi.fn((n: string) => n),
       };
       return { XBrowserPluginLoader: vi.fn(() => mockLoader) };
     });
@@ -914,6 +923,7 @@ describe('router', () => {
           loader: { getSite: vi.fn(() => null) },
         }),
         scanAndLoad: vi.fn(),
+        resolveSiteName: vi.fn((n: string) => n),
       };
       return { XBrowserPluginLoader: vi.fn(() => mockLoader) };
     });

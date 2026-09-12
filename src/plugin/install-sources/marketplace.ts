@@ -61,6 +61,11 @@ export async function installFromMarketplace(
 
   try {
     await downloadAndExtractMarketplaceTarball(baseUrl, realSlug, tmpDir, targetDir);
+  } catch (err) {
+    // 下载/解压失败时清掉空壳 targetDir——残留会让 plugin list 显示一个
+    // 调不通的幽灵插件（github-seo 实测案例）
+    safeCleanup(targetDir);
+    throw err;
   } finally {
     safeCleanup(tmpDir);
   }

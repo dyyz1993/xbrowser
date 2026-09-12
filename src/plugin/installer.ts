@@ -22,6 +22,7 @@ import { installFromMarketplace } from './install-sources/marketplace.js';
 import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 import { getMarketplaceUrl, resolveNpmPackageWithFallback } from '../config.js';
 import { ensurePluginDependencies } from './ensure-deps.js';
+import { safeCleanup } from '@dyyz1993/xcli-core';
 
 export type { InstalledPlugin, InstallOptions } from './installer-types.js';
 
@@ -62,15 +63,33 @@ export class PluginInstaller {
 
     const resolvedSource = type === 'npm' ? await resolveNpmPackageWithFallback(source) : source;
 
+    // 失败清理（小白用户实测踩坑）：下载/解压抛错时 targetDir 空壳残留——
+    // 之后 `plugin list` 会显示一个调不通的插件（github-seo 案例）。统一包一层：
+    // 安装失败即清目录再抛原错误；装完必须存在入口文件，否则视为坏包同样清理。
+    const withCleanup = async (fn: () => Promise<InstalledPlugin>): Promise<InstalledPlugin> => {
+      try {
+        const r = await fn();
+        await this.fixSharedDeps(targetDir);
+        ensurePluginDependencies(this.pluginsDir);
+        if (!existsSync(resolve(targetDir, 'index.ts')) && !existsSync(resolve(targetDir, 'index.js'))) {
+          throw new Error('installed package has no index.ts/js entry');
+        }
+        return r;
+      } catch (err) {
+        safeCleanup(targetDir);
+        throw err;
+      }
+    };
+
     switch (type) {
       case 'local':
-        return await installFromLocal(source, name, targetDir).then(async r => { await this.fixSharedDeps(targetDir); ensurePluginDependencies(this.pluginsDir); return r; });
+        return await withCleanup(() => installFromLocal(source, name, targetDir));
       case 'npm':
-        return await installFromNpm(resolvedSource, name, targetDir).then(async r => { await this.fixSharedDeps(targetDir); ensurePluginDependencies(this.pluginsDir); return r; });
+        return await withCleanup(() => installFromNpm(resolvedSource, name, targetDir));
       case 'git':
-        return await installFromGit(source, name, targetDir).then(async r => { await this.fixSharedDeps(targetDir); ensurePluginDependencies(this.pluginsDir); return r; });
+        return await withCleanup(() => installFromGit(source, name, targetDir));
       case 'url':
-        return await installFromUrl(source, name, targetDir).then(async r => { await this.fixSharedDeps(targetDir); ensurePluginDependencies(this.pluginsDir); return r; });
+        return await withCleanup(() => installFromUrl(source, name, targetDir));
     }
   }
 

@@ -81,6 +81,8 @@ vi.mock('../src/plugin/loader.js', () => {
       },
     }),
     scanAndLoad: vi.fn(),
+    // resolveSiteName：别名兜底（executor 链式插件路由调用）；测试默认透传
+    resolveSiteName: vi.fn((name: string) => (mockGetSite(name) ? name : undefined)),
   };
   return {
     XBrowserPluginLoader: vi.fn(() => mockLoader),
