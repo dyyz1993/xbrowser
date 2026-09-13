@@ -83,6 +83,17 @@ xbrowser "preflight --strict && goto https://target.com"   # 门禁放行才执�
 **红线：发布类任务（真实账号发内容）禁用 headless**——四站实证 headless 会话快速作废+服务端踢登录。
 发布一律接有头真 Chrome：`--cdp http://localhost:9222`（Chrome 带 --remote-debugging-port 启动）。
 
+## 3.6 Linux 容器/服务器字体（渲染层收尾）
+
+stealth 垫片已覆盖指纹层+渲染声明层（dpr/color-gamut），唯一剩余项是**字体实体**——
+headless 缺中文字体会回退 Arial，字体宽度探测可识别。容器部署时装一次：
+
+```bash
+# Debian/Ubuntu 容器（中文 + emoji + 西文核心）
+apt-get install -y fonts-noto-color-emoji fonts-wqy-zenhei fonts-ipafont-gothic fonts-freefont-ttf
+# 声明为 Mac UA 的场景再补苹方（无官方 deb，从 Mac 拷 PingFang.ttc 到 /usr/share/fonts/ 后 fc-cache -f）
+```
+
 ## 4. 发布一篇文章（端到端）
 
 ```bash
