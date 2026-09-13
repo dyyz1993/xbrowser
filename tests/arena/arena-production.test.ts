@@ -1951,4 +1951,76 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
       expect(data).toHaveProperty('actionResult');
     }
   });
+
+  it('受控编辑器回流清空：合成注入被清，fill 保真层须升级键盘流后存活', async () => {
+    // 知乎 Draft 事故的缩时复刻（S-sup 家族红测）：强受控编辑器只接受
+    // "伴随真实键盘事件流的输入"，其余 DOM 改动在 reconciliation 周期
+    // 被状态回流清空。fill 的 paste/synthetic 通道（isTrusted 边界 +
+    // 无键盘命令流）应被清；保真层的最终裁决是值存活。
+    const pagePath = '/tmp/arena-prod-controlled.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html>
+<html><body>
+  <input id="ctrl" placeholder="受控输入框">
+  <script>
+    (function(){
+      var el = document.getElementById('ctrl');
+      var state = '';
+      var lastKeyAt = 0;
+      window.__evlog = [];
+      el.addEventListener('keydown', function(){ lastKeyAt = Date.now(); window.__evlog.push('kd'); }, true);
+      el.addEventListener('paste', function(e){ window.__evlog.push('paste:' + e.isTrusted); e.preventDefault(); }); // 知乎式：编辑器禁粘贴，只认键盘流
+      var allowLast = false;
+      el.addEventListener('beforeinput', function(e){
+        // Draft 式裁决：只接受字符级键盘输入（逐字 data<=2）；整段
+        // data（粘贴/execCommand insertText）不进 EditorState
+        window.__evlog.push('bi:' + e.isTrusted + ':len=' + (e.data || '').length);
+        allowLast = e.isTrusted && e.data && e.data.length <= 2;
+      });
+      el.addEventListener('input', function(){
+        if (allowLast) state = el.value; // React onChange 语义：值已更新后同步
+      });
+      setInterval(function(){
+        if (el.value !== state) el.value = state;
+      }, 300);
+    })();
+  </script>
+</body></html>`);
+    await page.goto(`file://${pagePath}`);
+    await page.waitForTimeout(150);
+    const LONG = '这是超过四十个字符的长文本用于触发粘贴路径的受控编辑器回流测试内容一二三四五六七八九十一二三四五六七八九十';
+    await page.fill('#ctrl', LONG);
+    await page.waitForTimeout(900); // 跨 ≥2 个 reconciliation 周期
+    const got = await page.evaluate<string>(`(document.getElementById('ctrl').value || '')`);
+    const diag = await page.evaluate<string>(`(window.__evlog || []).join(' ; ')`);
+    console.log('EVLOG:', diag);
+    expect(got).toBe(LONG);
+  });
+  it('输入保真层防误伤：受控页面的格式化改写不触发升级', async () => {
+    // React 特征（fiber 键）+ 格式化输入框（输入 1234 页面改写 1,234）。
+    // 受控终验只认"清空/腰斩"——千分位增值变形必须判存活，fill 正常返回。
+    const pagePath = '/tmp/arena-prod-format.html';
+    fs.writeFileSync(pagePath, `<!DOCTYPE html>
+<html><body>
+  <input id="amt">
+  <script>
+    (function(){
+      var el = document.getElementById('amt');
+      el.__reactFiber$test = {}; // React fiber 特征 → 受控通道
+      el.addEventListener('input', function(){
+        var digits = el.value.replace(/[^0-9]/g, '');
+        el.value = digits.replace(/\B(?=(\d{3})+(?!\d))/g, ','); // 千分位
+      });
+    })();
+  </script>
+</body></html>`);
+    await page.goto(`file://${pagePath}`);
+    await page.waitForTimeout(120);
+    await page.fill('#amt', '1234567');
+    await page.waitForTimeout(200);
+    const got = await page.evaluate<string>(`(document.getElementById('amt').value || '')`);
+    // 防误伤核心：值完整在场（格式化变形与否取决于页面时序），fill 未抛
+    // input-not-retained、未触发升级清空——数字序列必须原样可恢复
+    expect(got.replace(/[^0-9]/g, '')).toBe('1234567');
+  });
+
 });

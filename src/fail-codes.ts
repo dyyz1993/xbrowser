@@ -31,6 +31,7 @@ export const FAIL_CODES = {
   selectorNotFound: 'RETRYABLE: selector-not-found',
   pageNotReady: 'RETRYABLE: page-not-ready',
   elementGone: 'RETRYABLE: element-gone',
+  inputNotRetained: 'RETRYABLE: input-not-retained',
   captcha: 'HUMAN: captcha',
   loginWall: 'HUMAN: login-wall',
   permissionDenied: 'FATAL: permission-denied',
@@ -53,6 +54,7 @@ export function classifyFailure(message: string | undefined): FailCode {
   if (/selector|选择器|element not found|未找到元素|no such element|queryselector returned null/.test(msg))
     return pick(FAIL_CODES.selectorNotFound);
   if (/timeout|超时|timed out|waiting for/.test(msg)) return pick(FAIL_CODES.pageNotReady);
+  if (/not retained|清空了注入值|input-not-retained/.test(msg)) return pick(FAIL_CODES.inputNotRetained);
   if (/net::err|404|navigation failed|页面不存在|target closed|element-gone/.test(msg))
     return pick(FAIL_CODES.targetGone);
   return pick(FAIL_CODES.unknown);

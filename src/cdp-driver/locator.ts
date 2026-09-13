@@ -19,6 +19,7 @@ import type {
 import type { XBPageImpl } from './page.js';
 import { waitForActionable, scrollIntoView } from './actionability.js';
 import { queryJS, queryAllJS } from './selector-utils.js';
+import { probeEditor } from './editor-profile.js';
 
 export class XBLocatorImpl implements XBLocator {
   protected page: XBPageImpl;
@@ -106,28 +107,72 @@ export class XBLocatorImpl implements XBLocator {
         if ((el.value || el.textContent || '') !== '') document.execCommand('selectAll');
       })()
     `);
+    // 输入保真层（S-sup 家族，知乎 Draft 事故 2026-09-13）双层防线：
+    // ①前置：受控编辑器（React fiber/Draft 族/contenteditable）直接跳过
+    //   粘贴快通道——它们的 paste/synthetic 注入即时"成功"但会被
+    //   reconciliation 回流清空（假成功）。
+    // ②后置：快通道无论前置探测结果如何，成功返回前必须过延时存活
+    //   验证——特征探测覆盖不了"无框架特征的禁粘贴受控面"（红测实证：
+    //   纯 JS 受控 + paste preventDefault 页面无任何框架指纹）。
+    const profile = await probeEditor(
+      (expr) => this.page.evaluate(expr),
+      this._q(this.selector),
+    );
+    const verifyMs = parseInt(process.env.XBROWSER_FILL_VERIFY_MS ?? '600', 10) || 600;
+    const readValue = (): Promise<string> => this.page.evaluate<string>(
+      `(function(){ const el = ${this._q(this.selector)}; if (!el) return ''; const v = el.value !== undefined ? el.value : el.textContent; return v || ''; })()`,
+    );
+    /** 延时存活验证：只认"被清/腰斩(<50%)"为失败——格式化改写（日期
+     * 重排/千分位/slug 生成等增值变形）一律视为存活，防误伤 */
+    const survived = async (expected: string): Promise<boolean> => {
+      await this.page.waitForTimeout(verifyMs);
+      const got = await readValue();
+      return !(got === '' || got.length < expected.length * 0.5);
+    };
+    const canFastPath =
+      process.env.XBROWSER_STEALTH !== 'off' &&
+      value.length >= 40 &&
+      process.env.XBROWSER_FILL_TYPE !== 'type' &&
+      !profile.controlled; // 已知受控家族直接跳过粘贴（省一轮假成功+验证）
+
     // 长文本粘贴路径（d56）：人类长文本（≥40 字符）80%+ 用粘贴 ——
     // trusted paste 事件 + 整段瞬达。逐字打 40+ 字符的每字符 ~300ms
     // 节奏本身是指纹。OS 剪贴板 + 平台粘贴组合键（原生粘贴管线）。
-    if (
-      process.env.XBROWSER_STEALTH !== 'off' &&
-      value.length >= 40 &&
-      process.env.XBROWSER_FILL_TYPE !== 'type'
-    ) {
-      // 三级路径（d58）：原生粘贴（CDP 协议边界，当前必败但保留给未来
-      // 协议演进）→ 合成 paste + execCommand insertText（真实编辑管线，
-      // 事件形态贴近人类粘贴）→ 键盘打字（最终兜底）
+    if (canFastPath) {
+      // 三级路径（d58）：原生粘贴 → 合成 paste + execCommand → 键盘打字。
+      // 快通道"即时回读通过"不再直接 return——必须过延时存活验证，
+      // 被回流清空则自然落入键盘流（升级语义）。
       try {
         const { pasteViaClipboard, syntheticPaste } = await import('../utils/clipboard.js');
         await pasteViaClipboard(this.page, value);
         const got = await this.page.evaluate<string>(
           `(function(){ const el = ${this._q(this.selector)}; return el ? (el.value || '') : ''; })()`,
         );
-        if (got === value) return;
-        if (await syntheticPaste(this.page, this._q(this.selector), value)) return;
+        if (got === value && (await survived(value))) return;
+        const syn = await syntheticPaste(this.page, this._q(this.selector), value);
+        if (syn && (await survived(value))) return;
       } catch { /* fall through to typing */ }
     }
     await this.page.keyboard.type(value, { stealth: true });
+    // 键盘流是完整真实事件流，常规站点无需终验；仅在受控家族上做最终
+    // 裁决（含升级重打一轮），防 Draft 式"连键盘流也被拒"的极端站点。
+    if (profile.controlled && verifyMs > 0 && !(await survived(value))) {
+      await this.click({ ...opts });
+      await this.page.evaluate(`
+        (function() {
+          const el = ${this._q(this.selector)};
+          if (!el) return;
+          if (document.activeElement !== el) el.focus();
+          document.execCommand('selectAll');
+        })()
+      `);
+      await this.page.keyboard.type(value, { stealth: true });
+      if (!(await survived(value))) {
+        throw new Error(
+          `input not retained: 受控编辑器在键盘流后仍清空注入值（升级人工或检查站点裁决逻辑；可调 XBROWSER_FILL_VERIFY_MS）`,
+        );
+      }
+    }
     return;
     // Legacy path (unreachable but kept for reference):
     await this.page.evaluate(`
