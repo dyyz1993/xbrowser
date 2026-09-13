@@ -308,12 +308,20 @@ export async function handleBrowserCommand(
       }
       case 'mouse': {
         // Supports: mouse move 100 200  OR  mouse click 50 50  OR  mouse --action move --x 100 --y 200
+        //           mouse 960 655 --action click (action flag + positional coords)
         // Flatten args in case shell quoting merged them (e.g. "move 100 200")
         const flatArgs = args.flatMap(a => a.split(/\s+/).filter(Boolean));
-        const action = (options.action as string) || flatArgs.find(a => ['move','click','dblclick','down','up'].includes(a));
-        const actionIdx = action ? flatArgs.indexOf(action) : -1;
-        const x = options.x !== undefined ? Number(options.x) : (actionIdx >= 0 && flatArgs[actionIdx+1] ? Number(flatArgs[actionIdx+1]) : undefined);
-        const y = options.y !== undefined ? Number(options.y) : (actionIdx >= 0 && flatArgs[actionIdx+2] ? Number(flatArgs[actionIdx+2]) : undefined);
+        const argActionIdx = flatArgs.findIndex(a => ['move','click','dblclick','down','up'].includes(a));
+        const action = (options.action as string) || (argActionIdx >= 0 ? flatArgs[argActionIdx] : undefined);
+        // Coordinates: --x/--y flags win; otherwise the two tokens after the
+        // action token (2026-09-13-01: when action came from --action, x/y were
+        // left undefined because the action token wasn't in flatArgs → zod
+        // coerced undefined to NaN → "Expected number, received nan").
+        const coordArgs = options.action !== undefined
+          ? flatArgs
+          : (argActionIdx >= 0 ? flatArgs.slice(argActionIdx + 1) : flatArgs);
+        const x = options.x !== undefined ? Number(options.x) : (coordArgs[0] !== undefined ? Number(coordArgs[0]) : undefined);
+        const y = options.y !== undefined ? Number(options.y) : (coordArgs[1] !== undefined ? Number(coordArgs[1]) : undefined);
         if (!action || x === undefined || y === undefined || isNaN(x) || isNaN(y)) {
           outputError('Usage: xbrowser mouse <move|click|dblclick> <x> <y>\n       xbrowser mouse --action <action> --x <x> --y <y>');
         }
