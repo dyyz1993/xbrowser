@@ -8,12 +8,14 @@
  *   xbrowser mcp                      # 前台运行（stdio）
  *   claude mcp add xbrowser -- xbrowser mcp
  *
- * 工具集（7 个）：
+ * 工具集（9 个）：
  *   browser_navigate / browser_act / browser_read / browser_snapshot /
- *   browser_screenshot / browser_network / browser_replay
+ *   browser_screenshot / browser_network / browser_replay +
+ *   heal_kb_read / heal_kb_write（M2：自愈知识库读写，供 healer agent 使用）
  */
 import { executeChain } from '../executor.js';
 import { executeCommand } from '../executor.js';
+import { readHeals, lookupHeal, writeHeal, forgetHeal, listHealDomains } from '../lib/heal-kb.js';
 
 // ── 工具定义 ──────────────────────────────────────────────
 
@@ -131,17 +133,49 @@ const TOOLS: McpTool[] = [
       required: ['file'],
     },
   },
+  {
+    name: 'heal_kb_read',
+    description:
+      'Read the self-healing knowledge base (~/.xbrowser/knowledge/heals-{domain}.json). ' +
+      'Mappings: broken primary selector → healed selector + strategy + hits. ' +
+      'No args = list all domains; domain only = all entries for that domain; domain+selector = single lookup.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        domain: { type: 'string', description: 'Site domain, e.g. juejin.cn. Omit to list all domains.' },
+        selector: { type: 'string', description: 'Broken primary selector to look up (requires domain).' },
+      },
+    },
+  },
+  {
+    name: 'heal_kb_write',
+    description:
+      'Write or remove an entry in the self-healing knowledge base — lets an external healer agent ' +
+      '(selector-healer) persist re-located selectors that the replay engine will pick up as known-heal. ' +
+      'Entries TTL-prune after 30 days without a hit.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        domain: { type: 'string', description: 'Site domain, e.g. juejin.cn' },
+        selector: { type: 'string', description: 'Broken primary selector (the recording-time selector)' },
+        healed: { type: 'string', description: 'The re-located working selector' },
+        strategy: { type: 'string', description: 'How it was healed, e.g. partial-id / text-anchor / label-anchor' },
+        remove: { type: 'boolean', description: 'true = forget this entry instead of writing' },
+      },
+      required: ['domain', 'selector'],
+    },
+  },
 ];
 
 // ── 工具实现（复用 executor，薄壳） ─────────────────────────
 
 const DEFAULT_SESSION = 'mcp';
 
-async function runTool(name: string, args: Record<string, unknown>): Promise<{ content: Array<{ type: string; text: string }> }> {
+/** 工具实现入口（导出供测试直接调用；stdio 循环也走这里） */
+export async function runTool(name: string, args: Record<string, unknown>): Promise<{ content: Array<{ type: string; text: string }> }> {
   const session = (args.session as string) || DEFAULT_SESSION;
   const sessionOpts = { sessionName: session };
   const text = (v: unknown) => ({ content: [{ type: 'text', text: JSON.stringify(v, null, 2) }] });
-
   switch (name) {
     case 'browser_navigate': {
       const url = args.url as string;
@@ -187,6 +221,28 @@ async function runTool(name: string, args: Record<string, unknown>): Promise<{ c
       };
       const result = await executeCommand('replay', params, session, {});
       return text(result);
+    }
+    case 'heal_kb_read': {
+      const domain = args.domain as string | undefined;
+      const selector = args.selector as string | undefined;
+      if (!domain) return text({ domains: listHealDomains() });
+      if (selector) {
+        const entry = lookupHeal(domain, selector);
+        return text({ domain, selector, entry });
+      }
+      return text({ domain, entries: readHeals(domain) });
+    }
+    case 'heal_kb_write': {
+      const domain = args.domain as string;
+      const selector = args.selector as string;
+      if (args.remove) {
+        return text({ domain, selector, removed: forgetHeal(domain, selector) });
+      }
+      const entry = writeHeal(domain, selector, {
+        healed: args.healed as string,
+        strategy: args.strategy as string,
+      });
+      return text({ domain, selector, written: entry });
     }
     default:
       throw new Error(`unknown tool: ${name}`);
