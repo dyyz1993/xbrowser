@@ -15,8 +15,13 @@ URL（本文档）: `https://raw.githubusercontent.com/dyyz1993/xbrowser/master/
 
 ```bash
 # Node 20+（已装可跳过；不要用 root）
-node --version || { curl -O https://nodejs.org/dist/v20.18.1/node-v20.18.1-darwin-arm64.tar.gz \
-  && mkdir -p ~/local && tar -xzf node-*.tar.gz -C ~/local && mv ~/local/node-* ~/local/node; }
+# 注意按 CPU 架构选包（Apple Silicon=darwin-arm64，Intel=darwin-x64）；
+# 不要用官方 .pkg + curl（实测会被静默截断），必须用 tar.gz
+node --version || {
+  ARCH=$(uname -m); [ "$ARCH" = "arm64" ] && A=arm64 || A=x64
+  curl -o /tmp/node.tar.gz "https://nodejs.org/dist/v20.18.1/node-v20.18.1-darwin-$A.tar.gz" \
+  && mkdir -p ~/local && tar -xzf /tmp/node.tar.gz -C ~/local && mv ~/local/node-v20.18.1-darwin-$A ~/local/node
+}
 export PATH="$HOME/local/node/bin:$PATH"
 
 # CLI（官方 npm 包）
@@ -34,6 +39,7 @@ node -e "import('$(npm root -g)/@xbrowser/cli/dist/index.js').then(()=>console.l
 
 ```bash
 xbrowser plugin install <短名>        # 短名！如 juejin（传全包名会 404）
+# marketplace 包损坏时用 npm 源强制重装：xbrowser plugin install <短名> --source npm --force
 ```
 
 常用插件速查：`juejin` `csdn` `cnblogs` `zhihu` `51cto` `devto`（发布类）｜
@@ -102,6 +108,8 @@ xbrowser --cdp 9222 title          # 接管已开的 Chrome（复用真实登录
 | 搜索 0 结果 | headless 风控（百度/知乎等） | 接真 Chrome：`--cdp 9222` 或 chrome-bridge |
 | 插件命令无输出 | daemon 缓存 | `pkill -f daemon` |
 | 知乎编辑器填了就空 | 字段级合成输入免疫（React 回流清空） | headless 不可发知乎；走真浏览器（chrome-bridge 扩展路径） |
+| 知乎提示"请求存在异常，暂时限制" | headless 高频自动化触发风控墙 | 知乎操作走真浏览器（chrome-bridge 扩展路径）；等待限制解除 |
+| marketplace 包 ParseError / 损坏 | 个别 marketplace tarball 是旧坏版 | `xbrowser plugin install <短名> --source npm --force` 装 npm 源 |
 | chrome-bridge 无连接 | 扩展 SW 死透 | `xbrowser chrome-bridge revive`；日志 `~/.xbrowser/logs/chrome-bridge.log` |
 
 **红线**：绝不 `browser.close()`（会杀用户浏览器）；不碰用户正在看的 tab（用 `--task` 建任务组 tab）；
