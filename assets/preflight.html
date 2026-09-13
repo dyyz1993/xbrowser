@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>xbrowser preflight 反爬自检页</title>
+</head>
+<body>
+<h3 id="st">preflight</h3>
+<div id="out">PENDING</div>
+<script>
+// xbrowser 预检门禁检测页：与 bot.sannysoft.com 同类的本地版——
+// 覆盖 webdriver/headless/UA/插件/权限/自动化痕迹六族断言，免外网依赖。
+(function () {
+  var fails = [];
+  function assert(name, ok) {
+    var li = document.createElement('div');
+    li.className = ok ? 'pass' : 'fail';
+    li.setAttribute('data-check', name);
+    li.textContent = name + ': ' + (ok ? 'pass' : 'FAIL');
+    document.getElementById('out').appendChild(li);
+    if (!ok) fails.push(name);
+  }
+  // 1. webdriver 必须为 false（无痕/垫片失败/headless 默认全会暴露 true）
+  assert('webdriver', navigator.webdriver === false);
+  // 2. headless UA 泄漏（HeadlessChrome 字样）
+  assert('ua-no-headless', !/headless/i.test(navigator.userAgent));
+  // 3. UA 与 platform 一致性（MacIntel/macos 系 UA、Win32/windows 系 UA）
+  var uaMac = /Macintosh/.test(navigator.userAgent);
+  assert('ua-platform-consistent', (uaMac && /Mac/.test(navigator.platform)) || (!uaMac && /Win|Linux/.test(navigator.platform)));
+  // 4. plugins 非空（真 Chrome ≥1；多数自动化环境为 0）
+  assert('plugins-nonempty', navigator.plugins && navigator.plugins.length > 0);
+  // 5. languages 可用且非空
+  assert('languages', Array.isArray(navigator.languages) && navigator.languages.length > 0);
+  // 6. window.chrome 存在（Chromium 系真浏览器标志；部分 headless 缺失）
+  assert('window-chrome', typeof window.chrome === 'object' && window.chrome !== null);
+  // 7. permissions.query notification 不报错（自动化环境常 throw/拒绝）
+  if (navigator.permissions && navigator.permissions.query) {
+    navigator.permissions.query({ name: 'notifications' }).then(function (s) {
+      assert('permissions', true);
+      finish();
+    }, function () {
+      assert('permissions', false);
+      finish();
+    });
+  } else {
+    assert('permissions', false);
+    finish();
+  }
+  // 8. 外层尺寸合理（headless 默认 800x600 或 0）
+  assert('viewport-sane', window.outerWidth >= 500 && window.outerHeight >= 400);
+  function finish() {
+    if (document.getElementById('out').getAttribute('data-done')) return;
+    document.getElementById('out').setAttribute('data-done', '1');
+    document.getElementById('out').setAttribute('data-fails', fails.join(','));
+    document.getElementById('out').textContent = fails.length === 0 ? 'ALL-PASS' : 'FAILED:' + fails.join(',');
+    document.title = fails.length === 0 ? 'PREFLIGHT-PASS' : 'PREFLIGHT-FAIL';
+  }
+})();
+</script>
+</body>
+</html>

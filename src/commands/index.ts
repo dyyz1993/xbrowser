@@ -8,6 +8,7 @@ import './find-visual.js';
 import './vision-task.js';
 import './evaluate.js';
 import './ua.js';
+import './preflight.js';
 import './storage.js';
 import './screenshot.js';
 import './structure.js';

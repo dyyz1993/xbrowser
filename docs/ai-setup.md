@@ -73,6 +73,16 @@ xbrowser login-bridge apply --site <domain> --cdp http://localhost:9333
 
 **验证**：`xbrowser plugin list | grep <site>` → `[logged in]` 标记，或跑该站一条只读命令。
 
+## 3.5 预检门禁（任务启动前必过反爬检测）
+
+```bash
+xbrowser preflight                     # 自检：webdriver/headless-UA/plugins/权限等八族断言
+xbrowser preflight --publish           # 发布类门禁：headless 环境直接 FAIL（红线）
+xbrowser "preflight --strict && goto https://target.com"   # 门禁放行才执行任务
+```
+**红线：发布类任务（真实账号发内容）禁用 headless**——四站实证 headless 会话快速作废+服务端踢登录。
+发布一律接有头真 Chrome：`--cdp http://localhost:9222`（Chrome 带 --remote-debugging-port 启动）。
+
 ## 4. 发布一篇文章（端到端）
 
 ```bash
