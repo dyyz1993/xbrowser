@@ -272,7 +272,9 @@ function resolveKeyMapping(key: string): KeyInfo {
       const keyCode = key.charCodeAt(0);
       return { key, code, text: key, keyCode };
     }
-    // Punctuation
+    // Punctuation & CJK（知乎 Draft 事故 2026-09-13）：任何单字符都必须带
+    // text —— CJK 无 text 时 dispatchKeyEvent 零插入，强受控编辑器唯一
+    // 存活通道（完整键盘流）对中文直接失效
     return { key, code: key, text: key };
   }
 

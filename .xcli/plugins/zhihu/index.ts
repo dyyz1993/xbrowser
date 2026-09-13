@@ -51,6 +51,109 @@ async function safeClick(page: Page, selector: string): Promise<boolean> {
   }
 }
 
+/** 编辑器当前内容长度（textarea→value；contenteditable→innerText），页面异常返回 -1 */
+async function editorLength(page: Page, selector: string): Promise<number> {
+  try {
+    const v = await page.evaluate(`(function(){
+      var el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return -1;
+      var v = (el.value !== undefined && el.value !== null) ? el.value : (el.innerText || el.textContent || '');
+      return String(v).length;
+    })()`);
+    return typeof v === 'number' ? v : parseInt(String(v), 10) || 0;
+  } catch {
+    return -1;
+  }
+}
+
+/**
+ * 强受控编辑器稳定键入（知乎 Draft 事故 2026-09-13）：
+ * Draft 编辑器的 EditorState 是唯一数据源，任何不经其键盘命令流的改动
+ * （合成 input / insertText / paste）都会"即时成功然后被回流清空"。
+ * 唯一存活通道 = 完整键盘事件流 + 分块对账 + 焦点丢失自愈：
+ *   - 每 CHUNK 字块后读长度对账，停滞（未增长）→ safeClick 重新聚焦续打
+ *   - 终验：长度 < 50% 原文 → 重聚焦 + 全选退格 + 重打一轮
+ *   - 仍 < 50% → 抛 'input not retained'（fail-codes → RETRYABLE 阶梯）
+ * 返回最终编辑器内长度。
+ */
+async function typeDraftStabilized(
+  page: Page,
+  editorSelector: string,
+  text: string,
+  tips: string[],
+): Promise<number> {
+  const CHUNK = 24;
+  const typeAll = async (): Promise<number> => {
+    let prev = await editorLength(page, editorSelector);
+    for (let i = 0; i < text.length; i += CHUNK) {
+      const chunk = text.slice(i, i + CHUNK);
+      await page.keyboard.type(chunk, { delay: 10 });
+      const now = await editorLength(page, editorSelector);
+      if (now <= prev && prev >= 0) {
+        // 对账停滞：焦点丢失/页面捣乱 → 重新聚焦（真实鼠标）续打剩余
+        await safeClick(page, editorSelector);
+        tips.push(`输入停滞于 ${now}，已重新聚焦续打`);
+      }
+      prev = await editorLength(page, editorSelector);
+    }
+    return prev;
+  };
+
+  let len = await typeAll();
+  if (len >= 0 && len < text.length * 0.5) {
+    tips.push(`首轮键入仅存活 ${len}/${text.length}，升级重打一轮`);
+    await safeClick(page, editorSelector);
+    await page.keyboard.press('Control+a');
+    await page.keyboard.press('Backspace');
+    len = await typeAll();
+    if (len < text.length * 0.5) {
+      throw new Error(`input not retained: 受控编辑器键盘流两轮后仍仅存活 ${len}/${text.length}（升级人工）`);
+    }
+  }
+  return len;
+}
+
+/** 标题框选择器（2026-09 实测：当前为无类名 textarea，历史类名保留兜底） */
+const ZHIHU_TITLE_SELECTOR =
+  'textarea[placeholder*="标题"], textarea.WriteIndex-titleInput, input[placeholder*="标题"], textarea';
+
+/** 标题键入：真实点击聚焦 → 全选退格清空 → 键盘流 → 值长度硬验收（textarea 值实时同步） */
+async function fillZhihuTitle(page: Page, title: string, tips: string[]): Promise<void> {
+  await safeClick(page, ZHIHU_TITLE_SELECTOR);
+  await page.keyboard.press('Control+a');
+  await page.keyboard.press('Backspace');
+  await page.keyboard.type(title, { delay: 10 });
+  let got = await editorLength(page, ZHIHU_TITLE_SELECTOR);
+  if (got !== title.length) {
+    tips.push(`标题长度不符（${got}/${title.length}），重打一轮`);
+    await safeClick(page, ZHIHU_TITLE_SELECTOR);
+    await page.keyboard.press('Control+a');
+    await page.keyboard.press('Backspace');
+    await page.keyboard.type(title, { delay: 10 });
+    got = await editorLength(page, ZHIHU_TITLE_SELECTOR);
+    if (got !== title.length) {
+      throw new Error(`input not retained: 标题两轮后仍为 ${got}/${title.length}`);
+    }
+  }
+}
+
+/** 等待知乎自动保存（URL 出现草稿 id 优先），返回草稿 URL / 'autosaved' / '' */
+async function waitForZhihuAutosave(page: Page, timeoutMs = 15000): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const m = page.url().match(/\/p\/(\d+)\/edit/);
+    if (m) return `https://zhuanlan.zhihu.com/p/${m[1]}`;
+    try {
+      const mark = (await page.evaluate(
+        `(document.body.innerText.match(/已自动保存|保存于/) || [''])[0]`,
+      )) as string;
+      if (mark) return 'autosaved';
+    } catch { /* page busy */ }
+    await page.waitForTimeout(1500);
+  }
+  return '';
+}
+
 /** 确保在知乎知答页面且已登录 */
 async function ensureZhidaPage(page: Page, ctx?: CommandContext): Promise<void> {
   const currentUrl = page.url();
@@ -911,7 +1014,8 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({
       title: z.string().describe('文章标题'),
-      content: z.string().describe('文章内容（Markdown 或纯文本）'),
+      content: z.string().optional().describe('文章内容（Markdown 或纯文本）'),
+      file: z.string().optional().describe('Markdown 文件路径（与 content 二选一）'),
       topic: z.string().optional().describe('所属话题'),
     }),
     examples: [
@@ -931,6 +1035,13 @@ export default function (xcli: XCLIAPI): void {
       const { page, tips } = resolvePage(ctx);
 
       try {
+        let content = params.content || '';
+        if (!content && params.file) {
+          const { readFileSync } = await import('node:fs');
+          content = readFileSync(params.file, 'utf8');
+        }
+        if (!content) return fail('必须提供 --content 或 --file 参数', tips);
+
         await page.goto('https://zhuanlan.zhihu.com/write', {
           waitUntil: 'domcontentloaded',
           timeout: 30000,
@@ -938,31 +1049,30 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(3000);
         await dismissModals(page);
 
-        // 填写标题
-        const titleInput = page.locator(
-          'textarea.WriteIndex-titleInput, input.WriteIndex-titleInput, textarea[placeholder*="标题"], input[placeholder*="标题"]'
-        ).first();
-        if (await titleInput.isVisible().catch(() => false)) {
-          await titleInput.click();
-          await page.waitForTimeout(200);
-          await page.keyboard.type(params.title, { delay: 30 });
-        } else {
+        // 填写标题（真实点击聚焦 + 键盘流 + 长度硬验收）
+        const titleSel = 'textarea[placeholder*="标题"], textarea.WriteIndex-titleInput, input[placeholder*="标题"]';
+        if (!(await safeClick(page, titleSel))) {
           return fail('未找到标题输入框，请确认已登录知乎专栏', tips);
+        }
+        await page.keyboard.press('Control+a');
+        await page.keyboard.press('Backspace');
+        await page.keyboard.type(params.title, { delay: 10 });
+        const titleGot = await editorLength(page, titleSel);
+        if (titleGot !== params.title.length) {
+          await safeClick(page, titleSel);
+          await page.keyboard.press('Control+a');
+          await page.keyboard.press('Backspace');
+          await page.keyboard.type(params.title, { delay: 10 });
         }
 
         await page.waitForTimeout(500);
 
-        // 填写正文（富文本编辑器）
-        const editor = page.locator(
-          '.public-DraftEditor-content, div[contenteditable="true"], .ProseMirror'
-        ).first();
-        if (await editor.isVisible().catch(() => false)) {
-          await editor.click();
-          await page.waitForTimeout(300);
-          await page.keyboard.type(params.content, { delay: 20 });
-        } else {
+        // 填写正文（强受控编辑器稳定键入：分块对账+焦点自愈+升级重打）
+        const editorSelector = '.public-DraftEditor-content, div[contenteditable="true"], .ProseMirror';
+        if (!(await safeClick(page, editorSelector))) {
           return fail('未找到正文编辑器，请确认页面已加载完成', tips);
         }
+        const bodyLen = await typeDraftStabilized(page, editorSelector, content, tips);
 
         // 选择话题（可选）
         if (params.topic) {
@@ -980,7 +1090,7 @@ export default function (xcli: XCLIAPI): void {
         }
 
         tips.push(`标题已填写: ${params.title}`);
-        tips.push(`正文长度: ${params.content.length} 字符`);
+        tips.push(`正文存活: ${bodyLen}/${content.length} 字符`);
 
         // 等待用户检查后发布
         await ctx.waitForHuman?.({
@@ -1097,38 +1207,57 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.command('draft', {
-    description: '保存文章草稿到知乎专栏',
+    description: '保存文章草稿到知乎专栏（键盘流通路，强受控编辑器安全）',
     scope: 'browser',
     parameters: z.object({
       title: z.string().describe('文章标题'),
-      content: z.string().describe('文章内容（Markdown）'),
+      content: z.string().optional().describe('文章内容（Markdown，与 file 二选一）'),
+      file: z.string().optional().describe('Markdown 文件路径（与 content 二选一）'),
     }),
-    result: z.object({ saved: z.boolean() }).passthrough(),
+    result: z.object({
+      saved: z.boolean(),
+      draftUrl: z.string().optional(),
+    }).passthrough(),
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面');
+      const tips: string[] = [];
       try {
+        let content = params.content || '';
+        if (!content && params.file) {
+          const { readFileSync } = await import('node:fs');
+          content = readFileSync(params.file, 'utf8');
+        }
+        if (!content) return fail('必须提供 --content 或 --file 参数', tips);
+
         await page.goto('https://zhuanlan.zhihu.com/write', { waitUntil: 'domcontentloaded' });
         await page.waitForTimeout(3000);
-        // Fill title
-        const titleInput = page.locator('textarea.WriteIndex-titleInput, input[placeholder*="标题"]');
-        await titleInput.fill(params.title);
-        // Fill content
-        const editor = page.locator('.public-DraftEditor-content, [contenteditable="true"]');
-        await editor.click();
-        await page.keyboard.type(params.content, { delay: 10 });
-        // Click save draft button
-        await page.waitForTimeout(1000);
-        const saveBtn = page.locator('button').filter({ hasText: /保存草稿|存草稿/i });
-        if (await saveBtn.isVisible().catch(() => false)) {
-          await saveBtn.click();
-        } else {
-          // Some versions auto-save, just wait
-          await page.waitForTimeout(2000);
+        // Fill title（真实点击聚焦 + 键盘流 + 长度硬验收）
+        await fillZhihuTitle(page, params.title, tips);
+        // Fill content（稳定键入：分块对账 + 焦点自愈 + 升级重打）
+        const editorSelector = '.public-DraftEditor-content, [contenteditable="true"]';
+        await page.locator(editorSelector).first().click();
+        const bodyLen = await typeDraftStabilized(page, editorSelector, content, tips);
+        tips.push(`正文存活 ${bodyLen}/${content.length} 字符`);
+
+        // 自动保存验收：URL 出现草稿 id 即云端已落库
+        const draftUrl = await waitForZhihuAutosave(page, 15000);
+        const saved = /\/p\/\d+\/edit/.test(page.url()) || draftUrl.startsWith('http');
+        if (!saved) {
+          // 兜底：旧版保存按钮（历史布局）
+          const saveBtn = page.locator('button').filter({ hasText: /保存草稿|存草稿/i });
+          if (await saveBtn.isVisible().catch(() => false)) {
+            await saveBtn.click();
+            await page.waitForTimeout(2000);
+          }
         }
-        return ok({ saved: true }, ['知乎草稿已保存']);
+        const finalSaved = saved || /\/p\/\d+\/edit/.test(page.url());
+        return ok(
+          { saved: finalSaved, draftUrl: draftUrl.startsWith('http') ? draftUrl : page.url() },
+          [...tips, finalSaved ? '知乎草稿已保存（自动保存确认）' : '已填入并等待自动保存，建议稍后在草稿箱确认'],
+        );
       } catch (error) {
-        return fail(error instanceof Error ? error.message : '保存草稿失败');
+        return fail(error instanceof Error ? error.message : '保存草稿失败', tips);
       }
     },
   });
