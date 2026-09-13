@@ -461,6 +461,25 @@ export function buildStealthInitScript(config: StealthConfig = DEFAULT_STEALTH_C
     // —— 真实浏览器失焦/后台时 hasFocus=false
     // S172: 原型层覆写——实例赋值可被 Document.prototype.hasFocus.call(document) 逃逸
     '  Document.prototype.hasFocus=function(){return document.visibilityState==="visible";};',
+    // 4a. 渲染层声明一致性（2026-09-13 实测双模式四差异，修 dpr/color-gamut 两项）：
+    //     headless 默认 devicePixelRatio=1 / color-gamut=srgb，而真实 Mac Chrome 是
+    //     2 / p3 —— 声明（UA 说是 Mac）与渲染参数对不上即 headless 铁证。
+    //     UA 含 "Macintosh" 时对齐 Retina 声明（dpr=2、p3）；Windows/Linux 保持
+    //     1 / srgb（与主流真机一致）。login-bridge 扩展侧 L0 已有同款，此处对齐 driver 侧。
+    '  try{',
+    '    var _uaIsMac=navigator.userAgent.indexOf("Macintosh")>=0;',
+    '    if(_uaIsMac){',
+    '      Object.defineProperty(window,"devicePixelRatio",{get:function(){return 2;},configurable:true});',
+    '      var _mq=window.matchMedia.bind(window);',
+    '      window.matchMedia=function(q){',
+    '        var m=_mq(q);',
+    '        if(typeof q==="string"&&q.indexOf("color-gamut")>=0&&q.indexOf("p3")>=0){',
+    '          Object.defineProperty(m,"matches",{get:function(){return true;},configurable:true});',
+    '        }',
+    '        return m;',
+    '      };',
+    '    }',
+    '  }catch(e){}',
     // 4. Canvas/WebGL fingerprint: per-session stable noise (d20).
     //    Headless software raster differs subtly from Chrome GPU raster —
     //    toDataURL hashes fingerprint the rasterizer. Inject a stable

@@ -47,7 +47,7 @@ import { getPluginLoader } from './utils/plugin-singleton.js';
 import { checkPluginLoginRequired } from './plugin/login-guard.js';
 import { findOrRestoreSession, createSession, saveSessionDiskMeta, type ManagedSession } from './browser.js';
 import { HTTPServer } from './server/http-server.js';
-import { getCommand } from './commands/command-registry.js';
+import { getCommand, getCommandNames } from './commands/command-registry.js';
 import { buildViewerUrl } from './utils/viewer-url.js';
 import { attachDetectAntiBot } from './context.js';
 
@@ -225,12 +225,21 @@ function extractSessionNameFromArgv(argv: string[]): string {
 async function handleEvalMode(argv: string[]): Promise<void> {
   const evalCommands = parseEvalFlags(argv);
   if (evalCommands.length === 0) return;
-  // Encode each script as base64url so chain parsing (which splits on ';',
-  // whitespace and newlines) cannot break JS containing semicolons or
-  // multiline statements. The eval command decodes scriptB64.
-  const chain = evalCommands
-    .map((script) => `eval --script-b64 ${Buffer.from(script, 'utf8').toString('base64url')}`)
-    .join(' ; ');
+  // Docs (README "-e / --eval 模式", help.ts "Eval Flag") promise each -e value
+  // is a COMMAND executed in sequence (`-e "goto https://x" -e title`). If the
+  // value's first word is a registered command, pass it into the chain
+  // verbatim; only non-command values are treated as eval JS scripts
+  // (2026-09-12-4: `wait nav` was base64'd into eval and SyntaxError'd).
+  const knownCommands = new Set(getCommandNames());
+  const chainParts = evalCommands.map((value) => {
+    const firstWord = value.trim().split(/\s+/)[0] || '';
+    if (knownCommands.has(firstWord)) return value;
+    // Encode each script as base64url so chain parsing (which splits on ';',
+    // whitespace and newlines) cannot break JS containing semicolons or
+    // multiline statements. The eval command decodes scriptB64.
+    return `eval --script-b64 ${Buffer.from(value, 'utf8').toString('base64url')}`;
+  });
+  const chain = chainParts.join(' ; ');
   const cdpEndpoint = extractCdpFromArgv(argv);
   // Extract --session from argv for eval mode (not handled by parseArgs)
   const sessionArgIdx = argv.indexOf('--session');
@@ -345,6 +354,13 @@ export async function routeCommand(
   stdinCommands?: string[]
 ): Promise<void> {
   let argv = argvIn;
+  // Inclusive token range of the quoted chain string after argv rewriting.
+  // The default branch's chain reassembly strips global flags from argv, but
+  // tokens INSIDE this region belong to the chain itself and must survive —
+  // otherwise `screenshot --output P` inside a chain loses both the flag and
+  // its value (2026-09-12-08: screenshots silently rerouted to the temp dir).
+  let chainTokenStart = -1;
+  let chainTokenEnd = -1;
   // exitCode is set via process.exitCode so that cli.ts can read it after
   // routeCommand returns, without having to thread a return value through
   // every early-exit path. process.exitCode does NOT kill the process — it
@@ -427,6 +443,8 @@ export async function routeCommand(
 	        // where there's no space before the semicolon.
 	        remainderParts = remainderParts.flatMap(part => part.split(';').filter(Boolean));
 	        // Replace the chain arg with split parts, keep everything else
+	        chainTokenStart = chainArgIdx;
+	        chainTokenEnd = chainArgIdx + remainderParts.length; // possibleCmd + remainder tokens
 	        argv = [...argv.slice(0, chainArgIdx), possibleCmd, ...remainderParts, ...argv.slice(chainArgIdx + 1)];
 	      }
     }
@@ -679,6 +697,14 @@ export async function routeCommand(
           const globalFlagSet = new Set(['--session', '--cdp', '--json', '--yaml', '--help', '-h', '--version', '--output', '-o']);
           const cleanParts: string[] = [];
           for (let i = 0; i < argv.length; i++) {
+            // Tokens split out of the quoted chain string are chain content:
+            // in-chain per-command flags (e.g. `screenshot --output P`) must
+            // survive reassembly; only global flags OUTSIDE the chain region
+            // are stripped (2026-09-12-8 fix).
+            if (chainTokenStart >= 0 && i >= chainTokenStart && i <= chainTokenEnd) {
+              cleanParts.push(argv[i]);
+              continue;
+            }
             if (globalFlagSet.has(argv[i])) continue;
             // Skip the value of --session/--cdp/--output
             if (i > 0 && globalFlagSet.has(argv[i-1]) && !argv[i].startsWith('-')) continue;

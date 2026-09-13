@@ -364,10 +364,10 @@ describe('router', () => {
 
     await routeCommand(['-e', 'title']);
 
-    // -e scripts are routed base64url-encoded so chain parsing cannot split
-    // on ';'/whitespace inside the script.
-    const b64 = Buffer.from('title', 'utf8').toString('base64url');
-    expect(executeChain).toHaveBeenCalledWith(`eval --script-b64 ${b64}`, { cdpEndpoint: undefined, sessionName: 'default' });
+    // Docs (README/help "Eval Flag") promise -e values are COMMANDS: a value
+    // whose first word is a registered command goes into the chain verbatim
+    // (2026-09-12-4 fix), not base64-wrapped as eval JS.
+    expect(executeChain).toHaveBeenCalledWith('title', { cdpEndpoint: undefined, sessionName: 'default' });
     expect(printChainResult).toHaveBeenCalled();
   });
 
@@ -381,8 +381,7 @@ describe('router', () => {
 
     await routeCommand(['--eval', 'title']);
 
-    const b64 = Buffer.from('title', 'utf8').toString('base64url');
-    expect(executeChain).toHaveBeenCalledWith(`eval --script-b64 ${b64}`, { cdpEndpoint: undefined, sessionName: 'default' });
+    expect(executeChain).toHaveBeenCalledWith('title', { cdpEndpoint: undefined, sessionName: 'default' });
   });
 
   it('handles multiple -e flags', async () => {
@@ -395,9 +394,42 @@ describe('router', () => {
 
     await routeCommand(['-e', 'goto https://example.com', '-e', 'title']);
 
-    const b1 = Buffer.from('goto https://example.com', 'utf8').toString('base64url');
-    const b2 = Buffer.from('title', 'utf8').toString('base64url');
+    expect(executeChain).toHaveBeenCalledWith('goto https://example.com ; title', { cdpEndpoint: undefined, sessionName: 'default' });
+  });
+
+  it('wraps non-command -e values as eval JS scripts', async () => {
+    const { executeChain } = await import('../src/executor.js');
+    vi.mocked(executeChain).mockResolvedValueOnce({
+      success: true,
+      steps: [],
+      totalDuration: 0,
+    });
+
+    await routeCommand(['-e', '1+1', '-e', 'document.title']);
+
+    const b1 = Buffer.from('1+1', 'utf8').toString('base64url');
+    const b2 = Buffer.from('document.title', 'utf8').toString('base64url');
     expect(executeChain).toHaveBeenCalledWith(`eval --script-b64 ${b1} ; eval --script-b64 ${b2}`, { cdpEndpoint: undefined, sessionName: 'default' });
+  });
+
+  it('preserves in-chain --output when reassembling chain input (2026-09-12-8)', async () => {
+    const { executeChain, isChainInput } = await import('../src/executor.js');
+    vi.mocked(isChainInput).mockImplementation((input: string) => /\s&&\s|\s;\s|\s,\s|\s\+\s|\s->\s/.test(input));
+    vi.mocked(executeChain).mockResolvedValueOnce({
+      success: true,
+      steps: [],
+      totalDuration: 0,
+    });
+
+    // Quoted chain with an in-chain screenshot --output: the flag and its
+    // value must survive chain reassembly (they were stripped as "global
+    // flags", silently rerouting the screenshot to the temp dir).
+    await routeCommand(['--session', 't1', 'refresh && screenshot --output /tmp/must-exist.png']);
+
+    expect(executeChain).toHaveBeenCalledWith(
+      'refresh && screenshot --output /tmp/must-exist.png',
+      { cdpEndpoint: undefined, sessionName: 't1' },
+    );
   });
 
   it('outputs error when eval chain fails', async () => {
@@ -721,8 +753,9 @@ describe('router', () => {
 
     await routeCommand(['-e', 'title', 'session', 'list']);
 
-    const b64 = Buffer.from('title', 'utf8').toString('base64url');
-    expect(executeChain).toHaveBeenCalledWith(`eval --script-b64 ${b64}`, { cdpEndpoint: undefined, sessionName: 'default' });
+    // Eval mode wins over normal routing; `title` is a registered command so
+    // it goes into the chain verbatim (2026-09-12-4 fix).
+    expect(executeChain).toHaveBeenCalledWith('title', { cdpEndpoint: undefined, sessionName: 'default' });
   });
 
   it('routes preview subcommand to builtin', async () => {
