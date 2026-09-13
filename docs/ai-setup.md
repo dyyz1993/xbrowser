@@ -101,6 +101,7 @@ xbrowser --cdp 9222 title          # 接管已开的 Chrome（复用真实登录
 | 安装报 404 | 传了全包名 / registry 延迟 | 用短名；几十秒后重试 |
 | 搜索 0 结果 | headless 风控（百度/知乎等） | 接真 Chrome：`--cdp 9222` 或 chrome-bridge |
 | 插件命令无输出 | daemon 缓存 | `pkill -f daemon` |
+| 知乎编辑器填了就空 | 字段级合成输入免疫（React 回流清空） | headless 不可发知乎；走真浏览器（chrome-bridge 扩展路径） |
 | chrome-bridge 无连接 | 扩展 SW 死透 | `xbrowser chrome-bridge revive`；日志 `~/.xbrowser/logs/chrome-bridge.log` |
 
 **红线**：绝不 `browser.close()`（会杀用户浏览器）；不碰用户正在看的 tab（用 `--task` 建任务组 tab）；
