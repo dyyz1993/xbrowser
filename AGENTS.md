@@ -1162,6 +1162,22 @@ await page.setInputFiles('input[type="file"]', {
 
 如果要在事件触发时执行动作（如 `filechooser`），用 `page.waitForEvent`。
 
+### 受控编辑器决策树（输入保真层，S-sup 家族 2026-09-13）
+
+强受控编辑器（知乎 Draft/ProseMirror/Quill 等 React 系）的 EditorState 是唯一数据源，
+**合成 input 事件 / execCommand insertText / CDP Input.insertText（半真实）都会"即时成功
+然后被 reconciliation 回流清空"**——唯一存活通道是完整键盘事件流（dispatchKeyEvent）。
+locator.fill 已内置双层防线（受控探测跳过粘贴快通道 + 快通道延时存活验证+升级重打），
+手写注入时按此决策：
+
+| 通道 | isTrusted | 键盘命令流 | 强受控编辑器存活 |
+|------|-----------|-----------|------------------|
+| native setter + dispatchEvent | ✗ | ✗ | ❌ 被清 |
+| execCommand insertText | ✓(编辑管线) | ✗ | ❌ 被清 |
+| CDP Input.insertText | ✓ | ✗ | ❌ 被清（半真实） |
+| **CDP dispatchKeyEvent 逐键** | ✓ | **✓** | **✅ 唯一存活** |
+| OS 剪贴板 + Cmd/Ctrl+V（pressCombo） | ✓ | ✓(组合键) | ✅ 页面可 preventDefault paste |
+
 ### contenteditable 输入框
 
 - ❌ 不要用 `page.fill()` — 不会触发 React/ProseMirror 状态更新

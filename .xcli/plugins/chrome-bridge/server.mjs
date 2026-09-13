@@ -160,7 +160,13 @@ function handleExec(req, res, cmd, args, clientSel) {
     let entry;
     if (clientSel === 'last') entry = all[all.length - 1];
     else if (clientSel !== null && clientSel !== undefined && !Number.isNaN(Number(clientSel))) entry = all[Number(clientSel)];
-    else entry = all[0];
+    else {
+      // 默认路由：选"最近 pong 且未超探"的活连接（revive/重连风暴会遗留
+      // 大量僵尸 TCP（server 从未收到 close），固定取 all[0] 会路由到死
+      // 连接 60s 超时——按 lastSeen 倒序取健康者，僵尸交给 ka 探测回收）
+      const healthy = all.filter(([, c]) => c.aliveMisses === 0 || Date.now() - (c.lastSeen ?? 0) < 80_000);
+        entry = healthy.sort((a, b) => (b[1].lastSeen ?? 0) - (a[1].lastSeen ?? 0))[0] || all[0];
+    }
     if (!entry) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'no extension connected' })); return; }
     const clientId = entry[0];
     const client = entry[1];

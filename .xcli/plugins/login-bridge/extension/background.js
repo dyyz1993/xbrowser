@@ -664,6 +664,45 @@ const executors = {
 
   fill: async ({ selector, value, tabId }) => {
     const target = tabId ?? await getTaskTabId();
+    // 输入保真层（S-sup 家族，知乎 Draft 事故）：受控编辑器上 native setter
+    // + 合成 input 事件"即时成功"但被 React reconciliation 回流清空。
+    // ①先探测受控特征 → 命中即拒绝合成注入，返回升级指引（走 type executor
+    //   的 chrome.debugger 键盘流）；②非受控也做 setter 后延时回读，
+    //   被清同样报 input-not-retained（覆盖无框架特征的禁粘贴面）。
+    const probe = await chrome.scripting.executeScript({
+      target: { tabId: target },
+      func: (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return { found: false };
+        const editable = el.closest('[contenteditable="true"]');
+        const host = editable || el;
+        let react = false;
+        try {
+          for (const k of Object.keys(host)) {
+            if (k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$')) { react = true; break; }
+          }
+          if (!react && host.parentElement) {
+            for (const k of Object.keys(host.parentElement)) {
+              if (k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$')) { react = true; break; }
+            }
+          }
+        } catch (e) { /* cross-origin guard */ }
+        const fams = [['.public-DraftEditor-content','draft'],['.DraftEditor-editorContainer','draft'],['.ProseMirror','prosemirror'],['.ql-editor','quill'],['.CodeMirror','codemirror'],['.cm-editor','codemirror'],['[data-slate-editor]','slate']];
+        let richFamily = null;
+        for (const [s, n] of fams) { if (host.closest(s)) { richFamily = n; break; } }
+        const contenteditable = !!editable && el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA';
+        return { found: true, react, richFamily, contenteditable, controlled: react || !!richFamily || contenteditable };
+      },
+      args: [selector],
+    });
+    const prof = probe[0]?.result || { found: false };
+    if (!prof.found) return { ok: false, error: 'not found: ' + selector };
+    if (prof.controlled) {
+      return {
+        ok: false, upgrade: 'cdp-keyboard', controlled: true, profile: prof,
+        hint: '受控编辑器拒绝合成注入——改用 chrome-bridge exec --cmd type --args {"selector","text"}（键盘流）',
+      };
+    }
     const [{ result, error }] = await chrome.scripting.executeScript({
       target: { tabId: target },
       func: (sel, val) => {
@@ -678,7 +717,123 @@ const executors = {
       },
       args: [selector, value],
     });
-    return error ? { ok: false, error: String(error) } : result;
+    if (error) return { ok: false, error: String(error) };
+    // 延时存活验证（默认 600ms，与 driver 侧 XBROWSER_FILL_VERIFY_MS 对齐）：
+    // 被清/腰斩(<50%) → input-not-retained（caller 可升级 type 键盘流重试）
+    await new Promise((r) => setTimeout(r, 600));
+    const verify = await chrome.scripting.executeScript({
+      target: { tabId: target },
+      func: (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return '';
+        return (el.value !== undefined ? el.value : el.textContent) || '';
+      },
+      args: [selector],
+    });
+    const got = verify[0]?.result || '';
+    if (got === '' || got.length < value.length * 0.5) {
+      return { ok: false, error: 'input not retained（合成注入被页面回流清空）', upgrade: 'cdp-keyboard', got: got.length };
+    }
+    return result;
+  },
+
+  // 输入保真层配套：完整键盘流键入（chrome.debugger Input.dispatchKeyEvent
+  // 逐字，isTrusted=true + 键盘命令流完整——强受控编辑器唯一存活通道）。
+  // 流程：trustedClick 点进元素 →（清空已有内容 Ctrl+A/Backspace）→ 逐字
+  // keyDown(text)/keyUp → 延时回读终验（被清重打一轮，仍败报 not-retained）。
+  type: async ({ selector, text, tabId, clear = true }) => {
+    const target = tabId ?? await getTaskTabId();
+    if (target == null || typeof text !== 'string') return { ok: false, error: 'need tabId & text' };
+    // 1. 定位元素中心并 trustedClick 聚焦
+    const pos = await chrome.scripting.executeScript({
+      target: { tabId: target },
+      func: (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+      },
+      args: [selector],
+    });
+    const p = pos[0]?.result;
+    if (!p) return { ok: false, error: 'not found: ' + selector };
+    const clickRes = await executors.trustedClick({ x: p.x, y: p.y, tabId: target });
+    if (!clickRes.ok) return clickRes;
+    const dbg = { tabId: target };
+    const persistent = stealthTabs.has(target);
+    const attached = await new Promise((resolve) => {
+      if (persistent) { resolve(true); return; }
+      chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
+        chrome.debugger.attach(dbg, '1.3', () => resolve(!chrome.runtime.lastError));
+      });
+    });
+    if (!attached) return { ok: false, error: 'debugger attach failed' };
+    const key = (params) => new Promise((resolve) => chrome.debugger.sendCommand(dbg, 'Input.dispatchKeyEvent', params, () => resolve(!chrome.runtime.lastError)));
+    // 2. 清空已有内容
+    if (clear) {
+      await key({ type: 'keyDown', key: 'a', code: 'KeyA', modifiers: 2, windowsVirtualKeyCode: 65 });
+      await key({ type: 'keyUp', key: 'a', code: 'KeyA', modifiers: 2, windowsVirtualKeyCode: 65 });
+      await key({ type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
+      await key({ type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
+    }
+    // 3. 逐字完整键盘流（\n → Enter）
+    for (const ch of text) {
+      if (ch === '\n') {
+        await key({ type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+        await key({ type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+      } else {
+        await key({ type: 'keyDown', text: ch, key: ch, unmodifiedText: ch });
+        await key({ type: 'keyUp', key: ch });
+      }
+    }
+    if (!persistent) chrome.debugger.detach(dbg).catch(() => {});
+    // 4. 延时终验 + 一轮升级重打
+    const readVal = async () => {
+      const r = await chrome.scripting.executeScript({
+        target: { tabId: target },
+        func: (sel) => {
+          const el = document.querySelector(sel);
+          if (!el) return '';
+          return (el.value !== undefined ? el.value : el.textContent) || '';
+        },
+        args: [selector],
+      });
+      return r[0]?.result || '';
+    };
+    await new Promise((r) => setTimeout(r, 600));
+    let got = await readVal();
+    if (got === '' || got.length < text.length * 0.5) {
+      // 升级重打一轮（重点击+全清+键盘流）
+      const c2 = await executors.trustedClick({ x: p.x, y: p.y, tabId: target });
+      if (c2.ok) {
+        const a2 = await new Promise((resolve) => {
+          if (persistent) { resolve(true); return; }
+          chrome.debugger.attach(dbg, '1.3', () => resolve(!chrome.runtime.lastError));
+        });
+        if (a2) {
+          await key({ type: 'keyDown', key: 'a', code: 'KeyA', modifiers: 2, windowsVirtualKeyCode: 65 });
+          await key({ type: 'keyUp', key: 'a', code: 'KeyA', modifiers: 2, windowsVirtualKeyCode: 65 });
+          await key({ type: 'keyDown', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
+          await key({ type: 'keyUp', key: 'Backspace', code: 'Backspace', windowsVirtualKeyCode: 8 });
+          for (const ch of text) {
+            if (ch === '\n') {
+              await key({ type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+              await key({ type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+            } else {
+              await key({ type: 'keyDown', text: ch, key: ch, unmodifiedText: ch });
+              await key({ type: 'keyUp', key: ch });
+            }
+          }
+          if (!persistent) chrome.debugger.detach(dbg).catch(() => {});
+        }
+      }
+      await new Promise((r) => setTimeout(r, 600));
+      got = await readVal();
+      if (got === '' || got.length < text.length * 0.5) {
+        return { ok: false, error: 'input not retained（键盘流亦被清——升级人工）', got: got.length };
+      }
+    }
+    return { ok: true, typed: text.length, retained: got.length };
   },
 
   uploadFile: async ({ filePathB64, fileName, selector, tabId }) => {
