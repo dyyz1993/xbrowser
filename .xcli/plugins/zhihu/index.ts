@@ -95,7 +95,7 @@ async function typeDraftStabilized(
         // （实测 891 字在录但 innerText 停在 395）。两个真信号优先：
         // ① URL 已分配草稿 id（云端在录）；② activeElement 仍是编辑器（焦点没丢）。
         // 二者任一成立即视为健康，继续打完不做无谓重聚焦。
-        const hasId = /\/p\/\d+\/edit/.test(page.url());
+        const hasId = /\/p\/\d+\/(edit|e)\b/.test(page.url());
         const focused = await page.evaluate(
           `(document.activeElement && document.activeElement.closest('${editorSelector.split(',')[0].trim()}') !== null)`,
         ).catch(() => false);
@@ -118,7 +118,7 @@ async function typeDraftStabilized(
   };
 
   let len = await typeAll();
-  const hasDraftId = /\/p\/\d+\/edit/.test(page.url());
+  const hasDraftId = /\/p\/\d+\/(edit|e)\b/.test(page.url());
   if (!hasDraftId && len >= 0 && len < text.length * 0.5) {
     tips.push(`首轮键入仅存活 ${len}/${text.length}，升级重打一轮`);
     await safeClick(page, editorSelector);
@@ -178,7 +178,7 @@ async function fillZhihuTitle(page: Page, title: string, tips: string[]): Promis
 async function waitForZhihuAutosave(page: Page, timeoutMs = 15000): Promise<string> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const m = page.url().match(/\/p\/(\d+)\/edit/);
+    const m = page.url().match(/\/p\/(\d+)\/(edit|e)\b/);
     if (m) return `https://zhuanlan.zhihu.com/p/${m[1]}`;
     try {
       const mark = (await page.evaluate(
@@ -1279,7 +1279,7 @@ export default function (xcli: XCLIAPI): void {
 
         // 自动保存验收：URL 出现草稿 id 即云端已落库
         const draftUrl = await waitForZhihuAutosave(page, 15000);
-        const saved = /\/p\/\d+\/edit/.test(page.url()) || draftUrl.startsWith('http');
+        const saved = /\/p\/\d+\/(edit|e)\b/.test(page.url()) || draftUrl.startsWith('http');
         if (!saved) {
           // 兜底：旧版保存按钮（历史布局）
           const saveBtn = page.locator('button').filter({ hasText: /保存草稿|存草稿/i });
@@ -1288,7 +1288,7 @@ export default function (xcli: XCLIAPI): void {
             await page.waitForTimeout(2000);
           }
         }
-        const finalSaved = saved || /\/p\/\d+\/edit/.test(page.url());
+        const finalSaved = saved || /\/p\/\d+\/(edit|e)\b/.test(page.url());
         return ok(
           { saved: finalSaved, draftUrl: draftUrl.startsWith('http') ? draftUrl : page.url() },
           [...tips, finalSaved ? '知乎草稿已保存（自动保存确认）' : '已填入并等待自动保存，建议稍后在草稿箱确认'],

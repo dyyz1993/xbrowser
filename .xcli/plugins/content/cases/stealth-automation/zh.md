@@ -2,7 +2,7 @@
 
 > 发布于 {{DATE}} · xbrowser v{{VERSION}}
 
-自动化浏览器被识别，无非三条路：你的**事件**是合成的、你的**环境**有接缝、你的**流程**被人类会随手点掉的东西打断。多数 stealth 教程只讲第二条。这篇把三条讲全——来自数月攻防竞技场对生产级检测的实测，对应 [xbrowser]({{GITHUB_URL}}) 的 stealth 层实现。
+自动化浏览器被识别，无非三条路：你的**事件**是合成的、你的**环境**有接缝、你的**流程**被人类会随手点掉的东西打断。多数 stealth 教程只讲第二条。这篇把三条讲全——来自数月攻防竞技场对生产级检测的实测，对应 xbrowser 的 stealth 层实现。
 
 ## 1. 合成事件：`isTrusted` 是第一道闸
 
@@ -51,6 +51,6 @@ headful agent 死于一千次纸割：`beforeunload` 对话框、HTTP Basic 认�
 xbrowser stealth:check   # 28 断言环境自检
 ```
 
-MIT 开源：[{{GITHUB_URL}}]({{GITHUB_URL}}) · npm: [{{NPM_URL}}]({{NPM_URL}})
+MIT 开源，GitHub 搜 {{GITHUB_REPO}} 或 npm 装 {{NPM_PKG}} 即可找到。
 
 *本文由 xbrowser 自己的内容管线完成起草、封面渲染与分发。*
