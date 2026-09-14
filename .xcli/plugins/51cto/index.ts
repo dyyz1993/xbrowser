@@ -370,17 +370,18 @@ export default function (xcli: XCLIAPI): void {
       await page.waitForLoadState('domcontentloaded');
       await randomPause(2000, 3500);
       if ((await page.url()).includes('home.51cto.com')) return fail('未登录：先跑 xbrowser 51cto login');
-      // 计数由接口异步填充（初始渲染无数字）——轮询直到出现 "(n)" 或超时
+      // 计数由接口异步填充——数字在 tab strong 的相邻兄弟 "(n)" 里
+      // （strong 自身 innerText 只有"待审核/未通过"，实测 2026-09-15）
       const deadline = Date.now() + 8000;
       let counts = { pending: 0, rejected: 0 };
       while (Date.now() < deadline) {
         counts = await page.evaluate(`(() => {
-          const read = (t) => {
-            const el = [...document.querySelectorAll('strong')].find(e => e.innerText.trim().startsWith(t));
-            const m = el ? el.innerText.match(/\\((\\d+)\\)/) : null;
+          const read = (attrType) => {
+            const el = document.querySelector('strong[attr_type="' + attrType + '"]');
+            const m = el && el.nextElementSibling ? el.nextElementSibling.innerText.match(/\\((\\d+)\\)/) : null;
             return m ? Number(m[1]) : -1;
           };
-          return { pending: read('待审核'), rejected: read('未通过') };
+          return { pending: read('1'), rejected: read('6') };
         })()`) as { pending: number; rejected: number };
         if (counts.pending >= 0 && counts.rejected >= 0) break;
         await page.waitForTimeout(500);
