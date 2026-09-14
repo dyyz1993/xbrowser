@@ -65,7 +65,8 @@ function createMockPage() {
       if (expr.includes('.common-article-list')) {
         return [{ title: '你的 CLI 工具为什么需要 MCP', reason: '含广告信息' }];
       }
-      if (expr.includes("querySelectorAll('strong')")) {
+      if (expr.includes('attr_type')) {
+        // tab 计数在新解析里读 strong[attr_type] 的相邻兄弟 "(n)"
         return { pending: 0, rejected: 1 };
       }
       if (expr.includes('getComputedStyle')) {

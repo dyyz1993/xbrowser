@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-51cto",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "51CTO - IT技术/运维/认证社区发布 (DA 65+) 全自动发布链",
   "main": "index.ts",
   "type": "module",
@@ -21,7 +21,7 @@
   "xbrowser": {
     "name": "51cto",
     "slug": "51cto",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "author": "dyyz1993",
     "description": "51CTO - IT技术/运维/认证社区发布",
     "site": "https://www.51cto.com",
