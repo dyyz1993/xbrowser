@@ -85,22 +85,41 @@ async function typeDraftStabilized(
   const CHUNK = 24;
   const typeAll = async (): Promise<number> => {
     let prev = await editorLength(page, editorSelector);
+    let stalled = 0;
     for (let i = 0; i < text.length; i += CHUNK) {
       const chunk = text.slice(i, i + CHUNK);
       await page.keyboard.type(chunk, { delay: 10 });
       const now = await editorLength(page, editorSelector);
       if (now <= prev && prev >= 0) {
-        // 对账停滞：焦点丢失/页面捣乱 → 重新聚焦（真实鼠标）续打剩余
-        await safeClick(page, editorSelector);
-        tips.push(`输入停滞于 ${now}，已重新聚焦续打`);
+        // Draft 对长文的 innerText 增长是惰性批量的——长度不涨≠键入失败
+        // （实测 891 字在录但 innerText 停在 395）。两个真信号优先：
+        // ① URL 已分配草稿 id（云端在录）；② activeElement 仍是编辑器（焦点没丢）。
+        // 二者任一成立即视为健康，继续打完不做无谓重聚焦。
+        const hasId = /\/p\/\d+\/edit/.test(page.url());
+        const focused = await page.evaluate(
+          `(document.activeElement && document.activeElement.closest('${editorSelector.split(',')[0].trim()}') !== null)`,
+        ).catch(() => false);
+        if (hasId || focused) {
+          stalled = 0;
+        } else {
+          stalled++;
+          if (stalled >= 6) {
+            await safeClick(page, editorSelector);
+            tips.push(`输入停滞于 ${now}（连续 ${stalled} 块，焦点丢失），已重新聚焦续打`);
+            stalled = 0;
+          }
+        }
+      } else {
+        stalled = 0;
       }
-      prev = await editorLength(page, editorSelector);
+      prev = now;
     }
     return prev;
   };
 
   let len = await typeAll();
-  if (len >= 0 && len < text.length * 0.5) {
+  const hasDraftId = /\/p\/\d+\/edit/.test(page.url());
+  if (!hasDraftId && len >= 0 && len < text.length * 0.5) {
     tips.push(`首轮键入仅存活 ${len}/${text.length}，升级重打一轮`);
     await safeClick(page, editorSelector);
     await page.keyboard.press('Control+a');
@@ -117,16 +136,34 @@ async function typeDraftStabilized(
 const ZHIHU_TITLE_SELECTOR =
   'textarea[placeholder*="标题"], textarea.WriteIndex-titleInput, input[placeholder*="标题"], textarea';
 
-/** 标题键入：真实点击聚焦 → 全选退格清空 → 键盘流 → 值长度硬验收（textarea 值实时同步） */
+/** 标题框坐标点击聚焦（safeClick 的 evaluateHandle 在部分环境静默失败——
+ * 2026-09-13 真站实测：选择器命中、box 正常，但 evaluateHandle 路径返回 false
+ * 导致 0/37。改为 evaluate 直读 box + mouse.click 坐标直击，路径最短） */
+async function clickTitleBox(page: Page): Promise<boolean> {
+  try {
+    const r = await page.evaluate(`(function(){
+      var el = document.querySelector(${JSON.stringify(ZHIHU_TITLE_SELECTOR)});
+      if (!el) return null;
+      el.scrollIntoView({block: 'center'});
+      var b = el.getBoundingClientRect();
+      return {x: Math.round(b.x + b.width/2), y: Math.round(b.y + b.height/2)};
+    })()`) as { x: number; y: number } | null;
+    if (!r) return false;
+    await page.mouse.click(r.x, r.y);
+    return true;
+  } catch { return false; }
+}
+
+/** 标题键入：坐标点击聚焦 → 全选退格清空 → 键盘流 → 值长度硬验收（textarea 值实时同步） */
 async function fillZhihuTitle(page: Page, title: string, tips: string[]): Promise<void> {
-  await safeClick(page, ZHIHU_TITLE_SELECTOR);
+  if (!(await clickTitleBox(page))) tips.push('标题框坐标点击失败，尝试直接键盘流');
   await page.keyboard.press('Control+a');
   await page.keyboard.press('Backspace');
   await page.keyboard.type(title, { delay: 10 });
   let got = await editorLength(page, ZHIHU_TITLE_SELECTOR);
   if (got !== title.length) {
     tips.push(`标题长度不符（${got}/${title.length}），重打一轮`);
-    await safeClick(page, ZHIHU_TITLE_SELECTOR);
+    await clickTitleBox(page);
     await page.keyboard.press('Control+a');
     await page.keyboard.press('Backspace');
     await page.keyboard.type(title, { delay: 10 });

@@ -362,6 +362,19 @@ export class XBPageImpl implements XBPage {
         await this.conn.send('Page.addScriptToEvaluateOnNewDocument',
           { source: buildStealthInitScript({ ...DEFAULT_STEALTH_CONFIG, ...(this._contextImpl.stealthConfig ?? {}) }) }, this.sessionId);
       } catch { /* best-effort */ }
+      // HTTP 层 UA 覆盖（2026-09-13 browserscan 实测）：headless Chrome HTTP
+      // User-Agent 含 "HeadlessChrome"——stealth init script 只覆盖 JS 层
+      // navigator.userAgent，HTTP header 仍泄漏。必须在这里同步清除。
+      try {
+        const rawUa = await this.conn.send<{ value: string }>('Runtime.evaluate',
+          { expression: 'navigator.userAgent', returnByValue: true }, this.sessionId);
+        const ua = rawUa?.value || '';
+        const cleaned = ua.replace(/HeadlessChrome/g, 'Chrome');
+        if (cleaned !== ua) {
+          await this.conn.send('Network.setUserAgentOverride',
+            { userAgent: cleaned }, this.sessionId);
+        }
+      } catch { /* best-effort */ }
     }
 
     // Navigate
