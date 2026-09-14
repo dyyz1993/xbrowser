@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page, PluginPage, PluginElementHandle, PluginRoute } from '../types.js';
+import type { Page, PluginRoute } from '../types.js';
 
 const ZHIDA_URL = 'https://zhida.zhihu.com';
 
@@ -35,16 +35,18 @@ function resolvePage(ctx: CommandContext): { page: Page; tips: string[] } {
 
 /** 安全点击选择器（CDP 模式兼容） */
 async function safeClick(page: Page, selector: string): Promise<boolean> {
+  // 坑谱（xyz-mac 实录）：evaluateHandle 句柄的 boundingBox() 在部分环境静默 null——
+  // 改 evaluate 直读 rect 中心 + mouse.click 坐标直击
   try {
-    const handle = await (page as unknown as PluginPage).evaluateHandle((sel: string) => {
-      const el = document.querySelector(sel);
-      return el;
-    }, selector);
-    const element = (handle as unknown as PluginElementHandle).asElement();
-    if (!element) return false;
-    const box = await element.boundingBox();
-    if (!box) return false;
-    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    const c = await page.evaluate(`(function(){
+      var el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return null;
+      var r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return null;
+      return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+    })()`) as { x: number; y: number } | null;
+    if (!c) return false;
+    await page.mouse.click(c.x, c.y);
     return true;
   } catch {
     return false;
@@ -594,11 +596,20 @@ async function extractSources(page: Page): Promise<{ total: number; domains: str
 }
 
 async function dismissModals(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    document.querySelectorAll('.Modal-closeButton, [class*="close"], [class*="Close"]').forEach((el) => {
-      if (el instanceof HTMLElement) el.click();
-    });
-  });
+  // CDP-Guard 铁律：不用合成 el.click()（isTrusted=false 100% 可检）——
+  // 坐标回读 + 真实鼠标点击（Input.dispatchMouseEvent）
+  const targets = await page.evaluate(`(() => {
+    return [...document.querySelectorAll('.Modal-closeButton, [class*="close"], [class*="Close"]')]
+      .filter((el) => el instanceof HTMLElement)
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2, w: r.width };
+      })
+      .filter((c) => c.w > 0);
+  })()`) as Array<{ x: number; y: number }>;
+  for (const c of targets.slice(0, 3)) {
+    await page.mouse.click(c.x, c.y).catch(() => {});
+  }
 }
 
 export default function (xcli: XCLIAPI): void {
@@ -1083,31 +1094,55 @@ export default function (xcli: XCLIAPI): void {
           waitUntil: 'domcontentloaded',
           timeout: 30000,
         });
-        await page.waitForTimeout(3000);
+        // /write 是 React 慢挂载页——轮询等标题框出现（实测常超 5s，单次 safeClick 必空）
+        // 坑：daemon 路径 page.waitForTimeout 可能立即返回——用真 sleep
+        const nativeSleepTitle = (ms: number) => new Promise<void>((r) => { setTimeout(r, ms); });
+        const titleReadyDeadline = Date.now() + 20000;
+        let titleReady = false;
+        while (Date.now() < titleReadyDeadline) {
+          if (await page.evaluate(`!!document.querySelector(${JSON.stringify(ZHIHU_TITLE_SELECTOR)})`)) {
+            titleReady = true;
+            break;
+          }
+          await nativeSleepTitle(600);
+        }
+        if (!titleReady) return fail('未找到标题输入框（/write 挂载 20s 超时），请确认已登录知乎专栏', tips);
+        await page.waitForTimeout(500);
         await dismissModals(page);
 
-        // 填写标题（真实点击聚焦 + 键盘流 + 长度硬验收）
-        const titleSel = 'textarea[placeholder*="标题"], textarea.WriteIndex-titleInput, input[placeholder*="标题"]';
-        if (!(await safeClick(page, titleSel))) {
-          return fail('未找到标题输入框，请确认已登录知乎专栏', tips);
-        }
-        await page.keyboard.press('Control+a');
-        await page.keyboard.press('Backspace');
-        await page.keyboard.type(params.title, { delay: 10 });
-        const titleGot = await editorLength(page, titleSel);
-        if (titleGot !== params.title.length) {
-          await safeClick(page, titleSel);
-          await page.keyboard.press('Control+a');
-          await page.keyboard.press('Backspace');
-          await page.keyboard.type(params.title, { delay: 10 });
-        }
-
+        // 填写标题（坐标点击聚焦 + 键盘流 + 长度硬验收——与 draft 同源 fillZhihuTitle）
+        await fillZhihuTitle(page, params.title, tips);
         await page.waitForTimeout(500);
 
         // 填写正文（强受控编辑器稳定键入：分块对账+焦点自愈+升级重打）
         const editorSelector = '.public-DraftEditor-content, div[contenteditable="true"], .ProseMirror';
+        // 正文编辑器同样慢挂载——轮询等出现再点。
+        // 坑：daemon 路径 page.waitForTimeout 可能立即返回（假等待）——用真 sleep 保证预算
+        const nativeSleep = (ms: number) => new Promise<void>((r) => { setTimeout(r, ms); });
+        const editorReadyDeadline = Date.now() + 30000;
+        let editorReady = false;
+        while (Date.now() < editorReadyDeadline) {
+          if (await page.evaluate(`!!document.querySelector(${JSON.stringify(editorSelector)})`)) {
+            editorReady = true;
+            break;
+          }
+          await nativeSleep(600);
+        }
+        if (!editorReady) {
+          const diag = await page.evaluate(`JSON.stringify((function(){
+            return {
+              url: location.href.slice(0, 60),
+              edCount: document.querySelectorAll('.public-DraftEditor-content').length,
+              ceCount: document.querySelectorAll('div[contenteditable="true"]').length,
+              modals: [].slice.call(document.querySelectorAll('[class*=Modal], [role=dialog]')).filter(function(x){
+                return x.getBoundingClientRect().width > 100;
+              }).length
+            };
+          })())`);
+          return fail(`未找到正文编辑器（真等待 30s 超时）现场=${diag}`, tips);
+        }
         if (!(await safeClick(page, editorSelector))) {
-          return fail('未找到正文编辑器，请确认页面已加载完成', tips);
+          return fail('正文编辑器已挂载但聚焦失败', tips);
         }
         const bodyLen = await typeDraftStabilized(page, editorSelector, content, tips);
 
