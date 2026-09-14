@@ -4,7 +4,7 @@
 
 2026 年之前诞生的每个 CLI 工具都在问自己同一个问题：AI Agent 怎么发现我？生态给出的收敛答案是 Model Context Protocol——MCP。如果 Claude Desktop、Cursor 或任何 MCP 客户端能列出你的能力并调用它，你在 Agent 世界里就存在；反之就不存在。
 
-[xbrowser]({{GITHUB_URL}}) 是一个浏览器自动化 CLI（57 命令、130+ 站点插件、自愈回放）。这周我们上线了 `xbrowser mcp`——一个 stdio MCP server，暴露 7 个浏览器工具。这篇是建造日志：设计决策、首轮冒烟抓到的两个真 bug、以及为什么协议层选择手写。
+xbrowser 是一个浏览器自动化 CLI（57 命令、130+ 站点插件、自愈回放）。这周我们上线了 `xbrowser mcp`——一个 stdio MCP server，暴露 7 个浏览器工具。这篇是建造日志：设计决策、首轮冒烟抓到的两个真 bug、以及为什么协议层选择手写。
 
 ## 为什么手写 JSON-RPC 层？
 
@@ -54,6 +54,6 @@ case 'browser_navigate': {
 
 如果你维护一个有 Agent 相关面的 CLI（浏览器、文件、HTTP、搜索——大多数 CLI 都算），一个 MCP server 大概是一天工作量：枚举 Agent 真正需要的 5~10 个动词、接到你现有的函数上、手写协议循环、用进程做冒烟。难的不是协议——是边界决策：哪些动词、什么粒度、错误如何作为工具结果而不是崩溃呈现。
 
-xbrowser 采用 MIT 协议开源：[{{GITHUB_URL}}]({{GITHUB_URL}}) · npm: [{{NPM_URL}}]({{NPM_URL}})
+xbrowser 采用 MIT 协议开源，GitHub 搜 {{GITHUB_REPO}} 或 npm 装 {{NPM_PKG}} 即可找到。
 
 *本文经 xbrowser 自己的内容管线起草，上面的 `browser_*` 工具与任何 MCP Agent 拿到的完全相同。*
