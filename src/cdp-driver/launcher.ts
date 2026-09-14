@@ -90,6 +90,10 @@ export const DEFAULT_ARGS = [
 export const ANTI_DETECT_ARGS = [
   '--disable-blink-features=AutomationControlled',
   '--disable-features=IsolateOrigins,site-per-process',
+  // headless UA 清洗（browserscan 实测 2026-09-14）：headless 默认 UA 含
+  // "HeadlessChrome"——这是反爬系统最高频检测面之一。必须在 launch 级覆盖
+  // （stealth init-script 只能覆盖 JS 层 navigator.userAgent，HTTP header 盖不住）
+  '--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36',
 ];
 
 // ── Public API ─────────────────────────────────────────────────
