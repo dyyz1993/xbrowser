@@ -177,7 +177,10 @@ export default function (xcli: XCLIAPI): void {
           return fail('必须提供 --content 或 --file 参数');
         }
 
-        await page.goto('https://juejin.cn/editor/draft', {
+        // 2026-09-22: /editor/draft 已被掘金重定向回首页（改版），publish 全流程
+        // 空转后仍报成功（假阳性实录）。draft 命令在用的 /editor/drafts/new 仍有效，
+        // publish 对齐到同一 URL。
+        await page.goto('https://juejin.cn/editor/drafts/new', {
           waitUntil: 'domcontentloaded',
           timeout: 20000,
         });
