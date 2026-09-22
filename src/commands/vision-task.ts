@@ -16,7 +16,7 @@ import { join } from 'path';
  * 复用 find-visual 的凭据发现与坐标幻觉防御。
  */
 
-function loadVLMCredentials(): { apiKey: string; baseURL: string; model: string } | null {
+export function loadVLMCredentials(): { apiKey: string; baseURL: string; model: string } | null {
   const candidates = [
     process.env.XBROWSER_VLM_CONFIG,
     join(homedir(), '.zcode', 'v2', 'config.json'),
@@ -47,7 +47,7 @@ type VLMImage = { type: 'image'; source: { type: 'base64'; media_type: 'image/pn
 type VLMText = { type: 'text'; text: string };
 type VLMContent = Array<VLMImage | VLMText>;
 
-async function vlmAsk(
+export async function vlmAsk(
   creds: { apiKey: string; baseURL: string; model: string },
   content: VLMContent,
   maxTokens = 2000,
