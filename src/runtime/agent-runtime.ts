@@ -1,6 +1,6 @@
 import type { Page } from '../browser-shim.js';
 import { errMsg } from '../utils/error.js';
-import { getRefTarget, normalizeAgentRef, replaceRefs } from './ref-store.js';
+import { getRefTarget, inheritStableRefs, normalizeAgentRef, replaceRefs } from './ref-store.js';
 import type { AgentActionInput, AgentActionResult, AgentObservation, AgentTarget, AgentTargetAction, AgentWaitInput, AgentWaitResult } from './types.js';
 
 interface RawTarget {
@@ -217,10 +217,7 @@ export async function observePage(
     ) as Promise<RawObservation>,
   ]);
 
-  const targets = raw.targets.map((target, index) => ({
-    ref: `e${index + 1}`,
-    ...target,
-  }));
+  const targets = inheritStableRefs(sessionKey(sessionId), raw.targets);
   replaceRefs(sessionKey(sessionId), raw.screenHash, targets);
 
   return {
