@@ -5,7 +5,14 @@ import { ContextTracker } from './context-tracker.js';
 import { TipGenerator, buildSnapshot } from './tip-generator.js';
 import { detectAntiBot, formatDetectionMessage, type DetectionConfig } from '../lib/anti-bot.js';
 
-const DEBOUNCE_MS = 500;
+// Smart-tips 需等 SPA 弹层渲染后再做 DOM diff。此前固定同步等待 500ms 且每条
+// 命令都付（bench 实测：静态页 eval 命令 508ms ≈ 全部是这个等待，见
+// output/benchmark）。默认降为 120ms —— 仍覆盖快弹层，慢渲染弹层会被后续
+// 命令的 beforeCommand 快照兜住。XBROWSER_TIPS_DEBOUNCE 可调，0 完全跳过。
+function tipsDebounceMs(): number {
+  const v = parseInt(process.env.XBROWSER_TIPS_DEBOUNCE ?? '120', 10);
+  return Number.isFinite(v) && v > 0 ? v : 0;
+}
 
 // 需要跳过检测的命令列表
 const SKIP_DETECT_COMMANDS = new Set([
@@ -112,7 +119,9 @@ export class TipsManager {
   }
 
   private debounce(): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, DEBOUNCE_MS));
+    const ms = tipsDebounceMs();
+    if (ms <= 0) return Promise.resolve();
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   formatTips(tips: SmartTip[]): string[] {
