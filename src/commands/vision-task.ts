@@ -43,7 +43,7 @@ export function loadVLMCredentials(): { apiKey: string; baseURL: string; model: 
   return null;
 }
 
-type VLMImage = { type: 'image'; source: { type: 'base64'; media_type: 'image/png'; data: string } };
+type VLMImage = { type: 'image'; source: { type: 'base64'; media_type: 'image/png' | 'image/jpeg'; data: string } };
 type VLMText = { type: 'text'; text: string };
 type VLMContent = Array<VLMImage | VLMText>;
 
@@ -163,9 +163,13 @@ export const visionTaskCommand = registerCommand({
           if (real) { await real.bringToFront().catch(() => {}); page = real; }
         } catch { /* keep current */ }
       }
-      const buffer = await page.screenshot({ type: 'png' });
+      // JPEG 降质提频：视觉决策对无损不敏感，q75 相比 PNG 省 ~60% 图片 token
+      const shotQuality = Math.max(30, Math.min(95, parseInt(process.env.XBROWSER_VLM_SHOT_QUALITY ?? '75', 10) || 75));
+      const buffer = await page.screenshot({ type: 'jpeg', quality: shotQuality });
       const b64 = buffer.toString('base64');
-      const { w, h } = pngDims(b64);
+      const vp = typeof page.viewportSize === 'function' ? page.viewportSize() : null;
+      const w = vp?.width ?? pngDims(b64).w;
+      const h = vp?.height ?? pngDims(b64).h;
 
       // ── Decide ──
       const obsText = [
@@ -175,7 +179,7 @@ export const visionTaskCommand = registerCommand({
         history.length ? `已执行动作：\n${history.slice(-6).join('\n')}` : '尚无动作。',
       ].join('\n');
       const reply = await vlmAskRetry(creds, [
-        { type: 'image', source: { type: 'base64', media_type: 'image/png', data: b64 } },
+        { type: 'image', source: { type: 'base64', media_type: shotQuality >= 100 ? 'image/png' : 'image/jpeg', data: b64 } },
         { type: 'text', text: `${SYSTEM_PROMPT}\n\n${obsText}` },
       ]);
       const decision = parseDecision(reply);
