@@ -182,7 +182,7 @@ describe('juejin plugin', () => {
       const ctx = createMockCtx(page);
       await handler({ title: 'My Guide', content: '# Hello' }, ctx);
       expect(page.goto).toHaveBeenCalledWith(
-        'https://juejin.cn/editor/draft',
+        'https://juejin.cn/editor/drafts/new',
         expect.objectContaining({ waitUntil: 'domcontentloaded' })
       );
     }, 15000);
