@@ -402,6 +402,16 @@ export function buildStealthInitScript(config: StealthConfig = DEFAULT_STEALTH_C
     '  Object.defineProperty(Screen.prototype,"height",{get:_gh,configurable:true});',
     '  Object.defineProperty(Screen.prototype,"availWidth",{get:_gw,configurable:true});',
     '  Object.defineProperty(Screen.prototype,"availHeight",{get:_gah,configurable:true});',
+    // 2b. Window outer 尺寸伪造：无窗口管理器的 CI/Linux 环境里 outerWidth/outerHeight
+    //     偶发为 0 —— 真实反爬的高频 headless 特征（outer===0 或 outer===inner）。
+    //     伪造为 inner 加合理浏览器 chrome 高度差（真实 Chrome outer>inner）。
+    //     09-22 修复 preflight.test viewport-sane 在 CI 间歇 FAIL（两次绊住 PR 合并）。
+    '  try{',
+    '    var _ow=function(){return Math.max(window.innerWidth||1280,1280)+16;}',
+    '    var _oh=function(){return Math.max(window.innerHeight||800,800)+88;}',
+    '    Object.defineProperty(window,"outerWidth",{get:_ow,configurable:true});',
+    '    Object.defineProperty(window,"outerHeight",{get:_oh,configurable:true});',
+    '  }catch(e){}',
     // S174: UA Headless 标记清洗——headless launch 的 UA 含 HeadlessChrome/xxx
     // （最高频检测面），同步清洗 userAgent/appVersion/userAgentData(brands+高熵值)。
     // 原型+实例双层覆写（S172 模式）。
