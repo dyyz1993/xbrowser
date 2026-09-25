@@ -271,7 +271,7 @@ export async function executeCommand(
     const { forwardExec } = await import('./client/daemon-client.js');
     // Long-running agent loops (vision-task: N × VLM round-trips ≈ 5-15s/step)
     // outlive the default 120s exec RPC.
-    const longRunning = /^(vision-task|crawl|scrape|record|replay)$/.test(commandName);
+    const longRunning = /^(vision-task|task|crawl|scrape|record|replay)$/.test(commandName);
     const result = await forwardExec(
       commandName, params, sessionName, extraOpts?.cdpEndpoint,
       longRunning ? 20 * 60_000 : undefined,
