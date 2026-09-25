@@ -254,7 +254,7 @@ export default function (xcli: XCLIAPI): void {
           await randomPause(1400, 2600);
 
           const confirmBtn = page.locator(
-            'button:has-text("确认发布"), button:has-text("确定")'
+            'button:has-text("确定并发布"), button:has-text("确认发布"), button:has-text("确定")'
           ).first();
           if (await confirmBtn.isVisible().catch(() => false)) {
             await humanClick(page, confirmBtn);

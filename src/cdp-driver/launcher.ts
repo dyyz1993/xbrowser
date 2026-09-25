@@ -66,6 +66,9 @@ export const DEFAULT_ARGS = [
   '--no-first-run',
   '--no-default-browser-check',
   '--no-sandbox',
+  // CI runner 的 /dev/shm 仅 64MB，Chrome shm 不足时启动显著变慢（CDP 端口
+  // 30s 绑不上，伴生 dbus 噪音）——e2e m5-human-gate 间歇挂的根因（09-24）。
+  '--disable-dev-shm-usage',
   '--disable-background-networking',
   '--disable-background-timer-throttling',
   '--disable-backgrounding-occluded-windows',
