@@ -3,7 +3,7 @@ import { ok, fail, normalizeTips } from '@dyyz1993/xcli-core';
 import type { BrowserCommandContext } from '../context.js';
 import { observePage, actOnPage } from '../runtime/agent-runtime.js';
 import { registerCommand } from './command-registry.js';
-import { loadVLMCredentials, vlmAsk } from './vision-task.js';
+import { loadVLMCredentials, vlmAskRetry } from './vision-task.js';
 
 /**
  * task — 快思考自治循环（jev-ultrafast 同构，跑在本项目硬执行层上）
@@ -35,12 +35,13 @@ const DECISION_SYSTEM = `你是浏览器任务决策器。根据目标、当前�
 {"action":"press","value":"Enter","thought":"为什么"}
 {"action":"scroll","value":"down 或 up","thought":"为什么"}
 {"action":"done","value":"完成摘要","thought":"为什么"}
+{"action":"back","thought":"点错了/跳转错了，返回上一页重试"}
 {"action":"blocked","value":"卡住原因","thought":"为什么"}
 
 规则：
 1. ref 必须原样来自本次元素清单；清单里没有能推进目标的元素就输出 blocked。
 2. 目标已完成（页面上能确认结果）就输出 done，value 写完成摘要。
-3. 不要重复刚失败过的同一动作；连续失败换思路或 blocked。`;
+3. 不要重复刚失败过的同一动作；动作后页面跳到了意料之外的地方就输出 back 返回重试；连续失败换思路或 blocked。`;
 
 function extractDecision(raw: string): Record<string, unknown> | null {
   // 容错解析：剥 ```json 围栏、取首个 {...} 平衡块
@@ -90,6 +91,7 @@ export const taskCommand = registerCommand({
     let status: 'done' | 'blocked' | 'max_steps' | 'error' = 'max_steps';
     let summary = '';
     let lastError = '';
+    let emptyReplies = 0;
 
     for (let step = 1; step <= p.maxSteps; step++) {
       if (Date.now() - started > p.timeout) { status = 'blocked'; summary = `timeout after ${step - 1} steps`; break; }
@@ -110,7 +112,7 @@ export const taskCommand = registerCommand({
 
       let raw = '';
       try {
-        raw = await vlmAsk({ ...creds, model }, [{ type: 'text', text: `${DECISION_SYSTEM}\n\n---\n\n${userPayload}` }], 900);
+        raw = await vlmAskRetry({ ...creds, model }, [{ type: 'text', text: `${DECISION_SYSTEM}\n\n---\n\n${userPayload}` }], 900);
         llmCalls++;
       } catch (e) {
         lastError = e instanceof Error ? e.message : String(e);
@@ -118,6 +120,13 @@ export const taskCommand = registerCommand({
       }
       const decision = extractDecision(raw);
       if (!decision || typeof decision.action !== 'string') {
+        // 空回复（过渡页/加载中常见）：重 observe 一次形成自然间隔再决策，连续 2 次空才放弃
+        if (!raw.trim() && emptyReplies < 2) {
+          emptyReplies++;
+          steps.push({ step, action: '(empty reply, re-observe)', ok: false, screenHash: (obs as { screenHash?: string }).screenHash });
+          history.push(`step${step}: (empty reply, retrying)`);
+          continue;
+        }
         status = 'blocked'; summary = `LLM returned unparsable decision: ${raw.slice(0, 120)}`; break;
       }
       const action = decision.action as string;
@@ -130,6 +139,12 @@ export const taskCommand = registerCommand({
         status = 'done'; summary = value || thought || 'task done';
         steps.push({ step, thought, action: 'done', ok: true, screenHash });
         break;
+      }
+      if (action === 'back') {
+        await ctx.page?.goBack?.().catch?.(() => {});
+        steps.push({ step, thought, action: 'back', ok: true, screenHash });
+        history.push(`step${step}: back (返回上一页)`);
+        continue;
       }
       if (action === 'blocked') {
         status = 'blocked'; summary = value || thought || 'LLM judged blocked';

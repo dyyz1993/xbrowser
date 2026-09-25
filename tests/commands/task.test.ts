@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('../../src/commands/vision-task.js', () => ({
   loadVLMCredentials: mocks.creds,
   vlmAsk: mocks.vlm,
+  vlmAskRetry: mocks.vlm,
 }));
 
 vi.mock('../../src/runtime/agent-runtime.js', () => ({

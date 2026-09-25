@@ -65,7 +65,7 @@ export async function vlmAsk(
 
 /** vlmAsk with empty-reply retry: transitional pages (nav spinner) can elicit
  *  empty text blocks from the model — one blind retry usually resolves it. */
-async function vlmAskRetry(
+export async function vlmAskRetry(
   creds: { apiKey: string; baseURL: string; model: string },
   content: VLMContent,
   maxTokens = 2000,
