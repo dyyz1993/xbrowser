@@ -123,6 +123,26 @@ xbrowser --cdp 9222 title                               # Connect existing brows
 xbrowser --cdp auto title                               # Auto-discover
 ```
 
+### Browser Session Priority (决策顺序，实战经验)
+
+**先查有没有可复用的浏览器，再考虑自起**——大多数站需要登录态，headless 新起必败：
+
+```bash
+# 1. 先探活已开的浏览器（按端口试）
+curl -s -m 3 http://localhost:9222/json/version   # 自动化实例（xyz-mac 等）
+curl -s -m 3 http://localhost:9221/json/version   # 用户日常浏览器
+# 活着 → --cdp 连它（复用登录态，零成本）
+# 死了 → 2a. 重启自动化实例（登录态在 profile 里）或 2b. cookie 迁移（login-bridge）
+```
+
+| 场景 | 正确选择 |
+|------|---------|
+| 需要登录态（知乎/微博/淘宝/ASC） | **必须**连用户浏览器或 CDP 实例——headless 新起必败 |
+| cookie 已迁移到 CDP 实例 | 连实例（与用户浏览器解耦，可并发） |
+| 纯公开页面 | 随意，headless 兜底 |
+
+注意：CDP trusted 输入要求目标 tab **visible**（`document.visibilityState`），tab 被遮挡时点击/键入被静默丢弃——操作前先查。
+
 ### Environment Variables
 
 | Variable | Purpose | Example |
