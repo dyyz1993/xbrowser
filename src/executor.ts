@@ -1,39 +1,47 @@
-import { classifyFailure } from './fail-codes.js';
 import {
   ok,
   fail,
   isCommandResult,
-  type CommandResult,
-  type Tip,
-  type StorageContext,
-  CompositeStorage,
-  TipCollector,
   normalizeTips,
-  configureArchiveStore,
-  appendCommandToArchive,
-  type CommandArchiveEntry,
-  checkGuard,
-  unquote,
+  TipCollector,
+  type Tip,
 } from '@dyyz1993/xcli-core';
-import { parsePluginParams } from './utils/plugin-params.js';
 import { errMsg } from './utils/error.js';
 import { NoopSiteInstance } from './utils/stub-context.js';
 import { getCommand, getAllCommands } from './commands/index.js';
 import { attachDetectAntiBot, type BrowserCommandContext } from './context.js';
-import type { CommandContext } from '@dyyz1993/xcli-core';
-import { findOrRestoreSession, createSession, saveSessionDiskMeta, closeSessionByName, setActivePage, type ManagedSession, type BrowserLaunchOptions } from './browser.js';
 import {
-  parseCommandChain,
-  splitCommand,
-  parseCommandArgs,
-} from './chain-parser.js';
-import type { WSServer, CommandMessage } from './websocket-server.js';
-import { getPluginLoader } from './utils/plugin-singleton.js';
-import { checkPluginLoginRequired } from './plugin/login-guard.js';
+  findOrRestoreSession,
+  createSession,
+  saveSessionDiskMeta,
+  closeSessionByName,
+  setActivePage,
+  type ManagedSession,
+} from './browser.js';
 import { getTipsManager } from './tips/index.js';
 import { resolveRefParams } from './utils/resolve-selector.js';
 import { loadHooks } from './hooks/loader.js';
-import { homedir } from 'os';
+import { classifyFailure } from './fail-codes.js';
+import {
+  errorResult,
+  guardCheck,
+  getPluginStorage,
+  NAVIGATION_COMMANDS,
+  recordArchive,
+  snapshotHintShown,
+  streamCommandEvent,
+  tipsToMessages,
+} from './executor/foundation.js';
+import { executeChain as executeChainImpl } from './executor/chain.js';
+import type {
+  ChainExecutionResult,
+  ChainStepResult,
+  ExecutionResult,
+  HookOutput,
+} from './executor/types.js';
+
+export { getPluginStorage, setWSServer } from './executor/foundation.js';
+export type { ChainExecutionResult, ChainStepResult, ExecutionResult, HookOutput };
 
 /** Simple Levenshtein distance for "Did you mean?" suggestions */
 function levenshtein(a: string, b: string): number {
@@ -45,131 +53,12 @@ function levenshtein(a: string, b: string): number {
     for (let j = 1; j <= n; j++) {
       dp[i][j] = a[i-1] === b[j-1]
         ? dp[i-1][j-1]
-        : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+        : 1 + Math.min(dp[i-1][j-1], dp[i-1][j-1]);
     }
   }
   return dp[m][n];
 }
-import { join } from 'path';
 
-const NAVIGATION_COMMANDS = new Set(['goto', 'back', 'forward', 'refresh']);
-const snapshotHintShown = new WeakSet<ManagedSession>();
-
-const CONFIG_DIR = join(homedir(), '.xbrowser');
-
-export type SimpleStorage = StorageContext;
-
-const storageCache = new Map<string, StorageContext>();
-
-export function getPluginStorage(pluginName: string): StorageContext {
-  if (!storageCache.has(pluginName)) {
-    // CompositeStorage satisfies StorageContext (provides plugin/global/cache/tmp stores),
-    // whereas the legacy PluginStorage class lacks those nested stores.
-    storageCache.set(pluginName, new CompositeStorage(pluginName, CONFIG_DIR, 'xbrowser'));
-  }
-  return storageCache.get(pluginName)!;
-}
-
-let archiveInitialized = false;
-function ensureArchiveInit(): void {
-  if (!archiveInitialized) {
-    try {
-      configureArchiveStore({ archiveDir: join(homedir(), '.xbrowser', 'archives') });
-    } catch { /* archive init failure is non-fatal */ }
-    archiveInitialized = true;
-  }
-}
-
-function recordArchive(sessionId: string | undefined, sessionName: string, entry: CommandArchiveEntry): void {
-  if (!sessionId) return;
-  try {
-    ensureArchiveInit();
-    appendCommandToArchive(sessionId, sessionName, entry);
-  } catch { /* archive write failure is non-fatal */ }
-}
-
-async function guardCheck(commandName: string): Promise<{ blocked: boolean; message: string } | null> {
-  try {
-    const loader = await getPluginLoader();
-    const core = loader.getCore();
-    return checkGuard(core, commandName, process.env);
-  } catch { /* guard check failure should not block */ return null; }
-}
-
-/**
- * Result of a single command execution.
- */
-export interface HookOutput {
-  _hook: string;
-  [key: string]: unknown;
-}
-
-export interface ExecutionResult {
-  success: boolean;
-  data: unknown;
-  message?: string;
-  duration: number;
-  tips?: Tip[];
-  hookOutputs?: HookOutput[];
-  error?: { code: string; level: string };
-}
-
-/**
- * Result of a single step within a command chain execution.
- */
-export interface ChainStepResult {
-  command: string;
-  raw: string;
-  success: boolean;
-  data: unknown;
-  message?: string;
-  duration: number;
-  tips?: Tip[];
-  hookOutputs?: HookOutput[];
-}
-
-/**
- * Result of executing a command chain (multiple commands linked with &&, ||, etc.).
- */
-export interface ChainExecutionResult {
-  success: boolean;
-  steps: ChainStepResult[];
-  totalDuration: number;
-  stoppedAt?: number;
-  stoppedReason?: string;
-}
-
-function errorResult(message: string): ExecutionResult {
-  return { ...fail(message), duration: 0 };
-}
-
-/**
- * Convert Tip[] back to string[] for the archive protocol (CommandArchiveEntry.result.tips).
- * xcli-core's CommandResult.tips is Tip[], but the archive stores plain strings.
- */
-function tipsToMessages(tips: Tip[] | undefined): string[] {
-  if (!tips || tips.length === 0) return [];
-  return tips.map((t) => (typeof t === 'string' ? t : t.message));
-}
-
-let wsServer: WSServer | null = null;
-
-/**
- * Set or clear the WebSocket server used for streaming command events.
- *
- * @param server - A WSServer instance to stream events to, or null to disable.
- */
-export function setWSServer(server: WSServer | null): void {
-  wsServer = server;
-}
-
-function streamCommandEvent(sessionId: string, message: CommandMessage): void {
-  if (!wsServer || !wsServer.getRunning()) return;
-  wsServer.broadcastToSession(sessionId, {
-    type: 'command',
-    data: message,
-  });
-}
 
 /**
  * Execute a single browser command against an existing session.
@@ -558,331 +447,11 @@ export async function executeCommand(
   }
 }
 
-/**
- * Execute a chain of browser commands parsed from a string expression.
- *
- * Supports `&&` (and-chain, stops on first failure), `||` (or-chain, stops on
- * first success), `;` (sequence separator), `->`, `,`, and `+` operators.
- * Automatically creates a browser session if none exists and destroys it
- * afterwards.
- *
- * @param input - Raw chain expression (e.g. `"goto https://example.com && click #btn"`).
- * @param options - Optional configuration for CDP endpoint, session name, and file mode.
- * @returns A {@link ChainExecutionResult} with per-step results and total duration.
- *
- * @example
- * ```ts
- * const result = await executeChain('goto https://example.com && click #btn');
- * console.log(result.success, result.steps.length);
- * ```
- */
 export async function executeChain(
   input: string,
   options?: { cdpEndpoint?: string; sessionName?: string; fileMode?: boolean }
 ): Promise<ChainExecutionResult> {
-  const pipelines = parseCommandChain(input, { fileMode: options?.fileMode });
-  const sessionName = options?.sessionName || 'default';
-  const results: ChainStepResult[] = [];
-  const totalStart = Date.now();
-
-  let session = await findOrRestoreSession(sessionName, options?.cdpEndpoint);
-  if (!session) {
-    const launchOpts: BrowserLaunchOptions = {};
-    if (options?.cdpEndpoint) {
-      launchOpts.cdpEndpoint = options.cdpEndpoint;
-    }
-    session = await createSession(sessionName, undefined, launchOpts);
-    // Persist session to disk for cross-CLI-invocation recovery (CDP mode)
-    saveSessionDiskMeta(sessionName, {
-      id: session.id,
-      name: sessionName,
-      url: session.page.url(),
-      createdAt: session.createdAt,
-      cdpEndpoint: session.cdpEndpoint,
-    });
-  }
-
-  try {
-    for (const pipeline of pipelines) {
-      const { type, pipeline: commands } = pipeline;
-
-      for (const cmdStr of commands) {
-        // 链间人类节奏（d54，opt-in：XBROWSER_CHAIN_PACE=human）：默认链命令
-        // 零间隔连发 —— goto 后 <200ms 即操作是"加载即操作"暴露（无视觉定位
-        // 时间）。开启后命令间随机 0.8-2.5s，模拟人类阅读/定位节奏。
-        if (process.env.XBROWSER_CHAIN_PACE === 'human' && results.length > 0) {
-          await new Promise(r => setTimeout(r, 800 + Math.random() * 1700));
-        }
-        const parts = splitCommand(cmdStr);
-        if (parts.length === 0) continue;
-
-        const cmdName = parts[0];
-        const cmdArgs = parts.slice(1);
-
-        const loader = await getPluginLoader();
-        const internalLoader = loader.getCore().loader;
-        // 目录名别名兜底（与 router 同源修复）：链式命令里的插件名按
-        // plugin list 显示的目录名敲也应命中（如 alibaba-1688 → 1688）
-        const resolvedName = loader.resolveSiteName(cmdName);
-        const site = resolvedName ? internalLoader.getSite(resolvedName) : undefined;
-
-        if (site) {
-          const subCommand = cmdArgs[0];
-          if (!subCommand) {
-            results.push({
-              command: cmdName,
-              raw: cmdStr,
-              ...fail(`Plugin "${cmdName}" requires a sub-command`),
-              duration: 0,
-            });
-            if (type === 'and') {
-              return {
-                success: false,
-                steps: results,
-                totalDuration: Date.now() - totalStart,
-                stoppedAt: results.length,
-                stoppedReason: `Command '${cmdName}' failed (&& chain): no sub-command`,
-              };
-            }
-            continue;
-          }
-
-          const cmdEntry = site.getCommand(subCommand);
-          if (!cmdEntry) {
-            results.push({
-              command: cmdName,
-              raw: cmdStr,
-              ...fail(`Unknown command "${subCommand}" for plugin "${cmdName}"`),
-              duration: 0,
-            });
-            if (type === 'and') {
-              return {
-                success: false,
-                steps: results,
-                totalDuration: Date.now() - totalStart,
-                stoppedAt: results.length,
-                stoppedReason: `Command '${cmdName}' failed (&& chain): unknown sub-command "${subCommand}"`,
-              };
-            }
-            continue;
-          }
-
-          const pluginArgs = cmdArgs.slice(1);
-          // safeParse 必须在此重跑：CLI 侧的 zod 默认值填充只覆盖内置命令路径，
-          // daemon 转发的插件 handler 直接吃 parsePluginParams 原始输出——
-          // 跳过 schema 意味着 zod .default() 全部失效（实测 baidu search
-          // 的 pages 变 undefined）。只回填缺失键（默认值），不整体替换——
-          // zod 默认会剥掉 schema 外的键（session 等全局选项不能丢）。
-          let pluginParams = parsePluginParams(pluginArgs, cmdEntry.parameters!);
-          if (cmdEntry.parameters) {
-            const schemaCheck = cmdEntry.parameters.safeParse(pluginParams);
-            if (schemaCheck.success) {
-              for (const [k, v] of Object.entries(schemaCheck.data as Record<string, unknown>)) {
-                if (!(k in pluginParams)) pluginParams[k] = v;
-              }
-            }
-          }
-
-          const pluginCtx = {
-            args: pluginArgs,
-            options: pluginParams,
-            cwd: process.cwd(),
-            page: session!.page,
-            browser: session!.context.browser()!,
-            browserContext: session!.context,
-            sessionId: session!.id,
-            storage: getPluginStorage(cmdName),
-            output: { mode: 'text' as const, showTips: false, color: false, emoji: false },
-            error: (msg: string) => { throw new Error(msg); },
-            config: {},
-            site,
-            cliName: 'xbrowser',
-            tips: new TipCollector(),
-          };
-
-          const start = Date.now();
-          try {
-            const loginGuard = await checkPluginLoginRequired({
-              site,
-              command: cmdEntry,
-              commandName: subCommand,
-              ctx: pluginCtx,
-              page: session?.page,
-              sessionName,
-            });
-            if (!loginGuard.ok) {
-              const duration = Date.now() - start;
-              const data = loginGuard.data ?? null;
-              recordArchive(session!.id, sessionName, {
-                step: results.length,
-                command: `${cmdName} ${subCommand}`,
-                params: pluginParams,
-                result: { success: false, data, message: loginGuard.message, tips: loginGuard.tips || [] as string[] },
-                toolCalls: [],
-                duration,
-                timestamp: start,
-              });
-              results.push({
-                command: `${cmdName} ${subCommand}`,
-                raw: cmdStr,
-                success: false,
-                data,
-                message: loginGuard.message,
-                tips: normalizeTips(loginGuard.tips),
-                duration,
-              });
-              if (type === 'and') {
-                return {
-                  success: false,
-                  steps: results,
-                  totalDuration: Date.now() - totalStart,
-                  stoppedAt: results.length,
-                  stoppedReason: `Command '${cmdName} ${subCommand}' failed (&& chain): ${loginGuard.message}`,
-                };
-              }
-              continue;
-            }
-
-            const hooks = await loadHooks();
-            if (hooks.length > 0) {
-              await Promise.all(hooks.map(h => h.onBeforeCommand?.({ page: session!.page!, command: `${cmdName} ${subCommand}`, params: pluginParams })));
-            }
-
-            const raw = await cmdEntry.handler(pluginParams, pluginCtx as unknown as CommandContext) as CommandResult;
-            const duration = Date.now() - start;
-
-            let hookOutputs: HookOutput[] | undefined;
-            if (hooks.length > 0) {
-              const outputs: HookOutput[] = [];
-              for (const h of hooks) {
-                const output = await h.onAfterCommand?.({ page: session!.page!, command: `${cmdName} ${subCommand}`, params: pluginParams, result: raw, duration });
-                if (output) outputs.push({ _hook: h.name, ...output } as HookOutput);
-              }
-              if (outputs.length > 0) hookOutputs = outputs;
-            }
-
-            const data = raw?.data ?? raw;
-            recordArchive(session!.id, sessionName, {
-              step: results.length,
-              command: `${cmdName} ${subCommand}`,
-              params: pluginParams,
-              result: { success: true, data, tips: tipsToMessages(raw?.tips) },
-              toolCalls: [],
-              duration,
-              timestamp: start,
-            });
-            results.push({
-              command: `${cmdName} ${subCommand}`,
-              raw: cmdStr,
-              ...ok(data),
-              duration,
-              ...(hookOutputs ? { hookOutputs } : {}),
-            });
-            if (type === 'or') {
-              return {
-                success: true,
-                steps: results,
-                totalDuration: Date.now() - totalStart,
-                stoppedAt: results.length,
-                stoppedReason: `Command '${cmdName} ${subCommand}' succeeded (|| chain)`,
-              };
-            }
-          } catch (err) {
-            const duration = Date.now() - start;
-            const errorMessage = errMsg(err);
-            recordArchive(session!.id, sessionName, {
-              step: results.length,
-              command: `${cmdName} ${subCommand}`,
-              params: pluginParams,
-              result: { success: false, data: null, message: errorMessage, tips: [] },
-              toolCalls: [],
-              duration,
-              timestamp: start,
-            });
-            results.push({
-              command: `${cmdName} ${subCommand}`,
-              raw: cmdStr,
-              ...fail(errorMessage),
-              duration,
-            });
-            if (type === 'and') {
-              return {
-                success: false,
-                steps: results,
-                totalDuration: Date.now() - totalStart,
-                stoppedAt: results.length,
-                stoppedReason: `Command '${cmdName} ${subCommand}' failed (&& chain): ${errorMessage}`,
-              };
-            }
-          }
-          continue;
-        }
-
-        const { params } = parseCommandArgs(cmdName, cmdArgs, unquote);
-
-        if (cmdName === 'goto' && params.url) {
-          const existing2 = await findOrRestoreSession(sessionName, options?.cdpEndpoint);
-          if (!existing2) {
-            session = await createSession(sessionName, params.url as string, {
-              cdpEndpoint: options?.cdpEndpoint,
-            });
-          }
-        }
-
-        const start = Date.now();
-        const result = await executeCommand(cmdName, params, sessionName, {
-          cdpEndpoint: options?.cdpEndpoint,
-          skipCleanup: true, // executeChain's finally handles cleanup
-        });
-        const duration = Date.now() - start;
-
-        const stepResult: ChainStepResult = {
-          command: cmdName,
-          raw: cmdStr,
-          success: result.success,
-          data: result.data,
-          message: result.message,
-          duration,
-          tips: result.tips,
-          ...(result.hookOutputs ? { hookOutputs: result.hookOutputs } : {}),
-        };
-        results.push(stepResult);
-
-        if (type === 'and' && !result.success) {
-          return {
-            success: false,
-            steps: results,
-            totalDuration: Date.now() - totalStart,
-            stoppedAt: results.length,
-            stoppedReason: `Command '${cmdName}' failed (&& chain): ${result.message}`,
-          };
-        }
-
-        if (type === 'or' && result.success) {
-          return {
-            success: true,
-            steps: results,
-            totalDuration: Date.now() - totalStart,
-            stoppedAt: results.length,
-            stoppedReason: `Command '${cmdName}' succeeded (|| chain)`,
-          };
-        }
-      }
-    }
-
-    const anyFailed = results.some((r) => !r.success);
-    return {
-      success: !anyFailed,
-      steps: results,
-      totalDuration: Date.now() - totalStart,
-    };
-  } finally {
-    // Session lifecycle is managed by:
-    //   1. process.on('exit') — cleanup on process exit (CDP: disconnect only; non-CDP: close browser)
-    //   2. "session close/kill" — explicit destruction by user
-    // Do NOT destroy here — executeChain is just a command executor, not a lifecycle manager.
-    // Daemon mode keeps sessions alive for reuse across requests.
-  }
+  return executeChainImpl(input, options, executeCommand);
 }
 
 /**
