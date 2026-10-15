@@ -61,7 +61,8 @@ export async function imageCommandHandler(
         .filter((src) => src.startsWith('http'));
     }).catch(() => [] as string[]);
 
-    if (!page.url().includes('gemini.google.com/app')) {
+    const currentUrl = page.url() ?? '';
+    if (!currentUrl.includes('gemini.google.com/app')) {
       await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 });
       await new Promise((resolve) => setTimeout(resolve, 3000));
     }

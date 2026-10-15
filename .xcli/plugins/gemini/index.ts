@@ -9,6 +9,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import fs from 'node:fs';
 import path from 'node:path';
 import { imageCommandConfig, imageCommandHandler, setImageHelpers } from './image.js';
+import { usageCommandHandler, usageResultSchema } from './usage.js';
 
 const GEMINI_URL = 'https://gemini.google.com';
 type Page = import('../types').Page;
@@ -228,6 +229,19 @@ export default function (xcli: XCLIAPI): void {
   });
 
   // ── music — 生成音乐 ──
+  site.command('usage', {
+    description: '读取 Gemini 当前用量和周限额（含重置时间）',
+    scope: 'page',
+    loginRequired: 'required',
+    parameters: z.object({}),
+    examples: [
+      { cmd: 'xbrowser --cdp 9221 gemini usage', description: '输出当前用量、周限额和重置时间' },
+      { cmd: 'xbrowser --cdp 9221 --json gemini usage', description: 'JSON 输出' },
+    ],
+    result: usageResultSchema,
+    handler: async (_params, ctx) => usageCommandHandler(_params, ctx),
+  });
+
   site.command('music', {
     description: '生成音乐（打开制作音乐工具并发送提示）',
     scope: 'page',
