@@ -20,23 +20,25 @@ import type {
   XBElementHandle, XBFrame, WaitUntilState,
   XBClickOptions, XBFillOptions, XBScreenshotOptions, XBPdfOptions,
   XBNavigationResponse,
-  XBConsoleMessage, XBDIALOG,
+  XBConsoleMessage,
   XBResponse, XBRequest, XBRoute, XBFilePayload,
 } from './types.js';
 import type { XBContextImpl } from './context.js';
 import type { XBBrowserImpl } from './browser.js';
 import { XBMouseImpl } from './mouse.js';
-import { buildStealthInitScript, DEFAULT_STEALTH_CONFIG } from './stealth.js';
 import { XBKeyboardImpl } from './keyboard.js';
 import { XBLocatorImpl } from './locator.js';
 import { XBElementHandleImpl } from './element-handle.js';
+import { MediaService } from './page-media.js';
+import { FileInputService } from './page-file-input.js';
+import { setupNetworkEvents } from './page-network-events.js';
+import { setupPageEvents } from './page-lifecycle-events.js';
+import { NetworkWaitService } from './page-network-waits.js';
+import { NetworkRouteService } from './page-routes.js';
+import { NavigationService } from './page-navigation.js';
+import { DomQueryService } from './page-dom.js';
 import { queryJS } from './selector-utils.js';
-import {
-  type FetchPausedParams,
-  globToRegex, matchGlob,
-  createResponsePredicate, createRequestPredicate,
-  createXBResponse, createXBRequest, createXBRouteFetch,
-} from './page-helpers.js';
+
 
 type XBConsoleType = 'log' | 'debug' | 'info' | 'error' | 'warning' | 'dir' | 'dirxml' | 'table' | 'trace' | 'clear' | 'startGroup' | 'startGroupCollapsed' | 'endGroup' | 'assert' | 'profile' | 'profileEnd' | 'count' | 'timeEnd';
 
@@ -46,11 +48,6 @@ interface PageLoadState {
   networkIdle: boolean;
 }
 
-interface DialogInfo {
-  type: 'alert' | 'confirm' | 'prompt' | 'beforeunload';
-  message: string;
-  defaultValue: string;
-}
 
 export class XBPageImpl implements XBPage {
   private conn: CDPConnection;
@@ -72,6 +69,12 @@ export class XBPageImpl implements XBPage {
 
   readonly mouse: XBMouse;
   readonly keyboard: XBKeyboard;
+  private readonly mediaService: MediaService;
+  private readonly fileInputService: FileInputService;
+  private readonly networkWaitService: NetworkWaitService;
+  private readonly networkRouteService: NetworkRouteService;
+  private readonly navigationService: NavigationService;
+  private readonly domQueryService: DomQueryService;
 
   // Network tracking for waitForLoadState('networkidle')
   private inflightRequests = new Set<string>();
@@ -94,6 +97,50 @@ export class XBPageImpl implements XBPage {
 
     this.mouse = new XBMouseImpl(conn, sessionId);
     this.keyboard = new XBKeyboardImpl(conn, sessionId);
+    this.mediaService = new MediaService({
+      conn,
+      sessionId,
+      viewportSize: this._viewportSize,
+      evaluate: <T>(script: string) => this.evaluate(script) as Promise<T>,
+      onViewportSize: (size) => { this._viewportSize = size; },
+    });
+    this.fileInputService = new FileInputService({
+      conn,
+      sessionId,
+      evaluate: <T>(script: string) => this.evaluate(script) as Promise<T>,
+      mouse: this.mouse,
+    });
+    this.networkWaitService = new NetworkWaitService({
+      conn,
+      sessionId,
+      responses: this._networkResponses,
+      requests: this._networkRequests,
+      on: (event, handler) => this._emitter.on(event, handler),
+      off: (event, handler) => this._emitter.removeListener(event, handler),
+      currentUrl: () => this.url(),
+    });
+    this.networkRouteService = new NetworkRouteService({
+      conn,
+      sessionId,
+      emit: (event, ...args) => this._emit(event, ...args),
+    });
+    this.navigationService = new NavigationService({
+      conn,
+      sessionId,
+      state: this._loadState,
+      stealthConfig: this._contextImpl.stealthConfig,
+      isClosed: () => this._closed,
+      setUrl: (url) => { this._url = url; },
+      currentUrl: () => this.url(),
+      waitForLoadState: (state, timeout) => this.waitForLoadState(state, timeout),
+      waitForTimeout: (ms) => this.waitForTimeout(ms),
+      evaluate: <T>(script: string) => this.evaluate(script) as Promise<T>,
+    });
+    this.domQueryService = new DomQueryService({
+      conn,
+      sessionId,
+      evaluate: <T>(script: string) => this.evaluate(script) as Promise<T>,
+    });
   }
 
   protected _emit(event: string, ...args: unknown[]): void {
@@ -138,7 +185,7 @@ export class XBPageImpl implements XBPage {
       this._subscriptions.push(
         this.conn.subscribe('Fetch.requestPaused', this.sessionId, (params: unknown) => {
           // route() 未激活时旁路直通（仅认证场景需要 Fetch，不拦截常规流量）
-          if (this._interceptionEnabled) return;
+          if (this.networkRouteService.isInterceptionEnabled) return;
           const p = params as { requestId: string };
           this.conn.send('Fetch.continueRequest', { requestId: p.requestId }, this.sessionId).catch(() => {});
         }),
@@ -348,129 +395,19 @@ export class XBPageImpl implements XBPage {
     url: string,
     opts: { waitUntil?: WaitUntilState; timeout?: number; referer?: string } = {},
   ): Promise<XBNavigationResponse | null> {
-    if (this._closed) throw new Error('Page is closed');
-
-    const waitUntil = opts.waitUntil ?? 'load';
-    const timeout = opts.timeout ?? 30_000;
-
-    // Reset load state
-    this._loadState = { loadFired: false, domContentFired: false, networkIdle: false };
-
-    // Inject stealth hooks BEFORE navigation
-    if (process.env.XBROWSER_STEALTH !== 'off') {
-      try {
-        await this.conn.send('Page.addScriptToEvaluateOnNewDocument',
-          { source: buildStealthInitScript({ ...DEFAULT_STEALTH_CONFIG, ...(this._contextImpl.stealthConfig ?? {}) }) }, this.sessionId);
-      } catch { /* best-effort */ }
-      // HTTP 层 UA 覆盖（2026-09-13 browserscan 实测）：headless Chrome HTTP
-      // User-Agent 含 "HeadlessChrome"——stealth init script 只覆盖 JS 层
-      // navigator.userAgent，HTTP header 仍泄漏。必须在这里同步清除。
-      try {
-        const rawUa = await this.conn.send<{ value: string }>('Runtime.evaluate',
-          { expression: 'navigator.userAgent', returnByValue: true }, this.sessionId);
-        const ua = rawUa?.value || '';
-        const cleaned = ua.replace(/HeadlessChrome/g, 'Chrome');
-        if (cleaned !== ua) {
-          await this.conn.send('Network.setUserAgentOverride',
-            { userAgent: cleaned }, this.sessionId);
-        }
-      } catch { /* best-effort */ }
-    }
-
-    // Navigate
-    const result = await this.conn.send<{ errorText?: string; frameId?: string }>(
-      'Page.navigate',
-      { url, referrer: opts.referer },
-      this.sessionId,
-    );
-
-    if (result.errorText) {
-      throw new Error(`Navigation failed: ${result.errorText}`);
-    }
-
-    // 'commit' = return immediately after navigation without waiting for load
-    if (waitUntil === 'commit') {
-      this._url = url;
-      return {
-        status: () => 0,
-        ok: () => false,
-        url: () => url,
-        headers: () => ({}) as Record<string, string>,
-      };
-    }
-
-    // Wait for the specified load state
-    await this.waitForLoadState(waitUntil, timeout);
-
-    this._url = url;
-
-    // Best-effort navigation response — CDP doesn't expose HTTP status directly
-    const statusCode = 200;
-    const finalUrl = url;
-    const headers: Record<string, string> = {};
-    return {
-      status: () => statusCode,
-      ok: () => statusCode >= 200 && statusCode < 300,
-      url: () => finalUrl,
-      headers: () => headers,
-    };
+    return this.navigationService.goto(url, opts);
   }
 
   async goBack(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
-    // Use CDP Page.getNavigationHistory to find the previous entry,
-    // then navigate directly via Page.navigate (reliable context refresh).
-    try {
-      const navHistory = await this.conn.send<{
-        entries: Array<{ url: string }>;
-        currentIndex: number;
-      }>('Page.getNavigationHistory', undefined, this.sessionId);
-
-      if (navHistory.currentIndex > 0) {
-        const prevUrl = navHistory.entries[navHistory.currentIndex - 1]?.url;
-        if (prevUrl && prevUrl !== 'about:blank') {
-          await this.conn.send('Page.navigate', { url: prevUrl }, this.sessionId);
-          await this.waitForLoadState(opts.waitUntil ?? 'domcontentloaded', opts.timeout ?? 10000).catch(() => {});
-          this._url = prevUrl;
-          return;
-        }
-      }
-    } catch {
-      // Page.getNavigationHistory not available — fall through
-    }
-    // Fallback: history.back() with long wait
-    await this.evaluate('() => history.back()');
-    await this.waitForTimeout(3000);
-    this._url = await this.evaluate<string>('location.href').catch(() => this._url);
+    return this.navigationService.goBack(opts);
   }
 
   async goForward(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
-    try {
-      const navHistory = await this.conn.send<{
-        entries: Array<{ url: string }>;
-        currentIndex: number;
-      }>('Page.getNavigationHistory', undefined, this.sessionId);
-
-      if (navHistory.currentIndex < navHistory.entries.length - 1) {
-        const nextUrl = navHistory.entries[navHistory.currentIndex + 1]?.url;
-        if (nextUrl && nextUrl !== 'about:blank') {
-          await this.conn.send('Page.navigate', { url: nextUrl }, this.sessionId);
-          await this.waitForLoadState(opts.waitUntil ?? 'domcontentloaded', opts.timeout ?? 10000).catch(() => {});
-          this._url = nextUrl;
-          return;
-        }
-      }
-    } catch {
-      // Page.getNavigationHistory not available — fall through
-    }
-    await this.evaluate('() => history.forward()');
-    await this.waitForTimeout(3000);
-    this._url = await this.evaluate<string>('location.href').catch(() => this._url);
+    return this.navigationService.goForward(opts);
   }
 
   async reload(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
-    this._loadState = { loadFired: false, domContentFired: false, networkIdle: false };
-    await this.conn.send('Page.reload', undefined, this.sessionId);
-    await this.waitForLoadState(opts.waitUntil ?? 'load', opts.timeout);
+    return this.navigationService.reload(opts);
   }
 
   async waitForLoadState(state: WaitUntilState = 'load', timeout = 30_000): Promise<void> {
@@ -972,100 +909,24 @@ export class XBPageImpl implements XBPage {
   // ── Screen ──────────────────────────────────────────────────
 
   async screenshot(opts: XBScreenshotOptions = {}): Promise<Buffer> {
-    const params: Record<string, unknown> = {
-      format: opts.type ?? 'png',
-    };
-
-    if (opts.quality !== undefined && (opts.type === 'jpeg' || (!opts.type && opts.quality))) {
-      params.quality = opts.quality;
-    }
-
-    if (opts.fullPage) {
-      params.captureBeyondViewport = true;
-    }
-
-    if (opts.clip) {
-      const clip = {
-        x: Math.round(opts.clip.x),
-        y: Math.round(opts.clip.y),
-        width: Math.round(Math.max(1, opts.clip.width)),
-        height: Math.round(Math.max(1, opts.clip.height)),
-        scale: 1,
-      };
-      params.clip = clip;
-    }
-
-    if (opts.omitBackground) {
-      params.omitBackground = true;
-    }
-
-    const result = await this.conn.send<{ data: string }>(
-      'Page.captureScreenshot',
-      params,
-      this.sessionId,
-    );
-
-    return Buffer.from(result.data, 'base64');
+    return this.mediaService.screenshot(opts);
   }
 
   async pdf(opts: XBPdfOptions = {}): Promise<Buffer> {
-    const params: Record<string, unknown> = {};
-    if (opts.landscape !== undefined) params.landscape = opts.landscape;
-    if (opts.printBackground !== undefined) params.printBackground = opts.printBackground;
-    if (opts.scale !== undefined) params.scale = opts.scale;
-    if (opts.format) params.paperFormat = opts.format;
-    if (opts.preferCSSPageSize !== undefined) params.preferCSSPageSize = opts.preferCSSPageSize;
-    if (opts.margin) {
-      if (opts.margin.top) params.marginTop = parseFloat(opts.margin.top);
-      if (opts.margin.bottom) params.marginBottom = parseFloat(opts.margin.bottom);
-      if (opts.margin.left) params.marginLeft = parseFloat(opts.margin.left);
-      if (opts.margin.right) params.marginRight = parseFloat(opts.margin.right);
-    }
-    const result = await this.conn.send<{ data: string }>('Page.printToPDF', params, this.sessionId);
-    return Buffer.from(result.data, 'base64');
+    return this.mediaService.pdf(opts);
   }
 
   viewportSize(): { width: number; height: number } | null {
-    // Tracked via Emulation.setDeviceMetricsOverride
-    return this._viewportSize ?? null;
+    return this._viewportSize;
   }
 
   async setViewportSize(size: { width: number; height: number }): Promise<void> {
-    await this.conn.send(
-      'Emulation.setDeviceMetricsOverride',
-      {
-        width: size.width,
-        height: size.height,
-        deviceScaleFactor: 1,
-        mobile: false,
-      },
-      this.sessionId,
-    );
-    this._viewportSize = size;
+    return this.mediaService.setViewportSize(size);
   }
 
-  /**
-   * env-E2: 缩放变异——deviceScaleFactor 切换（CSS 像素坐标空间不变，
-   * 物理像素翻倍）。保留当前 CSS 视口尺寸，只换 DSF。
-   */
   async setDeviceScaleFactor(dsf: number): Promise<void> {
-    const size = this._viewportSize ?? (await this.evaluate<{ width: number; height: number }>(
-      '({ width: window.innerWidth, height: window.innerHeight })',
-    ));
-    await this.conn.send(
-      'Emulation.setDeviceMetricsOverride',
-      {
-        width: size.width,
-        height: size.height,
-        deviceScaleFactor: dsf,
-        mobile: false,
-      },
-      this.sessionId,
-    );
-    this._viewportSize = size;
+    return this.mediaService.setDeviceScaleFactor(dsf);
   }
-
-  // ── Scripts ─────────────────────────────────────────────────
 
   async addInitScript(script: string): Promise<void> {
     await this.conn.send(
@@ -1230,102 +1091,20 @@ export class XBPageImpl implements XBPage {
 
   // ── CDP helpers exposed for locator/element ─────────────────
 
-  /** Query a single element, returns CDP nodeId or 0 if not found */
   async querySelector(selector: string): Promise<number> {
-    // For xpath selectors, use evaluate to find the element, then requestNode
-    if (selector.startsWith('xpath=')) {
-      const found = await this.evaluate<boolean>(`
-        (() => { const el = ${queryJS(selector)}; return !!el; })()
-      `).catch(() => false);
-      if (!found) return 0;
-      // Use DOM.performSearch as fallback to get nodeId for xpath
-      try {
-        const search = await this.conn.send<{ nodeId: number }>(
-          'DOM.performSearch',
-          { query: selector.slice(6) },
-          this.sessionId,
-        );
-        if (search.nodeId) return search.nodeId;
-      } catch { /* performSearch may not support xpath */ }
-      return 1; // Element exists but we can't get nodeId — return truthy
-    }
-    // Get document root — with timeout guard: on freshly-attached tab
-    // sessions the DOM agent can silently never respond (d07: detectCaptcha's
-    // page.$ hung forever after a target=_blank tab switch). Time out and
-    // report "not found" instead of deadlocking the command.
-    const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T | null> =>
-      Promise.race([p, new Promise<null>(r => setTimeout(() => r(null), ms))]);
-
-    const doc = await withTimeout(
-      this.conn.send<{ root: { nodeId: number } }>('DOM.getDocument', { depth: 0 }, this.sessionId),
-      8000,
-    );
-    if (!doc) return 0;
-
-    const result = await withTimeout(
-      this.conn.send<{ nodeId: number }>(
-        'DOM.querySelector',
-        { nodeId: doc.root.nodeId, selector },
-        this.sessionId,
-      ),
-      8000,
-    );
-    if (!result) return 0;
-
-    return result.nodeId;
+    return this.domQueryService.querySelector(selector);
   }
 
-  /** Query all matching elements, returns array of CDP nodeIds */
   async querySelectorAll(selector: string): Promise<number[]> {
-    const doc = await this.conn.send<{ root: { nodeId: number } }>(
-      'DOM.getDocument',
-      { depth: 0 },
-      this.sessionId,
-    );
-
-    const result = await this.conn.send<{ nodeIds: number[] }>(
-      'DOM.querySelectorAll',
-      { nodeId: doc.root.nodeId, selector },
-      this.sessionId,
-    );
-
-    return result.nodeIds ?? [];
+    return this.domQueryService.querySelectorAll(selector);
   }
 
-  /** Resolve a CDP nodeId to a RemoteObject for evaluate */
   async resolveNode(nodeId: number): Promise<string> {
-    const result = await this.conn.send<{ object: { objectId: string } }>(
-      'DOM.resolveNode',
-      { nodeId },
-      this.sessionId,
-    );
-    return result.object.objectId;
+    return this.domQueryService.resolveNode(nodeId);
   }
 
-  /** Get the box model for a nodeId */
   async getBoxModel(nodeId: number): Promise<{ x: number; y: number; width: number; height: number } | null> {
-    try {
-      const result = await this.conn.send<{
-        model: { content: number[] };
-      }>('DOM.getBoxModel', { nodeId }, this.sessionId);
-
-      const c = result.model?.content;
-      if (!c || c.length < 8) return null;
-
-      const x1 = c[0];
-      const y1 = c[1];
-      const x2 = c[4];
-      const y2 = c[5];
-
-      return {
-        x: Math.min(x1, x2),
-        y: Math.min(y1, y2),
-        width: Math.abs(x2 - x1),
-        height: Math.abs(y2 - y1),
-      };
-    } catch {
-      return null;
-    }
+    return this.domQueryService.getBoxModel(nodeId);
   }
 
   /** Call a function on a RemoteObject */
@@ -1356,9 +1135,6 @@ export class XBPageImpl implements XBPage {
     return this.conn.send<T>(method, params, this.sessionId);
   }
 
-  /** sup-s11: beforeunload 自动应答语义——'accept'（默认，离开页面，与录制
-   * 意图一致）或 'dismiss'（取消导航留守原页，尽力而为：此构建上 CDP
-   * accept:false 对浏览器侧导航的取消语义不稳定，不保证）。 */
   setBeforeUnloadBehavior(mode: 'accept' | 'dismiss'): void {
     this._beforeUnloadAccept = mode === 'accept';
   }
@@ -1386,168 +1162,32 @@ export class XBPageImpl implements XBPage {
   // ── Private: Event Setup ────────────────────────────────────
 
   private setupPageEvents(): void {
-    // Page navigation events
-    this._subscriptions.push(
-      this.conn.subscribe('Page.frameNavigated', this.sessionId, (params: unknown) => {
-        const p = params as { frame: { url: string } };
-        if (p.frame) {
-          this._url = p.frame.url;
-        }
-        this._emit('framenavigated', this.mainFrame());
-      }),
-    );
-
-    this._subscriptions.push(
-      this.conn.subscribe('Page.loadEventFired', this.sessionId, () => {
-        this._loadState.loadFired = true;
-      }),
-    );
-
-    this._subscriptions.push(
-      this.conn.subscribe('Page.domContentEventFired', this.sessionId, () => {
-        this._loadState.domContentFired = true;
-      }),
-    );
-
-    this._subscriptions.push(
-      this.conn.subscribe('Page.javascriptDialogOpening', this.sessionId, (params: unknown) => {
-        const p = params as DialogInfo;
-        const dialog: XBDIALOG = {
-          type: p.type,
-          message: () => p.message,
-          defaultValue: () => p.defaultValue,
-          accept: async (text?: string) => {
-            await this.conn.send('Page.handleJavaScriptDialog', {
-              accept: true,
-              promptText: text,
-            }, this.sessionId);
-          },
-          dismiss: async () => {
-            await this.conn.send('Page.handleJavaScriptDialog', {
-              accept: false,
-            }, this.sessionId);
-          },
-        };
-        this._emit('dialog', dialog);
-
-        // Auto-dismiss dialog on next tick (prevents page hangs on alert/confirm/prompt).
-        // Playwright auto-dismisses by default; we do the same after the event is dispatched.
-        // sup-s11: beforeunload 例外——dismiss=取消导航（回放录制的"离开页面"
-        // 流被静默卡死，实测 net::ERR_ABORTED），默认 accept（离开），可经
-        // setBeforeUnloadBehavior('dismiss') 配回留守语义。
-        const autoAccept = p.type === 'beforeunload' ? this._beforeUnloadAccept : false;
-        setTimeout(() => {
-          this.conn.send('Page.handleJavaScriptDialog', { accept: autoAccept }, this.sessionId)
-            .catch(() => { /* dialog may already be handled */ });
-        }, 0);
-      }),
-    );
-
-    // Enable file chooser interception (optional - don't block if not needed)
-    // this.conn.send('Page.setInterceptFileChooserDialog', { enabled: true }, this.sessionId).catch(() => {});
-
-    this._subscriptions.push(
-      this.conn.subscribe('Page.fileChooserOpened', this.sessionId, async (params: unknown) => {
-        const p = params as { mode: string; backendNodeId: number };
-        // Resolve backendNodeId to a selector
-        let selector = '';
-        try {
-          const result = await this.conn.send('DOM.describeNode', { backendNodeId: p.backendNodeId }, this.sessionId) as { node: { attributes?: string[] } };
-          const attrs = result.node?.attributes || [];
-          const idIdx = attrs.indexOf('id');
-          if (idIdx >= 0) selector = '#' + attrs[idIdx + 1];
-        } catch { /* ignore */ }
-        if (!selector) {
-          try {
-            const result = await this.conn.send('DOM.resolveNode', { backendNodeId: p.backendNodeId }, this.sessionId) as { objectId: string };
-            const evalResult = await this.conn.send('Runtime.callFunctionOn', {
-              objectId: result.objectId,
-              functionDeclaration: 'function() { return this.id || this.name || "" }',
-              returnByValue: true,
-            }, this.sessionId) as { result: { value: string } };
-            if (evalResult.result?.value) selector = '#' + evalResult.result.value;
-          } catch { /* ignore */ }
-        }
-
-        const fileChooser: import('./types.js').XBFileChooser = {
-          selector,
-          isMultiple: p.mode === 'selectMultiple',
-          setFiles: async (files: import('./types.js').XBFilePayload | import('./types.js').XBFilePayload[]) => {
-            const fileArray = Array.isArray(files) ? files : [files];
-            await this.setInputFiles(selector || 'input[type="file"]', fileArray);
-          },
-        };
-        this._emit('filechooser', fileChooser);
-      }),
-    );
+    setupPageEvents({
+      conn: this.conn,
+      sessionId: this.sessionId,
+      addSubscription: (unsubscribe) => this._subscriptions.push(unsubscribe),
+      emit: (event, ...args) => this._emit(event, ...args),
+      setUrl: (url) => { this._url = url; },
+      currentUrl: () => this.url(),
+      mainFrame: () => this.mainFrame(),
+      markLoadFired: () => { this._loadState.loadFired = true; },
+      markDomContentFired: () => { this._loadState.domContentFired = true; },
+      getBeforeUnloadAccept: () => this._beforeUnloadAccept,
+      setInputFiles: (selector, files) => this.setInputFiles(selector, files),
+    });
   }
 
   private setupNetworkEvents(): void {
-    this._subscriptions.push(
-      this.conn.subscribe('Network.requestWillBeSent', this.sessionId, (params: unknown) => {
-        const p = params as {
-          requestId: string;
-          request: { url: string; method: string; headers: Record<string, string>; postData?: string };
-          type: string;
-        };
-        this.inflightRequests.add(p.requestId);
-        this._storeNetworkRequest(p.requestId, {
-          url: p.request.url,
-          method: p.request.method,
-          headers: p.request.headers,
-          postData: p.request.postData ?? null,
-          resourceType: p.type,
-        });
-        this._emit('request', createXBRequest(
-          null,
-          { requestId: p.requestId, url: p.request.url, method: p.request.method,
-            headers: p.request.headers, postData: p.request.postData ?? null, resourceType: p.type },
-        ));
-        this.checkNetworkIdle();
-      }),
-    );
-
-    this._subscriptions.push(
-      this.conn.subscribe('Network.responseReceived', this.sessionId, (params: unknown) => {
-        const p = params as {
-          requestId: string;
-          type: string;
-          response: {
-            status: number;
-            url: string;
-            headers: Record<string, string>;
-            mimeType: string;
-          };
-        };
-        this._storeNetworkResponse(p.requestId, {
-          status: p.response.status,
-          url: p.response.url,
-          headers: p.response.headers,
-        });
-        this._emit('response', createXBResponse(
-          { requestId: p.requestId, status: p.response.status, url: p.response.url, headers: p.response.headers },
-          this.conn,
-          this.sessionId,
-        ));
-      }),
-    );
-
-    this._subscriptions.push(
-      this.conn.subscribe('Network.loadingFinished', this.sessionId, (params: unknown) => {
-        const p = params as { requestId: string };
-        this.inflightRequests.delete(p.requestId);
-        this._emit('requestfinished', p);
-        this.checkNetworkIdle();
-      }),
-    );
-
-    this._subscriptions.push(
-      this.conn.subscribe('Network.loadingFailed', this.sessionId, (params: unknown) => {
-        const p = params as { requestId: string };
-        this.inflightRequests.delete(p.requestId);
-        this.checkNetworkIdle();
-      }),
-    );
+    setupNetworkEvents({
+      conn: this.conn,
+      sessionId: this.sessionId,
+      state: { inflightRequests: this.inflightRequests },
+      emit: (event, ...args) => this._emit(event, ...args),
+      storeRequest: (id, data) => this._storeNetworkRequest(id, data),
+      storeResponse: (id, data) => this._storeNetworkResponse(id, data),
+      checkNetworkIdle: () => this.checkNetworkIdle(),
+      addSubscription: (unsubscribe) => this._subscriptions.push(unsubscribe),
+    });
   }
 
   private setupConsoleEvents(): void {
@@ -1608,8 +1248,6 @@ export class XBPageImpl implements XBPage {
 
   _networkResponses = new Map<string, { requestId: string; status: number; url: string; headers: Record<string, string> }>();
   _networkRequests = new Map<string, { requestId: string; url: string; method: string; headers: Record<string, string>; postData: string | null; resourceType: string }>();
-  private _routeHandlers: Array<{ pattern: string; regex: RegExp; handler: (route: XBRoute) => Promise<void> | void }> = [];
-  private _interceptionEnabled = false;
   private _beforeUnloadAccept = true;
 
   /** Store network data — called by browser.ts installNetworkCapture or internal event handlers */
@@ -1621,356 +1259,49 @@ export class XBPageImpl implements XBPage {
     this._networkResponses.set(requestId, { requestId, ...data });
   }
 
-  // ── waitForResponse ─────────────────────────────────────────
-
   async waitForResponse(
     urlOrPredicate: string | RegExp | ((response: XBResponse) => boolean),
     opts: { timeout?: number } = {},
   ): Promise<XBResponse> {
-    const timeout = opts.timeout ?? 30000;
-    const predicate = createResponsePredicate(urlOrPredicate);
-
-    // Check existing responses
-    for (const [, data] of this._networkResponses) {
-      const response = createXBResponse(data, this.conn, this.sessionId);
-      if (predicate(response)) return response;
-    }
-
-    // Wait for future responses
-    return new Promise<XBResponse>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this._emitter.removeListener('response', handler);
-        reject(new Error(`waitForResponse timed out after ${timeout}ms`));
-      }, timeout);
-
-      const handler = (params: unknown): void => {
-        // Handle both raw CDP format and pre-built XBResponse objects
-        let response: XBResponse;
-        const respObj = params as { requestId?: string; response?: { status?: number; url?: string; headers?: Record<string, string> } };
-        if (respObj.response) {
-          const data = {
-            requestId: respObj.requestId || '',
-            status: respObj.response.status || 0,
-            url: respObj.response.url || '',
-            headers: respObj.response.headers || {},
-          };
-          response = createXBResponse(data, this.conn, this.sessionId);
-        } else if (typeof (params as XBResponse).status === 'function') {
-          response = params as XBResponse;
-        } else {
-          return;
-        }
-        if (predicate(response)) {
-          clearTimeout(timer);
-          this._emitter.removeListener('response', handler);
-          resolve(response);
-        }
-      };
-
-      this._emitter.on('response', handler);
-    });
+    return this.networkWaitService.waitForResponse(urlOrPredicate, opts);
   }
-
-  // ── waitForRequest ──────────────────────────────────────────
 
   async waitForRequest(
     urlOrPredicate: string | RegExp | ((request: XBRequest) => boolean),
     opts: { timeout?: number } = {},
   ): Promise<XBRequest> {
-    const timeout = opts.timeout ?? 30000;
-    const predicate = createRequestPredicate(urlOrPredicate);
-
-    // Check existing requests
-    for (const [, data] of this._networkRequests) {
-      const request = createXBRequest(this, data);
-      if (predicate(request)) return request;
-    }
-
-    // Wait for future requests
-    return new Promise<XBRequest>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this._emitter.removeListener('request', handler);
-        reject(new Error(`waitForRequest timed out after ${timeout}ms`));
-      }, timeout);
-
-      const handler = (params: unknown): void => {
-        // Handle both raw CDP format and pre-built XBRequest objects
-        let request: XBRequest;
-        const reqObj = params as { requestId?: string; request?: { url?: string; method?: string; headers?: Record<string, string>; postData?: string }; type?: string };
-        if (reqObj.request) {
-          request = createXBRequest(this, {
-            requestId: reqObj.requestId || '',
-            url: reqObj.request.url || '',
-            method: reqObj.request.method || '',
-            headers: reqObj.request.headers || {},
-            postData: reqObj.request.postData ?? null,
-            resourceType: reqObj.type || '',
-          });
-        } else if (typeof (params as XBRequest).url === 'function') {
-          request = params as XBRequest;
-        } else {
-          return;
-        }
-        if (predicate(request)) {
-          clearTimeout(timer);
-          this._emitter.removeListener('request', handler);
-          resolve(request);
-        }
-      };
-
-      this._emitter.on('request', handler);
-    });
+    return this.networkWaitService.waitForRequest(urlOrPredicate, opts);
   }
-
-  // ── waitForURL ──────────────────────────────────────────────
 
   async waitForURL(
     url: string | RegExp | ((url: string) => boolean),
-    opts: { timeout?: number; waitUntil?: WaitUntilState } = {},
+    opts: { timeout?: number } = {},
   ): Promise<void> {
-    const timeout = opts.timeout ?? 30000;
-    const checkFn = typeof url === 'function'
-      ? url
-      : typeof url === 'string'
-        ? (current: string) => matchGlob(url, current)
-        : (current: string) => url.test(current);
-
-    // Check current URL
-    if (checkFn(this._url)) return;
-
-    // Wait for URL change
-    return new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this._emitter.removeListener('framenavigated', handler);
-        reject(new Error(`waitForURL timed out after ${timeout}ms`));
-      }, timeout);
-
-      const handler = (): void => {
-        if (checkFn(this._url)) {
-          clearTimeout(timer);
-          this._emitter.removeListener('framenavigated', handler);
-          resolve();
-        }
-      };
-
-      this._emitter.on('framenavigated', handler);
-    });
+    return this.networkWaitService.waitForURL(url, opts);
   }
-
-  // ── route / unroute ─────────────────────────────────────────
 
   async route(
-    url: string | RegExp,
+    pattern: string,
     handler: (route: XBRoute) => Promise<void> | void,
   ): Promise<void> {
-    const regex = typeof url === 'string' ? globToRegex(url) : url;
-    this._routeHandlers.push({ pattern: String(url), regex, handler });
-
-    if (!this._interceptionEnabled) {
-      this._interceptionEnabled = true;
-      await this.conn.send('Fetch.enable', {
-        patterns: [{ urlPattern: '*', requestStage: 'Request' }],
-        // sup-s9: 保留认证自动响应（Fetch.enable 为替换语义，不带此参数
-        // 会顶掉 _init 的 auth 配置）
-        handleAuthRequests: true,
-      }, this.sessionId);
-
-      this._subscriptions.push(
-        this.conn.subscribe('Fetch.requestPaused', this.sessionId, (params: unknown) => {
-          this._handleRequestPaused(params as FetchPausedParams);
-        }),
-      );
-    }
+    return this.networkRouteService.route(pattern, handler);
   }
 
-  async unroute(
-    url: string | RegExp,
-    handler?: (route: XBRoute) => Promise<void> | void,
-  ): Promise<void> {
-    const regex = typeof url === 'string' ? globToRegex(url) : url;
-    this._routeHandlers = this._routeHandlers.filter(
-      (h) => !(regex.source === h.regex.source && (!handler || h.handler === handler)),
-    );
-
-    if (this._routeHandlers.length === 0 && this._interceptionEnabled) {
-      this._interceptionEnabled = false;
-      await this.conn.send('Fetch.disable', undefined, this.sessionId).catch(() => {});
-    }
+  async unroute(pattern: string): Promise<void> {
+    return this.networkRouteService.unroute(pattern);
   }
 
-  private async _handleRequestPaused(params: FetchPausedParams): Promise<void> {
-    const requestUrl = params.request.url;
-
-    for (const { regex, handler } of this._routeHandlers) {
-      if (regex.test(requestUrl)) {
-        // Emit request event for waitForRequest listeners
-        // (Fetch.requestPaused may not be preceded by Network.requestWillBeSent)
-        this._emit('request', createXBRequest(
-          null,
-          { requestId: params.requestId, url: params.request.url,
-            method: params.request.method,
-            headers: params.request.headers,
-            postData: params.request.postData ?? null, resourceType: params.resourceType },
-        ));
-
-        const route = createXBRouteFetch(this.conn, this.sessionId, params, this._emitter);
-        try {
-          await handler(route);
-        } catch {
-          // Handler threw — continue the request to prevent stalling
-          await this.conn.send('Fetch.continueRequest', {
-            requestId: params.requestId,
-          }, this.sessionId).catch(() => {});
-        }
-        return;
-      }
-    }
-
-    // No handler matched — continue the request
-    await this.conn.send('Fetch.continueRequest', {
-      requestId: params.requestId,
-    }, this.sessionId).catch(() => {});
-  }
-
-  // ── setInputFiles ───────────────────────────────────────────
-
-  /**
-   * sup-s4: Dropzone 拖拽上传模拟——Dropzone/Uppy/自绘上传区只监听
-   * dragover/drop（无 input[type=file] 可点），真实用户靠 OS 文件拖入
-   * 触发，自动化无法产生 OS 拖拽。页内构造 DataTransfer+File，按拖放
-   * 协议派发 dragenter/dragover/drop（bubbles+cancelable，坐标取目标
-   * 中心）。
-   */
   async dropFiles(selector: string, payload: XBFilePayload): Promise<void> {
-    await this.evaluate(`
-      (function() {
-        var el = ${queryJS(selector)};
-        if (!el) throw new Error('drop target not found: ' + ${JSON.stringify(selector)});
-        var b64 = ${JSON.stringify(payload.buffer.toString('base64'))};
-        var bin = atob(b64);
-        var buf = new Uint8Array(bin.length);
-        for (var i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-        var file = new File([buf], ${JSON.stringify(payload.name)}, { type: ${JSON.stringify(payload.mimeType)} });
-        var dt = new DataTransfer();
-        dt.items.add(file);
-        var rect = el.getBoundingClientRect();
-        var opts = {
-          bubbles: true, cancelable: true,
-          clientX: rect.x + rect.width / 2, clientY: rect.y + rect.height / 2,
-        };
-        el.dispatchEvent(new DragEvent('dragenter', Object.assign({ dataTransfer: dt }, opts)));
-        el.dispatchEvent(new DragEvent('dragover', Object.assign({ dataTransfer: dt }, opts)));
-        el.dispatchEvent(new DragEvent('drop', Object.assign({ dataTransfer: dt }, opts)));
-      })()
-    `);
+    return this.fileInputService.dropFiles(selector, payload);
   }
 
   async setInputFiles(selector: string, files: XBFilePayload | XBFilePayload[]): Promise<void> {
-    const fileArr = Array.isArray(files) ? files : [files];
-
-    // Use JavaScript DataTransfer API — more reliable across Chrome versions
-    // than CDP DOM.setFileInputFiles which has inconsistent parameter formats
-    const fileList = fileArr.map((f) => ({
-      name: f.name,
-      type: f.mimeType,
-      dataBase64: f.buffer.toString('base64'),
-    }));
-
-    await this.evaluate(`
-      (function() {
-        var selector = ${JSON.stringify(selector)};
-        var input = ${queryJS(selector)};
-        if (!input) throw new Error('Element not found: ' + selector);
-
-        var fileList = ${JSON.stringify(fileList)};
-        var dt = new DataTransfer();
-
-        fileList.forEach(function(f) {
-          var binary = atob(f.dataBase64);
-          var bytes = new Uint8Array(binary.length);
-          for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          var blob = new Blob([bytes], { type: f.type });
-          var file = new File([blob], f.name, { type: f.type });
-          dt.items.add(file);
-        });
-
-        input.files = dt.files;
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      })()
-    `);
+    return this.fileInputService.setInputFiles(selector, files);
   }
-
-  // ── dragAndDrop ─────────────────────────────────────────────
 
   async dragAndDrop(source: string, target: string): Promise<void> {
-
-    // Get bounding boxes
-    const sourceRect = await this.evaluate<{ x: number; y: number; width: number; height: number }>(`
-      (function() {
-        const el = ${queryJS(source)};
-        if (!el) throw new Error('Source not found: ${source}');
-        el.scrollIntoView({ behavior: 'instant', block: 'center' });
-        const r = el.getBoundingClientRect();
-        return { x: r.x, y: r.y, width: r.width, height: r.height };
-      })()
-    `);
-
-    const targetRect = await this.evaluate<{ x: number; y: number; width: number; height: number }>(`
-      (function() {
-        const el = ${queryJS(target)};
-        if (!el) throw new Error('Target not found: ${target}');
-        el.scrollIntoView({ behavior: 'instant', block: 'center' });
-        const r = el.getBoundingClientRect();
-        return { x: r.x, y: r.y, width: r.width, height: r.height };
-      })()
-    `);
-
-    const sx = sourceRect.x + sourceRect.width / 2;
-    const sy = sourceRect.y + sourceRect.height / 2;
-    const tx = targetRect.x + targetRect.width / 2;
-    const ty = targetRect.y + targetRect.height / 2;
-
-    // Simulate drag-and-drop via CDP Input.dispatchDragEvent
-    // First try the DragData approach (more reliable for HTML5 drag-and-drop)
-    try {
-      await this.conn.send('Input.dispatchDragEvent', {
-        type: 'dragStart',
-        x: sx,
-        y: sy,
-        data: { items: [], dragOperations: ['copy', 'move', 'link'] },
-      }, this.sessionId);
-
-      await this.conn.send('Input.dispatchDragEvent', {
-        type: 'dragOver',
-        x: tx,
-        y: ty,
-        data: { items: [], dragOperations: ['copy', 'move', 'link'] },
-      }, this.sessionId);
-
-      await this.conn.send('Input.dispatchDragEvent', {
-        type: 'drop',
-        x: tx,
-        y: ty,
-        data: { items: [], dragOperations: ['copy', 'move', 'link'] },
-      }, this.sessionId);
-
-      await this.conn.send('Input.dispatchDragEvent', {
-        type: 'dragCancel',
-        x: sx,
-        y: sy,
-        data: { items: [], dragOperations: ['copy', 'move', 'link'] },
-      }, this.sessionId);
-    } catch {
-      // Fallback: simulate via mouse events
-      await this.mouse.move(sx, sy);
-      await this.mouse.down();
-      await this.mouse.move(tx, ty, { steps: 10 });
-      await this.mouse.up();
-    }
+    return this.fileInputService.dragAndDrop(source, target);
   }
-
-  // ── setOfflineMode ──────────────────────────────────────────
 
   async setOfflineMode(offline: boolean): Promise<void> {
     await this.conn.send('Network.emulateNetworkConditions', {
