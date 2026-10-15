@@ -84,6 +84,8 @@ xbrowser "goto https://example.com && title"
 
 ## CDP Connection Modes
 
+**Decision order (实战)**: probe existing browsers first (`curl localhost:9222/json/version`, then 9221) — most sites need login state and a fresh headless launch will fail auth. Reuse > migrate cookies (login-bridge) > auto-launch. Also: CDP trusted input silently drops when the target tab is hidden (`document.visibilityState !== "visible"`) — check before dispatching mouse/keyboard.
+
 Three modes for connecting to browsers:
 
 | Mode | Flag | Use Case |
