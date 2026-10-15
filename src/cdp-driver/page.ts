@@ -34,12 +34,13 @@ import { MediaService } from './page-media.js';
 import { FileInputService } from './page-file-input.js';
 import { setupNetworkEvents } from './page-network-events.js';
 import { setupPageEvents } from './page-lifecycle-events.js';
+import { NetworkWaitService } from './page-network-waits.js';
 import { queryJS } from './selector-utils.js';
 import {
   type FetchPausedParams,
-  globToRegex, matchGlob,
-  createResponsePredicate, createRequestPredicate,
-  createXBResponse, createXBRequest, createXBRouteFetch,
+  globToRegex,
+  createXBRequest,
+  createXBRouteFetch,
 } from './page-helpers.js';
 
 type XBConsoleType = 'log' | 'debug' | 'info' | 'error' | 'warning' | 'dir' | 'dirxml' | 'table' | 'trace' | 'clear' | 'startGroup' | 'startGroupCollapsed' | 'endGroup' | 'assert' | 'profile' | 'profileEnd' | 'count' | 'timeEnd';
@@ -73,6 +74,7 @@ export class XBPageImpl implements XBPage {
   readonly keyboard: XBKeyboard;
   private readonly mediaService: MediaService;
   private readonly fileInputService: FileInputService;
+  private readonly networkWaitService: NetworkWaitService;
 
   // Network tracking for waitForLoadState('networkidle')
   private inflightRequests = new Set<string>();
@@ -107,6 +109,15 @@ export class XBPageImpl implements XBPage {
       sessionId,
       evaluate: <T>(script: string) => this.evaluate(script) as Promise<T>,
       mouse: this.mouse,
+    });
+    this.networkWaitService = new NetworkWaitService({
+      conn,
+      sessionId,
+      responses: this._networkResponses,
+      requests: this._networkRequests,
+      on: (event, handler) => this._emitter.on(event, handler),
+      off: (event, handler) => this._emitter.removeListener(event, handler),
+      currentUrl: () => this.url(),
     });
   }
 
@@ -1422,143 +1433,26 @@ export class XBPageImpl implements XBPage {
     this._networkResponses.set(requestId, { requestId, ...data });
   }
 
-  // ── waitForResponse ─────────────────────────────────────────
-
   async waitForResponse(
     urlOrPredicate: string | RegExp | ((response: XBResponse) => boolean),
     opts: { timeout?: number } = {},
   ): Promise<XBResponse> {
-    const timeout = opts.timeout ?? 30000;
-    const predicate = createResponsePredicate(urlOrPredicate);
-
-    // Check existing responses
-    for (const [, data] of this._networkResponses) {
-      const response = createXBResponse(data, this.conn, this.sessionId);
-      if (predicate(response)) return response;
-    }
-
-    // Wait for future responses
-    return new Promise<XBResponse>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this._emitter.removeListener('response', handler);
-        reject(new Error(`waitForResponse timed out after ${timeout}ms`));
-      }, timeout);
-
-      const handler = (params: unknown): void => {
-        // Handle both raw CDP format and pre-built XBResponse objects
-        let response: XBResponse;
-        const respObj = params as { requestId?: string; response?: { status?: number; url?: string; headers?: Record<string, string> } };
-        if (respObj.response) {
-          const data = {
-            requestId: respObj.requestId || '',
-            status: respObj.response.status || 0,
-            url: respObj.response.url || '',
-            headers: respObj.response.headers || {},
-          };
-          response = createXBResponse(data, this.conn, this.sessionId);
-        } else if (typeof (params as XBResponse).status === 'function') {
-          response = params as XBResponse;
-        } else {
-          return;
-        }
-        if (predicate(response)) {
-          clearTimeout(timer);
-          this._emitter.removeListener('response', handler);
-          resolve(response);
-        }
-      };
-
-      this._emitter.on('response', handler);
-    });
+    return this.networkWaitService.waitForResponse(urlOrPredicate, opts);
   }
-
-  // ── waitForRequest ──────────────────────────────────────────
 
   async waitForRequest(
     urlOrPredicate: string | RegExp | ((request: XBRequest) => boolean),
     opts: { timeout?: number } = {},
   ): Promise<XBRequest> {
-    const timeout = opts.timeout ?? 30000;
-    const predicate = createRequestPredicate(urlOrPredicate);
-
-    // Check existing requests
-    for (const [, data] of this._networkRequests) {
-      const request = createXBRequest(this, data);
-      if (predicate(request)) return request;
-    }
-
-    // Wait for future requests
-    return new Promise<XBRequest>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this._emitter.removeListener('request', handler);
-        reject(new Error(`waitForRequest timed out after ${timeout}ms`));
-      }, timeout);
-
-      const handler = (params: unknown): void => {
-        // Handle both raw CDP format and pre-built XBRequest objects
-        let request: XBRequest;
-        const reqObj = params as { requestId?: string; request?: { url?: string; method?: string; headers?: Record<string, string>; postData?: string }; type?: string };
-        if (reqObj.request) {
-          request = createXBRequest(this, {
-            requestId: reqObj.requestId || '',
-            url: reqObj.request.url || '',
-            method: reqObj.request.method || '',
-            headers: reqObj.request.headers || {},
-            postData: reqObj.request.postData ?? null,
-            resourceType: reqObj.type || '',
-          });
-        } else if (typeof (params as XBRequest).url === 'function') {
-          request = params as XBRequest;
-        } else {
-          return;
-        }
-        if (predicate(request)) {
-          clearTimeout(timer);
-          this._emitter.removeListener('request', handler);
-          resolve(request);
-        }
-      };
-
-      this._emitter.on('request', handler);
-    });
+    return this.networkWaitService.waitForRequest(urlOrPredicate, opts);
   }
-
-  // ── waitForURL ──────────────────────────────────────────────
 
   async waitForURL(
     url: string | RegExp | ((url: string) => boolean),
-    opts: { timeout?: number; waitUntil?: WaitUntilState } = {},
+    opts: { timeout?: number } = {},
   ): Promise<void> {
-    const timeout = opts.timeout ?? 30000;
-    const checkFn = typeof url === 'function'
-      ? url
-      : typeof url === 'string'
-        ? (current: string) => matchGlob(url, current)
-        : (current: string) => url.test(current);
-
-    // Check current URL
-    if (checkFn(this._url)) return;
-
-    // Wait for URL change
-    return new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this._emitter.removeListener('framenavigated', handler);
-        reject(new Error(`waitForURL timed out after ${timeout}ms`));
-      }, timeout);
-
-      const handler = (): void => {
-        if (checkFn(this._url)) {
-          clearTimeout(timer);
-          this._emitter.removeListener('framenavigated', handler);
-          resolve();
-        }
-      };
-
-      this._emitter.on('framenavigated', handler);
-    });
+    return this.networkWaitService.waitForURL(url, opts);
   }
-
-  // ── route / unroute ─────────────────────────────────────────
 
   async route(
     url: string | RegExp,
