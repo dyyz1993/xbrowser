@@ -32,6 +32,7 @@ import { XBLocatorImpl } from './locator.js';
 import { XBElementHandleImpl } from './element-handle.js';
 import { MediaService } from './page-media.js';
 import { FileInputService } from './page-file-input.js';
+import { setupNetworkEvents } from './page-network-events.js';
 import { queryJS } from './selector-utils.js';
 import {
   type FetchPausedParams,
@@ -1424,71 +1425,16 @@ export class XBPageImpl implements XBPage {
   }
 
   private setupNetworkEvents(): void {
-    this._subscriptions.push(
-      this.conn.subscribe('Network.requestWillBeSent', this.sessionId, (params: unknown) => {
-        const p = params as {
-          requestId: string;
-          request: { url: string; method: string; headers: Record<string, string>; postData?: string };
-          type: string;
-        };
-        this.inflightRequests.add(p.requestId);
-        this._storeNetworkRequest(p.requestId, {
-          url: p.request.url,
-          method: p.request.method,
-          headers: p.request.headers,
-          postData: p.request.postData ?? null,
-          resourceType: p.type,
-        });
-        this._emit('request', createXBRequest(
-          null,
-          { requestId: p.requestId, url: p.request.url, method: p.request.method,
-            headers: p.request.headers, postData: p.request.postData ?? null, resourceType: p.type },
-        ));
-        this.checkNetworkIdle();
-      }),
-    );
-
-    this._subscriptions.push(
-      this.conn.subscribe('Network.responseReceived', this.sessionId, (params: unknown) => {
-        const p = params as {
-          requestId: string;
-          type: string;
-          response: {
-            status: number;
-            url: string;
-            headers: Record<string, string>;
-            mimeType: string;
-          };
-        };
-        this._storeNetworkResponse(p.requestId, {
-          status: p.response.status,
-          url: p.response.url,
-          headers: p.response.headers,
-        });
-        this._emit('response', createXBResponse(
-          { requestId: p.requestId, status: p.response.status, url: p.response.url, headers: p.response.headers },
-          this.conn,
-          this.sessionId,
-        ));
-      }),
-    );
-
-    this._subscriptions.push(
-      this.conn.subscribe('Network.loadingFinished', this.sessionId, (params: unknown) => {
-        const p = params as { requestId: string };
-        this.inflightRequests.delete(p.requestId);
-        this._emit('requestfinished', p);
-        this.checkNetworkIdle();
-      }),
-    );
-
-    this._subscriptions.push(
-      this.conn.subscribe('Network.loadingFailed', this.sessionId, (params: unknown) => {
-        const p = params as { requestId: string };
-        this.inflightRequests.delete(p.requestId);
-        this.checkNetworkIdle();
-      }),
-    );
+    setupNetworkEvents({
+      conn: this.conn,
+      sessionId: this.sessionId,
+      state: { inflightRequests: this.inflightRequests },
+      emit: (event, ...args) => this._emit(event, ...args),
+      storeRequest: (id, data) => this._storeNetworkRequest(id, data),
+      storeResponse: (id, data) => this._storeNetworkResponse(id, data),
+      checkNetworkIdle: () => this.checkNetworkIdle(),
+      addSubscription: (unsubscribe) => this._subscriptions.push(unsubscribe),
+    });
   }
 
   private setupConsoleEvents(): void {
