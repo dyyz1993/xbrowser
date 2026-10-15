@@ -26,7 +26,6 @@ import type {
 import type { XBContextImpl } from './context.js';
 import type { XBBrowserImpl } from './browser.js';
 import { XBMouseImpl } from './mouse.js';
-import { buildStealthInitScript, DEFAULT_STEALTH_CONFIG } from './stealth.js';
 import { XBKeyboardImpl } from './keyboard.js';
 import { XBLocatorImpl } from './locator.js';
 import { XBElementHandleImpl } from './element-handle.js';
@@ -36,6 +35,7 @@ import { setupNetworkEvents } from './page-network-events.js';
 import { setupPageEvents } from './page-lifecycle-events.js';
 import { NetworkWaitService } from './page-network-waits.js';
 import { NetworkRouteService } from './page-routes.js';
+import { NavigationService } from './page-navigation.js';
 import { queryJS } from './selector-utils.js';
 
 
@@ -72,6 +72,7 @@ export class XBPageImpl implements XBPage {
   private readonly fileInputService: FileInputService;
   private readonly networkWaitService: NetworkWaitService;
   private readonly networkRouteService: NetworkRouteService;
+  private readonly navigationService: NavigationService;
 
   // Network tracking for waitForLoadState('networkidle')
   private inflightRequests = new Set<string>();
@@ -120,6 +121,18 @@ export class XBPageImpl implements XBPage {
       conn,
       sessionId,
       emit: (event, ...args) => this._emit(event, ...args),
+    });
+    this.navigationService = new NavigationService({
+      conn,
+      sessionId,
+      state: this._loadState,
+      stealthConfig: this._contextImpl.stealthConfig,
+      isClosed: () => this._closed,
+      setUrl: (url) => { this._url = url; },
+      currentUrl: () => this.url(),
+      waitForLoadState: (state, timeout) => this.waitForLoadState(state, timeout),
+      waitForTimeout: (ms) => this.waitForTimeout(ms),
+      evaluate: <T>(script: string) => this.evaluate(script) as Promise<T>,
     });
   }
 
@@ -375,129 +388,19 @@ export class XBPageImpl implements XBPage {
     url: string,
     opts: { waitUntil?: WaitUntilState; timeout?: number; referer?: string } = {},
   ): Promise<XBNavigationResponse | null> {
-    if (this._closed) throw new Error('Page is closed');
-
-    const waitUntil = opts.waitUntil ?? 'load';
-    const timeout = opts.timeout ?? 30_000;
-
-    // Reset load state
-    this._loadState = { loadFired: false, domContentFired: false, networkIdle: false };
-
-    // Inject stealth hooks BEFORE navigation
-    if (process.env.XBROWSER_STEALTH !== 'off') {
-      try {
-        await this.conn.send('Page.addScriptToEvaluateOnNewDocument',
-          { source: buildStealthInitScript({ ...DEFAULT_STEALTH_CONFIG, ...(this._contextImpl.stealthConfig ?? {}) }) }, this.sessionId);
-      } catch { /* best-effort */ }
-      // HTTP 层 UA 覆盖（2026-09-13 browserscan 实测）：headless Chrome HTTP
-      // User-Agent 含 "HeadlessChrome"——stealth init script 只覆盖 JS 层
-      // navigator.userAgent，HTTP header 仍泄漏。必须在这里同步清除。
-      try {
-        const rawUa = await this.conn.send<{ value: string }>('Runtime.evaluate',
-          { expression: 'navigator.userAgent', returnByValue: true }, this.sessionId);
-        const ua = rawUa?.value || '';
-        const cleaned = ua.replace(/HeadlessChrome/g, 'Chrome');
-        if (cleaned !== ua) {
-          await this.conn.send('Network.setUserAgentOverride',
-            { userAgent: cleaned }, this.sessionId);
-        }
-      } catch { /* best-effort */ }
-    }
-
-    // Navigate
-    const result = await this.conn.send<{ errorText?: string; frameId?: string }>(
-      'Page.navigate',
-      { url, referrer: opts.referer },
-      this.sessionId,
-    );
-
-    if (result.errorText) {
-      throw new Error(`Navigation failed: ${result.errorText}`);
-    }
-
-    // 'commit' = return immediately after navigation without waiting for load
-    if (waitUntil === 'commit') {
-      this._url = url;
-      return {
-        status: () => 0,
-        ok: () => false,
-        url: () => url,
-        headers: () => ({}) as Record<string, string>,
-      };
-    }
-
-    // Wait for the specified load state
-    await this.waitForLoadState(waitUntil, timeout);
-
-    this._url = url;
-
-    // Best-effort navigation response — CDP doesn't expose HTTP status directly
-    const statusCode = 200;
-    const finalUrl = url;
-    const headers: Record<string, string> = {};
-    return {
-      status: () => statusCode,
-      ok: () => statusCode >= 200 && statusCode < 300,
-      url: () => finalUrl,
-      headers: () => headers,
-    };
+    return this.navigationService.goto(url, opts);
   }
 
   async goBack(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
-    // Use CDP Page.getNavigationHistory to find the previous entry,
-    // then navigate directly via Page.navigate (reliable context refresh).
-    try {
-      const navHistory = await this.conn.send<{
-        entries: Array<{ url: string }>;
-        currentIndex: number;
-      }>('Page.getNavigationHistory', undefined, this.sessionId);
-
-      if (navHistory.currentIndex > 0) {
-        const prevUrl = navHistory.entries[navHistory.currentIndex - 1]?.url;
-        if (prevUrl && prevUrl !== 'about:blank') {
-          await this.conn.send('Page.navigate', { url: prevUrl }, this.sessionId);
-          await this.waitForLoadState(opts.waitUntil ?? 'domcontentloaded', opts.timeout ?? 10000).catch(() => {});
-          this._url = prevUrl;
-          return;
-        }
-      }
-    } catch {
-      // Page.getNavigationHistory not available — fall through
-    }
-    // Fallback: history.back() with long wait
-    await this.evaluate('() => history.back()');
-    await this.waitForTimeout(3000);
-    this._url = await this.evaluate<string>('location.href').catch(() => this._url);
+    return this.navigationService.goBack(opts);
   }
 
   async goForward(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
-    try {
-      const navHistory = await this.conn.send<{
-        entries: Array<{ url: string }>;
-        currentIndex: number;
-      }>('Page.getNavigationHistory', undefined, this.sessionId);
-
-      if (navHistory.currentIndex < navHistory.entries.length - 1) {
-        const nextUrl = navHistory.entries[navHistory.currentIndex + 1]?.url;
-        if (nextUrl && nextUrl !== 'about:blank') {
-          await this.conn.send('Page.navigate', { url: nextUrl }, this.sessionId);
-          await this.waitForLoadState(opts.waitUntil ?? 'domcontentloaded', opts.timeout ?? 10000).catch(() => {});
-          this._url = nextUrl;
-          return;
-        }
-      }
-    } catch {
-      // Page.getNavigationHistory not available — fall through
-    }
-    await this.evaluate('() => history.forward()');
-    await this.waitForTimeout(3000);
-    this._url = await this.evaluate<string>('location.href').catch(() => this._url);
+    return this.navigationService.goForward(opts);
   }
 
   async reload(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
-    this._loadState = { loadFired: false, domContentFired: false, networkIdle: false };
-    await this.conn.send('Page.reload', undefined, this.sessionId);
-    await this.waitForLoadState(opts.waitUntil ?? 'load', opts.timeout);
+    return this.navigationService.reload(opts);
   }
 
   async waitForLoadState(state: WaitUntilState = 'load', timeout = 30_000): Promise<void> {
@@ -1343,6 +1246,7 @@ export class XBPageImpl implements XBPage {
       addSubscription: (unsubscribe) => this._subscriptions.push(unsubscribe),
       emit: (event, ...args) => this._emit(event, ...args),
       setUrl: (url) => { this._url = url; },
+      currentUrl: () => this.url(),
       mainFrame: () => this.mainFrame(),
       markLoadFired: () => { this._loadState.loadFired = true; },
       markDomContentFired: () => { this._loadState.domContentFired = true; },

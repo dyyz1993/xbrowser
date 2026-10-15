@@ -13,6 +13,7 @@ export function setupPageEvents(options: {
   addSubscription(unsubscribe: () => void): void;
   emit(event: string, ...args: unknown[]): void;
   setUrl(url: string): void;
+  currentUrl(): string;
   mainFrame(): import('./types.js').XBFrame;
   markLoadFired(): void;
   markDomContentFired(): void;
