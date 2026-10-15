@@ -628,6 +628,16 @@ CDP connection / Chromium
 
 新增例外必须说明理由并在 PR 中显式评审；新的业务实现应优先拆入相邻内部模块。
 
+### 错题本
+
+执行器会把命令失败写入 `~/.xbrowser/knowledge/mistakes.json`。错题按
+`category + normalize(message)` 生成指纹；时间戳、耗时和数字会被归一化，
+避免同一根因因随机端口/时长变化分裂。同一指纹发生第 3 次时标记为
+`constrained`，表示该错误已升级为必须处理的重复约束。
+
+`npm run lint:mistakes` 会列出所有已约束错题；存在任何一条即失败，提醒
+先修复或显式清理错题本，而不是继续带病迭代。
+
 ---
 
 ## 扩展点
