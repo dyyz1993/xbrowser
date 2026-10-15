@@ -20,7 +20,7 @@ import type {
   XBElementHandle, XBFrame, WaitUntilState,
   XBClickOptions, XBFillOptions, XBScreenshotOptions, XBPdfOptions,
   XBNavigationResponse,
-  XBConsoleMessage, XBDIALOG,
+  XBConsoleMessage,
   XBResponse, XBRequest, XBRoute, XBFilePayload,
 } from './types.js';
 import type { XBContextImpl } from './context.js';
@@ -33,6 +33,7 @@ import { XBElementHandleImpl } from './element-handle.js';
 import { MediaService } from './page-media.js';
 import { FileInputService } from './page-file-input.js';
 import { setupNetworkEvents } from './page-network-events.js';
+import { setupPageEvents } from './page-lifecycle-events.js';
 import { queryJS } from './selector-utils.js';
 import {
   type FetchPausedParams,
@@ -49,11 +50,6 @@ interface PageLoadState {
   networkIdle: boolean;
 }
 
-interface DialogInfo {
-  type: 'alert' | 'confirm' | 'prompt' | 'beforeunload';
-  message: string;
-  defaultValue: string;
-}
 
 export class XBPageImpl implements XBPage {
   private conn: CDPConnection;
@@ -1328,100 +1324,18 @@ export class XBPageImpl implements XBPage {
   // ── Private: Event Setup ────────────────────────────────────
 
   private setupPageEvents(): void {
-    // Page navigation events
-    this._subscriptions.push(
-      this.conn.subscribe('Page.frameNavigated', this.sessionId, (params: unknown) => {
-        const p = params as { frame: { url: string } };
-        if (p.frame) {
-          this._url = p.frame.url;
-        }
-        this._emit('framenavigated', this.mainFrame());
-      }),
-    );
-
-    this._subscriptions.push(
-      this.conn.subscribe('Page.loadEventFired', this.sessionId, () => {
-        this._loadState.loadFired = true;
-      }),
-    );
-
-    this._subscriptions.push(
-      this.conn.subscribe('Page.domContentEventFired', this.sessionId, () => {
-        this._loadState.domContentFired = true;
-      }),
-    );
-
-    this._subscriptions.push(
-      this.conn.subscribe('Page.javascriptDialogOpening', this.sessionId, (params: unknown) => {
-        const p = params as DialogInfo;
-        const dialog: XBDIALOG = {
-          type: p.type,
-          message: () => p.message,
-          defaultValue: () => p.defaultValue,
-          accept: async (text?: string) => {
-            await this.conn.send('Page.handleJavaScriptDialog', {
-              accept: true,
-              promptText: text,
-            }, this.sessionId);
-          },
-          dismiss: async () => {
-            await this.conn.send('Page.handleJavaScriptDialog', {
-              accept: false,
-            }, this.sessionId);
-          },
-        };
-        this._emit('dialog', dialog);
-
-        // Auto-dismiss dialog on next tick (prevents page hangs on alert/confirm/prompt).
-        // Playwright auto-dismisses by default; we do the same after the event is dispatched.
-        // sup-s11: beforeunload 例外——dismiss=取消导航（回放录制的"离开页面"
-        // 流被静默卡死，实测 net::ERR_ABORTED），默认 accept（离开），可经
-        // setBeforeUnloadBehavior('dismiss') 配回留守语义。
-        const autoAccept = p.type === 'beforeunload' ? this._beforeUnloadAccept : false;
-        setTimeout(() => {
-          this.conn.send('Page.handleJavaScriptDialog', { accept: autoAccept }, this.sessionId)
-            .catch(() => { /* dialog may already be handled */ });
-        }, 0);
-      }),
-    );
-
-    // Enable file chooser interception (optional - don't block if not needed)
-    // this.conn.send('Page.setInterceptFileChooserDialog', { enabled: true }, this.sessionId).catch(() => {});
-
-    this._subscriptions.push(
-      this.conn.subscribe('Page.fileChooserOpened', this.sessionId, async (params: unknown) => {
-        const p = params as { mode: string; backendNodeId: number };
-        // Resolve backendNodeId to a selector
-        let selector = '';
-        try {
-          const result = await this.conn.send('DOM.describeNode', { backendNodeId: p.backendNodeId }, this.sessionId) as { node: { attributes?: string[] } };
-          const attrs = result.node?.attributes || [];
-          const idIdx = attrs.indexOf('id');
-          if (idIdx >= 0) selector = '#' + attrs[idIdx + 1];
-        } catch { /* ignore */ }
-        if (!selector) {
-          try {
-            const result = await this.conn.send('DOM.resolveNode', { backendNodeId: p.backendNodeId }, this.sessionId) as { objectId: string };
-            const evalResult = await this.conn.send('Runtime.callFunctionOn', {
-              objectId: result.objectId,
-              functionDeclaration: 'function() { return this.id || this.name || "" }',
-              returnByValue: true,
-            }, this.sessionId) as { result: { value: string } };
-            if (evalResult.result?.value) selector = '#' + evalResult.result.value;
-          } catch { /* ignore */ }
-        }
-
-        const fileChooser: import('./types.js').XBFileChooser = {
-          selector,
-          isMultiple: p.mode === 'selectMultiple',
-          setFiles: async (files: import('./types.js').XBFilePayload | import('./types.js').XBFilePayload[]) => {
-            const fileArray = Array.isArray(files) ? files : [files];
-            await this.setInputFiles(selector || 'input[type="file"]', fileArray);
-          },
-        };
-        this._emit('filechooser', fileChooser);
-      }),
-    );
+    setupPageEvents({
+      conn: this.conn,
+      sessionId: this.sessionId,
+      addSubscription: (unsubscribe) => this._subscriptions.push(unsubscribe),
+      emit: (event, ...args) => this._emit(event, ...args),
+      setUrl: (url) => { this._url = url; },
+      mainFrame: () => this.mainFrame(),
+      markLoadFired: () => { this._loadState.loadFired = true; },
+      markDomContentFired: () => { this._loadState.domContentFired = true; },
+      getBeforeUnloadAccept: () => this._beforeUnloadAccept,
+      setInputFiles: (selector, files) => this.setInputFiles(selector, files),
+    });
   }
 
   private setupNetworkEvents(): void {
