@@ -19,6 +19,7 @@ import { getSelectorGeneratorScript } from './selector-utils.js';
 import { updateSiteKnowledge } from './site-knowledge.js';
 import { buildSummary } from './summary-builder.js';
 import { buildMarkdownSummary } from './markdown-summary.js';
+import { detectCheckpoints, verifyAction } from './observation-insights.js';
 import {
   captureAutoSnapshot,
   captureClickContext,
@@ -58,28 +59,20 @@ export class SessionRecorder {
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private lastActionTs = 0;
   private activePages = new Set<Page>();
-  private lastKnownUrl = '';  // Track URL to detect real navigation changes
+  private lastKnownUrl = '';
 
-  /** Dedup map: key = normalizedType|tag|value → expiration timestamp.
-   *  Replaces old single-entry cdpActionDedup for bidirectional dedup. */
   private dedupMap = new Map<string, { expires: number; origin: 'signal' | 'command' }>();
-  private dedupActionCount = 0; // counter for periodic cleanup
-
-  /** Network dedup: last request key for short-window dedup */
+  private dedupActionCount = 0;
   private _lastRequestKey = '';
   private _lastRequestTs = 0;
-
   private _isRecording = false;
   private streamMode: 'clean' | 'raw' = 'clean';
-
-  /** Snapshot throttle: prevents too many screenshots during rapid inputs.
-   *  Keyed by 'type|elementSelector', value = last snapshot timestamp. */
   private snapshotThrottle = new Map<string, number>();
 
-  /** Ambient action types: filtered out in clean mode */
   private static readonly AMBIENT_TYPES = new Set([
     'hover', 'focus', 'scroll', 'visibility', 'resize', 'clipboard', 'touch', 'contextmenu',
   ]);
+
   constructor(context: BrowserContext, page: Page, sessionName: string) {
     this.context = context;
     this.page = page;
@@ -1098,124 +1091,20 @@ export class SessionRecorder {
 	      // Verify: collect success signals for key action types
 	      const verifyTypes = new Set(['click', 'submit', 'input', 'change', 'cdp-click', 'cdp-fill']);
 		      if (verifyTypes.has(raw.type as string)) {
-		        const signals = await this.verifyAction(page, pushed).catch(() => [] as ActionSignal[]);
+		        const signals = await verifyAction(page, pushed, this.network, this.checkpoints).catch(() => [] as ActionSignal[]);
 		        if (signals.length > 0) {
 		          (pushed as unknown as { __signals?: ActionSignal[] }).__signals = signals;
 		        }
 		      }
 
 		      if (raw.type === 'click' || raw.type === 'navigate' || raw.type === 'submit') {
-        const detected = await this.detectCheckpoints(page);
+        const detected = await detectCheckpoints(page, () => ++this.checkpointCounter);
         for (const cp of detected) {
           cp.relatedActionId = this.actionCounter;
           this.checkpoints.push(cp);
         }
       }
     }
-  }
-
-  private async detectCheckpoints(page: Page): Promise<CheckpointEntry[]> {
-    const CHECKPOINT_RULES: Array<{ type: CheckpointType; selectors: string[] }> = [
-      { type: 'captcha', selectors: ['img[src*="captcha"]', 'img[src*="verify"]', '[class*="captcha"]', '[id*="captcha"]', '#captcha', '.captcha'] },
-      { type: 'slider', selectors: ['[class*="slider"]', '[class*="drag-verify"]', '[class*="slide-verify"]'] },
-      { type: 'login', selectors: ['input[type="password"]'] },
-      { type: 'iframe', selectors: ['iframe[src*="captcha"]', 'iframe[src*="verify"]', 'iframe[src*="recaptcha"]', 'iframe[title*="captcha"]'] },
-    ];
-
-    try {
-      const found = await page.evaluate<Array<{ type: string; selector: string; text: string }>>((rules: Array<{ type: string; selectors: string[] }>) => {
-        const results: Array<{ type: string; selector: string; text: string }> = [];
-        for (const rule of rules) {
-          for (const sel of rule.selectors) {
-            try {
-              const el = document.querySelector(sel);
-              if (el) {
-                const rect = el.getBoundingClientRect();
-                if (rect.width > 0 && rect.height > 0) {
-                  results.push({
-                    type: rule.type,
-                    selector: sel,
-                    text: (el.textContent || '').substring(0, 60),
-                  });
-                }
-              }
-            } catch { /* skip invalid selector */ }
-          }
-        }
-        return results;
-      }, CHECKPOINT_RULES);
-
-      const entries: CheckpointEntry[] = [];
-      for (const item of found) {
-        this.checkpointCounter++;
-        const hints: Record<string, string> = {
-          captcha: 'Captcha verification detected',
-          slider: 'Slider verification detected',
-          login: 'Login form detected (password field)',
-          iframe: 'Verification iframe detected',
-        };
-        entries.push({
-          id: this.checkpointCounter,
-          type: item.type as CheckpointType,
-          timestamp: Date.now(),
-          url: page.url(),
-          pageTitle: await page.title().catch(() => ''),
-          hint: hints[item.type] || item.type,
-          selector: item.selector,
-          source: 'auto',
-          context: { matchedSelector: item.selector, elementText: item.text },
-        });
-      }
-      return entries;
-    } catch {
-      return [];
-    }
-  }
-
-  // ─── Verification: collect success signals after key actions ──────
-
-  /**
-   * After a key action (click/submit/input), check for success signals:
-   * URL changes, recent successful network responses, dialog appearances.
-   */
-  private async verifyAction(page: Page, action: UserAction): Promise<ActionSignal[]> {
-    const signals: ActionSignal[] = [];
-
-    // 1. URL change detection
-    try {
-      const currentUrl = page.url();
-      if (currentUrl && currentUrl !== 'about:blank' && currentUrl !== action.url) {
-        signals.push({ type: 'url_change', value: currentUrl, label: `URL changed to ${currentUrl}` });
-      }
-    } catch { /* page may be closed */ }
-
-    // 2. Recent successful network responses (3s window after action)
-    try {
-      const recentNetwork = this.network.filter(n =>
-        n.timestamp > action.timestamp - 100 &&
-        n.timestamp < action.timestamp + 5000 &&
-        n.status >= 200 && n.status < 400
-      );
-      for (const net of recentNetwork.slice(0, 3)) {
-        signals.push({
-          type: 'network_success',
-          value: `${net.status}`,
-          label: `${net.method} ${net.path} → ${net.status}`,
-        });
-      }
-    } catch { /* ignore */ }
-
-    // 3. Dialog checkpoint near this action
-    try {
-      const recentDialog = [...this.checkpoints].reverse().find(cp =>
-        cp.type === 'dialog' && Math.abs(cp.timestamp - action.timestamp) < 3000
-      );
-      if (recentDialog) {
-        signals.push({ type: 'dialog', value: recentDialog.type, label: recentDialog.hint });
-      }
-    } catch { /* ignore */ }
-
-    return signals;
   }
 
   // ─── Periodic disk flush ────────────────────────────────────────
