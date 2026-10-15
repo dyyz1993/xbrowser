@@ -41,6 +41,13 @@
 - WS 连上即上报 hello（extId + 版本）→ bridge 持久化 `~/.xbrowser/chrome-bridge-ext.json`（revive 命令据此唤醒）
 - CONNECTING 卡死 >15s 强制 close 重连（半开 TCP 时 onclose 永不触发，是 SW 死透根因之一）
 - 应用层 ka 帧早退处理（配合 bridge 25s 心跳给 SW 续命）
+
+## [1.5.1] - 2026-10-15
+
+### Fixed
+- Serialize task group lifecycle operations so concurrent `task-open` calls reuse one colored group instead of creating duplicate groups
+- Reuse an existing explicit task group on repeat `task-open`; added regression tests for stable colors and concurrent different-task groups
+
 ## [1.5.0] - 2026-10-15
 
 ### Changed

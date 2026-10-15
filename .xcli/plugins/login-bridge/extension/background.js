@@ -308,6 +308,15 @@ let currentTaskName = '';
 // Stable per-task color so concurrent task groups are visually distinct.
 // Chrome tabGroups supports: grey/blue/red/yellow/green/pink/purple/cyan/orange.
 const TASK_COLORS = ['blue', 'purple', 'cyan', 'green', 'yellow', 'red', 'pink', 'orange'];
+// 生命周期命令共享一把锁：同一任务并发的 task-open 串行化，
+// 才能在第二次进入前看到第一次创建的显式组并复用，而不是开出重复组。
+let lifecycleTail = Promise.resolve();
+
+function enqueueLifecycle(operation) {
+  const run = lifecycleTail.then(operation, operation);
+  lifecycleTail = run.catch(() => {});
+  return run;
+}
 
 function taskColorFor(name) {
   const key = String(name || 'xbrowser');
@@ -446,8 +455,13 @@ const executors = {
   },
 
   // ── S121: tab group 生命周期（任务分组） ──
-  'task-open': async ({ name, url }) => {
+  'task-open': ({ name, url }) => enqueueLifecycle(async () => {
     const taskName = name || 'default';
+    const existing = (await chrome.tabGroups.query({})).find((g) => g.title === 'xb-task-' + taskName);
+    if (existing) {
+      const tabs = await chrome.tabs.query({ groupId: existing.id });
+      if (tabs.length > 0) return { tabId: tabs[tabs.length - 1].id, groupId: existing.id, reused: true };
+    }
     const tab = await chrome.tabs.create({ url: url || 'about:blank', active: false }); // 后台创建，不抢焦点
     const group = await chrome.tabs.group({ tabIds: [tab.id] });
     await chrome.tabGroups.update(group, {
@@ -457,8 +471,8 @@ const executors = {
     // S164: 任务 tab 预置可见性一致性层（失败降级为普通任务 tab，不阻塞）
     const stealth = await enableTaskStealth(tab.id).catch((e) => ({ ok: false, error: String(e) }));
     return { tabId: tab.id, groupId: group, stealth: stealth.ok };
-  },
-  'task-close': async ({ name }) => {
+  }),
+  'task-close': ({ name }) => enqueueLifecycle(async () => {
     const groups = await chrome.tabGroups.query({});
     const targets = name
       ? groups.filter((g) => g.title === 'xb-task-' + name || g.title === '🤖 ' + name)
@@ -483,7 +497,7 @@ const executors = {
       await chrome.storage.local.set({ taskTabs: [], taskUsedAt: 0 }).catch(() => {});
     }
     return { closed, ungrouped };
-  },
+  }),
   // S166: 可见小窗口模式（L0 真渲染）——hidden tab 有两个进程级残留：
   // rAF 帧距 ~1000ms（节流）+ trusted mousemove 大量丢弃（输入路由）。
   // 小窗口（focused:false 不抢焦点）让 Chrome 真渲染：帧距 ~16ms、事件全到达。
@@ -582,7 +596,7 @@ const executors = {
   // S209：显式接管——把用户当前活跃 tab 打入任务组（🤖 任务名），让"agent 在操作
   // 哪个 tab"对用户可见。用户 tab 只入组、不记"自建"：收尾（sweep/task-close）
   // 对它只做 ungroup 保留，绝不关闭。
-  'attach': async ({ task }) => {
+  'attach': ({ task }) => enqueueLifecycle(async () => {
     const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!t) return { ok: false, error: 'no active tab' };
     const name = '🤖 ' + (task || 'xbrowser');
@@ -596,7 +610,7 @@ const executors = {
     await chrome.tabGroups.update(gid, { title: name, color: taskColorFor(task || 'xbrowser') }).catch(() => {});
     await touchTaskActivity();
     return { ok: true, tabId: t.id, groupId: gid, url: t.url, title: t.title };
-  },
+  }),
   // S170: 热更新直达通道——WS 消息在 SW 内执行，chrome.runtime.reload 可靠
   // （popup.html 页面载体的 chrome.runtime 绑定时好时坏，此执行器取代该路径）
   'ext-reload': async () => { setTimeout(() => chrome.runtime.reload(), 50); return { ok: true, reloading: true }; },
