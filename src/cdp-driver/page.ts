@@ -35,13 +35,9 @@ import { FileInputService } from './page-file-input.js';
 import { setupNetworkEvents } from './page-network-events.js';
 import { setupPageEvents } from './page-lifecycle-events.js';
 import { NetworkWaitService } from './page-network-waits.js';
+import { NetworkRouteService } from './page-routes.js';
 import { queryJS } from './selector-utils.js';
-import {
-  type FetchPausedParams,
-  globToRegex,
-  createXBRequest,
-  createXBRouteFetch,
-} from './page-helpers.js';
+
 
 type XBConsoleType = 'log' | 'debug' | 'info' | 'error' | 'warning' | 'dir' | 'dirxml' | 'table' | 'trace' | 'clear' | 'startGroup' | 'startGroupCollapsed' | 'endGroup' | 'assert' | 'profile' | 'profileEnd' | 'count' | 'timeEnd';
 
@@ -75,6 +71,7 @@ export class XBPageImpl implements XBPage {
   private readonly mediaService: MediaService;
   private readonly fileInputService: FileInputService;
   private readonly networkWaitService: NetworkWaitService;
+  private readonly networkRouteService: NetworkRouteService;
 
   // Network tracking for waitForLoadState('networkidle')
   private inflightRequests = new Set<string>();
@@ -118,6 +115,11 @@ export class XBPageImpl implements XBPage {
       on: (event, handler) => this._emitter.on(event, handler),
       off: (event, handler) => this._emitter.removeListener(event, handler),
       currentUrl: () => this.url(),
+    });
+    this.networkRouteService = new NetworkRouteService({
+      conn,
+      sessionId,
+      emit: (event, ...args) => this._emit(event, ...args),
     });
   }
 
@@ -163,7 +165,7 @@ export class XBPageImpl implements XBPage {
       this._subscriptions.push(
         this.conn.subscribe('Fetch.requestPaused', this.sessionId, (params: unknown) => {
           // route() 未激活时旁路直通（仅认证场景需要 Fetch，不拦截常规流量）
-          if (this._interceptionEnabled) return;
+          if (this.networkRouteService.isInterceptionEnabled) return;
           const p = params as { requestId: string };
           this.conn.send('Fetch.continueRequest', { requestId: p.requestId }, this.sessionId).catch(() => {});
         }),
@@ -1420,8 +1422,6 @@ export class XBPageImpl implements XBPage {
 
   _networkResponses = new Map<string, { requestId: string; status: number; url: string; headers: Record<string, string> }>();
   _networkRequests = new Map<string, { requestId: string; url: string; method: string; headers: Record<string, string>; postData: string | null; resourceType: string }>();
-  private _routeHandlers: Array<{ pattern: string; regex: RegExp; handler: (route: XBRoute) => Promise<void> | void }> = [];
-  private _interceptionEnabled = false;
   private _beforeUnloadAccept = true;
 
   /** Store network data — called by browser.ts installNetworkCapture or internal event handlers */
@@ -1455,87 +1455,16 @@ export class XBPageImpl implements XBPage {
   }
 
   async route(
-    url: string | RegExp,
+    pattern: string,
     handler: (route: XBRoute) => Promise<void> | void,
   ): Promise<void> {
-    const regex = typeof url === 'string' ? globToRegex(url) : url;
-    this._routeHandlers.push({ pattern: String(url), regex, handler });
-
-    if (!this._interceptionEnabled) {
-      this._interceptionEnabled = true;
-      await this.conn.send('Fetch.enable', {
-        patterns: [{ urlPattern: '*', requestStage: 'Request' }],
-        // sup-s9: 保留认证自动响应（Fetch.enable 为替换语义，不带此参数
-        // 会顶掉 _init 的 auth 配置）
-        handleAuthRequests: true,
-      }, this.sessionId);
-
-      this._subscriptions.push(
-        this.conn.subscribe('Fetch.requestPaused', this.sessionId, (params: unknown) => {
-          this._handleRequestPaused(params as FetchPausedParams);
-        }),
-      );
-    }
+    return this.networkRouteService.route(pattern, handler);
   }
 
-  async unroute(
-    url: string | RegExp,
-    handler?: (route: XBRoute) => Promise<void> | void,
-  ): Promise<void> {
-    const regex = typeof url === 'string' ? globToRegex(url) : url;
-    this._routeHandlers = this._routeHandlers.filter(
-      (h) => !(regex.source === h.regex.source && (!handler || h.handler === handler)),
-    );
-
-    if (this._routeHandlers.length === 0 && this._interceptionEnabled) {
-      this._interceptionEnabled = false;
-      await this.conn.send('Fetch.disable', undefined, this.sessionId).catch(() => {});
-    }
+  async unroute(pattern: string): Promise<void> {
+    return this.networkRouteService.unroute(pattern);
   }
 
-  private async _handleRequestPaused(params: FetchPausedParams): Promise<void> {
-    const requestUrl = params.request.url;
-
-    for (const { regex, handler } of this._routeHandlers) {
-      if (regex.test(requestUrl)) {
-        // Emit request event for waitForRequest listeners
-        // (Fetch.requestPaused may not be preceded by Network.requestWillBeSent)
-        this._emit('request', createXBRequest(
-          null,
-          { requestId: params.requestId, url: params.request.url,
-            method: params.request.method,
-            headers: params.request.headers,
-            postData: params.request.postData ?? null, resourceType: params.resourceType },
-        ));
-
-        const route = createXBRouteFetch(this.conn, this.sessionId, params, this._emitter);
-        try {
-          await handler(route);
-        } catch {
-          // Handler threw — continue the request to prevent stalling
-          await this.conn.send('Fetch.continueRequest', {
-            requestId: params.requestId,
-          }, this.sessionId).catch(() => {});
-        }
-        return;
-      }
-    }
-
-    // No handler matched — continue the request
-    await this.conn.send('Fetch.continueRequest', {
-      requestId: params.requestId,
-    }, this.sessionId).catch(() => {});
-  }
-
-  // ── setInputFiles ───────────────────────────────────────────
-
-  /**
-   * sup-s4: Dropzone 拖拽上传模拟——Dropzone/Uppy/自绘上传区只监听
-   * dragover/drop（无 input[type=file] 可点），真实用户靠 OS 文件拖入
-   * 触发，自动化无法产生 OS 拖拽。页内构造 DataTransfer+File，按拖放
-   * 协议派发 dragenter/dragover/drop（bubbles+cancelable，坐标取目标
-   * 中心）。
-   */
   async dropFiles(selector: string, payload: XBFilePayload): Promise<void> {
     return this.fileInputService.dropFiles(selector, payload);
   }
