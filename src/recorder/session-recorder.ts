@@ -15,6 +15,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { BrowserContext, Frame, Page, Request, Response, Dialog } from '../browser-shim.js';
 import { updateSiteKnowledge } from './site-knowledge.js';
+import { createNetworkCaptureState, handleNetworkRequest, handleNetworkResponse } from './network-capture.js';
 import { injectActionScript } from './script-injector.js';
 import { ACTION_SIGNAL_SCRIPT, CHECKPOINT_OVERLAY_SCRIPT } from './injection-scripts.js';
 import { getSelectorGeneratorScript } from './selector-utils.js';
@@ -26,7 +27,7 @@ import {
   captureClickContext,
   captureElementScreenshot,
 } from './page-context.js';
-import type { UserAction, RecordingData, RecordingSummary, RecordingControlFile, NetworkEntry, CheckpointEntry, CheckpointType, ContextChange, ClickContext , ActionSignal, DiscoveredFilter } from './recording-types.js';
+import type { UserAction, RecordingData, RecordingSummary, RecordingControlFile, CheckpointEntry, CheckpointType, ContextChange, ClickContext, ActionSignal, DiscoveredFilter } from './recording-types.js';
 export type {
   ClickContextItem, ClickContextElement, ClickContextStateChange, ClickContext,
   UserAction, NetworkEntry, ContextChange, ElementRef,
@@ -44,7 +45,7 @@ export class SessionRecorder {
   private startedAt = 0;
 
   private actions: UserAction[] = [];
-  private network: NetworkEntry[] = [];
+  private networkCapture = createNetworkCaptureState();
   private contextChanges: ContextChange[] = [];
   private checkpoints: CheckpointEntry[] = [];
   /** Proactive baseline scan of filter/sort/tab/menu regions. Keyed by
@@ -52,8 +53,7 @@ export class SessionRecorder {
   private discoveredFilters: Map<string, DiscoveredFilter> = new Map();
 
   private actionCounter = 0;
-  private networkCounter = 0;
-  private contextCounter = 0;
+    private contextCounter = 0;
   private checkpointCounter = 0;
 
   private pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -64,8 +64,6 @@ export class SessionRecorder {
 
   private dedupMap = new Map<string, { expires: number; origin: 'signal' | 'command' }>();
   private dedupActionCount = 0;
-  private _lastRequestKey = '';
-  private _lastRequestTs = 0;
   private _isRecording = false;
   private streamMode: 'clean' | 'raw' = 'clean';
   private snapshotThrottle = new Map<string, number>();
@@ -171,7 +169,7 @@ export class SessionRecorder {
   }
 
   get networkCount(): number {
-    return this.network.length;
+    return this.networkCapture.entries.length;
   }
 
   getLiveData(): RecordingData {
@@ -226,7 +224,7 @@ export class SessionRecorder {
     this._isRecording = true;
     this.startedAt = Date.now();
     this.actions = [];
-    this.network = [];
+    
     this.contextChanges = [];
     this.checkpoints = [];
     this.checkpointCounter = 0;
@@ -443,83 +441,11 @@ export class SessionRecorder {
   // ─── Network capture ────────────────────────────────────────────
 
   private handleRequest = (request: Request): void => {
-    const resourceType = request.resourceType();
-    if (['image', 'stylesheet', 'font', 'manifest', 'other'].includes(resourceType)) return;
-
-    const url = request.url();
-    if (url.startsWith('data:') || url.startsWith('chrome-extension://') || url.startsWith('blob:')) return;
-
-    // Dedup: skip if same URL+method was seen in last 100ms (forwarded event duplication)
-    const dedupKey = request.method() + ' ' + url;
-    const now = Date.now();
-    if (this._lastRequestKey === dedupKey && now - this._lastRequestTs < 100) return;
-    this._lastRequestKey = dedupKey;
-    this._lastRequestTs = now;
-
-    this.networkCounter++;
-    const entry: NetworkEntry = {
-      id: this.networkCounter,
-      timestamp: Date.now(),
-      method: request.method(),
-      url,
-      path: new URL(url).pathname,
-      status: 0,
-      resourceType,
-      contentType: '',
-      responseSize: 0,
-    };
-
-    // Capture request body for mutation methods
-    if (['POST', 'PATCH', 'PUT'].includes(request.method())) {
-      try {
-        const postData = request.postData();
-        if (postData) {
-          try {
-            entry.requestBody = JSON.parse(postData);
-          } catch {
-            entry.requestBody = postData.substring(0, 500);
-          }
-        }
-      } catch { /* ignore */ }
-    }
-
-    this.network.push(entry);
+    handleNetworkRequest(request, this.networkCapture);
   };
 
   private handleResponse = async (response: Response): Promise<void> => {
-    const url = response.url();
-    if (url.startsWith('data:') || url.startsWith('chrome-extension://') || url.startsWith('blob:')) return;
-
-    // Find matching request entry (status still 0)
-    const entry = [...this.network].reverse().find(e => e.url === url && e.status === 0);
-    if (!entry) return;
-
-    entry.status = response.status();
-    entry.contentType = response.headers()['content-type'] || '';
-
-    // Only capture response body for API-like requests
-    const resourceType = response.request().resourceType();
-    const isApi = ['fetch', 'xhr'].includes(resourceType) ||
-      entry.contentType.includes('json') ||
-      entry.contentType.includes('text/');
-
-    if (isApi) {
-      try {
-        const text = await response.text();
-        entry.responseSize = text.length;
-        if (text.length <= 20480) {
-          try {
-            entry.responseBody = JSON.parse(text);
-          } catch {
-            entry.responseBody = text.substring(0, 500);
-          }
-        }
-      } catch { /* unable to read */ }
-    } else {
-      try {
-        entry.responseSize = parseInt(response.headers()['content-length'] || '0', 10);
-      } catch { /* ignore */ }
-    }
+    await handleNetworkResponse(response, this.networkCapture);
   };
 
   // ─── Page tracking ──────────────────────────────────────────────
@@ -970,7 +896,7 @@ export class SessionRecorder {
 	      // Verify: collect success signals for key action types
 	      const verifyTypes = new Set(['click', 'submit', 'input', 'change', 'cdp-click', 'cdp-fill']);
 		      if (verifyTypes.has(raw.type as string)) {
-		        const signals = await verifyAction(page, pushed, this.network, this.checkpoints).catch(() => [] as ActionSignal[]);
+		        const signals = await verifyAction(page, pushed, this.networkCapture.entries, this.checkpoints).catch(() => [] as ActionSignal[]);
 		        if (signals.length > 0) {
 		          (pushed as unknown as { __signals?: ActionSignal[] }).__signals = signals;
 		        }
@@ -1020,7 +946,7 @@ export class SessionRecorder {
       sessionName: this.sessionName,
       startedAt: new Date(this.startedAt).toISOString(),
       actions: [...this.actions],
-      network: [...this.network],
+      network: [...this.networkCapture.entries],
       contextChanges: [...this.contextChanges],
       checkpoints: [...this.checkpoints],
       discoveredFilters: [...this.discoveredFilters.values()],
