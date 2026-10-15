@@ -36,6 +36,7 @@ import { setupPageEvents } from './page-lifecycle-events.js';
 import { NetworkWaitService } from './page-network-waits.js';
 import { NetworkRouteService } from './page-routes.js';
 import { NavigationService } from './page-navigation.js';
+import { DomQueryService } from './page-dom.js';
 import { queryJS } from './selector-utils.js';
 
 
@@ -73,6 +74,7 @@ export class XBPageImpl implements XBPage {
   private readonly networkWaitService: NetworkWaitService;
   private readonly networkRouteService: NetworkRouteService;
   private readonly navigationService: NavigationService;
+  private readonly domQueryService: DomQueryService;
 
   // Network tracking for waitForLoadState('networkidle')
   private inflightRequests = new Set<string>();
@@ -132,6 +134,11 @@ export class XBPageImpl implements XBPage {
       currentUrl: () => this.url(),
       waitForLoadState: (state, timeout) => this.waitForLoadState(state, timeout),
       waitForTimeout: (ms) => this.waitForTimeout(ms),
+      evaluate: <T>(script: string) => this.evaluate(script) as Promise<T>,
+    });
+    this.domQueryService = new DomQueryService({
+      conn,
+      sessionId,
       evaluate: <T>(script: string) => this.evaluate(script) as Promise<T>,
     });
   }
@@ -1084,102 +1091,20 @@ export class XBPageImpl implements XBPage {
 
   // ── CDP helpers exposed for locator/element ─────────────────
 
-  /** Query a single element, returns CDP nodeId or 0 if not found */
   async querySelector(selector: string): Promise<number> {
-    // For xpath selectors, use evaluate to find the element, then requestNode
-    if (selector.startsWith('xpath=')) {
-      const found = await this.evaluate<boolean>(`
-        (() => { const el = ${queryJS(selector)}; return !!el; })()
-      `).catch(() => false);
-      if (!found) return 0;
-      // Use DOM.performSearch as fallback to get nodeId for xpath
-      try {
-        const search = await this.conn.send<{ nodeId: number }>(
-          'DOM.performSearch',
-          { query: selector.slice(6) },
-          this.sessionId,
-        );
-        if (search.nodeId) return search.nodeId;
-      } catch { /* performSearch may not support xpath */ }
-      return 1; // Element exists but we can't get nodeId — return truthy
-    }
-    // Get document root — with timeout guard: on freshly-attached tab
-    // sessions the DOM agent can silently never respond (d07: detectCaptcha's
-    // page.$ hung forever after a target=_blank tab switch). Time out and
-    // report "not found" instead of deadlocking the command.
-    const withTimeout = <T>(p: Promise<T>, ms: number): Promise<T | null> =>
-      Promise.race([p, new Promise<null>(r => setTimeout(() => r(null), ms))]);
-
-    const doc = await withTimeout(
-      this.conn.send<{ root: { nodeId: number } }>('DOM.getDocument', { depth: 0 }, this.sessionId),
-      8000,
-    );
-    if (!doc) return 0;
-
-    const result = await withTimeout(
-      this.conn.send<{ nodeId: number }>(
-        'DOM.querySelector',
-        { nodeId: doc.root.nodeId, selector },
-        this.sessionId,
-      ),
-      8000,
-    );
-    if (!result) return 0;
-
-    return result.nodeId;
+    return this.domQueryService.querySelector(selector);
   }
 
-  /** Query all matching elements, returns array of CDP nodeIds */
   async querySelectorAll(selector: string): Promise<number[]> {
-    const doc = await this.conn.send<{ root: { nodeId: number } }>(
-      'DOM.getDocument',
-      { depth: 0 },
-      this.sessionId,
-    );
-
-    const result = await this.conn.send<{ nodeIds: number[] }>(
-      'DOM.querySelectorAll',
-      { nodeId: doc.root.nodeId, selector },
-      this.sessionId,
-    );
-
-    return result.nodeIds ?? [];
+    return this.domQueryService.querySelectorAll(selector);
   }
 
-  /** Resolve a CDP nodeId to a RemoteObject for evaluate */
   async resolveNode(nodeId: number): Promise<string> {
-    const result = await this.conn.send<{ object: { objectId: string } }>(
-      'DOM.resolveNode',
-      { nodeId },
-      this.sessionId,
-    );
-    return result.object.objectId;
+    return this.domQueryService.resolveNode(nodeId);
   }
 
-  /** Get the box model for a nodeId */
   async getBoxModel(nodeId: number): Promise<{ x: number; y: number; width: number; height: number } | null> {
-    try {
-      const result = await this.conn.send<{
-        model: { content: number[] };
-      }>('DOM.getBoxModel', { nodeId }, this.sessionId);
-
-      const c = result.model?.content;
-      if (!c || c.length < 8) return null;
-
-      const x1 = c[0];
-      const y1 = c[1];
-      const x2 = c[4];
-      const y2 = c[5];
-
-      return {
-        x: Math.min(x1, x2),
-        y: Math.min(y1, y2),
-        width: Math.abs(x2 - x1),
-        height: Math.abs(y2 - y1),
-      };
-    } catch {
-      return null;
-    }
+    return this.domQueryService.getBoxModel(nodeId);
   }
 
   /** Call a function on a RemoteObject */
@@ -1210,9 +1135,6 @@ export class XBPageImpl implements XBPage {
     return this.conn.send<T>(method, params, this.sessionId);
   }
 
-  /** sup-s11: beforeunload 自动应答语义——'accept'（默认，离开页面，与录制
-   * 意图一致）或 'dismiss'（取消导航留守原页，尽力而为：此构建上 CDP
-   * accept:false 对浏览器侧导航的取消语义不稳定，不保证）。 */
   setBeforeUnloadBehavior(mode: 'accept' | 'dismiss'): void {
     this._beforeUnloadAccept = mode === 'accept';
   }
