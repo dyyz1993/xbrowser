@@ -30,6 +30,8 @@ import { buildStealthInitScript, DEFAULT_STEALTH_CONFIG } from './stealth.js';
 import { XBKeyboardImpl } from './keyboard.js';
 import { XBLocatorImpl } from './locator.js';
 import { XBElementHandleImpl } from './element-handle.js';
+import { MediaService } from './page-media.js';
+import { FileInputService } from './page-file-input.js';
 import { queryJS } from './selector-utils.js';
 import {
   type FetchPausedParams,
@@ -72,6 +74,8 @@ export class XBPageImpl implements XBPage {
 
   readonly mouse: XBMouse;
   readonly keyboard: XBKeyboard;
+  private readonly mediaService: MediaService;
+  private readonly fileInputService: FileInputService;
 
   // Network tracking for waitForLoadState('networkidle')
   private inflightRequests = new Set<string>();
@@ -94,6 +98,19 @@ export class XBPageImpl implements XBPage {
 
     this.mouse = new XBMouseImpl(conn, sessionId);
     this.keyboard = new XBKeyboardImpl(conn, sessionId);
+    this.mediaService = new MediaService({
+      conn,
+      sessionId,
+      viewportSize: this._viewportSize,
+      evaluate: <T>(script: string) => this.evaluate(script) as Promise<T>,
+      onViewportSize: (size) => { this._viewportSize = size; },
+    });
+    this.fileInputService = new FileInputService({
+      conn,
+      sessionId,
+      evaluate: <T>(script: string) => this.evaluate(script) as Promise<T>,
+      mouse: this.mouse,
+    });
   }
 
   protected _emit(event: string, ...args: unknown[]): void {
@@ -972,100 +989,24 @@ export class XBPageImpl implements XBPage {
   // ── Screen ──────────────────────────────────────────────────
 
   async screenshot(opts: XBScreenshotOptions = {}): Promise<Buffer> {
-    const params: Record<string, unknown> = {
-      format: opts.type ?? 'png',
-    };
-
-    if (opts.quality !== undefined && (opts.type === 'jpeg' || (!opts.type && opts.quality))) {
-      params.quality = opts.quality;
-    }
-
-    if (opts.fullPage) {
-      params.captureBeyondViewport = true;
-    }
-
-    if (opts.clip) {
-      const clip = {
-        x: Math.round(opts.clip.x),
-        y: Math.round(opts.clip.y),
-        width: Math.round(Math.max(1, opts.clip.width)),
-        height: Math.round(Math.max(1, opts.clip.height)),
-        scale: 1,
-      };
-      params.clip = clip;
-    }
-
-    if (opts.omitBackground) {
-      params.omitBackground = true;
-    }
-
-    const result = await this.conn.send<{ data: string }>(
-      'Page.captureScreenshot',
-      params,
-      this.sessionId,
-    );
-
-    return Buffer.from(result.data, 'base64');
+    return this.mediaService.screenshot(opts);
   }
 
   async pdf(opts: XBPdfOptions = {}): Promise<Buffer> {
-    const params: Record<string, unknown> = {};
-    if (opts.landscape !== undefined) params.landscape = opts.landscape;
-    if (opts.printBackground !== undefined) params.printBackground = opts.printBackground;
-    if (opts.scale !== undefined) params.scale = opts.scale;
-    if (opts.format) params.paperFormat = opts.format;
-    if (opts.preferCSSPageSize !== undefined) params.preferCSSPageSize = opts.preferCSSPageSize;
-    if (opts.margin) {
-      if (opts.margin.top) params.marginTop = parseFloat(opts.margin.top);
-      if (opts.margin.bottom) params.marginBottom = parseFloat(opts.margin.bottom);
-      if (opts.margin.left) params.marginLeft = parseFloat(opts.margin.left);
-      if (opts.margin.right) params.marginRight = parseFloat(opts.margin.right);
-    }
-    const result = await this.conn.send<{ data: string }>('Page.printToPDF', params, this.sessionId);
-    return Buffer.from(result.data, 'base64');
+    return this.mediaService.pdf(opts);
   }
 
   viewportSize(): { width: number; height: number } | null {
-    // Tracked via Emulation.setDeviceMetricsOverride
-    return this._viewportSize ?? null;
+    return this._viewportSize;
   }
 
   async setViewportSize(size: { width: number; height: number }): Promise<void> {
-    await this.conn.send(
-      'Emulation.setDeviceMetricsOverride',
-      {
-        width: size.width,
-        height: size.height,
-        deviceScaleFactor: 1,
-        mobile: false,
-      },
-      this.sessionId,
-    );
-    this._viewportSize = size;
+    return this.mediaService.setViewportSize(size);
   }
 
-  /**
-   * env-E2: 缩放变异——deviceScaleFactor 切换（CSS 像素坐标空间不变，
-   * 物理像素翻倍）。保留当前 CSS 视口尺寸，只换 DSF。
-   */
   async setDeviceScaleFactor(dsf: number): Promise<void> {
-    const size = this._viewportSize ?? (await this.evaluate<{ width: number; height: number }>(
-      '({ width: window.innerWidth, height: window.innerHeight })',
-    ));
-    await this.conn.send(
-      'Emulation.setDeviceMetricsOverride',
-      {
-        width: size.width,
-        height: size.height,
-        deviceScaleFactor: dsf,
-        mobile: false,
-      },
-      this.sessionId,
-    );
-    this._viewportSize = size;
+    return this.mediaService.setDeviceScaleFactor(dsf);
   }
-
-  // ── Scripts ─────────────────────────────────────────────────
 
   async addInitScript(script: string): Promise<void> {
     await this.conn.send(
@@ -1842,135 +1783,16 @@ export class XBPageImpl implements XBPage {
    * 中心）。
    */
   async dropFiles(selector: string, payload: XBFilePayload): Promise<void> {
-    await this.evaluate(`
-      (function() {
-        var el = ${queryJS(selector)};
-        if (!el) throw new Error('drop target not found: ' + ${JSON.stringify(selector)});
-        var b64 = ${JSON.stringify(payload.buffer.toString('base64'))};
-        var bin = atob(b64);
-        var buf = new Uint8Array(bin.length);
-        for (var i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-        var file = new File([buf], ${JSON.stringify(payload.name)}, { type: ${JSON.stringify(payload.mimeType)} });
-        var dt = new DataTransfer();
-        dt.items.add(file);
-        var rect = el.getBoundingClientRect();
-        var opts = {
-          bubbles: true, cancelable: true,
-          clientX: rect.x + rect.width / 2, clientY: rect.y + rect.height / 2,
-        };
-        el.dispatchEvent(new DragEvent('dragenter', Object.assign({ dataTransfer: dt }, opts)));
-        el.dispatchEvent(new DragEvent('dragover', Object.assign({ dataTransfer: dt }, opts)));
-        el.dispatchEvent(new DragEvent('drop', Object.assign({ dataTransfer: dt }, opts)));
-      })()
-    `);
+    return this.fileInputService.dropFiles(selector, payload);
   }
 
   async setInputFiles(selector: string, files: XBFilePayload | XBFilePayload[]): Promise<void> {
-    const fileArr = Array.isArray(files) ? files : [files];
-
-    // Use JavaScript DataTransfer API — more reliable across Chrome versions
-    // than CDP DOM.setFileInputFiles which has inconsistent parameter formats
-    const fileList = fileArr.map((f) => ({
-      name: f.name,
-      type: f.mimeType,
-      dataBase64: f.buffer.toString('base64'),
-    }));
-
-    await this.evaluate(`
-      (function() {
-        var selector = ${JSON.stringify(selector)};
-        var input = ${queryJS(selector)};
-        if (!input) throw new Error('Element not found: ' + selector);
-
-        var fileList = ${JSON.stringify(fileList)};
-        var dt = new DataTransfer();
-
-        fileList.forEach(function(f) {
-          var binary = atob(f.dataBase64);
-          var bytes = new Uint8Array(binary.length);
-          for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          var blob = new Blob([bytes], { type: f.type });
-          var file = new File([blob], f.name, { type: f.type });
-          dt.items.add(file);
-        });
-
-        input.files = dt.files;
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      })()
-    `);
+    return this.fileInputService.setInputFiles(selector, files);
   }
-
-  // ── dragAndDrop ─────────────────────────────────────────────
 
   async dragAndDrop(source: string, target: string): Promise<void> {
-
-    // Get bounding boxes
-    const sourceRect = await this.evaluate<{ x: number; y: number; width: number; height: number }>(`
-      (function() {
-        const el = ${queryJS(source)};
-        if (!el) throw new Error('Source not found: ${source}');
-        el.scrollIntoView({ behavior: 'instant', block: 'center' });
-        const r = el.getBoundingClientRect();
-        return { x: r.x, y: r.y, width: r.width, height: r.height };
-      })()
-    `);
-
-    const targetRect = await this.evaluate<{ x: number; y: number; width: number; height: number }>(`
-      (function() {
-        const el = ${queryJS(target)};
-        if (!el) throw new Error('Target not found: ${target}');
-        el.scrollIntoView({ behavior: 'instant', block: 'center' });
-        const r = el.getBoundingClientRect();
-        return { x: r.x, y: r.y, width: r.width, height: r.height };
-      })()
-    `);
-
-    const sx = sourceRect.x + sourceRect.width / 2;
-    const sy = sourceRect.y + sourceRect.height / 2;
-    const tx = targetRect.x + targetRect.width / 2;
-    const ty = targetRect.y + targetRect.height / 2;
-
-    // Simulate drag-and-drop via CDP Input.dispatchDragEvent
-    // First try the DragData approach (more reliable for HTML5 drag-and-drop)
-    try {
-      await this.conn.send('Input.dispatchDragEvent', {
-        type: 'dragStart',
-        x: sx,
-        y: sy,
-        data: { items: [], dragOperations: ['copy', 'move', 'link'] },
-      }, this.sessionId);
-
-      await this.conn.send('Input.dispatchDragEvent', {
-        type: 'dragOver',
-        x: tx,
-        y: ty,
-        data: { items: [], dragOperations: ['copy', 'move', 'link'] },
-      }, this.sessionId);
-
-      await this.conn.send('Input.dispatchDragEvent', {
-        type: 'drop',
-        x: tx,
-        y: ty,
-        data: { items: [], dragOperations: ['copy', 'move', 'link'] },
-      }, this.sessionId);
-
-      await this.conn.send('Input.dispatchDragEvent', {
-        type: 'dragCancel',
-        x: sx,
-        y: sy,
-        data: { items: [], dragOperations: ['copy', 'move', 'link'] },
-      }, this.sessionId);
-    } catch {
-      // Fallback: simulate via mouse events
-      await this.mouse.move(sx, sy);
-      await this.mouse.down();
-      await this.mouse.move(tx, ty, { steps: 10 });
-      await this.mouse.up();
-    }
+    return this.fileInputService.dragAndDrop(source, target);
   }
-
-  // ── setOfflineMode ──────────────────────────────────────────
 
   async setOfflineMode(offline: boolean): Promise<void> {
     await this.conn.send('Network.emulateNetworkConditions', {
