@@ -6,14 +6,132 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import fs from 'node:fs';
+import path from 'node:path';
+import { imageCommandConfig, imageCommandHandler, setImageHelpers } from './image.js';
 
 const GEMINI_URL = 'https://gemini.google.com';
 type Page = import('../types').Page;
+
+const IMAGE_MODE_SELECTORS = [
+  'button[aria-label*="图片"]',
+  'button[aria-label*="Image"]',
+  '[role="button"][aria-label*="图片"]',
+  '[role="button"][aria-label*="Image"]',
+  '[data-test-id*="image"]',
+].join(', ');
+
+const INPUT_SELECTORS = [
+  '[aria-label*="输入提示"]',
+  '[aria-label*="Enter a prompt"]',
+  '[role="textbox"][contenteditable="true"]',
+  '[contenteditable="true"]',
+  'textarea',
+].join(', ');
+
+const SEND_SELECTORS = [
+  'button[aria-label*="发送"]',
+  'button[aria-label*="Send"]',
+  'button[type="submit"]',
+].join(', ');
 
 function buildCdpTips(ctx: CommandContext): string[] {
   const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint as string | undefined;
   return cdp ? [] : ['建议使用 --cdp 9221 连接已登录浏览器'];
 }
+
+async function clickImageMode(page: Page): Promise<boolean> {
+  return page.evaluate((selectors: string) => {
+    const buttons = Array.from(document.querySelectorAll(selectors)) as HTMLElement[];
+    const button = buttons.find((el) => {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && getComputedStyle(el).visibility !== 'hidden';
+    });
+    if (!button) return false;
+    button.click();
+    return true;
+  }, IMAGE_MODE_SELECTORS).catch(() => false);
+}
+
+async function typePrompt(page: Page, prompt: string): Promise<void> {
+  const typed = await page.evaluate((data: { selectors: string; prompt: string }) => {
+    const inputs = Array.from(document.querySelectorAll(data.selectors)) as HTMLElement[];
+    const input = inputs.find((el) => {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    });
+    if (!input) return false;
+    input.focus();
+    if (input instanceof HTMLTextAreaElement) {
+      input.value = data.prompt;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    } else {
+      input.textContent = data.prompt;
+      input.dispatchEvent(new InputEvent('input', { bubbles: true, data: data.prompt }));
+    }
+    return true;
+  }, { selectors: INPUT_SELECTORS, prompt }).catch(() => false);
+  if (!typed) throw new Error('找不到 Gemini 输入框');
+}
+
+async function submitPrompt(page: Page): Promise<void> {
+  const clicked = await page.evaluate((selectors: string) => {
+    const buttons = Array.from(document.querySelectorAll(selectors)) as HTMLButtonElement[];
+    const button = buttons.find((el) => {
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0 && !el.disabled;
+    });
+    if (!button) return false;
+    button.click();
+    return true;
+  }, SEND_SELECTORS).catch(() => false);
+  if (!clicked) await page.keyboard.press('Enter');
+}
+
+async function collectNewImages(
+  page: Page,
+  beforeUrls: string[],
+  timeoutMs: number,
+): Promise<string[]> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+    const urls = await page.evaluate((exclude: string[]) => {
+      const excluded = new Set(exclude);
+      const found = new Set<string>();
+      for (const image of Array.from(document.querySelectorAll('img')) as HTMLImageElement[]) {
+        const src = image.currentSrc || image.src;
+        if (!src.startsWith('http') || excluded.has(src)) continue;
+        const rect = image.getBoundingClientRect();
+        if (rect.width < 180 || rect.height < 180) continue;
+        const context = image.closest('a,button,[role="button"]');
+        if (context && context.textContent?.match(/登录|Sign in|升级|Upgrade/)) continue;
+        found.add(src);
+      }
+      return [...found];
+    }, beforeUrls).catch(() => [] as string[]);
+    if (urls.length > 0) return urls;
+  }
+  return [];
+}
+
+async function downloadImages(urls: string[]): Promise<string[]> {
+  const outputDir = path.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads');
+  fs.mkdirSync(outputDir, { recursive: true });
+  const paths: string[] = [];
+  for (const url of urls) {
+    const localPath = path.join(outputDir, `gemini_image_${Date.now()}_${paths.length}.png`);
+    const response = await fetch(url);
+    if (!response.ok) continue;
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length < 1024) continue;
+    fs.writeFileSync(localPath, bytes);
+    paths.push(localPath);
+  }
+  return paths;
+}
+
+setImageHelpers({ clickImageMode, typePrompt, submitPrompt, collectNewImages, downloadImages });
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -101,6 +219,12 @@ export default function (xcli: XCLIAPI): void {
         return fail((error as Error).message || '未知错误', tips);
       }
     },
+  });
+
+  // ── image — 快速图片生成 ──
+  site.command('image', {
+    ...imageCommandConfig(),
+    handler: async (params, ctx) => imageCommandHandler(params, ctx),
   });
 
   // ── music — 生成音乐 ──
