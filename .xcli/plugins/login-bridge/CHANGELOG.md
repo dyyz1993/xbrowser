@@ -41,3 +41,9 @@
 - WS 连上即上报 hello（extId + 版本）→ bridge 持久化 `~/.xbrowser/chrome-bridge-ext.json`（revive 命令据此唤醒）
 - CONNECTING 卡死 >15s 强制 close 重连（半开 TCP 时 onclose 永不触发，是 SW 死透根因之一）
 - 应用层 ka 帧早退处理（配合 bridge 25s 心跳给 SW 续命）
+## [1.5.0] - 2026-10-15
+
+### Changed
+- Task groups are now per-task-name: concurrent tasks create separate named groups
+- Group titles show `🤖 <task>` (auto) or `xb-task-<task>` (explicit), with a stable deterministic color per task name
+- Attach only reuses the group for the same task name instead of any 🤖 group
