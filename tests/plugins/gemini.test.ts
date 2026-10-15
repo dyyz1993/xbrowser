@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/gemini/index.ts';
 import { imageCommandHandler, setImageHelpers } from '../../.xcli/plugins/gemini/image.ts';
+import { parseUsageText, usageCommandHandler } from '../../.xcli/plugins/gemini/usage.ts';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -44,7 +45,7 @@ function createMockCtx(page?: ReturnType<typeof createMockPage>) {
   };
 }
 
-const ALL_COMMANDS = ['list', 'chat', 'image', 'music'];
+const ALL_COMMANDS = ['list', 'chat', 'image', 'usage', 'music'];
 
 describe('gemini plugin', () => {
   beforeEach(() => {
@@ -66,7 +67,7 @@ describe('gemini plugin', () => {
   });
 
   it('should register 3 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(4);
+    expect(mockSite.command).toHaveBeenCalledTimes(5);
   });
 
   it('should register expected command names', () => {
@@ -204,6 +205,60 @@ describe('gemini plugin', () => {
   });
 
   // ─── music command ───
+  describe('usage command', () => {
+    it('should have page scope and required login', () => {
+      const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'usage');
+      const config = cmd![1] as Record<string, unknown>;
+      expect(config.scope).toBe('page');
+      expect(config.loginRequired).toBe('required');
+    });
+
+    it('should throw when no page', async () => {
+      await expect(usageCommandHandler({}, createMockCtx(undefined) as never))
+        .rejects.toThrow('需要浏览器页面');
+    });
+
+    it('parses current and weekly usage with reset times', () => {
+      const text = [
+        'Gemini',
+        '用量限额 PRO',
+        '更新时间：1 分钟前',
+        '当前用量',
+        '已使用 1%',
+        '重置时间：23:34',
+        '每周限额',
+        '重置时间：10月20日05:34',
+        '已使用 0%',
+      ].join('\n');
+      const parsed = parseUsageText(text, 'https://gemini.google.com/usage');
+      expect(parsed.plan).toBe('PRO');
+      expect(parsed.current).toEqual({ usedPercent: 1, resetAt: '23:34' });
+      expect(parsed.weekly).toEqual({ usedPercent: 0, resetAt: '10月20日05:34' });
+      expect(parsed.updatedAt).toBe('1 分钟前');
+    });
+
+    it('reuses the usage tab and returns parsed data', async () => {
+      const usageText = [
+        '用量限额 PRO',
+        '当前用量',
+        '已使用 2%',
+        '重置时间：23:34',
+        '每周限额',
+        '重置时间：10月20日05:34',
+        '已使用 1%',
+      ].join('\n');
+      const page = createMockPage(usageText);
+      page.url = vi.fn(() => 'https://gemini.google.com/usage');
+      const result = await usageCommandHandler({}, createMockCtx(page) as never) as unknown as Record<string, unknown>;
+      expect(result.success).toBe(true);
+      const data = result.data as Record<string, any>;
+      expect(data.current.usedPercent).toBe(2);
+      expect(data.weekly.usedPercent).toBe(1);
+      expect(data.sourceUrl).toContain('/usage');
+      expect(page.goto).not.toHaveBeenCalled();
+    });
+  });
+
   describe('music command', () => {
     it('should have page scope', () => {
       const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'music');

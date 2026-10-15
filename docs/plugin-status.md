@@ -93,7 +93,7 @@
 | facebook | 5 | `browser` |
 | flickr | 1 | `browser` |
 | freepik | 1 | `browser` |
-| gemini | 4 | `page` |
+| gemini | 5 | `page` |
 | geo-analysis | 9 | `browser`, `global` |
 | gettyimages | 1 | `browser` |
 | github | 6 | `browser` |
