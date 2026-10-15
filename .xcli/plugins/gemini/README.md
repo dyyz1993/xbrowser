@@ -29,6 +29,7 @@ xbrowser --cdp 9221 gemini <command>
 | --- | --- |
 | `list` | 列出历史会话 |
 | `chat` | 发送消息 |
+| `image` | 快速生成图片并下载到本地 |
 | `music` | 生成音乐（打开制作音乐工具并发送提示） |
 
 ## 使用示例
@@ -38,6 +39,7 @@ xbrowser --cdp 9221 gemini list
 ```
 ```bash
 xbrowser --cdp 9221 gemini chat
+xbrowser --cdp 9221 gemini image --prompt "赛博朋克城市夜景" --ratio 16:9
 ```
 ```bash
 xbrowser --cdp 9221 gemini music
@@ -47,7 +49,8 @@ xbrowser --cdp 9221 gemini music
 
 1. 本插件需要登录，请通过 --cdp 连接已登录的浏览器
 2. 避免频繁请求，防止触发反爬
-3. 仅用于学习研究，不得用于商业用途
+3. 图片默认保存到 `~/.xbrowser/downloads/`，生成等待默认 180 秒
+4. 仅用于学习研究，不得用于商业用途
 
 ## 许可证
 

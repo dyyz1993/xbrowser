@@ -11,3 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `list` — 列出历史会话
 - `chat` — 发送消息
 - `music` — 生成音乐（打开制作音乐工具并发送提示）
+
+## [1.1.0] - 2026-10-15
+
+### Added
+- `image` — 切换 Gemini 图片模式、发送提示词、等待新图并下载到 `~/.xbrowser/downloads/`

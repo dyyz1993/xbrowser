@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/gemini/index.ts';
+import { imageCommandHandler, setImageHelpers } from '../../.xcli/plugins/gemini/image.ts';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -43,7 +44,7 @@ function createMockCtx(page?: ReturnType<typeof createMockPage>) {
   };
 }
 
-const ALL_COMMANDS = ['list', 'chat', 'music'];
+const ALL_COMMANDS = ['list', 'chat', 'image', 'music'];
 
 describe('gemini plugin', () => {
   beforeEach(() => {
@@ -65,7 +66,7 @@ describe('gemini plugin', () => {
   });
 
   it('should register 3 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(3);
+    expect(mockSite.command).toHaveBeenCalledTimes(4);
   });
 
   it('should register expected command names', () => {
@@ -143,6 +144,62 @@ describe('gemini plugin', () => {
       expect(result.success).toBe(true);
       const data = result.data as Record<string, unknown>;
       expect(data).toHaveProperty('conversationUrl');
+    });
+  });
+
+  // ─── image command ───
+  describe('image command', () => {
+    it('should have page scope and required login', () => {
+      const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'image');
+      const config = cmd![1] as Record<string, unknown>;
+      expect(config.scope).toBe('page');
+      expect(config.loginRequired).toBe('required');
+    });
+
+    it('should throw when no page', async () => {
+      await expect(imageCommandHandler({ prompt: 'cat', timeout: 15 }, createMockCtx(undefined) as never))
+        .rejects.toThrow('需要浏览器页面');
+    });
+
+    it('activates image mode, submits prompt, and downloads new images', async () => {
+      const page = createMockPage(['https://old.example/avatar.png']);
+      page.url = vi.fn(() => 'https://gemini.google.com/app');
+      setImageHelpers({
+        clickImageMode: vi.fn(() => Promise.resolve(true)),
+        typePrompt: vi.fn(() => Promise.resolve()),
+        submitPrompt: vi.fn(() => Promise.resolve()),
+        collectNewImages: vi.fn(() => Promise.resolve(['https://new.example/generated.png'])),
+        downloadImages: vi.fn(() => Promise.resolve(['/tmp/generated.png'])),
+      });
+
+      const result = await imageCommandHandler(
+        { prompt: 'watercolor cat', timeout: 15, ratio: '16:9' },
+        createMockCtx(page) as never,
+      ) as unknown as Record<string, unknown>;
+
+      expect(result.success).toBe(true);
+      expect(result.data).toMatchObject({
+        prompt: 'watercolor cat',
+        count: 1,
+        localPaths: ['/tmp/generated.png'],
+      });
+      expect(page.goto).not.toHaveBeenCalled();
+    });
+
+    it('returns fail when no generated image appears', async () => {
+      const page = createMockPage([]);
+      page.url = vi.fn(() => 'https://gemini.google.com/app');
+      setImageHelpers({
+        clickImageMode: vi.fn(() => Promise.resolve(false)),
+        typePrompt: vi.fn(() => Promise.resolve()),
+        submitPrompt: vi.fn(() => Promise.resolve()),
+        collectNewImages: vi.fn(() => Promise.resolve([])),
+        downloadImages: vi.fn(() => Promise.resolve([])),
+      });
+
+      const result = await imageCommandHandler({ prompt: 'cat', timeout: 15 }, createMockCtx(page) as never) as unknown as Record<string, unknown>;
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('未检测到生成图片');
     });
   });
 
