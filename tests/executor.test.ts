@@ -89,6 +89,11 @@ vi.mock('../src/plugin/loader.js', () => {
   };
 });
 
+const recordMistakeMock = vi.fn();
+vi.mock('../src/lib/mistake-ledger.js', () => ({
+  recordMistake: recordMistakeMock,
+}));
+
 describe('Executor', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -101,6 +106,20 @@ describe('Executor', () => {
     const result = await executeCommand('nonexistent.command', {});
     expect(result.success).toBe(false);
     expect(result.message).toContain('Unknown command');
+  });
+
+  it('records command failures in the mistake ledger', async () => {
+    const { resetForTesting } = await import('../src/browser.js');
+    resetForTesting();
+    recordMistakeMock.mockClear();
+    const { executeCommand } = await import('../src/executor.js');
+    const result = await executeCommand('nonexistent.command', {});
+    expect(result.success).toBe(false);
+    expect(recordMistakeMock).toHaveBeenCalledTimes(1);
+    expect(recordMistakeMock.mock.calls[0][0]).toMatchObject({
+      category: 'RETRYABLE: page-not-ready',
+      command: 'nonexistent.command',
+    });
   });
 
   it('should include available commands in unknown command error', async () => {

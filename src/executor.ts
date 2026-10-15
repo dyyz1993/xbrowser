@@ -22,6 +22,7 @@ import { getTipsManager } from './tips/index.js';
 import { resolveRefParams } from './utils/resolve-selector.js';
 import { loadHooks } from './hooks/loader.js';
 import { classifyFailure } from './fail-codes.js';
+import { recordMistake } from './lib/mistake-ledger.js';
 import {
   errorResult,
   guardCheck,
@@ -110,8 +111,15 @@ export async function executeCommand(
     if (knownPlugins.includes(commandName)) {
       hint = ` Plugin "${commandName}" may need to be installed. Try: xbrowser plugin install @xbrowser/${commandName}`;
     }
+    const message = `Unknown command: ${commandName}.${hint} Available: ${available.join(', ')}`;
+    recordMistake({
+      category: classifyFailure(message).code,
+      command: commandName,
+      message,
+      context: { sessionName, params },
+    });
     return errorResult(
-      `Unknown command: ${commandName}.${hint} Available: ${available.join(', ')}`
+      message
     );
   }
 
@@ -355,6 +363,14 @@ export async function executeCommand(
         ...refTips,
       ];
       const isSuccess = raw.success !== false;
+      if (!isSuccess) {
+        recordMistake({
+          category: classifyFailure(raw.message).code,
+          command: commandName,
+          message: raw.message ?? 'unknown command failure',
+          context: { sessionName, params },
+        });
+      }
       const mergedOrRaw = merged.length > 0 ? merged : (raw.tips || []);
       recordArchive(session?.id, sessionName, {
         step: 0,
@@ -389,6 +405,12 @@ export async function executeCommand(
     const end = Date.now();
     const duration = end - start;
     const errorMessage = errMsg(err);
+    recordMistake({
+      category: classifyFailure(errorMessage).code,
+      command: commandName,
+      message: errorMessage,
+      context: { sessionName, params },
+    });
 
     // Attempt recovery if enabled (XBROWSER_RECOVERY=true).
     // Guard against infinite recursion: only attempt recovery once per
