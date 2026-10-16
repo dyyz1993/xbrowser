@@ -45,7 +45,12 @@ function createMockCtx(page?: ReturnType<typeof createMockPage>) {
   };
 }
 
-const ALL_COMMANDS = ['list', 'chat', 'image', 'usage', 'music'];
+const ALL_COMMANDS = [
+  'list', 'chat', 'image', 'usage', 'music',
+  'task-open', 'task-close', 'task-list',
+  'generate-image', 'generate-video',
+  'history-list', 'history-download-video',
+];
 
 describe('gemini plugin', () => {
   beforeEach(() => {
@@ -66,8 +71,8 @@ describe('gemini plugin', () => {
     expect(mockXCLI.createSite).toHaveBeenCalledWith(expect.objectContaining({ requiresLogin: true }));
   });
 
-  it('should register 3 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(5);
+  it('should register all commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(ALL_COMMANDS.length);
   });
 
   it('should register expected command names', () => {

@@ -10,6 +10,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { imageCommandConfig, imageCommandHandler, setImageHelpers } from './image.js';
 import { usageCommandHandler, usageResultSchema } from './usage.js';
+import { registerBridgeCommands } from './bridge.js';
+import { registerGenerateCommands } from './generate.js';
+import { registerHistoryCommands } from './history.js';
 
 const GEMINI_URL = 'https://gemini.google.com';
 type Page = import('../types').Page;
@@ -288,6 +291,10 @@ export default function (xcli: XCLIAPI): void {
       }
     },
   });
+
+  registerBridgeCommands(site);
+  registerGenerateCommands(site);
+  registerHistoryCommands(site);
 
   site.login(async (ctx) => {
     const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
