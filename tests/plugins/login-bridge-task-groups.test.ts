@@ -42,9 +42,13 @@ type ChromeLike = {
       params: unknown,
       callback: (result?: unknown) => void,
     ) => void;
+    onDetach: { addListener: ReturnType<typeof vi.fn> };
   };
   tabs: {
     query: (query: { groupId?: number; active?: boolean; currentWindow?: boolean }) => Promise<Tab[]>;
+    onRemoved: { addListener: ReturnType<typeof vi.fn> };
+    onUpdated: { addListener: ReturnType<typeof vi.fn> };
+    onReplaced: { addListener: ReturnType<typeof vi.fn> };
     create: (options: { url: string; active: boolean }) => Promise<Tab>;
     group: (options: { tabIds: number | number[] }) => Promise<number>;
     remove: (tabId: number) => Promise<void>;
@@ -71,10 +75,16 @@ async function loadExecutors(chrome: ChromeLike): Promise<Record<string, Executo
   vi.stubGlobal('WebSocket', class FakeWebSocket {
     readyState = 1;
     close(): void {}
+    onopen: unknown = null;
+    onclose: unknown = null;
+    onerror: unknown = null;
+    onmessage: unknown = null;
   });
 
-  const load = new Function('globalThis', `return function () { ${source}; return executors; }`);
-  return load(globalThis)() as Promise<Record<string, Executor>>;
+  // Raw concatenation: background source contains template literals and
+  // interpolating it into another template corrupts its syntax.
+  const load = new Function('globalThis', source + '\n; return async () => executors;');
+  return await load(globalThis)() as Record<string, Executor>;
 }
 
 function createChrome() {
@@ -105,9 +115,13 @@ function createChrome() {
       sendCommand: (_target, method, _params, callback) => {
         callback(method === 'Page.addScriptToEvaluateOnNewDocument' ? { identifier: 'script' } : undefined);
       },
+      onDetach: { addListener: vi.fn() },
     },
     tabs: {
       query: async (query) => (query.groupId == null ? tabs : tabs.filter((tab) => tab.groupId === query.groupId)),
+      onRemoved: { addListener: vi.fn() },
+      onUpdated: { addListener: vi.fn() },
+      onReplaced: { addListener: vi.fn() },
       create: async (options) => {
         createdCount += 1;
         const tab: Tab = { id: nextTabId++, groupId: -1, url: options.url };

@@ -19,21 +19,56 @@ function createPage(evaluateResult: unknown) {
   };
 }
 
+function createBridgeMocks(fetchMock: ReturnType<typeof vi.fn>) {
+  global.fetch = fetchMock as unknown as typeof fetch;
+}
+
+function createBridgeFetch(evaluateValues: unknown[]): ReturnType<typeof vi.fn> {
+  return vi.fn(async (url: unknown, init?: { body?: string }) => {
+    if (String(url).includes('/status')) {
+      return { json: async () => ({ running: true }) };
+    }
+    const { cmd } = JSON.parse(init?.body ?? '{}') as { cmd: string };
+    const data = cmd === 'navigate'
+      ? { tabId: 885234300 }
+      : cmd === 'evaluate'
+        ? { value: evaluateValues.shift() }
+        : {};
+    return { json: async () => ({ ok: true, data }) };
+  });
+}
+
+function mockBridgeDown(): void {
+  global.fetch = vi.fn(async (url: unknown) => ({
+    json: async () => ({ running: String(url).includes('/status') ? false : undefined }),
+  })) as unknown as typeof fetch;
+}
+
+function createPageWithHealth(evaluateResult: unknown, health = { ready: 'complete', url: 'https://www.zhipin.com/x', usedMB: 80, limitMB: 4096 }) {
+  const page = createPage(health);
+  page.evaluate = vi.fn()
+    .mockResolvedValueOnce(health)
+    .mockResolvedValueOnce(evaluateResult);
+  return page;
+}
+
 
 describe('boss plugin', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     plugin(mockXCLI as never);
+    mockBridgeDown();
   });
 
   it('registers search and detail commands', () => {
     expect(mockXCLI.createSite).toHaveBeenCalledWith(expect.objectContaining({
       name: 'boss',
       url: 'https://www.zhipin.com',
-      requiresLogin: true,
+      // chat-reply 走 chrome-bridge，登录态由真实页面验证兜底。
+      requiresLogin: false,
     }));
     expect(mockSite.command.mock.calls.map((item: unknown[]) => item[0])).toEqual([
-      'search', 'detail', 'companies', 'recommend', 'chat', 'resume',
+      'search', 'detail', 'companies', 'recommend', 'chat', 'chat-reply', 'resume',
     ]);
     expect(mockSite.login).toHaveBeenCalledTimes(0);
   });
@@ -41,11 +76,11 @@ describe('boss plugin', () => {
   it('returns fail when page context is missing', async () => {
     const result = await handlerOf('search')({ query: 'front', limit: 5 }, {});
     expect(result.success).toBe(false);
-    expect(result.message).toBe('需要浏览器页面');
+    expect(result.message).toBe('需要浏览器页面或已连接的 chrome-bridge');
   });
 
   it('normalizes search results from job cards', async () => {
-    const page = createPage([{
+    const page = createPageWithHealth([{
       rank: 1,
       jobId: 'abc123',
       title: 'Frontend Engineer',
@@ -79,14 +114,14 @@ describe('boss plugin', () => {
   });
 
   it('fails with clear message when no jobs found', async () => {
-    const page = createPage([]);
+    const page = createPageWithHealth([]);
     const result = await handlerOf('search')({ query: 'none', limit: 5 }, { page });
     expect(result.success).toBe(false);
     expect(result.message).toBe('未找到匹配 "none" 的职位，请确认已登录');
   });
 
   it('opens job detail and reports title', async () => {
-    const page = createPage('Job Title');
+    const page = createPageWithHealth('Job Title');
     const result = await handlerOf('detail')({ jobId: 'abc123' }, { page });
     expect(page.goto).toHaveBeenCalledWith(
       'https://www.zhipin.com/job_detail/abc123.html',
@@ -100,7 +135,7 @@ describe('boss plugin', () => {
   });
 
   it('companies returns normalized list', async () => {
-    const page = createPage([{
+    const page = createPageWithHealth([{
       rank: 1,
       name: 'Acme Corp',
       industry: '不需要融资互联网',
@@ -123,7 +158,7 @@ describe('boss plugin', () => {
   });
 
   it('recommend returns viewers and profile', async () => {
-    const page = createPage({
+    const page = createPageWithHealth({
       viewers: [{ name: '林女士', company: '诗悦网络', title: 'AI全栈开发', salary: '18-28K·13薪' }],
       profile: { name: '许先生', experience: '10年经验本科', status: '离职-随时到岗', expectation: '前端开发工程师' },
     });
@@ -136,7 +171,7 @@ describe('boss plugin', () => {
   });
 
   it('chat returns message list', async () => {
-    const page = createPage([
+    const page = createPageWithHealth([
       { sender: '范丽萍', company: '德熙数字科技', role: 'HRBP', time: '昨天', preview: '[送达] 您好...' },
     ]);
     const result = await handlerOf('chat')({ limit: 5 }, { page });
@@ -146,8 +181,50 @@ describe('boss plugin', () => {
     ]);
   });
 
+  it('chat-reply navigates, clicks conversation, types and sends', async () => {
+    const fetchMock = createBridgeFetch([
+      { ready: 'complete', url: 'https://www.zhipin.com/web/geek/chat', usedMB: 80, limitMB: 4096 },
+      { x: 550, y: 206.5 },
+      true,
+      true,
+      true,
+    ]);
+    createBridgeMocks(fetchMock);
+    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好，感谢联系' }, {});
+    const bridgeCommands = fetchMock.mock.calls.map((call) => {
+      const init = call[1] as { body: string };
+      if (!init?.body) return 'status';
+      return (JSON.parse(init.body) as { cmd: string }).cmd;
+    });
+    expect(bridgeCommands.filter(cmd => cmd !== 'status')).toEqual(['navigate', 'evaluate', 'evaluate', 'trustedClick', 'evaluate', 'evaluate', 'evaluate', 'task-close']);
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({ sent: true, to: '德熙' });
+  });
+
+  it('chat-reply fails when real message is not present after sending', async () => {
+    createBridgeMocks(createBridgeFetch([
+      { ready: 'complete', url: 'https://www.zhipin.com/web/geek/chat', usedMB: 80, limitMB: 4096 },
+      { x: 550, y: 206.5 },
+      true,
+      true,
+      false,
+    ]));
+    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好' }, {});
+    expect(result.success).toBe(false);
+    expect(result.message).toBe('发送后未在会话中找到消息');
+  });
+
+  it('chat-reply refuses a BOSS renderer near V8 heap limit', async () => {
+    createBridgeMocks(createBridgeFetch([
+      { ready: 'complete', url: 'https://www.zhipin.com/web/geek/chat', usedMB: 3000, limitMB: 4096 },
+    ]));
+    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好' }, {});
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('BOSS 渲染进程内存过高');
+  });
+
   it('resume returns profile info', async () => {
-    const page = createPage({
+    const page = createPageWithHealth({
       name: '许先生',
       experience: '10年经验本科',
       phone: '137****1234',

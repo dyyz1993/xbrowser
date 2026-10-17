@@ -278,17 +278,20 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser chrome-bridge cdp --method Page.captureScreenshot', description: 'CDP 截图' },
     ],
     handler: async (params) => {
-      // CLI 层可能已把 --params 的 JSON 解析成对象；字符串才需要再 parse
+      // CLI 层可能已把 --params 的 JSON 解析成对象；扩展端要求 CDP 参数
+      // 保持嵌套 params，不能展开到 args 顶层。
       const paramsRaw: unknown = params.params;
       const parsedParams = typeof paramsRaw === 'string'
         ? (()=>{try{return JSON.parse(paramsRaw)}catch{return {}}})()
         : (paramsRaw ?? {});
-      const body = { cmd: 'cdp', args: {
+      const cdpParams = parsedParams as Record<string, unknown>;
+      const args: Record<string, unknown> = {
         method: params.method,
-        ...parsedParams,
-        ...(params.tabId ? { tabId: params.tabId } : {}),
-        ...(params.task ? { task: params.task } : {}),
-      }};
+        params: cdpParams,
+      };
+      if (params.tabId != null) args.tabId = params.tabId;
+      if (params.task != null) args.task = params.task;
+      const body = { cmd: 'cdp', args };
       const r = await fetch('http://127.0.0.1:9347/exec?client=0', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
