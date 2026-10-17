@@ -13,6 +13,7 @@ const jobResult = z.array(z.object({
   experience: z.string(),
   education: z.string(),
   tags: z.string(),
+  salaryNote: z.string().optional(),
   url: z.string(),
 })).describe('Job search results');
 
@@ -127,6 +128,7 @@ export default function (xcli: XCLIAPI): void {
         experience: String(item.experience ?? ''),
         education: String(item.education ?? ''),
         tags: String(item.tags ?? ''),
+        salaryNote: 'BOSS直聘列表页薪资为字体渲染反爬，真实薪资请通过 detail 命令查看',
         url: `https://www.zhipin.com${item.href ?? ''}`,
       })));
     },
@@ -222,19 +224,26 @@ export default function (xcli: XCLIAPI): void {
 
       const data = await page.evaluate(`
         (() => {
-          var text = document.body.innerText;
-          var viewers = [];
-          var viewerEls = [...document.querySelectorAll("[class*=friend], [class*=viewer]")].slice(0, 10);
-          viewerEls.forEach(function(e) {
+          var items = [...document.querySelectorAll(".item-recommend")].slice(0, 10);
+          var viewers = items.map(function(e, i) {
             var lines = e.innerText.replace(/\\n/g, "|").split("|").map(function(s) { return s.trim() }).filter(Boolean);
-            if (lines.length >= 4) {
-              viewers.push({ name: lines[0], company: lines[1], title: lines[2], salary: lines[3] });
-            }
-          });
-          var profileMatch = text.match(/([\\u4e00-\\u9fa5]{2,4})\\n(\\d+岁\\d+年经验\\S+)\\n([^\\n]+)\\n期望：([^\\n]+)/);
+            var link = e.closest("a") || e.querySelector("a");
+            return lines.length >= 4 ? {
+              name: lines[0], company: lines[1], title: lines[2], salary: lines[3],
+              href: link ? link.getAttribute("href") : ""
+            } : null;
+          }).filter(Boolean);
+          var text = document.body.innerText;
+          var profileEl = document.querySelector(".name");
+          var expMatch = text.match(/(\\d+年经验\\S+-随时到岗|\\d+年经验\\S+在职-\\S+)/);
           return {
             viewers: viewers,
-            profile: profileMatch ? { name: profileMatch[1], experience: profileMatch[2], status: profileMatch[3], expectation: profileMatch[4] } : null,
+            profile: profileEl ? {
+              name: profileEl.textContent.trim(),
+              experience: expMatch ? expMatch[1] : "",
+              status: "",
+              expectation: "",
+            } : null,
           };
         })()
       `) as { viewers: Array<Record<string, unknown>>; profile: Record<string, unknown> | null };
@@ -329,19 +338,20 @@ export default function (xcli: XCLIAPI): void {
 
       const data = await page.evaluate(`
         (() => {
-          var text = document.body.innerText;
-          var nameMatch = text.match(/([\\u4e00-\\u9fa5]{2,4})\\n(\\d+年经验\\S+)/);
-          var phoneMatch = text.match(/(1[3-9]\\d{9}|\\d{3}\\*{5}\\d{4})/);
-          var emailMatch = text.match(/[\\w.+-]+@[\\w-]+\\.[\\w.]+/);
-          var advantageMatch = text.match(/个人优势\\n([\\s\\S]{10,500}?)(?=\\n期望职位|\\n工作经历|\\n项目经历)/);
-          var statusMatch = text.match(/(离职-\\S+|在职-\\S+)/);
+          var nameEl = document.querySelector(".name");
+          var ps = [...document.querySelectorAll("p")].map(function(p) { return p.textContent.trim() });
+          var exp = ps.find(function(t) { return /\\d+年经验/.test(t) }) || "";
+          var contact = ps.find(function(t) { return /\\d{3}\\*/.test(t) }) || "";
+          var phoneMatch = contact.match(/(\\d{3}\\*{4}\\d{4})/);
+          var emailMatch = contact.match(/[\\w.+-]+@[\\w-]+\\.[\\w.]+/);
+          var statusMatch = exp.match(/(离职-\\S+|在职-\\S+)/);
           return {
-            name: nameMatch ? nameMatch[1] : "",
-            experience: nameMatch ? nameMatch[2] : "",
+            name: nameEl ? nameEl.textContent.trim() : "",
+            experience: exp.replace(/离职-\\S+|在职-\\S+/, "").trim(),
             phone: phoneMatch ? phoneMatch[1] : "",
             email: emailMatch ? emailMatch[0] : "",
-            advantage: advantageMatch ? advantageMatch[1].trim() : "",
             status: statusMatch ? statusMatch[1] : "",
+            advantage: "",
           };
         })()
       `) as Record<string, unknown>;
