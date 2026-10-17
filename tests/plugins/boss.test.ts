@@ -73,6 +73,7 @@ describe('boss plugin', () => {
       experience: '3-5 years',
       education: 'Bachelor',
       tags: 'React, TypeScript',
+      salaryNote: 'BOSS直聘列表页薪资为字体渲染反爬，真实薪资请通过 detail 命令查看',
       url: 'https://www.zhipin.com/job_detail/abc123.html',
     }]);
   });

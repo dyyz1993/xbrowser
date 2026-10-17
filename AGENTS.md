@@ -1147,6 +1147,34 @@ xbrowser marketplace publish <plugin-name> --registry https://your-registry.com
 
 完整内容见 `.opencode/ui-automator/troubleshooting/`。
 
+### CDP vs Computer Use 分工（必须遵守！）
+
+**所有插件网页操作必须通过 chrome-bridge 扩展暴露的 CDP/WS 通道完成，不允许通过 Computer Use 直接操控网页。**
+**禁止用 `--remote-debugging-port=9222` 启动 Chrome，禁止让用户重启 Chrome。**
+
+| 操作 | 用什么 | 示例 |
+|------|--------|------|
+| 安装/加载浏览器扩展 | Computer Use | 在 Chrome 扩展页手动加载 login-bridge 插件 |
+| 刷新/重新加载扩展 | Computer Use | `chrome://extensions` 页面点击"重新加载" |
+| 插件网页自动化（抓取/点击/填表） | xbrowser + chrome-bridge | `xbrowser chrome-bridge serve` → 插件通过 WS 通道控制用户浏览器 |
+| 需要登录态的插件命令 | xbrowser + chrome-bridge | 插件经 WS 在用户浏览器内执行，复用已有登录态 |
+
+**为什么：**
+1. 用户浏览器装 login-bridge/chrome-bridge 扩展（含 WS 客户端，连 `ws://127.0.0.1:9346`）
+2. xbrowser 启动 WS server，插件命令经通道下发在用户浏览器内执行
+3. 无需 `--remote-debugging-port`，不要求用户重启 Chrome，登录态天然复用
+4. Computer Use 不经过 xbrowser，无法执行插件 handler，还会绕过 CDP 风控检测
+5. 混用会导致两边看到不同的浏览器实例，session 状态不同步
+
+**Computer Use 唯一适用场景：** 当 chrome-bridge/login-bridge 扩展未安装/未启用/需要刷新时，
+用 Computer Use 去操作 `chrome://extensions` 页面完成加载或刷新。
+操作完之后仍然回退到 chrome-bridge WS 通道执行插件命令。
+
+**启动流程：**
+1. `xbrowser chrome-bridge serve` → 启动 WS 9346 + HTTP 9347
+2. 用户 Chrome 里的扩展自动连接（无需重启 Chrome）
+3. 插件命令通过通道下发执行
+
 ### CDP Firewall 检测合成事件（重要！2026-06 豆包实战）
 
 生产站点（豆包、TikTok、抖音等）会监听 `isTrusted` 属性，**JS 触发的合成事件**（`el.click()`、`el.dispatchEvent`）会被识别并可能导致：
@@ -1184,7 +1212,7 @@ await page.mouse.click(rect.x, rect.y);
 await page.mouse.click(fileInputRect.x, fileInputRect.y);
 ```
 
-**正确**：用 `page.setInputFiles`（CDP 模式已实现，内部用 DataTransfer + dispatch change 事件，React 监听 onChange 处理）。
+**正确**：用 `page.setInputFiles`（chrome-bridge 模式已实现，内部用 DataTransfer + dispatch change 事件，React 监听 onChange 处理）。
 
 ```typescript
 const fileBuffer = fs.readFileSync(absPath);
