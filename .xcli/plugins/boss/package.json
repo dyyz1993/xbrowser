@@ -17,6 +17,6 @@
     "description": "Boss直聘 - 职位搜索、公司信息",
     "site": "https://www.zhipin.com",
     "requiresLogin": true,
-    "commands": []
+    "commands": ["search", "detail"]
   }
 }

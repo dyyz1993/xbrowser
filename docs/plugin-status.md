@@ -8,18 +8,17 @@
 | 指标 | 值 |
 |------|-----|
 | 插件总数 | 123 |
-| ✅ 已完成（有实现+有测试） | 120 |
+| ✅ 已完成（有实现+有测试） | 121 |
 | 🟡 有实现无测试 | 0 |
-| 🔴 scaffold 待实现 | 3 |
-| **当前债务** | **3** |
+| 🔴 scaffold 待实现 | 2 |
+| **当前债务** | **2** |
 
 > 债务 = 🟡无测试 + 🔴scaffold + ⛔加载失败。目标：债务 → 0。
 
-## 🔴 Scaffold 待实现（3）
+## 🔴 Scaffold 待实现（2）
 
 | 插件 | 行数 | URL |
 |------|------|-----|
-| boss | 14 | https://www.zhipin.com |
 | confluence | 14 | https://xxx.atlassian.net/wiki |
 | jira | 14 | https://xxx.atlassian.net |
 
@@ -28,7 +27,7 @@
 | 插件 | 行数 | 命令数 | scope |
 |------|------|--------|-------|
 
-## ✅ 已完成（120）
+## ✅ 已完成（121）
 
 | 插件 | 命令数 | scope |
 |------|--------|-------|
@@ -51,6 +50,7 @@
 | blogger | 4 | `browser`, `page` |
 | bloomberg | 1 | `browser` |
 | booking | 1 | `browser` |
+| boss | 2 | `page` |
 | chatgpt | 5 | `browser`, `page` |
 | chrome-bridge | 9 | `project` |
 | claude | 5 | `browser`, `page` |
