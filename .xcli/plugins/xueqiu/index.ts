@@ -72,7 +72,7 @@ export default function (xcli: XCLIAPI): void {
       limit: z.coerce.number().optional().default(20).describe('返回数量')
     }),
     handler: async (p, _ctx) => {
-      const url = 'https://xueqiu.com/stock/v4/stock/rank.json?type=1&_=1';
+      const url = 'https://stock.xueqiu.com/v5/stock/realtime/quotec.json?symbol=SH000001,SZ399001,SZ399006,HKHSI,US_DJI';
             const data = await fetchJson(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Cookie': 'xq_a_token=guest', 'Referer': 'https://xueqiu.com/' } }) as JsonObject;
             const list = (data?.data as Record<string, unknown>[] | undefined) ?? [];
             interface QuoteRow { code?: string; symbol?: string; name?: string; current?: number; price?: number; percent?: number; changePercent?: number; turnoverRate?: number }
