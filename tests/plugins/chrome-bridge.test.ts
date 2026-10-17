@@ -144,7 +144,7 @@ describe('chrome-bridge plugin', () => {
     expect(body.args.expression).toBe('1+1');
   });
 
-  it('cdp passes object params through without double-JSON.parse drop', async () => {
+  it('cdp nests parsed params for extension cdp executor', async () => {
     const fetchMock = vi.fn((_url: unknown, _init?: unknown): Promise<{ json(): Promise<unknown> }> => Promise.resolve({ json: () => Promise.resolve({ ok: true, data: {} }) }));
     global.fetch = fetchMock as unknown as typeof fetch;
     const { site, xcli } = makeMock();
@@ -152,8 +152,24 @@ describe('chrome-bridge plugin', () => {
     const handler = getCmd(site, 'cdp');
     await handler({ method: 'Runtime.evaluate', params: { expression: '1+1' } }, {});
     const init = fetchMock.mock.calls[0][1] as { body: string };
-    const body = JSON.parse(init.body) as { args: { expression?: string } };
-    expect(body.args.expression).toBe('1+1');
+    const body = JSON.parse(init.body) as { args: { method?: string; params?: { expression?: string }; tabId?: number } };
+    expect(body.args.method).toBe('Runtime.evaluate');
+    expect(body.args.params?.expression).toBe('1+1');
+  });
+
+  it('cdp parses string params, nests them, and routes explicit tab id', async () => {
+    const fetchMock = vi.fn((_url: unknown, _init?: unknown): Promise<{ json(): Promise<unknown> }> => Promise.resolve({ json: () => Promise.resolve({ ok: true, data: {} }) }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { site, xcli } = makeMock();
+    chromeBridge(xcli as never);
+    const handler = getCmd(site, 'cdp');
+    await handler({ method: 'Runtime.evaluate', params: '{"expression":"document.title"}', tabId: 885234300 }, {});
+    const init = fetchMock.mock.calls[0][1] as { body: string };
+    const body = JSON.parse(init.body) as {
+      args: { method?: string; params?: { expression?: string }; tabId?: number };
+    };
+    expect(body.args.params?.expression).toBe('document.title');
+    expect(body.args.tabId).toBe(885234300);
   });
 
   it('exec still accepts string args (legacy direct-HTTP style)', async () => {

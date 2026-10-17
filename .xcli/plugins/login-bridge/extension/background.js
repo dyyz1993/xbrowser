@@ -435,12 +435,20 @@ const executors = {
   cdp: async ({ tabId, method, params }) => {
     const target = tabId ?? await getTaskTabId();
     return new Promise((resolve) => {
-      chrome.debugger.attach({ tabId: target }, '1.3', () => {
-        // 已 attach 也继续（幂等）
-        chrome.debugger.sendCommand({ tabId: target }, method, params || {}, (result) => {
+      const dbg = { tabId: target };
+      const dispatch = () => {
+        chrome.debugger.sendCommand(dbg, method, params || {}, (result) => {
           const err = chrome.runtime.lastError;
           if (err) resolve({ ok: false, error: err.message });
           else resolve({ ok: true, data: result });
+        });
+      };
+      // detach-first: 残留 attach 会让新 attach 静默失败（S120 同源模式）
+      chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
+        chrome.debugger.attach(dbg, '1.3', () => {
+          const err = chrome.runtime.lastError;
+          if (err) { resolve({ ok: false, error: err.message }); return; }
+          dispatch();
         });
       });
     });
@@ -675,16 +683,81 @@ const executors = {
           (r) => finish(r));
         return;
       }
-      chrome.debugger.attach(dbg, '1.3', () => {
-        const err = chrome.runtime.lastError;
-        if (err) { resolve({ ok: false, error: err.message }); return; }
-        chrome.debugger.sendCommand(dbg, 'Runtime.evaluate',
-          { expression, returnByValue: true, awaitPromise: true },
-          (r) => finish(r));
+      // detach-first: 残留 attach 会让新 attach 静默失败（S120 同源模式）
+      chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
+        chrome.debugger.attach(dbg, '1.3', () => {
+          const err = chrome.runtime.lastError;
+          if (err) { resolve({ ok: false, error: err.message }); return; }
+          chrome.debugger.sendCommand(dbg, 'Runtime.evaluate',
+            { expression, returnByValue: true, awaitPromise: true },
+            (r) => finish(r));
+        });
       });
     });
   },
 
+  // 可靠的 trusted 鼠标点击+键盘输入+发送序列（chat-reply 等需要 isTrusted=true 的场景）
+  'trusted-type': async ({ text, tabId }) => {
+    const target = tabId ?? await getTaskTabId();
+    const persistent = stealthTabs.has(target);
+    return new Promise((resolve) => {
+      const dbg = { tabId: target };
+      const typeText = () => {
+        // 逐字符键盘流，保证 isTrusted=true
+        const chars = [...text];
+        let i = 0;
+        const typeNext = () => {
+          if (i >= chars.length) {
+            if (!persistent) chrome.debugger.detach(dbg).catch(() => {});
+            resolve({ ok: true, typed: chars.length });
+            return;
+          }
+          const c = chars[i];
+          i++;
+          chrome.debugger.sendCommand(dbg, 'Input.dispatchKeyEvent',
+            { type: 'keyDown', text: c }, () => {
+              chrome.debugger.sendCommand(dbg, 'Input.dispatchKeyEvent',
+                { type: 'keyUp', text: c }, () => { setTimeout(typeNext, 30); });
+            });
+        };
+        typeNext();
+      };
+      if (persistent) { typeText(); return; }
+      chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
+        chrome.debugger.attach(dbg, '1.3', () => {
+          const err = chrome.runtime.lastError;
+          if (err) { resolve({ ok: false, error: err.message }); return; }
+          typeText();
+        });
+      });
+    });
+  },
+
+  'trusted-enter': async ({ tabId }) => {
+    const target = tabId ?? await getTaskTabId();
+    const persistent = stealthTabs.has(target);
+    return new Promise((resolve) => {
+      const dbg = { tabId: target };
+      const pressEnter = () => {
+        chrome.debugger.sendCommand(dbg, 'Input.dispatchKeyEvent',
+          { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 }, () => {
+            chrome.debugger.sendCommand(dbg, 'Input.dispatchKeyEvent',
+              { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 }, () => {
+                if (!persistent) chrome.debugger.detach(dbg).catch(() => {});
+                resolve({ ok: true, sent: 'Enter' });
+              });
+          });
+      };
+      if (persistent) { pressEnter(); return; }
+      chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
+        chrome.debugger.attach(dbg, '1.3', () => {
+          const err = chrome.runtime.lastError;
+          if (err) { resolve({ ok: false, error: err.message }); return; }
+          pressEnter();
+        });
+      });
+    });
+  },
   click: async ({ selector, tabId }) => {
     const target = tabId ?? await getTaskTabId();
     const [{ result, error }] = await chrome.scripting.executeScript({

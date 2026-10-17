@@ -19,6 +19,10 @@ function createPage(evaluateResult: unknown) {
   };
 }
 
+function createBridgeMocks(fetchMock: ReturnType<typeof vi.fn>) {
+  global.fetch = fetchMock as unknown as typeof fetch;
+}
+
 
 describe('boss plugin', () => {
   beforeEach(() => {
@@ -33,7 +37,7 @@ describe('boss plugin', () => {
       requiresLogin: true,
     }));
     expect(mockSite.command.mock.calls.map((item: unknown[]) => item[0])).toEqual([
-      'search', 'detail', 'companies', 'recommend', 'chat', 'resume',
+      'search', 'detail', 'companies', 'recommend', 'chat', 'chat-reply', 'resume',
     ]);
     expect(mockSite.login).toHaveBeenCalledTimes(0);
   });
@@ -144,6 +148,45 @@ describe('boss plugin', () => {
     expect(result.data).toEqual([
       { sender: '范丽萍', company: '德熙数字科技', role: 'HRBP', time: '昨天', preview: '[送达] 您好...' },
     ]);
+  });
+
+  it('chat-reply navigates, clicks conversation, types and sends', async () => {
+    const page = createPage(null);
+    page.evaluate = vi.fn()
+      .mockResolvedValueOnce({ x: 550, y: 206.5 })
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce({ x: 1491, y: 919 })
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true);
+    const fetchMock = vi.fn((_url: unknown, init?: { body?: string }) => {
+      const body = JSON.parse(init?.body ?? '{}') as { cmd: string };
+      return Promise.resolve({
+        json: async () => ({ ok: true, data: { cmd: body.cmd } }),
+      });
+    });
+    createBridgeMocks(fetchMock);
+    const ctx = { page };
+    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好，感谢联系' }, ctx);
+    const bridgeCommands = fetchMock.mock.calls.map((call) => {
+      const init = call[1] as { body: string };
+      return (JSON.parse(init.body) as { cmd: string }).cmd;
+    });
+    expect(bridgeCommands).toEqual(['trustedClick']);
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({ sent: true, to: '德熙' });
+  });
+
+  it('chat-reply fails when real message is not present after sending', async () => {
+    const page = createPage(null);
+    page.evaluate = vi.fn()
+      .mockResolvedValueOnce({ x: 550, y: 206.5 })
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    createBridgeMocks(vi.fn().mockResolvedValue({ json: async () => ({ ok: true, data: {} }) }));
+    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好' }, { page });
+    expect(result.success).toBe(false);
+    expect(result.message).toBe('发送后未在会话中找到消息');
   });
 
   it('resume returns profile info', async () => {

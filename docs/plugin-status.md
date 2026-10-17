@@ -8,26 +8,24 @@
 | 指标 | 值 |
 |------|-----|
 | 插件总数 | 123 |
-| ✅ 已完成（有实现+有测试） | 121 |
+| ✅ 已完成（有实现+有测试） | 123 |
 | 🟡 有实现无测试 | 0 |
-| 🔴 scaffold 待实现 | 2 |
-| **当前债务** | **2** |
+| 🔴 scaffold 待实现 | 0 |
+| **当前债务** | **0** |
 
 > 债务 = 🟡无测试 + 🔴scaffold + ⛔加载失败。目标：债务 → 0。
 
-## 🔴 Scaffold 待实现（2）
+## 🔴 Scaffold 待实现（0）
 
 | 插件 | 行数 | URL |
 |------|------|-----|
-| confluence | 14 | https://xxx.atlassian.net/wiki |
-| jira | 14 | https://xxx.atlassian.net |
 
 ## 🟡 有实现无测试（0） — P1 优先
 
 | 插件 | 行数 | 命令数 | scope |
 |------|------|--------|-------|
 
-## ✅ 已完成（121）
+## ✅ 已完成（123）
 
 | 插件 | 命令数 | scope |
 |------|--------|-------|
@@ -50,12 +48,13 @@
 | blogger | 4 | `browser`, `page` |
 | bloomberg | 1 | `browser` |
 | booking | 1 | `browser` |
-| boss | 6 | `page` |
+| boss | 7 | `page`, `project` |
 | chatgpt | 5 | `browser`, `page` |
 | chrome-bridge | 9 | `project` |
 | claude | 5 | `browser`, `page` |
 | cmf-seats | 3 | `any`, `page` |
 | cnblogs | 3 | `browser`, `page` |
+| confluence | 2 | `project` |
 | content | 3 | `page`, `project` |
 | crates | 2 | `project` |
 | csdn | 5 | `browser`, `page` |
@@ -94,6 +93,7 @@
 | imgur | 1 | `browser` |
 | instagram | 1 | `browser` |
 | jd | 1 | `browser` |
+| jira | 2 | `project` |
 | juejin | 6 | `browser`, `page` |
 | kimi | 1 | `browser` |
 | login-bridge | 5 | `page`, `project` |

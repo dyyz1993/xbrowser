@@ -60,6 +60,22 @@ const resumeResult = z.object({
   status: z.string(),
 });
 
+const chatReplyResult = z.object({
+  sent: z.boolean(),
+  to: z.string().optional(),
+});
+
+type BridgeResponse = { ok?: boolean; data?: Record<string, unknown>; error?: string };
+
+async function bridgeExec(cmd: string, args: Record<string, unknown>): Promise<BridgeResponse> {
+  return await fetch('http://127.0.0.1:9347/exec?client=0', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cmd, args }),
+  }).then(response => response.json() as Promise<BridgeResponse>)
+    .catch(() => ({ ok: false, error: 'bridge unavailable' }));
+}
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'boss',
@@ -321,6 +337,77 @@ export default function (xcli: XCLIAPI): void {
         time: String(item.time ?? ''),
         preview: String(item.preview ?? ''),
       })));
+    },
+  });
+
+  site.command('chat-reply', {
+    description: '回复指定对话（通过 chrome-bridge CDP 真实键盘事件发送）',
+    scope: 'project',
+    loginRequired: 'required',
+    result: chatReplyResult,
+    parameters: z.object({
+      keyword: z.string().describe('对话关键词，如 "德熙"'),
+      message: z.string().describe('要发送的回复内容'),
+    }),
+    handler: async (params, ctx) => {
+      const page = ctx.page as Page | undefined;
+      if (!page) return fail('需要浏览器页面（建议通过 chrome-bridge 通道使用）');
+
+      await page.goto('https://www.zhipin.com/web/geek/chat', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await page.waitForTimeout(3000);
+
+      // BOSS 的列表项靠 trusted mousedown 打开会话；el.click() 只会移除
+      // no-data 占位，不会真正建立会话。坐标必须用页面视口 CSS 像素。
+      const target = await page.evaluate(`
+        (() => {
+          const el = [...document.querySelectorAll(".friend-content")]
+            .find(e => e.innerText.includes(${JSON.stringify(params.keyword)}));
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        })()
+      `) as { x?: number; y?: number } | null;
+      if (!target?.x || !target?.y) return fail(`未找到包含 "${params.keyword}" 的对话`);
+      const click = await bridgeExec('trustedClick', { x: target.x, y: target.y });
+      if (click.ok !== true) return fail(click.error || '打开会话失败');
+      await page.waitForTimeout(2000);
+
+      // 编辑器与发送按钮都接受组件层 click；trustedClick 的独立 press/release
+      // 在 BOSS Vue 组件上不稳定。发送后必须读会话消息做业务级验收。
+      const typed = await page.evaluate(`
+        (() => {
+          const input = document.querySelector(".chat-input");
+          if (!input) return false;
+          input.textContent = ${JSON.stringify(params.message)};
+          input.dispatchEvent(new InputEvent("input", { bubbles: true }));
+          return input.textContent === ${JSON.stringify(params.message)};
+        })()
+      `) as boolean;
+      if (!typed) return fail('未找到聊天输入框，请确认已打开对话');
+      await page.waitForTimeout(500);
+
+      const clicked = await page.evaluate(`
+        (() => {
+          const el = document.querySelector(".btn-send");
+          if (!el) return false;
+          el.click();
+          return true;
+        })()
+      `) as boolean;
+      if (!clicked) return fail('未找到发送按钮');
+      await page.waitForTimeout(1000);
+
+      const verify = await page.evaluate(`
+        (() => {
+          const text = ${JSON.stringify(params.message)};
+          return [...document.querySelectorAll(".message-item")].some(e => e.innerText.includes(text));
+        })()
+      `) as boolean;
+      if (!verify) return fail('发送后未在会话中找到消息');
+
+      return ok({ sent: true, to: params.keyword, message: params.message.slice(0, 50) }, [
+        `已回复 "${params.keyword}"`,
+      ]);
     },
   });
 
