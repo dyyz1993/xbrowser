@@ -371,8 +371,12 @@ export default function (xcli: XCLIAPI): void {
       const useBridge = await bridgeRunning();
       if (!page && !useBridge) return fail('需要浏览器页面或已连接的 chrome-bridge');
       const CHAT_URL = 'https://www.zhipin.com/web/geek/chat';
+      // Use a dedicated short-lived group for every reply. BOSS chat has
+      // demonstrated V8 OOM after long-lived tabs (Chrome error code 5 and
+      // crash stacks in its chat bundle); never reuse that renderer.
+      const taskName = `boss-reply-${Date.now()}`;
       const navigated = useBridge
-        ? await bridgeExec('navigate', { url: CHAT_URL, task: 'boss-chat-reply' })
+        ? await bridgeExec('navigate', { url: CHAT_URL, task: taskName })
         : { ok: true as const, data: {} };
       if (navigated.ok !== true) return fail(navigated.error || 'chrome-bridge 未启动或导航失败');
       const tabId = bridgeData(navigated).tabId;
@@ -382,6 +386,34 @@ export default function (xcli: XCLIAPI): void {
       const evaluate = async (expression: string): Promise<BridgeResponse> => useBridge
         ? await bridgeExec('evaluate', { tabId, expression })
         : { ok: true, data: { value: await page!.evaluate(expression) } };
+
+      // Fresh tab + explicit heap check. This is the OOM tripwire: the BOSS
+      // renderer can already be near its heap cap after a long-lived session.
+      const healthResponse = await evaluate(`
+        (() => {
+          const memory = performance.memory;
+          return {
+            ready: document.readyState,
+            url: location.href,
+            usedMB: memory ? Math.round(memory.usedJSHeapSize / 1048576) : null,
+            limitMB: memory ? Math.round(memory.jsHeapSizeLimit / 1048576) : null,
+          };
+        })()
+      `);
+      if (healthResponse.ok !== true) return fail(healthResponse.error || '页面健康检查失败');
+      const health = bridgeData(healthResponse).value as {
+        ready?: string; url?: string; usedMB?: number | null; limitMB?: number | null;
+      } | null;
+      if (health?.ready !== 'complete' || !health.url?.includes('zhipin.com')) {
+        return fail('BOSS 页面未就绪');
+      }
+      if (typeof health.usedMB === 'number' && typeof health.limitMB === 'number') {
+        const usedRatio = health.usedMB / health.limitMB;
+        if (usedRatio > 0.65) {
+          await bridgeExec('task-close', { name: taskName });
+          return fail(`BOSS 渲染进程内存过高（${health.usedMB}/${health.limitMB} MB），已拒绝继续写入`);
+        }
+      }
 
       // BOSS 的列表项靠 trusted mousedown 打开会话；el.click() 只会移除
       // no-data 占位，不会真正建立会话。坐标必须用页面视口 CSS 像素。
@@ -440,6 +472,9 @@ export default function (xcli: XCLIAPI): void {
       `);
       if (verifyResponse.ok !== true) return fail(verifyResponse.error || '读取发送结果失败');
       const verify = bridgeData(verifyResponse).value === true;
+      // Close the dedicated tab immediately after business verification. This
+      // prevents the renderer from accumulating history/messages across jobs.
+      if (useBridge) await bridgeExec('task-close', { name: taskName });
       if (!verify) return fail('发送后未在会话中找到消息');
 
       return ok({ sent: true, to: params.keyword, message: params.message.slice(0, 50) }, [

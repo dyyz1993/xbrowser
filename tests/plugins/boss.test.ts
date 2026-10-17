@@ -168,6 +168,7 @@ describe('boss plugin', () => {
 
   it('chat-reply navigates, clicks conversation, types and sends', async () => {
     const fetchMock = createBridgeFetch([
+      { ready: 'complete', url: 'https://www.zhipin.com/web/geek/chat', usedMB: 80, limitMB: 4096 },
       { x: 550, y: 206.5 },
       true,
       true,
@@ -180,13 +181,14 @@ describe('boss plugin', () => {
       if (!init?.body) return 'status';
       return (JSON.parse(init.body) as { cmd: string }).cmd;
     });
-    expect(bridgeCommands.filter(cmd => cmd !== 'status')).toEqual(['navigate', 'evaluate', 'trustedClick', 'evaluate', 'evaluate', 'evaluate']);
+    expect(bridgeCommands.filter(cmd => cmd !== 'status')).toEqual(['navigate', 'evaluate', 'evaluate', 'trustedClick', 'evaluate', 'evaluate', 'evaluate', 'task-close']);
     expect(result.success).toBe(true);
     expect(result.data).toMatchObject({ sent: true, to: '德熙' });
   });
 
   it('chat-reply fails when real message is not present after sending', async () => {
     createBridgeMocks(createBridgeFetch([
+      { ready: 'complete', url: 'https://www.zhipin.com/web/geek/chat', usedMB: 80, limitMB: 4096 },
       { x: 550, y: 206.5 },
       true,
       true,
@@ -195,6 +197,15 @@ describe('boss plugin', () => {
     const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好' }, {});
     expect(result.success).toBe(false);
     expect(result.message).toBe('发送后未在会话中找到消息');
+  });
+
+  it('chat-reply refuses a BOSS renderer near V8 heap limit', async () => {
+    createBridgeMocks(createBridgeFetch([
+      { ready: 'complete', url: 'https://www.zhipin.com/web/geek/chat', usedMB: 3000, limitMB: 4096 },
+    ]));
+    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好' }, {});
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('BOSS 渲染进程内存过高');
   });
 
   it('resume returns profile info', async () => {
