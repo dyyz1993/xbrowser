@@ -8,10 +8,10 @@
 | 指标 | 值 |
 |------|-----|
 | 插件总数 | 131 |
-| ✅ 已完成（有实现+有测试） | 111 |
-| 🟡 有实现无测试 | 9 |
+| ✅ 已完成（有实现+有测试） | 116 |
+| 🟡 有实现无测试 | 4 |
 | 🔴 scaffold 待实现 | 11 |
-| **当前债务** | **20** |
+| **当前债务** | **15** |
 
 > 债务 = 🟡无测试 + 🔴scaffold + ⛔加载失败。目标：债务 → 0。
 
@@ -31,7 +31,7 @@
 | tiktok | 14 | https://www.tiktok.com |
 | upwork | 14 | https://www.upwork.com |
 
-## 🟡 有实现无测试（9） — P1 优先
+## 🟡 有实现无测试（4） — P1 优先
 
 | 插件 | 行数 | 命令数 | scope |
 |------|------|--------|-------|
@@ -39,13 +39,8 @@
 | login-bridge | 421 | 5 | `page`, `project` |
 | oschina | 132 | 3 | `browser`, `page` |
 | producthunt | 286 | 4 | `browser`, `page` |
-| pubmed | 60 | 1 | `project` |
-| stackoverflow | 60 | 1 | `project` |
-| weread | 54 | 1 | `project` |
-| wikidata | 88 | 2 | `project` |
-| xueqiu | 90 | 2 | `project` |
 
-## ✅ 已完成（111）
+## ✅ 已完成（116）
 
 | 插件 | 命令数 | scope |
 |------|--------|-------|
@@ -123,6 +118,7 @@
 | pinterest | 1 | `browser` |
 | pixabay | 1 | `browser` |
 | pixiv | 2 | `browser` |
+| pubmed | 1 | `project` |
 | pypi | 3 | `project` |
 | qianwen | 5 | `browser`, `page` |
 | quanjing | 1 | `browser` |
@@ -137,6 +133,7 @@
 | shutterstock | 1 | `browser` |
 | smzdm | 1 | `page` |
 | spotify | 1 | `browser` |
+| stackoverflow | 1 | `project` |
 | stats | 6 | `browser`, `cli` |
 | steam | 1 | `browser` |
 | substack | 1 | `browser` |
@@ -153,9 +150,12 @@
 | v2ex | 2 | `browser` |
 | wanx | 3 | `browser` |
 | weibo | 3 | `browser` |
+| weread | 1 | `project` |
+| wikidata | 2 | `project` |
 | wikipedia | 5 | `project` |
 | wordpress | 5 | `browser`, `page` |
 | xiaohongshu | 8 | `browser` |
+| xueqiu | 2 | `project` |
 | yahoo-finance | 1 | `project` |
 | youtube | 1 | `browser` |
 | yuanbao | 6 | `browser`, `page` |
