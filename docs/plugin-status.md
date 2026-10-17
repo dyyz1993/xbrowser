@@ -8,10 +8,10 @@
 | 指标 | 值 |
 |------|-----|
 | 插件总数 | 131 |
-| ✅ 已完成（有实现+有测试） | 116 |
-| 🟡 有实现无测试 | 4 |
+| ✅ 已完成（有实现+有测试） | 120 |
+| 🟡 有实现无测试 | 0 |
 | 🔴 scaffold 待实现 | 11 |
-| **当前债务** | **15** |
+| **当前债务** | **11** |
 
 > 债务 = 🟡无测试 + 🔴scaffold + ⛔加载失败。目标：债务 → 0。
 
@@ -31,16 +31,12 @@
 | tiktok | 14 | https://www.tiktok.com |
 | upwork | 14 | https://www.upwork.com |
 
-## 🟡 有实现无测试（4） — P1 优先
+## 🟡 有实现无测试（0） — P1 优先
 
 | 插件 | 行数 | 命令数 | scope |
 |------|------|--------|-------|
-| goofish | 333 | 3 | `page` |
-| login-bridge | 421 | 5 | `page`, `project` |
-| oschina | 132 | 3 | `browser`, `page` |
-| producthunt | 286 | 4 | `browser`, `page` |
 
-## ✅ 已完成（116）
+## ✅ 已完成（120）
 
 | 插件 | 命令数 | scope |
 |------|--------|-------|
@@ -93,6 +89,7 @@
 | gettyimages | 1 | `browser` |
 | github | 6 | `browser` |
 | github-trending | 1 | `project` |
+| goofish | 3 | `page` |
 | google | 3 | `browser`, `cli` |
 | google-scholar | 1 | `project` |
 | hackernews | 8 | `project` |
@@ -107,17 +104,20 @@
 | jd | 1 | `browser` |
 | juejin | 6 | `browser`, `page` |
 | kimi | 1 | `browser` |
+| login-bridge | 5 | `page`, `project` |
 | maven | 1 | `project` |
 | medium | 5 | `browser`, `page` |
 | mureka | 6 | `browser` |
 | npm | 3 | `project` |
 | nuget | 1 | `project` |
+| oschina | 3 | `browser`, `page` |
 | p500px | 1 | `browser` |
 | packagist | 1 | `project` |
 | pexels | 1 | `browser` |
 | pinterest | 1 | `browser` |
 | pixabay | 1 | `browser` |
 | pixiv | 2 | `browser` |
+| producthunt | 4 | `browser`, `page` |
 | pubmed | 1 | `project` |
 | pypi | 3 | `project` |
 | qianwen | 5 | `browser`, `page` |
