@@ -223,7 +223,11 @@ async function waitForTrack(tabId: number, timeoutSeconds: number): Promise<stri
   throw new Error(`等待音乐超时（${timeoutSeconds}s）\n${lastText.slice(-240)}`);
 }
 
-async function downloadTrack(tabId: number, mediaUrl: string, taskId: string): Promise<string> {
+async function downloadTrack(
+  tabId: number,
+  mediaUrl: string,
+  taskId: string,
+): Promise<{ localPath: string; sizeBytes: number }> {
   const mediaSource = mediaUrl;
   const expression = `(async () => {
     const response = await fetch(${JSON.stringify(mediaSource)}, { credentials: 'include' });
@@ -241,10 +245,14 @@ async function downloadTrack(tabId: number, mediaUrl: string, taskId: string): P
   fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
   const localPath = path.join(DOWNLOAD_DIR, `gemini_music_${taskId}.mp4`);
   const bytes = Buffer.from(value, 'base64');
-  if (downloader) return downloader(localPath, bytes);
-  fs.writeFileSync(localPath, bytes);
-  if (fs.statSync(localPath).size < 10_000) throw new Error('音乐下载内容异常');
-  return localPath;
+  if (bytes.length < 10_000) throw new Error('音乐下载内容异常');
+  let localPathForDownload = localPath;
+  if (downloader) {
+    localPathForDownload = downloader(localPath, bytes);
+  } else {
+    fs.writeFileSync(localPath, bytes);
+  }
+  return { localPath: localPathForDownload, sizeBytes: bytes.length };
 }
 
 interface MusicParams {
@@ -264,6 +272,7 @@ function toMediaTaskResult(input: {
   sessionUrl: string;
   mediaUrl: string | null;
   localPath: string | null;
+  sizeBytes?: number;
 }): MediaTaskResult {
   const status = input.status === 'downloaded' ? 'completed' : 'submitted';
   const task = createMediaTask({
@@ -281,7 +290,7 @@ function toMediaTaskResult(input: {
     kind: 'audio',
     status,
     mediaUrl: input.mediaUrl,
-    sizeBytes: input.localPath ? fs.statSync(input.localPath).size : undefined,
+    sizeBytes: input.localPath ? input.sizeBytes : undefined,
   })] : [];
   return {
     ...task,
@@ -306,7 +315,8 @@ async function waitAndDownload(
 ): Promise<ReturnType<typeof ok> | ReturnType<typeof fail>> {
   try {
     const mediaUrl = await waitForTrack(tabId, params.timeout);
-    const localPath = await downloadTrack(tabId, mediaUrl, params.taskId);
+    const download = await downloadTrack(tabId, mediaUrl, params.taskId);
+    const localPath = download.localPath;
     const state = await getState(tabId);
     return success({
       ...toMediaTaskResult({
@@ -315,6 +325,7 @@ async function waitAndDownload(
         sessionUrl: state.href,
         mediaUrl,
         localPath,
+        sizeBytes: download.sizeBytes,
       }),
       prompt: params.prompt,
       download: toMediaDownloadResult({ taskId: params.taskId, localPath }),

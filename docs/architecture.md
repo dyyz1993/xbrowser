@@ -644,6 +644,10 @@ CDP connection / Chromium
 债务记录在 `lint-scripts/media-constraints-baseline.json`，只允许收敛，
 不允许新增。
 
+媒体产物契约还有一条运行时约束：只有字节已经真实写入目标路径，才允许把
+`localPath` 标记为可下载；`sizeBytes` 应来自同一次下载字节，而不是事后
+重新读盘。测试替身也必须满足同一语义，否则在干净 CI 环境会掩盖未落盘产物。
+
 ---
 
 ## 扩展点

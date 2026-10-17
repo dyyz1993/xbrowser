@@ -209,6 +209,7 @@ describe('gemini plugin', () => {
   });
 
   describe('music command', () => {
+    const sampleAudioBase64 = Buffer.alloc(10_000, 7).toString('base64');
     const readyState = {
       href: 'https://gemini.google.com/app/sea',
       text: 'Music ready',
@@ -231,7 +232,7 @@ describe('gemini plugin', () => {
         }) as never,
         cdp: vi.fn(() => Promise.resolve(undefined)) as never,
         ev: vi.fn((expression: string) => {
-          if (expression.includes('fetch(')) return Promise.resolve('AQID');
+          if (expression.includes('fetch(')) return Promise.resolve(sampleAudioBase64);
           if (expression.includes('musicSelected')) return Promise.resolve(JSON.stringify(state));
           if (expression.includes('上传和工具') || expression.includes('制作音乐') || expression.includes('发送')) {
             return Promise.resolve('true');
@@ -284,6 +285,68 @@ describe('gemini plugin', () => {
       });
       expect((result.data as { localPath: string }).localPath).toContain('gemini_music_music-test.mp4');
       expect(taskClose).toHaveBeenCalledWith('task-close');
+    });
+
+    it('reports the downloaded byte size without re-reading the artifact', async () => {
+      const written: string[] = [];
+      createRuntime(readyState);
+      setMusicDownloader((localPath, bytes) => {
+        written.push(localPath);
+        expect(bytes.length).toBeGreaterThan(0);
+        return `/tmp/verified-${bytes.length}.mp4`;
+      });
+      const result = await musicCommandHandler({
+        prompt: 'sea prompt', timeout: 1, wait: true, taskId: 'music-size',
+      }) as unknown as Record<string, unknown>;
+
+      expect(written).toHaveLength(1);
+      expect((result.data as { localPath: string }).localPath).toBe('/tmp/verified-10000.mp4');
+      expect((result.data as { artifacts: Array<{ sizeBytes: number }> }).artifacts[0].sizeBytes)
+        .toBe(10_000);
+    });
+
+    it('keeps concurrent task state isolated by task id', async () => {
+      const calls: Array<{ command: string; payload?: unknown }> = [];
+      setMusicRuntime({
+        bridgeExec: vi.fn((command: string, payload?: unknown) => {
+          calls.push({ command, payload });
+          if (command === 'task-open') {
+            return Promise.resolve({ ok: true, data: { tabId: (payload as { name: string }).name.length } });
+          }
+          return Promise.resolve({ ok: true });
+        }) as never,
+        cdp: vi.fn(() => Promise.resolve(undefined)) as never,
+        ev: vi.fn((expression: string, tabId: number) => {
+          if (expression.includes('fetch(')) return Promise.resolve(sampleAudioBase64);
+          if (expression.includes('musicSelected')) {
+            const expectedPrompt = tabId === 3 ? 'first' : 'second';
+            return Promise.resolve(JSON.stringify({
+              ...readyState,
+              editor: expectedPrompt,
+            }));
+          }
+          if (expression.includes('上传和工具') || expression.includes('制作音乐') || expression.includes('发送')) {
+            return Promise.resolve('true');
+          }
+          return Promise.resolve('null');
+        }) as never,
+        sleep: vi.fn(() => Promise.resolve()),
+      });
+
+      const [first, second] = await Promise.all([
+        musicCommandHandler({ prompt: 'first', timeout: 1, wait: false, taskId: 'one' }) as unknown as Record<string, unknown>,
+        musicCommandHandler({ prompt: 'second', timeout: 1, wait: false, taskId: 'two-two' }) as unknown as Record<string, unknown>,
+      ]);
+
+      expect(first.success, JSON.stringify(first)).toBe(true);
+      expect(second.success, JSON.stringify(second)).toBe(true);
+      expect((first.data as { taskId: string }).taskId).toBe('one');
+      expect((second.data as { taskId: string }).taskId).toBe('two-two');
+      expect(calls.filter((call) => call.command === 'task-open').map((call) => call.payload))
+        .toEqual(expect.arrayContaining([
+          { name: 'one', url: 'https://gemini.google.com/app' },
+          { name: 'two-two', url: 'https://gemini.google.com/app' },
+        ]));
     });
 
     it('supports asynchronous submission and keeps the task alive', async () => {
