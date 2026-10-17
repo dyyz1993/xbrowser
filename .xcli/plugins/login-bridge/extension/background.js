@@ -383,7 +383,15 @@ async function ensurePersistentStealth(tabId) {
   // attached and enableTaskStealth reuses that live target. Avoid probing
   // here—probing with Runtime.evaluate adds needless round trips on every
   // command and can contend with the caller's next debugger operation.
-  if (stealthTabs.has(tabId)) return true;
+  if (stealthTabs.has(tabId)) {
+    // cdp-detach or an external DevTools detach invalidates the registry.
+    // Try a cheap attach: Chrome reports "already attached" only when the
+    // live target still exists; otherwise this performs the missing attach.
+    const result = await enableTaskStealth(tabId).catch(() => ({ ok: false }));
+    if (result?.ok === true) return true;
+    stealthTabs.delete(tabId);
+    return false;
+  }
   const result = await enableTaskStealth(tabId).catch(() => ({ ok: false }));
   return result?.ok === true;
 }
@@ -701,6 +709,11 @@ const executors = {
           try {
             const t = await chrome.tabs.get(target);
             if (t.active) {
+              // Replacing a user-facing renderer keeps each task isolated: the
+              // old BOSS renderer is closed before the new page loads, so V8
+              // heap/history cannot carry across commands.
+              await chrome.tabs.remove(target).catch(() => {});
+              stealthTabs.delete(target);
               const created = await safeCreateTab({ url: 'about:blank', active: false });
               await recordTaskTab(created.id);
               try { if (t.groupId && t.groupId !== -1) await chrome.tabs.group({ tabIds: created.id, groupId: t.groupId }); } catch {}
@@ -737,6 +750,10 @@ const executors = {
         chrome.debugger.sendCommand(dbg, 'Runtime.evaluate',
           { expression, returnByValue: true, awaitPromise: true },
           (r) => {
+            if (chrome.runtime.lastError) {
+              resolve({ ok: false, error: chrome.runtime.lastError.message });
+              return;
+            }
             if (r?.exceptionDetails) {
               resolve({ ok: false, error: r.exceptionDetails.exception?.description || r.exceptionDetails.text });
             } else {

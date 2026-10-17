@@ -89,6 +89,36 @@ function bridgeData(response: BridgeResponse): Record<string, unknown> {
 
 const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 
+type BossMemory = { usedMB: number | null; limitMB: number | null };
+
+function bossMemoryExpression(): string {
+  return `
+    (() => {
+      const memory = performance.memory;
+      return {
+        ready: document.readyState,
+        url: location.href,
+        usedMB: memory ? Math.round(memory.usedJSHeapSize / 1048576) : null,
+        limitMB: memory ? Math.round(memory.jsHeapSizeLimit / 1048576) : null,
+      };
+    })()
+  `;
+}
+
+function assertBossMemory(health: BossMemory & { ready?: string; url?: string }, taskName: string, useBridge: boolean): string | null {
+  if (health.ready !== 'complete' || !health.url?.includes('zhipin.com')) {
+    return 'BOSS 页面未就绪';
+  }
+  if (typeof health.usedMB === 'number' && typeof health.limitMB === 'number') {
+    const usedRatio = health.usedMB / health.limitMB;
+    if (usedRatio > 0.65) {
+      if (useBridge) void bridgeExec('task-close', { name: taskName });
+      return `BOSS 渲染进程内存过高（${health.usedMB}/${health.limitMB} MB），已拒绝继续`;
+    }
+  }
+  return null;
+}
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'boss',
@@ -114,13 +144,32 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       const page = ctx.page as Page | undefined;
-      if (!page) return fail('需要浏览器页面');
-
+      const useBridge = await bridgeRunning();
+      if (!page && !useBridge) return fail('需要浏览器页面或已连接的 chrome-bridge');
       const url = `https://www.zhipin.com/web/geek/job?query=${encodeURIComponent(params.query)}&city=${params.city ?? ''}`;
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await page.waitForTimeout(3000);
-
-      const raw = await page.evaluate(`
+      const taskName = `boss-search-${Date.now()}`;
+      let tabId: number | undefined;
+      if (useBridge) {
+        const opened = await bridgeExec('task-open', { name: taskName, url });
+        if (opened.ok !== true) return fail(opened.error || 'chrome-bridge 未启动');
+        tabId = bridgeData(opened).tabId as number;
+        await sleep(5000);
+      } else {
+        await page!.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await page!.waitForTimeout(3000);
+      }
+      const evaluate = async (expression: string): Promise<BridgeResponse> => useBridge
+        ? await bridgeExec('evaluate', { tabId, expression })
+        : { ok: true, data: { value: await page!.evaluate(expression) } };
+      const healthResponse = await evaluate(bossMemoryExpression());
+      if (healthResponse.ok !== true) return fail(healthResponse.error || '页面健康检查失败');
+      const healthError = assertBossMemory(
+        bridgeData(healthResponse).value as BossMemory & { ready?: string; url?: string },
+        taskName,
+        useBridge,
+      );
+      if (healthError) return fail(healthError);
+      const response = await evaluate(`
         (() => {
           var cards = [...document.querySelectorAll(".job-card-box")].slice(0, ${params.limit ?? 10});
           return cards.map(function(card, i) {
@@ -146,8 +195,9 @@ export default function (xcli: XCLIAPI): void {
             };
           });
         })()
-      `) as Array<Record<string, unknown>>;
-
+      `);
+      if (useBridge) await bridgeExec('task-close', { name: taskName });
+      const raw = bridgeData(response).value as Array<Record<string, unknown>>;
       if (!raw.length) return fail(`未找到匹配 "${params.query}" 的职位，请确认已登录`);
       return ok(raw.map((item) => ({
         rank: Number(item.rank ?? 0),
@@ -179,11 +229,31 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       const page = ctx.page as Page | undefined;
-      if (!page) return fail('需要浏览器页面');
       const url = `https://www.zhipin.com/job_detail/${params.jobId}.html`;
-      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await page.waitForTimeout(1500);
-      const pageTitle = await page.evaluate('document.title') as string;
+      const useBridge = await bridgeRunning();
+      if (!page && !useBridge) return fail('需要浏览器页面或已连接的 chrome-bridge');
+      const taskName = `boss-detail-${Date.now()}`;
+      let tabId: number | undefined;
+      if (useBridge) {
+        const opened = await bridgeExec('task-open', { name: taskName, url });
+        if (opened.ok !== true) return fail(opened.error || 'chrome-bridge 未启动');
+        tabId = bridgeData(opened).tabId as number;
+        await sleep(4000);
+      } else {
+        await page!.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await page!.waitForTimeout(1500);
+      }
+      const evaluate = async (expression: string): Promise<BridgeResponse> => useBridge
+        ? await bridgeExec('evaluate', { tabId, expression })
+        : { ok: true, data: { value: await page!.evaluate(expression) } };
+      const healthResponse = await evaluate(bossMemoryExpression());
+      if (healthResponse.ok !== true) return fail(healthResponse.error || '页面健康检查失败');
+      const healthError = assertBossMemory(bridgeData(healthResponse).value as BossMemory & { ready?: string; url?: string }, taskName, useBridge);
+      if (healthError) return fail(healthError);
+      const titleResponse = await evaluate('document.title');
+      if (titleResponse.ok !== true) return fail(titleResponse.error || '读取标题失败');
+      const pageTitle = bridgeData(titleResponse).value as string;
+      if (useBridge) await bridgeExec('task-close', { name: taskName });
       return ok({ jobId: params.jobId, url, pageTitle });
     },
   });
@@ -201,13 +271,32 @@ export default function (xcli: XCLIAPI): void {
     examples: [{ cmd: 'xbrowser boss companies', description: '搜索公司列表' }],
     handler: async (params, ctx) => {
       const page = ctx.page as Page | undefined;
-      if (!page) return fail('需要浏览器页面');
       const city = params.city ?? 'guangzhou';
       const query = params.query ? `?query=${encodeURIComponent(params.query)}` : '';
-      await page.goto(`https://www.zhipin.com/${city}/gongsi/${query}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await page.waitForTimeout(3000);
-
-      const raw = await page.evaluate(`
+      const url = query
+        ? `https://www.zhipin.com/gongsi/?query=${encodeURIComponent(params.query ?? '')}`
+        : `https://www.zhipin.com/${city}/gongsi/`;
+      const useBridge = await bridgeRunning();
+      if (!page && !useBridge) return fail('需要浏览器页面或已连接的 chrome-bridge');
+      const taskName = `boss-companies-${Date.now()}`;
+      let tabId: number | undefined;
+      if (useBridge) {
+        const opened = await bridgeExec('task-open', { name: taskName, url });
+        if (opened.ok !== true) return fail(opened.error || 'chrome-bridge 未启动');
+        tabId = bridgeData(opened).tabId as number;
+        await sleep(5000);
+      } else {
+        await page!.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await page!.waitForTimeout(3000);
+      }
+      const evaluate = async (expression: string): Promise<BridgeResponse> => useBridge
+        ? await bridgeExec('evaluate', { tabId, expression })
+        : { ok: true, data: { value: await page!.evaluate(expression) } };
+      const healthResponse = await evaluate(bossMemoryExpression());
+      if (healthResponse.ok !== true) return fail(healthResponse.error || '页面健康检查失败');
+      const healthError = assertBossMemory(bridgeData(healthResponse).value as BossMemory & { ready?: string; url?: string }, taskName, useBridge);
+      if (healthError) return fail(healthError);
+      const response = await evaluate(`
         (() => {
           var items = [...document.querySelectorAll(".company-info, [class*=company-card]")].slice(0, ${params.limit ?? 10});
           return items.map(function(e, i) {
@@ -226,8 +315,9 @@ export default function (xcli: XCLIAPI): void {
             };
           });
         })()
-      `) as Array<Record<string, unknown>>;
-
+      `);
+      if (useBridge) await bridgeExec('task-close', { name: taskName });
+      const raw = bridgeData(response).value as Array<Record<string, unknown>>;
       if (!raw.length) return fail('未找到公司数据，请确认已登录');
       return ok(raw.map((item) => ({
         rank: Number(item.rank ?? 0),
@@ -249,11 +339,28 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({}),
     handler: async (_params, ctx) => {
       const page = ctx.page as Page | undefined;
-      if (!page) return fail('需要浏览器页面');
-      await page.goto('https://www.zhipin.com/web/geek/recommend', { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await page.waitForTimeout(3000);
-
-      const data = await page.evaluate(`
+      const url = 'https://www.zhipin.com/web/geek/recommend';
+      const useBridge = await bridgeRunning();
+      if (!page && !useBridge) return fail('需要浏览器页面或已连接的 chrome-bridge');
+      const taskName = `boss-recommend-${Date.now()}`;
+      let tabId: number | undefined;
+      if (useBridge) {
+        const opened = await bridgeExec('task-open', { name: taskName, url });
+        if (opened.ok !== true) return fail(opened.error || 'chrome-bridge 未启动');
+        tabId = bridgeData(opened).tabId as number;
+        await sleep(5000);
+      } else {
+        await page!.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await page!.waitForTimeout(3000);
+      }
+      const evaluate = async (expression: string): Promise<BridgeResponse> => useBridge
+        ? await bridgeExec('evaluate', { tabId, expression })
+        : { ok: true, data: { value: await page!.evaluate(expression) } };
+      const healthResponse = await evaluate(bossMemoryExpression());
+      if (healthResponse.ok !== true) return fail(healthResponse.error || '页面健康检查失败');
+      const healthError = assertBossMemory(bridgeData(healthResponse).value as BossMemory & { ready?: string; url?: string }, taskName, useBridge);
+      if (healthError) return fail(healthError);
+      const response = await evaluate(`
         (() => {
           var items = [...document.querySelectorAll(".item-recommend")].slice(0, 10);
           var viewers = items.map(function(e, i) {
@@ -277,8 +384,9 @@ export default function (xcli: XCLIAPI): void {
             } : null,
           };
         })()
-      `) as { viewers: Array<Record<string, unknown>>; profile: Record<string, unknown> | null };
-
+      `);
+      if (useBridge) await bridgeExec('task-close', { name: taskName });
+      const data = bridgeData(response).value as { viewers: Array<Record<string, unknown>>; profile: Record<string, unknown> | null };
       if (!data.viewers.length && !data.profile) return fail('未获取到推荐数据');
       return ok({
         whoViewedMe: data.viewers.map((v) => ({
@@ -307,11 +415,28 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       const page = ctx.page as Page | undefined;
-      if (!page) return fail('需要浏览器页面');
-      await page.goto('https://www.zhipin.com/web/geek/chat', { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await page.waitForTimeout(3000);
-
-      const raw = await page.evaluate(`
+      const url = 'https://www.zhipin.com/web/geek/chat';
+      const useBridge = await bridgeRunning();
+      if (!page && !useBridge) return fail('需要浏览器页面或已连接的 chrome-bridge');
+      const taskName = `boss-chat-${Date.now()}`;
+      let tabId: number | undefined;
+      if (useBridge) {
+        const opened = await bridgeExec('task-open', { name: taskName, url });
+        if (opened.ok !== true) return fail(opened.error || 'chrome-bridge 未启动');
+        tabId = bridgeData(opened).tabId as number;
+        await sleep(5000);
+      } else {
+        await page!.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await page!.waitForTimeout(3000);
+      }
+      const evaluate = async (expression: string): Promise<BridgeResponse> => useBridge
+        ? await bridgeExec('evaluate', { tabId, expression })
+        : { ok: true, data: { value: await page!.evaluate(expression) } };
+      const healthResponse = await evaluate(bossMemoryExpression());
+      if (healthResponse.ok !== true) return fail(healthResponse.error || '页面健康检查失败');
+      const healthError = assertBossMemory(bridgeData(healthResponse).value as BossMemory & { ready?: string; url?: string }, taskName, useBridge);
+      if (healthError) return fail(healthError);
+      const response = await evaluate(`
         (() => {
           var text = document.body.innerText;
           var items = [];
@@ -342,8 +467,9 @@ export default function (xcli: XCLIAPI): void {
           }
           return items.slice(0, ${params.limit ?? 10});
         })()
-      `) as Array<Record<string, unknown>>;
-
+      `);
+      if (useBridge) await bridgeExec('task-close', { name: taskName });
+      const raw = bridgeData(response).value as Array<Record<string, unknown>>;
       if (!raw.length) return fail('未找到聊天消息');
       return ok(raw.map((item) => ({
         sender: String(item.sender ?? ''),
@@ -491,11 +617,28 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({}),
     handler: async (_params, ctx) => {
       const page = ctx.page as Page | undefined;
-      if (!page) return fail('需要浏览器页面');
-      await page.goto('https://www.zhipin.com/web/geek/resume', { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await page.waitForTimeout(3000);
-
-      const data = await page.evaluate(`
+      const url = 'https://www.zhipin.com/web/geek/resume';
+      const useBridge = await bridgeRunning();
+      if (!page && !useBridge) return fail('需要浏览器页面或已连接的 chrome-bridge');
+      const taskName = `boss-resume-${Date.now()}`;
+      let tabId: number | undefined;
+      if (useBridge) {
+        const opened = await bridgeExec('task-open', { name: taskName, url });
+        if (opened.ok !== true) return fail(opened.error || 'chrome-bridge 未启动');
+        tabId = bridgeData(opened).tabId as number;
+        await sleep(5000);
+      } else {
+        await page!.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+        await page!.waitForTimeout(3000);
+      }
+      const evaluate = async (expression: string): Promise<BridgeResponse> => useBridge
+        ? await bridgeExec('evaluate', { tabId, expression })
+        : { ok: true, data: { value: await page!.evaluate(expression) } };
+      const healthResponse = await evaluate(bossMemoryExpression());
+      if (healthResponse.ok !== true) return fail(healthResponse.error || '页面健康检查失败');
+      const healthError = assertBossMemory(bridgeData(healthResponse).value as BossMemory & { ready?: string; url?: string }, taskName, useBridge);
+      if (healthError) return fail(healthError);
+      const response = await evaluate(`
         (() => {
           var nameEl = document.querySelector(".name");
           var ps = [...document.querySelectorAll("p")].map(function(p) { return p.textContent.trim() });
@@ -514,7 +657,8 @@ export default function (xcli: XCLIAPI): void {
           };
         })()
       `) as Record<string, unknown>;
-
+      if (useBridge) await bridgeExec('task-close', { name: taskName });
+      const data = bridgeData(response).value as Record<string, unknown>;
       if (!data.name) return fail('未获取到简历信息');
       return ok({
         name: String(data.name ?? ''),
