@@ -67,6 +67,13 @@ const chatReplyResult = z.object({
 
 type BridgeResponse = { ok?: boolean; data?: Record<string, unknown>; error?: string };
 
+async function bridgeRunning(): Promise<boolean> {
+  const status = await fetch('http://127.0.0.1:9347/status')
+    .then(response => response.json() as Promise<{ running?: boolean }>)
+    .catch(() => null);
+  return status?.running === true;
+}
+
 async function bridgeExec(cmd: string, args: Record<string, unknown>): Promise<BridgeResponse> {
   return await fetch('http://127.0.0.1:9347/exec?client=0', {
     method: 'POST',
@@ -76,12 +83,20 @@ async function bridgeExec(cmd: string, args: Record<string, unknown>): Promise<B
     .catch(() => ({ ok: false, error: 'bridge unavailable' }));
 }
 
+function bridgeData(response: BridgeResponse): Record<string, unknown> {
+  return response.data ?? {};
+}
+
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'boss',
     url: 'https://www.zhipin.com',
     description: 'Boss直聘 - 职位搜索、公司信息',
-    requiresLogin: true,
+    // requiresLogin 由各命令分别声明；chat-reply 走 chrome-bridge 时依赖
+    // 用户 Chrome 登录态，不能使用本地 Chromium session 判断。
+    requiresLogin: false,
   });
 
   site.command('search', {
@@ -343,7 +358,9 @@ export default function (xcli: XCLIAPI): void {
   site.command('chat-reply', {
     description: '回复指定对话（通过 chrome-bridge CDP 真实键盘事件发送）',
     scope: 'project',
-    loginRequired: 'required',
+    // 走用户 Chrome 的 chrome-bridge 时，本地 xbrowser session 没有登录态；
+    // 登录态由导航后的真实页面和发送验证兜底，不能让本地空 session 误杀。
+    loginRequired: 'none',
     result: chatReplyResult,
     parameters: z.object({
       keyword: z.string().describe('对话关键词，如 "德熙"'),
@@ -351,14 +368,24 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       const page = ctx.page as Page | undefined;
-      if (!page) return fail('需要浏览器页面（建议通过 chrome-bridge 通道使用）');
+      const useBridge = await bridgeRunning();
+      if (!page && !useBridge) return fail('需要浏览器页面或已连接的 chrome-bridge');
+      const CHAT_URL = 'https://www.zhipin.com/web/geek/chat';
+      const navigated = useBridge
+        ? await bridgeExec('navigate', { url: CHAT_URL, task: 'boss-chat-reply' })
+        : { ok: true as const, data: {} };
+      if (navigated.ok !== true) return fail(navigated.error || 'chrome-bridge 未启动或导航失败');
+      const tabId = bridgeData(navigated).tabId;
+      if (useBridge && typeof tabId !== 'number') return fail('chrome-bridge 未返回任务 tab');
+      await sleep(3000);
 
-      await page.goto('https://www.zhipin.com/web/geek/chat', { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await page.waitForTimeout(3000);
+      const evaluate = async (expression: string): Promise<BridgeResponse> => useBridge
+        ? await bridgeExec('evaluate', { tabId, expression })
+        : { ok: true, data: { value: await page!.evaluate(expression) } };
 
       // BOSS 的列表项靠 trusted mousedown 打开会话；el.click() 只会移除
       // no-data 占位，不会真正建立会话。坐标必须用页面视口 CSS 像素。
-      const target = await page.evaluate(`
+      const targetResponse = await evaluate(`
         (() => {
           const el = [...document.querySelectorAll(".friend-content")]
             .find(e => e.innerText.includes(${JSON.stringify(params.keyword)}));
@@ -366,15 +393,19 @@ export default function (xcli: XCLIAPI): void {
           const r = el.getBoundingClientRect();
           return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
         })()
-      `) as { x?: number; y?: number } | null;
+      `);
+      if (targetResponse.ok !== true) return fail(targetResponse.error || '读取会话列表失败');
+      const target = bridgeData(targetResponse).value as { x?: number; y?: number } | null;
       if (!target?.x || !target?.y) return fail(`未找到包含 "${params.keyword}" 的对话`);
-      const click = await bridgeExec('trustedClick', { x: target.x, y: target.y });
+      const click = useBridge
+        ? await bridgeExec('trustedClick', { x: target.x, y: target.y, tabId })
+        : { ok: true as const, data: {} };
       if (click.ok !== true) return fail(click.error || '打开会话失败');
-      await page.waitForTimeout(2000);
+      await sleep(2000);
 
       // 编辑器与发送按钮都接受组件层 click；trustedClick 的独立 press/release
       // 在 BOSS Vue 组件上不稳定。发送后必须读会话消息做业务级验收。
-      const typed = await page.evaluate(`
+      const typedResponse = await evaluate(`
         (() => {
           const input = document.querySelector(".chat-input");
           if (!input) return false;
@@ -382,27 +413,33 @@ export default function (xcli: XCLIAPI): void {
           input.dispatchEvent(new InputEvent("input", { bubbles: true }));
           return input.textContent === ${JSON.stringify(params.message)};
         })()
-      `) as boolean;
+      `);
+      if (typedResponse.ok !== true) return fail(typedResponse.error || '读取聊天输入框失败');
+      const typed = bridgeData(typedResponse).value === true;
       if (!typed) return fail('未找到聊天输入框，请确认已打开对话');
-      await page.waitForTimeout(500);
+      await sleep(500);
 
-      const clicked = await page.evaluate(`
+      const clickedResponse = await evaluate(`
         (() => {
           const el = document.querySelector(".btn-send");
           if (!el) return false;
           el.click();
           return true;
         })()
-      `) as boolean;
+      `);
+      if (clickedResponse.ok !== true) return fail(clickedResponse.error || '读取发送按钮失败');
+      const clicked = bridgeData(clickedResponse).value === true;
       if (!clicked) return fail('未找到发送按钮');
-      await page.waitForTimeout(1000);
+      await sleep(1000);
 
-      const verify = await page.evaluate(`
+      const verifyResponse = await evaluate(`
         (() => {
           const text = ${JSON.stringify(params.message)};
           return [...document.querySelectorAll(".message-item")].some(e => e.innerText.includes(text));
         })()
-      `) as boolean;
+      `);
+      if (verifyResponse.ok !== true) return fail(verifyResponse.error || '读取发送结果失败');
+      const verify = bridgeData(verifyResponse).value === true;
       if (!verify) return fail('发送后未在会话中找到消息');
 
       return ok({ sent: true, to: params.keyword, message: params.message.slice(0, 50) }, [

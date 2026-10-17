@@ -198,18 +198,20 @@ const SPY_SOURCE = [
 //（二次 attach 会报 "Another debugger is already attached"，
 //  且 detach-first 会拆掉伪装注册）。
 async function enableTaskStealth(tabId) {
+  const startedAt = Date.now();
   const dbg = { tabId };
   const attachOnce = (retry) => new Promise((resolve) => {
     chrome.debugger.attach(dbg, '1.3', () => {
       const err = chrome.runtime.lastError;
       if (!err) { resolve(true); return; }
+      recordDiagnostic('attach-error', { tabId, error: err.message, elapsedMs: Date.now() - startedAt });
       // 残留 attach（此前流程异常退出）→ 拆掉重试一次
-      if (retry && /already attached/i.test(err.message)) {
-        chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
-          chrome.debugger.attach(dbg, '1.3', () => {
-            resolve(!chrome.runtime.lastError);
-          });
-        });
+      // Already attached normally means OUR persistent session survived while
+      // the in-memory registry was lost. Never detach/re-attach: it creates a
+      // visible debugger gap and triggers detach/re-attach churn.
+      if (/already attached/i.test(err.message)) {
+        void recordDiagnostic('attach-reuse', { tabId });
+        resolve(true);
         return;
       }
       resolve(false);
@@ -217,6 +219,7 @@ async function enableTaskStealth(tabId) {
   });
   const ok = await attachOnce(true);
   if (!ok) return { ok: false, error: 'attach failed' };
+  await recordDiagnostic('attach-ok', { tabId, elapsedMs: Date.now() - startedAt });
   const send = (method, params) => new Promise((resolve) => {
     chrome.debugger.sendCommand(dbg, method, params || {}, () => resolve(!chrome.runtime.lastError));
   });
@@ -228,6 +231,7 @@ async function enableTaskStealth(tabId) {
   if (chrome.runtime.lastError) return { ok: false, error: chrome.runtime.lastError.message };
   // 立即对当前文档生效（addScriptToEvaluateOnNewDocument 只管后续文档）
   await send('Runtime.evaluate', { expression: StealthCommon.VISIBILITY_STEALTH_SOURCE });
+  await recordDiagnostic('stealth-ready', { tabId, elapsedMs: Date.now() - startedAt });
   stealthTabs.add(tabId);
   return { ok: true, tabId, identifier: reg?.identifier, persistent: true };
 }
@@ -308,6 +312,10 @@ let currentTaskName = '';
 // Stable per-task color so concurrent task groups are visually distinct.
 // Chrome tabGroups supports: grey/blue/red/yellow/green/pink/purple/cyan/orange.
 const TASK_COLORS = ['blue', 'purple', 'cyan', 'green', 'yellow', 'red', 'pink', 'orange'];
+// Boss-crash diagnostic ledger. The last 200 lifecycle facts correlate forced
+// tab unload/crash with the exact debugger operation that preceded it.
+const DIAGNOSTICS_KEY = 'bridgeDiagnostics';
+const DIAGNOSTICS_LIMIT = 200;
 // 生命周期命令共享一把锁：同一任务并发的 task-open 串行化，
 // 才能在第二次进入前看到第一次创建的显式组并复用，而不是开出重复组。
 let lifecycleTail = Promise.resolve();
@@ -316,6 +324,68 @@ function enqueueLifecycle(operation) {
   const run = lifecycleTail.then(operation, operation);
   lifecycleTail = run.catch(() => {});
   return run;
+}
+
+async function recordDiagnostic(event, details = {}) {
+  try {
+    const { [DIAGNOSTICS_KEY]: items = [] } = await chrome.storage.local.get(DIAGNOSTICS_KEY);
+    items.push({ at: Date.now(), event, ...details });
+    await chrome.storage.local.set({ [DIAGNOSTICS_KEY]: items.slice(-DIAGNOSTICS_LIMIT) });
+  } catch {}
+}
+
+// debugger 命令锁：避免同一 tab 上并发 attach/detach 互相打断。
+// Chrome 的 attach/evaluate 回调在页面崩溃或忙碌时可能长期不返回；这里
+// 提供扩展侧硬超时，保证一条命令最多占锁 12s，超时后立刻放行下一条，
+// 避免后续 automation 被“幽灵请求”永久卡死。
+const debuggerTails = new Map();
+function debuggerCall(timeoutMs, executor) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const timer = setTimeout(() => finish({ ok: false, error: `debugger timeout after ${timeoutMs}ms`, timedOut: true }), timeoutMs);
+    executor(finish);
+  });
+}
+function enqueueDebugger(tabId, operation) {
+  const key = tabId == null ? 'default' : String(tabId);
+  const previous = debuggerTails.get(key) || Promise.resolve();
+  const run = previous.then(operation, operation);
+  debuggerTails.set(key, run.catch(() => {}));
+  return run;
+}
+
+async function runDebugger(tabId, label, timeoutMs, executor) {
+  const startedAt = Date.now();
+  const result = await enqueueDebugger(tabId, () => debuggerCall(timeoutMs, executor));
+  await recordDiagnostic(label, {
+    tabId,
+    ok: result?.ok === true,
+    timedOut: result?.timedOut === true,
+    elapsedMs: Date.now() - startedAt,
+    error: result?.ok === true ? undefined : result?.error,
+  });
+  return result;
+}
+
+// 自动任务 tab 一律持久 attach + 行为伪装。旧的“每次 detach-first”会让
+// BOSS 等重前端页面在连续自动化中暴露短暂 debugger 空窗，也可能因为残留
+// attach 或页面忙碌导致下一次 attach 卡住。
+async function ensurePersistentStealth(tabId) {
+  // tab reload can drop the debugger target while our Set still records it.
+  // Probe the live target first; stale registry entries must be removed.
+  // attach is idempotent in the registry sense: Chrome reports already
+  // attached and enableTaskStealth reuses that live target. Avoid probing
+  // here—probing with Runtime.evaluate adds needless round trips on every
+  // command and can contend with the caller's next debugger operation.
+  if (stealthTabs.has(tabId)) return true;
+  const result = await enableTaskStealth(tabId).catch(() => ({ ok: false }));
+  return result?.ok === true;
 }
 
 function taskColorFor(name) {
@@ -434,24 +504,15 @@ const executors = {
   // ── S121: CDP 透传（核心：命令转发器，扩展零逻辑） ──
   cdp: async ({ tabId, method, params }) => {
     const target = tabId ?? await getTaskTabId();
-    return new Promise((resolve) => {
-      const dbg = { tabId: target };
-      const dispatch = () => {
+    return await ensurePersistentStealth(target).then(() =>
+      runDebugger(target, 'cdp', 12000, (resolve) => {
+        const dbg = { tabId: target };
         chrome.debugger.sendCommand(dbg, method, params || {}, (result) => {
           const err = chrome.runtime.lastError;
           if (err) resolve({ ok: false, error: err.message });
           else resolve({ ok: true, data: result });
         });
-      };
-      // detach-first: 残留 attach 会让新 attach 静默失败（S120 同源模式）
-      chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
-        chrome.debugger.attach(dbg, '1.3', () => {
-          const err = chrome.runtime.lastError;
-          if (err) { resolve({ ok: false, error: err.message }); return; }
-          dispatch();
-        });
-      });
-    });
+      }));
   },
   'cdp-detach': async ({ tabId }) => {
     const target = tabId ?? null;
@@ -657,63 +718,51 @@ const executors = {
     return { ok: false, error: 'no url' };
   },
 
+  'tab-reload': async ({ tabId }) => {
+    const target = tabId ?? await getTaskTabId();
+    if (target == null) return { ok: false, error: 'no tabId' };
+    await chrome.tabs.reload(target).catch((e) => ({ ok: false, error: String(e) }));
+    return { ok: true, tabId: target };
+  },
+
   evaluate: async ({ expression, tabId }) => {
     // S105：chrome.scripting（含 world MAIN）的注入都受 CSP 约束（eval 被拦）。
     // chrome.debugger 走 CDP Runtime.evaluate —— DevTools console 同源能力，
     // 不受页面/扩展 CSP 限制。attach 时浏览器顶部出现"正在调试"横幅（用户可见）。
     // S164：stealthTabs 上的 tab 走持久 attach，跳过 attach/detach。
     const target = tabId ?? await getTaskTabId();
-    const persistent = stealthTabs.has(target);
-    return new Promise((resolve) => {
-      const dbg = { tabId: target };
-      const finish = (r) => {
-        if (!persistent) chrome.debugger.detach(dbg).catch(() => {});
-        if (r?.exceptionDetails) {
-          resolve({ ok: false, error: r.exceptionDetails.exception?.description || r.exceptionDetails.text });
-        } else {
-          let v = r?.result?.value;
-          if (v === undefined) v = null;
-          else if (typeof v === 'object') { try { v = JSON.parse(JSON.stringify(v)); } catch {} }
-          resolve({ ok: true, value: v });
-        }
-      };
-      if (persistent) {
+    return await ensurePersistentStealth(target).then((persistent) =>
+      runDebugger(target, 'evaluate', 12000, (resolve) => {
+        const dbg = { tabId: target };
         chrome.debugger.sendCommand(dbg, 'Runtime.evaluate',
           { expression, returnByValue: true, awaitPromise: true },
-          (r) => finish(r));
-        return;
-      }
-      // detach-first: 残留 attach 会让新 attach 静默失败（S120 同源模式）
-      chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
-        chrome.debugger.attach(dbg, '1.3', () => {
-          const err = chrome.runtime.lastError;
-          if (err) { resolve({ ok: false, error: err.message }); return; }
-          chrome.debugger.sendCommand(dbg, 'Runtime.evaluate',
-            { expression, returnByValue: true, awaitPromise: true },
-            (r) => finish(r));
-        });
-      });
-    });
+          (r) => {
+            if (r?.exceptionDetails) {
+              resolve({ ok: false, error: r.exceptionDetails.exception?.description || r.exceptionDetails.text });
+            } else {
+              let v = r?.result?.value;
+              if (v === undefined) v = null;
+              else if (typeof v === 'object') { try { v = JSON.parse(JSON.stringify(v)); } catch {} }
+              resolve({ ok: true, value: v, persistent });
+            }
+          });
+      }));
   },
 
   // 可靠的 trusted 鼠标点击+键盘输入+发送序列（chat-reply 等需要 isTrusted=true 的场景）
   'trusted-type': async ({ text, tabId }) => {
     const target = tabId ?? await getTaskTabId();
-    const persistent = stealthTabs.has(target);
-    return new Promise((resolve) => {
-      const dbg = { tabId: target };
-      const typeText = () => {
-        // 逐字符键盘流，保证 isTrusted=true
+    return await ensurePersistentStealth(target).then((persistent) =>
+      runDebugger(target, 'trusted-type', 12000, (resolve) => {
+        const dbg = { tabId: target };
         const chars = [...text];
         let i = 0;
         const typeNext = () => {
           if (i >= chars.length) {
-            if (!persistent) chrome.debugger.detach(dbg).catch(() => {});
-            resolve({ ok: true, typed: chars.length });
+            resolve({ ok: true, typed: chars.length, persistent });
             return;
           }
-          const c = chars[i];
-          i++;
+          const c = chars[i++];
           chrome.debugger.sendCommand(dbg, 'Input.dispatchKeyEvent',
             { type: 'keyDown', text: c }, () => {
               chrome.debugger.sendCommand(dbg, 'Input.dispatchKeyEvent',
@@ -721,42 +770,22 @@ const executors = {
             });
         };
         typeNext();
-      };
-      if (persistent) { typeText(); return; }
-      chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
-        chrome.debugger.attach(dbg, '1.3', () => {
-          const err = chrome.runtime.lastError;
-          if (err) { resolve({ ok: false, error: err.message }); return; }
-          typeText();
-        });
-      });
-    });
+      }));
   },
 
   'trusted-enter': async ({ tabId }) => {
     const target = tabId ?? await getTaskTabId();
-    const persistent = stealthTabs.has(target);
-    return new Promise((resolve) => {
-      const dbg = { tabId: target };
-      const pressEnter = () => {
+    return await ensurePersistentStealth(target).then((persistent) =>
+      runDebugger(target, 'trusted-enter', 12000, (resolve) => {
+        const dbg = { tabId: target };
         chrome.debugger.sendCommand(dbg, 'Input.dispatchKeyEvent',
           { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 }, () => {
             chrome.debugger.sendCommand(dbg, 'Input.dispatchKeyEvent',
               { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, nativeVirtualKeyCode: 13 }, () => {
-                if (!persistent) chrome.debugger.detach(dbg).catch(() => {});
-                resolve({ ok: true, sent: 'Enter' });
+                resolve({ ok: true, sent: 'Enter', persistent });
               });
           });
-      };
-      if (persistent) { pressEnter(); return; }
-      chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
-        chrome.debugger.attach(dbg, '1.3', () => {
-          const err = chrome.runtime.lastError;
-          if (err) { resolve({ ok: false, error: err.message }); return; }
-          pressEnter();
-        });
-      });
-    });
+      }));
   },
   click: async ({ selector, tabId }) => {
     const target = tabId ?? await getTaskTabId();
@@ -985,29 +1014,17 @@ const executors = {
   // 页面 el.click() 是合成事件，ProseMirror 等框架不认；可信点击等价鼠标。
   trustedClick: async ({ x, y, tabId }) => {
     const target = tabId ?? await getTaskTabId();
-    const persistent = stealthTabs.has(target); // S164: 持久 attach 不做 detach-first（会拆伪装）
-    return new Promise((resolve) => {
-      const dbg = { tabId: target };
-      const dispatch = () => {
+    return await ensurePersistentStealth(target).then((persistent) =>
+      runDebugger(target, 'trusted-click', 12000, (resolve) => {
+        const dbg = { tabId: target };
         chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent',
           { type: 'mousePressed', x, y, button: 'left', clickCount: 1 }, () => {
             chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent',
               { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }, () => {
-                if (!persistent) chrome.debugger.detach(dbg).catch(() => {});
-                resolve({ ok: true, clicked: x + ',' + y });
+                resolve({ ok: true, clicked: x + ',' + y, persistent });
               });
           });
-      };
-      if (persistent) { dispatch(); return; }
-      // 先 detach（可能残留）再 attach —— 残留 attach 会让新 attach 静默失败
-      chrome.debugger.detach(dbg).catch(() => {}).finally(() => {
-        chrome.debugger.attach(dbg, '1.3', () => {
-          const err = chrome.runtime.lastError;
-          if (err) { resolve({ ok: false, error: err.message }); return; }
-          dispatch();
-        });
-      });
-    });
+      }));
   },
 
   // S164: 行为预热（L2）——trusted 鼠标轨迹 + 滚轮。
@@ -1105,6 +1122,12 @@ const executors = {
       : (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
     return { ok: true, url: t?.url, title: t?.title };
   },
+
+  diagnostics: async ({ clear = false }) => {
+    const { [DIAGNOSTICS_KEY]: items = [] } = await chrome.storage.local.get(DIAGNOSTICS_KEY);
+    if (clear) await chrome.storage.local.set({ [DIAGNOSTICS_KEY]: [] });
+    return { ok: true, items, count: items.length };
+  },
 };
 
 // ── WS 客户端（连 xbrowser bridge 9346） ────────────────────
@@ -1173,6 +1196,26 @@ async function reconcileTaskTabs() {
   } catch {}
 }
 reconcileTaskTabs();
+
+// Crash/unload correlation: Chrome fires these before our next command sees a
+// dead debugger target. Record the page lifecycle fact immediately.
+chrome.tabs.onRemoved.addListener((tabId, info) => {
+  void recordDiagnostic('tab-removed', { tabId, windowId: info.windowId, isWindowClosing: info.isWindowClosing });
+  stealthTabs.delete(tabId);
+});
+chrome.tabs.onUpdated.addListener((tabId, info, tab) => {
+  if (info.status === 'loading') void recordDiagnostic('page-loading', { tabId, url: info.url || tab.url });
+  if (info.status === 'complete') void recordDiagnostic('page-complete', { tabId, url: info.url || tab.url });
+});
+chrome.tabs.onReplaced.addListener((addedTabId, removedTabId) => {
+  void recordDiagnostic('tab-replaced', { tabId: removedTabId, addedTabId });
+  stealthTabs.delete(removedTabId);
+});
+chrome.debugger.onDetach.addListener((source, reason) => {
+  const tabId = source?.tabId;
+  void recordDiagnostic('debugger-detached', { tabId, reason });
+  if (typeof tabId === 'number') stealthTabs.delete(tabId);
+});
 
 connectWS();
 

@@ -23,6 +23,21 @@ function createBridgeMocks(fetchMock: ReturnType<typeof vi.fn>) {
   global.fetch = fetchMock as unknown as typeof fetch;
 }
 
+function createBridgeFetch(evaluateValues: unknown[]): ReturnType<typeof vi.fn> {
+  return vi.fn(async (url: unknown, init?: { body?: string }) => {
+    if (String(url).includes('/status')) {
+      return { json: async () => ({ running: true }) };
+    }
+    const { cmd } = JSON.parse(init?.body ?? '{}') as { cmd: string };
+    const data = cmd === 'navigate'
+      ? { tabId: 885234300 }
+      : cmd === 'evaluate'
+        ? { value: evaluateValues.shift() }
+        : {};
+    return { json: async () => ({ ok: true, data }) };
+  });
+}
+
 
 describe('boss plugin', () => {
   beforeEach(() => {
@@ -34,7 +49,8 @@ describe('boss plugin', () => {
     expect(mockXCLI.createSite).toHaveBeenCalledWith(expect.objectContaining({
       name: 'boss',
       url: 'https://www.zhipin.com',
-      requiresLogin: true,
+      // chat-reply 走 chrome-bridge，登录态由真实页面验证兜底。
+      requiresLogin: false,
     }));
     expect(mockSite.command.mock.calls.map((item: unknown[]) => item[0])).toEqual([
       'search', 'detail', 'companies', 'recommend', 'chat', 'chat-reply', 'resume',
@@ -151,40 +167,32 @@ describe('boss plugin', () => {
   });
 
   it('chat-reply navigates, clicks conversation, types and sends', async () => {
-    const page = createPage(null);
-    page.evaluate = vi.fn()
-      .mockResolvedValueOnce({ x: 550, y: 206.5 })
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce({ x: 1491, y: 919 })
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(true);
-    const fetchMock = vi.fn((_url: unknown, init?: { body?: string }) => {
-      const body = JSON.parse(init?.body ?? '{}') as { cmd: string };
-      return Promise.resolve({
-        json: async () => ({ ok: true, data: { cmd: body.cmd } }),
-      });
-    });
+    const fetchMock = createBridgeFetch([
+      { x: 550, y: 206.5 },
+      true,
+      true,
+      true,
+    ]);
     createBridgeMocks(fetchMock);
-    const ctx = { page };
-    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好，感谢联系' }, ctx);
+    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好，感谢联系' }, {});
     const bridgeCommands = fetchMock.mock.calls.map((call) => {
       const init = call[1] as { body: string };
+      if (!init?.body) return 'status';
       return (JSON.parse(init.body) as { cmd: string }).cmd;
     });
-    expect(bridgeCommands).toEqual(['trustedClick']);
+    expect(bridgeCommands.filter(cmd => cmd !== 'status')).toEqual(['navigate', 'evaluate', 'trustedClick', 'evaluate', 'evaluate', 'evaluate']);
     expect(result.success).toBe(true);
     expect(result.data).toMatchObject({ sent: true, to: '德熙' });
   });
 
   it('chat-reply fails when real message is not present after sending', async () => {
-    const page = createPage(null);
-    page.evaluate = vi.fn()
-      .mockResolvedValueOnce({ x: 550, y: 206.5 })
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(false);
-    createBridgeMocks(vi.fn().mockResolvedValue({ json: async () => ({ ok: true, data: {} }) }));
-    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好' }, { page });
+    createBridgeMocks(createBridgeFetch([
+      { x: 550, y: 206.5 },
+      true,
+      true,
+      false,
+    ]));
+    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好' }, {});
     expect(result.success).toBe(false);
     expect(result.message).toBe('发送后未在会话中找到消息');
   });
