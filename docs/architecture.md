@@ -638,6 +638,16 @@ CDP connection / Chromium
 `npm run lint:mistakes` 会列出所有已约束错题；存在任何一条即失败，提醒
 先修复或显式清理错题本，而不是继续带病迭代。
 
+媒体与音乐生成命令还受静态错题约束：`npm run lint:media-constraints`
+会检查关键 UI 不得新增 `DOM click()`（`isTrusted=false`）、受保护媒体
+下载必须声明浏览器凭证上下文，并锁定产物溯源字段与模式校验债务。历史
+债务记录在 `lint-scripts/media-constraints-baseline.json`，只允许收敛，
+不允许新增。
+
+媒体产物契约还有一条运行时约束：只有字节已经真实写入目标路径，才允许把
+`localPath` 标记为可下载；`sizeBytes` 应来自同一次下载字节，而不是事后
+重新读盘。测试替身也必须满足同一语义，否则在干净 CI 环境会掩盖未落盘产物。
+
 ---
 
 ## 扩展点

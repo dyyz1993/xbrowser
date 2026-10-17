@@ -3,10 +3,31 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { bridgeExec, cdp, ev, sleep } from './bridge.js';
+import {
+  createMediaArtifact,
+  createMediaTask,
+  mediaDownloadResultSchema,
+  mediaTaskResultSchema,
+  type MediaTaskResult,
+} from '../shared/media-contract.js';
 
 const DOWNLOAD_DIR = path.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads');
 
 type SendResult = { typed: boolean; sent: boolean; text: string };
+type MediaMode = 'image' | 'video';
+
+type Runtime = {
+  bridgeExec: typeof bridgeExec;
+  cdp: typeof cdp;
+  ev: typeof ev;
+  sleep: typeof sleep;
+};
+
+const runtime: Runtime = { bridgeExec, cdp, ev, sleep };
+
+export function setGenerateRuntime(next: Partial<Runtime>): void {
+  Object.assign(runtime, next);
+}
 
 async function waitForReady(tabId: number, secs: number): Promise<boolean> {
   for (let i = 0; i < secs; i++) {
@@ -44,6 +65,67 @@ async function sendPrompt(tabId: number, prompt: string): Promise<SendResult> {
   const sentExpr = '(()=>{const b=[...document.querySelectorAll("button")].find(x=>{const l=x.getAttribute("aria-label")||"";return (l.includes("发送")||l.includes("Send"))&&!x.disabled&&x.getBoundingClientRect().width>0});if(b){b.click();return true}return false})()';
   const sent = await ev<boolean>(sentExpr, tabId);
   return { typed: true, sent: sent === true, text: got };
+}
+
+async function selectGenerationMode(tabId: number, media: MediaMode): Promise<void> {
+  const targetLabel = media === 'image' ? '制作图片' : '制作视频';
+  await runtime.cdp('Page.bringToFront', {}, tabId);
+  await runtime.sleep(500);
+
+  const tools = await runtime.ev<{ x: number; y: number; width: number; height: number } | null>('(' + (() => {
+    const button = [...document.querySelectorAll('button')].find((item) => {
+      const label = item.getAttribute('aria-label') || item.textContent || '';
+      return label.includes('上传和工具') && item.getBoundingClientRect().width > 0;
+    });
+    if (!button) return null;
+    const rect = button.getBoundingClientRect();
+    return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+  }).toString() + ')()', tabId);
+  if (!tools) throw new Error('未找到「上传和工具」按钮');
+  const toolsX = Math.round(tools.x + tools.width / 2);
+  const toolsY = Math.round(tools.y + tools.height / 2);
+  await runtime.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: toolsX, y: toolsY }, tabId);
+  await runtime.cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: toolsX, y: toolsY, button: 'left', clickCount: 1 }, tabId);
+  await runtime.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: toolsX, y: toolsY, button: 'left', clickCount: 1 }, tabId);
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await runtime.sleep(300);
+    const state = await runtime.ev<string>('JSON.stringify({open:!!document.querySelector("mat-card,toolbox-drawer")})', tabId);
+    if (JSON.parse(state || '{}').open) break;
+  }
+
+  const targetExpression = '(' + ((expected: string) => {
+    const button = [...document.querySelectorAll('button')]
+      .filter((node) => {
+        const itemLabel = node.getAttribute('aria-label') || node.textContent || '';
+        return itemLabel.trim() === expected;
+      })
+      .map((node) => node.getBoundingClientRect())
+      .at(-1);
+    if (!button) return null;
+    return { x: button.x, y: button.y, width: button.width, height: button.height };
+  }).toString() + `)(${JSON.stringify(targetLabel)})`;
+  const target = await runtime.ev<{ x: number; y: number; width: number; height: number } | null>(targetExpression, tabId);
+  if (!target) throw new Error(`工具菜单中没有「${targetLabel}」`);
+
+  const x = Math.round(target.x + target.width / 2);
+  const y = Math.round(target.y + target.height / 2);
+  await runtime.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }, tabId);
+  await runtime.cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 }, tabId);
+  await runtime.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }, tabId);
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await runtime.sleep(300);
+    const selectedExpression = '(' + ((label: string) => {
+      const button = [...document.querySelectorAll('button')].find((item) => {
+        const itemLabel = item.getAttribute('aria-label') || item.textContent || '';
+        return itemLabel.includes('取消选择') && itemLabel.includes(label);
+      });
+      return Boolean(button);
+    }).toString() + `)(${JSON.stringify(media === 'image' ? '图片' : '视频')})`;
+    const selected = await runtime.ev<boolean>(selectedExpression, tabId);
+    if (selected) return;
+  }
+  throw new Error(`切换「${targetLabel}」模式失败`);
 }
 
 async function snapshot(tabId: number) {
@@ -99,12 +181,9 @@ async function saveBlobImage(tabId: number, blobUrl: string, filePath: string): 
   return true;
 }
 
-const generateResult = z.object({
+const generateResult = mediaTaskResultSchema.extend({
   prompt: z.string(),
-  taskId: z.string(),
-  sessionUrl: z.string(),
-  mediaUrl: z.string().nullable(),
-  localPath: z.string().nullable(),
+  download: mediaDownloadResultSchema,
 });
 
 async function generate(
@@ -120,6 +199,7 @@ async function generate(
   tips.push(`任务分组: xb-task-${taskId}`);
 
   try {
+    await selectGenerationMode(tabId, media);
     const ready = await waitForReady(tabId, 60);
     if (!ready) return fail('Gemini 页面加载超时', tips);
 
@@ -160,15 +240,41 @@ async function generate(
     const sessionUrl = await ev<string>('JSON.stringify(location.href)', tabId);
     const session = JSON.parse(sessionUrl || '""') as string;
 
-    return ok({
-      prompt: params.prompt,
+    const task = createMediaTask({
       taskId,
+      site: 'gemini',
+      kind: media,
+      status: localPath ? 'completed' : 'processing',
+      providerStatus: localPath ? 'downloaded' : 'processing',
+      sessionName: taskId,
       sessionUrl: session,
-      mediaUrl,
-      localPath,
-    }, [...tips, localPath ? `已保存: ${localPath}` : '下载失败但 URL 可用']);
+    });
+    task.localPath = localPath;
+    if (mediaUrl) {
+      (task as MediaTaskResult).artifacts = [createMediaArtifact({
+        artifactId: `${taskId}-artifact`,
+        taskId,
+        kind: media,
+        status: task.status,
+        mediaUrl,
+        duration: media === 'video' ? undefined : undefined,
+      })];
+    }
+    return ok({
+      ...task,
+      prompt: params.prompt,
+      download: mediaDownloadResultSchema.parse({
+        ok: Boolean(localPath),
+        taskId,
+        mediaUrl,
+        localPath,
+        error: localPath ? null : 'download pending',
+      }),
+    } as unknown as ReturnType<typeof generateResult.parse>, [...tips, localPath ? `已保存: ${localPath}` : '下载失败但 URL 可用']);
   } catch (error) {
     return fail(error instanceof Error ? error.message : '生成失败', tips);
+  } finally {
+    await runtime.bridgeExec('task-close', { name: taskId });
   }
 }
 

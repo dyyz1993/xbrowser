@@ -1,6 +1,13 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
+import {
+  createMediaArtifact,
+  createMediaTask,
+  mediaDownloadResultSchema,
+  mediaTaskResultSchema,
+  type MediaTaskResult,
+} from '../shared/media-contract.js';
 
 type Page = import('../types').Page;
 type Response = import('../types').Response;
@@ -109,6 +116,48 @@ function mapSong(item: Record<string, unknown>): Record<string, unknown> | Recor
     bpm: (item.bpm || 0) as number,
     createdAt: (item.generate_at ? new Date((item.generate_at as number) * 1000).toISOString() : '') as string,
   };
+}
+
+function toMurekaTaskResult(input: {
+  taskId: string;
+  status?: unknown;
+  providerTaskId?: string;
+  songs: Array<Record<string, unknown>>;
+  sessionName?: string;
+}): MediaTaskResult {
+  const task = createMediaTask({
+    taskId: input.taskId,
+    site: 'mureka',
+    kind: 'audio',
+    status: input.status,
+    providerTaskId: input.providerTaskId,
+    sessionName: input.sessionName,
+    sessionUrl: 'https://www.mureka.cn',
+    error: null,
+  });
+  return {
+    ...task,
+    artifacts: input.songs.map((song, index) => createMediaArtifact({
+      artifactId: String(song.id || `${input.taskId}-${index}`),
+      taskId: input.taskId,
+      kind: 'audio',
+      status: song.status,
+      mediaUrl: song.audioUrl as string | null,
+      duration: song.duration,
+      provider: { title: song.title, model: song.model },
+    })),
+  };
+}
+
+function toMurekaDownloadResult(input: { taskId: string; mediaUrl: string; localPath?: string; size?: number; error?: string }) {
+  return mediaDownloadResultSchema.parse({
+    ok: Boolean(input.localPath),
+    taskId: input.taskId,
+    mediaUrl: input.mediaUrl,
+    localPath: input.localPath,
+    sizeBytes: input.size,
+    error: input.error ?? null,
+  });
 }
 
 interface CapturedApi {
@@ -280,7 +329,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('library', {
     description: '查看已创作的歌曲列表',
     scope: 'browser',
-    result: z.object({ songs: z.array(z.record(z.string(), z.any())) }),
+    result: mediaTaskResultSchema,
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(20).describe('返回条数（默认 20）'),
     }),
@@ -317,7 +366,13 @@ export default function (xcli: XCLIAPI): void {
         }
 
     return ok(
-          { songs },
+          toMurekaTaskResult({
+            taskId: String((feedItems[0] as Record<string, unknown> | undefined)?.feed_id || 'mureka-library'),
+            status: songs[0]?.status,
+            providerTaskId: String((feedItems[0] as Record<string, unknown> | undefined)?.feed_id || ''),
+            songs,
+            sessionName: 'default',
+          }),
           [
             ...tips,
             `共 ${songs.length} 首，${withUrl.length} 首可播放`,
@@ -338,7 +393,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('create', {
     description: '在 Mureka 上创建音乐。支持简易/自定义/配乐模式，--wait 同步等待结果',
     scope: 'browser',
-    result: z.object({ songs: z.array(z.record(z.string(), z.any())).optional(), songId: z.string().optional(), status: z.string().optional() }),
+    result: mediaTaskResultSchema,
     parameters: z.object({
       prompt: z.string().describe('音乐描述（如"轻快的钢琴曲"、"悲伤的小提琴"）'),
       mode: z.enum(['简易', '自定义', '配乐']).optional().describe('创作模式（默认 自定义）'),
@@ -695,7 +750,13 @@ export default function (xcli: XCLIAPI): void {
             }
 
             return ok(
-              { songs, songId: capturedSongId },
+              toMurekaTaskResult({
+                taskId: capturedSongId || `mureka-session`,
+                status: 'completed',
+                providerTaskId: capturedSongId,
+                songs,
+                sessionName: 'default',
+              }),
               [
                 ...tips,
                 `✅ 生成完成！共 ${songs.length} 首${withUrl.length > 0 ? `，${withUrl.length} 首可播放` : ''}`,
@@ -707,7 +768,13 @@ export default function (xcli: XCLIAPI): void {
           }
 
           return ok(
-            { status: 'timeout', songId: capturedSongId },
+            toMurekaTaskResult({
+              taskId: capturedSongId || `mureka-session`,
+              status: 'timeout',
+              providerTaskId: capturedSongId,
+              songs: [],
+              sessionName: 'default',
+            }),
             [
               ...tips,
               `⏱ 等待 ${waitSeconds}s 超时，音乐可能还在生成`,
@@ -717,7 +784,13 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok(
-          { songId: capturedSongId },
+          toMurekaTaskResult({
+            taskId: capturedSongId || `mureka-session`,
+            status: 'submitted',
+            providerTaskId: capturedSongId,
+            songs: [],
+            sessionName: 'default',
+          }),
           [
             ...tips,
             '✅ 生成请求已提交（异步模式）',
@@ -738,7 +811,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('status', {
     description: '检查当前音乐生成状态',
     scope: 'browser',
-    result: z.object({ status: z.string().optional(), songs: z.array(z.record(z.string(), z.any())).optional() }),
+    result: mediaTaskResultSchema,
     parameters: z.object({}),
     examples: [
       { cmd: 'xbrowser mureka status --cdp 9221', description: '检查状态' },
@@ -777,7 +850,12 @@ export default function (xcli: XCLIAPI): void {
           } catch { /* ignore */ }
 
     return ok(
-            { status: domStatus },
+            toMurekaTaskResult({
+              taskId: `mureka-status`,
+              status: domStatus,
+              songs: [],
+              sessionName: 'default',
+            }),
             [...tips, '未捕获到歌曲数据', `DOM 状态提示: ${domStatus}`, `📊 DOM 状态: ${domStatus}`],
           );
         }
@@ -786,7 +864,13 @@ export default function (xcli: XCLIAPI): void {
         const statusSummary = songs.map((s: Record<string, unknown>) => `${s.title || '未命名'}[${s.status}]`).join(', ');
 
     return ok(
-          { songs },
+          toMurekaTaskResult({
+            taskId: String((feedItems[0] as Record<string, unknown> | undefined)?.feed_id || `mureka-status`),
+            status: songs[0]?.status,
+            providerTaskId: String((feedItems[0] as Record<string, unknown> | undefined)?.feed_id || ''),
+            songs,
+            sessionName: 'default',
+          }),
           [...tips, `共 ${songs.length} 首`, `📊 ${statusSummary}`],
         );
       } catch (error) {
@@ -801,7 +885,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('download', {
     description: '下载音乐到本地（返回 curl 命令或直接下载）',
     scope: 'browser',
-    result: z.object({ url: z.string(), size: z.number().optional() }),
+    result: mediaDownloadResultSchema,
     parameters: z.object({
       url: z.string().describe('音频 URL'),
       output: z.string().optional().describe('输出路径（默认 ./downloads/）'),
@@ -813,6 +897,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params, ctx) => {
       try {
+        const page = getPage(ctx);
         const tips = buildTips(ctx);
 
         if (params.url && params.url.includes('static-web.mureka.cn')) {
@@ -831,7 +916,7 @@ export default function (xcli: XCLIAPI): void {
 
         if (params.format === 'curl') {
     return ok(
-              { url: params.url },
+              toMurekaDownloadResult({ taskId: 'mureka-curl', mediaUrl: params.url, error: 'curl command mode' }),
               [
                 ...tips,
                 `💡 运行以下命令下载:`,
@@ -842,18 +927,25 @@ export default function (xcli: XCLIAPI): void {
         }
 
         try {
-          const resp = await fetch(params.url);
-          if (!resp.ok) {
-    return ok({ url: params.url }, [...tips, `无法访问音频 URL (HTTP ${resp.status})`, '⚠️ 无法访问音频 URL']);
+          const base64 = await page.evaluate(async (mediaUrl: string) => {
+            const response = await fetch(mediaUrl, { credentials: 'include' });
+            if (!response.ok) return `ERR:${response.status}`;
+            const bytes = new Uint8Array(await response.arrayBuffer());
+            let text = '';
+            for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 0x8000)) as number[]);
+            return btoa(text);
+          }, params.url);
+          if (!base64 || base64.startsWith('ERR:')) {
+            return ok(toMurekaDownloadResult({ taskId: 'mureka-download', mediaUrl: params.url, error: base64 || 'empty media response' }), [...tips, '无法访问音频 URL', '⚠️ 无法访问音频 URL']);
           }
-          const buffer = Buffer.from(await resp.arrayBuffer());
+          const buffer = Buffer.from(base64, 'base64');
           const fs = await import('fs');
           const pathMod = await import('path');
           const dir = pathMod.dirname(outputPath);
           fs.mkdirSync(dir, { recursive: true });
           fs.writeFileSync(outputPath, buffer);
     return ok(
-              { size: buffer.length },
+              toMurekaDownloadResult({ taskId: 'mureka-download', mediaUrl: params.url, localPath: outputPath, size: buffer.length }),
               [
                 ...tips,
                 `✅ 已下载: ${outputPath} (${(buffer.length / 1024).toFixed(1)} KB)`,
@@ -861,7 +953,7 @@ export default function (xcli: XCLIAPI): void {
               ],
             );
         } catch (e) {
-    return ok({ url: params.url }, [...tips, `下载失败: ${e instanceof Error ? e.message : '未知错误'}`, '❌ 下载失败']);
+    return ok(toMurekaDownloadResult({ taskId: 'mureka-download', mediaUrl: params.url, error: e instanceof Error ? e.message : '未知错误' }), [...tips, `下载失败: ${e instanceof Error ? e.message : '未知错误'}`, '❌ 下载失败']);
         }
       } catch (error) {
     return fail(error instanceof Error ? error.message : '未知错误', ['下载命令失败']);
@@ -875,7 +967,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('result', {
     description: '获取最新生成的音乐音频 URL（被动拦截页面数据）',
     scope: 'browser',
-    result: z.object({ songs: z.array(z.record(z.string(), z.any())) }),
+    result: mediaTaskResultSchema,
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(10).describe('返回条数（默认 10）'),
     }),
@@ -906,7 +998,12 @@ export default function (xcli: XCLIAPI): void {
 
         if (feedItems.length === 0) {
     return ok(
-            { songs: [] },
+            toMurekaTaskResult({
+              taskId: 'mureka-result',
+              status: 'unknown',
+              songs: [],
+              sessionName: 'default',
+            }),
             [...tips, '未获取到歌曲数据。可能未登录或没有创作记录', '⏱ 未获取到歌曲'],
           );
         }
@@ -915,7 +1012,13 @@ export default function (xcli: XCLIAPI): void {
         const withUrl = songs.filter((s: Record<string, unknown>) => s.audioUrl);
 
     return ok(
-          { songs },
+          toMurekaTaskResult({
+            taskId: String((feedItems[0] as Record<string, unknown> | undefined)?.feed_id || 'mureka-result'),
+            status: songs[0]?.status,
+            providerTaskId: String((feedItems[0] as Record<string, unknown> | undefined)?.feed_id || ''),
+            songs,
+            sessionName: 'default',
+          }),
           [
             ...tips,
             `共 ${songs.length} 首，${withUrl.length} 首可播放`,

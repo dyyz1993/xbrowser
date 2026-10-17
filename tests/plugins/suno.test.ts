@@ -141,7 +141,7 @@ describe('suno plugin', () => {
       expect(result.success).toBe(false);
     });
 
-    it('should return empty songs when no feed data', async () => {
+    it('should return an empty media task when no feed data', async () => {
       const handler = getHandler('result');
       const ctx = makeCtx({
         page: {
@@ -155,7 +155,11 @@ describe('suno plugin', () => {
     });
     const result = await handler({ limit: 10 }, ctx);
     expect(result.success).toBe(true);
-    expect(result.data.songs).toEqual([]);
+      expect(result.data).toMatchObject({
+        site: 'suno',
+        kind: 'audio',
+        artifacts: [],
+      });
     });
   });
 

@@ -25,10 +25,10 @@ description: >
 ```
 CLI (bin/cli.ts)
   └─ router.ts — single command / chain (&& , ->) / heredoc / stdin
-       ├─ commands/  — 49 built-in commands (49 registered via registerCommand)
+       ├─ commands/  — built-in commands (count: see `xbrowser --help`)
        ├─ cli/       — subcommand routing (session, plugin, record, run, viewer)
        ├─ daemon/    — background daemon + WebSocket preview server (port 9224)
-       └─ plugin/    — plugin loader (.xcli/plugins/ → 69 site plugins)
+       └─ plugin/    — plugin loader (.xcli/plugins/ → count: see `xbrowser plugin list`)
 ```
 
 ### Key Paths
@@ -110,6 +110,29 @@ export default function (xcli: XCLIAPI): void {
 - Use `xbrowser create <name> --template <type>` to scaffold
 
 See [references/plugin-development.md](references/plugin-development.md) for full guide (loginConfig, isLogin patterns, result schema migration, helpers).
+
+### Media Generation Plugins
+
+媒体/音乐/生图/生视频插件必须复用统一契约：
+
+```typescript
+import {
+  buildMediaDownload,
+  buildMediaTask,
+  mediaCommandDownloadSchema,
+  mediaCommandResultSchema,
+} from '../shared/media-plugin-template.js';
+```
+
+- 任务/状态命令：`result: mediaCommandResultSchema()`
+- 下载命令：`result: mediaCommandDownloadSchema()`
+- 状态：`submitted / processing / completed / failed / timeout`
+- 本地路径只有在真实写盘成功后才能返回
+- 关键 UI 用真实鼠标事件，不用 `element.click()`
+- 受保护媒体用页面上下文 `fetch(..., { credentials: 'include' })`
+
+完整头部、命令模板、禁忌和测试模板见
+[docs/media-plugin-template.md](../../docs/media-plugin-template.md)。
 
 ---
 

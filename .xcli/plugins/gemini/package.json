@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-gemini",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Google Gemini AI 助手 — 对话、图片生成、音乐生成、文件分析",
   "type": "module",
   "main": "index.ts",
@@ -17,7 +17,7 @@
     "version": "1.0.0",
     "author": "dyyz1993",
     "tags": ["ai", "gemini", "google"],
-    "commands": ["list", "chat", "new", "open", "image", "model", "music"],
+    "commands": ["list", "chat", "new", "open", "image", "model", "music", "music-status"],
     "sites": ["gemini"],
     "site": "https://gemini.google.com"
   },
