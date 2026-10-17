@@ -1,6 +1,13 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
+import {
+  createMediaArtifact,
+  createMediaTask,
+  mediaDownloadResultSchema,
+  mediaTaskResultSchema,
+  type MediaTaskResult,
+} from '../shared/media-contract.js';
 import { buildTips, uploadFileViaDataTransfer, handleChatAttachments } from '../shared/ai-chat-base.js';
 import { extractAllHDImages } from '../shared/image-lightbox.js';
 import { clickButtonByText } from '../shared/file-upload.js';
@@ -15,7 +22,7 @@ const DB_URL = 'https://www.doubao.com';
 /**
  * 下载媒体文件到本地，返回 { localPath, size } 或 null
  */
-async function downloadMedia(url: string, prefix: string, maxRetries = 3): Promise<{ localPath: string; size: number }> {
+async function downloadMedia(page: Page, url: string, prefix: string, maxRetries = 3): Promise<{ localPath: string; size: number }> {
   const downloadDir = path.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads');
   if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir, { recursive: true });
   const ext = url.includes('video') || url.includes('videoweb') ? '.mp4'
@@ -26,8 +33,16 @@ async function downloadMedia(url: string, prefix: string, maxRetries = 3): Promi
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      const { execSync } = await import('child_process');
-      execSync(`curl -sLf -o '${localPath}' '${url}'`, { timeout: 120000 });
+      const base64 = await page.evaluate(async (mediaUrl: string) => {
+        const response = await fetch(mediaUrl, { credentials: 'include' });
+        if (!response.ok) return `ERR:${response.status}`;
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        let text = '';
+        for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 0x8000)) as number[]);
+        return btoa(text);
+      }, url);
+      if (!base64 || base64.startsWith('ERR:')) throw new Error(base64 || 'empty media response');
+      fs.writeFileSync(localPath, Buffer.from(base64, 'base64'));
       const stat = fs.statSync(localPath);
       if (stat.size >= 1024) {
         return { localPath, size: stat.size };
@@ -46,6 +61,51 @@ async function downloadMedia(url: string, prefix: string, maxRetries = 3): Promi
 
 function formatFileSize(bytes: number): string {
   return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)}MB` : `${(bytes / 1024).toFixed(0)}KB`;
+}
+
+function toDoubaoTaskResult(input: {
+  taskId: string;
+  status: 'submitted' | 'processing' | 'completed' | 'failed' | 'timeout';
+  conversationUrl?: string;
+  mediaUrl?: string | null;
+  localPath?: string | null;
+  sizeBytes?: number;
+  provider?: Record<string, unknown>;
+}): MediaTaskResult {
+  const task = createMediaTask({
+    taskId: input.taskId,
+    site: 'doubao',
+    kind: 'audio',
+    status: input.status,
+    sessionName: 'default',
+    sessionUrl: input.conversationUrl,
+    error: input.status === 'failed' ? 'generation failed' : null,
+  });
+  if (!input.mediaUrl) return task;
+  return {
+    ...task,
+    localPath: input.localPath ?? null,
+    artifacts: [createMediaArtifact({
+      artifactId: `${input.taskId}-artifact`,
+      taskId: input.taskId,
+      kind: 'audio',
+      status: input.status,
+      mediaUrl: input.mediaUrl,
+      sizeBytes: input.sizeBytes,
+      provider: input.provider,
+    })],
+  };
+}
+
+function toDoubaoDownloadResult(input: { taskId: string; mediaUrl: string | null; localPath?: string | null; size?: number; error?: string }) {
+  return mediaDownloadResultSchema.parse({
+    ok: Boolean(input.localPath),
+    taskId: input.taskId,
+    mediaUrl: input.mediaUrl,
+    localPath: input.localPath,
+    sizeBytes: input.size,
+    error: input.error ?? null,
+  });
 }
 
 /** Extract audio URL from audio/download elements on the current page. */
@@ -610,7 +670,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao image --prompt "赛博朋克城市" --model Seedance --ratio 16:9', description: '指定模型和比例' },
       { cmd: 'xbrowser doubao image --prompt "油画风格的花园" --style 水彩 --ref /path/to/ref.jpg', description: '指定风格+参考图' },
     ],
-    result: z.object({ url: z.string().optional(), localPath: z.string().optional(), prompt: z.string().optional(), duration: z.string().optional() }).passthrough(),
+    result: mediaTaskResultSchema,
     handler: async (params, ctx) => {
       try {
         const page = ctx.page;
@@ -985,7 +1045,7 @@ export default function (xcli: XCLIAPI): void {
           const url = sourceImages[i]!;
           const isHD = url.includes('image_pre_watermark_1_5b');
           try {
-            const result = await downloadMedia(url, 'extract');
+            const result = await downloadMedia(page, url, 'extract');
             downloads.push({ url, localPath: result.localPath, size: result.size, isHD });
             tips.push(`📁 [${i + 1}/${sourceImages.length}] ${result.localPath} (${isHD ? 'HD' : '缩略图'}, ${(result.size / 1024).toFixed(1)}KB)`);
           } catch (err) {
@@ -1037,7 +1097,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao image-cutout --image /path/to/img.jpg', description: 'AI 抠图' },
     ],
-    result: z.object({ resultUrl: z.string(), source: z.string() }).passthrough(),
+    result: mediaTaskResultSchema,
     handler: async (params, ctx) => {
       try {
         const page = ctx.page;
@@ -1086,7 +1146,12 @@ export default function (xcli: XCLIAPI): void {
           if (resultUrl) break;
         }
 
-        return ok({ resultUrl: resultUrl || 'processing', source: absPath }, tips);
+        return ok(toDoubaoTaskResult({
+          taskId: `doubao-cutout-${Date.now()}`,
+          status: resultUrl ? 'completed' : 'processing',
+          mediaUrl: resultUrl || null,
+          provider: { source: absPath },
+        }), tips);
       } catch {
         return fail('未知错误', ['抠图失败']);
       }
@@ -1105,7 +1170,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao image-vary --image /path/to/img.jpg', description: '图片衍生' },
       { cmd: 'xbrowser doubao image-vary --image /path/to/img.jpg --prompt "更亮色调"', description: '带提示词的衍生' },
     ],
-    result: z.object({ source: z.string(), prompt: z.string().optional(), submitted: z.boolean() }).passthrough(),
+    result: mediaTaskResultSchema,
     handler: async (params, ctx) => {
       try {
         const page = ctx.page;
@@ -1146,7 +1211,11 @@ export default function (xcli: XCLIAPI): void {
           }
         }
 
-        return ok({ source: absPath, prompt: params.prompt, submitted: true }, tips);
+        return ok(toDoubaoTaskResult({
+          taskId: `doubao-vary-${Date.now()}`,
+          status: 'submitted',
+          provider: { source: absPath, prompt: params.prompt },
+        }), tips);
       } catch {
         return fail('未知错误', ['图片衍生失败']);
       }
@@ -1228,7 +1297,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao video --prompt "一只猫在草地上奔跑"', description: '提交视频生成' },
       { cmd: 'xbrowser doubao video --prompt "赛博朋克城市夜景" --model Seedance2.0', description: '指定模型' },
     ],
-    result: z.object({ taskId: z.string(), prompt: z.string(), status: z.string() }).passthrough(),
+    result: mediaTaskResultSchema,
     handler: async (params, ctx) => {
       try {
         const page = ctx.page;
@@ -1272,7 +1341,14 @@ export default function (xcli: XCLIAPI): void {
           return urlParts ? urlParts[1] : '';
         });
 
-        return ok({ taskId: taskId || 'pending', prompt: params.prompt, status: 'submitted' }, taskId
+        return ok({
+          ...toDoubaoTaskResult({
+            taskId: taskId || `doubao-video-${Date.now()}`,
+            status: 'submitted',
+            provider: { providerTaskId: taskId || null },
+          }),
+          prompt: params.prompt,
+        }, taskId
             ? [...tips, `taskId: ${taskId}`]
             : [...tips, '无法提取 taskId，请使用 video-status 检查任务状态']);
       } catch {
@@ -1291,7 +1367,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao video-status --task abc123', description: '检查状态' },
     ],
-    result: z.object({ taskId: z.string(), status: z.string() }).passthrough(),
+    result: mediaTaskResultSchema,
     handler: async (params, ctx) => {
       try {
         const page = ctx.page;
@@ -1320,7 +1396,11 @@ export default function (xcli: XCLIAPI): void {
           return 'unknown';
         }, params.task);
 
-        return ok({ taskId: params.task, status }, tips);
+        return ok(toDoubaoTaskResult({
+          taskId: params.task,
+          status: status === 'pending' ? 'submitted' : status as 'submitted' | 'processing' | 'completed' | 'failed' | 'timeout',
+          provider: { providerStatus: status },
+        }), tips);
       } catch {
         return fail('未知错误', ['检查状态失败']);
       }
@@ -1337,7 +1417,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao video-result --task abc123', description: '获取视频 URL' },
     ],
-    result: z.object({ taskId: z.string(), url: z.string().optional(), localPath: z.string().optional() }).passthrough(),
+    result: mediaDownloadResultSchema,
     handler: async (params, ctx) => {
       try {
         const page = ctx.page;
@@ -1368,11 +1448,20 @@ export default function (xcli: XCLIAPI): void {
 
 
         if (videoUrl) {
-          const downloaded = await downloadMedia(videoUrl, 'video');
+          const downloaded = await downloadMedia(page, videoUrl, 'video');
           tips.push(`📁 视频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`);
-          return ok({ taskId: params.task, url: videoUrl, localPath: downloaded.localPath }, tips);
+          return ok(toDoubaoDownloadResult({
+            taskId: params.task,
+            mediaUrl: videoUrl,
+            localPath: downloaded.localPath,
+            size: downloaded.size,
+          }), tips);
         }
-        return ok({ taskId: params.task }, tips);
+        return ok(toDoubaoDownloadResult({
+          taskId: params.task,
+          mediaUrl: null,
+          error: 'video not ready',
+        }), tips);
       } catch {
         return fail('未知错误', ['获取视频结果失败']);
       }
@@ -1397,6 +1486,7 @@ export default function (xcli: XCLIAPI): void {
         .describe('时长（秒）：如 30、60、90'),
       timeout: z.coerce.number().int().positive().optional()
         .describe('同步等待秒数（如 --timeout 60），不传则异步提交'),
+      taskId: z.string().optional().describe('媒体任务 ID，用于统一溯源'),
       debug: z.boolean().optional().describe('开启 debug 模式，自动记录 API 请求结构到 ~/.xbrowser/debug/'),
     }),
         examples: [
@@ -1406,20 +1496,15 @@ export default function (xcli: XCLIAPI): void {
           { cmd: 'xbrowser doubao music --description "励志歌曲" --voice 男声 --timeout 60', description: 'AI 写歌词模式，指定音色' },
           { cmd: 'xbrowser doubao music --lyric "测试歌词" --debug --timeout 90', description: '开启 debug 模式，记录 API 请求到 ~/.xbrowser/debug/' },
         ],
-    result: z.object({
-      url: z.string().optional(),
-      localPath: z.string().optional(),
+    result: mediaTaskResultSchema.extend({
       conversationUrl: z.string().optional(),
       description: z.string().optional(),
       style: z.string().optional(),
       mood: z.string().optional(),
       voice: z.string().optional(),
       duration: z.union([z.string(), z.number()]).optional(),
-      lyric: z.string().optional(),
+      lyrics: z.string().optional(),
       mode: z.enum(['custom_lyric', 'ai_lyric', 'description']).optional(),
-      taskId: z.string().optional(),
-      status: z.enum(['pending', 'submitted', 'completed', 'timeout', 'error']).optional(),
-      error: z.string().optional(),
     }),
     handler: async (params, ctx) => {
       try {
@@ -1800,8 +1885,17 @@ export default function (xcli: XCLIAPI): void {
           }
 
           if (audioUrl) {
-            const downloaded = await downloadMedia(audioUrl, 'music');
+            const downloaded = await downloadMedia(page, audioUrl, 'music');
             return ok({
+              ...toDoubaoTaskResult({
+                taskId: params.taskId || `doubao-music-${Date.now()}`,
+                status: 'completed',
+                conversationUrl,
+                mediaUrl: audioUrl,
+                localPath: downloaded.localPath,
+                sizeBytes: downloaded.size,
+                provider: { mode, style: params.style, mood: params.mood, voice: params.voice, lyric: params.lyric },
+              }),
               url: audioUrl,
               localPath: downloaded.localPath,
               conversationUrl,
@@ -1833,17 +1927,27 @@ export default function (xcli: XCLIAPI): void {
           });
           if (hasError) {
             return ok({
-              error: '生成失败',
+              ...toDoubaoTaskResult({
+                taskId: params.taskId || `doubao-music-${Date.now()}`,
+                status: 'failed',
+                conversationUrl,
+                provider: { mode, lyric: params.lyric },
+              }),
               conversationUrl,
               description: activeDescription,
               lyric: params.lyric || undefined,
               mode,
-              status: 'error',
+              error: '生成失败',
             }, [...tips, '❌ 音乐生成失败，请检查豆包页面']);
           }
 
           return ok({
-            status: 'timeout',
+            ...toDoubaoTaskResult({
+              taskId: params.taskId || `doubao-music-${Date.now()}`,
+              status: 'timeout',
+              conversationUrl,
+              provider: { mode, lyric: params.lyric },
+            }),
             conversationUrl,
             description: activeDescription,
             lyric: params.lyric || undefined,
@@ -1857,7 +1961,12 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok({
-          status: 'submitted',
+          ...toDoubaoTaskResult({
+            taskId: params.taskId || `doubao-music-${Date.now()}`,
+            status: 'submitted',
+            conversationUrl,
+            provider: { mode, style: params.style, mood: params.mood, voice: params.voice },
+          }),
           conversationUrl,
           description: activeDescription,
           style: params.style || undefined,
@@ -1890,7 +1999,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [
       { cmd: 'xbrowser doubao music-status --task my-music --session music-session --cdp 9221', description: '检查音乐状态' },
     ],
-    result: z.object({ status: z.string(), taskId: z.string().nullable(), url: z.string().nullable() }).passthrough(),
+    result: mediaTaskResultSchema,
     handler: async (params, ctx) => {
       try {
         const page = ctx.page;
@@ -1901,8 +2010,14 @@ export default function (xcli: XCLIAPI): void {
         // Try to find audio first → completed
         const audioUrl = await extractPageAudio(page);
         if (audioUrl) {
-          const downloaded = await downloadMedia(audioUrl, 'music');
-          return ok({ status: 'completed', url: audioUrl, localPath: downloaded.localPath, taskId: params.task || null }, [...tips, `📁 音频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`]);
+          const downloaded = await downloadMedia(page, audioUrl, 'music');
+          return ok(toDoubaoTaskResult({
+            taskId: params.task || `doubao-status-${Date.now()}`,
+            status: 'completed',
+            mediaUrl: audioUrl,
+            localPath: downloaded.localPath,
+            sizeBytes: downloaded.size,
+          }), [...tips, `📁 音频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`]);
         }
 
         // Otherwise check text indicators
@@ -1922,7 +2037,10 @@ export default function (xcli: XCLIAPI): void {
         const sessionNameB = (optsB?.session as string) || 'default';
         const sessionSuffixB = ` --session ${sessionNameB}${cdpSuffixB}`;
 
-        return ok({ status, taskId: params.task || null, url: null }, [
+        return ok(toDoubaoTaskResult({
+          taskId: params.task || `doubao-status-${Date.now()}`,
+          status: status === 'pending' ? 'submitted' : status as 'submitted' | 'processing' | 'completed' | 'failed' | 'timeout',
+        }), [
             ...tips,
             status === 'completed' ? '✅ 已完成' :
             status === 'processing' ? '⏳ 生成中，请稍候' :
@@ -1948,7 +2066,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao music-result --session music-session --cdp 9221', description: '获取音乐 URL' },
       { cmd: 'xbrowser doubao music-result --task my-track --session music-session --cdp 9221', description: '带标记获取' },
     ],
-    result: z.object({ url: z.string().nullable(), localPath: z.string().optional(), taskId: z.string().nullable() }).passthrough(),
+    result: mediaDownloadResultSchema,
     handler: async (params, ctx) => {
       try {
         const page = ctx.page;
@@ -1959,8 +2077,8 @@ export default function (xcli: XCLIAPI): void {
         const audioUrl = await extractPageAudio(page);
 
         if (audioUrl) {
-          const downloaded = await downloadMedia(audioUrl, 'music');
-          return ok({ url: audioUrl, localPath: downloaded.localPath, taskId: params.task || null }, [...tips, `📁 音频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`]);
+          const downloaded = await downloadMedia(page, audioUrl, 'music');
+          return ok(toDoubaoDownloadResult({ taskId: params.task || 'doubao-result', mediaUrl: audioUrl, localPath: downloaded.localPath, size: downloaded.size }), [...tips, `📁 音频已下载: ${downloaded.localPath} (${formatFileSize(downloaded.size)})`]);
         }
 
         // No audio found — give user actionable instructions
@@ -1977,7 +2095,7 @@ export default function (xcli: XCLIAPI): void {
         });
 
         if (hasSubmitted) {
-          return ok({ url: null, taskId: params.task || null }, [
+          return ok(toDoubaoDownloadResult({ taskId: params.task || 'doubao-result', mediaUrl: null, error: 'processing' }), [
               ...tips,
               '⏱ 音乐还在生成中，请稍候再试',
               `重试: xbrowser doubao music-result${sessionSuffixC}`,
@@ -2110,19 +2228,28 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(2000);
         const tips = buildTips(ctx);
 
-        const driveClicked = await page.evaluate(() => {
+        const driveEntry = await page.evaluate(() => {
           const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
           let node: Text | null;
           while ((node = walker.nextNode() as Text | null)) {
             if (node.textContent?.includes('云盘') || node.textContent?.includes('我的文件') || node.textContent?.includes('空间')) {
               const parent = node.parentElement;
-              if (parent) { parent.click(); return true; }
+              if (parent) {
+                const rect = parent.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                  return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+                }
+              }
             }
           }
-          return false;
+          return null;
         });
 
-        if (!driveClicked) tips.push('⚠ 未找到云盘入口，请手动打开云盘页面');
+        if (!driveEntry) {
+          tips.push('⚠ 未找到云盘入口，请手动打开云盘页面');
+        } else {
+          await page.mouse.click(driveEntry.x, driveEntry.y);
+        }
 
         await page.waitForTimeout(2000);
 
@@ -2169,34 +2296,35 @@ export default function (xcli: XCLIAPI): void {
         const tips = buildTips(ctx);
 
         const modelName = params.model;
-        const clicked = await page.evaluate((name: string) => {
+        const entry = await page.evaluate((name: string) => {
           const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
           let node: Text | null;
           while ((node = walker.nextNode() as Text | null)) {
             if (node.textContent?.trim() === name || node.textContent?.includes(name)) {
               const parent = node.parentElement;
               if (parent) {
-                parent.click();
-                return true;
+                const rect = parent.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
               }
             }
           }
-          const selectors = [
-            `[class*="model"]:has-text("${name}")`,
-            `[class*="model-select"] option:has-text("${name}")`,
-            `[class*="dropdown"] [class*="item"]:has-text("${name}")`,
-          ];
-          for (const sel of selectors) {
-            const el = document.querySelector<HTMLElement>(sel);
-            if (el) { el.click(); return true; }
-          }
-          return false;
+          const selector = [`[class*="model"]`, `[class*="model-select"] option`, `[class*="dropdown"] [class*="item"]`]
+            .find((sel) => {
+              const el = document.querySelector<HTMLElement>(sel);
+              if (!el) return false;
+              return (el.textContent || '').includes(name) && el.getBoundingClientRect().width > 0;
+            });
+          if (!selector) return null;
+          const el = document.querySelector<HTMLElement>(selector)!;
+          const rect = el.getBoundingClientRect();
+          return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
         }, modelName);
 
-        if (!clicked) {
+        if (!entry) {
           return ok({ model: modelName }, [...tips, '未找到模型选择器，可能页面结构不同']);
         }
 
+        await page.mouse.click(entry.x, entry.y);
         await page.waitForTimeout(1000);
         return ok({ model: modelName, switched: true }, tips);
       } catch {

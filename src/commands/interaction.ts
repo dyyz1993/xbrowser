@@ -44,10 +44,18 @@ export const clickCommand = registerCommand({
         targetIdsBefore = new Set(ctx.browserContext.pages().map(targetIdOf));
       } catch { targetIdsBefore = new Set(); }
       const pagePromise = new Promise<Page | undefined>((resolve) => {
+        // 新 tab 事件（Target auto-attach 'page'）在点击后毫秒级到达；这个定时器
+        // 只是"没开新 tab 时放弃检测"的兜底。曾为 3000ms —— 每次 click 未开新
+        // tab 都等满 3 秒（bench 实测：click 命令 3.5s 的主项，见 output/benchmark）。
+        // 默认 250ms（25 倍事件到达余量）。XBROWSER_NEW_TAB_WAIT 可调。
+        const waitMs = (() => {
+          const v = parseInt(process.env.XBROWSER_NEW_TAB_WAIT ?? '250', 10);
+          return Number.isFinite(v) && v > 0 ? v : 250;
+        })();
         const timer = setTimeout(() => {
           ctx.browserContext.off('page', handler);
           resolve(undefined);
-        }, 3000);
+        }, waitMs);
         const handler = (page: Page) => {
           if (targetIdsBefore.has(targetIdOf(page))) return; // re-attach of a known target
           // about:blank swap targets attach with fresh targetIds during clicks

@@ -25,10 +25,10 @@ description: >
 ```
 CLI (bin/cli.ts)
   └─ router.ts — single command / chain (&& , ->) / heredoc / stdin
-       ├─ commands/  — 49 built-in commands (49 registered via registerCommand)
+       ├─ commands/  — built-in commands (count: see `xbrowser --help`)
        ├─ cli/       — subcommand routing (session, plugin, record, run, viewer)
        ├─ daemon/    — background daemon + WebSocket preview server (port 9224)
-       └─ plugin/    — plugin loader (.xcli/plugins/ → 69 site plugins)
+       └─ plugin/    — plugin loader (.xcli/plugins/ → count: see `xbrowser plugin list`)
 ```
 
 ### Key Paths
@@ -111,6 +111,29 @@ export default function (xcli: XCLIAPI): void {
 
 See [references/plugin-development.md](references/plugin-development.md) for full guide (loginConfig, isLogin patterns, result schema migration, helpers).
 
+### Media Generation Plugins
+
+媒体/音乐/生图/生视频插件必须复用统一契约：
+
+```typescript
+import {
+  buildMediaDownload,
+  buildMediaTask,
+  mediaCommandDownloadSchema,
+  mediaCommandResultSchema,
+} from '../shared/media-plugin-template.js';
+```
+
+- 任务/状态命令：`result: mediaCommandResultSchema()`
+- 下载命令：`result: mediaCommandDownloadSchema()`
+- 状态：`submitted / processing / completed / failed / timeout`
+- 本地路径只有在真实写盘成功后才能返回
+- 关键 UI 用真实鼠标事件，不用 `element.click()`
+- 受保护媒体用页面上下文 `fetch(..., { credentials: 'include' })`
+
+完整头部、命令模板、禁忌和测试模板见
+[docs/media-plugin-template.md](../../docs/media-plugin-template.md)。
+
 ---
 
 ## CLI Usage
@@ -122,6 +145,26 @@ xbrowser goto https://example.com                       # Auto-start
 xbrowser --cdp 9222 title                               # Connect existing browser
 xbrowser --cdp auto title                               # Auto-discover
 ```
+
+### Browser Session Priority (决策顺序，实战经验)
+
+**先查有没有可复用的浏览器，再考虑自起**——大多数站需要登录态，headless 新起必败：
+
+```bash
+# 1. 先探活已开的浏览器（按端口试）
+curl -s -m 3 http://localhost:9222/json/version   # 自动化实例（xyz-mac 等）
+curl -s -m 3 http://localhost:9221/json/version   # 用户日常浏览器
+# 活着 → --cdp 连它（复用登录态，零成本）
+# 死了 → 2a. 重启自动化实例（登录态在 profile 里）或 2b. cookie 迁移（login-bridge）
+```
+
+| 场景 | 正确选择 |
+|------|---------|
+| 需要登录态（知乎/微博/淘宝/ASC） | **必须**连用户浏览器或 CDP 实例——headless 新起必败 |
+| cookie 已迁移到 CDP 实例 | 连实例（与用户浏览器解耦，可并发） |
+| 纯公开页面 | 随意，headless 兜底 |
+
+注意：CDP trusted 输入要求目标 tab **visible**（`document.visibilityState`），tab 被遮挡时点击/键入被静默丢弃——操作前先查。
 
 ### Environment Variables
 

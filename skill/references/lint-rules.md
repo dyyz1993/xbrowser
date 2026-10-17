@@ -359,3 +359,15 @@ npm run validate    # typecheck + lint + build + test
    - Pre-commit checks → `.husky/pre-commit`
 3. Document in `lint-scripts/RULES.md`
 4. Test: `node lint-scripts/check-xxx.mjs` should pass on all 69 plugins
+
+## Media Generation Constraints (`lint:media-constraints`)
+
+Checks `.xcli/plugins/{gemini,doubao,mureka,suno,udio}` for media-specific rules:
+
+- Critical UI must not use `DOM click()` (`isTrusted=false`); use CDP real mouse events.
+- Protected media downloads must use page-context `fetch(..., { credentials: 'include' })`.
+- Media task/result schemas must expose `taskId/status/mediaUrl/localPath` or inherit from `mediaTaskResultSchema`/`mediaDownloadResultSchema`.
+- Generation mode switches must verify the selected mode before submit.
+
+Baseline file: `lint-scripts/media-constraints-baseline.json` (only shrinks; new debt fails).
+Full guide: `docs/media-plugin-template.md`.

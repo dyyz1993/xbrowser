@@ -4,7 +4,7 @@
 
 If you watch a coding agent work, you'll notice something: it is already an expert in one universal automation interface. It reads `man` pages, composes pipes, retries with backoff, and parses JSON without being taught. Every browser-automation SDK asks that agent to learn a *second* language — import this, await that, wire a driver — just to click a button.
 
-[xbrowser]({{GITHUB_URL}}) takes the opposite bet: **give the agent a shell command it can already use.** This post is the product reasoning, plus what we learned shipping it.
+xbrowser takes the opposite bet: **give the agent a shell command it can already use.** This post is the product reasoning, plus what we learned shipping it.
 
 ## Shell is the native tongue
 
@@ -55,6 +55,6 @@ xbrowser goto https://example.com && title
 xbrowser plugin list
 ```
 
-MIT licensed: [{{GITHUB_URL}}]({{GITHUB_URL}}) · npm: [{{NPM_URL}}]({{NPM_URL}})
+MIT-licensed — search {{GITHUB_REPO}} on GitHub or {{NPM_PKG}} on npm.
 
 *Drafted, cover-rendered, and published by an agent driving xbrowser — including the `devto publish` call that got this page in front of you.*

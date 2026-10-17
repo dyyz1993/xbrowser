@@ -185,7 +185,7 @@ describe('udio plugin', () => {
       });
       const result = await handler({ limit: 20 }, ctx);
       expect(result.success).toBe(true);
-      expect(result.data.songs.length).toBe(1);
+      expect(result.data.artifacts.length).toBe(1);
     });
   });
 
@@ -260,7 +260,7 @@ describe('udio plugin', () => {
       });
       const result = await handler({ limit: 5 }, ctx);
       expect(result.success).toBe(true);
-      expect(result.data.songs).toEqual([]);
+      expect(result.data.artifacts).toEqual([]);
     });
   });
 

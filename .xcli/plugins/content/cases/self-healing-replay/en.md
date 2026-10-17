@@ -4,7 +4,7 @@
 
 Every team that records browser automation hits the same wall three weeks later: the site ships a redesign, a class name changes from `.cta-primary` to `Button_variant__3xkQ`, and every recorded script that touched that button dies at step 4. You re-record, patch selectors, and repeat next sprint.
 
-We spent 30+ seasons of an automated attack-defense arena making recorded scripts survive exactly this. This post is the design walkthrough of the self-healing replay engine that ships in [xbrowser]({{GITHUB_URL}}) — a browser automation CLI where `replay` doesn't just fail, it *recovers*.
+We spent 30+ seasons of an automated attack-defense arena making recorded scripts survive exactly this. This post is the design walkthrough of the self-healing replay engine that ships in xbrowser — a browser automation CLI where `replay` doesn't just fail, it *recovers*.
 
 ## The problem with selectors
 
@@ -80,6 +80,6 @@ xbrowser replay flow.yaml
 
 Replay prints every self-healed step with the strategy that won, so failures are diagnosable and heal rates are measurable. The whole engine is deterministic — no LLM in the loop, no per-action token cost, millisecond-scale recovery.
 
-xbrowser is MIT-licensed on GitHub: [{{GITHUB_URL}}]({{GITHUB_URL}}) · npm: [{{NPM_URL}}]({{NPM_URL}})
+xbrowser is MIT-licensed — search {{GITHUB_REPO}} on GitHub or {{NPM_PKG}} on npm.
 
 *Yes, this post was drafted, cover-rendered, and published through xbrowser's own content pipeline. It eats its own dog food.*

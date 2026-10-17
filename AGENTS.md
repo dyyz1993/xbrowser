@@ -28,7 +28,7 @@ npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 |------|------|
 | `bin/cli.ts` | CLI 入口（`xbrowser` 命令） |
 | `src/` | 核心代码（`browser.ts` / `commands/` / `cli/` / `daemon/` / `cdp-driver/`） |
-| `src/commands/` | 58 个内置命令（goto / click / fill / wait / waitForTimeout / check / uncheck / scroll / browse / record / replay / preview…） |
+| `src/commands/` | 59 个内置命令（goto / click / fill / wait / waitForTimeout / check / uncheck / scroll / browse / record / replay / preview…） |
 | `src/cdp-driver/` | 自研 CDP 驱动（Playwright 替代） |
 | `src/cli/` | 子命令路由（session / plugin / record / preview / viewer） |
 | `src/daemon/` | 后台 daemon + WebSocket preview 服务器 |
@@ -692,6 +692,48 @@ describe('<name> plugin', () => {
 ├── LICENSE             # 发布时必须（推荐 MIT）
 └── helpers.ts          # 可选
 ```
+
+### 10.1.1 媒体/音乐/生图/生视频插件（必须遵守）
+
+所有媒体生成插件必须复用统一契约，不要自造 `songs[]`、`clips[]`、
+`audioUrl` 或裸 `url` 作为任务返回结构。
+
+#### 文件头部模板
+
+```typescript
+import { z } from 'zod/v4';
+import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
+import type { Page } from '../types.js';
+
+const SITE_URL = 'https://example.com';
+
+import {
+  buildMediaDownload,
+  buildMediaTask,
+  mediaCommandDownloadSchema,
+  mediaCommandResultSchema,
+} from '../shared/media-plugin-template.js';
+```
+
+chrome-bridge / CDP 插件参考 `.xcli/plugins/gemini/music.ts` 的可注入
+`Runtime` 模式。
+
+#### 命令声明
+
+- 任务/状态命令：`result: mediaCommandResultSchema()`
+- 下载命令：`result: mediaCommandDownloadSchema()`
+- 返回用 `buildMediaTask()` / `buildMediaDownload()` 构造
+- 统一状态：`submitted / processing / completed / failed / timeout`
+- `localPath` 只有真实写盘成功后才能返回
+- 受保护媒体必须用页面上下文 `fetch(..., { credentials: 'include' })`
+- 关键 UI 不允许 `element.click()`；用 CDP 真实鼠标事件
+- 切换模式后必须读回模式状态
+
+完整模板、反例和测试模板见 `docs/media-plugin-template.md`。
+静态守卫：`npm run lint:media-constraints`。
+运行时错题本见 `docs/architecture.md` 的“错题本”章节：同一错误第 3 次
+会被 `constrained`，`npm run lint:mistakes` 会失败。
 
 ### 10.2 最小插件
 

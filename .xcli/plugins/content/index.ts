@@ -74,8 +74,10 @@ export function buildVars(): Record<string, string> {
     VERSION: version,
     DATE: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`,
     INSTALL_CMD: 'npm install -g @xbrowser/cli',
-    GITHUB_URL: 'https://github.com/dyyz1993/xbrowser',
-    NPM_URL: 'https://www.npmjs.com/package/@xbrowser/cli',
+    // 2026-09-14 用户定调：发布内容零外链（51CTO"含广告信息"拒稿实录）——
+    // 项目以「GitHub 用户名/项目名」文字出现，可搜索但无超链接
+    GITHUB_REPO: 'dyyz1993/xbrowser',
+    NPM_PKG: '@xbrowser/cli',
   };
 }
 

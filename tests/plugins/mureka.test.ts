@@ -186,7 +186,7 @@ describe('mureka plugin', () => {
       });
       const result = await handler({ limit: 20 }, ctx);
       expect(result.success).toBe(true);
-      expect(result.data.songs).toEqual([]);
+      expect(result.data.artifacts).toEqual([]);
     });
   });
 
@@ -271,7 +271,7 @@ describe('mureka plugin', () => {
       });
       const result = await handler({ limit: 10 }, ctx);
       expect(result.success).toBe(true);
-      expect(result.data.songs).toEqual([]);
+      expect(result.data.artifacts).toEqual([]);
     });
   });
 

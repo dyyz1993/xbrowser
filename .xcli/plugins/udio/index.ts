@@ -1,6 +1,13 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
+import {
+  createMediaArtifact,
+  createMediaTask,
+  mediaDownloadResultSchema,
+  mediaTaskResultSchema,
+  type MediaTaskResult,
+} from '../shared/media-contract.js';
 
 type Page = import('../types').Page;
 type Response = import('../types').Response;
@@ -112,6 +119,49 @@ function mapSong(raw: Record<string, unknown>) {
   };
 }
 
+function toUdioTaskResult(input: {
+  taskId: string;
+  status?: unknown;
+  songs: Array<Record<string, unknown>>;
+  sessionName?: string;
+}): MediaTaskResult {
+  const task = createMediaTask({
+    taskId: input.taskId,
+    site: 'udio',
+    kind: 'audio',
+    status: input.status,
+    providerTaskId: input.songs[0]?.id as string | undefined,
+    sessionName: input.sessionName,
+    sessionUrl: 'https://www.udio.com',
+    error: null,
+  });
+  return {
+    ...task,
+    artifacts: input.songs.map((song, index) => {
+      const mapped = mapSong(song) as Record<string, unknown>;
+      return createMediaArtifact({
+        artifactId: String(mapped.id || `${input.taskId}-${index}`),
+        taskId: input.taskId,
+        kind: 'audio',
+        status: input.status,
+        mediaUrl: mapped.audioUrl as string | null,
+        provider: { title: mapped.title, artist: mapped.artist, tags: mapped.tags },
+      });
+    }),
+  };
+}
+
+function toUdioDownloadResult(input: { taskId: string; mediaUrl: string; localPath?: string; size?: number; error?: string }) {
+  return mediaDownloadResultSchema.parse({
+    ok: Boolean(input.localPath),
+    taskId: input.taskId,
+    mediaUrl: input.mediaUrl,
+    localPath: input.localPath,
+    sizeBytes: input.size,
+    error: input.error ?? null,
+  });
+}
+
 async function checkLoggedIn(page: Page): Promise<boolean> {
   return new Promise<boolean>(async (resolve) => {
     const timer = setTimeout(() => {
@@ -217,7 +267,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('library', {
     description: '查看 Udio 歌曲库/创作历史',
     scope: 'browser',
-    result: z.object({ songs: z.array(z.record(z.string(), z.any())) }).passthrough(),
+    result: mediaTaskResultSchema,
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(20).describe('返回条数（默认 20）'),
     }),
@@ -243,14 +293,20 @@ export default function (xcli: XCLIAPI): void {
             return (json.songs || json.data || []) as Array<Record<string, unknown>>;
           } catch { return []; }
         }) as Array<Record<string, unknown>>;
-        const mapped = rawSongs.slice(0, params.limit!).map(mapSong);
-
         return ok(
-          { songs: mapped },
+          toUdioTaskResult({
+            taskId: String(rawSongs[0]?.id || 'udio-library'),
+            status: 'completed',
+            songs: rawSongs.slice(0, params.limit!),
+            sessionName: 'default',
+          }),
           [
             ...tips,
-            `共 ${mapped.length} 首音乐`,
-            ...mapped.slice(0, 5).map((s) => `🎵 ${s.title} — ${s.artist} (${s.createdAt.slice(0, 10)})`),
+            `共 ${rawSongs.length} 首音乐`,
+            ...rawSongs.slice(0, 5).map((song) => {
+              const mapped = mapSong(song);
+              return `🎵 ${mapped.title} — ${mapped.artist} (${mapped.createdAt.slice(0, 10)})`;
+            }),
           ],
         );
       } catch (error) {
@@ -262,7 +318,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('create', {
     description: '在 Udio 上生成音乐。支持自定义 prompt、歌词、风格、纯音乐模式。含 hCaptcha 自动检测',
     scope: 'browser',
-    result: z.object({}).passthrough(),
+    result: mediaTaskResultSchema,
     parameters: z.object({
       prompt: z.string().describe('音乐描述提示词（如 "A gentle piano melody with soft strings"）'),
       lyrics: z.string().optional().describe('自定义歌词文本'),
@@ -637,7 +693,12 @@ export default function (xcli: XCLIAPI): void {
 
             if (newSong) {
               return ok(
-                {},
+                toUdioTaskResult({
+                  taskId: String(newSong.id || `udio-session`),
+                  status: newSong.audioUrl ? 'completed' : 'processing',
+                  songs: [{ id: newSong.id, title: newSong.title, artist: newSong.artist, song_path: newSong.songPath }],
+                  sessionName: 'default',
+                }),
                 [
                   ...tips,
                   `🎵 ${newSong.title} — ${newSong.artist}`,
@@ -648,7 +709,12 @@ export default function (xcli: XCLIAPI): void {
             }
 
             return ok(
-              {},
+              toUdioTaskResult({
+                taskId: `udio-session`,
+                status: 'submitted',
+                songs: [],
+                sessionName: 'default',
+              }),
               [
                 ...tips,
                 '✅ 生成请求已提交，歌曲可能还在处理',
@@ -659,7 +725,12 @@ export default function (xcli: XCLIAPI): void {
           }
 
           return ok(
-            {},
+            toUdioTaskResult({
+              taskId: `udio-session`,
+              status: 'timeout',
+              songs: [],
+              sessionName: 'default',
+            }),
             [
               ...tips,
               `⏱ 等待 ${waitSeconds}s 超时`,
@@ -670,7 +741,12 @@ export default function (xcli: XCLIAPI): void {
         }
 
         return ok(
-          {},
+          toUdioTaskResult({
+            taskId: `udio-session`,
+            status: 'submitted',
+            songs: [],
+            sessionName: 'default',
+          }),
           [
             ...tips,
             '✅ 生成请求已提交（异步模式）',
@@ -688,7 +764,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('status', {
     description: '检查 Udio 最新歌曲生成状态（被动拦截 API 数据）',
     scope: 'browser',
-    result: z.object({ status: z.string().optional(), songs: z.array(z.record(z.string(), z.any())).optional() }).passthrough(),
+    result: mediaTaskResultSchema,
     parameters: z.object({}),
     examples: [
       { cmd: 'xbrowser udio status --cdp 9221', description: '检查状态' },
@@ -720,7 +796,12 @@ export default function (xcli: XCLIAPI): void {
           });
 
           return ok(
-            { status: domStatus },
+            toUdioTaskResult({
+              taskId: `udio-status`,
+              status: domStatus,
+              songs: [],
+              sessionName: 'default',
+            }),
             [...tips, '未捕获到歌曲数据', `DOM 状态提示: ${domStatus}`],
           );
         }
@@ -730,7 +811,12 @@ export default function (xcli: XCLIAPI): void {
         const hasAudio = !!(topSong && topSong.audioUrl);
 
         return ok(
-          { songs: latest },
+          toUdioTaskResult({
+            taskId: String(songs[0]?.id || `udio-status`),
+            status: hasAudio ? 'completed' : 'processing',
+            songs: songs.slice(0, 5),
+            sessionName: 'default',
+          }),
           [
             ...tips,
             `最新: ${topSong?.title || '未命名'} — ${topSong?.artist || ''}`,
@@ -746,7 +832,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('download', {
     description: '下载音乐到本地（返回 curl 命令或直接下载）',
     scope: 'browser',
-    result: z.object({ url: z.string(), size: z.number().optional() }).passthrough(),
+    result: mediaDownloadResultSchema,
     parameters: z.object({
       url: z.string().describe('音频 URL'),
       output: z.string().optional().describe('输出路径（默认 ./downloads/）'),
@@ -780,21 +866,28 @@ export default function (xcli: XCLIAPI): void {
         }
 
         try {
-          const resp = await fetch(params.url);
-          if (!resp.ok) {
+          const base64 = await page.evaluate(async (mediaUrl: string) => {
+            const response = await fetch(mediaUrl, { credentials: 'include' });
+            if (!response.ok) return `ERR:${response.status}`;
+            const bytes = new Uint8Array(await response.arrayBuffer());
+            let text = '';
+            for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + 0x8000)) as number[]);
+            return btoa(text);
+          }, params.url);
+          if (!base64 || base64.startsWith('ERR:')) {
             return ok(
-              { url: params.url },
-              [...tips, `无法访问音频 URL (HTTP ${resp.status})`],
+              toUdioDownloadResult({ taskId: 'udio-download', mediaUrl: params.url, error: base64 || 'empty media response' }),
+              [...tips, '无法访问音频 URL'],
             );
           }
-          const buffer = Buffer.from(await resp.arrayBuffer());
+          const buffer = Buffer.from(base64, 'base64');
           const fs = await import('fs');
           const pathMod = await import('path');
           const dir = pathMod.dirname(outputPath);
           fs.mkdirSync(dir, { recursive: true });
           fs.writeFileSync(outputPath, buffer);
           return ok(
-            { url: outputPath, size: buffer.length },
+            toUdioDownloadResult({ taskId: 'udio-download', mediaUrl: params.url, localPath: outputPath, size: buffer.length }),
             [
               ...tips,
               `✅ 已下载: ${outputPath} (${(buffer.length / 1024).toFixed(1)} KB)`,
@@ -802,7 +895,7 @@ export default function (xcli: XCLIAPI): void {
           );
         } catch (e) {
           return ok(
-            { url: params.url },
+            toUdioDownloadResult({ taskId: 'udio-download', mediaUrl: params.url, error: e instanceof Error ? e.message : '未知错误' }),
             [...tips, `下载失败: ${e instanceof Error ? e.message : '未知错误'}`],
           );
         }
@@ -815,7 +908,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('result', {
     description: '获取 Udio 最新生成的音乐音频 URL',
     scope: 'browser',
-    result: z.object({ songs: z.array(z.record(z.string(), z.any())) }).passthrough(),
+    result: mediaTaskResultSchema,
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(5).describe('返回条数（默认 5）'),
     }),
@@ -847,13 +940,23 @@ export default function (xcli: XCLIAPI): void {
 
         if (songs.length === 0) {
           return ok(
-            { songs: [] },
+            toUdioTaskResult({
+              taskId: 'udio-result',
+              status: 'unknown',
+              songs: [],
+              sessionName: 'default',
+            }),
             [...tips, '未获取到音乐数据。可能未登录或没有创作记录'],
           );
         }
 
         return ok(
-          { songs },
+          toUdioTaskResult({
+            taskId: String(songsRaw[0]?.id || 'udio-result'),
+            status: withUrl.length > 0 ? 'completed' : 'processing',
+            songs: songsRaw.slice(0, params.limit!),
+            sessionName: 'default',
+          }),
           [
             ...tips,
             `共 ${songs.length} 首，${withUrl.length} 首可播放`,

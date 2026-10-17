@@ -4,7 +4,7 @@
 
 观察任何一个 coding agent 工作几分钟，你会发现一件事：它已经是某个通用自动化接口的专家了。它读 `--help`、组织管道、带退避重试、不需要教就会解析 JSON。而每一个浏览器自动化 SDK 都要求这个 agent 再学一门**第二语言**——import 这个、await 那个、接一个 driver——只为点一个按钮。
 
-[xbrowser]({{GITHUB_URL}}) 押了相反的一注：**给 agent 一个它本来就会用的 shell 命令。** 这篇文章讲产品推理，以及做这个产品过程中学到的东西。
+xbrowser 押了相反的一注：**给 agent 一个它本来就会用的 shell 命令。** 这篇文章讲产品推理，以及做这个产品过程中学到的东西。
 
 ## Shell 是母语
 
@@ -55,6 +55,6 @@ xbrowser goto https://example.com && title
 xbrowser plugin list
 ```
 
-MIT 开源：[{{GITHUB_URL}}]({{GITHUB_URL}}) · npm: [{{NPM_URL}}]({{NPM_URL}})
+MIT 开源，GitHub 搜 {{GITHUB_REPO}} 或 npm 装 {{NPM_PKG}} 即可找到。
 
 *本文由 agent 驱动 xbrowser 完成起草、封面渲染与发布——包括把你带到这个页面的那次 `devto publish`。*

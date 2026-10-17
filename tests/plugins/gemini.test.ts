@@ -1,5 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import plugin from '../../.xcli/plugins/gemini/index.ts';
+import { parseUsageText, usageCommandHandler } from '../../.xcli/plugins/gemini/usage.ts';
+import { musicCommandHandler, musicStatusHandler, setMusicDownloader, setMusicRuntime } from '../../.xcli/plugins/gemini/music.ts';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -43,7 +45,13 @@ function createMockCtx(page?: ReturnType<typeof createMockPage>) {
   };
 }
 
-const ALL_COMMANDS = ['list', 'chat', 'music'];
+const ALL_COMMANDS = [
+  'list', 'chat', 'usage',
+  'task-open', 'task-close', 'task-list',
+  'generate-image', 'generate-video',
+  'history-list', 'history-download-video',
+  'music', 'music-status',
+];
 
 describe('gemini plugin', () => {
   beforeEach(() => {
@@ -64,8 +72,8 @@ describe('gemini plugin', () => {
     expect(mockXCLI.createSite).toHaveBeenCalledWith(expect.objectContaining({ requiresLogin: true }));
   });
 
-  it('should register 3 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(3);
+  it('should register all commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(ALL_COMMANDS.length);
   });
 
   it('should register expected command names', () => {
@@ -146,27 +154,261 @@ describe('gemini plugin', () => {
     });
   });
 
-  // ─── music command ───
-  describe('music command', () => {
-    it('should have page scope', () => {
-      const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'music');
-      expect((cmd![1] as Record<string, unknown>).scope).toBe('page');
+  describe('usage command', () => {
+    it('should have page scope and required login', () => {
+      const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'usage');
+      const config = cmd![1] as Record<string, unknown>;
+      expect(config.scope).toBe('page');
+      expect(config.loginRequired).toBe('required');
     });
 
     it('should throw when no page', async () => {
-      const handler = getHandler('music');
-      const ctx = createMockCtx(undefined);
-      await expect(handler({ prompt: 'piano' }, ctx)).rejects.toThrow('需要浏览器页面');
+      await expect(usageCommandHandler({}, createMockCtx(undefined) as never))
+        .rejects.toThrow('需要浏览器页面');
     });
 
-    it('should return ok with url', async () => {
-      const handler = getHandler('music');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      const result = await handler({ prompt: 'piano' }, ctx) as Record<string, unknown>;
+    it('parses current and weekly usage with reset times', () => {
+      const text = [
+        'Gemini',
+        '用量限额 PRO',
+        '更新时间：1 分钟前',
+        '当前用量',
+        '已使用 1%',
+        '重置时间：23:34',
+        '每周限额',
+        '重置时间：10月20日05:34',
+        '已使用 0%',
+      ].join('\n');
+      const parsed = parseUsageText(text, 'https://gemini.google.com/usage');
+      expect(parsed.plan).toBe('PRO');
+      expect(parsed.current).toEqual({ usedPercent: 1, resetAt: '23:34' });
+      expect(parsed.weekly).toEqual({ usedPercent: 0, resetAt: '10月20日05:34' });
+      expect(parsed.updatedAt).toBe('1 分钟前');
+    });
+
+    it('reuses the usage tab and returns parsed data', async () => {
+      const usageText = [
+        '用量限额 PRO',
+        '当前用量',
+        '已使用 2%',
+        '重置时间：23:34',
+        '每周限额',
+        '重置时间：10月20日05:34',
+        '已使用 1%',
+      ].join('\n');
+      const page = createMockPage(usageText);
+      page.url = vi.fn(() => 'https://gemini.google.com/usage');
+      const result = await usageCommandHandler({}, createMockCtx(page) as never) as unknown as Record<string, unknown>;
       expect(result.success).toBe(true);
-      const data = result.data as Record<string, unknown>;
-      expect(data).toHaveProperty('url');
+      const data = result.data as Record<string, any>;
+      expect(data.current.usedPercent).toBe(2);
+      expect(data.weekly.usedPercent).toBe(1);
+      expect(data.sourceUrl).toContain('/usage');
+      expect(page.goto).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('music command', () => {
+    const sampleAudioBase64 = Buffer.alloc(10_000, 7).toString('base64');
+    const readyState = {
+      href: 'https://gemini.google.com/app/sea',
+      text: 'Music ready',
+      editor: 'sea prompt',
+      musicSelected: true,
+      toolsOpen: false,
+      audio: [{ src: 'https://example.com/song.mp4', duration: 62 }],
+    };
+
+    function createRuntime(state: unknown, options: { failOpen?: boolean } = {}) {
+      setMusicDownloader((localPath) => localPath);
+      const taskClose = vi.fn((_command?: string) => Promise.resolve({ ok: true }));
+      setMusicRuntime({
+        bridgeExec: vi.fn((command: string) => {
+          if (command === 'task-open') {
+            if (options.failOpen) return Promise.resolve({ ok: false, error: 'down' });
+            return Promise.resolve({ ok: true, data: { tabId: 42 } });
+          }
+          return taskClose(command);
+        }) as never,
+        cdp: vi.fn(() => Promise.resolve(undefined)) as never,
+        ev: vi.fn((expression: string) => {
+          if (expression.includes('fetch(')) return Promise.resolve(sampleAudioBase64);
+          if (expression.includes('musicSelected')) return Promise.resolve(JSON.stringify(state));
+          if (expression.includes('上传和工具') || expression.includes('制作音乐') || expression.includes('发送')) {
+            return Promise.resolve('true');
+          }
+          return Promise.resolve('null');
+        }) as never,
+        sleep: vi.fn(() => Promise.resolve()),
+      });
+      return { taskClose };
+    }
+
+    afterEach(() => {
+      setMusicDownloader(undefined as never);
+      setMusicRuntime({ bridgeExec: vi.fn(), cdp: vi.fn(), ev: vi.fn(), sleep: vi.fn() });
+    });
+
+    it('registers project commands for synchronous and asynchronous music generation', () => {
+      const music = mockSite.command.mock.calls.find((call: unknown[]) => call[0] === 'music');
+      const status = mockSite.command.mock.calls.find((call: unknown[]) => call[0] === 'music-status');
+      expect((music![1] as Record<string, unknown>).scope).toBe('project');
+      expect((status![1] as Record<string, unknown>).scope).toBe('project');
+    });
+
+    it('returns chrome-bridge failure without opening a page', async () => {
+      createRuntime(readyState, { failOpen: true });
+      const result = await musicCommandHandler({ prompt: 'sea', timeout: 1, wait: true, taskId: 'music-no-bridge' } as never) as unknown as Record<string, unknown>;
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('chrome-bridge 未启动');
+    });
+
+    it('switches to music mode, waits for completion, and downloads the track', async () => {
+      const { taskClose } = createRuntime(readyState);
+      const result = await musicCommandHandler({
+        prompt: 'sea prompt', timeout: 1, wait: true, taskId: 'music-test',
+      }) as unknown as Record<string, unknown>;
+
+      expect(result.success).toBe(true);
+      expect(result.data).toMatchObject({
+        taskId: 'music-test',
+        site: 'gemini',
+        kind: 'audio',
+        status: 'completed',
+        download: { ok: true, taskId: 'music-test' },
+      });
+      expect((result.data as { artifacts: Array<Record<string, unknown>> }).artifacts[0]).toMatchObject({
+        taskId: 'music-test',
+        status: 'completed',
+        mediaUrl: 'https://example.com/song.mp4',
+        sizeBytes: expect.any(Number),
+      });
+      expect((result.data as { localPath: string }).localPath).toContain('gemini_music_music-test.mp4');
+      expect(taskClose).toHaveBeenCalledWith('task-close');
+    });
+
+    it('reports the downloaded byte size without re-reading the artifact', async () => {
+      const written: string[] = [];
+      createRuntime(readyState);
+      setMusicDownloader((localPath, bytes) => {
+        written.push(localPath);
+        expect(bytes.length).toBeGreaterThan(0);
+        return `/tmp/verified-${bytes.length}.mp4`;
+      });
+      const result = await musicCommandHandler({
+        prompt: 'sea prompt', timeout: 1, wait: true, taskId: 'music-size',
+      }) as unknown as Record<string, unknown>;
+
+      expect(written).toHaveLength(1);
+      expect((result.data as { localPath: string }).localPath).toBe('/tmp/verified-10000.mp4');
+      expect((result.data as { artifacts: Array<{ sizeBytes: number }> }).artifacts[0].sizeBytes)
+        .toBe(10_000);
+    });
+
+    it('keeps concurrent task state isolated by task id', async () => {
+      const calls: Array<{ command: string; payload?: unknown }> = [];
+      setMusicRuntime({
+        bridgeExec: vi.fn((command: string, payload?: unknown) => {
+          calls.push({ command, payload });
+          if (command === 'task-open') {
+            return Promise.resolve({ ok: true, data: { tabId: (payload as { name: string }).name.length } });
+          }
+          return Promise.resolve({ ok: true });
+        }) as never,
+        cdp: vi.fn(() => Promise.resolve(undefined)) as never,
+        ev: vi.fn((expression: string, tabId: number) => {
+          if (expression.includes('fetch(')) return Promise.resolve(sampleAudioBase64);
+          if (expression.includes('musicSelected')) {
+            const expectedPrompt = tabId === 3 ? 'first' : 'second';
+            return Promise.resolve(JSON.stringify({
+              ...readyState,
+              editor: expectedPrompt,
+            }));
+          }
+          if (expression.includes('上传和工具') || expression.includes('制作音乐') || expression.includes('发送')) {
+            return Promise.resolve('true');
+          }
+          return Promise.resolve('null');
+        }) as never,
+        sleep: vi.fn(() => Promise.resolve()),
+      });
+
+      const [first, second] = await Promise.all([
+        musicCommandHandler({ prompt: 'first', timeout: 1, wait: false, taskId: 'one' }) as unknown as Record<string, unknown>,
+        musicCommandHandler({ prompt: 'second', timeout: 1, wait: false, taskId: 'two-two' }) as unknown as Record<string, unknown>,
+      ]);
+
+      expect(first.success, JSON.stringify(first)).toBe(true);
+      expect(second.success, JSON.stringify(second)).toBe(true);
+      expect((first.data as { taskId: string }).taskId).toBe('one');
+      expect((second.data as { taskId: string }).taskId).toBe('two-two');
+      expect(calls.filter((call) => call.command === 'task-open').map((call) => call.payload))
+        .toEqual(expect.arrayContaining([
+          { name: 'one', url: 'https://gemini.google.com/app' },
+          { name: 'two-two', url: 'https://gemini.google.com/app' },
+        ]));
+    });
+
+    it('supports asynchronous submission and keeps the task alive', async () => {
+      const { taskClose } = createRuntime(readyState);
+      const result = await musicCommandHandler({
+        prompt: 'sea prompt', timeout: 1, wait: false, taskId: 'music-async',
+      }) as unknown as Record<string, unknown>;
+
+      expect(result.success).toBe(true);
+      expect(result.data).toMatchObject({
+        taskId: 'music-async',
+        site: 'gemini',
+        kind: 'audio',
+        status: 'submitted',
+        artifacts: [],
+        download: { ok: false, taskId: 'music-async' },
+      });
+      expect(taskClose).not.toHaveBeenCalled();
+    });
+
+    it('downloads an asynchronous track through music-status', async () => {
+      createRuntime(readyState);
+      const result = await musicStatusHandler({ taskId: 'music-async', timeout: 1 }) as unknown as Record<string, unknown>;
+      expect(result.success).toBe(true);
+      expect(result.data).toMatchObject({
+        taskId: 'music-async',
+        site: 'gemini',
+        kind: 'audio',
+        status: 'completed',
+        download: { ok: true },
+      });
+    });
+
+    it('fails clearly when the music mode cannot be selected', async () => {
+      createRuntime({ ...readyState, musicSelected: false });
+      const result = await musicCommandHandler({
+        prompt: 'sea', timeout: 1, wait: true, taskId: 'music-mode',
+      }) as unknown as Record<string, unknown>;
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('切换「制作音乐」模式失败');
+    });
+
+    it('reports Gemini synthesis failure', async () => {
+      createRuntime({
+        ...readyState,
+        text: '抱歉，音频生成过程中遇到了一点问题，未能成功合成。',
+        audio: [],
+      });
+      const result = await musicCommandHandler({
+        prompt: 'sea', timeout: 1, wait: true, taskId: 'music-fail',
+      }) as unknown as Record<string, unknown>;
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Gemini 音乐合成失败，请调整提示词后重试');
+    });
+
+    it('reports timeout when no track becomes ready', async () => {
+      createRuntime({ ...readyState, audio: [] });
+      const result = await musicCommandHandler({
+        prompt: 'sea', timeout: 0, wait: true, taskId: 'music-slow',
+      }) as unknown as Record<string, unknown>;
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('等待音乐超时');
     });
   });
 

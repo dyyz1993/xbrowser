@@ -2,7 +2,7 @@
 
 > Published on {{DATE}} · xbrowser v{{VERSION}}
 
-Automated browsers get detected in three ways: your *events* are synthetic, your *environment* has seams, and your *workflow* gets interrupted by things a human would click through. Most stealth guides cover the second. This post covers all three, from months of running an automated attack-defense arena against production-grade detection — as implemented in [xbrowser]({{GITHUB_URL}})'s stealth layer.
+Automated browsers get detected in three ways: your *events* are synthetic, your *environment* has seams, and your *workflow* gets interrupted by things a human would click through. Most stealth guides cover the second. This post covers all three, from months of running an automated attack-defense arena against production-grade detection — as implemented in xbrowser's stealth layer.
 
 ## 1. Synthetic events: `isTrusted` is the first gate
 
@@ -51,6 +51,6 @@ Anti-detection sits on a spectrum. Test automation on your own app, scraping pub
 xbrowser stealth:check   # 28-assertion environment self-audit
 ```
 
-MIT licensed: [{{GITHUB_URL}}]({{GITHUB_URL}}) · npm: [{{NPM_URL}}]({{NPM_URL}})
+MIT-licensed — search {{GITHUB_REPO}} on GitHub or {{NPM_PKG}} on npm.
 
 *Drafted, cover-rendered, and published through xbrowser's own content pipeline.*

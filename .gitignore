@@ -19,6 +19,8 @@ output/
 # ── Project state / metadata tools ─────────────────────
 .codenomad/
 .opencode/
+.zcode/
+.video_agent/
 
 # ── Archive (历史归档) ──────────────────────────────
 .archive/

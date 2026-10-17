@@ -1,5 +1,6 @@
 import { SessionRecorder } from '../recorder/session-recorder.js';
 import type { RecordingSummary } from '../recorder/session-recorder.js';
+import { readMarkdownSummary } from '../recorder/markdown-summary.js';
 import type { Recording } from '../commands/definitions.js';
 import { outputResult, outputError } from './output.js';
 import { existsSync } from 'node:fs';
@@ -90,7 +91,7 @@ export async function handleRecord(
         steps: result.steps,
       }, mode);
 
-      const md = SessionRecorder.readMarkdownSummary(sessionName);
+      const md = readMarkdownSummary(sessionName);
       if (md) {
         process.stdout.write('\n');
         process.stdout.write(md + '\n');
