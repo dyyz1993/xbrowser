@@ -92,21 +92,27 @@ describe('weread', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     ({ mockSite: site, mockXcli: xcli } = makeMock());
-    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ books: [
-      { bookId: 'wr123', title: '三体', author: '刘慈欣', intro: '科幻小说', cover: 'https://cover.jpg', category: '小说' },
-    ] }) });
     weread(xcli);
   });
   it('createSite 参数正确', () => {
     expect(xcli.createSite).toHaveBeenCalledWith(expect.objectContaining({ name: 'weread' }));
   });
   it('search 返回图书列表', async () => {
-    const r = await getCmd(site, 'search')({ query: '三体', limit: 20 }, {});
+    const page = {
+      goto: vi.fn(async () => undefined),
+      waitForTimeout: vi.fn(async () => undefined),
+      evaluate: vi.fn(async () => [{ bookId: 'wr123', title: '三体', author: '刘慈欣', intro: '科幻小说', cover: 'https://cover.jpg' }]),
+    };
+    const r = await getCmd(site, 'search')({ query: '三体', limit: 20 }, { page });
     expect(JSON.stringify(r)).toContain('三体');
   });
   it('无结果返回 fail', async () => {
-    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ books: [] }) });
-    const r = await getCmd(site, 'search')({ query: 'none', limit: 20 }, {});
+    const page = {
+      goto: vi.fn(async () => undefined),
+      waitForTimeout: vi.fn(async () => undefined),
+      evaluate: vi.fn(async () => []),
+    };
+    const r = await getCmd(site, 'search')({ query: 'none', limit: 20 }, { page });
     expect(JSON.stringify(r)).toContain('未找到');
   });
 });

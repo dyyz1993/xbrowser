@@ -1,11 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import plugin from '../../.xcli/plugins/weread/index.ts';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
-const originalFetch = globalThis.fetch;
 
-function handlerOf(name: string): (params: unknown) => Promise<Record<string, unknown>> {
+function handlerOf(name: string): (params: unknown, ctx?: unknown) => Promise<Record<string, unknown>> {
   const call = mockSite.command.mock.calls.find((item: unknown[]) => item[0] === name);
   if (!call) throw new Error(`command ${name} missing`);
   return call[1].handler;
@@ -15,10 +14,6 @@ describe('weread plugin', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     plugin(mockXCLI as never);
-  });
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
   });
 
   it('registers a project search command', () => {
@@ -33,24 +28,19 @@ describe('weread plugin', () => {
   });
 
   it('supports top-level and nested book arrays, and trims intros', async () => {
-    globalThis.fetch = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        data: {
-          books: [{
-            bookId: 'book-1',
-            title: 'Book One',
-            author: 'Author',
-            intro: 'x'.repeat(260),
-            cover: 'https://img/book.jpg',
-            cat: 'Fiction',
-          }],
-        },
-      }),
-    })) as unknown as typeof fetch;
+    const page = {
+      goto: vi.fn(async () => undefined),
+      waitForTimeout: vi.fn(async () => undefined),
+      evaluate: vi.fn(async (_expr: string) => [{
+        bookId: 'book-1',
+        title: 'Book One',
+        author: 'Author',
+        intro: 'x'.repeat(260),
+        cover: 'https://img/book.jpg',
+      }]),
+    };
+    const result = await handlerOf('search')({ query: 'book', limit: 10 }, { page });
 
-    const result = await handlerOf('search')({ query: 'book', limit: 10 });
     expect(result.success).toBe(true);
     expect(result.data).toEqual([{
       rank: 1,
@@ -59,20 +49,26 @@ describe('weread plugin', () => {
       author: 'Author',
       intro: 'x'.repeat(200),
       cover: 'https://img/book.jpg',
-      category: 'Fiction',
+      category: '',
       url: 'https://weread.qq.com/web/reader/book-1',
     }]);
   });
 
   it('fails when no books are found', async () => {
-    globalThis.fetch = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => ({ books: [] }),
-    })) as unknown as typeof fetch;
+    const page = {
+      goto: vi.fn(async () => undefined),
+      waitForTimeout: vi.fn(async () => undefined),
+      evaluate: vi.fn(async (_expr: string) => []),
+    };
+    const result = await handlerOf('search')({ query: 'none', limit: 5 }, { page });
 
-    const result = await handlerOf('search')({ query: 'none', limit: 5 });
     expect(result.success).toBe(false);
     expect(result.message).toBe('未找到 "none" 的相关图书');
+  });
+
+  it('fails clearly when no page context provided', async () => {
+    const result = await handlerOf('search')({ query: 'test', limit: 5 }, {});
+    expect(result.success).toBe(false);
+    expect(result.message).toContain('需要浏览器页面');
   });
 });
