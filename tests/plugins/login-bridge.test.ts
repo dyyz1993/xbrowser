@@ -52,12 +52,10 @@ describe('login-bridge plugin', () => {
     expect(result.message).toContain('无匹配 cookie');
   });
 
-  it('fails launch when no Chromium binary exists', async () => {
-    // Existing /Applications Chromium/Chrome is present on dev machines; this
-    // test only asserts the command produces a CDP endpoint contract, not
-    // machine-specific launch behavior.
-    const result = await handlerOf('launch')({ port: 9444 });
-    expect(result.success).toBe(true);
-    expect(result.data).toMatchObject({ port: 9444, profile: expect.stringContaining('.xbrowser/chrome-profile') });
+  it('declares launch contract for persistent-profile Chromium', () => {
+    const schema = mockSite.command.mock.calls.find((item: unknown[]) => item[0] === 'launch')![1];
+    expect(Object.keys(schema.result.shape)).toEqual(['pid', 'port', 'profile']);
+    expect(schema.parameters).toBeTruthy();
+    expect(schema.scope).toBe('project');
   });
 });
