@@ -1,7 +1,7 @@
 # 插件完成度看板
 
 > **自动生成，请勿手改** · 由 `lint-scripts/check-plugin-status.mjs` 生成
-> 生成时间：2026-10-15 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
+> 生成时间：2026-10-17 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
 
 ## 汇总
 
@@ -93,7 +93,7 @@
 | facebook | 5 | `browser` |
 | flickr | 1 | `browser` |
 | freepik | 1 | `browser` |
-| gemini | 5 | `page` |
+| gemini | 12 | `page`, `project` |
 | geo-analysis | 9 | `browser`, `global` |
 | gettyimages | 1 | `browser` |
 | github | 6 | `browser` |

@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import plugin from '../../.xcli/plugins/gemini/index.ts';
-import { imageCommandHandler, setImageHelpers } from '../../.xcli/plugins/gemini/image.ts';
 import { parseUsageText, usageCommandHandler } from '../../.xcli/plugins/gemini/usage.ts';
+import { musicCommandHandler, musicStatusHandler, setMusicDownloader, setMusicRuntime } from '../../.xcli/plugins/gemini/music.ts';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -46,10 +46,11 @@ function createMockCtx(page?: ReturnType<typeof createMockPage>) {
 }
 
 const ALL_COMMANDS = [
-  'list', 'chat', 'image', 'usage', 'music',
+  'list', 'chat', 'usage',
   'task-open', 'task-close', 'task-list',
   'generate-image', 'generate-video',
   'history-list', 'history-download-video',
+  'music', 'music-status',
 ];
 
 describe('gemini plugin', () => {
@@ -153,63 +154,6 @@ describe('gemini plugin', () => {
     });
   });
 
-  // ─── image command ───
-  describe('image command', () => {
-    it('should have page scope and required login', () => {
-      const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'image');
-      const config = cmd![1] as Record<string, unknown>;
-      expect(config.scope).toBe('page');
-      expect(config.loginRequired).toBe('required');
-    });
-
-    it('should throw when no page', async () => {
-      await expect(imageCommandHandler({ prompt: 'cat', timeout: 15 }, createMockCtx(undefined) as never))
-        .rejects.toThrow('需要浏览器页面');
-    });
-
-    it('activates image mode, submits prompt, and downloads new images', async () => {
-      const page = createMockPage(['https://old.example/avatar.png']);
-      page.url = vi.fn(() => 'https://gemini.google.com/app');
-      setImageHelpers({
-        clickImageMode: vi.fn(() => Promise.resolve(true)),
-        typePrompt: vi.fn(() => Promise.resolve()),
-        submitPrompt: vi.fn(() => Promise.resolve()),
-        collectNewImages: vi.fn(() => Promise.resolve(['https://new.example/generated.png'])),
-        downloadImages: vi.fn(() => Promise.resolve(['/tmp/generated.png'])),
-      });
-
-      const result = await imageCommandHandler(
-        { prompt: 'watercolor cat', timeout: 15, ratio: '16:9' },
-        createMockCtx(page) as never,
-      ) as unknown as Record<string, unknown>;
-
-      expect(result.success).toBe(true);
-      expect(result.data).toMatchObject({
-        prompt: 'watercolor cat',
-        count: 1,
-        localPaths: ['/tmp/generated.png'],
-      });
-      expect(page.goto).not.toHaveBeenCalled();
-    });
-
-    it('returns fail when no generated image appears', async () => {
-      const page = createMockPage([]);
-      page.url = vi.fn(() => 'https://gemini.google.com/app');
-      setImageHelpers({
-        clickImageMode: vi.fn(() => Promise.resolve(false)),
-        typePrompt: vi.fn(() => Promise.resolve()),
-        submitPrompt: vi.fn(() => Promise.resolve()),
-        collectNewImages: vi.fn(() => Promise.resolve([])),
-        downloadImages: vi.fn(() => Promise.resolve([])),
-      });
-
-      const result = await imageCommandHandler({ prompt: 'cat', timeout: 15 }, createMockCtx(page) as never) as unknown as Record<string, unknown>;
-      expect(result.success).toBe(false);
-      expect(result.message).toBe('未检测到生成图片');
-    });
-  });
-
-  // ─── music command ───
   describe('usage command', () => {
     it('should have page scope and required login', () => {
       const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'usage');
@@ -265,25 +209,143 @@ describe('gemini plugin', () => {
   });
 
   describe('music command', () => {
-    it('should have page scope', () => {
-      const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'music');
-      expect((cmd![1] as Record<string, unknown>).scope).toBe('page');
+    const readyState = {
+      href: 'https://gemini.google.com/app/sea',
+      text: 'Music ready',
+      editor: 'sea prompt',
+      musicSelected: true,
+      toolsOpen: false,
+      audio: [{ src: 'https://example.com/song.mp4', duration: 62 }],
+    };
+
+    function createRuntime(state: unknown, options: { failOpen?: boolean } = {}) {
+      setMusicDownloader((localPath) => localPath);
+      const taskClose = vi.fn((_command?: string) => Promise.resolve({ ok: true }));
+      setMusicRuntime({
+        bridgeExec: vi.fn((command: string) => {
+          if (command === 'task-open') {
+            if (options.failOpen) return Promise.resolve({ ok: false, error: 'down' });
+            return Promise.resolve({ ok: true, data: { tabId: 42 } });
+          }
+          return taskClose(command);
+        }) as never,
+        cdp: vi.fn(() => Promise.resolve(undefined)) as never,
+        ev: vi.fn((expression: string) => {
+          if (expression.includes('fetch(')) return Promise.resolve('AQID');
+          if (expression.includes('musicSelected')) return Promise.resolve(JSON.stringify(state));
+          if (expression.includes('上传和工具') || expression.includes('制作音乐') || expression.includes('发送')) {
+            return Promise.resolve('true');
+          }
+          return Promise.resolve('null');
+        }) as never,
+        sleep: vi.fn(() => Promise.resolve()),
+      });
+      return { taskClose };
+    }
+
+    afterEach(() => {
+      setMusicDownloader(undefined as never);
+      setMusicRuntime({ bridgeExec: vi.fn(), cdp: vi.fn(), ev: vi.fn(), sleep: vi.fn() });
     });
 
-    it('should throw when no page', async () => {
-      const handler = getHandler('music');
-      const ctx = createMockCtx(undefined);
-      await expect(handler({ prompt: 'piano' }, ctx)).rejects.toThrow('需要浏览器页面');
+    it('registers project commands for synchronous and asynchronous music generation', () => {
+      const music = mockSite.command.mock.calls.find((call: unknown[]) => call[0] === 'music');
+      const status = mockSite.command.mock.calls.find((call: unknown[]) => call[0] === 'music-status');
+      expect((music![1] as Record<string, unknown>).scope).toBe('project');
+      expect((status![1] as Record<string, unknown>).scope).toBe('project');
     });
 
-    it('should return ok with url', async () => {
-      const handler = getHandler('music');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      const result = await handler({ prompt: 'piano' }, ctx) as Record<string, unknown>;
+    it('returns chrome-bridge failure without opening a page', async () => {
+      createRuntime(readyState, { failOpen: true });
+      const result = await musicCommandHandler({ prompt: 'sea', timeout: 1, wait: true, taskId: 'music-no-bridge' } as never) as unknown as Record<string, unknown>;
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('chrome-bridge 未启动');
+    });
+
+    it('switches to music mode, waits for completion, and downloads the track', async () => {
+      const { taskClose } = createRuntime(readyState);
+      const result = await musicCommandHandler({
+        prompt: 'sea prompt', timeout: 1, wait: true, taskId: 'music-test',
+      }) as unknown as Record<string, unknown>;
+
       expect(result.success).toBe(true);
-      const data = result.data as Record<string, unknown>;
-      expect(data).toHaveProperty('url');
+      expect(result.data).toMatchObject({
+        taskId: 'music-test',
+        site: 'gemini',
+        kind: 'audio',
+        status: 'completed',
+        download: { ok: true, taskId: 'music-test' },
+      });
+      expect((result.data as { artifacts: Array<Record<string, unknown>> }).artifacts[0]).toMatchObject({
+        taskId: 'music-test',
+        status: 'completed',
+        mediaUrl: 'https://example.com/song.mp4',
+        sizeBytes: expect.any(Number),
+      });
+      expect((result.data as { localPath: string }).localPath).toContain('gemini_music_music-test.mp4');
+      expect(taskClose).toHaveBeenCalledWith('task-close');
+    });
+
+    it('supports asynchronous submission and keeps the task alive', async () => {
+      const { taskClose } = createRuntime(readyState);
+      const result = await musicCommandHandler({
+        prompt: 'sea prompt', timeout: 1, wait: false, taskId: 'music-async',
+      }) as unknown as Record<string, unknown>;
+
+      expect(result.success).toBe(true);
+      expect(result.data).toMatchObject({
+        taskId: 'music-async',
+        site: 'gemini',
+        kind: 'audio',
+        status: 'submitted',
+        artifacts: [],
+        download: { ok: false, taskId: 'music-async' },
+      });
+      expect(taskClose).not.toHaveBeenCalled();
+    });
+
+    it('downloads an asynchronous track through music-status', async () => {
+      createRuntime(readyState);
+      const result = await musicStatusHandler({ taskId: 'music-async', timeout: 1 }) as unknown as Record<string, unknown>;
+      expect(result.success).toBe(true);
+      expect(result.data).toMatchObject({
+        taskId: 'music-async',
+        site: 'gemini',
+        kind: 'audio',
+        status: 'completed',
+        download: { ok: true },
+      });
+    });
+
+    it('fails clearly when the music mode cannot be selected', async () => {
+      createRuntime({ ...readyState, musicSelected: false });
+      const result = await musicCommandHandler({
+        prompt: 'sea', timeout: 1, wait: true, taskId: 'music-mode',
+      }) as unknown as Record<string, unknown>;
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('切换「制作音乐」模式失败');
+    });
+
+    it('reports Gemini synthesis failure', async () => {
+      createRuntime({
+        ...readyState,
+        text: '抱歉，音频生成过程中遇到了一点问题，未能成功合成。',
+        audio: [],
+      });
+      const result = await musicCommandHandler({
+        prompt: 'sea', timeout: 1, wait: true, taskId: 'music-fail',
+      }) as unknown as Record<string, unknown>;
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Gemini 音乐合成失败，请调整提示词后重试');
+    });
+
+    it('reports timeout when no track becomes ready', async () => {
+      createRuntime({ ...readyState, audio: [] });
+      const result = await musicCommandHandler({
+        prompt: 'sea', timeout: 0, wait: true, taskId: 'music-slow',
+      }) as unknown as Record<string, unknown>;
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('等待音乐超时');
     });
   });
 

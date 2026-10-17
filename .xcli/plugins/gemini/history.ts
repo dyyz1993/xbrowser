@@ -3,6 +3,9 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { bridgeExec, cdp, ev, sleep } from './bridge.js';
+import {
+  mediaDownloadResultSchema,
+} from '../shared/media-contract.js';
 
 const DOWNLOAD_DIR = path.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads');
 
@@ -75,13 +78,7 @@ export function registerHistoryCommands(site: CommandRegistrar): void {
       keyword: z.string().describe('会话标题关键词'),
       timeout: z.number().min(10).max(120).default(30).describe('等待视频加载秒数'),
     }),
-    result: z.object({
-      title: z.string(),
-      sessionUrl: z.string(),
-      videoUrl: z.string(),
-      localPath: z.string(),
-      size: z.number(),
-    }),
+    result: mediaDownloadResultSchema,
     examples: [{ cmd: 'xbrowser gemini history-download-video --keyword "日落海浪"', description: '按关键词找回视频' }],
     handler: async (params: { keyword: string; timeout: number }) => {
       const taskId = `history-dl-${Date.now()}`;
@@ -109,13 +106,17 @@ export function registerHistoryCommands(site: CommandRegistrar): void {
         if (!result) return fail('视频下载失败');
         fs.writeFileSync(filePath, Buffer.from(result.data.split(',')[1], 'base64'));
 
-        return ok({
-          title: target.title,
-          sessionUrl: target.href,
-          videoUrl,
+        return ok(mediaDownloadResultSchema.parse({
+          ok: true,
+          taskId: taskId,
+          mediaUrl: videoUrl,
           localPath: filePath,
-          size: fs.statSync(filePath).size,
-        }, [`已从历史记录下载: ${filePath}`]);
+          sizeBytes: fs.statSync(filePath).size,
+        }), [
+          `会话: ${target.title}`,
+          `会话URL: ${target.href}`,
+          `已从历史记录下载: ${filePath}`,
+        ]);
       } catch (error) {
         return fail(error instanceof Error ? error.message : '下载失败');
       } finally {
