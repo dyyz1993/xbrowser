@@ -7,29 +7,21 @@
 
 | 指标 | 值 |
 |------|-----|
-| 插件总数 | 131 |
+| 插件总数 | 123 |
 | ✅ 已完成（有实现+有测试） | 120 |
 | 🟡 有实现无测试 | 0 |
-| 🔴 scaffold 待实现 | 11 |
-| **当前债务** | **11** |
+| 🔴 scaffold 待实现 | 3 |
+| **当前债务** | **3** |
 
 > 债务 = 🟡无测试 + 🔴scaffold + ⛔加载失败。目标：债务 → 0。
 
-## 🔴 Scaffold 待实现（11）
+## 🔴 Scaffold 待实现（3）
 
 | 插件 | 行数 | URL |
 |------|------|-----|
-| amazon | 14 | https://www.amazon.com |
 | boss | 14 | https://www.zhipin.com |
 | confluence | 14 | https://xxx.atlassian.net/wiki |
-| grok | 14 | https://grok.com |
-| indeed | 14 | https://www.indeed.com |
 | jira | 14 | https://xxx.atlassian.net |
-| linkedin | 14 | https://www.linkedin.com |
-| linkedin-learning | 14 | https://www.linkedin.com/learning |
-| notebooklm | 14 | https://notebooklm.google.com |
-| tiktok | 14 | https://www.tiktok.com |
-| upwork | 14 | https://www.upwork.com |
 
 ## 🟡 有实现无测试（0） — P1 优先
 
