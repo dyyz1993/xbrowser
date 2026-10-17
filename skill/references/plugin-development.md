@@ -10,6 +10,7 @@ Complete reference for creating xbrowser plugins — from minimal to full-featur
 - [Naming Convention](#naming-convention)
 - [Minimal Plugin](#minimal-plugin)
 - [Full Plugin Template](#full-plugin-template)
+- [Media Plugin Template](#media-plugin-template)
 - [package.json Fields](#packagejson-fields)
 - [ok()/fail() Return Pattern](#okfail-return-pattern)
 - [Result Schema Migration (L0→L1→L2)](#result-schema-migration-l0l1l2)
@@ -19,6 +20,77 @@ Complete reference for creating xbrowser plugins — from minimal to full-featur
 - [CDP-Safe Helper Functions](#cdp-safe-helper-functions)
 - [Scaffold with create Command](#scaffold-with-create-command)
 - [Common Anti-Patterns](#common-anti-patterns)
+
+---
+
+## Media Plugin Template
+
+媒体/音乐/生图/生视频插件必须使用统一媒体契约，不能自造顶层任务字段。
+
+### Header Imports
+
+```typescript
+import { z } from 'zod/v4';
+import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
+import type { Page } from '../types.js';
+import {
+  buildMediaDownload,
+  buildMediaTask,
+  mediaCommandDownloadSchema,
+  mediaCommandResultSchema,
+} from '../shared/media-plugin-template.js';
+```
+
+### Command Schemas
+
+```typescript
+site.command('generate', {
+  description: 'Generate media',
+  scope: 'browser',
+  result: mediaCommandResultSchema(),
+  parameters: z.object({
+    prompt: z.string(),
+    waitForCompletion: z.boolean().optional(),
+    timeoutMs: z.number().int().positive().optional(),
+  }),
+  handler: async (params, ctx) => {
+    const page = (ctx as Record<string, unknown>).page as Page | undefined;
+    if (!page) return fail('需要浏览器页面');
+
+    const task = buildMediaTask({
+      taskId: `example-${Date.now()}`,
+      site: 'example',
+      kind: 'audio',
+      status: 'submitted',
+      providerStatus: 'submitted',
+      sessionName: 'default',
+      sessionUrl: page.url(),
+      localPath: null,
+    });
+    return ok(task, ['已提交']);
+  },
+});
+```
+
+下载命令必须使用：
+
+```typescript
+result: mediaCommandDownloadSchema(),
+```
+
+并返回 `buildMediaDownload({ taskId, mediaUrl, localPath, sizeBytes })`。
+
+### Hard Rules
+
+- 统一状态：`submitted / processing / completed / failed / timeout`
+- `localPath` 只能在真实写盘成功后返回
+- 受保护媒体必须用页面上下文 `fetch(..., { credentials: 'include' })`
+- 关键 UI 不允许 `element.click()`；用真实鼠标事件
+- 切换模式后必须读回模式状态
+- 不新增 `songs[]`、`clips[]`、`audioUrl` 或裸 `url` 作为任务顶层字段
+
+完整文档：[../../docs/media-plugin-template.md](../../docs/media-plugin-template.md)。
 
 ---
 

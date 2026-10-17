@@ -4,14 +4,19 @@
  * chat — 发送消息
  */
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import { usageCommandHandler, usageResultSchema } from './usage.js';
+import { registerBridgeCommands } from './bridge.js';
+import { registerGenerateCommands } from './generate.js';
+import { registerHistoryCommands } from './history.js';
+import { registerMusicCommands } from './music.js';
 
 const GEMINI_URL = 'https://gemini.google.com';
 type Page = import('../types').Page;
 
-function buildCdpTips(ctx: CommandContext): string[] {
-  const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint as string | undefined;
+function buildCdpTips(ctx: unknown): string[] {
+  const cdp = (ctx as Record<string, unknown>).cdpEndpoint as string | undefined;
   return cdp ? [] : ['建议使用 --cdp 9221 连接已登录浏览器'];
 }
 
@@ -104,52 +109,23 @@ export default function (xcli: XCLIAPI): void {
   });
 
   // ── music — 生成音乐 ──
-  site.command('music', {
-    description: '生成音乐（打开制作音乐工具并发送提示）',
+  site.command('usage', {
+    description: '读取 Gemini 当前用量和周限额（含重置时间）',
     scope: 'page',
-    parameters: z.object({
-      prompt: z.string().describe('音乐描述，如"一首轻快的钢琴曲"'),
-    }),
-    result: z.object({ url: z.string() }),
-    handler: async (params, ctx) => {
-      const page = ctx.page;
-      if (!page) throw new Error("需要浏览器页面");
-      const tips = buildCdpTips(ctx);
-      try {
-        // Navigate to Gemini
-        await page.goto(GEMINI_URL + '/app', { waitUntil: 'domcontentloaded', timeout: 20000 });
-        await new Promise(r => setTimeout(r, 4000));
-
-        // Click upload/tools button
-        await page.evaluate(() => {
-          const btn = document.querySelector('[aria-label*="上传和工具"]');
-          if (btn) (btn as HTMLElement).click();
-        });
-        await new Promise(r => setTimeout(r, 1000));
-
-        // Click "制作音乐"
-        await page.evaluate(() => {
-          const items = document.querySelectorAll('[class*="drawer-item"], div, button');
-          for (const el of items) {
-            if ((el.textContent || '').includes('制作音乐')) {
-              (el as HTMLElement).click();
-              return;
-            }
-          }
-        });
-        await new Promise(r => setTimeout(r, 1000));
-
-        // Type prompt and send
-        const inputSel = '[aria-label*="输入提示"], [contenteditable="true"]';
-        await page.fill(inputSel, params.prompt);
-        await page.keyboard.press('Enter');
-
-        return ok({ url: '' }, [...tips, `音乐生成请求已发送: "${params.prompt}"`]);
-      } catch (error) {
-        return fail((error as Error).message || '未知错误', tips);
-      }
-    },
+    loginRequired: 'required',
+    parameters: z.object({}),
+    examples: [
+      { cmd: 'xbrowser --cdp 9221 gemini usage', description: '输出当前用量、周限额和重置时间' },
+      { cmd: 'xbrowser --cdp 9221 --json gemini usage', description: 'JSON 输出' },
+    ],
+    result: usageResultSchema,
+    handler: async (_params, ctx) => usageCommandHandler(_params, ctx),
   });
+
+  registerBridgeCommands(site);
+  registerGenerateCommands(site);
+  registerHistoryCommands(site);
+  registerMusicCommands(site);
 
   site.login(async (ctx) => {
     const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;

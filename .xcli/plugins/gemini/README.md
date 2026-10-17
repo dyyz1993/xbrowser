@@ -29,7 +29,9 @@ xbrowser --cdp 9221 gemini <command>
 | --- | --- |
 | `list` | 列出历史会话 |
 | `chat` | 发送消息 |
-| `music` | 生成音乐（打开制作音乐工具并发送提示） |
+| `image` | 快速生成图片并下载到本地 |
+| `music` | 自动切换制作音乐模式，等待并下载音乐；`--wait false` 异步提交 |
+| `music-status` | 继续等待异步音乐任务并下载产物 |
 
 ## 使用示例
 
@@ -38,16 +40,21 @@ xbrowser --cdp 9221 gemini list
 ```
 ```bash
 xbrowser --cdp 9221 gemini chat
+xbrowser --cdp 9221 gemini image --prompt "赛博朋克城市夜景" --ratio 16:9
 ```
 ```bash
-xbrowser --cdp 9221 gemini music
+xbrowser gemini music --prompt "大海主题中文歌，温柔女声" --timeout 300
+xbrowser gemini music --prompt "大海" --wait false
+xbrowser gemini music-status --taskId <music-task-id>
 ```
 
 ## 注意事项
 
 1. 本插件需要登录，请通过 --cdp 连接已登录的浏览器
 2. 避免频繁请求，防止触发反爬
-3. 仅用于学习研究，不得用于商业用途
+3. 图片默认保存到 `~/.xbrowser/downloads/`，生成等待默认 180 秒
+4. 音乐命令依赖 `chrome-bridge`，产物保存到 `~/.xbrowser/downloads/`
+5. 仅用于学习研究，不得用于商业用途
 
 ## 许可证
 

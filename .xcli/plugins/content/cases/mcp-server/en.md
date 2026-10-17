@@ -4,7 +4,7 @@
 
 Every CLI tool built before 2026 is asking itself the same question: how do AI agents discover me? The answer the ecosystem converged on is the Model Context Protocol — MCP. If Claude Desktop, Cursor, or any MCP-capable client can list your tool's capabilities and call them, your tool exists for agents. If not, it doesn't.
 
-[xbrowser]({{GITHUB_URL}}) is a browser-automation CLI (57 commands, 130+ site plugins, self-healing replay). This week we shipped `xbrowser mcp` — a stdio MCP server exposing 7 browser tools. This post is the build log: the design decisions, the two real bugs the first smoke run caught, and why we wrote the protocol layer by hand.
+xbrowser is a browser-automation CLI (57 commands, 130+ site plugins, self-healing replay). This week we shipped `xbrowser mcp` — a stdio MCP server exposing 7 browser tools. This post is the build log: the design decisions, the two real bugs the first smoke run caught, and why we wrote the protocol layer by hand.
 
 ## Why hand-write the JSON-RPC layer?
 
@@ -54,6 +54,6 @@ For the real thing: `claude mcp add xbrowser -- xbrowser mcp`, then ask any MCP-
 
 If you maintain a CLI with an agent-relevant surface (browser, files, HTTP, search — most CLIs qualify), an MCP server is probably a day of work: enumerate 5–10 verbs agents actually need, wire them to your existing functions, hand-write the protocol loop, smoke-test with processes. The hard part isn't the protocol — it's the boundary decisions: which verbs, what granularity, how errors surface as tool results instead of crashes.
 
-xbrowser is MIT-licensed: [{{GITHUB_URL}}]({{GITHUB_URL}}) · npm: [{{NPM_URL}}]({{NPM_URL}})
+xbrowser is MIT-licensed — search {{GITHUB_REPO}} on GitHub or {{NPM_PKG}} on npm.
 
 *This post was drafted through xbrowser's own content pipeline, and the `browser_*` tools above are the same ones any MCP agent gets.*

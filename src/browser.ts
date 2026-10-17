@@ -1,85 +1,32 @@
-import { randomUUID } from 'node:crypto';
-import { errMsg } from './utils/error.js';
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 import type { Browser, BrowserContext, Page } from './browser-shim.js';
-import { launch } from './cdp-driver/index.js';
-import { CDPInterceptorProxy } from './cdp-interceptor/proxy.js';
-import type { CDPInterceptorConfig } from './cdp-interceptor/types.js';
-import type { BrowserCommandContext } from './context.js';
 import { resolveCDPEndpoint } from './utils/cdp.js';
-import { SessionStore } from '@dyyz1993/xcli-core';
+import { launch } from './cdp-driver/index.js';
+import { createBrowser, getCDPTargets, getSharedCdpProxy, setSharedCdpProxy } from './browser/connection.js';
+import {
+  SESSION_DIR,
+  type BrowserLaunchOptions,
+  type ManagedSession,
+  sessionFile,
+  sessions,
+  sharedState,
+} from './browser/state.js';
+import { findOrRestoreSession as findOrRestoreSessionImpl } from './browser/restore.js';
+import { createSessionImpl } from './browser/create-session.js';
+import { registerSession } from './browser/lifecycle.js';
+export type { BrowserLaunchOptions, ManagedSession, SessionDiskMeta } from './browser/state.js';
+export * from './browser/index.js';
 
-/**
- * Log a session lifecycle event for traceability.
- * Format: [SESSION] event | details
- * Events: create, close, idle_timeout, destroy_browser, process_exit, cdp_disconnect
- */
 function logSessionEvent(event: string, details: string): void {
-  const ts = new Date().toISOString().replace('T', ' ').substring(0, 19);
-  const pid = process.pid;
-  console.error(`[SESSION] ${ts} [PID:${pid}] ${event} | ${details}`);
+  const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+  console.error(`[SESSION] ${timestamp} [PID:${process.pid}] ${event} | ${details}`);
 }
-
-/**
- * Represents a managed browser session with its Playwright context, page,
- * and its own dedicated Browser connection.
- */
-export interface ManagedSession {
-  id: string;
-  name: string;
-  context: BrowserContext;
-  page: Page;
-  browser: Browser;
-  createdAt: string;
-  lastActivityAt: number;
-  isCDP?: boolean;
-  cdpEndpoint?: string;
-}
-
-/** Extra metadata stored on disk for cross-process session recovery. */
-export interface SessionDiskMeta {
-  id: string;
-  name: string;
-  url: string;
-  createdAt: string;
-  cdpEndpoint?: string;
-  conversationUrl?: string;   // specific page URL to restore (e.g. doubao chat conversation)
-}
-
-const SESSION_DIR = join(homedir(), '.xbrowser', 'sessions');
-
-function sessionFile(name: string): string {
-  return join(SESSION_DIR, `${name}.json`);
-}
-
-function ensureSessionDir(): void {
-  mkdirSync(SESSION_DIR, { recursive: true });
-}
-
-/**
- * Options for launching or connecting to a browser instance.
- */
-export interface BrowserLaunchOptions {
-  headless?: boolean;
-  executablePath?: string;
-  cdpEndpoint?: string;
-  /** Enable CDP-level interception for anti-crawler protection */
-  intercept?: boolean | CDPInterceptorConfig;
-}
-
-const sessions = new SessionStore<ManagedSession>();
-
-let _sharedBrowser: Browser | null = null;
-let _sharedCdpProxy: CDPInterceptorProxy | null = null;
 
 const IDLE_TIMEOUT_MS = (process.env.XBROWSER_IDLE_TIMEOUT ? parseInt(process.env.XBROWSER_IDLE_TIMEOUT, 10) : 30) * 60 * 1000;
-let idleTimer: ReturnType<typeof setTimeout> | null = null;
-
-function resetIdleTimer(): void {
-  if (idleTimer) clearTimeout(idleTimer);
-  idleTimer = setTimeout(async () => {
+export function resetIdleTimer(): void {
+  if (sharedState.idleTimer) clearTimeout(sharedState.idleTimer);
+  sharedState.idleTimer = setTimeout(async () => {
     const now = Date.now();
     let allIdle = true;
     const idleSessions: string[] = [];
@@ -90,16 +37,25 @@ function resetIdleTimer(): void {
         idleSessions.push(`${s.name}(${(now - s.lastActivityAt) / 1000}s idle)`);
       }
     }
-    if (allIdle && (sessions.size > 0 || _sharedBrowser)) {
+    if (allIdle && (sessions.size > 0 || sharedState.browser)) {
       logSessionEvent('idle_timeout', `Sessions idle for >${IDLE_TIMEOUT_MS / 60000}min. Sessions: ${idleSessions.join(', ') || 'all'}. Calling destroyBrowser()`);
       await destroyBrowser().catch(() => {         });
     }
   }, IDLE_TIMEOUT_MS);
-  // unref() so idleTimer does not prevent process exit.
+  // unref() so sharedState.idleTimer does not prevent process exit.
   // Daemon mode keeps itself alive via its own setInterval.
-  if (idleTimer && typeof idleTimer.unref === 'function') {
-    idleTimer.unref();
+  if (sharedState.idleTimer && typeof sharedState.idleTimer.unref === 'function') {
+    sharedState.idleTimer.unref();
   }
+}
+
+export async function findOrRestoreSession(name: string, cdpEndpoint?: string): Promise<ManagedSession | undefined> {
+  return findOrRestoreSessionImpl(
+    name,
+    cdpEndpoint,
+    closeSessionByName,
+    installNetworkCapture
+  );
 }
 
 export function touchSession(id: string): void {
@@ -117,141 +73,18 @@ process.on('exit', () => {
       try { session.browser?.close(); } catch { /* force cleanup on exit */ }
     }
   }
-  if (_sharedBrowser) {
+  if (sharedState.browser) {
     logSessionEvent('process_exit', 'Closing shared browser (self-launched only, external CDP is safe).');
-    try { _sharedBrowser.close(); } catch { /* force cleanup on exit */ }
-    _sharedBrowser = null;
+    try { sharedState.browser.close(); } catch { /* force cleanup on exit */ }
+    sharedState.browser = null;
   }
-  if (_sharedCdpProxy) {
-    try { _sharedCdpProxy.stop(); } catch { /* best effort */ }
-    _sharedCdpProxy = null;
+  const cdpProxy = getSharedCdpProxy();
+  if (cdpProxy) {
+    try { cdpProxy.stop(); } catch { /* best effort */ }
+    setSharedCdpProxy(null);
   }
   sessions.clear();
 });
-
-async function getCDPTargets(cdpEndpoint: string | number): Promise<Array<{ id: string; url: string; title: string; webSocketDebuggerUrl: string }>> {
-  try {
-    const ep = String(cdpEndpoint);
-    let url = 'http://localhost:9222/json/list';
-    if (ep.startsWith('http://') || ep.startsWith('https://')) {
-      // 保留 endpoint 的 query（多用户网关 ?key= 按 key 隔离路由）
-      const u = new URL(ep);
-      u.pathname = (u.pathname.replace(/\/+$/, '') || '') + '/json/list';
-      url = u.toString();
-    } else if (/^\d+$/.test(ep)) {
-      url = `http://localhost:${ep}/json/list`;
-    }
-    const resp = await fetch(url);
-    return (await resp.json()) as Array<{ id: string; url: string; title: string; webSocketDebuggerUrl: string }>;
-  } catch {
-    return [];
-  }
-}
-
-export async function findTargetPage(
-  cdpEndpoint: string | number,
-  target: string
-): Promise<{ pageId: string; wsUrl: string; title: string; url: string } | null> {
-  const targets = await getCDPTargets(cdpEndpoint);
-  const pages = targets.filter(t => t.url && !t.url.startsWith('about:blank') && !t.url.startsWith('chrome://') && !t.url.startsWith('chrome-untrusted://') && !t.url.startsWith('chrome-error://'));
-
-  const byId = pages.find(t => t.id === target);
-  if (byId) return { pageId: byId.id, wsUrl: byId.webSocketDebuggerUrl, title: byId.title, url: byId.url };
-
-  const lowerTarget = target.toLowerCase();
-  const byTitle = pages.find(t => t.title && t.title.toLowerCase().includes(lowerTarget));
-  if (byTitle) return { pageId: byTitle.id, wsUrl: byTitle.webSocketDebuggerUrl, title: byTitle.title, url: byTitle.url };
-
-  const byUrl = pages.find(t => t.url.toLowerCase().includes(lowerTarget));
-  if (byUrl) return { pageId: byUrl.id, wsUrl: byUrl.webSocketDebuggerUrl, title: byUrl.title, url: byUrl.url };
-
-  return null;
-}
-
-/**
- * Fetch a URL bypassing any HTTP proxy (for localhost CDP endpoints).
- * Node.js global fetch respects http_proxy/https_proxy which breaks localhost CDP discovery.
- */
-
-
-export function resolveLaunchOpts(ctx: BrowserCommandContext): BrowserLaunchOptions {
-  if (ctx.cdpEndpoint) {
-    return { cdpEndpoint: ctx.cdpEndpoint };
-  }
-  return { headless: true };
-}
-
-const CHROMIUM_CANDIDATES = [
-  '/Applications/Chromium.app/Contents/MacOS/Chromium',
-  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  '/usr/bin/chromium-browser',
-  '/usr/bin/chromium',
-  '/usr/bin/google-chrome',
-];
-
-function discoverChromiumPath(): string | undefined {
-  for (const p of CHROMIUM_CANDIDATES) {
-    if (existsSync(p)) return p;
-  }
-  return undefined;
-}
-
-/**
- * Always create a new Browser instance (never caches).
- *
- * @param options - Launch options including headless mode, executable path, or CDP endpoint.
- * @returns A fresh Playwright Browser instance.
- */
-// d07 连接级持久化（S102）：--cdp 模式此前每命令新建连接 —— 旧连接的
-// page wrapper 与新连接 pages() 对象不可比（S98 坐实 === 恒 false），跨
-// session 占用判定只能靠 URL 兜底且 newPage 的 tab 管理割裂。daemon 级
-// endpoint→browser 缓存让同一浏览器的所有 session 共享一个连接与 wrapper
-// 世界，对象比对恢复有效、tab 状态一致。
-const _browserPool = new Map<string, Browser>();
-
-export async function createBrowser(options?: BrowserLaunchOptions): Promise<Browser> {
-  if (options?.cdpEndpoint) {
-    const realEndpoint = await resolveCDPEndpoint(options.cdpEndpoint);
-    if (!options.intercept) {
-      const pooled = _browserPool.get(realEndpoint);
-      if (pooled && !pooled.disconnected) {
-        return pooled;
-      }
-      if (pooled) _browserPool.delete(realEndpoint);
-    }
-
-    if (options.intercept) {
-      const config: CDPInterceptorConfig = typeof options.intercept === 'object'
-        ? { ...options.intercept, cdpEndpoint: realEndpoint }
-        : { cdpEndpoint: realEndpoint };
-
-      _sharedCdpProxy = new CDPInterceptorProxy(config);
-      const proxyPort = await _sharedCdpProxy.start();
-      console.error(`[CDP Interceptor] Proxy running on ws://localhost:${proxyPort}, forwarding to ${realEndpoint}`);
-      const { browser } = await launch({ cdpEndpoint: `ws://localhost:${proxyPort}` });
-      // Interceptor proxy already wraps the connection — contexts should be visible.
-      return browser;
-    }
-
-    const { browser } = await launch({ cdpEndpoint: realEndpoint });
-    // CDP tunnel/attach connections don't reliably fire Target.attachedToTarget
-    // events for existing pages. Without this call, `browser.contexts()` would
-    // return [] and downstream code would fall back to creating a brand-new
-    // isolated context — losing all the user's existing cookies/login state.
-    await browser.discoverContexts().catch((err: unknown) => {
-      console.error(`[browser] discoverContexts failed: ${errMsg(err)}`);
-    });
-    if (!options.intercept) _browserPool.set(realEndpoint, browser);
-    return browser;
-  }
-
-  const executablePath =
-    options?.executablePath ||
-    process.env.XBROWSER_CHROMIUM_PATH ||
-    discoverChromiumPath();
-  const { browser } = await launch({ executablePath, headless: options?.headless ?? true });
-  return browser;
-}
 
 /**
  * Get or create the shared browser instance (lazy singleton).
@@ -268,13 +101,13 @@ export async function createBrowser(options?: BrowserLaunchOptions): Promise<Bro
  * ```
  */
 export async function getBrowser(options?: BrowserLaunchOptions): Promise<Browser> {
-  if (_sharedBrowser) return _sharedBrowser;
-  _sharedBrowser = await createBrowser(options);
+  if (sharedState.browser) return sharedState.browser;
+  sharedState.browser = await createBrowser(options);
   // Track CDP proxy for shared browser cleanup
   if (options?.cdpEndpoint && options.intercept) {
     // Proxy lifecycle is handled by destroyBrowser
   }
-  return _sharedBrowser;
+  return sharedState.browser;
 }
 
 /**
@@ -294,207 +127,6 @@ export function getSessionById(id: string): ManagedSession | undefined {
 export function setActivePage(session: ManagedSession, page: Page): void {
   session.page = page;
   session.lastActivityAt = Date.now();
-}
-
-/**
- * Save session metadata to disk for cross-process recovery.
- */
-export function saveSessionDiskMeta(name: string, data: Partial<SessionDiskMeta>): void {
-  ensureSessionDir();
-  const file = sessionFile(name);
-  let existing: Record<string, unknown> = {};
-  try { existing = JSON.parse(readFileSync(file, 'utf8')); } catch { /* new file */ }
-  Object.assign(existing, data, { name });
-  writeFileSync(file, JSON.stringify(existing, null, 2));
-}
-
-/**
- * Read session metadata from disk.
- */
-export function readSessionDiskMeta(name: string): SessionDiskMeta | null {
-  const file = sessionFile(name);
-  try {
-    return JSON.parse(readFileSync(file, 'utf8')) as SessionDiskMeta;
-  } catch {
-    return null;
-  }
-}
-
-export function deleteSessionDiskMeta(name: string): void {
-  const file = sessionFile(name);
-  try { unlinkSync(file); } catch { /* file may not exist */ }
-}
-
-/**
- * Find a session by name, falling back to disk-stored metadata when the
- * in-memory session is gone (e.g. cross-CLI-invocation).
- *
- * In restore mode, creates a fresh page via CDP and navigates to the saved
- * conversationUrl or url so the caller gets a working page.
- *
- * @param name - Session name.
- * @param cdpEndpoint - CDP endpoint to use when restoring from disk.
- * @returns A managed session (possibly restored), or `undefined`.
- */
-/**
- * 便宜存活探针：一次 evaluate 往返即可判断 page 背后的 CDP 连接是否还活着。
- * 浏览器在同一端口被杀重拉后，内存会话的 page 对象仍存在但 WS 已死——
- * 不探一下就返回，首个命令必失败（"Cannot read properties of undefined" /
- * WS 404），要等人工重试才恢复。
- */
-async function isSessionPageAlive(session: ManagedSession): Promise<boolean> {
-  const page = session.page as unknown as { evaluate?: (expr: string) => Promise<unknown> } | undefined;
-  if (!page || typeof page.evaluate !== 'function') return false;
-  // Probe up to 3 times: freshly-switched tabs (target=_blank wrappers) can
-  // transiently fail evaluate while their CDP session settles — one blip must
-  // not kill the session and rebuild it onto the WRONG (original) tab (d07).
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      await Promise.race([
-        page.evaluate('1'),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('liveness probe timeout')), 1500)),
-      ]);
-      return true;
-    } catch {
-      await new Promise(r => setTimeout(r, 400));
-    }
-  }
-  return false;
-}
-
- export async function findOrRestoreSession(
-  name: string,
-  cdpEndpoint?: string,
-): Promise<ManagedSession | undefined> {
-  // 1. Try in-memory first — 但必须探活。
-  //    Defense (2026-08-15 F3, browser-agent-product 冷启动 404)：
-  //    原「same-process sessions are always valid」在浏览器于同端口重启后为假——
-  //    内存会话持死 page，首个命令失败、人工重试才恢复（冒烟 3 个数据点）。
-  //    探针失败 → 关闭僵尸条目，落入下方磁盘/CDP 重建路径，同一次调用内自愈。
-  const inMem = findSession(name);
-  if (inMem) {
-    if (await isSessionPageAlive(inMem)) return inMem;
-    logSessionEvent('stale_session', `name="${name}" — page 探针失败（浏览器可能已重启），就地重建`);
-    try { await closeSessionByName(name); } catch { /* 已死，忽略关闭错误 */ }
-  }
-
-  // 2. Try disk recovery if we have CDP
-  const meta = readSessionDiskMeta(name);
-  if (!meta) return undefined;
-  const ep = cdpEndpoint || meta.cdpEndpoint;
-  if (!ep) return undefined;
-
-  try {
-    const b = await createBrowser({ cdpEndpoint: ep });
-    await new Promise(r => setTimeout(r, 500)); // 等待 contexts 填充
-    let contexts = b.contexts();
-    
-    // 如果 contexts 仍为空，尝试等待更长时间
-    if (contexts.length === 0) {
-      await new Promise(r => setTimeout(r, 500));
-      contexts = b.contexts();
-    }
-    
-    const context = contexts[0] || (await b.newContext());
-
-    const savedUrl = meta.conversationUrl || meta.url;
-    const targetHostname = savedUrl ? (() => { try { return new URL(savedUrl).hostname; } catch { return ''; } })() : '';
-
-    let page: Page | null = null;
-    let fallbackPage: Page | null = null;
-
-    for (const ctx of contexts) {
-      const pages = ctx.pages();
-      for (const p of pages) {
-        const pUrl = p.url();
-        if (pUrl && pUrl !== 'about:blank' && !pUrl.startsWith('chrome://') && !pUrl.startsWith('chrome-untrusted://') && !pUrl.startsWith('chrome-error://')) {
-          // Prefer the page matching the session's saved hostname
-          if (targetHostname && pUrl.includes(targetHostname)) {
-            page = p;
-            break;
-          }
-          // Keep the first usable page as fallback
-          if (!fallbackPage) {
-            fallbackPage = p;
-          }
-        }
-      }
-      if (page) break;
-    }
-
-    // Use hostname-matched page, or fallback to first usable page
-    page = page || fallbackPage;
-
-    if (!page) {
-      const targets = await getCDPTargets(ep);
-      const matchTarget = targets.find(t =>
-        t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://') && !t.url.startsWith('chrome-untrusted://') && !t.url.startsWith('chrome-error://') &&
-        (targetHostname ? t.url.includes(targetHostname) : true)
-      );
-      if (matchTarget && matchTarget.url) {
-        page = await context.newPage();
-        await page.goto(matchTarget.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-      }
-    }
-
-    if (!page) {
-      const pages = context.pages();
-      page = pages.length > 0 ? pages[0] : await context.newPage();
-    }
-
-    // Validate restored page is responsive
-    try {
-      await Promise.race([
-        page.evaluate(() => true),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000)),
-      ]);
-    } catch {
-      // Page is dead (CDP disconnected, tab closed, etc.) — discard stale session, create fresh
-      console.log(`[Session] "${name}" restored page unresponsive, creating fresh session`);
-      deleteSessionDiskMeta(name);
-      return undefined;
-    }
-
-    const targetUrl = meta.conversationUrl || meta.url;
-    if (targetUrl && page.url() !== targetUrl) {
-      try {
-        if (!page.url().includes(new URL(targetUrl).hostname)) {
-          await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
-        }
-      } catch { /* ignore URL parse errors */ }
-    }
-
-    const session: ManagedSession = {
-      id: meta.id || randomUUID(),
-      name,
-      context,
-      page,
-      browser: b,
-      createdAt: meta.createdAt || new Date().toISOString(),
-      lastActivityAt: Date.now(),
-      isCDP: true,
-      cdpEndpoint: ep,
-    };
-    // Safety: remove any stale session with the same name before inserting.
-    // This should never happen (findSession returned undefined above) but
-    // guards against race conditions in daemon mode.
-    for (const existingSession of sessions.list()) {
-      if (existingSession.name === name) {
-        logSessionEvent('remove_stale', `Removing stale session name="${name}" id="${existingSession.id}" during restore`);
-        sessions.removeById(existingSession.id);
-      }
-    }
-
-    sessions.set(session);
-    resetIdleTimer();
-    await installNetworkCapture(page, name);
-    return session;
-  } catch (e) {
-    console.error(`[Session Restore] Failed for "${name}":`, errMsg(e));
-    // Discard corrupt session meta so next attempt starts fresh
-    deleteSessionDiskMeta(name);
-    return undefined;
-  }
 }
 
 /**
@@ -577,9 +209,9 @@ export async function closeEphemeralContext(context: BrowserContext): Promise<vo
 
   // If no managed sessions exist, clear the idle timer so the process can exit.
   // Ephemeral commands (scrape/search/map etc.) don't need session lifecycle management.
-  if (sessions.size === 0 && idleTimer) {
-    clearTimeout(idleTimer);
-    idleTimer = null;
+  if (sessions.size === 0 && sharedState.idleTimer) {
+    clearTimeout(sharedState.idleTimer);
+    sharedState.idleTimer = null;
   }
 }
 
@@ -751,251 +383,18 @@ async function installNetworkCapture(page: Page, sessionName: string): Promise<v
   });
 }
 
-/**
- * Create a new browser session with a page and optional initial URL.
- *
- * Each session gets its own dedicated Browser connection. If connecting via
- * CDP, reuses existing pages when possible instead of creating a new
- * context/page pair.
- *
- * @param name - Unique name for the session.
- * @param url - Optional URL to navigate to after creation.
- * @param options - Browser launch or CDP connection options.
- * @returns The newly created managed session.
- *
- * @example
- * ```ts
- * const session = await createSession('default', 'https://example.com');
- * ```
- */
 export async function createSession(
   name: string,
   url?: string,
   options?: BrowserLaunchOptions
 ): Promise<ManagedSession> {
-  // Enforce name uniqueness: close any existing session with the same name.
-  // A session name is a unique identifier — there can be only one per name.
-  const existing = findSession(name);
-  if (existing) {
-    logSessionEvent('replace_session', `name="${name}" id="${existing.id}" — closing existing session before creating new one`);
-    await closeSessionByName(name);
-  }
-
-  const b = await createBrowser(options);
-  const isCDP = !!options?.cdpEndpoint;
-  let context: BrowserContext;
-  let page: Page;
-
-  if (isCDP) {
-    // Defense (2026-08-15 rung-2, browser-agent-product 真实站点冒烟):
-    // attach 后 contexts 枚举出的 page 的 url() 可能为 null（内部 target info
-    // 异步填充，实测 5s 内不出现）——原固定 sleep 500ms×2 后页面匹配全落空 →
-    // newPage() 新开 tab → 录制 session 的监听与命令实际操作的 tab 分离 →
-    // record stop 只剩 navigation、0 用户动作（多 tab 时必现，单 tab 偶尔幸存）。
-    // 解法：url 为空时用 page.evaluate('location.href') 主动向页面取真实 URL。
-    const targetHostname = url ? (() => { try { return new URL(url).hostname; } catch { return ''; } })() : '';
-    const isRealPageUrl = (u: string) =>
-      !!u && u !== 'about:blank' && !u.startsWith('chrome://') &&
-      !u.startsWith('chrome-untrusted://') && !u.startsWith('chrome-error://');
-    const resolvePageUrl = async (p: Page): Promise<string> => {
-      const u = p.url();
-      if (u && u !== 'about:blank') return u;
-      try { return await p.evaluate<string>('location.href'); } catch { return u ?? ''; }
-    };
-
-    const pollStart = Date.now();
-    for (;;) {
-      const ctxs = b.contexts();
-      let hostHit = false;
-      let anyHit = false;
-      for (const ctx of ctxs) {
-        for (const p of ctx.pages()) {
-          const u = await resolvePageUrl(p);
-          if (!isRealPageUrl(u)) continue;
-          anyHit = true;
-          if (targetHostname && u.includes(targetHostname)) { hostHit = true; break; }
-        }
-        if (hostHit) break;
-      }
-      if (process.env.XB_DEBUG_SESSION_POLL) {
-        console.error(`[poll] t=${Date.now() - pollStart}ms ctxs=${ctxs.length} hostHit=${hostHit} anyHit=${anyHit}`);
-      }
-      if (hostHit) break;
-      if (anyHit && Date.now() - pollStart >= 2000) break;
-      if (Date.now() - pollStart >= 5000) break;
-      await new Promise(r => setTimeout(r, 200));
-    }
-    let contexts = b.contexts();
-    if (contexts.length === 0) {
-      await new Promise(r => setTimeout(r, 500));
-      contexts = b.contexts();
-    }
-
-    context = contexts[0] || (await b.newContext());
-
-    let targetPage: Page | null = null;
-
-    // 第零遍（S96，d07 下一切片）：精确 URL 匹配 —— goto 特定 URL 时优先
-    // 绑定"已是该 URL"的页面（无需导航，也绝不会把别的 session 的页面
-    // 导航走）。S95 实战：hostname 匹配绑到遗留 tab 后导航超时静默，title
-    // 残留旧页 —— hostname 级匹配只该是次选。
-    const ownedUrls = new Set<string>();
-    for (const ssn of sessions.list()) {
-      try { const u = ssn.page?.url(); if (u && u !== 'about:blank') ownedUrls.add(u); } catch { /* ignore */ }
-    }
-    if (url) {
-      for (const ctx of contexts) {
-        for (const p of ctx.pages()) {
-          try {
-            const pUrl = await resolvePageUrl(p);
-            if (ownedUrls.has(pUrl)) continue;
-            if (pUrl === url) { targetPage = p; break; }
-          } catch { /* ignore */ }
-        }
-        if (targetPage) break;
-      }
-    }
-
-    // 第一遍：找 hostname 匹配的页面（修复"session 总被绑到错 tab"bug；
-    // url 可能为 null，走 resolvePageUrl 主动获取）。占用检查（S97）：
-    // hostname 匹配会绑走他 session 的页面再导航 —— M1 漂移根因。
-    if (!targetPage && targetHostname) {
-      for (const ctx of contexts) {
-        const pages = ctx.pages();
-        for (const p of pages) {
-          const pUrl0 = await resolvePageUrl(p);
-          if (ownedUrls.has(pUrl0)) continue;
-          const pUrl = pUrl0;
-          if (isRealPageUrl(pUrl) && pUrl.includes(targetHostname)) {
-            targetPage = p;
-            break;
-          }
-        }
-        if (targetPage) break;
-      }
-    }
-
-    // 第二遍：fallback 到任意非空白、非 chrome:// 页面（占用检查 S97）
-    if (!targetPage) {
-      for (const ctx of contexts) {
-        const pages = ctx.pages();
-        for (const p of pages) {
-          const pUrl0 = await resolvePageUrl(p);
-          if (ownedUrls.has(pUrl0)) continue;
-          const pUrl = pUrl0;
-          if (isRealPageUrl(pUrl)) {
-            targetPage = p;
-            break;
-          }
-        }
-        if (targetPage) break;
-      }
-    }
-
-    if (!targetPage && options?.cdpEndpoint) {
-      const targets = await getCDPTargets(options.cdpEndpoint);
-      // S98：matchTarget 本身必须尊重占用 —— 旧逻辑 find 只筛 URL 非空白，
-      // 被 session 占用的 tab 也会命中，随后 newPage+goto(matchTarget.url)
-      // 把别的 session 的页面导航走（Q1 漂移全链根因）。占用 tab 直接跳过。
-      const ownedUrlsT = new Set<string>();
-      for (const ssn of sessions.list()) {
-        try { const u = ssn.page?.url(); if (u && u !== 'about:blank') ownedUrlsT.add(u); } catch { /* ignore */ }
-      }
-      const matchTarget = targets.find(t =>
-        t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://') && !t.url.startsWith('chrome-untrusted://') && !t.url.startsWith('chrome-error://') &&
-        !ownedUrlsT.has(t.url) &&
-        (url ? t.url === url || t.url.includes(new URL(url).hostname) : true)
-      );
-      if (matchTarget && matchTarget.url) {
-        // d07 第六层（S82）：复用已有 page —— 旧逻辑每条命令 newPage 复制
-        // target（3 条命令繁殖 9 个 tab，S72 七 tab 泥潭的真根因）。
-        // 同 URL 的 page 已存在则直接复用，仅无匹配时才开新 tab。
-        // URL 比对而非对象比对（S98 坐实：--cdp 模式每命令新建连接，
-        // 旧连接的 page wrapper 与本连接 pages() 的不可比，=== 恒 false）
-        const ownedUrls = new Set<string>();
-        for (const ssn of sessions.list()) {
-          try { const u = ssn.page?.url(); if (u && u !== 'about:blank') ownedUrls.add(u); } catch { /* ignore */ }
-        }
-        const isOwned = (p: unknown) => {
-          try { return ownedUrls.has((p as { url(): string }).url()); } catch { return false; }
-        };
-        // 复用需未被其他 session 占用（S95 实战：J-draft 的 hostname 匹配
-        // 复用了 J-home 绑定的 tab 并导航走 —— 跨 session 页面漂移）
-        const existing = context.pages().find(p => {
-          try { return p.url() === matchTarget.url && !isOwned(p); } catch { return false; }
-        });
-        if (existing) {
-          targetPage = existing;
-        } else {
-          targetPage = await context.newPage();
-          await targetPage.goto(matchTarget.url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-        }
-      }
-    }
-
-    if (!targetPage) {
-      const pages = context.pages();
-      if (pages.length > 1) {
-        // d07 第六层最小切片（S81）：多 tab 时优先激活 tab ——
-        // visibilityState=visible 的 tab 全浏览器唯一（后台 tab 全 hidden）。
-        // pages[0] 是注册顺序不是激活顺序（S72 七 tab 泥潭的选错根因）。
-        try {
-          const owned = new Set<unknown>();
-          for (const ssn of sessions.list()) owned.add(ssn.page);
-          for (const p of pages) {
-            if (owned.has(p)) continue; // 他 session 占用的 page 不抢（S95）
-            const vis = await p.evaluate<string>('document.visibilityState').catch(() => 'hidden');
-            if (vis === 'visible') { targetPage = p; break; }
-          }
-        } catch { /* best-effort */ }
-      }
-      if (!targetPage && pages.length > 0) {
-        targetPage = pages[0];
-      }
-      if (!targetPage) {
-        targetPage = await context.newPage();
-      }
-    }
-
-    page = targetPage;
-
-    // CDP 多 tab 激活保障（S72 掘金实战）：同源多 tab 时 attach 可能选中
-    // 后台 tab —— 后台 tab 的输入管线被节流/挂起，Input.dispatchMouseEvent
-    // 直接 30s 超时（d07 第六层同源症状）。attach 后立即 bringToFront，
-    // 确保后续输入派发打在激活 tab 上。
-    if (isCDP) {
-      // 可选调用：测试 mock 可能不带 bringToFront（同步 TypeError 会穿透
-      // .catch —— CI 抓过一次，tests/browser.test.ts 3 用例）
-      await Promise.resolve(targetPage.bringToFront?.()).catch(() => { /* best-effort */ });
-    }
-
-    // Note: auto-attach for new tab detection is only enabled for self-launched Chromium
-    // (via newContext -> _enableAutoAttach). CDP tunnels may not support it reliably.
-  } else {
-    context = await b.newContext({ viewport: { width: 1920, height: 1080 } });
-    page = await context.newPage();
-  }
-
-  if (url && page.url() !== url) {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-  }
-
-  const session: ManagedSession = {
-    id: randomUUID(),
-    name,
-    context,
-    page,
-    browser: b,
-    createdAt: new Date().toISOString(),
-    lastActivityAt: Date.now(),
-    isCDP,
-    cdpEndpoint: options?.cdpEndpoint,
-  };
-  sessions.set(session);
-  logSessionEvent('create_session', `name="${name}" id="${session.id}" url="${url || '(no url)'}" isCDP=${isCDP} cdpEndpoint=${options?.cdpEndpoint || '(none)'}`);
-  resetIdleTimer();
-  await installNetworkCapture(page, name);
-  return session;
+  return createSessionImpl(name, url, options, {
+    closeSessionByName,
+    installNetworkCapture,
+    registerSession,
+    logSessionEvent,
+    getCDPTargets,
+  });
 }
 
 /**
@@ -1096,21 +495,21 @@ export async function closeAllSessions(): Promise<void> {
  */
 export async function destroyBrowser(): Promise<void> {
   logSessionEvent('destroy_browser', `Sessions count: ${sessions.size}. Clearing idle timer and closing all sessions.`);
-  if (idleTimer) {
-    clearTimeout(idleTimer);
-    idleTimer = null;
+  if (sharedState.idleTimer) {
+    clearTimeout(sharedState.idleTimer);
+    sharedState.idleTimer = null;
   }
   await closeAllSessions();
-  if (_sharedBrowser) {
+  if (sharedState.browser) {
     // close() internally checks childProcess:
     //   - self-launched → kills Chrome (cleanup)
     //   - external CDP   → only disconnects WebSocket
-    await _sharedBrowser.close().catch(() => {});
-    _sharedBrowser = null;
+    await sharedState.browser.close().catch(() => {});
+    sharedState.browser = null;
   }
-  if (_sharedCdpProxy) {
-    await _sharedCdpProxy.stop().catch(() => {});
-    _sharedCdpProxy = null;
+  if (getSharedCdpProxy()) {
+    await getSharedCdpProxy()!.stop().catch(() => {});
+    setSharedCdpProxy(null);
   }
 }
 
@@ -1122,12 +521,11 @@ export async function destroyBrowser(): Promise<void> {
  */
 export function resetForTesting(): void {
   sessions.clear();
-  _sharedBrowser = null;
-  _sharedCdpProxy = null;
+  sharedState.browser = null;
+  sharedState.idleTimer = null;
+  setSharedCdpProxy(null);
   try {
-    for (const f of readdirSync(SESSION_DIR)) {
-      unlinkSync(join(SESSION_DIR, f));
-    }
+    for (const file of readdirSync(SESSION_DIR)) unlinkSync(join(SESSION_DIR, file));
   } catch { /* dir may not exist */ }
 }
 
@@ -1136,9 +534,9 @@ export function resetForTesting(): void {
  * Call this before process.exit() to release all Playwright resources.
  */
 export async function ensureProcessCanExit(): Promise<void> {
-  if (idleTimer) {
-    clearTimeout(idleTimer);
-    idleTimer = null;
+  if (sharedState.idleTimer) {
+    clearTimeout(sharedState.idleTimer);
+    sharedState.idleTimer = null;
   }
 
   // Close self-launched browsers; external CDP connections are left alone.
@@ -1157,16 +555,16 @@ export async function ensureProcessCanExit(): Promise<void> {
 
   sessions.clear();
 
-  if (_sharedBrowser) {
+  if (sharedState.browser) {
     // close() internally checks childProcess:
     //   - self-launched → kills Chrome (cleanup)
     //   - external CDP   → only disconnects WebSocket
-    await _sharedBrowser.close().catch(() => {});
-    _sharedBrowser = null;
+    await sharedState.browser.close().catch(() => {});
+    sharedState.browser = null;
   }
 
-  if (_sharedCdpProxy) {
-    await _sharedCdpProxy.stop().catch(() => {});
-    _sharedCdpProxy = null;
+  if (getSharedCdpProxy()) {
+    await getSharedCdpProxy()!.stop().catch(() => {});
+    setSharedCdpProxy(null);
   }
 }

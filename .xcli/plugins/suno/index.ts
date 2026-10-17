@@ -1,6 +1,12 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
+import {
+  createMediaArtifact,
+  createMediaTask,
+  mediaTaskResultSchema,
+  type MediaTaskResult,
+} from '../shared/media-contract.js';
 
 type Page = import('../types').Page;
 type Response = import('../types').Response;
@@ -35,6 +41,40 @@ function extractAudioUrl(clip: Record<string, unknown>): string | null {
 }
 
 /** Map a raw clip object to a clean song record */
+function toSunoTaskResult(input: {
+  taskId: string;
+  status?: unknown;
+  clips: Array<Record<string, unknown>>;
+  sessionName?: string;
+  prompt?: string | null;
+}): MediaTaskResult {
+  const task = createMediaTask({
+    taskId: input.taskId,
+    site: 'suno',
+    kind: 'audio',
+    status: input.status,
+    providerTaskId: input.clips[0]?.id as string | undefined,
+    sessionName: input.sessionName,
+    sessionUrl: 'https://suno.com/library',
+    error: null,
+  });
+  return {
+    ...task,
+    artifacts: input.clips.map((clip, index) => {
+      const song = mapClip(clip) as Record<string, unknown>;
+      return createMediaArtifact({
+        artifactId: String(song.id || `${input.taskId}-${index}`),
+        taskId: input.taskId,
+        kind: 'audio',
+        status: song.status,
+        mediaUrl: song.audioUrl as string | null,
+        duration: song.duration,
+        provider: { title: song.title, model: song.model, tags: song.tags, imageUrl: song.imageUrl },
+      });
+    }),
+  };
+}
+
 function mapClip(c: Record<string, unknown>) {
   const meta = (c.metadata || {}) as Record<string, unknown>;
   return {
@@ -202,24 +242,10 @@ export default function (xcli: XCLIAPI): void {
   site.command('create', {
     description: '在 Suno 上生成音乐。传 --prompt/--lyric 填入描述，--style 点击风格标签，--instrumental 切换纯音乐。--wait 同步等待结果',
     scope: 'browser',
-    result: z.object({
-      status: z.enum(['submitted', 'completed', 'timeout', 'error']).optional(),
-      songs: z.array(z.object({
-        id: z.string(),
-        title: z.string(),
-        status: z.string(),
-        audioUrl: z.string().nullable(),
-        imageUrl: z.string().optional(),
-        model: z.string().optional(),
-        tags: z.string().optional(),
-        prompt: z.string().optional(),
-        duration: z.number().optional(),
-      })).optional(),
-      clipIds: z.array(z.string()).optional(),
+    result: mediaTaskResultSchema.extend({
       prompt: z.string().nullable().optional(),
-      lyric: z.string().nullable().optional(),
+      lyrics: z.string().nullable().optional(),
       style: z.string().nullable().optional(),
-      error: z.string().optional(),
     }),
     parameters: z.object({
       prompt: z.string().optional().describe('描述你想创作的音乐（如 "A gentle piano melody with soft strings"）'),
@@ -426,10 +452,14 @@ export default function (xcli: XCLIAPI): void {
             const withUrl = songs.filter(s => s.audioUrl);
 
             return ok({
-                songs,
-                clipIds: genResult.clipIds,
+                ...toSunoTaskResult({
+                  taskId: genResult.clipIds[0] || `suno-session`,
+                  status: 'completed',
+                  clips: genResult.clips,
+                  sessionName: 'default',
+                }),
                 prompt: params.prompt || null,
-                lyric: params.lyric || null,
+                lyrics: params.lyric || null,
                 style: params.style || null,
               }, [
                 ...tips,
@@ -439,7 +469,17 @@ export default function (xcli: XCLIAPI): void {
               ]);
           }
 
-          return ok({ clipIds: genResult.clipIds, status: 'timeout' }, [
+          return ok({
+            ...toSunoTaskResult({
+              taskId: genResult.clipIds[0] || `suno-session`,
+              status: 'timeout',
+              clips: [],
+              sessionName: 'default',
+            }),
+            prompt: params.prompt || null,
+            lyrics: params.lyric || null,
+            style: params.style || null,
+          }, [
               ...tips,
               `⏱ 等待 ${waitSeconds}s 超时，音乐可能还在生成`,
               '检查: xbrowser suno result --cdp 9221',
@@ -448,9 +488,14 @@ export default function (xcli: XCLIAPI): void {
 
         // Async mode — return immediately
         return ok({
-            status: 'submitted',
+            ...toSunoTaskResult({
+              taskId: `suno-session`,
+              status: 'submitted',
+              clips: [],
+              sessionName: 'default',
+            }),
             prompt: params.prompt || null,
-            lyric: params.lyric || null,
+            lyrics: params.lyric || null,
             style: params.style || null,
           }, [
             ...tips,
@@ -472,20 +517,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('result', {
     description: '获取最新生成的音乐音频 URL（被动拦截页面 feed 数据）',
     scope: 'browser',
-    result: z.object({
-      songs: z.array(z.object({
-        id: z.string(),
-        title: z.string(),
-        status: z.string(),
-        audioUrl: z.string().nullable(),
-        imageUrl: z.string().optional(),
-        model: z.string().optional(),
-        tags: z.string().optional(),
-        prompt: z.string().optional(),
-        duration: z.number().optional(),
-      })).optional(),
-      total: z.number().optional(),
-    }),
+    result: mediaTaskResultSchema,
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(10).describe('返回条数（默认 10）'),
     }),
@@ -507,15 +539,24 @@ export default function (xcli: XCLIAPI): void {
         });
 
         if (clips.length === 0) {
-          return ok({ songs: [], total: 0 }, [...tips, '未获取到音乐数据。可能未登录或没有创作记录']);
+          return ok(toSunoTaskResult({
+            taskId: `suno-latest`,
+            status: 'unknown',
+            clips: [],
+            sessionName: 'default',
+          }), [...tips, '未获取到音乐数据。可能未登录或没有创作记录']);
         }
 
-        const songs = clips.map(mapClip);
-        const withUrl = songs.filter(s => s.audioUrl);
+        const withUrl = clips.map(mapClip).filter(s => s.audioUrl);
 
-        return ok({ songs, total: songs.length }, [
+        return ok(toSunoTaskResult({
+          taskId: String(clips[0].id || `suno-latest`),
+          status: clips[0].status,
+          clips,
+          sessionName: 'default',
+        }), [
             ...tips,
-            `共 ${songs.length} 首，${withUrl.length} 首可播放`,
+            `共 ${clips.length} 首，${withUrl.length} 首可播放`,
             ...withUrl.slice(0, 3).map(s => `🎵 ${s.title || '未命名'} [${s.status}] → ${s.audioUrl}`),
           ]);
       } catch {
@@ -530,7 +571,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('status', {
     description: '检查当前页面音乐生成状态（被动拦截 feed 数据）',
     scope: 'browser',
-    result: z.object({ status: z.string().optional(), clips: z.array(z.record(z.string(), z.any())).optional(), total: z.number().optional() }).passthrough(),
+    result: mediaTaskResultSchema,
     parameters: z.object({}),
     examples: [
       { cmd: 'xbrowser suno status --cdp 9221', description: '检查状态' },
@@ -557,11 +598,20 @@ export default function (xcli: XCLIAPI): void {
             return 'unknown';
           });
 
-          return ok({ status: domStatus, clips: [] }, [...tips, '未捕获到 feed 数据', `DOM 状态提示: ${domStatus}`]);
+          return ok(toSunoTaskResult({
+            taskId: `suno-status`,
+            status: domStatus,
+            clips: [],
+            sessionName: 'default',
+          }), [...tips, '未捕获到 feed 数据', `DOM 状态提示: ${domStatus}`]);
         }
 
-        const songs = clips.map(mapClip);
-        return ok({ clips: songs, total: songs.length }, [...tips, `共 ${songs.length} 个剪辑`]);
+        return ok(toSunoTaskResult({
+          taskId: String(clips[0].id || `suno-status`),
+          status: clips[0].status,
+          clips,
+          sessionName: 'default',
+        }), [...tips, `共 ${clips.length} 个剪辑`]);
       } catch {
         return fail('未知错误', ['检查状态失败']);
       }
@@ -574,7 +624,7 @@ export default function (xcli: XCLIAPI): void {
   site.command('library', {
     description: '查看 Suno 创作历史/歌曲列表',
     scope: 'browser',
-    result: z.object({ songs: z.array(z.record(z.string(), z.any())), total: z.number() }).passthrough(),
+    result: mediaTaskResultSchema,
     parameters: z.object({
       limit: z.coerce.number().int().positive().optional().default(20).describe('返回条数（默认 20）'),
     }),
@@ -594,9 +644,12 @@ export default function (xcli: XCLIAPI): void {
           filter: (all) => all.slice(0, params.limit!),
         });
 
-        const songs = clips.map(mapClip);
-
-        return ok({ songs, total: songs.length }, [...tips, `共 ${songs.length} 首音乐`]);
+        return ok(toSunoTaskResult({
+          taskId: String(clips[0].id || 'suno-library'),
+          status: clips[0].status,
+          clips,
+          sessionName: 'default',
+        }), [...tips, `共 ${clips.length} 首音乐`]);
       } catch {
         return fail('未知错误', ['获取音乐库失败']);
       }

@@ -594,6 +594,62 @@ xbrowser **不依赖** mpage。它直接使用 Playwright 驱动浏览器，同�
 
 ---
 
+## 模块边界与重构守卫
+
+xbrowser 采用“入口外观 + 内部协作模块”的结构。外观层保持外部 API 和 CLI 行为稳定；内部模块按职责拆分，避免单文件继续膨胀。
+
+### 入口外观
+
+- `src/router.ts`：只负责 argv 预处理、全局选项解析和路由分发；输入模式、帮助、子命令、插件/链式执行、serve/remote/MCP 在 `src/router/` 内实现。
+- `src/executor.ts`：保留单命令和链式命令公开入口；结果类型、存储/归档、链式插件执行在 `src/executor/` 内实现。
+- `src/browser.ts`：保留会话公开 API；连接策略、状态、恢复、页面选择、注册生命周期在 `src/browser/` 内实现。
+- `src/cdp-driver/page.ts`：保留 Playwright-compatible `XBPage` API；navigation、DOM、runtime、媒体、输入、网络等待/事件/路由在 `page-*` 服务内实现。
+- `src/recorder/session-recorder.ts`：保留 `SessionRecorder` 外观和录制格式；注入脚本、摘要、页面上下文、观察信号、网络捕获在相邻模块内实现。
+
+### 依赖方向
+
+```text
+CLI / router / daemon
+        ↓
+executor / commands / recorder
+        ↓
+browser session + cdp-driver
+        ↓
+CDP connection / Chromium
+```
+
+底层不得反向依赖上层：`cdp-driver` 不依赖 commands/daemon/recorder/CLI；commands 不依赖 daemon/CLI/router；recorder 不依赖 CLI/daemon/router。
+
+`npm run lint:architecture` 会检查：
+
+- `src/**` TypeScript 文件默认不超过 1200 行；
+- 生成型大模板和既有录制回放巨石列入显式例外；
+- 上述禁止的反向 import。
+
+新增例外必须说明理由并在 PR 中显式评审；新的业务实现应优先拆入相邻内部模块。
+
+### 错题本
+
+执行器会把命令失败写入 `~/.xbrowser/knowledge/mistakes.json`。错题按
+`category + normalize(message)` 生成指纹；时间戳、耗时和数字会被归一化，
+避免同一根因因随机端口/时长变化分裂。同一指纹发生第 3 次时标记为
+`constrained`，表示该错误已升级为必须处理的重复约束。
+
+`npm run lint:mistakes` 会列出所有已约束错题；存在任何一条即失败，提醒
+先修复或显式清理错题本，而不是继续带病迭代。
+
+媒体与音乐生成命令还受静态错题约束：`npm run lint:media-constraints`
+会检查关键 UI 不得新增 `DOM click()`（`isTrusted=false`）、受保护媒体
+下载必须声明浏览器凭证上下文，并锁定产物溯源字段与模式校验债务。历史
+债务记录在 `lint-scripts/media-constraints-baseline.json`，只允许收敛，
+不允许新增。
+
+媒体产物契约还有一条运行时约束：只有字节已经真实写入目标路径，才允许把
+`localPath` 标记为可下载；`sizeBytes` 应来自同一次下载字节，而不是事后
+重新读盘。测试替身也必须满足同一语义，否则在干净 CI 环境会掩盖未落盘产物。
+
+---
+
 ## 扩展点
 
 ### 添加新命令

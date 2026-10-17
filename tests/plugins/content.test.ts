@@ -164,7 +164,9 @@ describe('content plugin', () => {
       const vars = buildVars();
       expect(vars.INSTALL_CMD).toBe('npm install -g @xbrowser/cli');
       expect(vars.DATE).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(vars.GITHUB_URL).toContain('github.com');
+      // 2026-09-14 零外链策略：URL 变量退役，换可搜索文字变量
+      expect(vars.GITHUB_REPO).toBe('dyyz1993/xbrowser');
+      expect(vars.NPM_PKG).toBe('@xbrowser/cli');
     });
 
     it('renderCoverHtml should escape html in title', () => {

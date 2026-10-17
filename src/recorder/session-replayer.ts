@@ -10,12 +10,10 @@
 import type { UserAction, RecordingData } from './session-recorder.js';
 import type { XBPage, XBFilePayload } from '../cdp-driver/types.js';
 import { queryJS, queryAllDeepJS } from '../cdp-driver/selector-utils.js';
-import { readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-
-/** r12: heal 知识条目 TTL——写入时剪枝，长期未验证的映射不配继续占位 */
-const HEAL_KB_TTL_DAYS = 30;
+// M2: heal 知识库读写统一走公共模块（MCP heal_kb_* 工具与回放器同一事实源）
+import { lookupHeal, writeHeal, bumpHeal, forgetHeal } from '../lib/heal-kb.js';
 
 /** sup-s1/s3: 原生控件家族——fill 的 click+type 路径无法设值（OS 面板/
  * 浏览器内部弹层/键盘分段吞字符），回放统一改走 JS 值注入。 */
@@ -960,44 +958,15 @@ export class SessionReplayer {
     }
   }
 
-  private healKnowledgeFile(domain: string): string {
-    return join(this.opts.healKnowledgeDir as string, `heals-${domain}.json`);
-  }
-
-  private readHealFile(file: string): Record<string, { healed: string; strategy: string; lastSeen: string; hits: number }> {
-    try {
-      return JSON.parse(readFileSync(file, 'utf8'));
-    } catch {
-      return {};
-    }
-  }
-
   private lookupHealKnowledge(domain: string, primary: string): { healed: string; strategy: string } | null {
     if (!primary || !this.opts.healKnowledgeDir) return null;
-    const data = this.readHealFile(this.healKnowledgeFile(domain));
-    const e = data[primary];
-    return e ? { healed: e.healed, strategy: e.strategy } : null;
+    return lookupHeal(domain, primary, this.opts.healKnowledgeDir);
   }
 
   private persistHealKnowledge(action: UserAction, primary: string, healed: { selector: string; strategy: string }): void {
     if (!this.opts.healKnowledgeDir || !primary || healed.strategy === 'known-heal') return;
     try {
-      const file = this.healKnowledgeFile(this.pageDomain(action));
-      const data = this.readHealFile(file);
-      data[primary] = {
-        healed: healed.selector,
-        strategy: healed.strategy,
-        lastSeen: new Date().toISOString(),
-        hits: (data[primary]?.hits ?? 0) + 1,
-      };
-      // TTL 剪枝（r12）：超期条目在写入时一并清除，文件不无界增长
-      const cutoff = Date.now() - HEAL_KB_TTL_DAYS * 86_400_000;
-      for (const k of Object.keys(data)) {
-        const ts = Date.parse(data[k]?.lastSeen ?? '');
-        if (!(ts >= cutoff)) delete data[k];
-      }
-      mkdirSync(this.opts.healKnowledgeDir, { recursive: true });
-      writeFileSync(file, JSON.stringify(data, null, 2));
+      writeHeal(this.pageDomain(action), primary, { healed: healed.selector, strategy: healed.strategy }, this.opts.healKnowledgeDir);
     } catch {
       // 知识沉淀失败不阻塞回放
     }
@@ -1005,23 +974,13 @@ export class SessionReplayer {
 
   private bumpHealKnowledge(domain: string, primary: string): void {
     try {
-      const file = this.healKnowledgeFile(domain);
-      const data = this.readHealFile(file);
-      const e = data[primary];
-      if (!e) return;
-      e.hits += 1;
-      e.lastSeen = new Date().toISOString();
-      writeFileSync(file, JSON.stringify(data, null, 2));
+      bumpHeal(domain, primary, this.opts.healKnowledgeDir);
     } catch { /* best-effort */ }
   }
 
   private forgetHealKnowledge(domain: string, primary: string): void {
     try {
-      const file = this.healKnowledgeFile(domain);
-      const data = this.readHealFile(file);
-      if (!data[primary]) return;
-      delete data[primary];
-      writeFileSync(file, JSON.stringify(data, null, 2));
+      forgetHeal(domain, primary, this.opts.healKnowledgeDir);
     } catch { /* best-effort */ }
   }
 

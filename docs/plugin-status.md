@@ -1,17 +1,17 @@
 # 插件完成度看板
 
 > **自动生成，请勿手改** · 由 `lint-scripts/check-plugin-status.mjs` 生成
-> 生成时间：2026-09-11 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
+> 生成时间：2026-10-17 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
 
 ## 汇总
 
 | 指标 | 值 |
 |------|-----|
 | 插件总数 | 131 |
-| ✅ 已完成（有实现+有测试） | 110 |
-| 🟡 有实现无测试 | 10 |
+| ✅ 已完成（有实现+有测试） | 111 |
+| 🟡 有实现无测试 | 9 |
 | 🔴 scaffold 待实现 | 11 |
-| **当前债务** | **21** |
+| **当前债务** | **20** |
 
 > 债务 = 🟡无测试 + 🔴scaffold + ⛔加载失败。目标：债务 → 0。
 
@@ -31,14 +31,13 @@
 | tiktok | 14 | https://www.tiktok.com |
 | upwork | 14 | https://www.upwork.com |
 
-## 🟡 有实现无测试（10） — P1 优先
+## 🟡 有实现无测试（9） — P1 优先
 
 | 插件 | 行数 | 命令数 | scope |
 |------|------|--------|-------|
-| 51cto | 130 | 3 | `browser`, `page` |
 | goofish | 333 | 3 | `page` |
 | login-bridge | 421 | 5 | `page`, `project` |
-| oschina | 126 | 3 | `browser`, `page` |
+| oschina | 132 | 3 | `browser`, `page` |
 | producthunt | 286 | 4 | `browser`, `page` |
 | pubmed | 60 | 1 | `project` |
 | stackoverflow | 60 | 1 | `project` |
@@ -46,11 +45,12 @@
 | wikidata | 88 | 2 | `project` |
 | xueqiu | 90 | 2 | `project` |
 
-## ✅ 已完成（110）
+## ✅ 已完成（111）
 
 | 插件 | 命令数 | scope |
 |------|--------|-------|
 | 1688 | 5 | `browser` |
+| 51cto | 4 | `browser`, `page` |
 | 58pic | 1 | `browser` |
 | 699pic | 1 | `browser` |
 | 9gag | 1 | `browser` |
@@ -69,7 +69,7 @@
 | bloomberg | 1 | `browser` |
 | booking | 1 | `browser` |
 | chatgpt | 5 | `browser`, `page` |
-| chrome-bridge | 8 | `project` |
+| chrome-bridge | 9 | `project` |
 | claude | 5 | `browser`, `page` |
 | cmf-seats | 3 | `any`, `page` |
 | cnblogs | 3 | `browser`, `page` |
@@ -93,7 +93,7 @@
 | facebook | 5 | `browser` |
 | flickr | 1 | `browser` |
 | freepik | 1 | `browser` |
-| gemini | 3 | `page` |
+| gemini | 12 | `page`, `project` |
 | geo-analysis | 9 | `browser`, `global` |
 | gettyimages | 1 | `browser` |
 | github | 6 | `browser` |

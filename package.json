@@ -1,6 +1,6 @@
 {
   "name": "@xbrowser/cli",
-  "version": "1.25.2",
+  "version": "1.28.0",
   "description": "Browser automation CLI for web scraping, headless browsing, SEO analysis, and AI agent workflows. A command-line alternative to Playwright, Puppeteer, and Selenium.",
   "type": "module",
   "bin": {
@@ -75,6 +75,9 @@
     "lint": "eslint src/ bin/ tests/ --ext .ts",
     "lint:plugins": "eslint .xcli/plugins/ --ext .ts --max-warnings 0",
     "lint:plugin-contract": "node lint-scripts/check-plugin-contract.mjs && node lint-scripts/check-plugin-status.mjs",
+    "lint:architecture": "node lint-scripts/check-architecture.mjs",
+    "lint:media-constraints": "node lint-scripts/check-media-constraints.mjs",
+    "lint:mistakes": "node lint-scripts/check-mistakes.mjs",
     "lint:plugin-status": "node lint-scripts/check-plugin-status.mjs --update",
     "stealth:check": "vitest run tests/cdp-driver/stealth-health.test.ts tests/cdp-driver/stealth-audit.test.ts tests/cdp-driver/stealth-probe.test.ts",
     "lint:docs": "node lint-scripts/check-docs-consistency.mjs",
@@ -86,7 +89,7 @@
     "test:watch": "vitest",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:arena": "vitest run --config vitest.arena.config.ts",
-    "validate": "npm run typecheck && npm run typecheck:plugins && npm run lint && npm run lint:plugins && npm run lint:docs && npm run lint:plugin-contract && npm run build && npm test",
+    "validate": "npm run typecheck && npm run typecheck:plugins && npm run lint && npm run lint:plugins && npm run lint:docs && npm run lint:plugin-contract && npm run lint:architecture && npm run lint:media-constraints && npm run lint:mistakes && npm run build && npm test",
     "prepare": "husky"
   },
   "dependencies": {
