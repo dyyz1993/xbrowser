@@ -50,7 +50,7 @@
 | blogger | 4 | `browser`, `page` |
 | bloomberg | 1 | `browser` |
 | booking | 1 | `browser` |
-| boss | 2 | `page` |
+| boss | 6 | `page` |
 | chatgpt | 5 | `browser`, `page` |
 | chrome-bridge | 9 | `project` |
 | claude | 5 | `browser`, `page` |

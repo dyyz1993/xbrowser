@@ -19,6 +19,7 @@ function createPage(evaluateResult: unknown) {
   };
 }
 
+
 describe('boss plugin', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -31,7 +32,9 @@ describe('boss plugin', () => {
       url: 'https://www.zhipin.com',
       requiresLogin: true,
     }));
-    expect(mockSite.command.mock.calls.map((item: unknown[]) => item[0])).toEqual(['search', 'detail']);
+    expect(mockSite.command.mock.calls.map((item: unknown[]) => item[0])).toEqual([
+      'search', 'detail', 'companies', 'recommend', 'chat', 'resume',
+    ]);
     expect(mockSite.login).toHaveBeenCalledTimes(0);
   });
 
@@ -43,10 +46,11 @@ describe('boss plugin', () => {
 
   it('normalizes search results from job cards', async () => {
     const page = createPage([{
+      rank: 1,
       jobId: 'abc123',
       title: 'Frontend Engineer',
-      company: 'Acme',
       salary: '20-30K',
+      company: 'Acme',
       location: 'Beijing',
       experience: '3-5 years',
       education: 'Bachelor',
@@ -91,6 +95,70 @@ describe('boss plugin', () => {
       jobId: 'abc123',
       url: 'https://www.zhipin.com/job_detail/abc123.html',
       pageTitle: 'Job Title',
+    });
+  });
+
+  it('companies returns normalized list', async () => {
+    const page = createPage([{
+      rank: 1,
+      name: 'Acme Corp',
+      industry: '不需要融资互联网',
+      funding: '不需要融资',
+      size: '1000人以上',
+      hotJob: '前端 20-30K',
+      href: '/gongsi/abc.html',
+    }]);
+    const result = await handlerOf('companies')({}, { page });
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([{
+      rank: 1,
+      name: 'Acme Corp',
+      industry: '不需要融资互联网',
+      funding: '不需要融资',
+      size: '1000人以上',
+      hotJob: '前端 20-30K',
+      url: 'https://www.zhipin.com/gongsi/abc.html',
+    }]);
+  });
+
+  it('recommend returns viewers and profile', async () => {
+    const page = createPage({
+      viewers: [{ name: '林女士', company: '诗悦网络', title: 'AI全栈开发', salary: '18-28K·13薪' }],
+      profile: { name: '许先生', experience: '10年经验本科', status: '离职-随时到岗', expectation: '前端开发工程师' },
+    });
+    const result = await handlerOf('recommend')({}, { page });
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      whoViewedMe: [{ name: '林女士', company: '诗悦网络' }],
+      profile: { name: '许先生' },
+    });
+  });
+
+  it('chat returns message list', async () => {
+    const page = createPage([
+      { sender: '范丽萍', company: '德熙数字科技', role: 'HRBP', time: '昨天', preview: '[送达] 您好...' },
+    ]);
+    const result = await handlerOf('chat')({ limit: 5 }, { page });
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual([
+      { sender: '范丽萍', company: '德熙数字科技', role: 'HRBP', time: '昨天', preview: '[送达] 您好...' },
+    ]);
+  });
+
+  it('resume returns profile info', async () => {
+    const page = createPage({
+      name: '许先生',
+      experience: '10年经验本科',
+      phone: '137****1234',
+      email: 'test@qq.com',
+      advantage: '10 年前端/全栈工程师',
+      status: '离职-随时到岗',
+    });
+    const result = await handlerOf('resume')({}, { page });
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      name: '许先生',
+      experience: '10年经验本科',
     });
   });
 });

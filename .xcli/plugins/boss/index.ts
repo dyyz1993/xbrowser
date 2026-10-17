@@ -7,14 +7,57 @@ const jobResult = z.array(z.object({
   rank: z.number(),
   jobId: z.string(),
   title: z.string(),
-  company: z.string(),
   salary: z.string(),
+  company: z.string(),
   location: z.string(),
   experience: z.string(),
   education: z.string(),
   tags: z.string(),
   url: z.string(),
 })).describe('Job search results');
+
+const companyResult = z.array(z.object({
+  rank: z.number(),
+  name: z.string(),
+  industry: z.string(),
+  funding: z.string(),
+  size: z.string(),
+  hotJob: z.string(),
+  url: z.string(),
+})).describe('Company search results');
+
+const recommendResult = z.object({
+  whoViewedMe: z.array(z.object({
+    name: z.string(),
+    company: z.string(),
+    title: z.string(),
+    salary: z.string(),
+  })),
+  profile: z.object({
+    name: z.string(),
+    experience: z.string(),
+    status: z.string(),
+    expectation: z.string(),
+  }),
+});
+
+const chatResult = z.array(z.object({
+  sender: z.string(),
+  company: z.string(),
+  role: z.string(),
+  time: z.string(),
+  preview: z.string(),
+})).describe('Chat message list');
+
+const resumeResult = z.object({
+  name: z.string(),
+  experience: z.string(),
+  education: z.string(),
+  phone: z.string(),
+  email: z.string(),
+  advantage: z.string(),
+  status: z.string(),
+});
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -43,50 +86,48 @@ export default function (xcli: XCLIAPI): void {
 
       const url = `https://www.zhipin.com/web/geek/job?query=${encodeURIComponent(params.query)}&city=${params.city ?? ''}`;
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(3000);
 
       const raw = await page.evaluate(`
         (() => {
-          const cards = [...document.querySelectorAll('.job-card-wrapper')].slice(0, ${params.limit});
-          return cards.map((card, index) => {
-            const link = card.querySelector('a[href*="/job_detail/"]');
-            const title = card.querySelector('.job-name');
-            const company = card.querySelector('.company-name a');
-            const salary = card.querySelector('.salary');
-            const area = card.querySelector('.job-area-wrapper');
-            const tags = [...card.querySelectorAll('.tag-list li, .job-card-footer .tag-list li')];
-            const info = [...card.querySelectorAll('.job-info .filter-labels')];
+          var cards = [...document.querySelectorAll(".job-card-box")].slice(0, ${params.limit ?? 10});
+          return cards.map(function(card, i) {
+            var link = card.querySelector("a[href*=job_detail]");
+            var title = card.querySelector(".job-name");
+            var salary = card.querySelector(".job-salary");
+            var company = card.querySelector(".boss-name");
+            var location = card.querySelector(".company-location");
+            var tags = card.querySelectorAll(".tag-list li");
+            var href = link ? link.getAttribute("href") : "";
+            var idMatch = href.match(/job_detail.([a-f0-9]+)/);
             return {
-              index,
-              jobId: (link?.getAttribute('href') || '').match(/job_detail\\/([a-f0-9]+)\\.html/)?.[1] || '',
-              title: title?.textContent?.replace(/\\s+/g, ' ').trim() || '',
-              company: company?.textContent?.replace(/\\s+/g, ' ').trim() || '',
-              salary: salary?.textContent?.replace(/\\s+/g, ' ').trim() || '',
-              location: area?.textContent?.replace(/\\s+/g, ' ').trim() || '',
-              experience: info[0]?.textContent?.replace(/\\s+/g, ' ').trim() || '',
-              education: info[1]?.textContent?.replace(/\\s+/g, ' ').trim() || '',
-              tags: tags.map(t => t.textContent?.replace(/\\s+/g, ' ').trim()).filter(Boolean).join(', '),
-              href: link?.getAttribute('href') || '',
+              rank: i + 1,
+              jobId: idMatch ? idMatch[1] : "",
+              title: title ? title.textContent.trim() : "",
+              salary: salary ? salary.textContent.trim() : "",
+              company: company ? company.textContent.trim() : "",
+              location: location ? location.textContent.trim() : "",
+              experience: tags.length > 0 ? tags[0].textContent.trim() : "",
+              education: tags.length > 1 ? tags[1].textContent.trim() : "",
+              tags: [].map.call(tags, function(t) { return t.textContent.trim() }).join(", "),
+              href: href,
             };
           });
         })()
       `) as Array<Record<string, unknown>>;
 
       if (!raw.length) return fail(`未找到匹配 "${params.query}" 的职位，请确认已登录`);
-      const limit = params.limit ?? 10;
-      return ok(raw.slice(0, limit).map((item, i) => ({
-        rank: i + 1,
+      return ok(raw.map((item) => ({
+        rank: Number(item.rank ?? 0),
         jobId: String(item.jobId ?? ''),
         title: String(item.title ?? ''),
-        company: String(item.company ?? ''),
         salary: String(item.salary ?? ''),
+        company: String(item.company ?? ''),
         location: String(item.location ?? ''),
         experience: String(item.experience ?? ''),
         education: String(item.education ?? ''),
         tags: String(item.tags ?? ''),
-        url: String(item.href ?? '').startsWith('http')
-          ? String(item.href)
-          : `https://www.zhipin.com${item.href ?? ''}`,
+        url: `https://www.zhipin.com${item.href ?? ''}`,
       })));
     },
   });
@@ -111,6 +152,210 @@ export default function (xcli: XCLIAPI): void {
       await page.waitForTimeout(1500);
       const pageTitle = await page.evaluate('document.title') as string;
       return ok({ jobId: params.jobId, url, pageTitle });
+    },
+  });
+
+  site.command('companies', {
+    description: '搜索 Boss直聘 公司',
+    scope: 'page',
+    loginRequired: 'required',
+    result: companyResult,
+    parameters: z.object({
+      query: z.string().optional().describe('公司关键词'),
+      city: z.string().optional().describe('城市拼音，如 guangzhou、beijing'),
+      limit: z.coerce.number().optional().default(10).describe('返回数量'),
+    }),
+    examples: [{ cmd: 'xbrowser boss companies', description: '搜索公司列表' }],
+    handler: async (params, ctx) => {
+      const page = ctx.page as Page | undefined;
+      if (!page) return fail('需要浏览器页面');
+      const city = params.city ?? 'guangzhou';
+      const query = params.query ? `?query=${encodeURIComponent(params.query)}` : '';
+      await page.goto(`https://www.zhipin.com/${city}/gongsi/${query}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await page.waitForTimeout(3000);
+
+      const raw = await page.evaluate(`
+        (() => {
+          var items = [...document.querySelectorAll(".company-info, [class*=company-card]")].slice(0, ${params.limit ?? 10});
+          return items.map(function(e, i) {
+            var link = e.querySelector("a[href*=gongsi]");
+            var name = e.querySelector(".company-name, [class*=company-name]");
+            var text = e.innerText.replace(/\\n/g, "|");
+            var parts = text.split("|").map(function(s) { return s.trim() }).filter(Boolean);
+            return {
+              rank: i + 1,
+              name: name ? name.textContent.trim() : (parts[0] || ""),
+              industry: parts.find(function(p) { return p.includes("融资") || p.includes("互联网") || p.includes("科技") }) || "",
+              funding: parts.find(function(p) { return p.includes("融资") }) || "",
+              size: parts.find(function(p) { return p.includes("人") }) || "",
+              hotJob: parts.find(function(p) { return p.includes("K") || p.includes("薪") }) || "",
+              href: link ? link.getAttribute("href") : "",
+            };
+          });
+        })()
+      `) as Array<Record<string, unknown>>;
+
+      if (!raw.length) return fail('未找到公司数据，请确认已登录');
+      return ok(raw.map((item) => ({
+        rank: Number(item.rank ?? 0),
+        name: String(item.name ?? ''),
+        industry: String(item.industry ?? ''),
+        funding: String(item.funding ?? ''),
+        size: String(item.size ?? ''),
+        hotJob: String(item.hotJob ?? ''),
+        url: String(item.href ?? '').startsWith('http') ? String(item.href) : `https://www.zhipin.com${item.href ?? ''}`,
+      })));
+    },
+  });
+
+  site.command('recommend', {
+    description: '获取推荐职位和谁看过我',
+    scope: 'page',
+    loginRequired: 'required',
+    result: recommendResult,
+    parameters: z.object({}),
+    handler: async (_params, ctx) => {
+      const page = ctx.page as Page | undefined;
+      if (!page) return fail('需要浏览器页面');
+      await page.goto('https://www.zhipin.com/web/geek/recommend', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await page.waitForTimeout(3000);
+
+      const data = await page.evaluate(`
+        (() => {
+          var text = document.body.innerText;
+          var viewers = [];
+          var viewerEls = [...document.querySelectorAll("[class*=friend], [class*=viewer]")].slice(0, 10);
+          viewerEls.forEach(function(e) {
+            var lines = e.innerText.replace(/\\n/g, "|").split("|").map(function(s) { return s.trim() }).filter(Boolean);
+            if (lines.length >= 4) {
+              viewers.push({ name: lines[0], company: lines[1], title: lines[2], salary: lines[3] });
+            }
+          });
+          var profileMatch = text.match(/([\\u4e00-\\u9fa5]{2,4})\\n(\\d+岁\\d+年经验\\S+)\\n([^\\n]+)\\n期望：([^\\n]+)/);
+          return {
+            viewers: viewers,
+            profile: profileMatch ? { name: profileMatch[1], experience: profileMatch[2], status: profileMatch[3], expectation: profileMatch[4] } : null,
+          };
+        })()
+      `) as { viewers: Array<Record<string, unknown>>; profile: Record<string, unknown> | null };
+
+      if (!data.viewers.length && !data.profile) return fail('未获取到推荐数据');
+      return ok({
+        whoViewedMe: data.viewers.map((v) => ({
+          name: String(v.name ?? ''),
+          company: String(v.company ?? ''),
+          title: String(v.title ?? ''),
+          salary: String(v.salary ?? ''),
+        })),
+        profile: {
+          name: String(data.profile?.name ?? ''),
+          experience: String(data.profile?.experience ?? ''),
+          status: String(data.profile?.status ?? ''),
+          expectation: String(data.profile?.expectation ?? ''),
+        },
+      });
+    },
+  });
+
+  site.command('chat', {
+    description: '获取沟通消息列表',
+    scope: 'page',
+    loginRequired: 'required',
+    result: chatResult,
+    parameters: z.object({
+      limit: z.coerce.number().optional().default(10).describe('返回条数'),
+    }),
+    handler: async (params, ctx) => {
+      const page = ctx.page as Page | undefined;
+      if (!page) return fail('需要浏览器页面');
+      await page.goto('https://www.zhipin.com/web/geek/chat', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await page.waitForTimeout(3000);
+
+      const raw = await page.evaluate(`
+        (() => {
+          var text = document.body.innerText;
+          var items = [];
+          var chatEls = [...document.querySelectorAll("[class*=chat-item], [class*=friend-item], [class*=message-item]")].slice(0, ${params.limit ?? 10});
+          if (chatEls.length === 0) {
+            var lines = text.split("\\n");
+            for (var i = 0; i < lines.length; i++) {
+              var line = lines[i].trim();
+              if (line.includes("[送达]") || line.includes("[已读]")) {
+                var prev = i > 0 ? lines[i - 1].trim() : "";
+                var parts = prev.split(/(?=[A-Z])/);
+                items.push({
+                  sender: parts[0] || prev.slice(0, 10),
+                  company: parts.slice(1).join(" ") || "",
+                  role: "HR",
+                  time: line.includes("昨天") ? "昨天" : "今天",
+                  preview: line,
+                });
+              }
+            }
+          } else {
+            chatEls.forEach(function(e) {
+              var lines = e.innerText.replace(/\\n/g, "|").split("|").map(function(s) { return s.trim() }).filter(Boolean);
+              if (lines.length >= 2) {
+                items.push({ sender: lines[0], company: lines[1] || "", role: "HR", time: "", preview: lines.slice(2).join(" ") });
+              }
+            });
+          }
+          return items.slice(0, ${params.limit ?? 10});
+        })()
+      `) as Array<Record<string, unknown>>;
+
+      if (!raw.length) return fail('未找到聊天消息');
+      return ok(raw.map((item) => ({
+        sender: String(item.sender ?? ''),
+        company: String(item.company ?? ''),
+        role: String(item.role ?? ''),
+        time: String(item.time ?? ''),
+        preview: String(item.preview ?? ''),
+      })));
+    },
+  });
+
+  site.command('resume', {
+    description: '获取在线简历信息',
+    scope: 'page',
+    loginRequired: 'required',
+    result: resumeResult,
+    parameters: z.object({}),
+    handler: async (_params, ctx) => {
+      const page = ctx.page as Page | undefined;
+      if (!page) return fail('需要浏览器页面');
+      await page.goto('https://www.zhipin.com/web/geek/resume', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await page.waitForTimeout(3000);
+
+      const data = await page.evaluate(`
+        (() => {
+          var text = document.body.innerText;
+          var nameMatch = text.match(/([\\u4e00-\\u9fa5]{2,4})\\n(\\d+年经验\\S+)/);
+          var phoneMatch = text.match(/(1[3-9]\\d{9}|\\d{3}\\*{5}\\d{4})/);
+          var emailMatch = text.match(/[\\w.+-]+@[\\w-]+\\.[\\w.]+/);
+          var advantageMatch = text.match(/个人优势\\n([\\s\\S]{10,500}?)(?=\\n期望职位|\\n工作经历|\\n项目经历)/);
+          var statusMatch = text.match(/(离职-\\S+|在职-\\S+)/);
+          return {
+            name: nameMatch ? nameMatch[1] : "",
+            experience: nameMatch ? nameMatch[2] : "",
+            phone: phoneMatch ? phoneMatch[1] : "",
+            email: emailMatch ? emailMatch[0] : "",
+            advantage: advantageMatch ? advantageMatch[1].trim() : "",
+            status: statusMatch ? statusMatch[1] : "",
+          };
+        })()
+      `) as Record<string, unknown>;
+
+      if (!data.name) return fail('未获取到简历信息');
+      return ok({
+        name: String(data.name ?? ''),
+        experience: String(data.experience ?? ''),
+        education: String(data.education ?? ''),
+        phone: String(data.phone ?? ''),
+        email: String(data.email ?? ''),
+        advantage: String(data.advantage ?? '').slice(0, 200),
+        status: String(data.status ?? ''),
+      });
     },
   });
 }
