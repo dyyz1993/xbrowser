@@ -15,6 +15,14 @@ describe('login-bridge collector launcher', () => {
   });
 
   it('starts and reports the collector endpoint', () => {
+    const chromiumCandidates = [
+      '/Applications/Chromium.app/Contents/MacOS/Chromium',
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    ];
+    if (!chromiumCandidates.some((candidate) => existsSync(candidate))) {
+      console.warn('Skipping collector launch: no local Chromium/Chrome');
+      return;
+    }
     const output = execFileSync('/bin/sh', [script, '9445'], {
       encoding: 'utf8',
       timeout: 15_000,
