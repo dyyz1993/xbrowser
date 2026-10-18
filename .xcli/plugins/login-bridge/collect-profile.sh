@@ -24,6 +24,10 @@ LOG="$HOME/.xbrowser/logs/chromium-collect.log"
 PIDFILE="$HOME/.xbrowser/chromium-collect.pid"
 PORT=${1:-9445}
 
+# Boss collector is write-heavy: naturalize long mouse jumps and pasted text
+# into trusted, human-shaped CDP input sequences by default.
+export XBROWSER_HUMANIZE_CDP=${XBROWSER_HUMANIZE_CDP:-on}
+
 if curl -fsS "http://127.0.0.1:$PORT/json/version" >/dev/null 2>&1; then
   echo "collector already running on http://127.0.0.1:$PORT"
   exit 0

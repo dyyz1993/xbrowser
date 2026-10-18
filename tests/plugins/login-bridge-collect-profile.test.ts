@@ -12,6 +12,7 @@ describe('login-bridge collector launcher', () => {
     expect(source).not.toContain('cp "$HOME/Library/Application Support/Google/Chrome/Local State"');
     expect(source).toContain('--remote-debugging-port="$PORT"');
     expect(source).toContain('chrome-collect-profile');
+    expect(source).toContain('XBROWSER_HUMANIZE_CDP=${XBROWSER_HUMANIZE_CDP:-on}');
   });
 
   it('starts and reports the collector endpoint', () => {
