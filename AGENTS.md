@@ -735,6 +735,10 @@ chrome-bridge / CDP 插件参考 `.xcli/plugins/gemini/music.ts` 的可注入
 运行时错题本见 `docs/architecture.md` 的“错题本”章节：同一错误第 3 次
 会被 `constrained`，`npm run lint:mistakes` 会失败。
 
+Boss 采集链路同样禁止合成输入：`dispatchEvent(new InputEvent(...))` 会被
+CDP Guard 拒绝，DOM `click()` 是可检测的 `isTrusted=false` 事件。会话选择
+和发送用 `page.mouse`，正文输入用 trusted fill 管线，并以真实会话消息验收。
+
 ### 10.2 最小插件
 
 ```typescript

@@ -555,8 +555,8 @@ export default function (xcli: XCLIAPI): void {
       await page.mouse.click(target.x, target.y);
       await sleep(2000);
 
-      // 编辑器与发送按钮都接受组件层 click；trustedClick 的独立 press/release
-      // 在 BOSS Vue 组件上不稳定。发送后必须读会话消息做业务级验收。
+      // Input must use the trusted fill pipeline; critical clicks use trusted
+      // mouse events because synthetic DOM events are blocked/detectable.
       const hasInput = await evaluate(`Boolean(document.querySelector(".chat-input"))`);
       if (hasInput !== true) return fail('未找到聊天输入框，请确认已打开对话');
       await page.fill('.chat-input', params.message, { timeout: 10000 });
@@ -571,16 +571,18 @@ export default function (xcli: XCLIAPI): void {
 
       const clickedResponse = await evaluate(`
         (() => {
-          const el = document.querySelector(".btn-send");
-          if (!el) return false;
-          el.click();
-          return true;
+          const r = document.querySelector(".btn-send")?.getBoundingClientRect();
+          if (!r || r.width <= 0 || r.height <= 0) return null;
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
         })()
       `);
       const clickedErrorShape = rejectUnsafeEvaluate(clickedResponse, '读取发送按钮失败');
       if (clickedErrorShape) return fail(clickedErrorShape);
-      const clicked = clickedResponse === true;
-      if (!clicked) return fail('未找到发送按钮');
+      const sendButton = clickedResponse as { x?: number; y?: number } | null;
+      if (!sendButton?.x || !sendButton?.y) return fail('未找到发送按钮');
+      await page.mouse.move(sendButton.x - 20, sendButton.y - 8);
+      await page.mouse.move(sendButton.x, sendButton.y, { steps: 6 });
+      await page.mouse.click(sendButton.x, sendButton.y);
       await sleep(1000);
 
       const verifyResponse = await evaluate(`
