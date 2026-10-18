@@ -10,15 +10,14 @@ LOG="$HOME/.xbrowser/logs/chromium-collect-$PORT.log"
 PIDFILE="$HOME/.xbrowser/chromium-collect-$PORT.pid"
 LOCKFILE="$PROFILE/SingletonLock"
 CHROMIUM_BIN="${XBROWSER_CHROMIUM_BIN:-/Applications/Chromium.app/Contents/MacOS/Chromium}"
+escaped_profile=$(printf '%s\n' "$PROFILE" | sed 's/[][\.*^$()+?{}|]/\\&/g')
 
 profile_pids() {
-  escaped_profile=$(printf '%s\n' "$PROFILE" | sed 's/[][\.*^$()+?{}|]/\\&/g')
   pgrep -f "Chromium.*--user-data-dir=${escaped_profile}( |$)" 2>/dev/null || true
 }
 
 is_our_collector() {
   pid="$1"
-  escaped_profile=$(printf '%s\n' "$PROFILE" | sed 's/[][\.*^$()+?{}|]/\\&/g')
   [ -n "$pid" ] || return 1
   kill -0 "$pid" 2>/dev/null || return 1
   ps -p "$pid" -o command= 2>/dev/null | grep -E -- "--remote-debugging-port=${PORT}( |$)" >/dev/null &&
@@ -102,6 +101,11 @@ cleanup_started_collector() {
   printf '%s\n' "$command_line" | grep -E -- "--remote-debugging-port=${PORT}( |$)" >/dev/null || return 0
   printf '%s\n' "$command_line" | grep -E -- "--user-data-dir=${escaped_profile}( |$)" >/dev/null || return 0
   kill "$CANDIDATE" 2>/dev/null || true
+  for _ in 1 2 3 4 5; do
+    kill -0 "$CANDIDATE" 2>/dev/null || return 0
+    sleep 0.1
+  done
+  kill -9 "$CANDIDATE" 2>/dev/null || true
 }
 trap cleanup_started_collector EXIT INT TERM
 

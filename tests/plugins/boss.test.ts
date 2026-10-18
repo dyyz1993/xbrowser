@@ -38,7 +38,7 @@ type ChatReplyPage = {
 type ChatReplyPageWithUrl = ChatReplyPage & { url: () => string };
 
 function createChatReplyPage(evaluateValues: unknown[]): ChatReplyPageWithUrl {
-  return {
+  const page: ChatReplyPageWithUrl = {
     goto: vi.fn(async () => undefined),
     waitForTimeout: vi.fn(async () => undefined),
     fill: vi.fn(async () => undefined),
@@ -49,11 +49,12 @@ function createChatReplyPage(evaluateValues: unknown[]): ChatReplyPageWithUrl {
     close: vi.fn(async () => undefined),
     url: vi.fn(() => 'https://www.zhipin.com/web/geek/chat?__xbrowser_tab=boss-chat'),
     evaluate: vi.fn(async (expression: string) => {
-      if (expression === 'location.href') return 'https://www.zhipin.com/web/geek/chat?__xbrowser_tab=boss-chat';
+      if (expression === 'location.href') return page.url();
       if (expression.startsWith('history.replaceState')) return undefined;
       return evaluateValues.shift();
     }),
   };
+  return page;
 }
 
 function createContext<T extends { close: ReturnType<typeof vi.fn> }>(newPageFactory?: () => T) {
@@ -344,6 +345,57 @@ describe('boss plugin', () => {
     }, { browserContext });
     expect(browserContext.newPage).not.toHaveBeenCalled();
     expect(result.success).toBe(true);
+  });
+
+  it('chat-reply does not reuse a tabName with a different exact suffix', async () => {
+    const page = createChatReplyPage([
+      { ready: 'complete', url: 'https://www.zhipin.com/web/geek/chat', usedMB: 80, limitMB: 4096 },
+      { x: 550, y: 206.5 },
+      true,
+      true,
+    ]);
+    const browserContext = {
+      pages: () => [page],
+      newPage: vi.fn(async () => page),
+    };
+    page.url = vi.fn(() => 'https://www.zhipin.com/web/geek/chat?__xbrowser_tab=boss-chat-other');
+    const result = await handlerOf('chat-reply')({
+      keyword: '德熙',
+      message: '您好',
+      dryRun: true,
+      tabName: 'boss-chat',
+    }, { browserContext });
+    expect(browserContext.newPage).toHaveBeenCalled();
+    expect(page.goto).toHaveBeenCalledWith(
+      'https://www.zhipin.com/web/geek/chat?__xbrowser_tab=boss-chat',
+      expect.anything(),
+    );
+    expect(result.success).toBe(true);
+  });
+
+  it('runs concurrent read-only commands in separate tabs', async () => {
+    const created: ReturnType<typeof createTabPage>[] = [];
+    const browserContext = {
+      pages: () => [...created],
+      newPage: async () => {
+        const page = createTabPage();
+        page.evaluate = vi.fn()
+          .mockResolvedValueOnce({ ready: 'complete', url: 'https://www.zhipin.com/x', usedMB: 10, limitMB: 4096 })
+          .mockResolvedValueOnce('[]');
+        created.push(page);
+        return page;
+      },
+    };
+    const [first, second] = await Promise.all([
+      handlerOf('search')({ query: 'front' }, { browserContext }),
+      handlerOf('search')({ query: 'backend' }, { browserContext }),
+    ]);
+    expect(created).toHaveLength(2);
+    expect(created[0]).not.toBe(created[1]);
+    expect(created[0].close).toHaveBeenCalledTimes(1);
+    expect(created[1].close).toHaveBeenCalledTimes(1);
+    expect(first.success).toBe(false);
+    expect(second.success).toBe(false);
   });
 
   it('chat-reply sends only outside dry run and verifies the real message', async () => {

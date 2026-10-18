@@ -239,6 +239,35 @@ describe("login-bridge collector launcher", () => {
   );
 
   it.skipIf(!existsSync(chromium))(
+    "cleans a live child that never becomes CDP-ready before timeout",
+    async () => {
+      const home = mkdtempSync(join(tmpdir(), "xbrowser-collector-"));
+      const profile = join(home, "collector-profile");
+      const source = join(home, "source-profile", "Default");
+      const fakeChromium = join(home, "fake-chromium");
+      mkdirSync(source, { recursive: true });
+      mkdirSync(profile, { recursive: true });
+      writeFileSync(
+        fakeChromium,
+        "#!/bin/sh\ntrap ':' TERM\nwhile true; do sleep 1; done\n",
+        { mode: 0o755 },
+      );
+      await expect(
+        launch(
+          26000 + Math.floor(Math.random() * 1000),
+          profile,
+          source,
+          fakeChromium,
+        ),
+      ).rejects.toThrow("collector failed to start");
+      const survivors = await execFileAsync("pgrep", ["-f", fakeChromium]).catch(
+        error => (error.code === 1 ? { stdout: "" } : Promise.reject(error)),
+      );
+      expect(survivors.stdout.trim()).toBe("");
+    },
+  );
+
+  it.skipIf(!existsSync(chromium))(
     "rejects an active profile lock without repairing data",
     async () => {
       const home = mkdtempSync(join(tmpdir(), "xbrowser-collector-"));

@@ -190,7 +190,18 @@ function rejectUnsafeEvaluate(value: unknown, message: string): string | null {
 
 type BossTab = { name: string; page: Page; reusable: boolean };
 
-async function openBossTab(
+async function openReadOnlyBossTab(
+  ctx: unknown,
+  name: string,
+): Promise<BossTab | null> {
+  const browserContext = (ctx as { browserContext?: BossBrowserContext })
+    .browserContext;
+  if (!browserContext?.newPage) return null;
+  const page = await browserContext.newPage();
+  return { name, page, reusable: false };
+}
+
+async function openReusableBossTab(
   ctx: unknown,
   name: string,
 ): Promise<BossTab | null> {
@@ -198,14 +209,19 @@ async function openBossTab(
     .browserContext;
   if (!browserContext?.newPage) return null;
   const pages = browserContext.pages?.() ?? [];
-  const marker = `__xbrowser_tab=${encodeURIComponent(name)}`;
   const pageUrls = await Promise.all(pages.map(async (page) => pageUrl(page)));
-  const existingIndex = pageUrls.findIndex(
-    (pageUrl) =>
-      typeof pageUrl === "string" &&
-      pageUrl.startsWith("https://www.zhipin.com/") &&
-      pageUrl.includes(marker),
-  );
+  const existingIndex = pageUrls.findIndex((pageUrl) => {
+    if (typeof pageUrl !== "string") return false;
+    try {
+      const parsed = new URL(pageUrl);
+      return (
+        (parsed.hostname === "www.zhipin.com" || parsed.hostname === "zhipin.com") &&
+        parsed.searchParams.get("__xbrowser_tab") === name
+      );
+    } catch {
+      return false;
+    }
+  });
   const existing = existingIndex >= 0 ? pages[existingIndex] : undefined;
   if (existing) return { name, page: existing, reusable: true };
   const page = await browserContext.newPage();
@@ -243,7 +259,7 @@ export default function (xcli: XCLIAPI): void {
       },
     ],
     handler: async (params, ctx) => {
-      const tab = await openBossTab(ctx, "boss-search");
+      const tab = await openReadOnlyBossTab(ctx, "boss-search");
       if (!tab) {
         recordBossMistake(
           "search",
@@ -370,7 +386,7 @@ export default function (xcli: XCLIAPI): void {
       jobId: z.string().describe("职位 ID"),
     }),
     handler: async (params, ctx) => {
-      const tab = await openBossTab(ctx, "boss-detail");
+      const tab = await openReadOnlyBossTab(ctx, "boss-detail");
       if (!tab) {
         recordBossMistake(
           "detail",
@@ -477,7 +493,7 @@ export default function (xcli: XCLIAPI): void {
     }),
     examples: [{ cmd: "xbrowser boss companies", description: "搜索公司列表" }],
     handler: async (params, ctx) => {
-      const tab = await openBossTab(ctx, "boss-companies");
+      const tab = await openReadOnlyBossTab(ctx, "boss-companies");
       if (!tab) {
         recordBossMistake(
           "companies",
@@ -574,7 +590,7 @@ export default function (xcli: XCLIAPI): void {
     result: recommendResult,
     parameters: z.object({}),
     handler: async (_params, ctx) => {
-      const tab = await openBossTab(ctx, "boss-recommend");
+      const tab = await openReadOnlyBossTab(ctx, "boss-recommend");
       if (!tab) {
         recordBossMistake(
           "recommend",
@@ -667,7 +683,7 @@ export default function (xcli: XCLIAPI): void {
       limit: z.coerce.number().optional().default(10).describe("返回条数"),
     }),
     handler: async (params, ctx) => {
-      const tab = await openBossTab(ctx, "boss-chat-list");
+      const tab = await openReadOnlyBossTab(ctx, "boss-chat-list");
       if (!tab) {
         recordBossMistake(
           "chat",
@@ -774,7 +790,7 @@ export default function (xcli: XCLIAPI): void {
       },
     ],
     handler: async (params, ctx) => {
-      const tab = await openBossTab(ctx, params.tabName);
+      const tab = await openReusableBossTab(ctx, params.tabName);
       if (!tab) {
         recordBossMistake(
           "chat-reply",
@@ -926,7 +942,7 @@ export default function (xcli: XCLIAPI): void {
     result: resumeResult,
     parameters: z.object({}),
     handler: async (_params, ctx) => {
-      const tab = await openBossTab(ctx, "boss-resume");
+      const tab = await openReadOnlyBossTab(ctx, "boss-resume");
       if (!tab) {
         recordBossMistake(
           "resume",
