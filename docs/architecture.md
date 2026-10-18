@@ -667,11 +667,12 @@ Boss 只读采集命令还有三条生命周期硬约束：
    `boss-collector` 分类。插件不得直接 import `src/`，避免安装后
    运行时路径破裂；同一 command/reason 的第三条记录会被 constrained。
 
-Boss 独立采集器启动脚本不得创建常驻 LaunchAgent。脚本以后台进程启动并
-显式记录子进程 PID，父脚本退出后 Chromium 继续作为用户进程运行；启动
-前后必须同时校验监听 PID、`--remote-debugging-port` 和
-`--user-data-dir`。端口被其他 profile 占用时必须失败，不能误接；
-`SingletonLock` 只有确认没有活进程引用时才可清理。
+Boss 独立采集器启动脚本不得创建常驻 LaunchAgent。脚本通过 Python
+`start_new_session=True`、`stdin=DEVNULL` 启动 Chromium 并记录真实子进程
+PID/进程组；启动 shell 退出后 Chromium 继续作为用户进程运行。启动前后必须
+同时校验监听 PID、`--remote-debugging-port` 和 `--user-data-dir`。端口被
+其他 profile 占用时必须失败，不能误接；`SingletonLock` 只有确认没有活进程
+引用时才可清理。
 
 CDP Guard 的行为约定是：`danger` 级合成事件硬拦截并返回带替代方案的
 `[CDP-Guard]` 错误；`warn` 级记录提示但放行；只有显式标记

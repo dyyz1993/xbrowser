@@ -59,16 +59,35 @@ export function textOf(element: Element | null | undefined): string {
 
 export function parseJobDetailTarget(input: string): string {
   const value = input.trim();
-  if (/^https?:\/\//i.test(value)) {
-    if (!/zhipin\.com\/job_detail\//i.test(value)) {
-      throw new Error('职位详情 URL 不是 Boss 直聘 job_detail 地址');
+  const tokenPattern = /^[A-Za-z0-9_-]{18,}$/;
+  const parseBossUrl = (raw: string): URL | null => {
+    let parsed: URL;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      return null;
     }
-    return value;
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+    if (parsed.hostname !== 'www.zhipin.com' && parsed.hostname !== 'zhipin.com') return null;
+    if (!/^\/job_detail\/[A-Za-z0-9_-]{18,}\.html$/.test(parsed.pathname)) return null;
+    return parsed;
+  };
+
+  if (/^https?:\/\//i.test(value)) {
+    const parsed = parseBossUrl(value);
+    if (!parsed) throw new Error('职位详情 URL 不是 Boss 直聘 job_detail 地址');
+    return parsed.toString();
   }
+
+  if (value.startsWith('/')) {
+    const parsed = parseBossUrl(`https://www.zhipin.com${value}`);
+    if (!parsed) throw new Error('职位详情路径不是 Boss 直聘 job_detail 地址');
+    return parsed.toString();
+  }
+
   const token = value
-    .replace(/^.*job_detail\//, '')
-    .split('?')[0].replace(/\.html$/, '');
-  if (!/^[a-f0-9]{8,}$/i.test(token)) {
+    .replace(/\.html$/i, '');
+  if (value.includes('/') || value.includes('?') || !tokenPattern.test(token)) {
     throw new Error(`无效的职位详情标识：${value}`);
   }
   return `https://www.zhipin.com/job_detail/${token}.html`;
@@ -91,8 +110,9 @@ export function extractJobDetail(): JobDetailData {
     jobTitle: textOf(q('.name h1') ?? q('.name .job-title') ?? q('h1')),
     salary: textOf(q('.name .salary') ?? q('.name .badge') ?? q('.salary')),
     company: textOf(
-      document.querySelector('.sider-company .company-info') ??
+      document.querySelector('.sider-company .company-info a[title]') ??
         document.querySelector('.company-info a[title]') ??
+        q('.company a[title]') ??
         q('.company'),
     ),
     location: textOf(q('.text-city') ?? q('.location')),
@@ -115,9 +135,9 @@ export function extractCompanies(limit: number): CompanyData[] {
       const funding = textOf(
         company?.querySelector('.conpany-text span:nth-child(2)'),
       );
-      const industry = textOf(
-        company?.querySelector('.conpany-text span:nth-child(3)'),
-      );
+      const industry = textOf(company?.querySelector('.company-industry'))
+        || textOf(company?.querySelector('.conpany-text span:nth-child(3)'));
+      const size = textOf(company?.querySelector('.company-size, .size'));
       const jobText = job?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
       const hotJob = jobText.replace(/^热招\s*/, '').trim();
       return {
@@ -125,7 +145,7 @@ export function extractCompanies(limit: number): CompanyData[] {
         name: textOf(company?.querySelector('h4')),
         industry,
         funding,
-        size: '',
+        size,
         hotJob,
         href: company?.getAttribute('href') ?? '',
       };
@@ -134,7 +154,9 @@ export function extractCompanies(limit: number): CompanyData[] {
 }
 
 export function extractRecommend(): RecommendData {
-  const root = document.querySelector('.sider-recommend-wrap');
+  const root = [...document.querySelectorAll('.sider-recommend-wrap')].find(
+    (element) => /谁看过我|对我感兴趣/.test(element.textContent ?? ''),
+  );
   const viewers = [...(root?.querySelectorAll('li.item-recommend') ?? [])]
     .slice(0, 10)
     .map((element) => ({
@@ -144,7 +166,9 @@ export function extractRecommend(): RecommendData {
       salary: textOf(element.querySelector('.salary')),
     }))
     .filter((viewer) => viewer.name.length > 0);
-  const profileName = [...document.querySelectorAll('.label-text')]
+  const profileName = [...document.querySelectorAll(
+    '.user-info .label-text, .user-info .user-name, .user-info .name',
+  )]
     .map(textOf)
     .find((value) => value.length > 0 && value !== '消息' && value !== '简历');
   return {

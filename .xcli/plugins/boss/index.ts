@@ -131,12 +131,17 @@ export function recordBossMistake(
   const recordBossMistakeImpl = (globalThis as Record<string, unknown>)
     .__xbrowserRecordMistake as BossMistakeRecorder | undefined;
   if (!recordBossMistakeImpl) return;
+  const reasonCode = reason
+    .replace(/\d+(?:\.\d+)?/g, '<number>')
+    .replace(/https?:\/\/\S+/g, '<url>')
+    .replace(/\s+/g, ' ')
+    .trim();
   recordBossMistakeImpl({
     category: "boss-collector",
-    fingerprint: `boss-collector::${command}::${reason}`,
+    fingerprint: `boss-collector::${command}::${reasonCode}`,
     command: `boss ${command}`,
     message: reason,
-    context: { plugin: "boss", ...(tabName ? { tabName } : {}) },
+    context: { plugin: "boss", reason, ...(tabName ? { tabName } : {}) },
   });
 }
 
@@ -433,7 +438,7 @@ export default function (xcli: XCLIAPI): void {
           return fail(`职位详情不存在：${target}`);
         }
         const jobId =
-          new URL(url).pathname.match(/job_detail\/([a-f0-9]+)/i)?.[1] ??
+          new URL(url).pathname.match(/job_detail\/([A-Za-z0-9_-]+)\.html/i)?.[1] ??
           params.jobId;
         return ok({
           jobId,
@@ -857,14 +862,13 @@ export default function (xcli: XCLIAPI): void {
         );
         if (hasInput !== true)
           return failWith("未找到聊天输入框，请确认已打开对话");
-        await page.fill(".chat-input", params.message, { timeout: 10000 });
-        await sleep(500);
         if (params.dryRun) {
-          await page.fill(".chat-input", "", { timeout: 10000 });
           return ok({ sent: false, to: params.keyword }, [
-            `dry-run 通过：已选中 "${params.keyword}"，输入可写入并可清空，未发送`,
+            `dry-run 通过：已选中 "${params.keyword}"，输入存在，未写入或发送`,
           ]);
         }
+        await page.fill(".chat-input", params.message, { timeout: 10000 });
+        await sleep(500);
         const clickedResponse = await evaluate(`
           (() => {
             const r = document.querySelector('.btn-send')?.getBoundingClientRect();

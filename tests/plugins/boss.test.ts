@@ -1,6 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import plugin from '../../.xcli/plugins/boss/index.ts';
-import { parseResumeContact } from '../../.xcli/plugins/boss/selectors.ts';
+import { rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import plugin, { recordBossMistake } from '../../.xcli/plugins/boss/index.ts';
+import {
+  extractChats,
+  extractCompanies,
+  extractJobDetail,
+  extractRecommend,
+  parseJobDetailTarget,
+  parseResumeContact,
+} from '../../.xcli/plugins/boss/selectors.ts';
+// @ts-expect-error -- domino is a transitive test dependency without ESM declarations.
+import domino from '@mixmark-io/domino';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -106,7 +118,7 @@ describe('boss plugin', () => {
     const jobCard = createTabPage([[
       {
         rank: 1,
-        jobId: '1234567890abcdef',
+        jobId: 'c35295a49980d3e90nx439i1FVRU',
         title: 'Frontend Engineer',
         salary: '20-30K',
         company: 'Acme',
@@ -123,7 +135,7 @@ describe('boss plugin', () => {
       .mockResolvedValueOnce(JSON.stringify([
         {
           rank: 1,
-          jobId: '1234567890abcdef',
+          jobId: 'c35295a49980d3e90nx439i1FVRU',
           title: 'Frontend Engineer',
           salary: '20-30K',
           company: 'Acme',
@@ -145,7 +157,7 @@ describe('boss plugin', () => {
     expect(result.success).toBe(true);
     expect(result.data).toEqual([{
       rank: 1,
-      jobId: '1234567890abcdef',
+      jobId: 'c35295a49980d3e90nx439i1FVRU',
       title: 'Frontend Engineer',
       company: 'Acme',
       salary: '20-30K',
@@ -185,16 +197,16 @@ describe('boss plugin', () => {
         description: '岗位职责',
       }));
     const { browserContext } = createContext(() => detailPage);
-    const result = await handlerOf('detail')({ jobId: 'https://www.zhipin.com/job_detail/1234567890abcdef.html?securityId=abc&lid=x' }, { browserContext });
+    const result = await handlerOf('detail')({ jobId: 'https://www.zhipin.com/job_detail/c35295a49980d3e90nx439i1FVRU.html?securityId=abc&lid=x' }, { browserContext });
     expect(detailPage.goto).toHaveBeenCalledWith(
-      'https://www.zhipin.com/job_detail/1234567890abcdef.html?securityId=abc&lid=x&__xbrowser_tab=boss-detail',
+      'https://www.zhipin.com/job_detail/c35295a49980d3e90nx439i1FVRU.html?securityId=abc&lid=x&__xbrowser_tab=boss-detail',
       expect.anything(),
     );
     expect(detailPage.close).toHaveBeenCalled();
     expect(result.success).toBe(true);
     expect(result.data).toEqual({
-      jobId: '1234567890abcdef',
-      url: 'https://www.zhipin.com/job_detail/1234567890abcdef.html?securityId=abc&lid=x&__xbrowser_tab=boss-detail',
+      jobId: 'c35295a49980d3e90nx439i1FVRU',
+      url: 'https://www.zhipin.com/job_detail/c35295a49980d3e90nx439i1FVRU.html?securityId=abc&lid=x&__xbrowser_tab=boss-detail',
       pageTitle: 'Job Title',
       jobTitle: '前端短期',
       salary: '7-10K',
@@ -213,7 +225,7 @@ describe('boss plugin', () => {
       .mockResolvedValueOnce('您访问的页面不存在-BOSS直聘')
       .mockResolvedValueOnce(JSON.stringify({ jobTitle: '', salary: '' }));
     const { browserContext } = createContext(() => notFoundPage);
-    const result = await handlerOf('detail')({ jobId: '1234567890abcdef' }, { browserContext });
+    const result = await handlerOf('detail')({ jobId: 'c35295a49980d3e90nx439i1FVRU' }, { browserContext });
     expect(result.success).toBe(false);
     expect(result.message).toContain('职位详情不存在');
   });
@@ -308,7 +320,8 @@ describe('boss plugin', () => {
     expect(result.data).toEqual({ sent: false, to: '德熙' });
     const tips = result.tips as Array<{ message?: string } | string> | undefined;
     const tipText = (tips ?? []).map((tip) => typeof tip === 'string' ? tip : tip.message ?? '').join(' ');
-    expect(tipText).toContain('未发送');
+    expect(tipText).toContain('未写入或发送');
+    expect(page.fill).not.toHaveBeenCalled();
   });
 
   it('chat-reply reuses the same tabName', async () => {
@@ -420,6 +433,7 @@ describe('boss mistake helper', () => {
         message: '无法从 BrowserCommandContext 创建独立采集 tab',
         context: {
           plugin: 'boss',
+          reason: '无法从 BrowserCommandContext 创建独立采集 tab',
           tabName: 'boss-search',
         },
       }]);
@@ -429,7 +443,125 @@ describe('boss mistake helper', () => {
   });
 });
 
+describe('boss mistake threshold', () => {
+  it('constrains the third occurrence when only dynamic details differ', async () => {
+    type RecordedMistake = {
+      category: string;
+      fingerprint?: string;
+      command: string;
+      message: string;
+      context?: Record<string, unknown>;
+    };
+    const calls: RecordedMistake[] = [];
+    (globalThis as Record<string, unknown>).__xbrowserRecordMistake = (input: RecordedMistake) => {
+      calls.push(input);
+    };
+    const details = ['http://a.example/1', 'http://b.example/2', 'http://c.example/3'];
+    for (const detail of details) recordBossMistake('detail', `职位详情不存在：${detail}`, 'boss-detail');
+    try {
+      expect(calls.map(input => input.fingerprint)).toEqual(Array(3).fill('boss-collector::detail::职位详情不存在：<url>'));
+      const { recordMistake } = await import('../../src/lib/mistake-ledger.js');
+      const ledgerPath = join(tmpdir(), `boss-mistake-${process.pid}-${Date.now()}.json`);
+      const results = calls.map(input => recordMistake(input, ledgerPath));
+      expect(results.at(-1)?.entry.occurrences).toHaveLength(3);
+      expect(results.at(-1)?.entry.constrained).toBe(true);
+      rmSync(ledgerPath, { force: true });
+    } finally {
+      delete (globalThis as Record<string, unknown>).__xbrowserRecordMistake;
+    }
+  });
+});
+
 describe('boss selectors', () => {
+  beforeEach(() => {
+    globalThis.document = domino.createDocument(
+      '<html><body></body></html>',
+    ) as unknown as Document;
+  });
+
+  afterEach(() => {
+    (globalThis as Partial<Record<'document', unknown>>).document = undefined;
+  });
+
+  it('accepts real Boss tokens and canonical detail URLs with query', () => {
+    expect(parseJobDetailTarget('c35295a49980d3e90nx439i1FVRU'))
+      .toBe('https://www.zhipin.com/job_detail/c35295a49980d3e90nx439i1FVRU.html');
+    expect(parseJobDetailTarget('https://www.zhipin.com/job_detail/c35295a49980d3e90nx439i1FVRU.html?securityId=abc&lid=x'))
+      .toBe('https://www.zhipin.com/job_detail/c35295a49980d3e90nx439i1FVRU.html?securityId=abc&lid=x');
+  });
+
+  it('rejects short hex IDs and forged or nested non-Boss detail URLs', () => {
+    expect(() => parseJobDetailTarget('1234567890abcdef')).toThrow('无效的职位详情标识');
+    expect(() => parseJobDetailTarget('https://evil.com/zhipin.com/job_detail/c35295a49980d3e90nx439i1FVRU.html'))
+      .toThrow('职位详情 URL 不是 Boss 直聘 job_detail 地址');
+    expect(() => parseJobDetailTarget('https://www.zhipin.com/job_detail/1234567890abcdef.html'))
+      .toThrow('职位详情 URL 不是 Boss 直聘 job_detail 地址');
+    expect(() => parseJobDetailTarget('https://www.zhipin.com/job_detail/c35295a49980d3e90nx439i1FVRU.evil.html'))
+      .toThrow('职位详情 URL 不是 Boss 直聘 job_detail 地址');
+  });
+
+  it('extracts job detail company from its named link instead of the noisy sidebar block', () => {
+    globalThis.document = domino.createDocument(`
+      <html><body>
+        <div class="job-primary">
+          <div class="name"><h1>前端短期</h1><span class="salary">7-10K</span></div>
+          <span class="text-city">北京</span>
+          <span class="text-experience">5-10年</span>
+          <span class="text-degree">大专</span>
+        </div>
+        <aside class="sider-company">
+          <div class="company-info"><a title="高伟达朝阳分公司">高伟达朝阳分公司</a><p>1000人以上 已上市</p></div>
+        </aside>
+        <section class="job-detail-section"><div class="job-sec-text">岗位职责</div></section>
+      </body></html>
+    `) as unknown as Document;
+    expect(extractJobDetail().company).toBe('高伟达朝阳分公司');
+  });
+
+  it('extracts companies from a DOM fixture with missing fields', () => {
+    globalThis.document = domino.createDocument(`
+      <html><body><ul class="company-tab-box company-list">
+        <li class="sub-li">
+          <a class="company-info" href="/gongsi/a.html"><h4>Acme</h4><div class="conpany-text"><span class="company-industry">互联网</span><span>不需要融资</span><span></span></div><span class="company-size">100人</span></a>
+          <a class="about-info" href="/job/a.html"><p>热招 前端 20-30K</p></a>
+        </li>
+        <li class="sub-li"><a class="company-info"><h4></h4></a></li>
+      </ul></body></html>
+    `) as unknown as Document;
+    expect(extractCompanies(2)).toEqual([{
+      rank: 1, name: 'Acme', industry: '互联网', funding: '不需要融资',
+      size: '100人', hotJob: '前端 20-30K', href: '/gongsi/a.html',
+    }]);
+  });
+
+  it('extracts who-viewed-me only from the titled section and ignores unrelated labels', () => {
+    globalThis.document = domino.createDocument(`
+      <html><body>
+        <div class="label-text">设置</div>
+        <section class="sider-recommend-wrap"><h3>猜你喜欢</h3><li class="item-recommend"><span class="name">推荐岗位</span></li></section>
+        <section class="sider-recommend-wrap"><h3>谁看过我</h3><ul><li class="item-recommend"><span class="name">林女士</span><span class="company">诗悦网络</span><span class="detail">AI全栈开发</span><span class="salary">18-28K</span></li></ul></section>
+        <div class="user-info"><span class="label-text">消息</span><span class="label-text">简历</span><span class="label-text">许先生</span></div>
+      </body></html>
+    `) as unknown as Document;
+    expect(extractRecommend()).toEqual({
+      viewers: [{ name: '林女士', company: '诗悦网络', title: 'AI全栈开发', salary: '18-28K' }],
+      profile: { name: '许先生', experience: '', status: '', expectation: '' },
+    });
+  });
+
+  it('extracts chat fields precisely from friend-content DOM', () => {
+    globalThis.document = domino.createDocument(`
+      <html><body><li><div class="friend-content">
+        <div class="name-box"><span class="name-text">范丽萍</span><span>德熙数字科技</span><i></i><span>HRBP</span></div>
+        <span class="time">10月17日</span><div class="last-msg">[送达] 您好</div>
+      </div></li></body></html>
+    `) as unknown as Document;
+    expect(extractChats(1)).toEqual([{
+      sender: '范丽萍', company: '德熙数字科技', role: 'HRBP',
+      time: '10月17日', preview: '[送达] 您好',
+    }]);
+  });
+
   it('parses only visibly masked contact fields from the fixed DOM fragment', () => {
     const contact = parseResumeContact('137******18dyy***93dyy***93@qq.com个人优势');
     expect(contact).toEqual({

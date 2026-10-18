@@ -749,9 +749,9 @@ Boss 命令生命周期约束：
 - Boss 失误记录由宿主在 plugin loader 中注入，分类为 `boss-collector`；
   插件不得直接 import `src/lib/mistake-ledger.js`。重复失败第 3 次会
   constrained，不能删账本、抬阈值或规避 lint。
-- Boss 独立采集器 launcher 禁止创建常驻 LaunchAgent。后台启动后必须记录
-  真实子进程 PID；启动/幂等必须校验 PID、端口、profile 和 SingletonLock，
-  且不能把其他 profile 的端口当成自己的。
+- Boss 独立采集器 launcher 禁止创建常驻 LaunchAgent。必须以新 session/
+  新进程组脱离启动 shell 并显式关闭 stdin；启动/幂等必须校验真实 PID、
+  进程组、端口、profile 和 SingletonLock，且不能把其他 profile 的端口当成自己的。
 
 ### 10.2 最小插件
 

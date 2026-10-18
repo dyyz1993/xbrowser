@@ -1,5 +1,11 @@
 import { execFile, spawn } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -15,6 +21,7 @@ function launch(
   port: number,
   profile: string,
   source: string,
+  chromiumPath = chromium,
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(
@@ -24,7 +31,7 @@ function launch(
         timeout: 20_000,
         env: {
           ...process.env,
-          XBROWSER_CHROMIUM_BIN: chromium,
+          XBROWSER_CHROMIUM_BIN: chromiumPath,
           XBROWSER_COLLECT_PROFILE: profile,
           XBROWSER_COLLECT_SOURCE: source,
         },
@@ -40,6 +47,18 @@ function launch(
         } else resolve(stdout);
       },
     );
+  });
+}
+
+async function execFileAsync(
+  command: string,
+  args: string[],
+): Promise<{ stdout: string }> {
+  return new Promise((resolve, reject) => {
+    execFile(command, args, (error, stdout) => {
+      if (error) reject(error);
+      else resolve({ stdout });
+    });
   });
 }
 
@@ -88,30 +107,35 @@ describe("login-bridge collector launcher", () => {
     expect(source).not.toContain(
       'cp "$HOME/Library/Application Support/Google/Chrome/Local State"',
     );
-    expect(source).toContain('--remote-debugging-port="$PORT"');
+
     expect(source).toContain("chrome-collect-profile");
     expect(source).toContain(
       "XBROWSER_HUMANIZE_CDP=${XBROWSER_HUMANIZE_CDP:-on}",
     );
-    expect(source).toContain("CANDIDATE=$!");
-    expect(source).toContain('about:blank </dev/null >>"$LOG" 2>&1 &');
+    expect(source).toContain("launch-collector.py");
     expect(source).not.toContain("launchctl load");
     expect(source).not.toContain("<key>KeepAlive</key>");
     expect(source).toContain("is_our_collector");
     expect(source).toContain("--remote-debugging-port=${PORT}( |$)");
-    expect(source).toContain("--user-data-dir=${PROFILE}( |$)");
+    expect(source).toContain("--user-data-dir=${escaped_profile}( |$)");
     expect(source).toContain("endpoint_pid");
     expect(source).toContain("port $PORT is owned by another process");
     expect(source).toContain('readlink "$LOCKFILE"');
     expect(source).toContain("profile_pids");
-    expect(source).toContain("</dev/null");
+    const launcherSource = readFileSync(
+      script.replace(/collect-profile\.sh$/, "launch-collector.py"),
+      "utf8",
+    );
+    expect(launcherSource).toContain("start_new_session=True");
+    expect(launcherSource).toContain("stdin=subprocess.DEVNULL");
+    expect(source).toContain("escaped_profile=");
   });
 
   it.skipIf(!existsSync(chromium))(
     "starts a detached collector on an isolated port and profile",
     async () => {
       const home = mkdtempSync(join(tmpdir(), "xbrowser-collector-"));
-      const profile = join(home, "collector-profile");
+      const profile = join(home, "collector+profile[1]");
       const source = join(home, "source-profile", "Default");
       mkdirSync(source, { recursive: true });
       mkdirSync(profile, { recursive: true });
@@ -122,6 +146,20 @@ describe("login-bridge collector launcher", () => {
       ownedProfiles.set(pid, profile);
       expect(output).toContain(`collector ready on http://127.0.0.1:${port}`);
       expect(await alive(pid)).toBe(true);
+      const [launcherProcessGroup, collectorProcessGroup] = await Promise.all([
+        execFileAsync("ps", ["-o", "pgid=", "-p", String(process.pid)]),
+        execFileAsync("ps", ["-o", "pgid=", "-p", String(pid)]),
+      ]);
+      expect(Number(collectorProcessGroup.stdout.trim())).not.toBe(
+        Number(launcherProcessGroup.stdout.trim()),
+      );
+      const parentProcess = await execFileAsync("ps", [
+        "-o",
+        "ppid=",
+        "-p",
+        String(pid),
+      ]);
+      expect(Number(parentProcess.stdout.trim())).toBe(1);
       const command = await new Promise<string>((resolve) => {
         execFile(
           "ps",
@@ -145,7 +183,7 @@ describe("login-bridge collector launcher", () => {
       const profile = join(home, "collector-profile");
       const source = join(home, "source-profile", "Default");
       mkdirSync(source, { recursive: true });
-      mkdirSync(profile, { recursive: true });
+      mkdirSync(join(profile, "Default", "sentinel"), { recursive: true });
       const foreign = spawn(
         "/usr/bin/python3",
         [
@@ -159,10 +197,44 @@ describe("login-bridge collector launcher", () => {
           resolve(Number(String(data).trim())),
         );
       });
-      await expect(launch(port, profile, source)).rejects.toThrow(
-        /port \d+ is owned by another process/,
+      try {
+        await expect(launch(port, profile, source)).rejects.toThrow(
+          /port \d+ is owned by another process/,
+        );
+        expect(existsSync(join(profile, "Default", "sentinel"))).toBe(true);
+      } finally {
+        foreign.kill("SIGTERM");
+      }
+    },
+  );
+
+  it.skipIf(!existsSync(chromium))(
+    "cleans its owned failed child without relying on test registration",
+    async () => {
+      const home = mkdtempSync(join(tmpdir(), "xbrowser-collector-"));
+      const profile = join(home, "collector-profile");
+      const source = join(home, "source-profile", "Default");
+      const fakeChromium = join(home, "fake-chromium");
+      mkdirSync(source, { recursive: true });
+      mkdirSync(profile, { recursive: true });
+      writeFileSync(fakeChromium, "#!/bin/sh\nexec /bin/sleep 30\n", {
+        mode: 0o755,
+      });
+      await expect(
+        launch(
+          25000 + Math.floor(Math.random() * 1000),
+          profile,
+          source,
+          fakeChromium,
+        ),
+      ).rejects.toThrow("collector failed to start");
+      const survivors = await execFileAsync("pgrep", [
+        "-f",
+        fakeChromium,
+      ]).catch((error) =>
+        error.code === 1 ? { stdout: "" } : Promise.reject(error),
       );
-      foreign.kill("SIGTERM");
+      expect(survivors.stdout.trim()).toBe("");
     },
   );
 
