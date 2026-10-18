@@ -509,6 +509,31 @@ async function sweepIdleTasks() {
 }
 
 const executors = {
+  // Read-only cookie export for a specifically authorized site. This avoids
+  // attaching a debugger to a user tab and never exposes values in CLI output.
+  'export-site-cookies': async ({ domain }) => {
+    const site = typeof domain === 'string' ? domain : '';
+    const cookies = await exportCookies(site);
+    const [candidate] = site
+      ? (await chrome.tabs.query({ url: `https://*/*${site}/*`, currentWindow: false }))
+      : [];
+    const localStorageEntries = await exportLocalStorage(candidate, site);
+    const result = await pushToBridge({
+      source: 'chrome',
+      domain: site || '*',
+      cookies,
+      localStorage: localStorageEntries,
+      at: Date.now(),
+    });
+    return {
+      ok: result?.ok === true,
+      domain: site || '*',
+      count: cookies.length,
+      localStorage: localStorageEntries.length,
+      tabId: candidate?.id,
+    };
+  },
+
   // ── S121: CDP 透传（核心：命令转发器，扩展零逻辑） ──
   cdp: async ({ tabId, method, params }) => {
     const target = tabId ?? await getTaskTabId();
