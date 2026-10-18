@@ -1178,6 +1178,10 @@ xbrowser marketplace publish <plugin-name> --registry https://your-registry.com
 提示的可信管线（`page.mouse` / trusted fill / `page.setInputFiles`）。测试
 或观测流量必须显式加 `/* @xb-probe */` 才能跳过拦截。
 
+需要自然化瞬移鼠标或粘贴式输入时，设置 `XBROWSER_HUMANIZE_CDP=on`：
+Guard 会把长距离 `mouseMoved` 展开成 trusted 贝塞尔轨迹，把 `insertText`
+展开成带节奏的完整键盘事件流；不注入 JS，不改变既有默认行为。
+
 **Computer Use 唯一适用场景：** 当 chrome-bridge/login-bridge 扩展未安装/未启用/需要刷新时，
 用 Computer Use 去操作 `chrome://extensions` 页面完成加载或刷新。
 操作完之后仍然回退到 chrome-bridge WS 通道执行插件命令。

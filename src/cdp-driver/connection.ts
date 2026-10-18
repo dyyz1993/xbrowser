@@ -202,6 +202,15 @@ export class CDPConnection extends EventEmitter {
       if (decision && decision.action === 'block') {
         throw new Error(`[CDP-Guard] ${decision.reason}${decision.suggestion ? ' | 替代: ' + decision.suggestion : ''} [${decision.ruleId}]`);
       }
+      if (decision && decision.action === 'transform' && Array.isArray((decision.transformedParams as Record<string, unknown> | undefined)?.__sequence)) {
+        const sequence = (decision.transformedParams as { __sequence: Array<{ method: string; params: Record<string, unknown>; delayMs?: number }> }).__sequence;
+        let last: unknown;
+        for (const step of sequence) {
+          if (step.delayMs) await new Promise((resolve) => setTimeout(resolve, step.delayMs));
+          last = await this.send(step.method, step.params, sessionId, effectiveTimeout);
+        }
+        return last as T;
+      }
     }
 
     if (this.closed) {

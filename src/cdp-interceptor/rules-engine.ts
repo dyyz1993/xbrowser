@@ -12,6 +12,7 @@ import { isProbeMarked } from './rules/shared.js';
 import { domMutationRule } from './rules/dom-mutation.js';
 import { mouseTrajectoryRule } from './rules/mouse-trajectory.js';
 import { inputKeystrokeRule } from './rules/input-keystroke.js';
+import { humanizeTransformRule } from './rules/humanize-transform.js';
 import { automationSignalsRule } from './rules/automation-signals.js';
 import { fingerprintingRule } from './rules/fingerprinting.js';
 import { eventSimulationRule } from './rules/event-simulation.js';
@@ -26,6 +27,7 @@ import { pageLifecycleRule } from './rules/page-lifecycle.js';
  *    20  Automation signals (Playwright/Puppeteer/Selenium markers, 35+)
  *    30  Fingerprinting APIs (canvas, WebGL, AudioContext, navigator, 35+)
  *    40  Event simulation (dispatchEvent, click/focus/blur, 30+)
+ *    45  Humanize transform (trusted mouse/keyboard sequence expansion)
  *    50  Mouse trajectory analysis (stateful)
  *    55  Input keystroke timing (stateful)
  *    60  CDP emulation/override detection (20+)
@@ -39,6 +41,7 @@ const BUILTIN_RULES: CDPInterceptorRule[] = [
   eventSimulationRule,
   mouseTrajectoryRule,
   inputKeystrokeRule,
+  humanizeTransformRule,
   emulationOverrideRule,
   networkAnomalyRule,
   pageLifecycleRule,
@@ -82,9 +85,15 @@ export function createRuleEngine(customRules?: CDPInterceptorRule[]): RuleEngine
       } catch {
         // 标记检测失败不阻断正常评估
       }
+      // Humanize transform is an opt-in repair layer, not a default gate:
+      // callers that explicitly request naturalized input set
+      // XBROWSER_HUMANIZE_CDP=on; tests and existing Playwright traffic stay
+      // byte-compatible until then.
+      const humanizeEnabled = process.env.XBROWSER_HUMANIZE_CDP === 'on';
 
       for (const rule of rules) {
         if (rule.canHandle && !rule.canHandle(fullCtx)) continue;
+        if (rule.id === 'humanize-transform' && !humanizeEnabled) continue;
         const decision = rule.evaluate(fullCtx);
         if (!decision) continue;
         // Only return actionable decisions. 'pass' = log-only, keep checking
