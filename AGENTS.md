@@ -1170,6 +1170,14 @@ xbrowser marketplace publish <plugin-name> --registry https://your-registry.com
 4. Computer Use 不经过 xbrowser，无法执行插件 handler，还会绕过 CDP 风控检测
 5. 混用会导致两边看到不同的浏览器实例，session 状态不同步
 
+**CDP Guard 是硬闸门，不是提醒：**
+所有 xbrowser CDP 出站命令先过规则引擎；`danger` 合成事件（`el.click()`、
+`dispatchEvent(new InputEvent/MouseEvent/KeyboardEvent/PointerEvent)`）会被
+直接拒绝并返回 `[CDP-Guard]` 错误，错误里的“替代”就是目标调用方式。不要
+用 `XBROWSER_CDP_GUARD=off` 绕过；如果命令需要触发关键 UI，直接改成错误
+提示的可信管线（`page.mouse` / trusted fill / `page.setInputFiles`）。测试
+或观测流量必须显式加 `/* @xb-probe */` 才能跳过拦截。
+
 **Computer Use 唯一适用场景：** 当 chrome-bridge/login-bridge 扩展未安装/未启用/需要刷新时，
 用 Computer Use 去操作 `chrome://extensions` 页面完成加载或刷新。
 操作完之后仍然回退到 chrome-bridge WS 通道执行插件命令。
@@ -1204,6 +1212,19 @@ const rect = await page.evaluate(() => {
   return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
 });
 await page.mouse.click(rect.x, rect.y);
+```
+
+输入同理：
+```typescript
+// ❌ 被拦截
+await page.evaluate((text) => {
+  const input = document.querySelector('.chat-input');
+  input.textContent = text;
+  input.dispatchEvent(new InputEvent('input', { bubbles: true }));
+}, text);
+
+// ✅ trusted fill 管线（内部走真实键盘/粘贴与存活验证）
+await page.fill('.chat-input', text);
 ```
 
 封装在 `.xcli/plugins/shared/file-upload.ts` 的 `clickButtonByText(page, text)` 已用真实 mouse 事件。
