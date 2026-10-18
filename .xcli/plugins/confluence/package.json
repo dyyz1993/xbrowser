@@ -17,6 +17,6 @@
     "description": "Confluence - 团队文档",
     "site": "https://xxx.atlassian.net/wiki",
     "requiresLogin": true,
-    "commands": []
+    "commands": ["pages", "search"]
   }
 }

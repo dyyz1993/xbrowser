@@ -17,6 +17,6 @@
     "description": "Jira - 项目管理",
     "site": "https://xxx.atlassian.net",
     "requiresLogin": true,
-    "commands": []
+    "commands": ["issues", "issue"]
   }
 }
