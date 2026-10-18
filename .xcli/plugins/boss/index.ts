@@ -119,6 +119,11 @@ function assertBossMemory(health: BossMemory & { ready?: string; url?: string },
   return null;
 }
 
+function rejectUnsafeEvaluate(value: unknown, message: string): string | null {
+  if (value && typeof value === 'object' && 'ok' in value) return message;
+  return null;
+}
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'boss',
@@ -482,36 +487,25 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.command('chat-reply', {
-    description: '回复指定对话（通过 chrome-bridge CDP 真实键盘事件发送）',
-    scope: 'project',
-    // 走用户 Chrome 的 chrome-bridge 时，本地 xbrowser session 没有登录态；
-    // 登录态由导航后的真实页面和发送验证兜底，不能让本地空 session 误杀。
-    loginRequired: 'none',
+    description: '在独立 Chromium 采集器中回复指定对话；--dry-run 只完成选会和输入校验，不发送',
+    scope: 'page',
+    loginRequired: 'required',
     result: chatReplyResult,
     parameters: z.object({
       keyword: z.string().describe('对话关键词，如 "德熙"'),
       message: z.string().describe('要发送的回复内容'),
+      dryRun: z.coerce.boolean().optional().default(false).describe('只验证选会与输入，不点击发送'),
     }),
+    examples: [
+      { cmd: 'xbrowser --cdp http://127.0.0.1:9445 --session boss-collect boss chat-reply --keyword "德熙" --message "您好" --dry-run true', description: '独立 Chromium 可控验证' },
+    ],
     handler: async (params, ctx) => {
       const page = ctx.page as Page | undefined;
-      const useBridge = await bridgeRunning();
-      if (!page && !useBridge) return fail('需要浏览器页面或已连接的 chrome-bridge');
+      if (!page) return fail('需要浏览器页面；请通过 --cdp 指向独立 Chromium 采集器');
       const CHAT_URL = 'https://www.zhipin.com/web/geek/chat';
-      // Use a dedicated short-lived group for every reply. BOSS chat has
-      // demonstrated V8 OOM after long-lived tabs (Chrome error code 5 and
-      // crash stacks in its chat bundle); never reuse that renderer.
-      const taskName = `boss-reply-${Date.now()}`;
-      const navigated = useBridge
-        ? await bridgeExec('navigate', { url: CHAT_URL, task: taskName })
-        : { ok: true as const, data: {} };
-      if (navigated.ok !== true) return fail(navigated.error || 'chrome-bridge 未启动或导航失败');
-      const tabId = bridgeData(navigated).tabId;
-      if (useBridge && typeof tabId !== 'number') return fail('chrome-bridge 未返回任务 tab');
-      await sleep(3000);
-
-      const evaluate = async (expression: string): Promise<BridgeResponse> => useBridge
-        ? await bridgeExec('evaluate', { tabId, expression })
-        : { ok: true, data: { value: await page!.evaluate(expression) } };
+      await page.goto(CHAT_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await page.waitForTimeout(3000);
+      const evaluate = async (expression: string): Promise<unknown> => page.evaluate(expression);
 
       // Fresh tab + explicit heap check. This is the OOM tripwire: the BOSS
       // renderer can already be near its heap cap after a long-lived session.
@@ -526,8 +520,9 @@ export default function (xcli: XCLIAPI): void {
           };
         })()
       `);
-      if (healthResponse.ok !== true) return fail(healthResponse.error || '页面健康检查失败');
-      const health = bridgeData(healthResponse).value as {
+      const healthErrorShape = rejectUnsafeEvaluate(healthResponse, '页面健康检查失败');
+      if (healthErrorShape) return fail(healthErrorShape);
+      const health = healthResponse as {
         ready?: string; url?: string; usedMB?: number | null; limitMB?: number | null;
       } | null;
       if (health?.ready !== 'complete' || !health.url?.includes('zhipin.com')) {
@@ -536,7 +531,6 @@ export default function (xcli: XCLIAPI): void {
       if (typeof health.usedMB === 'number' && typeof health.limitMB === 'number') {
         const usedRatio = health.usedMB / health.limitMB;
         if (usedRatio > 0.65) {
-          await bridgeExec('task-close', { name: taskName });
           return fail(`BOSS 渲染进程内存过高（${health.usedMB}/${health.limitMB} MB），已拒绝继续写入`);
         }
       }
@@ -552,30 +546,28 @@ export default function (xcli: XCLIAPI): void {
           return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
         })()
       `);
-      if (targetResponse.ok !== true) return fail(targetResponse.error || '读取会话列表失败');
-      const target = bridgeData(targetResponse).value as { x?: number; y?: number } | null;
+      const targetErrorShape = rejectUnsafeEvaluate(targetResponse, '读取会话列表失败');
+      if (targetErrorShape) return fail(targetErrorShape);
+      const target = targetResponse as { x?: number; y?: number } | null;
       if (!target?.x || !target?.y) return fail(`未找到包含 "${params.keyword}" 的对话`);
-      const click = useBridge
-        ? await bridgeExec('trustedClick', { x: target.x, y: target.y, tabId })
-        : { ok: true as const, data: {} };
-      if (click.ok !== true) return fail(click.error || '打开会话失败');
+      await page.mouse.move(target.x - 30, target.y - 10);
+      await page.mouse.move(target.x, target.y, { steps: 8 });
+      await page.mouse.click(target.x, target.y);
       await sleep(2000);
 
       // 编辑器与发送按钮都接受组件层 click；trustedClick 的独立 press/release
       // 在 BOSS Vue 组件上不稳定。发送后必须读会话消息做业务级验收。
-      const typedResponse = await evaluate(`
-        (() => {
-          const input = document.querySelector(".chat-input");
-          if (!input) return false;
-          input.textContent = ${JSON.stringify(params.message)};
-          input.dispatchEvent(new InputEvent("input", { bubbles: true }));
-          return input.textContent === ${JSON.stringify(params.message)};
-        })()
-      `);
-      if (typedResponse.ok !== true) return fail(typedResponse.error || '读取聊天输入框失败');
-      const typed = bridgeData(typedResponse).value === true;
-      if (!typed) return fail('未找到聊天输入框，请确认已打开对话');
+      const hasInput = await evaluate(`Boolean(document.querySelector(".chat-input"))`);
+      if (hasInput !== true) return fail('未找到聊天输入框，请确认已打开对话');
+      await page.fill('.chat-input', params.message, { timeout: 10000 });
       await sleep(500);
+
+      if (params.dryRun) {
+        await page.fill('.chat-input', '', { timeout: 10000 });
+        return ok({ sent: false, to: params.keyword }, [
+          `dry-run 通过：已选中 "${params.keyword}"，输入可写入并可清空，未发送`,
+        ]);
+      }
 
       const clickedResponse = await evaluate(`
         (() => {
@@ -585,8 +577,9 @@ export default function (xcli: XCLIAPI): void {
           return true;
         })()
       `);
-      if (clickedResponse.ok !== true) return fail(clickedResponse.error || '读取发送按钮失败');
-      const clicked = bridgeData(clickedResponse).value === true;
+      const clickedErrorShape = rejectUnsafeEvaluate(clickedResponse, '读取发送按钮失败');
+      if (clickedErrorShape) return fail(clickedErrorShape);
+      const clicked = clickedResponse === true;
       if (!clicked) return fail('未找到发送按钮');
       await sleep(1000);
 
@@ -596,11 +589,9 @@ export default function (xcli: XCLIAPI): void {
           return [...document.querySelectorAll(".message-item")].some(e => e.innerText.includes(text));
         })()
       `);
-      if (verifyResponse.ok !== true) return fail(verifyResponse.error || '读取发送结果失败');
-      const verify = bridgeData(verifyResponse).value === true;
-      // Close the dedicated tab immediately after business verification. This
-      // prevents the renderer from accumulating history/messages across jobs.
-      if (useBridge) await bridgeExec('task-close', { name: taskName });
+      const verifyErrorShape = rejectUnsafeEvaluate(verifyResponse, '读取发送结果失败');
+      if (verifyErrorShape) return fail(verifyErrorShape);
+      const verify = verifyResponse === true;
       if (!verify) return fail('发送后未在会话中找到消息');
 
       return ok({ sent: true, to: params.keyword, message: params.message.slice(0, 50) }, [

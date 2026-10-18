@@ -19,23 +19,28 @@ function createPage(evaluateResult: unknown) {
   };
 }
 
-function createBridgeMocks(fetchMock: ReturnType<typeof vi.fn>) {
-  global.fetch = fetchMock as unknown as typeof fetch;
-}
+type ChatReplyPage = {
+  goto: ReturnType<typeof vi.fn>;
+  waitForTimeout: ReturnType<typeof vi.fn>;
+  evaluate: ReturnType<typeof vi.fn>;
+  fill: ReturnType<typeof vi.fn>;
+  mouse: {
+    move: ReturnType<typeof vi.fn>;
+    click: ReturnType<typeof vi.fn>;
+  };
+};
 
-function createBridgeFetch(evaluateValues: unknown[]): ReturnType<typeof vi.fn> {
-  return vi.fn(async (url: unknown, init?: { body?: string }) => {
-    if (String(url).includes('/status')) {
-      return { json: async () => ({ running: true }) };
-    }
-    const { cmd } = JSON.parse(init?.body ?? '{}') as { cmd: string };
-    const data = cmd === 'navigate'
-      ? { tabId: 885234300 }
-      : cmd === 'evaluate'
-        ? { value: evaluateValues.shift() }
-        : {};
-    return { json: async () => ({ ok: true, data }) };
-  });
+function createChatReplyPage(evaluateValues: unknown[]): ChatReplyPage {
+  return {
+    goto: vi.fn(async () => undefined),
+    waitForTimeout: vi.fn(async () => undefined),
+    evaluate: vi.fn(async () => evaluateValues.shift()),
+    fill: vi.fn(async () => undefined),
+    mouse: {
+      move: vi.fn(async () => undefined),
+      click: vi.fn(async () => undefined),
+    },
+  };
 }
 
 function mockBridgeDown(): void {
@@ -64,7 +69,7 @@ describe('boss plugin', () => {
     expect(mockXCLI.createSite).toHaveBeenCalledWith(expect.objectContaining({
       name: 'boss',
       url: 'https://www.zhipin.com',
-      // chat-reply 走 chrome-bridge，登录态由真实页面验证兜底。
+      // chat-reply 走独立 Chromium 采集器页面路径，由真实页面验证兜底。
       requiresLogin: false,
     }));
     expect(mockSite.command.mock.calls.map((item: unknown[]) => item[0])).toEqual([
@@ -181,44 +186,67 @@ describe('boss plugin', () => {
     ]);
   });
 
-  it('chat-reply navigates, clicks conversation, types and sends', async () => {
-    const fetchMock = createBridgeFetch([
+  it('chat-reply rejects missing collector page', async () => {
+    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好' }, {});
+    expect(result.success).toBe(false);
+    expect(result.message).toBe('需要浏览器页面；请通过 --cdp 指向独立 Chromium 采集器');
+  });
+
+  it('chat-reply dry run selects conversation, fills and clears input without sending', async () => {
+    const page = createChatReplyPage([
+      { ready: 'complete', url: 'https://www.zhipin.com/web/geek/chat', usedMB: 80, limitMB: 4096 },
+      { x: 550, y: 206.5 },
+      true,
+      true,
+    ]);
+    const result = await handlerOf('chat-reply')({
+      keyword: '德熙',
+      message: '您好，感谢联系',
+      dryRun: true,
+    }, { page });
+    expect(page.goto).toHaveBeenCalledWith('https://www.zhipin.com/web/geek/chat', expect.anything());
+    expect(page.mouse.click).toHaveBeenCalledWith(550, 206.5);
+    expect(page.evaluate).toHaveBeenCalledTimes(3);
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ sent: false, to: '德熙' });
+    const tips = result.tips as Array<{ message?: string } | string> | undefined;
+    const tipText = (tips ?? []).map((tip) => typeof tip === 'string' ? tip : tip.message ?? '').join(' ');
+    expect(tipText).toContain('未发送');
+  });
+
+  it('chat-reply sends only outside dry run and verifies the real message', async () => {
+    const page = createChatReplyPage([
       { ready: 'complete', url: 'https://www.zhipin.com/web/geek/chat', usedMB: 80, limitMB: 4096 },
       { x: 550, y: 206.5 },
       true,
       true,
       true,
     ]);
-    createBridgeMocks(fetchMock);
-    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好，感谢联系' }, {});
-    const bridgeCommands = fetchMock.mock.calls.map((call) => {
-      const init = call[1] as { body: string };
-      if (!init?.body) return 'status';
-      return (JSON.parse(init.body) as { cmd: string }).cmd;
-    });
-    expect(bridgeCommands.filter(cmd => cmd !== 'status')).toEqual(['navigate', 'evaluate', 'evaluate', 'trustedClick', 'evaluate', 'evaluate', 'evaluate', 'task-close']);
+    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好，感谢联系' }, { page });
+    expect(page.mouse.click).toHaveBeenCalledTimes(1);
+    expect(page.evaluate).toHaveBeenCalledTimes(5);
     expect(result.success).toBe(true);
     expect(result.data).toMatchObject({ sent: true, to: '德熙' });
   });
 
   it('chat-reply fails when real message is not present after sending', async () => {
-    createBridgeMocks(createBridgeFetch([
+    const page = createChatReplyPage([
       { ready: 'complete', url: 'https://www.zhipin.com/web/geek/chat', usedMB: 80, limitMB: 4096 },
       { x: 550, y: 206.5 },
       true,
       true,
       false,
-    ]));
-    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好' }, {});
+    ]);
+    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好' }, { page });
     expect(result.success).toBe(false);
     expect(result.message).toBe('发送后未在会话中找到消息');
   });
 
   it('chat-reply refuses a BOSS renderer near V8 heap limit', async () => {
-    createBridgeMocks(createBridgeFetch([
+    const page = createChatReplyPage([
       { ready: 'complete', url: 'https://www.zhipin.com/web/geek/chat', usedMB: 3000, limitMB: 4096 },
-    ]));
-    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好' }, {});
+    ]);
+    const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好' }, { page });
     expect(result.success).toBe(false);
     expect(result.message).toContain('BOSS 渲染进程内存过高');
   });
