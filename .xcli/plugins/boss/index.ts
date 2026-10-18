@@ -198,6 +198,7 @@ async function openReadOnlyBossTab(
     .browserContext;
   if (!browserContext?.newPage) return null;
   const page = await browserContext.newPage();
+  if (!page) throw new Error("browserContext.newPage returned no page");
   return { name, page, reusable: false };
 }
 
@@ -225,6 +226,7 @@ async function openReusableBossTab(
   const existing = existingIndex >= 0 ? pages[existingIndex] : undefined;
   if (existing) return { name, page: existing, reusable: true };
   const page = await browserContext.newPage();
+  if (!page) throw new Error("browserContext.newPage returned no page");
   return { name, page, reusable: false };
 }
 
@@ -259,17 +261,18 @@ export default function (xcli: XCLIAPI): void {
       },
     ],
     handler: async (params, ctx) => {
-      const tab = await openReadOnlyBossTab(ctx, "boss-search");
-      if (!tab) {
-        recordBossMistake(
-          "search",
-          "无法从 BrowserCommandContext 创建独立采集 tab",
-          "boss-search",
-        );
-        return fail("需要浏览器上下文以创建独立采集 tab");
-      }
-      const page = tab.page;
+      let tab: BossTab | null = null;
       try {
+        tab = await openReadOnlyBossTab(ctx, "boss-search");
+        if (!tab) {
+          recordBossMistake(
+            "search",
+            "无法从 BrowserCommandContext 创建独立采集 tab",
+            "boss-search",
+          );
+          return fail("需要浏览器上下文以创建独立采集 tab");
+        }
+        const page = tab.page;
         const url = `https://www.zhipin.com/web/geek/job?query=${encodeURIComponent(params.query)}&city=${params.city ?? ""}&__xbrowser_tab=${encodeURIComponent(tab.name)}`;
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
         await page.waitForTimeout(3000);
@@ -357,11 +360,11 @@ export default function (xcli: XCLIAPI): void {
         recordBossMistake(
           "search",
           error instanceof Error ? error.message : String(error),
-          tab.name,
+          tab?.name ?? "boss-search",
         );
         throw error;
       } finally {
-        if (!tab.reusable) await closeBossTab(page);
+        if (tab && !tab.reusable) await closeBossTab(tab.page);
       }
     },
   });
@@ -386,17 +389,18 @@ export default function (xcli: XCLIAPI): void {
       jobId: z.string().describe("职位 ID"),
     }),
     handler: async (params, ctx) => {
-      const tab = await openReadOnlyBossTab(ctx, "boss-detail");
-      if (!tab) {
-        recordBossMistake(
-          "detail",
-          "无法从 BrowserCommandContext 创建独立采集 tab",
-          "boss-detail",
-        );
-        return fail("需要浏览器上下文以创建独立采集 tab");
-      }
-      const page = tab.page;
+      let tab: BossTab | null = null;
       try {
+        tab = await openReadOnlyBossTab(ctx, "boss-detail");
+        if (!tab) {
+          recordBossMistake(
+            "detail",
+            "无法从 BrowserCommandContext 创建独立采集 tab",
+            "boss-detail",
+          );
+          return fail("需要浏览器上下文以创建独立采集 tab");
+        }
+        const page = tab.page;
         let target: string;
         try {
           target = parseJobDetailTarget(params.jobId);
@@ -472,11 +476,11 @@ export default function (xcli: XCLIAPI): void {
         recordBossMistake(
           "detail",
           error instanceof Error ? error.message : String(error),
-          tab.name,
+          tab?.name ?? "boss-detail",
         );
         throw error;
       } finally {
-        if (!tab.reusable) await closeBossTab(page);
+        if (tab && !tab.reusable) await closeBossTab(tab.page);
       }
     },
   });
@@ -493,17 +497,18 @@ export default function (xcli: XCLIAPI): void {
     }),
     examples: [{ cmd: "xbrowser boss companies", description: "搜索公司列表" }],
     handler: async (params, ctx) => {
-      const tab = await openReadOnlyBossTab(ctx, "boss-companies");
-      if (!tab) {
-        recordBossMistake(
-          "companies",
-          "无法从 BrowserCommandContext 创建独立采集 tab",
-          "boss-companies",
-        );
-        return fail("需要浏览器上下文以创建独立采集 tab");
-      }
-      const page = tab.page;
+      let tab: BossTab | null = null;
       try {
+        tab = await openReadOnlyBossTab(ctx, "boss-companies");
+        if (!tab) {
+          recordBossMistake(
+            "companies",
+            "无法从 BrowserCommandContext 创建独立采集 tab",
+            "boss-companies",
+          );
+          return fail("需要浏览器上下文以创建独立采集 tab");
+        }
+        const page = tab.page;
         const city = params.city ?? "guangzhou";
         const baseUrl = params.query
           ? `https://www.zhipin.com/gongsi/?query=${encodeURIComponent(params.query)}`
@@ -574,11 +579,11 @@ export default function (xcli: XCLIAPI): void {
         recordBossMistake(
           "companies",
           error instanceof Error ? error.message : String(error),
-          tab.name,
+          tab?.name ?? "boss-companies",
         );
         throw error;
       } finally {
-        if (!tab.reusable) await closeBossTab(page);
+        if (tab && !tab.reusable) await closeBossTab(tab.page);
       }
     },
   });
@@ -590,17 +595,18 @@ export default function (xcli: XCLIAPI): void {
     result: recommendResult,
     parameters: z.object({}),
     handler: async (_params, ctx) => {
-      const tab = await openReadOnlyBossTab(ctx, "boss-recommend");
-      if (!tab) {
-        recordBossMistake(
-          "recommend",
-          "无法从 BrowserCommandContext 创建独立采集 tab",
-          "boss-recommend",
-        );
-        return fail("需要浏览器上下文以创建独立采集 tab");
-      }
-      const page = tab.page;
+      let tab: BossTab | null = null;
       try {
+        tab = await openReadOnlyBossTab(ctx, "boss-recommend");
+        if (!tab) {
+          recordBossMistake(
+            "recommend",
+            "无法从 BrowserCommandContext 创建独立采集 tab",
+            "boss-recommend",
+          );
+          return fail("需要浏览器上下文以创建独立采集 tab");
+        }
+        const page = tab.page;
         const url = `https://www.zhipin.com/web/geek/recommend?__xbrowser_tab=${encodeURIComponent(tab.name)}`;
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
         await page.waitForTimeout(5000);
@@ -665,11 +671,11 @@ export default function (xcli: XCLIAPI): void {
         recordBossMistake(
           "recommend",
           error instanceof Error ? error.message : String(error),
-          tab.name,
+          tab?.name ?? "boss-recommend",
         );
         throw error;
       } finally {
-        if (!tab.reusable) await closeBossTab(page);
+        if (tab && !tab.reusable) await closeBossTab(tab.page);
       }
     },
   });
@@ -683,17 +689,18 @@ export default function (xcli: XCLIAPI): void {
       limit: z.coerce.number().optional().default(10).describe("返回条数"),
     }),
     handler: async (params, ctx) => {
-      const tab = await openReadOnlyBossTab(ctx, "boss-chat-list");
-      if (!tab) {
-        recordBossMistake(
-          "chat",
-          "无法从 BrowserCommandContext 创建独立采集 tab",
-          "boss-chat-list",
-        );
-        return fail("需要浏览器上下文以创建独立采集 tab");
-      }
-      const page = tab.page;
+      let tab: BossTab | null = null;
       try {
+        tab = await openReadOnlyBossTab(ctx, "boss-chat-list");
+        if (!tab) {
+          recordBossMistake(
+            "chat",
+            "无法从 BrowserCommandContext 创建独立采集 tab",
+            "boss-chat-list",
+          );
+          return fail("需要浏览器上下文以创建独立采集 tab");
+        }
+        const page = tab.page;
         const url = `https://www.zhipin.com/web/geek/chat?__xbrowser_tab=${encodeURIComponent(tab.name)}`;
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
         await page.waitForTimeout(5000);
@@ -754,11 +761,11 @@ export default function (xcli: XCLIAPI): void {
         recordBossMistake(
           "chat",
           error instanceof Error ? error.message : String(error),
-          tab.name,
+          tab?.name ?? "boss-chat-list",
         );
         throw error;
       } finally {
-        if (!tab.reusable) await closeBossTab(page);
+        if (tab && !tab.reusable) await closeBossTab(tab.page);
       }
     },
   });
@@ -790,32 +797,46 @@ export default function (xcli: XCLIAPI): void {
       },
     ],
     handler: async (params, ctx) => {
-      const tab = await openReusableBossTab(ctx, params.tabName);
-      if (!tab) {
-        recordBossMistake(
-          "chat-reply",
-          "无法从 BrowserCommandContext 创建或复用 chat tab",
-          params.tabName,
-        );
-        return fail("需要浏览器上下文以创建或复用 chat tab");
-      }
-      const page = tab.page;
-      const CHAT_URL = `https://www.zhipin.com/web/geek/chat?__xbrowser_tab=${encodeURIComponent(tab.name)}`;
+      let tab: BossTab | null = null;
       const failWith = (message: string) => {
         recordBossMistake("chat-reply", message, params.tabName);
         return fail(message);
       };
       try {
-        await page.goto(CHAT_URL, {
-          waitUntil: "domcontentloaded",
-          timeout: 20000,
-        });
-        await page.waitForTimeout(3000);
-        await page
-          .evaluate(
-            `history.replaceState(null, '', ${JSON.stringify(CHAT_URL)})`,
-          )
-          .catch(() => {});
+        tab = await openReusableBossTab(ctx, params.tabName);
+        if (!tab) {
+          return failWith("无法从 BrowserCommandContext 创建或复用 chat tab");
+        }
+        const page = tab.page;
+        const CHAT_URL = `https://www.zhipin.com/web/geek/chat?__xbrowser_tab=${encodeURIComponent(tab.name)}`;
+        if (tab.reusable) {
+          const currentUrl = await pageUrl(page);
+          let currentTabName: string | null = null;
+          try {
+            currentTabName = new URL(currentUrl).searchParams.get(
+              "__xbrowser_tab",
+            );
+          } catch {
+            currentTabName = null;
+          }
+          if (
+            !currentUrl.startsWith("https://www.zhipin.com/web/geek/chat") ||
+            currentTabName !== tab.name
+          ) {
+            return failWith("复用的 chat tab 健康检查失败");
+          }
+        } else {
+          await page.goto(CHAT_URL, {
+            waitUntil: "domcontentloaded",
+            timeout: 20000,
+          });
+          await page.waitForTimeout(3000);
+          await page
+            .evaluate(
+              `history.replaceState(null, '', ${JSON.stringify(CHAT_URL)})`,
+            )
+            .catch(() => {});
+        }
         const evaluate = async (expression: string): Promise<unknown> =>
           page.evaluate(expression);
         const healthResponse = await evaluate(`
@@ -928,7 +949,7 @@ export default function (xcli: XCLIAPI): void {
         recordBossMistake(
           "chat-reply",
           error instanceof Error ? error.message : String(error),
-          params.tabName,
+          tab?.name ?? params.tabName,
         );
         throw error;
       }
@@ -942,17 +963,18 @@ export default function (xcli: XCLIAPI): void {
     result: resumeResult,
     parameters: z.object({}),
     handler: async (_params, ctx) => {
-      const tab = await openReadOnlyBossTab(ctx, "boss-resume");
-      if (!tab) {
-        recordBossMistake(
-          "resume",
-          "无法从 BrowserCommandContext 创建独立采集 tab",
-          "boss-resume",
-        );
-        return fail("需要浏览器上下文以创建独立采集 tab");
-      }
-      const page = tab.page;
+      let tab: BossTab | null = null;
       try {
+        tab = await openReadOnlyBossTab(ctx, "boss-resume");
+        if (!tab) {
+          recordBossMistake(
+            "resume",
+            "无法从 BrowserCommandContext 创建独立采集 tab",
+            "boss-resume",
+          );
+          return fail("需要浏览器上下文以创建独立采集 tab");
+        }
+        const page = tab.page;
         const url = `https://www.zhipin.com/web/geek/resume?__xbrowser_tab=${encodeURIComponent(tab.name)}`;
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
         await page.waitForTimeout(6000);
@@ -1019,11 +1041,11 @@ export default function (xcli: XCLIAPI): void {
         recordBossMistake(
           "resume",
           error instanceof Error ? error.message : String(error),
-          tab.name,
+          tab?.name ?? "boss-resume",
         );
         throw error;
       } finally {
-        if (!tab.reusable) await closeBossTab(page);
+        if (tab && !tab.reusable) await closeBossTab(tab.page);
       }
     },
   });

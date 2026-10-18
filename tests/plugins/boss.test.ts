@@ -296,7 +296,7 @@ describe('boss plugin', () => {
   it('chat-reply rejects missing browser context', async () => {
     const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好' }, {});
     expect(result.success).toBe(false);
-    expect(result.message).toBe('需要浏览器上下文以创建或复用 chat tab');
+    expect(result.message).toBe('无法从 BrowserCommandContext 创建或复用 chat tab');
   });
 
   it('chat-reply dry run selects conversation, fills and clears input without sending', async () => {
@@ -316,7 +316,6 @@ describe('boss plugin', () => {
     expect(created).toHaveLength(1);
     expect(page.goto).toHaveBeenCalledWith('https://www.zhipin.com/web/geek/chat?__xbrowser_tab=boss-chat', expect.anything());
     expect(page.mouse.click).toHaveBeenCalledWith(550, 206.5);
-    expect(page.close).not.toHaveBeenCalled();
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ sent: false, to: '德熙' });
     const tips = result.tips as Array<{ message?: string } | string> | undefined;
@@ -345,6 +344,33 @@ describe('boss plugin', () => {
     }, { browserContext });
     expect(browserContext.newPage).not.toHaveBeenCalled();
     expect(result.success).toBe(true);
+  });
+
+  it('dry-run preserves an existing draft in a correctly reused chat tab', async () => {
+    const page = createChatReplyPage([]);
+    page.url = vi.fn(() => 'https://www.zhipin.com/web/geek/chat?__xbrowser_tab=boss-chat');
+    let draft = '已有草稿';
+    page.evaluate = vi.fn(async (expression: string) => {
+      if (expression === 'location.href') return page.url();
+      if (expression.includes('.chat-input')) return true;
+      if (expression.includes('.friend-content')) return { x: 550, y: 206.5 };
+      if (expression.includes('performance.memory')) return { ready: 'complete', url: page.url(), usedMB: 80, limitMB: 4096 };
+      return true;
+    });
+    const fill = vi.fn(async (_selector: string, value: string) => { draft = value; });
+    (page as unknown as { fill: unknown }).fill = fill;
+    const result = await handlerOf('chat-reply')({
+      keyword: '德熙',
+      message: '新测试正文',
+      dryRun: true,
+      tabName: 'boss-chat',
+    }, { browserContext: { pages: () => [page], newPage: vi.fn() } });
+    expect(page.goto).not.toHaveBeenCalled();
+    expect(fill).not.toHaveBeenCalled();
+    expect(page.mouse.click).toHaveBeenCalledTimes(1);
+    expect(draft).toBe('已有草稿');
+    expect(result.success).toBe(true);
+    expect(result.data).toEqual({ sent: false, to: '德熙' });
   });
 
   it('chat-reply does not reuse a tabName with a different exact suffix', async () => {
@@ -459,6 +485,63 @@ describe('boss plugin', () => {
       name: '许先生',
       experience: '10年经验本科',
     });
+  });
+});
+
+describe('boss tab creation failure recording', () => {
+  type RecordedMistake = {
+    category: string;
+    fingerprint?: string;
+    command: string;
+    message: string;
+    context?: Record<string, unknown>;
+  };
+
+  async function withRecorder(run: () => Promise<unknown>): Promise<RecordedMistake[]> {
+    const calls: RecordedMistake[] = [];
+    (globalThis as Record<string, unknown>).__xbrowserRecordMistake = (input: RecordedMistake) => {
+      calls.push(input);
+    };
+    try {
+      await run();
+      return calls;
+    } finally {
+      delete (globalThis as Record<string, unknown>).__xbrowserRecordMistake;
+    }
+  }
+
+  it('records a read-only newPage rejection once without closing an unrelated page', async () => {
+    const calls = await withRecorder(() =>
+      expect(handlerOf('search')({ query: 'front' }, {
+        browserContext: { newPage: vi.fn(async () => Promise.reject(new Error('CDP disconnected'))) },
+      })).rejects.toThrow('CDP disconnected'));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      category: 'boss-collector',
+      command: 'boss search',
+      message: 'CDP disconnected',
+      context: { plugin: 'boss', reason: 'CDP disconnected', tabName: 'boss-search' },
+    });
+  });
+
+  it('records a reusable pages/pageUrl failure once without navigating', async () => {
+    const brokenPage = {
+      url: vi.fn(() => { throw new Error('target closed'); }),
+      evaluate: vi.fn(async () => Promise.reject(new Error('target closed'))),
+      goto: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+    };
+    const calls = await withRecorder(() =>
+      expect(handlerOf('chat-reply')({ keyword: '德熙', message: 'hi', dryRun: true }, {
+        browserContext: { pages: () => [brokenPage], newPage: vi.fn(async () => { throw new Error('newPage should not run'); }) },
+      })).rejects.toThrow('target closed'));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      command: 'boss chat-reply',
+      message: 'target closed',
+      context: { plugin: 'boss', reason: 'target closed' },
+    });
+    expect(brokenPage.goto).not.toHaveBeenCalled();
   });
 });
 
