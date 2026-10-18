@@ -228,6 +228,19 @@ export class CDPInterceptorProxy {
     }
 
     if (decision?.action === 'transform' && decision.transformedParams) {
+      const sequence = (decision.transformedParams as { __sequence?: Array<{ method: string; params: Record<string, unknown>; delayMs?: number }> }).__sequence;
+      if (Array.isArray(sequence)) {
+        this.stats.transformedMessages++;
+        const dispatch = async (): Promise<void> => {
+          for (const step of sequence) {
+            if (step.delayMs) await new Promise((resolve) => setTimeout(resolve, step.delayMs));
+            const transformed: CDPRequest = { id: request.id, method: step.method, params: step.params, sessionId: request.sessionId };
+            browserWs.send(JSON.stringify(transformed));
+          }
+        };
+        void dispatch();
+        return;
+      }
       const transformed: CDPRequest = { ...request, params: decision.transformedParams };
       this.stats.transformedMessages++;
       browserWs.send(JSON.stringify(transformed));

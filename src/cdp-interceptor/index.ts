@@ -24,6 +24,7 @@ export type { RuleEngine } from './rules-engine.js';
 export { domMutationRule } from './rules/dom-mutation.js';
 export { mouseTrajectoryRule } from './rules/mouse-trajectory.js';
 export { inputKeystrokeRule } from './rules/input-keystroke.js';
+export { humanizeTransformRule, humanMousePath, characterKeyEvents } from './rules/humanize-transform.js';
 export { automationSignalsRule } from './rules/automation-signals.js';
 export { fingerprintingRule } from './rules/fingerprinting.js';
 export { eventSimulationRule } from './rules/event-simulation.js';

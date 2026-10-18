@@ -659,6 +659,12 @@ CDP Guard 的行为约定是：`danger` 级合成事件硬拦截并返回带替�
 `/* @xb-probe */` 的测试/观测表达式可以跳过拦截。禁止在生产代码中设置
 `XBROWSER_CDP_GUARD=off` 绕过闸门。
 
+可信输入还有一层可选的人性化改写：设置 `XBROWSER_HUMANIZE_CDP=on` 后，
+`Input.dispatchMouseEvent` 中超过 32px 的瞬移会被展开为带帧级延迟的
+贝塞尔轨迹；`Input.insertText` 会被展开成完整 `rawKeyDown → char → keyUp`
+键盘命令流，并带三层节奏扰动。改写只生成 `Input.*` 的 isTrusted=true 事件，
+不注入 JS；显式 click、空文本清空和小幅移动保持原样。
+
 ---
 
 ## 扩展点
