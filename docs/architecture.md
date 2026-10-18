@@ -664,6 +664,8 @@ CDP Guard 的行为约定是：`danger` 级合成事件硬拦截并返回带替�
 贝塞尔轨迹；`Input.insertText` 会被展开成完整 `rawKeyDown → char → keyUp`
 键盘命令流，并带三层节奏扰动。改写只生成 `Input.*` 的 isTrusted=true 事件，
 不注入 JS；显式 click、空文本清空和小幅移动保持原样。
+Boss 独立采集器启动脚本默认启用这层改写，保证写入型任务天然使用可信、
+拟人化的输入序列。
 
 ---
 

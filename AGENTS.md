@@ -1181,6 +1181,8 @@ xbrowser marketplace publish <plugin-name> --registry https://your-registry.com
 需要自然化瞬移鼠标或粘贴式输入时，设置 `XBROWSER_HUMANIZE_CDP=on`：
 Guard 会把长距离 `mouseMoved` 展开成 trusted 贝塞尔轨迹，把 `insertText`
 展开成带节奏的完整键盘事件流；不注入 JS，不改变既有默认行为。
+独立 Chromium 采集器启动脚本默认打开该开关；如需关闭，显式导出
+`XBROWSER_HUMANIZE_CDP=off`。
 
 **Computer Use 唯一适用场景：** 当 chrome-bridge/login-bridge 扩展未安装/未启用/需要刷新时，
 用 Computer Use 去操作 `chrome://extensions` 页面完成加载或刷新。
