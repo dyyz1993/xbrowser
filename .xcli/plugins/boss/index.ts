@@ -1,39 +1,65 @@
-import { z } from 'zod/v4';
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
-import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page } from '../types.js';
+import { z } from "zod/v4";
+import type { XCLIAPI } from "@dyyz1993/xcli-core";
+import { ok, fail } from "@dyyz1993/xcli-core";
+import type { Page } from "../types.js";
+import {
+  textOf,
+  parseJobDetailTarget,
+  extractJobDetail,
+  extractCompanies,
+  extractRecommend,
+  extractChats,
+  extractResume,
+  parseResumeContact,
+  type JobDetailData,
+  type CompanyData,
+  type RecommendData,
+  type ChatData,
+  type ResumeData,
+} from "./selectors.js";
 
-const jobResult = z.array(z.object({
-  rank: z.number(),
-  jobId: z.string(),
-  title: z.string(),
-  salary: z.string(),
-  company: z.string(),
-  location: z.string(),
-  experience: z.string(),
-  education: z.string(),
-  tags: z.string(),
-  salaryNote: z.string().optional(),
-  url: z.string(),
-})).describe('Job search results');
+const jobResult = z
+  .array(
+    z.object({
+      rank: z.number(),
+      jobId: z.string(),
+      title: z.string(),
+      salary: z.string(),
+      company: z.string(),
+      location: z.string(),
+      experience: z.string(),
+      education: z.string(),
+      tags: z.string(),
+      salaryNote: z.string().optional(),
+      detailUrl: z.string(),
+      url: z.string(),
+    }),
+  )
+  .describe("Job search results");
 
-const companyResult = z.array(z.object({
-  rank: z.number(),
-  name: z.string(),
-  industry: z.string(),
-  funding: z.string(),
-  size: z.string(),
-  hotJob: z.string(),
-  url: z.string(),
-})).describe('Company search results');
+const companyResult = z
+  .array(
+    z.object({
+      rank: z.number(),
+      name: z.string(),
+      industry: z.string(),
+      funding: z.string(),
+      size: z.string(),
+      hotJob: z.string(),
+      url: z.string(),
+    }),
+  )
+  .describe("Company search results");
 
 const recommendResult = z.object({
-  whoViewedMe: z.array(z.object({
-    name: z.string(),
-    company: z.string(),
-    title: z.string(),
-    salary: z.string(),
-  })),
+  whoViewedMe: z.array(
+    z.object({
+      name: z.string(),
+      company: z.string(),
+      title: z.string(),
+      salary: z.string(),
+    }),
+  ),
   profile: z.object({
     name: z.string(),
     experience: z.string(),
@@ -42,13 +68,17 @@ const recommendResult = z.object({
   }),
 });
 
-const chatResult = z.array(z.object({
-  sender: z.string(),
-  company: z.string(),
-  role: z.string(),
-  time: z.string(),
-  preview: z.string(),
-})).describe('Chat message list');
+const chatResult = z
+  .array(
+    z.object({
+      sender: z.string(),
+      company: z.string(),
+      role: z.string(),
+      time: z.string(),
+      preview: z.string(),
+    }),
+  )
+  .describe("Chat message list");
 
 const resumeResult = z.object({
   name: z.string(),
@@ -65,29 +95,57 @@ const chatReplyResult = z.object({
   to: z.string().optional(),
 });
 
-type BridgeResponse = { ok?: boolean; data?: Record<string, unknown>; error?: string };
+type BridgeResponse = {
+  ok?: boolean;
+  data?: Record<string, unknown>;
+  error?: string;
+};
 
-async function bridgeRunning(): Promise<boolean> {
-  const status = await fetch('http://127.0.0.1:9347/status')
-    .then(response => response.json() as Promise<{ running?: boolean }>)
-    .catch(() => null);
-  return status?.running === true;
+export interface BossMistakeRecorder {
+  (input: {
+    category: string;
+    fingerprint?: string;
+    command: string;
+    message: string;
+    context?: Record<string, unknown>;
+  }): unknown;
 }
 
-async function bridgeExec(cmd: string, args: Record<string, unknown>): Promise<BridgeResponse> {
-  return await fetch('http://127.0.0.1:9347/exec?client=0', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cmd, args }),
-  }).then(response => response.json() as Promise<BridgeResponse>)
-    .catch(() => ({ ok: false, error: 'bridge unavailable' }));
+export interface BossBrowserContext {
+  newPage?: () => Promise<Page>;
+  pages?: () => Page[];
+}
+
+async function pageUrl(page: Page): Promise<string> {
+  const evaluated = await page
+    .evaluate<string>("location.href")
+    .catch(() => undefined);
+  return typeof evaluated === "string" && evaluated ? evaluated : page.url();
+}
+
+export function recordBossMistake(
+  command: string,
+  reason: string,
+  tabName?: string,
+): void {
+  const recordBossMistakeImpl = (globalThis as Record<string, unknown>)
+    .__xbrowserRecordMistake as BossMistakeRecorder | undefined;
+  if (!recordBossMistakeImpl) return;
+  recordBossMistakeImpl({
+    category: "boss-collector",
+    fingerprint: `boss-collector::${command}::${reason}`,
+    command: `boss ${command}`,
+    message: reason,
+    context: { plugin: "boss", ...(tabName ? { tabName } : {}) },
+  });
 }
 
 function bridgeData(response: BridgeResponse): Record<string, unknown> {
   return response.data ?? {};
 }
 
-const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+const sleep = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 type BossMemory = { usedMB: number | null; limitMB: number | null };
 
@@ -105,14 +163,15 @@ function bossMemoryExpression(): string {
   `;
 }
 
-function assertBossMemory(health: BossMemory & { ready?: string; url?: string }, taskName: string, useBridge: boolean): string | null {
-  if (health.ready !== 'complete' || !health.url?.includes('zhipin.com')) {
-    return 'BOSS 页面未就绪';
+function assertBossMemory(
+  health: BossMemory & { ready?: string; url?: string },
+): string | null {
+  if (health.ready !== "complete" || !health.url?.includes("zhipin.com")) {
+    return "BOSS 页面未就绪";
   }
-  if (typeof health.usedMB === 'number' && typeof health.limitMB === 'number') {
+  if (typeof health.usedMB === "number" && typeof health.limitMB === "number") {
     const usedRatio = health.usedMB / health.limitMB;
     if (usedRatio > 0.65) {
-      if (useBridge) void bridgeExec('task-close', { name: taskName });
       return `BOSS 渲染进程内存过高（${health.usedMB}/${health.limitMB} MB），已拒绝继续`;
     }
   }
@@ -120,548 +179,832 @@ function assertBossMemory(health: BossMemory & { ready?: string; url?: string },
 }
 
 function rejectUnsafeEvaluate(value: unknown, message: string): string | null {
-  if (value && typeof value === 'object' && 'ok' in value) return message;
+  if (value && typeof value === "object" && "ok" in value) return message;
   return null;
+}
+
+type BossTab = { name: string; page: Page; reusable: boolean };
+
+async function openBossTab(
+  ctx: unknown,
+  name: string,
+): Promise<BossTab | null> {
+  const browserContext = (ctx as { browserContext?: BossBrowserContext })
+    .browserContext;
+  if (!browserContext?.newPage) return null;
+  const pages = browserContext.pages?.() ?? [];
+  const marker = `__xbrowser_tab=${encodeURIComponent(name)}`;
+  const pageUrls = await Promise.all(pages.map(async (page) => pageUrl(page)));
+  const existingIndex = pageUrls.findIndex(
+    (pageUrl) =>
+      typeof pageUrl === "string" &&
+      pageUrl.startsWith("https://www.zhipin.com/") &&
+      pageUrl.includes(marker),
+  );
+  const existing = existingIndex >= 0 ? pages[existingIndex] : undefined;
+  if (existing) return { name, page: existing, reusable: true };
+  const page = await browserContext.newPage();
+  return { name, page, reusable: false };
+}
+
+async function closeBossTab(page: Page): Promise<void> {
+  await page.close().catch(() => {});
 }
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
-    name: 'boss',
-    url: 'https://www.zhipin.com',
-    description: 'Boss直聘 - 职位搜索、公司信息',
+    name: "boss",
+    url: "https://www.zhipin.com",
+    description: "Boss直聘 - 职位搜索、公司信息",
     // requiresLogin 由各命令分别声明；chat-reply 走 chrome-bridge 时依赖
     // 用户 Chrome 登录态，不能使用本地 Chromium session 判断。
     requiresLogin: false,
   });
 
-  site.command('search', {
-    description: '搜索 Boss直聘 职位',
-    scope: 'page',
-    loginRequired: 'required',
+  site.command("search", {
+    description: "搜索 Boss直聘 职位",
+    scope: "page",
+    loginRequired: "required",
     result: jobResult,
     parameters: z.object({
       query: z.string().describe('职位关键词，如 "前端"'),
-      city: z.string().optional().describe('城市代码，如 101010100（北京）'),
-      limit: z.coerce.number().optional().default(10).describe('返回数量'),
+      city: z.string().optional().describe("城市代码，如 101010100（北京）"),
+      limit: z.coerce.number().optional().default(10).describe("返回数量"),
     }),
     examples: [
-      { cmd: 'xbrowser boss search --query "前端" --city 101010100', description: '搜索北京前端岗位' },
+      {
+        cmd: 'xbrowser boss search --query "前端" --city 101010100',
+        description: "搜索北京前端岗位",
+      },
     ],
     handler: async (params, ctx) => {
-      const page = ctx.page as Page | undefined;
-      const useBridge = await bridgeRunning();
-      if (!page && !useBridge) return fail('需要浏览器页面或已连接的 chrome-bridge');
-      const url = `https://www.zhipin.com/web/geek/job?query=${encodeURIComponent(params.query)}&city=${params.city ?? ''}`;
-      const taskName = `boss-search-${Date.now()}`;
-      let tabId: number | undefined;
-      if (useBridge) {
-        const opened = await bridgeExec('task-open', { name: taskName, url });
-        if (opened.ok !== true) return fail(opened.error || 'chrome-bridge 未启动');
-        tabId = bridgeData(opened).tabId as number;
-        await sleep(5000);
-      } else {
-        await page!.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-        await page!.waitForTimeout(3000);
+      const tab = await openBossTab(ctx, "boss-search");
+      if (!tab) {
+        recordBossMistake(
+          "search",
+          "无法从 BrowserCommandContext 创建独立采集 tab",
+          "boss-search",
+        );
+        return fail("需要浏览器上下文以创建独立采集 tab");
       }
-      const evaluate = async (expression: string): Promise<BridgeResponse> => useBridge
-        ? await bridgeExec('evaluate', { tabId, expression })
-        : { ok: true, data: { value: await page!.evaluate(expression) } };
-      const healthResponse = await evaluate(bossMemoryExpression());
-      if (healthResponse.ok !== true) return fail(healthResponse.error || '页面健康检查失败');
-      const healthError = assertBossMemory(
-        bridgeData(healthResponse).value as BossMemory & { ready?: string; url?: string },
-        taskName,
-        useBridge,
-      );
-      if (healthError) return fail(healthError);
-      const response = await evaluate(`
-        (() => {
-          var cards = [...document.querySelectorAll(".job-card-box")].slice(0, ${params.limit ?? 10});
-          return cards.map(function(card, i) {
-            var link = card.querySelector("a[href*=job_detail]");
-            var title = card.querySelector(".job-name");
-            var salary = card.querySelector(".job-salary");
-            var company = card.querySelector(".boss-name");
-            var location = card.querySelector(".company-location");
-            var tags = card.querySelectorAll(".tag-list li");
-            var href = link ? link.getAttribute("href") : "";
-            var idMatch = href.match(/job_detail.([a-f0-9]+)/);
-            return {
-              rank: i + 1,
-              jobId: idMatch ? idMatch[1] : "",
-              title: title ? title.textContent.trim() : "",
-              salary: salary ? salary.textContent.trim() : "",
-              company: company ? company.textContent.trim() : "",
-              location: location ? location.textContent.trim() : "",
-              experience: tags.length > 0 ? tags[0].textContent.trim() : "",
-              education: tags.length > 1 ? tags[1].textContent.trim() : "",
-              tags: [].map.call(tags, function(t) { return t.textContent.trim() }).join(", "),
-              href: href,
-            };
-          });
-        })()
-      `);
-      if (useBridge) await bridgeExec('task-close', { name: taskName });
-      const raw = bridgeData(response).value as Array<Record<string, unknown>>;
-      if (!raw.length) return fail(`未找到匹配 "${params.query}" 的职位，请确认已登录`);
-      return ok(raw.map((item) => ({
-        rank: Number(item.rank ?? 0),
-        jobId: String(item.jobId ?? ''),
-        title: String(item.title ?? ''),
-        salary: String(item.salary ?? ''),
-        company: String(item.company ?? ''),
-        location: String(item.location ?? ''),
-        experience: String(item.experience ?? ''),
-        education: String(item.education ?? ''),
-        tags: String(item.tags ?? ''),
-        salaryNote: 'BOSS直聘列表页薪资为字体渲染反爬，真实薪资请通过 detail 命令查看',
-        url: `https://www.zhipin.com${item.href ?? ''}`,
-      })));
+      const page = tab.page;
+      try {
+        const url = `https://www.zhipin.com/web/geek/job?query=${encodeURIComponent(params.query)}&city=${params.city ?? ""}&__xbrowser_tab=${encodeURIComponent(tab.name)}`;
+        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+        await page.waitForTimeout(3000);
+        const evaluate = async (
+          expression: string,
+        ): Promise<BridgeResponse> => ({
+          ok: true,
+          data: { value: await page.evaluate(expression) },
+        });
+        const healthResponse = await evaluate(bossMemoryExpression());
+        if (healthResponse.ok !== true) {
+          const message = healthResponse.error || "页面健康检查失败";
+          recordBossMistake("search", message, tab.name);
+          return fail(message);
+        }
+        const healthError = assertBossMemory(
+          bridgeData(healthResponse).value as BossMemory & {
+            ready?: string;
+            url?: string;
+          },
+        );
+        if (healthError) {
+          recordBossMistake("search", healthError, tab.name);
+          return fail(healthError);
+        }
+        const limit = params.limit ?? 10;
+        const rawResponse = await evaluate(`
+          JSON.stringify((() => {
+            var cards = [...document.querySelectorAll('.job-card-box')].slice(0, ${limit});
+            return cards.map(function(card, i) {
+              var link = card.querySelector('a[href*=job_detail]');
+              var title = card.querySelector('.job-name');
+              var salary = card.querySelector('.job-salary');
+              var company = card.querySelector('.boss-name');
+              var location = card.querySelector('.company-location');
+              var tags = card.querySelectorAll('.tag-list li');
+              var href = link ? link.getAttribute('href') : '';
+              var idMatch = href.match(/job_detail\.([a-f0-9]+)/);
+              return {
+                rank: i + 1,
+                jobId: idMatch ? idMatch[1] : "",
+                title: title ? title.textContent.trim() : '',
+                salary: salary ? salary.textContent.trim() : '',
+                company: company ? company.textContent.trim() : '',
+                location: location ? location.textContent.trim() : '',
+                experience: tags.length > 0 ? tags[0].textContent.trim() : '',
+                education: tags.length > 1 ? tags[1].textContent.trim() : '',
+                tags: [].map.call(tags, function(t) { return t.textContent.trim() }).join(", "),
+                href: href,
+              };
+            });
+          })())
+        `);
+        let raw: Array<Record<string, unknown>> = [];
+        try {
+          raw = JSON.parse(String(bridgeData(rawResponse).value)) as Array<
+            Record<string, unknown>
+          >;
+        } catch {
+          raw = [];
+        }
+        if (!raw.length) {
+          const message = `未匹配 "${params.query}" 的职位，请确认已登录`;
+          recordBossMistake("search", message, tab.name);
+          return fail(message);
+        }
+        return ok(
+          raw.map((item) => ({
+            rank: Number(item.rank ?? 0),
+            jobId: String(item.jobId ?? ""),
+            title: String(item.title ?? ""),
+            salary: String(item.salary ?? ""),
+            company: String(item.company ?? ""),
+            location: String(item.location ?? ""),
+            experience: String(item.experience ?? ""),
+            education: String(item.education ?? ""),
+            tags: String(item.tags ?? ""),
+            salaryNote:
+              "BOSS直聘列表页薪资为字体渲染反爬，真实薪资请通过 detail 命令查看",
+            detailUrl: `https://www.zhipin.com${item.href ?? ""}`,
+            url: `https://www.zhipin.com${item.href ?? ""}`,
+          })),
+        );
+      } catch (error) {
+        recordBossMistake(
+          "search",
+          error instanceof Error ? error.message : String(error),
+          tab.name,
+        );
+        throw error;
+      } finally {
+        if (!tab.reusable) await closeBossTab(page);
+      }
     },
   });
 
-  site.command('detail', {
-    description: '打开 Boss直聘 职位详情页',
-    scope: 'page',
-    loginRequired: 'required',
+  site.command("detail", {
+    description: "打开 Boss直聘 职位详情页",
+    scope: "page",
+    loginRequired: "required",
     result: z.object({
       jobId: z.string(),
       url: z.string(),
       pageTitle: z.string(),
+      jobTitle: z.string(),
+      salary: z.string(),
+      company: z.string(),
+      location: z.string(),
+      experience: z.string(),
+      education: z.string(),
+      description: z.string(),
     }),
     parameters: z.object({
-      jobId: z.string().describe('职位 ID'),
+      jobId: z.string().describe("职位 ID"),
     }),
     handler: async (params, ctx) => {
-      const page = ctx.page as Page | undefined;
-      const url = `https://www.zhipin.com/job_detail/${params.jobId}.html`;
-      const useBridge = await bridgeRunning();
-      if (!page && !useBridge) return fail('需要浏览器页面或已连接的 chrome-bridge');
-      const taskName = `boss-detail-${Date.now()}`;
-      let tabId: number | undefined;
-      if (useBridge) {
-        const opened = await bridgeExec('task-open', { name: taskName, url });
-        if (opened.ok !== true) return fail(opened.error || 'chrome-bridge 未启动');
-        tabId = bridgeData(opened).tabId as number;
-        await sleep(4000);
-      } else {
-        await page!.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-        await page!.waitForTimeout(1500);
+      const tab = await openBossTab(ctx, "boss-detail");
+      if (!tab) {
+        recordBossMistake(
+          "detail",
+          "无法从 BrowserCommandContext 创建独立采集 tab",
+          "boss-detail",
+        );
+        return fail("需要浏览器上下文以创建独立采集 tab");
       }
-      const evaluate = async (expression: string): Promise<BridgeResponse> => useBridge
-        ? await bridgeExec('evaluate', { tabId, expression })
-        : { ok: true, data: { value: await page!.evaluate(expression) } };
-      const healthResponse = await evaluate(bossMemoryExpression());
-      if (healthResponse.ok !== true) return fail(healthResponse.error || '页面健康检查失败');
-      const healthError = assertBossMemory(bridgeData(healthResponse).value as BossMemory & { ready?: string; url?: string }, taskName, useBridge);
-      if (healthError) return fail(healthError);
-      const titleResponse = await evaluate('document.title');
-      if (titleResponse.ok !== true) return fail(titleResponse.error || '读取标题失败');
-      const pageTitle = bridgeData(titleResponse).value as string;
-      if (useBridge) await bridgeExec('task-close', { name: taskName });
-      return ok({ jobId: params.jobId, url, pageTitle });
+      const page = tab.page;
+      try {
+        let target: string;
+        try {
+          target = parseJobDetailTarget(params.jobId);
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : "无效的职位详情标识";
+          recordBossMistake("detail", message, tab.name);
+          return fail(message);
+        }
+        const url = `${target}${target.includes("?") ? "&" : "?"}__xbrowser_tab=${encodeURIComponent(tab.name)}`;
+        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+        await page.waitForTimeout(1500);
+        const evaluate = async (
+          expression: string,
+        ): Promise<BridgeResponse> => ({
+          ok: true,
+          data: { value: await page.evaluate(expression) },
+        });
+        const healthResponse = await evaluate(bossMemoryExpression());
+        if (healthResponse.ok !== true) {
+          const message = healthResponse.error || "页面健康检查失败";
+          recordBossMistake("detail", message, tab.name);
+          return fail(message);
+        }
+        const healthError = assertBossMemory(
+          bridgeData(healthResponse).value as BossMemory & {
+            ready?: string;
+            url?: string;
+          },
+        );
+        if (healthError) return fail(healthError);
+        const titleResponse = await evaluate("document.title");
+        if (titleResponse.ok !== true) {
+          const message = titleResponse.error || "读取标题失败";
+          recordBossMistake("detail", message, tab.name);
+          return fail(message);
+        }
+        const pageTitle = String(bridgeData(titleResponse).value ?? "");
+        const detailScript =
+          "const extract = " +
+          extractJobDetail.toString() +
+          ";\nreturn extract();";
+        const detailBody = textOf.toString() + "\n" + detailScript;
+        const raw = await evaluate(
+          "JSON.stringify((function(){" + detailBody + "})())",
+        );
+        let data: JobDetailData | null = null;
+        try {
+          data = JSON.parse(String(bridgeData(raw).value)) as JobDetailData;
+        } catch {
+          data = null;
+        }
+        if (pageTitle.includes("您访问的页面不存在")) {
+          recordBossMistake("detail", `职位详情不存在：${target}`, tab.name);
+          return fail(`职位详情不存在：${target}`);
+        }
+        const jobId =
+          new URL(url).pathname.match(/job_detail\/([a-f0-9]+)/i)?.[1] ??
+          params.jobId;
+        return ok({
+          jobId,
+          url,
+          pageTitle,
+          jobTitle: data?.jobTitle ?? "",
+          salary: data?.salary ?? "",
+          company: data?.company ?? "",
+          location: data?.location ?? "",
+          experience: data?.experience ?? "",
+          education: data?.education ?? "",
+          description: data?.description ?? "",
+        });
+      } catch (error) {
+        recordBossMistake(
+          "detail",
+          error instanceof Error ? error.message : String(error),
+          tab.name,
+        );
+        throw error;
+      } finally {
+        if (!tab.reusable) await closeBossTab(page);
+      }
     },
   });
 
-  site.command('companies', {
-    description: '搜索 Boss直聘 公司',
-    scope: 'page',
-    loginRequired: 'required',
+  site.command("companies", {
+    description: "搜索 Boss直聘 公司",
+    scope: "page",
+    loginRequired: "required",
     result: companyResult,
     parameters: z.object({
-      query: z.string().optional().describe('公司关键词'),
-      city: z.string().optional().describe('城市拼音，如 guangzhou、beijing'),
-      limit: z.coerce.number().optional().default(10).describe('返回数量'),
+      query: z.string().optional().describe("公司关键词"),
+      city: z.string().optional().describe("城市拼音，如 guangzhou、beijing"),
+      limit: z.coerce.number().optional().default(10).describe("返回数量"),
     }),
-    examples: [{ cmd: 'xbrowser boss companies', description: '搜索公司列表' }],
+    examples: [{ cmd: "xbrowser boss companies", description: "搜索公司列表" }],
     handler: async (params, ctx) => {
-      const page = ctx.page as Page | undefined;
-      const city = params.city ?? 'guangzhou';
-      const query = params.query ? `?query=${encodeURIComponent(params.query)}` : '';
-      const url = query
-        ? `https://www.zhipin.com/gongsi/?query=${encodeURIComponent(params.query ?? '')}`
-        : `https://www.zhipin.com/${city}/gongsi/`;
-      const useBridge = await bridgeRunning();
-      if (!page && !useBridge) return fail('需要浏览器页面或已连接的 chrome-bridge');
-      const taskName = `boss-companies-${Date.now()}`;
-      let tabId: number | undefined;
-      if (useBridge) {
-        const opened = await bridgeExec('task-open', { name: taskName, url });
-        if (opened.ok !== true) return fail(opened.error || 'chrome-bridge 未启动');
-        tabId = bridgeData(opened).tabId as number;
-        await sleep(5000);
-      } else {
-        await page!.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-        await page!.waitForTimeout(3000);
+      const tab = await openBossTab(ctx, "boss-companies");
+      if (!tab) {
+        recordBossMistake(
+          "companies",
+          "无法从 BrowserCommandContext 创建独立采集 tab",
+          "boss-companies",
+        );
+        return fail("需要浏览器上下文以创建独立采集 tab");
       }
-      const evaluate = async (expression: string): Promise<BridgeResponse> => useBridge
-        ? await bridgeExec('evaluate', { tabId, expression })
-        : { ok: true, data: { value: await page!.evaluate(expression) } };
-      const healthResponse = await evaluate(bossMemoryExpression());
-      if (healthResponse.ok !== true) return fail(healthResponse.error || '页面健康检查失败');
-      const healthError = assertBossMemory(bridgeData(healthResponse).value as BossMemory & { ready?: string; url?: string }, taskName, useBridge);
-      if (healthError) return fail(healthError);
-      const response = await evaluate(`
-        (() => {
-          var items = [...document.querySelectorAll(".company-info, [class*=company-card]")].slice(0, ${params.limit ?? 10});
-          return items.map(function(e, i) {
-            var link = e.querySelector("a[href*=gongsi]");
-            var name = e.querySelector(".company-name, [class*=company-name]");
-            var text = e.innerText.replace(/\\n/g, "|");
-            var parts = text.split("|").map(function(s) { return s.trim() }).filter(Boolean);
-            return {
-              rank: i + 1,
-              name: name ? name.textContent.trim() : (parts[0] || ""),
-              industry: parts.find(function(p) { return p.includes("融资") || p.includes("互联网") || p.includes("科技") }) || "",
-              funding: parts.find(function(p) { return p.includes("融资") }) || "",
-              size: parts.find(function(p) { return p.includes("人") }) || "",
-              hotJob: parts.find(function(p) { return p.includes("K") || p.includes("薪") }) || "",
-              href: link ? link.getAttribute("href") : "",
-            };
-          });
-        })()
-      `);
-      if (useBridge) await bridgeExec('task-close', { name: taskName });
-      const raw = bridgeData(response).value as Array<Record<string, unknown>>;
-      if (!raw.length) return fail('未找到公司数据，请确认已登录');
-      return ok(raw.map((item) => ({
-        rank: Number(item.rank ?? 0),
-        name: String(item.name ?? ''),
-        industry: String(item.industry ?? ''),
-        funding: String(item.funding ?? ''),
-        size: String(item.size ?? ''),
-        hotJob: String(item.hotJob ?? ''),
-        url: String(item.href ?? '').startsWith('http') ? String(item.href) : `https://www.zhipin.com${item.href ?? ''}`,
-      })));
+      const page = tab.page;
+      try {
+        const city = params.city ?? "guangzhou";
+        const baseUrl = params.query
+          ? `https://www.zhipin.com/gongsi/?query=${encodeURIComponent(params.query)}`
+          : `https://www.zhipin.com/${city}/gongsi/`;
+        const url = `${baseUrl}${baseUrl.includes("?") ? "&" : "?"}__xbrowser_tab=${encodeURIComponent(tab.name)}`;
+        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+        await page.waitForTimeout(3000);
+        const evaluate = async (
+          expression: string,
+        ): Promise<BridgeResponse> => ({
+          ok: true,
+          data: { value: await page.evaluate(expression) },
+        });
+        const healthResponse = await evaluate(bossMemoryExpression());
+        if (healthResponse.ok !== true) {
+          const message = healthResponse.error || "页面健康检查失败";
+          recordBossMistake("companies", message, tab.name);
+          return fail(message);
+        }
+        const healthError = assertBossMemory(
+          bridgeData(healthResponse).value as BossMemory & {
+            ready?: string;
+            url?: string;
+          },
+        );
+        if (healthError) {
+          recordBossMistake("companies", healthError, tab.name);
+          return fail(healthError);
+        }
+        const limit = params.limit ?? 10;
+        const companyScript =
+          textOf.toString() +
+          "\nconst extract = " +
+          extractCompanies.toString() +
+          ";\nreturn extract(" +
+          limit +
+          ");";
+        const rawResponse = await evaluate(
+          "JSON.stringify((function(){" + companyScript + "})())",
+        );
+        let raw: CompanyData[] = [];
+        try {
+          raw = JSON.parse(
+            String(bridgeData(rawResponse).value),
+          ) as CompanyData[];
+        } catch {
+          raw = [];
+        }
+        if (!raw.length) {
+          const message = "未找到公司数据，请确认已登录";
+          recordBossMistake("companies", message, tab.name);
+          return fail(message);
+        }
+        return ok(
+          raw.map((item) => ({
+            rank: Number(item.rank ?? 0),
+            name: String(item.name ?? ""),
+            industry: String(item.industry ?? ""),
+            funding: String(item.funding ?? ""),
+            size: String(item.size ?? ""),
+            hotJob: String(item.hotJob ?? ""),
+            url: String(item.href ?? "").startsWith("http")
+              ? String(item.href)
+              : `https://www.zhipin.com${item.href ?? ""}`,
+          })),
+        );
+      } catch (error) {
+        recordBossMistake(
+          "companies",
+          error instanceof Error ? error.message : String(error),
+          tab.name,
+        );
+        throw error;
+      } finally {
+        if (!tab.reusable) await closeBossTab(page);
+      }
     },
   });
 
-  site.command('recommend', {
-    description: '获取推荐职位和谁看过我',
-    scope: 'page',
-    loginRequired: 'required',
+  site.command("recommend", {
+    description: "获取推荐职位和谁看过我",
+    scope: "page",
+    loginRequired: "required",
     result: recommendResult,
     parameters: z.object({}),
     handler: async (_params, ctx) => {
-      const page = ctx.page as Page | undefined;
-      const url = 'https://www.zhipin.com/web/geek/recommend';
-      const useBridge = await bridgeRunning();
-      if (!page && !useBridge) return fail('需要浏览器页面或已连接的 chrome-bridge');
-      const taskName = `boss-recommend-${Date.now()}`;
-      let tabId: number | undefined;
-      if (useBridge) {
-        const opened = await bridgeExec('task-open', { name: taskName, url });
-        if (opened.ok !== true) return fail(opened.error || 'chrome-bridge 未启动');
-        tabId = bridgeData(opened).tabId as number;
-        await sleep(5000);
-      } else {
-        await page!.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-        await page!.waitForTimeout(3000);
+      const tab = await openBossTab(ctx, "boss-recommend");
+      if (!tab) {
+        recordBossMistake(
+          "recommend",
+          "无法从 BrowserCommandContext 创建独立采集 tab",
+          "boss-recommend",
+        );
+        return fail("需要浏览器上下文以创建独立采集 tab");
       }
-      const evaluate = async (expression: string): Promise<BridgeResponse> => useBridge
-        ? await bridgeExec('evaluate', { tabId, expression })
-        : { ok: true, data: { value: await page!.evaluate(expression) } };
-      const healthResponse = await evaluate(bossMemoryExpression());
-      if (healthResponse.ok !== true) return fail(healthResponse.error || '页面健康检查失败');
-      const healthError = assertBossMemory(bridgeData(healthResponse).value as BossMemory & { ready?: string; url?: string }, taskName, useBridge);
-      if (healthError) return fail(healthError);
-      const response = await evaluate(`
-        (() => {
-          var items = [...document.querySelectorAll(".item-recommend")].slice(0, 10);
-          var viewers = items.map(function(e, i) {
-            var lines = e.innerText.replace(/\\n/g, "|").split("|").map(function(s) { return s.trim() }).filter(Boolean);
-            var link = e.closest("a") || e.querySelector("a");
-            return lines.length >= 4 ? {
-              name: lines[0], company: lines[1], title: lines[2], salary: lines[3],
-              href: link ? link.getAttribute("href") : ""
-            } : null;
-          }).filter(Boolean);
-          var text = document.body.innerText;
-          var profileEl = document.querySelector(".name");
-          var expMatch = text.match(/(\\d+年经验\\S+-随时到岗|\\d+年经验\\S+在职-\\S+)/);
-          return {
-            viewers: viewers,
-            profile: profileEl ? {
-              name: profileEl.textContent.trim(),
-              experience: expMatch ? expMatch[1] : "",
-              status: "",
-              expectation: "",
-            } : null,
-          };
-        })()
-      `);
-      if (useBridge) await bridgeExec('task-close', { name: taskName });
-      const data = bridgeData(response).value as { viewers: Array<Record<string, unknown>>; profile: Record<string, unknown> | null };
-      if (!data.viewers.length && !data.profile) return fail('未获取到推荐数据');
-      return ok({
-        whoViewedMe: data.viewers.map((v) => ({
-          name: String(v.name ?? ''),
-          company: String(v.company ?? ''),
-          title: String(v.title ?? ''),
-          salary: String(v.salary ?? ''),
-        })),
-        profile: {
-          name: String(data.profile?.name ?? ''),
-          experience: String(data.profile?.experience ?? ''),
-          status: String(data.profile?.status ?? ''),
-          expectation: String(data.profile?.expectation ?? ''),
-        },
-      });
+      const page = tab.page;
+      try {
+        const url = `https://www.zhipin.com/web/geek/recommend?__xbrowser_tab=${encodeURIComponent(tab.name)}`;
+        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+        await page.waitForTimeout(5000);
+        const evaluate = async (
+          expression: string,
+        ): Promise<BridgeResponse> => ({
+          ok: true,
+          data: { value: await page.evaluate(expression) },
+        });
+        const healthResponse = await evaluate(bossMemoryExpression());
+        if (healthResponse.ok !== true) {
+          const message = healthResponse.error || "页面健康检查失败";
+          recordBossMistake("recommend", message, tab.name);
+          return fail(message);
+        }
+        const healthError = assertBossMemory(
+          bridgeData(healthResponse).value as BossMemory & {
+            ready?: string;
+            url?: string;
+          },
+        );
+        if (healthError) {
+          recordBossMistake("recommend", healthError, tab.name);
+          return fail(healthError);
+        }
+        const recommendScript =
+          textOf.toString() +
+          "\nconst extract = " +
+          extractRecommend.toString() +
+          ";\nreturn extract();";
+        const rawResponse = await evaluate(
+          "JSON.stringify((function(){" + recommendScript + "})())",
+        );
+        let data: RecommendData = { viewers: [], profile: null };
+        try {
+          data = JSON.parse(
+            String(bridgeData(rawResponse).value),
+          ) as RecommendData;
+        } catch {
+          data = { viewers: [], profile: null };
+        }
+        if (!data.viewers.length && !data.profile) {
+          const message = "未获取到推荐数据";
+          recordBossMistake("recommend", message, tab.name);
+          return fail(message);
+        }
+        return ok({
+          whoViewedMe: data.viewers.map((v) => ({
+            name: String(v.name ?? ""),
+            company: String(v.company ?? ""),
+            title: String(v.title ?? ""),
+            salary: String(v.salary ?? ""),
+          })),
+          profile: {
+            name: String(data.profile?.name ?? ""),
+            experience: String(data.profile?.experience ?? ""),
+            status: String(data.profile?.status ?? ""),
+            expectation: String(data.profile?.expectation ?? ""),
+          },
+        });
+      } catch (error) {
+        recordBossMistake(
+          "recommend",
+          error instanceof Error ? error.message : String(error),
+          tab.name,
+        );
+        throw error;
+      } finally {
+        if (!tab.reusable) await closeBossTab(page);
+      }
     },
   });
 
-  site.command('chat', {
-    description: '获取沟通消息列表',
-    scope: 'page',
-    loginRequired: 'required',
+  site.command("chat", {
+    description: "获取沟通消息列表",
+    scope: "page",
+    loginRequired: "required",
     result: chatResult,
     parameters: z.object({
-      limit: z.coerce.number().optional().default(10).describe('返回条数'),
+      limit: z.coerce.number().optional().default(10).describe("返回条数"),
     }),
     handler: async (params, ctx) => {
-      const page = ctx.page as Page | undefined;
-      const url = 'https://www.zhipin.com/web/geek/chat';
-      const useBridge = await bridgeRunning();
-      if (!page && !useBridge) return fail('需要浏览器页面或已连接的 chrome-bridge');
-      const taskName = `boss-chat-${Date.now()}`;
-      let tabId: number | undefined;
-      if (useBridge) {
-        const opened = await bridgeExec('task-open', { name: taskName, url });
-        if (opened.ok !== true) return fail(opened.error || 'chrome-bridge 未启动');
-        tabId = bridgeData(opened).tabId as number;
-        await sleep(5000);
-      } else {
-        await page!.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-        await page!.waitForTimeout(3000);
+      const tab = await openBossTab(ctx, "boss-chat-list");
+      if (!tab) {
+        recordBossMistake(
+          "chat",
+          "无法从 BrowserCommandContext 创建独立采集 tab",
+          "boss-chat-list",
+        );
+        return fail("需要浏览器上下文以创建独立采集 tab");
       }
-      const evaluate = async (expression: string): Promise<BridgeResponse> => useBridge
-        ? await bridgeExec('evaluate', { tabId, expression })
-        : { ok: true, data: { value: await page!.evaluate(expression) } };
-      const healthResponse = await evaluate(bossMemoryExpression());
-      if (healthResponse.ok !== true) return fail(healthResponse.error || '页面健康检查失败');
-      const healthError = assertBossMemory(bridgeData(healthResponse).value as BossMemory & { ready?: string; url?: string }, taskName, useBridge);
-      if (healthError) return fail(healthError);
-      const response = await evaluate(`
-        (() => {
-          var text = document.body.innerText;
-          var items = [];
-          var chatEls = [...document.querySelectorAll("[class*=chat-item], [class*=friend-item], [class*=message-item]")].slice(0, ${params.limit ?? 10});
-          if (chatEls.length === 0) {
-            var lines = text.split("\\n");
-            for (var i = 0; i < lines.length; i++) {
-              var line = lines[i].trim();
-              if (line.includes("[送达]") || line.includes("[已读]")) {
-                var prev = i > 0 ? lines[i - 1].trim() : "";
-                var parts = prev.split(/(?=[A-Z])/);
-                items.push({
-                  sender: parts[0] || prev.slice(0, 10),
-                  company: parts.slice(1).join(" ") || "",
-                  role: "HR",
-                  time: line.includes("昨天") ? "昨天" : "今天",
-                  preview: line,
-                });
-              }
-            }
-          } else {
-            chatEls.forEach(function(e) {
-              var lines = e.innerText.replace(/\\n/g, "|").split("|").map(function(s) { return s.trim() }).filter(Boolean);
-              if (lines.length >= 2) {
-                items.push({ sender: lines[0], company: lines[1] || "", role: "HR", time: "", preview: lines.slice(2).join(" ") });
-              }
-            });
-          }
-          return items.slice(0, ${params.limit ?? 10});
-        })()
-      `);
-      if (useBridge) await bridgeExec('task-close', { name: taskName });
-      const raw = bridgeData(response).value as Array<Record<string, unknown>>;
-      if (!raw.length) return fail('未找到聊天消息');
-      return ok(raw.map((item) => ({
-        sender: String(item.sender ?? ''),
-        company: String(item.company ?? ''),
-        role: String(item.role ?? ''),
-        time: String(item.time ?? ''),
-        preview: String(item.preview ?? ''),
-      })));
+      const page = tab.page;
+      try {
+        const url = `https://www.zhipin.com/web/geek/chat?__xbrowser_tab=${encodeURIComponent(tab.name)}`;
+        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+        await page.waitForTimeout(5000);
+        const evaluate = async (
+          expression: string,
+        ): Promise<BridgeResponse> => ({
+          ok: true,
+          data: { value: await page.evaluate(expression) },
+        });
+        const healthResponse = await evaluate(bossMemoryExpression());
+        if (healthResponse.ok !== true) {
+          const message = healthResponse.error || "页面健康检查失败";
+          recordBossMistake("chat", message, tab.name);
+          return fail(message);
+        }
+        const healthError = assertBossMemory(
+          bridgeData(healthResponse).value as BossMemory & {
+            ready?: string;
+            url?: string;
+          },
+        );
+        if (healthError) {
+          recordBossMistake("chat", healthError, tab.name);
+          return fail(healthError);
+        }
+        const chatLimit = params.limit ?? 10;
+        const chatScript =
+          textOf.toString() +
+          "\nconst extract = " +
+          extractChats.toString() +
+          ";\nreturn extract(" +
+          chatLimit +
+          ");";
+        const rawResponse = await evaluate(
+          "JSON.stringify((function(){" + chatScript + "})())",
+        );
+        let raw: ChatData[] = [];
+        try {
+          raw = JSON.parse(String(bridgeData(rawResponse).value)) as ChatData[];
+        } catch {
+          raw = [];
+        }
+        if (!raw.length) {
+          const message = "未找到聊天消息";
+          recordBossMistake("chat", message, tab.name);
+          return fail(message);
+        }
+        return ok(
+          raw.map((item) => ({
+            sender: String(item.sender ?? ""),
+            company: String(item.company ?? ""),
+            role: String(item.role ?? ""),
+            time: String(item.time ?? ""),
+            preview: String(item.preview ?? ""),
+          })),
+        );
+      } catch (error) {
+        recordBossMistake(
+          "chat",
+          error instanceof Error ? error.message : String(error),
+          tab.name,
+        );
+        throw error;
+      } finally {
+        if (!tab.reusable) await closeBossTab(page);
+      }
     },
   });
 
-  site.command('chat-reply', {
-    description: '在独立 Chromium 采集器中回复指定对话；--dry-run 只完成选会和输入校验，不发送',
-    scope: 'page',
-    loginRequired: 'required',
+  site.command("chat-reply", {
+    description:
+      "在独立 Chromium 采集器中回复指定对话；--dry-run 只完成选会和输入校验，不发送",
+    scope: "page",
+    loginRequired: "required",
     result: chatReplyResult,
     parameters: z.object({
       keyword: z.string().describe('对话关键词，如 "德熙"'),
-      message: z.string().describe('要发送的回复内容'),
-      dryRun: z.coerce.boolean().optional().default(false).describe('只验证选会与输入，不点击发送'),
+      message: z.string().describe("要发送的回复内容"),
+      dryRun: z.coerce
+        .boolean()
+        .optional()
+        .default(false)
+        .describe("只验证选会与输入，不点击发送"),
+      tabName: z
+        .string()
+        .optional()
+        .default("boss-chat")
+        .describe("chat-reply 复用的独立 tab 标记"),
     }),
     examples: [
-      { cmd: 'xbrowser --cdp http://127.0.0.1:9445 --session boss-collect boss chat-reply --keyword "德熙" --message "您好" --dry-run true', description: '独立 Chromium 可控验证' },
+      {
+        cmd: 'xbrowser --cdp http://127.0.0.1:9445 --session boss-collect boss chat-reply --keyword "德熙" --message "您好" --dry-run true',
+        description: "独立 Chromium 可控验证",
+      },
     ],
     handler: async (params, ctx) => {
-      const page = ctx.page as Page | undefined;
-      if (!page) return fail('需要浏览器页面；请通过 --cdp 指向独立 Chromium 采集器');
-      const CHAT_URL = 'https://www.zhipin.com/web/geek/chat';
-      await page.goto(CHAT_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await page.waitForTimeout(3000);
-      const evaluate = async (expression: string): Promise<unknown> => page.evaluate(expression);
-
-      // Fresh tab + explicit heap check. This is the OOM tripwire: the BOSS
-      // renderer can already be near its heap cap after a long-lived session.
-      const healthResponse = await evaluate(`
-        (() => {
-          const memory = performance.memory;
-          return {
-            ready: document.readyState,
-            url: location.href,
-            usedMB: memory ? Math.round(memory.usedJSHeapSize / 1048576) : null,
-            limitMB: memory ? Math.round(memory.jsHeapSizeLimit / 1048576) : null,
-          };
-        })()
-      `);
-      const healthErrorShape = rejectUnsafeEvaluate(healthResponse, '页面健康检查失败');
-      if (healthErrorShape) return fail(healthErrorShape);
-      const health = healthResponse as {
-        ready?: string; url?: string; usedMB?: number | null; limitMB?: number | null;
-      } | null;
-      if (health?.ready !== 'complete' || !health.url?.includes('zhipin.com')) {
-        return fail('BOSS 页面未就绪');
+      const tab = await openBossTab(ctx, params.tabName);
+      if (!tab) {
+        recordBossMistake(
+          "chat-reply",
+          "无法从 BrowserCommandContext 创建或复用 chat tab",
+          params.tabName,
+        );
+        return fail("需要浏览器上下文以创建或复用 chat tab");
       }
-      if (typeof health.usedMB === 'number' && typeof health.limitMB === 'number') {
-        const usedRatio = health.usedMB / health.limitMB;
-        if (usedRatio > 0.65) {
-          return fail(`BOSS 渲染进程内存过高（${health.usedMB}/${health.limitMB} MB），已拒绝继续写入`);
+      const page = tab.page;
+      const CHAT_URL = `https://www.zhipin.com/web/geek/chat?__xbrowser_tab=${encodeURIComponent(tab.name)}`;
+      const failWith = (message: string) => {
+        recordBossMistake("chat-reply", message, params.tabName);
+        return fail(message);
+      };
+      try {
+        await page.goto(CHAT_URL, {
+          waitUntil: "domcontentloaded",
+          timeout: 20000,
+        });
+        await page.waitForTimeout(3000);
+        await page
+          .evaluate(
+            `history.replaceState(null, '', ${JSON.stringify(CHAT_URL)})`,
+          )
+          .catch(() => {});
+        const evaluate = async (expression: string): Promise<unknown> =>
+          page.evaluate(expression);
+        const healthResponse = await evaluate(`
+          (() => {
+            const memory = performance.memory;
+            return {
+              ready: document.readyState,
+              url: location.href,
+              usedMB: memory ? Math.round(memory.usedJSHeapSize / 1048576) : null,
+              limitMB: memory ? Math.round(memory.jsHeapSizeLimit / 1048576) : null,
+            };
+          })()
+        `);
+        const healthErrorShape = rejectUnsafeEvaluate(
+          healthResponse,
+          "页面健康检查失败",
+        );
+        if (healthErrorShape) return failWith(healthErrorShape);
+        const health = healthResponse as {
+          ready?: string;
+          url?: string;
+          usedMB?: number | null;
+          limitMB?: number | null;
+        } | null;
+        if (health?.ready !== "complete" || !health.url?.includes("zhipin.com"))
+          return failWith("BOSS 页面未就绪");
+        if (
+          typeof health.usedMB === "number" &&
+          typeof health.limitMB === "number"
+        ) {
+          const usedRatio = health.usedMB / health.limitMB;
+          if (usedRatio > 0.65)
+            return failWith(
+              `BOSS 渲染进程内存过高（${health.usedMB}/${health.limitMB} MB），已拒绝继续写入`,
+            );
         }
+        const targetResponse = await evaluate(`
+          (() => {
+            const el = [...document.querySelectorAll('.friend-content')]
+              .find(e => e.innerText.includes(${JSON.stringify(params.keyword)}));
+            if (!el) return null;
+            const r = el.getBoundingClientRect();
+            return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+          })()
+        `);
+        const targetErrorShape = rejectUnsafeEvaluate(
+          targetResponse,
+          "读取会话列表失败",
+        );
+        if (targetErrorShape) return failWith(targetErrorShape);
+        const target = targetResponse as { x?: number; y?: number } | null;
+        if (!target?.x || !target?.y)
+          return failWith(`未找到包含 "${params.keyword}" 的对话`);
+        await page.mouse.move(target.x - 30, target.y - 10);
+        await page.mouse.move(target.x, target.y, { steps: 8 });
+        await page.mouse.click(target.x, target.y);
+        await sleep(2000);
+        const hasInput = await evaluate(
+          `Boolean(document.querySelector('.chat-input'))`,
+        );
+        if (hasInput !== true)
+          return failWith("未找到聊天输入框，请确认已打开对话");
+        await page.fill(".chat-input", params.message, { timeout: 10000 });
+        await sleep(500);
+        if (params.dryRun) {
+          await page.fill(".chat-input", "", { timeout: 10000 });
+          return ok({ sent: false, to: params.keyword }, [
+            `dry-run 通过：已选中 "${params.keyword}"，输入可写入并可清空，未发送`,
+          ]);
+        }
+        const clickedResponse = await evaluate(`
+          (() => {
+            const r = document.querySelector('.btn-send')?.getBoundingClientRect();
+            if (!r || r.width <= 0 || r.height <= 0) return null;
+            return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+          })()
+        `);
+        const clickedErrorShape = rejectUnsafeEvaluate(
+          clickedResponse,
+          "读取发送按钮失败",
+        );
+        if (clickedErrorShape) return failWith(clickedErrorShape);
+        const sendButton = clickedResponse as { x?: number; y?: number } | null;
+        if (!sendButton?.x || !sendButton?.y) return failWith("未找到发送按钮");
+        await page.mouse.move(sendButton.x - 20, sendButton.y - 8);
+        await page.mouse.move(sendButton.x, sendButton.y, { steps: 6 });
+        await page.mouse.click(sendButton.x, sendButton.y);
+        await sleep(1000);
+        const verifyResponse = await evaluate(`
+          (() => {
+            const text = ${JSON.stringify(params.message)};
+            return [...document.querySelectorAll('.message-item')].some(e => e.innerText.includes(text));
+          })()
+        `);
+        const verifyErrorShape = rejectUnsafeEvaluate(
+          verifyResponse,
+          "读取发送结果失败",
+        );
+        if (verifyErrorShape) return failWith(verifyErrorShape);
+        if (verifyResponse !== true)
+          return failWith("发送后未在会话中找到消息");
+        return ok(
+          {
+            sent: true,
+            to: params.keyword,
+            message: params.message.slice(0, 50),
+          },
+          [`已回复 "${params.keyword}"`],
+        );
+      } catch (error) {
+        recordBossMistake(
+          "chat-reply",
+          error instanceof Error ? error.message : String(error),
+          params.tabName,
+        );
+        throw error;
       }
-
-      // BOSS 的列表项靠 trusted mousedown 打开会话；el.click() 只会移除
-      // no-data 占位，不会真正建立会话。坐标必须用页面视口 CSS 像素。
-      const targetResponse = await evaluate(`
-        (() => {
-          const el = [...document.querySelectorAll(".friend-content")]
-            .find(e => e.innerText.includes(${JSON.stringify(params.keyword)}));
-          if (!el) return null;
-          const r = el.getBoundingClientRect();
-          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-        })()
-      `);
-      const targetErrorShape = rejectUnsafeEvaluate(targetResponse, '读取会话列表失败');
-      if (targetErrorShape) return fail(targetErrorShape);
-      const target = targetResponse as { x?: number; y?: number } | null;
-      if (!target?.x || !target?.y) return fail(`未找到包含 "${params.keyword}" 的对话`);
-      await page.mouse.move(target.x - 30, target.y - 10);
-      await page.mouse.move(target.x, target.y, { steps: 8 });
-      await page.mouse.click(target.x, target.y);
-      await sleep(2000);
-
-      // Input must use the trusted fill pipeline; critical clicks use trusted
-      // mouse events because synthetic DOM events are blocked/detectable.
-      const hasInput = await evaluate(`Boolean(document.querySelector(".chat-input"))`);
-      if (hasInput !== true) return fail('未找到聊天输入框，请确认已打开对话');
-      await page.fill('.chat-input', params.message, { timeout: 10000 });
-      await sleep(500);
-
-      if (params.dryRun) {
-        await page.fill('.chat-input', '', { timeout: 10000 });
-        return ok({ sent: false, to: params.keyword }, [
-          `dry-run 通过：已选中 "${params.keyword}"，输入可写入并可清空，未发送`,
-        ]);
-      }
-
-      const clickedResponse = await evaluate(`
-        (() => {
-          const r = document.querySelector(".btn-send")?.getBoundingClientRect();
-          if (!r || r.width <= 0 || r.height <= 0) return null;
-          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
-        })()
-      `);
-      const clickedErrorShape = rejectUnsafeEvaluate(clickedResponse, '读取发送按钮失败');
-      if (clickedErrorShape) return fail(clickedErrorShape);
-      const sendButton = clickedResponse as { x?: number; y?: number } | null;
-      if (!sendButton?.x || !sendButton?.y) return fail('未找到发送按钮');
-      await page.mouse.move(sendButton.x - 20, sendButton.y - 8);
-      await page.mouse.move(sendButton.x, sendButton.y, { steps: 6 });
-      await page.mouse.click(sendButton.x, sendButton.y);
-      await sleep(1000);
-
-      const verifyResponse = await evaluate(`
-        (() => {
-          const text = ${JSON.stringify(params.message)};
-          return [...document.querySelectorAll(".message-item")].some(e => e.innerText.includes(text));
-        })()
-      `);
-      const verifyErrorShape = rejectUnsafeEvaluate(verifyResponse, '读取发送结果失败');
-      if (verifyErrorShape) return fail(verifyErrorShape);
-      const verify = verifyResponse === true;
-      if (!verify) return fail('发送后未在会话中找到消息');
-
-      return ok({ sent: true, to: params.keyword, message: params.message.slice(0, 50) }, [
-        `已回复 "${params.keyword}"`,
-      ]);
     },
   });
 
-  site.command('resume', {
-    description: '获取在线简历信息',
-    scope: 'page',
-    loginRequired: 'required',
+  site.command("resume", {
+    description: "获取在线简历信息",
+    scope: "page",
+    loginRequired: "required",
     result: resumeResult,
     parameters: z.object({}),
     handler: async (_params, ctx) => {
-      const page = ctx.page as Page | undefined;
-      const url = 'https://www.zhipin.com/web/geek/resume';
-      const useBridge = await bridgeRunning();
-      if (!page && !useBridge) return fail('需要浏览器页面或已连接的 chrome-bridge');
-      const taskName = `boss-resume-${Date.now()}`;
-      let tabId: number | undefined;
-      if (useBridge) {
-        const opened = await bridgeExec('task-open', { name: taskName, url });
-        if (opened.ok !== true) return fail(opened.error || 'chrome-bridge 未启动');
-        tabId = bridgeData(opened).tabId as number;
-        await sleep(5000);
-      } else {
-        await page!.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-        await page!.waitForTimeout(3000);
+      const tab = await openBossTab(ctx, "boss-resume");
+      if (!tab) {
+        recordBossMistake(
+          "resume",
+          "无法从 BrowserCommandContext 创建独立采集 tab",
+          "boss-resume",
+        );
+        return fail("需要浏览器上下文以创建独立采集 tab");
       }
-      const evaluate = async (expression: string): Promise<BridgeResponse> => useBridge
-        ? await bridgeExec('evaluate', { tabId, expression })
-        : { ok: true, data: { value: await page!.evaluate(expression) } };
-      const healthResponse = await evaluate(bossMemoryExpression());
-      if (healthResponse.ok !== true) return fail(healthResponse.error || '页面健康检查失败');
-      const healthError = assertBossMemory(bridgeData(healthResponse).value as BossMemory & { ready?: string; url?: string }, taskName, useBridge);
-      if (healthError) return fail(healthError);
-      const response = await evaluate(`
-        (() => {
-          var nameEl = document.querySelector(".name");
-          var ps = [...document.querySelectorAll("p")].map(function(p) { return p.textContent.trim() });
-          var exp = ps.find(function(t) { return /\\d+年经验/.test(t) }) || "";
-          var contact = ps.find(function(t) { return /\\d{3}\\*/.test(t) }) || "";
-          var phoneMatch = contact.match(/(\\d{3}\\*{4}\\d{4})/);
-          var emailMatch = contact.match(/[\\w.+-]+@[\\w-]+\\.[\\w.]+/);
-          var statusMatch = exp.match(/(离职-\\S+|在职-\\S+)/);
-          return {
-            name: nameEl ? nameEl.textContent.trim() : "",
-            experience: exp.replace(/离职-\\S+|在职-\\S+/, "").trim(),
-            phone: phoneMatch ? phoneMatch[1] : "",
-            email: emailMatch ? emailMatch[0] : "",
-            status: statusMatch ? statusMatch[1] : "",
-            advantage: "",
-          };
-        })()
-      `) as Record<string, unknown>;
-      if (useBridge) await bridgeExec('task-close', { name: taskName });
-      const data = bridgeData(response).value as Record<string, unknown>;
-      if (!data.name) return fail('未获取到简历信息');
-      return ok({
-        name: String(data.name ?? ''),
-        experience: String(data.experience ?? ''),
-        education: String(data.education ?? ''),
-        phone: String(data.phone ?? ''),
-        email: String(data.email ?? ''),
-        advantage: String(data.advantage ?? '').slice(0, 200),
-        status: String(data.status ?? ''),
-      });
+      const page = tab.page;
+      try {
+        const url = `https://www.zhipin.com/web/geek/resume?__xbrowser_tab=${encodeURIComponent(tab.name)}`;
+        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
+        await page.waitForTimeout(6000);
+        const evaluate = async (
+          expression: string,
+        ): Promise<BridgeResponse> => ({
+          ok: true,
+          data: { value: await page.evaluate(expression) },
+        });
+        const healthResponse = await evaluate(bossMemoryExpression());
+        if (healthResponse.ok !== true) {
+          const message = healthResponse.error || "页面健康检查失败";
+          recordBossMistake("resume", message, tab.name);
+          return fail(message);
+        }
+        const healthError = assertBossMemory(
+          bridgeData(healthResponse).value as BossMemory & {
+            ready?: string;
+            url?: string;
+          },
+        );
+        if (healthError) {
+          recordBossMistake("resume", healthError, tab.name);
+          return fail(healthError);
+        }
+        const resumeScript =
+          textOf.toString() +
+          "\nconst parseResumeContact = " +
+          parseResumeContact.toString() +
+          ";" +
+          "\nconst extract = " +
+          extractResume.toString() +
+          ";" +
+          '\ntry { return extract(); } catch (error) { return { name: "", error: String(error) }; }';
+        const rawResponse = await evaluate(
+          "JSON.stringify((function(){" + resumeScript + "})())",
+        );
+        let parsed: ResumeData | null = null;
+        try {
+          parsed = JSON.parse(
+            String(bridgeData(rawResponse).value),
+          ) as ResumeData;
+        } catch {
+          parsed = null;
+        }
+        if (!parsed?.name) {
+          const message =
+            parsed && "error" in parsed
+              ? `简历解析失败：${String(parsed.error)}`
+              : "未获取到简历信息";
+          recordBossMistake("resume", message, tab.name);
+          return fail(message);
+        }
+        return ok({
+          name: String(parsed.name ?? ""),
+          experience: String(parsed.experience ?? ""),
+          education: String(parsed.education ?? ""),
+          phone: String(parsed.phone ?? ""),
+          email: String(parsed.email ?? ""),
+          advantage: String(parsed.advantage ?? "").slice(0, 200),
+          status: String(parsed.status ?? ""),
+        });
+      } catch (error) {
+        recordBossMistake(
+          "resume",
+          error instanceof Error ? error.message : String(error),
+          tab.name,
+        );
+        throw error;
+      } finally {
+        if (!tab.reusable) await closeBossTab(page);
+      }
     },
   });
 }

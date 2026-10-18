@@ -739,6 +739,20 @@ Boss 采集链路同样禁止合成输入：`dispatchEvent(new InputEvent(...))`
 CDP Guard 拒绝，DOM `click()` 是可检测的 `isTrusted=false` 事件。会话选择
 和发送用 `page.mouse`，正文输入用 trusted fill 管线，并以真实会话消息验收。
 
+Boss 命令生命周期约束：
+
+- `search/detail/companies/recommend/chat/resume` 必须从
+  `ctx.browserContext.newPage()` 创建独立 tab，成功和失败路径都在 `finally`
+  清理；拿不到 context 直接失败。
+- `chat-reply` 用 URL 参数 `__xbrowser_tab=<tabName>`（默认 `boss-chat`）
+  跨 CLI 进程复用并保持 tab 打开；不得依赖单次进程内挂在 Page JS 对象上的属性。
+- Boss 失误记录由宿主在 plugin loader 中注入，分类为 `boss-collector`；
+  插件不得直接 import `src/lib/mistake-ledger.js`。重复失败第 3 次会
+  constrained，不能删账本、抬阈值或规避 lint。
+- Boss 独立采集器 launcher 禁止创建常驻 LaunchAgent。后台启动后必须记录
+  真实子进程 PID；启动/幂等必须校验 PID、端口、profile 和 SingletonLock，
+  且不能把其他 profile 的端口当成自己的。
+
 ### 10.2 最小插件
 
 ```typescript

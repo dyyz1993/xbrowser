@@ -654,6 +654,25 @@ Boss 采集链路还有一条静态错题约束：聊天输入不得用
 事件。会话选择和发送必须使用 `page.mouse` 的可信鼠标事件，正文输入必须
 使用 xbrowser trusted fill 管线；发送后仍要以会话消息出现作为业务验收。
 
+Boss 只读采集命令还有三条生命周期硬约束：
+
+1. 必须从 `BrowserCommandContext.browserContext` 创建独立 tab，并在
+   `finally` 中关闭；拿不到 browser context、页面未就绪、选择器失败、
+   404、CDP 断开和 OOM 都要返回可诊断失败，不能用空数据冒充成功。
+2. `chat-reply` 是唯一允许保留的 tab。它以 URL 中的
+   `__xbrowser_tab=<tabName>` 作为跨 CLI 进程的稳定标记，默认
+   `boss-chat`；不得依赖单次 Node 进程挂在 Page 对象上的 JS 属性。其余
+   六个只读命令即使失败也必须清理新建 tab。
+3. Boss 失败统一通过宿主注入的 mistake-ledger 记录器写入
+   `boss-collector` 分类。插件不得直接 import `src/`，避免安装后
+   运行时路径破裂；同一 command/reason 的第三条记录会被 constrained。
+
+Boss 独立采集器启动脚本不得创建常驻 LaunchAgent。脚本以后台进程启动并
+显式记录子进程 PID，父脚本退出后 Chromium 继续作为用户进程运行；启动
+前后必须同时校验监听 PID、`--remote-debugging-port` 和
+`--user-data-dir`。端口被其他 profile 占用时必须失败，不能误接；
+`SingletonLock` 只有确认没有活进程引用时才可清理。
+
 CDP Guard 的行为约定是：`danger` 级合成事件硬拦截并返回带替代方案的
 `[CDP-Guard]` 错误；`warn` 级记录提示但放行；只有显式标记
 `/* @xb-probe */` 的测试/观测表达式可以跳过拦截。禁止在生产代码中设置
