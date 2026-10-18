@@ -299,7 +299,7 @@ describe('boss plugin', () => {
     expect(result.message).toBe('无法从 BrowserCommandContext 创建或复用 chat tab');
   });
 
-  it('chat-reply dry run selects conversation, fills and clears input without sending', async () => {
+  it('chat-reply dry run selects conversation without writing or sending', async () => {
     const page = createChatReplyPage([
       { ready: 'complete', url: 'https://www.zhipin.com/web/geek/chat', usedMB: 80, limitMB: 4096 },
       { x: 550, y: 206.5 },
@@ -316,6 +316,7 @@ describe('boss plugin', () => {
     expect(created).toHaveLength(1);
     expect(page.goto).toHaveBeenCalledWith('https://www.zhipin.com/web/geek/chat?__xbrowser_tab=boss-chat', expect.anything());
     expect(page.mouse.click).toHaveBeenCalledWith(550, 206.5);
+    expect(page.close).not.toHaveBeenCalled();
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ sent: false, to: '德熙' });
     const tips = result.tips as Array<{ message?: string } | string> | undefined;
