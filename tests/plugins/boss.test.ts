@@ -219,11 +219,12 @@ describe('boss plugin', () => {
       { ready: 'complete', url: 'https://www.zhipin.com/web/geek/chat', usedMB: 80, limitMB: 4096 },
       { x: 550, y: 206.5 },
       true,
-      true,
+      { x: 620, y: 340 },
       true,
     ]);
     const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好，感谢联系' }, { page });
-    expect(page.mouse.click).toHaveBeenCalledTimes(1);
+    expect(page.mouse.click).toHaveBeenCalledTimes(2);
+    expect(page.mouse.click).toHaveBeenNthCalledWith(2, 620, 340);
     expect(page.evaluate).toHaveBeenCalledTimes(5);
     expect(result.success).toBe(true);
     expect(result.data).toMatchObject({ sent: true, to: '德熙' });
@@ -234,7 +235,7 @@ describe('boss plugin', () => {
       { ready: 'complete', url: 'https://www.zhipin.com/web/geek/chat', usedMB: 80, limitMB: 4096 },
       { x: 550, y: 206.5 },
       true,
-      true,
+      { x: 620, y: 340 },
       false,
     ]);
     const result = await handlerOf('chat-reply')({ keyword: '德熙', message: '您好' }, { page });

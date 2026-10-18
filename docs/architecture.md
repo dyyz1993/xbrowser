@@ -648,6 +648,12 @@ CDP connection / Chromium
 `localPath` 标记为可下载；`sizeBytes` 应来自同一次下载字节，而不是事后
 重新读盘。测试替身也必须满足同一语义，否则在干净 CI 环境会掩盖未落盘产物。
 
+Boss 采集链路还有一条静态错题约束：聊天输入不得用
+`dispatchEvent(new InputEvent(...))` 写入，发送等关键 UI 也不得用 DOM
+`click()`。前者会被 CDP Guard 直接拒绝，后者是 `isTrusted=false` 的合成
+事件。会话选择和发送必须使用 `page.mouse` 的可信鼠标事件，正文输入必须
+使用 xbrowser trusted fill 管线；发送后仍要以会话消息出现作为业务验收。
+
 ---
 
 ## 扩展点
