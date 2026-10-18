@@ -54,3 +54,18 @@
 - Task groups are now per-task-name: concurrent tasks create separate named groups
 - Group titles show `🤖 <task>` (auto) or `xb-task-<task>` (explicit), with a stable deterministic color per task name
 - Attach only reuses the group for the same task name instead of any 🤖 group
+## [1.5.1] - 2026-10-18
+
+### Fixed
+- **debugger 死锁**：同 tab 调试器命令按 tabId 串行化，单条命令 12s 硬超时，杜绝嵌套 enqueue 自等
+- **detach/attach 洪泛**：`already attached` 改为复用现有持久 attach；不再每次 detach-first 暴露 debugger 空窗
+- **registry 失效自愈**：cdp-detach / reload / 外部 DevTools detach 后，stale registry 会被 probe 或 attach 修正
+- **崩溃诊断台账**：新增 diagnostics 执行器与 tab/debugger 生命周期记录（attach、detach、page loading/complete、tab removed），最多保留 200 条
+- **任务 renderer 隔离**：显式 tabId navigate 且目标 active 时，先关闭旧 renderer 再开新 tab，避免 V8 堆/历史跨任务累积（BOSS V8 OOM 长跑复现根因）
+- 新增 `tab-reload` 执行器
+
+## [1.5.0] - 2026-10-17
+
+### Added
+- chrome-bridge 控制通道（WS 9346 / HTTP 9347）+ task tab groups + stealth 任务页
+
