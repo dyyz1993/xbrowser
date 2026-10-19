@@ -1,5 +1,26 @@
 import { mapPositionalValues } from './positional-params.js';
 
+function schemaFieldType(schema: unknown, key: string): string | undefined {
+  const shape = (schema as Record<string, unknown> | undefined)?.shape;
+  const field = (shape as Record<string, unknown> | undefined)?.[key];
+  let current = field as Record<string, unknown> | undefined;
+
+  while (current) {
+    const def = current._def as Record<string, unknown> | undefined;
+    if (!def) return undefined;
+
+    const type = (def.typeName ?? def.type) as string | undefined;
+    if (type === 'ZodOptional' || type === 'ZodDefault' || type === 'ZodNullable'
+      || type === 'optional' || type === 'default' || type === 'nullable') {
+      current = (def.innerType ?? def.inner) as Record<string, unknown> | undefined;
+      continue;
+    }
+    return type;
+  }
+
+  return undefined;
+}
+
 export function parsePluginParams(
   args: string[],
   schema: unknown,
@@ -20,7 +41,9 @@ export function parsePluginParams(
       const key = args[i].slice(2);
       const value = args[i + 1];
       if (value && !value.startsWith('-')) {
-        if (value === 'true') params[key] = true;
+        const type = schemaFieldType(schema, key.replace(/-([a-z])/g, (_, c: string) => c.toUpperCase()));
+        if (type === 'ZodString' || type === 'string') params[key] = value;
+        else if (value === 'true') params[key] = true;
         else if (value === 'false') params[key] = false;
         else if (/^\d+$/.test(value)) params[key] = parseInt(value, 10);
         else {

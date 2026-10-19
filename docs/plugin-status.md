@@ -1,7 +1,7 @@
 # 插件完成度看板
 
 > **自动生成，请勿手改** · 由 `lint-scripts/check-plugin-status.mjs` 生成
-> 生成时间：2026-10-18 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
+> 生成时间：2026-10-19 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
 
 ## 汇总
 
@@ -136,7 +136,7 @@
 | ths | 1 | `page` |
 | tieba | 1 | `page` |
 | tumblr | 1 | `browser` |
-| twitter | 10 | `browser` |
+| twitter | 11 | `browser` |
 | udio | 6 | `browser` |
 | unsplash | 1 | `browser` |
 | v2ex | 2 | `browser` |

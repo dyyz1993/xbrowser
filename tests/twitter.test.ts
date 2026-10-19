@@ -90,13 +90,13 @@ describe('Twitter Plugin', () => {
       }));
     });
 
-    it('should register 10 commands', () => {
-      expect(mockSite.command).toHaveBeenCalledTimes(10);
+    it('should register 11 commands', () => {
+      expect(mockSite.command).toHaveBeenCalledTimes(11);
     });
 
     it('should register expected command names', () => {
       const names = Array.from(commands.keys());
-      expect(names).toEqual(['search', 'profile', 'timeline', 'replies', 'liked', 'search-image', 'post', 'reply', 'retweet', 'like']);
+      expect(names).toEqual(['search', 'profile', 'timeline', 'replies', 'liked', 'search-image', 'post', 'reply', 'retweet', 'like', 'delete']);
     });
 
     it('should register login and logout handlers', () => {

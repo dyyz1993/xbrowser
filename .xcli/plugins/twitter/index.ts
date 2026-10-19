@@ -1,6 +1,292 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import { execFile } from 'child_process';
+import * as fs from 'fs';
+import * as path from 'path';
+import { promisify } from 'util';
+import type { Page } from '../types.js';
+
+const execFileAsync = promisify(execFile);
+
+interface TwitterMistakeRecorder {
+  (input: {
+    category: string;
+    fingerprint?: string;
+    command: string;
+    message: string;
+    context?: Record<string, unknown>;
+  }): unknown;
+}
+
+interface ImageParameters {
+  image?: string;
+  images?: string;
+}
+
+interface ImageUploadResult {
+  usedPaste: boolean;
+  uploadMethod: 'none' | 'paste' | 'setInputFiles' | 'paste-then-setInputFiles';
+  attachments: string[];
+  imageCount: number;
+}
+
+type PageWithOptionalFront = Page & { bringToFront?: () => Promise<void> };
+
+function recordTwitterMistake(
+  command: 'post' | 'reply' | 'delete',
+  reason: string,
+  context: Record<string, unknown> = {},
+): void {
+  const recorder = (globalThis as Record<string, unknown>)
+    .__xbrowserRecordMistake as TwitterMistakeRecorder | undefined;
+  if (!recorder) return;
+  const reasonCode = reason
+    .replace(/\d+(?:\.\d+)?/g, '<number>')
+    .replace(/https?:\/\/\S+/g, '<url>')
+    .replace(/\s+/g, ' ')
+    .trim();
+  recorder({
+    category: 'twitter-collector',
+    fingerprint: `twitter-collector::${command}::${reasonCode}`,
+    command: `twitter ${command}`,
+    message: reason,
+    context: { plugin: 'twitter', reason, ...context },
+  });
+}
+
+function tweetIdOrUrl(value: string): string {
+  const trimmed = value.trim();
+  const match = trimmed.match(/status\/(\d+)/) ?? trimmed.match(/^(\d+)$/);
+  const tweetId = match?.[1];
+  if (!tweetId) throw new Error('无法从输入解析推文 ID');
+  return tweetId;
+}
+
+function collectImagePaths(params: ImageParameters): string[] {
+  if (params.images !== undefined && params.images.trim() === '') {
+    throw new Error('--images 不能为空');
+  }
+
+  const values = [
+    ...(params.image ? [params.image] : []),
+    ...(params.images ? params.images.split(',') : []),
+  ];
+  if (values.length === 0) return [];
+  if (values.some(value => value.trim() === '')) {
+    throw new Error('--images CSV 不能包含空路径');
+  }
+  if (values.some(value => value !== value.trim())) {
+    throw new Error('--images CSV 路径不能包含首尾空格');
+  }
+  if (values.some(value => value.startsWith('~'))) {
+    throw new Error('图片路径不支持 ~ 展开，请传绝对路径');
+  }
+  if (values.some(value => !path.isAbsolute(value))) {
+    throw new Error('图片路径必须是绝对路径');
+  }
+
+  const unique = [...new Set(values)];
+  if (unique.length > 4) throw new Error('Twitter/X 单条推文最多支持 4 张图片');
+
+  const imageExtension = /\.(?:png|jpe?g|gif|webp)$/i;
+  for (const value of unique) {
+    if (!imageExtension.test(value)) throw new Error(`不是支持的图片文件: ${value}`);
+    const stat = fs.statSync(value, { throwIfNoEntry: false });
+    if (!stat?.isFile()) throw new Error(`图片文件不存在: ${value}`);
+  }
+  return unique;
+}
+
+function appleScriptString(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+async function writeClipboardImage(filePath: string): Promise<void> {
+  await execFileAsync(
+    'osascript',
+    ['-e', `set the clipboard to (read (POSIX file "${appleScriptString(filePath)}") as \u00abclass PNGf\u00bb)`],
+    { timeout: 5000 },
+  );
+}
+
+async function sendPasteKeystroke(page: Page, filePath: string): Promise<void> {
+  if (process.env.XBROWSER_TWITTER_TEST_PASTE === '1') {
+    const bytes = await fs.promises.readFile(filePath);
+    await page.evaluate(async (payload: { data: string; name: string }) => {
+      const binary = atob(payload.data);
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([bytes], payload.name, { type: 'image/png' }));
+      const event = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'clipboardData', { value: transfer });
+      document.querySelector('[data-testid="tweetTextarea_0"]')?.dispatchEvent(event);
+    }, { data: bytes.toString('base64'), name: path.basename(filePath) });
+    return;
+  }
+
+  await execFileAsync(
+    'osascript',
+    ['-e', 'tell application "Google Chrome" to activate'],
+    { timeout: 5000 },
+  );
+  await page.waitForTimeout(200);
+  await execFileAsync(
+    'osascript',
+    ['-e', 'tell application "System Events" to keystroke "v" using command down'],
+    { timeout: 5000 },
+  );
+}
+
+async function countAttachments(page: Page): Promise<number> {
+  return page.evaluate<number>(`
+    document.querySelectorAll(
+      '[data-testid="attachments"] [data-testid="photoSelectorPreview"], [data-testid="photoSelectorPreview"], [data-testid="attachments"] img'
+    ).length
+  `);
+}
+
+async function waitForAttachmentCount(
+  page: Page,
+  expected: number,
+  timeoutMs = 10_000,
+): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  let current = -1;
+  while (Date.now() < deadline) {
+    current = await countAttachments(page);
+    if (current >= expected) return current;
+    await page.waitForTimeout(250);
+  }
+  throw new Error(`等待附件预览超时：当前 ${current}，期望 ${expected}`);
+}
+
+async function pasteImages(
+  page: Page,
+  filePaths: string[],
+): Promise<{ ok: boolean; pasted: number; reason?: string }> {
+  let pasted = 0;
+  for (const filePath of filePaths) {
+    try {
+      await (page as PageWithOptionalFront).bringToFront?.();
+      const editor = page.locator('[data-testid="tweetTextarea_0"]');
+      await editor.click({ timeout: 5000 });
+      if (process.env.XBROWSER_TWITTER_TEST_PASTE !== '1') {
+        await writeClipboardImage(filePath);
+      }
+      await sendPasteKeystroke(page, filePath);
+      await waitForAttachmentCount(page, pasted + 1, 12_000);
+      pasted += 1;
+    } catch (error) {
+      return {
+        ok: false,
+        pasted,
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+  return { ok: true, pasted };
+}
+
+function imageMimeType(filePath: string): string {
+  const extension = path.extname(filePath).toLowerCase();
+  if (extension === '.jpg' || extension === '.jpeg') return 'image/jpeg';
+  if (extension === '.gif') return 'image/gif';
+  if (extension === '.webp') return 'image/webp';
+  return 'image/png';
+}
+
+async function uploadViaFileInput(page: Page, filePaths: string[]): Promise<void> {
+  const files = await Promise.all(filePaths.map(async filePath => ({
+    name: path.basename(filePath),
+    mimeType: imageMimeType(filePath),
+    buffer: await fs.promises.readFile(filePath),
+  })));
+  await page.setInputFiles('input[type="file"]', files, { timeout: 10_000 });
+}
+
+async function uploadImages(
+  page: Page,
+  params: ImageParameters,
+  command: 'post' | 'reply',
+): Promise<ImageUploadResult> {
+  const filePaths = collectImagePaths(params);
+  if (filePaths.length === 0) {
+    return {
+      usedPaste: false,
+      uploadMethod: 'none',
+      attachments: [],
+      imageCount: 0,
+    };
+  }
+
+  const initialCount = await countAttachments(page).catch(() => 0);
+  let pasted = 0;
+  let pasteReason: string | undefined;
+  const canPaste = process.env.XBROWSER_TWITTER_DISABLE_PASTE !== '1'
+    && (
+      process.platform === 'darwin'
+      || process.env.XBROWSER_TWITTER_FORCE_PASTE === '1'
+      || process.env.XBROWSER_TWITTER_TEST_PASTE === '1'
+    );
+
+  if (canPaste) {
+    const result = await pasteImages(page, filePaths);
+    pasted = result.pasted;
+    pasteReason = result.reason;
+    if (!result.ok && result.pasted > 0) {
+      const currentCount = await countAttachments(page).catch(() => -1);
+      if (currentCount !== initialCount + result.pasted) {
+        const reason = `剪贴板粘贴部分成功后状态不确定: ${pasteReason}`;
+        recordTwitterMistake(command, reason, {
+          expectedCount: filePaths.length,
+          pastedCount: result.pasted,
+          currentCount,
+        });
+        throw new Error(reason);
+      }
+    }
+  }
+
+  const remaining = filePaths.slice(pasted);
+  if (remaining.length > 0) {
+    try {
+      await uploadViaFileInput(page, remaining);
+      await waitForAttachmentCount(page, initialCount + filePaths.length);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      recordTwitterMistake(command, reason, {
+        expectedCount: filePaths.length,
+        pastedCount: pasted,
+        fallbackCount: remaining.length,
+        pasteReason,
+      });
+      throw new Error(`图片上传失败: ${reason}`);
+    }
+  }
+
+  const finalCount = await waitForAttachmentCount(page, initialCount + filePaths.length);
+  if (finalCount !== initialCount + filePaths.length) {
+    const reason = `附件数量校验失败: 当前 ${finalCount}，期望 ${initialCount + filePaths.length}`;
+    recordTwitterMistake(command, reason, {
+      expectedCount: filePaths.length,
+      currentCount: finalCount,
+    });
+    throw new Error(reason);
+  }
+
+  return {
+    usedPaste: pasted > 0,
+    uploadMethod: pasted === 0
+      ? 'setInputFiles'
+      : remaining.length > 0
+        ? 'paste-then-setInputFiles'
+        : 'paste',
+    attachments: filePaths.map(filePath => path.basename(filePath)),
+    imageCount: filePaths.length,
+  };
+}
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -400,11 +686,20 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({
       text: z.string().min(1).max(280).describe('推文内容（最多280字符）'),
+      image: z.string().optional().describe('单张图片的绝对路径'),
+      images: z.string().optional().describe('多张图片的绝对路径 CSV（最多4张）'),
     }),
     examples: [
       { cmd: 'xbrowser twitter post --text "Hello World!"', description: '发布一条推文' },
     ],
-    result: z.object({ posted: z.boolean(), text: z.string() }).passthrough(),
+    result: z.object({
+      posted: z.boolean(),
+      text: z.string(),
+      usedPaste: z.boolean(),
+      uploadMethod: z.enum(['none', 'paste', 'setInputFiles', 'paste-then-setInputFiles']),
+      attachments: z.array(z.string()),
+      imageCount: z.number(),
+    }).passthrough(),
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
@@ -424,14 +719,24 @@ export default function (xcli: XCLIAPI): void {
         await page.keyboard.type(params.text, { delay: 30 });
         await page.waitForTimeout(500);
 
+        const upload = await uploadImages(page, params, 'post');
+
         // Click tweet button
         const tweetBtn = page.locator('[data-testid="tweetButton"]');
         await tweetBtn.waitFor({ state: 'visible', timeout: 5000 });
         await tweetBtn.click();
         await page.waitForTimeout(3000);
 
-        return ok({ posted: true, text: params.text }, ['推文已发布', ...tips]);
+        return ok({
+          posted: true,
+          text: params.text,
+          usedPaste: upload.usedPaste,
+          uploadMethod: upload.uploadMethod,
+          attachments: upload.attachments,
+          imageCount: upload.imageCount,
+        }, ['推文已发布', ...tips]);
       } catch (error) {
+        if (error instanceof Error) recordTwitterMistake('post', error.message, { command: 'post' });
         return fail(error instanceof Error ? error.message : '发布失败');
       }
     },
@@ -445,11 +750,20 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       tweetUrl: z.string().describe('推文 URL（如 https://x.com/user/status/123）'),
       text: z.string().min(1).max(280).describe('回复内容'),
+      image: z.string().optional().describe('单张图片的绝对路径'),
+      images: z.string().optional().describe('多张图片的绝对路径 CSV（最多4张）'),
     }),
     examples: [
       { cmd: 'xbrowser twitter reply --tweetUrl "https://x.com/user/status/123" --text "Great!"', description: '回复推文' },
     ],
-    result: z.object({ replied: z.boolean(), text: z.string() }).passthrough(),
+    result: z.object({
+      replied: z.boolean(),
+      text: z.string(),
+      usedPaste: z.boolean(),
+      uploadMethod: z.enum(['none', 'paste', 'setInputFiles', 'paste-then-setInputFiles']),
+      attachments: z.array(z.string()),
+      imageCount: z.number(),
+    }).passthrough(),
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
@@ -468,13 +782,23 @@ export default function (xcli: XCLIAPI): void {
         await page.keyboard.type(params.text, { delay: 30 });
         await page.waitForTimeout(500);
 
+        const upload = await uploadImages(page, params, 'reply');
+
         const replyBtn = page.locator('[data-testid="tweetButton"]');
         await replyBtn.waitFor({ state: 'visible', timeout: 5000 });
         await replyBtn.click();
         await page.waitForTimeout(3000);
 
-        return ok({ replied: true, text: params.text }, ['回复已发布', ...tips]);
+        return ok({
+          replied: true,
+          text: params.text,
+          usedPaste: upload.usedPaste,
+          uploadMethod: upload.uploadMethod,
+          attachments: upload.attachments,
+          imageCount: upload.imageCount,
+        }, ['回复已发布', ...tips]);
       } catch (error) {
+        if (error instanceof Error) recordTwitterMistake('reply', error.message, { command: 'reply' });
         return fail(error instanceof Error ? error.message : '回复失败');
       }
     },
@@ -569,6 +893,85 @@ export default function (xcli: XCLIAPI): void {
         return ok({ liked: true }, ['点赞成功', ...tips]);
       } catch (error) {
         return fail(error instanceof Error ? error.message : '点赞失败');
+      }
+    },
+  });
+
+  // ─── 11. delete (删除推文) ────────────────────
+
+  site.command('delete', {
+    description: '删除指定推文',
+    scope: 'browser',
+    loginRequired: 'required',
+    parameters: z.object({
+      tweet: z.string().describe('推文 ID 或推文 URL'),
+    }),
+    examples: [
+      { cmd: 'xbrowser twitter delete --tweet 1234567890', description: '按 ID 删除推文' },
+      { cmd: 'xbrowser twitter delete --tweet "https://x.com/user/status/1234567890"', description: '按 URL 删除推文' },
+    ],
+    result: z.object({ deleted: z.boolean(), tweetId: z.string() }).passthrough(),
+    handler: async (params, ctx) => {
+      const page = ctx.page;
+      if (!page) throw new Error('需要浏览器页面');
+      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+
+      try {
+        const tweetId = tweetIdOrUrl(params.tweet);
+        await page.goto(`${BASE}/i/status/${tweetId}`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(4000);
+
+        const article = page.locator('article[data-testid="tweet"]').first();
+        try {
+          await article.waitFor({ state: 'visible', timeout: 10_000 });
+        } catch {
+          const bodyText = await page.locator('body').innerText().catch(() => '');
+          if (/页面不存在|post (?:does not|doesn't) exist|post is unavailable/i.test(bodyText)) {
+            throw new Error('目标推文不存在或不可访问');
+          }
+          throw new Error('目标推文未能加载，未执行删除');
+        }
+
+        // First tweet on a status page is the target tweet; open its action menu.
+        const menu = page.locator('article[data-testid="tweet"] [data-testid="caret"]').first();
+        await menu.waitFor({ state: 'visible', timeout: 5000 });
+        await menu.click();
+        await page.waitForTimeout(500);
+
+        const deleteItem = page.locator('[role="menuitem"]').first();
+        await deleteItem.waitFor({ state: 'visible', timeout: 5000 });
+        const deleteLabel = (await deleteItem.innerText()).trim();
+        if (!/^(delete|删除)$/i.test(deleteLabel)) {
+          throw new Error('目标推文不属于当前账号，或菜单中没有删除选项');
+        }
+        await deleteItem.click();
+        await page.waitForTimeout(500);
+
+        const confirm = page.locator('button[data-testid="confirmationSheetConfirm"]');
+        await confirm.waitFor({ state: 'visible', timeout: 5000 });
+        await confirm.click();
+        await page.waitForTimeout(4000);
+
+        const currentUrl = await page.evaluate<string>('location.href');
+        const remainsOnTweet = currentUrl.includes(`/status/${tweetId}`);
+        const tweetStillVisible = await page.evaluate<boolean>((args: unknown[]) => {
+          const id = String(args[0] ?? '');
+          return [...document.querySelectorAll('article[data-testid="tweet"]')].some(article =>
+            [...article.querySelectorAll('a[href]')].some(link =>
+              new URL((link as HTMLAnchorElement).href, location.href).pathname
+                .split('/').some((segment, index, segments) => segment === 'status' && segments[index + 1] === id),
+            ),
+          );
+        }, [tweetId]);
+        if (remainsOnTweet || tweetStillVisible) {
+          throw new Error('X 未离开目标推文页面，无法确认删除成功');
+        }
+
+        return ok({ deleted: true, tweetId }, ['推文已删除', ...tips]);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        recordTwitterMistake('delete', reason, { tweet: params.tweet });
+        return fail(`删除推文失败：${reason}`);
       }
     },
   });

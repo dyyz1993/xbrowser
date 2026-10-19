@@ -11,13 +11,13 @@ describe('twitter plugin', () => {
     expect(mockXCLI.createSite).toHaveBeenCalledWith(expect.objectContaining({ name: 'twitter', url: 'https://x.com' }));
   });
 
-  it('should register 10 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(10);
+  it('should register 11 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(11);
   });
 
   it('should register expected commands', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
-    expect(names).toEqual(['search', 'profile', 'timeline', 'replies', 'liked', 'search-image', 'post', 'reply', 'retweet', 'like']);
+    expect(names).toEqual(['search', 'profile', 'timeline', 'replies', 'liked', 'search-image', 'post', 'reply', 'retweet', 'like', 'delete']);
   });
 
   it.each([
@@ -34,6 +34,18 @@ describe('twitter plugin', () => {
   it('timeline should have views/bookmarks description', () => {
     const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'timeline')!;
     expect(cmd[1].description).toContain('views');
+  });
+
+  it.each(['post', 'reply'])('%s should expose image parameters and upload result fields', name => {
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === name)!;
+    const shape = cmd[1].parameters as { shape: Record<string, unknown> };
+    const result = cmd[1].result as { shape: Record<string, unknown> };
+    expect(shape.shape.image).toBeDefined();
+    expect(shape.shape.images).toBeDefined();
+    expect(result.shape.usedPaste).toBeDefined();
+    expect(result.shape.uploadMethod).toBeDefined();
+    expect(result.shape.attachments).toBeDefined();
+    expect(result.shape.imageCount).toBeDefined();
   });
 
   it('should have login and logout', () => {
