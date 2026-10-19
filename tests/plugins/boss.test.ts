@@ -2,7 +2,14 @@ import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import plugin, { recordBossMistake } from '../../.xcli/plugins/boss/index.ts';
+import plugin, {
+  recordBossMistake,
+  parseMonthlySalaryK,
+  isEligibleApplySalary,
+  companyIsBlocked,
+  classifyMessageIntent,
+  buildSmartReply,
+} from '../../.xcli/plugins/boss/index.ts';
 import {
   extractChats,
   extractCompanies,
@@ -107,6 +114,7 @@ describe('boss plugin', () => {
     }));
     expect(mockSite.command.mock.calls.map((item: unknown[]) => item[0])).toEqual([
       'search', 'detail', 'companies', 'recommend', 'chat', 'chat-reply', 'resume',
+      'apply', 'smart-reply',
     ]);
     expect(mockSite.login).toHaveBeenCalledTimes(0);
   });
@@ -489,6 +497,54 @@ describe('boss plugin', () => {
       experience: '10年经验本科',
     });
   });
+
+  function createApplySearchPage(jobs: unknown[]) {
+    const page = createTabPage();
+    page.evaluate = vi.fn()
+      .mockResolvedValueOnce({ ready: 'complete', url: 'https://www.zhipin.com/x', usedMB: 10, limitMB: 4096 })
+      .mockResolvedValueOnce(JSON.stringify(jobs));
+    return page;
+  }
+
+  it('apply dry-run filters salary and companies without side effects', async () => {
+    const searchPage = createApplySearchPage([
+      { title: 'AI平台工程师', company: '德熙科技', salary: '20-35K', detailUrl: 'https://www.zhipin.com/job_detail/a.html' },
+      { title: '低薪岗位', company: '小公司', salary: '15-25K', detailUrl: 'https://www.zhipin.com/job_detail/b.html' },
+      { title: '大厂岗位', company: '广州腾讯', salary: '25-45K', detailUrl: 'https://www.zhipin.com/job_detail/c.html' },
+    ]);
+    const pages = [searchPage];
+    const browserContext = { newPage: async () => pages.shift() ?? createTabPage() };
+    const result = await handlerOf('apply')({
+      query: 'AI', dryRun: true, dailyLimit: 20, blocklist: '额外公司',
+    }, { browserContext });
+
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      dryRun: true,
+      quota: { used: 0, limit: 20 },
+      candidates: [{
+        title: 'AI平台工程师', company: '德熙科技', salary: '20-35K',
+        url: 'https://www.zhipin.com/job_detail/a.html', reason: 'salary-and-company-passed',
+      }],
+      submitted: [],
+    });
+    expect((searchPage.mouse as { click: ReturnType<typeof vi.fn> }).click).not.toHaveBeenCalled();
+    expect(searchPage.close).toHaveBeenCalledTimes(1);
+  });
+
+  it('apply stops when daily quota is already reached', async () => {
+    const storage = new Map([['boss_apply_daily_quota', { date: new Date().toISOString().slice(0, 10), count: 20 }]]);
+    const result = await handlerOf('apply')({ dryRun: false, dailyLimit: 20 }, {
+      browserContext: { newPage: vi.fn() },
+      storage: {
+        get: async <T>(key: string) => (storage.get(key) ?? null) as T | null,
+        set: async (key: string, value: { date: string; count: number }) => { storage.set(key, value); },
+      },
+    });
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({ stoppedAt: 'daily-limit', quota: { used: 20, limit: 20 } });
+    expect((result.data as { candidates: unknown[] }).candidates).toHaveLength(0);
+  });
 });
 
 describe('boss tab creation failure recording', () => {
@@ -578,6 +634,64 @@ describe('boss mistake helper', () => {
     } finally {
       delete (globalThis as Record<string, unknown>).__xbrowserRecordMistake;
     }
+  });
+});
+
+describe('boss apply and smart-reply helpers', () => {
+  it.each([
+    ['20-35K', { min: 20, max: 35, months: null }],
+    ['20-35K·16薪', { min: 20, max: 35, months: 16 }],
+  ])('parses monthly salary %s', (input, expected) => {
+    expect(parseMonthlySalaryK(input)).toEqual(expected);
+  });
+
+  it.each([
+    ['20-35K', true],
+    ['28-40K', true],
+    ['15-25K', false],
+    ['300-500元/天', false],
+    ['50-80元/时', false],
+  ])('filters salary %s as %s', (input, expected) => {
+    expect(isEligibleApplySalary(input)).toBe(expected);
+  });
+
+  it('excludes default and appended company blocklist terms', () => {
+    expect(companyIsBlocked('广州腾讯科技有限公司')).toBe(true);
+    expect(companyIsBlocked('北京字节跳动')).toBe(true);
+    expect(companyIsBlocked('德熙数字科技')).toBe(false);
+    expect(companyIsBlocked('某战略客户', ['战略客户'])).toBe(true);
+  });
+
+  it.each([
+    ['明天下午方便面试吗？', 'interview'],
+    ['请发一份完整JD', 'jd'],
+    ['你的期望薪资是多少？', 'salary'],
+    ['说说你的AI工程经验', 'experience'],
+  ])('classifies %s as %s', (message, intent) => {
+    expect(classifyMessageIntent(message)).toBe(intent);
+  });
+
+  it('fills deterministic reply templates with resume and job context', () => {
+    const input = {
+      intent: 'experience' as const,
+      sender: '林女士',
+      job: {
+        jobTitle: 'AI全栈开发',
+        salary: '25-40K',
+        description: 'React、Node.js、AI工具链、自动化平台建设',
+      },
+      resume: {
+        name: '许先生',
+        experience: '10年经验本科',
+        status: '离职-随时到岗',
+        advantage: '开源与AI工具链',
+      },
+    };
+    const reply = buildSmartReply(input);
+    expect(reply).toContain('林女士');
+    expect(reply).toContain('AI全栈开发（25-40K）');
+    expect(reply).toContain('React、Node.js');
+    expect(reply).toContain('10年经验本科');
   });
 });
 
