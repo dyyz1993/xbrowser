@@ -41,3 +41,11 @@
 ## [1.0.0] - Initial Release
 
 - 初始版本，包含 search、profile、timeline 三个命令
+
+## [4.1.1] - 2026-10-19
+
+### Added
+- Added marketplace command documentation for all 11 commands
+
+### Changed
+- Published through the authenticated official Marketplace publisher API

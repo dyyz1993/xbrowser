@@ -19,7 +19,7 @@
     "@dyyz1993/xcli-core": ">=0.19.1"
   },
   "type": "module",
-  "version": "4.1.0",
+  "version": "4.1.1",
   "xbrowser": {
     "author": "XBrowser Team",
     "commands": [
@@ -47,6 +47,6 @@
       "twitter",
       "social-media"
     ],
-    "version": "4.1.0"
+    "version": "4.1.1"
   }
 }
