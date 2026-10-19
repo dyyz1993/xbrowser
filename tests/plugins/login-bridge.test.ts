@@ -58,4 +58,9 @@ describe('login-bridge plugin', () => {
     expect(schema.parameters).toBeTruthy();
     expect(schema.scope).toBe('project');
   });
+
+  it('declares storage count in apply contract', () => {
+    const schema = mockSite.command.mock.calls.find((item: unknown[]) => item[0] === 'apply')![1];
+    expect(Object.keys(schema.result.shape)).toEqual(['applied', 'storage', 'site']);
+  });
 });

@@ -45,7 +45,7 @@ type ChromeLike = {
     onDetach: { addListener: ReturnType<typeof vi.fn> };
   };
   tabs: {
-    query: (query: { groupId?: number; active?: boolean; currentWindow?: boolean }) => Promise<Tab[]>;
+    query: (query: { groupId?: number; active?: boolean; currentWindow?: boolean; url?: string }) => Promise<Tab[]>;
     onRemoved: { addListener: ReturnType<typeof vi.fn> };
     onUpdated: { addListener: ReturnType<typeof vi.fn> };
     onReplaced: { addListener: ReturnType<typeof vi.fn> };
@@ -62,6 +62,12 @@ type ChromeLike = {
       get: (keys: string | string[]) => Promise<Record<string, unknown>>;
       set: (values: Record<string, unknown>) => Promise<void>;
     };
+  };
+  cookies: {
+    getAll: (filter?: { domain?: string }) => Promise<Array<Record<string, unknown>>>;
+  };
+  scripting: {
+    executeScript: (options: unknown) => Promise<Array<{ result?: unknown; error?: unknown }>>;
   };
 };
 
@@ -118,7 +124,10 @@ function createChrome() {
       onDetach: { addListener: vi.fn() },
     },
     tabs: {
-      query: async (query) => (query.groupId == null ? tabs : tabs.filter((tab) => tab.groupId === query.groupId)),
+      query: async (query) => {
+        if (query.url) return tabs.filter((tab) => (tab.url ?? '').includes('example.com'));
+        return query.groupId == null ? tabs : tabs.filter((tab) => tab.groupId === query.groupId);
+      },
       onRemoved: { addListener: vi.fn() },
       onUpdated: { addListener: vi.fn() },
       onReplaced: { addListener: vi.fn() },
@@ -165,6 +174,12 @@ function createChrome() {
         set: async () => undefined,
       },
     },
+    cookies: {
+      getAll: async () => [],
+    },
+    scripting: {
+      executeScript: async () => [{ result: [] }],
+    },
   };
 
   return { chrome, groups, tabs, updates, removed, state: { get createdCount() { return createdCount; } } };
@@ -179,6 +194,41 @@ function colorForName(name: string): string {
 }
 
 describe('login-bridge task groups', () => {
+  it('exports only the authorized site through the bridge cookie API', async () => {
+    const harness = createChrome();
+    harness.tabs.push({ id: 77, groupId: -1, url: 'https://www.example.com/jobs' });
+    const urlQueries: Array<string | undefined> = [];
+    const originalQuery = harness.chrome.tabs.query;
+    harness.chrome.tabs.query = async (query) => {
+      urlQueries.push(query.url);
+      return originalQuery(query);
+    };
+    const cookieCalls: Array<Record<string, unknown>> = [];
+    const originalGet = harness.chrome.cookies.getAll;
+    harness.chrome.cookies.getAll = async (filter?: { domain?: string }) => {
+      if (filter) cookieCalls.push(filter);
+      return originalGet(filter);
+    };
+    const fetchCalls: Array<{ url: unknown; body: unknown }> = [];
+    vi.stubGlobal('fetch', async (url: unknown, init?: { body?: unknown }) => {
+      fetchCalls.push({ url, body: init?.body });
+      return { json: async () => ({ ok: true }) };
+    });
+    const executors = await loadExecutors(harness.chrome);
+
+    const result = await executors['export-site-cookies']({ domain: 'example.com' }) as {
+      ok: boolean; domain: string; count: number; localStorage: number; tabId: number | undefined;
+    };
+
+    expect(result).toEqual({ ok: true, domain: 'example.com', count: 0, localStorage: 0, tabId: 77 });
+    expect(cookieCalls).toEqual([{ domain: 'example.com' }]);
+    expect(urlQueries).toEqual(['https://example.com/*', 'https://*.example.com/*']);
+    expect(fetchCalls).toEqual([{
+      url: 'http://127.0.0.1:9355/cookies',
+      body: expect.stringContaining('"domain":"example.com"'),
+    }]);
+  });
+
   it('colors each task name with the same stable Chrome color', async () => {
     const harness = createChrome();
     const executors = await loadExecutors(harness.chrome);

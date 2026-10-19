@@ -14,6 +14,7 @@ import { ensurePluginDependencies } from './ensure-deps.js';
 import { buildPluginContract } from './contract.js';
 import type { PluginCommandContract, PluginContract } from './types.js';
 import { patchLoginRequired } from './login-required-patch.js';
+import { recordMistake } from '../lib/mistake-ledger.js';
 
 export type { PluginInstance, PluginStatus, XCLIAPI };
 
@@ -43,6 +44,7 @@ export class XBrowserPluginLoader {
 
   constructor(options?: PluginLoaderOptions) {
     patchLoginRequired();
+    (globalThis as Record<string, unknown>).__xbrowserRecordMistake = recordMistake;
     this.options = options ?? {};
     const cwd = this.options.cwd || process.cwd();
 
