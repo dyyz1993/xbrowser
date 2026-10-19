@@ -1,7 +1,7 @@
 # 插件完成度看板
 
 > **自动生成，请勿手改** · 由 `lint-scripts/check-plugin-status.mjs` 生成
-> 生成时间：2026-10-18 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
+> 生成时间：2026-10-19 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
 
 ## 汇总
 

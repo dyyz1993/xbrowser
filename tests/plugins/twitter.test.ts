@@ -36,6 +36,18 @@ describe('twitter plugin', () => {
     expect(cmd[1].description).toContain('views');
   });
 
+  it.each(['post', 'reply'])('%s should expose image parameters and upload result fields', name => {
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === name)!;
+    const shape = cmd[1].parameters as { shape: Record<string, unknown> };
+    const result = cmd[1].result as { shape: Record<string, unknown> };
+    expect(shape.shape.image).toBeDefined();
+    expect(shape.shape.images).toBeDefined();
+    expect(result.shape.usedPaste).toBeDefined();
+    expect(result.shape.uploadMethod).toBeDefined();
+    expect(result.shape.attachments).toBeDefined();
+    expect(result.shape.imageCount).toBeDefined();
+  });
+
   it('should have login and logout', () => {
     expect(mockSite.login).toHaveBeenCalled();
     expect(mockSite.logout).toHaveBeenCalled();

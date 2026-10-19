@@ -453,6 +453,12 @@ site.command('attach', {
 }
 ```
 
+**Twitter/X 图片上传特例（2026-10 统一）**：`twitter post` / `twitter reply` 支持内嵌
+`--image <绝对路径>` 与 `--images <CSV>`（最多 4 张）。macOS 优先把 PNG 写入系统剪贴板，
+聚焦编辑器后发送真实 `Meta+V`，并逐一验证新增附件预览；失败时自动回退
+`page.setInputFiles('input[type=file]', ...)` 并验证最终数量。禁止对隐藏
+file input 做任何 DOM `click()`，禁止用合成上传事件替代上述两条通道。
+
 **反例**：
 
 | 反例 | 问题 | 正确 |
