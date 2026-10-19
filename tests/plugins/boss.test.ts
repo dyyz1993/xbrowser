@@ -8,6 +8,7 @@ import {
   extractCompanies,
   extractJobDetail,
   extractRecommend,
+  extractResume,
   parseJobDetailTarget,
   parseResumeContact,
 } from '../../.xcli/plugins/boss/selectors.ts';
@@ -79,6 +80,7 @@ function createTabPage(evaluateResult?: unknown) {
     url: vi.fn(() => 'https://www.zhipin.com/'),
     close: vi.fn(async () => undefined),
     mouse: { move: vi.fn(async () => undefined), click: vi.fn(async () => undefined) },
+    waitForFunction: vi.fn(async () => undefined),
   };
   return page;
 }
@@ -676,13 +678,26 @@ describe('boss selectors', () => {
         <div class="label-text">设置</div>
         <section class="sider-recommend-wrap"><h3>猜你喜欢</h3><li class="item-recommend"><span class="name">推荐岗位</span></li></section>
         <section class="sider-recommend-wrap"><h3>谁看过我</h3><ul><li class="item-recommend"><span class="name">林女士</span><span class="company">诗悦网络</span><span class="detail">AI全栈开发</span><span class="salary">18-28K</span></li></ul></section>
-        <div class="user-info"><span class="label-text">消息</span><span class="label-text">简历</span><span class="label-text">许先生</span></div>
+        <div class="user-info"><span class="label-text">消息</span><span class="label-text">简历</span></div>
+        <li class="nav-figure"><a ka="header-username"><span class="label-text">许先生</span></a></li>
       </body></html>
     `) as unknown as Document;
     expect(extractRecommend()).toEqual({
       viewers: [{ name: '林女士', company: '诗悦网络', title: 'AI全栈开发', salary: '18-28K' }],
       profile: { name: '许先生', experience: '', status: '', expectation: '' },
     });
+  });
+
+  it('joins multi-span chat roles without contaminating company', () => {
+    globalThis.document = domino.createDocument(`
+      <html><body><li><div class="friend-content">
+        <div class="name-box"><span class="name-text">仇女士</span><span>钛动科技</span><i class="vline"></i><span>高级招聘</span><span>HR</span></div>
+      </div></li></body></html>
+    `) as unknown as Document;
+    expect(extractChats(1)).toEqual([{
+      sender: '仇女士', company: '钛动科技', role: '高级招聘HR',
+      time: '', preview: '',
+    }]);
   });
 
   it('extracts chat fields precisely from friend-content DOM', () => {
@@ -708,5 +723,38 @@ describe('boss selectors', () => {
 
   it('does not invent unmasked contact values', () => {
     expect(parseResumeContact('个人优势')).toEqual({ phone: '', email: '' });
+  });
+
+  it('extracts education and full visible resume sections', () => {
+    // domino does not implement block-level innerText line boxes; patch its
+    // text solely for this parser test while preserving the real selectors.
+    const lines = [
+      '许先生',
+      '10年经验本科离职-随时到岗',
+      '137******18dyy***93dyy***93@qq.com',
+      '个人优势',
+      '十年以上前端全栈经验。',
+      '期望职位',
+      '前端开发工程师28-45K广州',
+      '工作经历',
+      '教育经历',
+      '仲恺农业工程学院',
+      '2012-2016',
+      '计算机科学与技术',
+      '本科',
+      '专业技能',
+    ];
+    globalThis.document = {
+      body: { innerText: lines.join('\n') },
+    } as unknown as Document;
+    expect(extractResume()).toMatchObject({
+      name: '许先生',
+      experience: '10年经验本科',
+      phone: '137******18',
+      email: 'dyy***93@qq.com',
+      advantage: '十年以上前端全栈经验。',
+      education: '本科',
+      status: '离职-随时到岗',
+    });
   });
 });

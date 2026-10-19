@@ -977,7 +977,13 @@ export default function (xcli: XCLIAPI): void {
         const page = tab.page;
         const url = `https://www.zhipin.com/web/geek/resume?__xbrowser_tab=${encodeURIComponent(tab.name)}`;
         await page.goto(url, { waitUntil: "domcontentloaded", timeout: 20000 });
-        await page.waitForTimeout(6000);
+        await page
+          .waitForFunction(
+            "document.body.innerText.includes('教育经历') && document.body.innerText.includes('专业技能') && document.body.innerText.includes('本科')",
+            { timeout: 15000, polling: 500 },
+          )
+          .catch(() => page.waitForTimeout(8000));
+        await page.waitForTimeout(500);
         const evaluate = async (
           expression: string,
         ): Promise<BridgeResponse> => ({

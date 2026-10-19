@@ -132,11 +132,13 @@ export function extractCompanies(limit: number): CompanyData[] {
     .map((element, index) => {
       const company = element.querySelector('a.company-info');
       const job = element.querySelector('a.about-info p');
-      const funding = textOf(
-        company?.querySelector('.conpany-text span:nth-child(2)'),
-      );
-      const industry = textOf(company?.querySelector('.company-industry'))
-        || textOf(company?.querySelector('.conpany-text span:nth-child(3)'));
+      const metadata = [
+        ...company?.querySelectorAll('.conpany-text span') ?? [],
+      ]
+        .map(textOf)
+        .filter(Boolean);
+      const funding = metadata.find(value => /融资/.test(value)) ?? '';
+      const industry = metadata.filter(value => value !== funding).join('');
       const size = textOf(company?.querySelector('.company-size, .size'));
       const jobText = job?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
       const hotJob = jobText.replace(/^热招\s*/, '').trim();
@@ -167,7 +169,7 @@ export function extractRecommend(): RecommendData {
     }))
     .filter((viewer) => viewer.name.length > 0);
   const profileName = [...document.querySelectorAll(
-    '.user-info .label-text, .user-info .user-name, .user-info .name',
+    'li.nav-figure .label-text, .user-info .label-text, .user-info .user-name, .user-info .name',
   )]
     .map(textOf)
     .find((value) => value.length > 0 && value !== '消息' && value !== '简历');
@@ -193,14 +195,13 @@ export function extractChats(limit: number): ChatData[] {
         .map((value: string) => value.trim())
         .filter(Boolean);
       const sender = textOf(element.querySelector('.name-text'));
-      const company = textOf(
-        element.querySelector('.name-box span:nth-child(2)'),
-      );
-      const role = textOf(
-        element.querySelector(
-          '.name-box i + span, .name-box span:nth-child(3)',
-        ),
-      );
+      const metadata = [
+        ...element.querySelectorAll('.name-box > span:not(.name-text)'),
+      ]
+        .map(textOf)
+        .filter(Boolean);
+      const company = metadata[0] ?? '';
+      const role = metadata.slice(1).join('') ?? '';
       const time = textOf(element.querySelector('.time'));
       const preview =
         element
@@ -252,6 +253,10 @@ export function extractResume(): ResumeData {
         /个人优势\n([\s\S]{10,500}?)(?=\n期望职位|\n工作经历|\n项目经历)/,
       )?.[1]
       ?.trim() ?? '';
+  const educationMatch = text.match(
+    /教育经历[\s\S]*?\n(本科|大专|硕士|博士|学历不限)\n专业技能/,
+  );
+  const education = educationMatch?.[1] ?? '';
   return {
     name:
       text
@@ -259,7 +264,7 @@ export function extractResume(): ResumeData {
         .map((value: string) => value.trim())
         .find((value: string) => /先生$|女士$/.test(value)) ?? '',
     experience: experienceLine.replace(/离职-\S+|在职-\S+/, '').trim(),
-    education: '',
+    education,
     phone: phoneMatch?.[0] ?? '',
     email: emailMatch?.[0] ?? '',
     advantage,
