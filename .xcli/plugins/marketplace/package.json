@@ -1,0 +1,39 @@
+{
+  "author": "XBrowser Team",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "description": "Publish xbrowser plugins to the official marketplace through authenticated APIs",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin"
+  ],
+  "license": "MIT",
+  "main": "index.ts",
+  "name": "xbrowser-plugin-marketplace",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=0.19.1"
+  },
+  "type": "module",
+  "version": "1.0.0",
+  "xbrowser": {
+    "author": "XBrowser Team",
+    "commands": [
+      "login",
+      "status",
+      "publish"
+    ],
+    "description": "Publish xbrowser plugins to the official marketplace",
+    "name": "marketplace",
+    "site": "https://xbrowser.dev",
+    "sites": [
+      "xbrowser.dev"
+    ],
+    "slug": "marketplace",
+    "tags": [
+      "marketplace",
+      "publishing"
+    ],
+    "version": "1.0.0"
+  }
+}
