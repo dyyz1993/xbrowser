@@ -1,0 +1,113 @@
+name: Announce release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (for example v1.30.0)
+        required: true
+        type: string
+      dry_run:
+        description: Render the tweet without posting
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: announce-release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  tweet-major-release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
+      RELEASE_NAME: ${{ github.event.release.name }}
+      RELEASE_BODY: ${{ github.event.release.body }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run != false }}
+    steps:
+      - name: Check version class
+        id: version
+        run: |
+          set -e
+          TAG="${TAG_NAME#v}"
+          if ! echo "$TAG" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "announce=false" >> "$GITHUB_OUTPUT"
+            echo "Patch/prerelease or invalid tag; no announcement: $TAG_NAME"
+            exit 0
+          fi
+          PATCH=$(echo "$TAG" | cut -d. -f3)
+          if [ "$PATCH" != "0" ]; then
+            echo "announce=false" >> "$GITHUB_OUTPUT"
+            echo "Patch release; no announcement: $TAG_NAME"
+            exit 0
+          fi
+          echo "announce=true" >> "$GITHUB_OUTPUT"
+          echo "Major/minor release; announcement enabled: $TAG_NAME"
+
+      - uses: actions/checkout@v4
+        if: steps.version.outputs.announce == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.version.outputs.announce == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+        if: steps.version.outputs.announce == 'true'
+
+      - run: npm run build
+        if: steps.version.outputs.announce == 'true'
+      - run: npm link
+        if: steps.version.outputs.announce == 'true'
+
+      - name: Render announcement
+        if: steps.version.outputs.announce == 'true'
+        run: |
+          set -e
+          mkdir -p output/twitter
+          NAME="${RELEASE_NAME:-@xbrowser/cli v${TAG_NAME#v}}"
+          HIGHLIGHTS=$(printf '%s' "$RELEASE_BODY" | awk '/^## Highlights/{in_section=1;next} /^## /{in_section=0} in_section && /^- /{sub(/^- /,"");print}')
+          BODY=$(printf '%s' "$HIGHLIGHTS" | head -n 3 | tr '\n' '|' | sed 's/[[:space:]]\+/ /g;s/|/ · /g;s/^ //;s/ $//')
+          if [ -z "$BODY" ]; then
+            BODY=$(printf '%s' "$RELEASE_BODY" | sed -e 's/\r$//' -e '/^## /,$d' | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | sed 's/^ //;s/ $//')
+          fi
+          TWEET="🚀 ${NAME} is live: ${BODY} npm: https://www.npmjs.com/package/@xbrowser/cli?activeTab=versions"
+          TWEET=$(node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{let out=s.trim().replace(/\s+/g," ");console.log(out.slice(0,280))}' <<< "$TWEET")
+          printf '%s' "$TWEET" > output/twitter/tweet.txt
+          echo "TWEET<<EOF" >> "$GITHUB_ENV"
+          echo "$TWEET" >> "$GITHUB_ENV"
+          echo "EOF" >> "$GITHUB_ENV"
+          echo "Rendered ($${#TWEET} chars):"
+          cat output/twitter/tweet.txt
+
+      - name: Post announcement
+        if: steps.version.outputs.announce == 'true' && env.DRY_RUN != 'true'
+        run: |
+          set -e
+          TWEET_FILE=output/twitter/tweet.txt
+          RESULT=$(xbrowser twitter post-api --text "$(cat "$TWEET_FILE")" --json)
+          echo "$RESULT" | node -e '
+            let input = "";
+            process.stdin.on("data", chunk => input += chunk);
+            process.stdin.on("end", () => {
+              const result = JSON.parse(input);
+              if (!result.success) {
+                console.error(result.error || "Twitter API post failed");
+                process.exit(1);
+              }
+              console.log(`Published tweet: https://x.com/i/web/status/${result.data.id}`);
+            });
+          ' <<< "$RESULT"
+        env:
+          X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
+          X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
