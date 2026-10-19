@@ -119,13 +119,9 @@ async function sendPasteKeystroke(page: Page, filePath: string): Promise<void> {
       for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
       const transfer = new DataTransfer();
       transfer.items.add(new File([bytes], payload.name, { type: 'image/png' }));
-      document
-        .querySelector('[data-testid="tweetTextarea_0"]')
-        ?.dispatchEvent(new ClipboardEvent('paste', {
-          bubbles: true,
-          cancelable: true,
-          clipboardData: transfer,
-        }));
+      const event = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(event, 'clipboardData', { value: transfer });
+      document.querySelector('[data-testid="tweetTextarea_0"]')?.dispatchEvent(event);
     }, { data: bytes.toString('base64'), name: path.basename(filePath) });
     return;
   }
