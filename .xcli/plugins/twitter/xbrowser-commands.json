@@ -65,16 +65,6 @@
     "examples": [{ "cmd": "xbrowser twitter post --text \"Hello World!\"", "description": "发布一条推文" }]
   },
   {
-    "name": "post-api",
-    "description": "通过 X API v2 发布推文，适合 CI 自动化",
-    "loginRequired": "required",
-    "parameters": [
-      { "name": "--text", "type": "string", "required": true, "description": "推文内容（最多280字符）" },
-      { "name": "--image", "type": "string", "required": false, "description": "单张图片绝对路径" }
-    ],
-    "examples": [{ "cmd": "xbrowser twitter post-api --text \"Release ready\"", "description": "发布版本推文" }]
-  },
-  {
     "name": "reply",
     "description": "回复指定推文，支持图片附件",
     "loginRequired": "required",
