@@ -155,6 +155,7 @@ const saveResult = z.object({
 
 const applyResult = z.object({
   applied: z.number(),
+  storage: z.number(),
   site: z.string(),
 });
 
@@ -235,7 +236,10 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (p, ctx) => {
       const page = (ctx as unknown as Record<string, unknown>).page as
-        | { _cdpSend?: (m: string, p?: unknown) => Promise<unknown> }
+        | {
+            _cdpSend?: (m: string, p?: unknown) => Promise<unknown>;
+            evaluate?: (expression: string) => Promise<unknown>;
+          }
         | undefined;
       const store = loadStore();
       const all: CookieItem[] = Object.entries(store)
@@ -263,7 +267,30 @@ export default function (xcli: XCLIAPI): void {
         })),
       }).catch((e: unknown) => ({ error: e }));
 
-      return ok({ applied: matched.length, site: p.site || '*' }, [
+      const localStorageEntries = store[p.site ?? '*']?.localStorage ?? [];
+      const evaluate = page?.evaluate?.bind(page);
+      if (localStorageEntries.length && evaluate) {
+        // Cookie apply targets the current page's origin; navigate there only
+        // after the caller has reached the site (the CLI requires a CDP page).
+        const currentUrl = await evaluate('location.href').catch(() => undefined);
+        if (typeof currentUrl === 'string' && new URL(currentUrl).hostname.endsWith(p.site ?? '')) {
+          await evaluate(`
+            (() => {
+              const entries = ${JSON.stringify(localStorageEntries)};
+              for (const entry of entries) {
+                if (!entry.storage || entry.storage === 'local') {
+                  localStorage.setItem(entry.key, entry.value);
+                }
+                if (entry.storage === 'session') {
+                  sessionStorage.setItem(entry.key, entry.value);
+                }
+              }
+            })()
+          `).catch(() => undefined);
+        }
+      }
+
+      return ok({ applied: matched.length, storage: localStorageEntries.length, site: p.site || '*' }, [
         `已注入 ${matched.length} 条 cookie — 刷新页面即可生效`,
       ]);
     },

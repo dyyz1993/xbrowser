@@ -252,18 +252,43 @@ async function exportLocalStorage(tab, domainFilter) {
   if (!tab || !tab.id) return [];
   if (domainFilter && !(tab.url || '').includes(domainFilter.replace(/^\./, ''))) return [];
   try {
-    const [{ result }] = await chrome.scripting.executeScript({
+    const [frame] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      func: () => {
+      func: (storageName) => {
+        const storage = storageName === 'session' ? sessionStorage : localStorage;
         const out = [];
-        for (let i = 0; i < localStorage.length; i++) {
-          const k = localStorage.key(i);
-          out.push({ key: k, value: localStorage.getItem(k) });
+        for (let i = 0; i < storage.length; i++) {
+          const k = storage.key(i);
+          out.push({ key: k, value: storage.getItem(k) });
         }
         return out;
       },
+      args: ['local'],
     });
-    return (result || []).map((e) => ({ url: tab.url, ...e }));
+    const value = frame?.result;
+    if (!Array.isArray(value)) return [];
+    return value.map((e) => ({ url: tab.url, ...e }));
+  } catch { return []; }
+}
+
+async function exportSessionStorage(tab, domainFilter) {
+  if (!tab || !tab.id) return [];
+  if (domainFilter && !(tab.url || '').includes(domainFilter.replace(/^\./, ''))) return [];
+  try {
+    const [frame] = await chrome.scripting.executeScript({
+      target: { tabId: tab.id },
+      func: (storageName) => {
+        const storage = storageName === 'session' ? sessionStorage : localStorage;
+        const out = [];
+        for (let i = 0; i < storage.length; i++) {
+          const k = storage.key(i);
+          out.push({ key: k, value: storage.getItem(k) });
+        }
+        return out;
+      },
+      args: ['session'],
+    });
+    return (frame?.result || []).map((e) => ({ url: tab.url, storage: 'session', ...e }));
   } catch { return []; }
 }
 
@@ -514,22 +539,31 @@ const executors = {
   'export-site-cookies': async ({ domain }) => {
     const site = typeof domain === 'string' ? domain : '';
     const cookies = await exportCookies(site);
-    const [candidate] = site
-      ? (await chrome.tabs.query({ url: `https://*/*${site}/*`, currentWindow: false }))
-      : [];
-    const localStorageEntries = await exportLocalStorage(candidate, site);
+    let candidates = [];
+    if (site) {
+      const host = site.replace(/^\./, '');
+      candidates = [
+        ...await chrome.tabs.query({ url: `https://${host}/*`, currentWindow: false }),
+        ...await chrome.tabs.query({ url: `https://*.${host}/*`, currentWindow: false }),
+      ].filter((tab, index, all) =>
+        all.findIndex(item => item.id === tab.id) === index);
+    }
+    const candidate = candidates.find(tab => (tab.url || '').startsWith('https://'));
+    const localStorageEntries = candidate ? await exportLocalStorage(candidate, site) : [];
+    const sessionStorageEntries = candidate ? await exportSessionStorage(candidate, site) : [];
+    const storageEntries = [...localStorageEntries, ...sessionStorageEntries];
     const result = await pushToBridge({
       source: 'chrome',
       domain: site || '*',
       cookies,
-      localStorage: localStorageEntries,
+      localStorage: storageEntries,
       at: Date.now(),
     });
     return {
       ok: result?.ok === true,
       domain: site || '*',
       count: cookies.length,
-      localStorage: localStorageEntries.length,
+      localStorage: storageEntries.length,
       tabId: candidate?.id,
     };
   },
