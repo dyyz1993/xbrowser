@@ -95,6 +95,21 @@ xbrowser --cdp 9221 twitter tweets --tweetId "1234567890"
 xbrowser --cdp 9221 twitter replies --tweetId "1234567890" --maxPages 10
 ```
 
+### 7. delete - 按推文 ID 或 URL 删除自己的推文
+
+删除前会打开目标推文并检查菜单中的“删除”选项，确认后再验证目标推文已从页面移除。
+
+**参数：**
+- `--tweet` - 推文 ID 或完整推文 URL（必需）
+
+**示例：**
+```bash
+xbrowser --cdp 9221 twitter delete --tweet 2112054783901331945
+xbrowser --cdp 9221 twitter delete --tweet "https://x.com/elon_trumps/status/2112054783901331945"
+```
+
+成功时返回 `deleted: true` 和解析出的 `tweetId`；目标不存在、菜单没有删除选项或删除未能确认时返回失败。
+
 ## 高影响力账号优化
 
 插件自动识别以下高影响力账号并应用优化策略：

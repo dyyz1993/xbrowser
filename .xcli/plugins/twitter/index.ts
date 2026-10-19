@@ -34,7 +34,7 @@ interface ImageUploadResult {
 type PageWithOptionalFront = Page & { bringToFront?: () => Promise<void> };
 
 function recordTwitterMistake(
-  command: 'post' | 'reply',
+  command: 'post' | 'reply' | 'delete',
   reason: string,
   context: Record<string, unknown> = {},
 ): void {
@@ -53,6 +53,14 @@ function recordTwitterMistake(
     message: reason,
     context: { plugin: 'twitter', reason, ...context },
   });
+}
+
+function tweetIdOrUrl(value: string): string {
+  const trimmed = value.trim();
+  const match = trimmed.match(/status\/(\d+)/) ?? trimmed.match(/^(\d+)$/);
+  const tweetId = match?.[1];
+  if (!tweetId) throw new Error('无法从输入解析推文 ID');
+  return tweetId;
 }
 
 function collectImagePaths(params: ImageParameters): string[] {
@@ -222,6 +230,7 @@ async function uploadImages(
     && (
       process.platform === 'darwin'
       || process.env.XBROWSER_TWITTER_FORCE_PASTE === '1'
+      || process.env.XBROWSER_TWITTER_TEST_PASTE === '1'
     );
 
   if (canPaste) {
@@ -886,6 +895,85 @@ export default function (xcli: XCLIAPI): void {
         return ok({ liked: true }, ['点赞成功', ...tips]);
       } catch (error) {
         return fail(error instanceof Error ? error.message : '点赞失败');
+      }
+    },
+  });
+
+  // ─── 11. delete (删除推文) ────────────────────
+
+  site.command('delete', {
+    description: '删除指定推文',
+    scope: 'browser',
+    loginRequired: 'required',
+    parameters: z.object({
+      tweet: z.string().describe('推文 ID 或推文 URL'),
+    }),
+    examples: [
+      { cmd: 'xbrowser twitter delete --tweet 1234567890', description: '按 ID 删除推文' },
+      { cmd: 'xbrowser twitter delete --tweet "https://x.com/user/status/1234567890"', description: '按 URL 删除推文' },
+    ],
+    result: z.object({ deleted: z.boolean(), tweetId: z.string() }).passthrough(),
+    handler: async (params, ctx) => {
+      const page = ctx.page;
+      if (!page) throw new Error('需要浏览器页面');
+      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+
+      try {
+        const tweetId = tweetIdOrUrl(params.tweet);
+        await page.goto(`${BASE}/i/status/${tweetId}`, { waitUntil: 'domcontentloaded' });
+        await page.waitForTimeout(4000);
+
+        const article = page.locator('article[data-testid="tweet"]').first();
+        try {
+          await article.waitFor({ state: 'visible', timeout: 10_000 });
+        } catch {
+          const bodyText = await page.locator('body').innerText().catch(() => '');
+          if (/页面不存在|post (?:does not|doesn't) exist|post is unavailable/i.test(bodyText)) {
+            throw new Error('目标推文不存在或不可访问');
+          }
+          throw new Error('目标推文未能加载，未执行删除');
+        }
+
+        // First tweet on a status page is the target tweet; open its action menu.
+        const menu = page.locator('article[data-testid="tweet"] [data-testid="caret"]').first();
+        await menu.waitFor({ state: 'visible', timeout: 5000 });
+        await menu.click();
+        await page.waitForTimeout(500);
+
+        const deleteItem = page.locator('[role="menuitem"]').first();
+        await deleteItem.waitFor({ state: 'visible', timeout: 5000 });
+        const deleteLabel = (await deleteItem.innerText()).trim();
+        if (!/^(delete|删除)$/i.test(deleteLabel)) {
+          throw new Error('目标推文不属于当前账号，或菜单中没有删除选项');
+        }
+        await deleteItem.click();
+        await page.waitForTimeout(500);
+
+        const confirm = page.locator('button[data-testid="confirmationSheetConfirm"]');
+        await confirm.waitFor({ state: 'visible', timeout: 5000 });
+        await confirm.click();
+        await page.waitForTimeout(4000);
+
+        const currentUrl = await page.evaluate<string>('location.href');
+        const remainsOnTweet = currentUrl.includes(`/status/${tweetId}`);
+        const tweetStillVisible = await page.evaluate<boolean>((args: unknown[]) => {
+          const id = String(args[0] ?? '');
+          return [...document.querySelectorAll('article[data-testid="tweet"]')].some(article =>
+            [...article.querySelectorAll('a[href]')].some(link =>
+              new URL((link as HTMLAnchorElement).href, location.href).pathname
+                .split('/').some((segment, index, segments) => segment === 'status' && segments[index + 1] === id),
+            ),
+          );
+        }, [tweetId]);
+        if (remainsOnTweet || tweetStillVisible) {
+          throw new Error('X 未离开目标推文页面，无法确认删除成功');
+        }
+
+        return ok({ deleted: true, tweetId }, ['推文已删除', ...tips]);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        recordTwitterMistake('delete', reason, { tweet: params.tweet });
+        return fail(`删除推文失败：${reason}`);
       }
     },
   });

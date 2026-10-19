@@ -136,7 +136,7 @@
 | ths | 1 | `page` |
 | tieba | 1 | `page` |
 | tumblr | 1 | `browser` |
-| twitter | 10 | `browser` |
+| twitter | 11 | `browser` |
 | udio | 6 | `browser` |
 | unsplash | 1 | `browser` |
 | v2ex | 2 | `browser` |

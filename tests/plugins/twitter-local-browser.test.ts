@@ -12,7 +12,7 @@ function handlerOf(name: string): (params: unknown, ctx: unknown) => Promise<Rec
   return call[1].handler;
 }
 
-function fixtureBody(): string {
+function fixtureBody(deleteStayOnStatus: boolean): string {
   return `<!doctype html>
 <html><head><meta charset="utf-8"><title>Twitter fixture</title></head>
 <body>
@@ -20,9 +20,18 @@ function fixtureBody(): string {
   <input type="file" accept="image/*" multiple hidden>
   <div data-testid="attachments"></div>
   <button data-testid="tweetButton">Post</button>
+  <article data-testid="tweet">
+    <a href="/user/status/1234567890">Timestamp</a>
+    <button data-testid="caret">Menu</button>
+  </article>
+  <div role="menu"><div role="menuitem">Delete</div></div>
+  <button data-testid="confirmationSheetConfirm">Delete</button>
   <div id="success"></div>
   <script>
-    window.__fixture = { inputEvents: [], posted: [] };
+    window.__fixture = {
+      inputEvents: [], posted: [], menuOpened: false,
+      deleteMenuClicked: false, deleteConfirmed: false, deleteStayOnStatus: ${deleteStayOnStatus},
+    };
     const editor = document.querySelector('[data-testid="tweetTextarea_0"]');
     editor.addEventListener('paste', event => {
       const images = [...event.clipboardData.files].filter(file => file.type.startsWith('image/'));
@@ -51,6 +60,19 @@ function fixtureBody(): string {
       editor.textContent = '';
       document.getElementById('success').textContent = 'posted';
     });
+    document.querySelector('[data-testid="caret"]').addEventListener('click', () => {
+      window.__fixture.menuOpened = true;
+    });
+    document.querySelector('[role=menuitem]').addEventListener('click', () => {
+      window.__fixture.deleteMenuClicked = true;
+    });
+    document.querySelector('[data-testid="confirmationSheetConfirm"]').addEventListener('click', () => {
+      window.__fixture.deleteConfirmed = true;
+      if (!window.__fixture.deleteStayOnStatus) {
+        history.replaceState(null, '', '/home');
+        document.querySelector('article[data-testid="tweet"]').remove();
+      }
+    });
   </script>
 </body></html>`;
 }
@@ -76,6 +98,7 @@ describe('twitter image upload local browser fixture', { timeout: 90_000 }, () =
   let browser: XBBrowser;
   let context: XBContext;
   let page: XBPage;
+  let keepDeletedTweetVisible = false;
 
   beforeAll(async () => {
     const launched = await launch({ headless: true });
@@ -85,10 +108,11 @@ describe('twitter image upload local browser fixture', { timeout: 90_000 }, () =
   beforeEach(async () => {
     vi.clearAllMocks();
     plugin(mockXCLI as never);
+    keepDeletedTweetVisible = false;
     context = await browser.newContext();
     page = await context.newPage();
     await page.route(/https:\/\/(?:www\.)?x\.com\//, route =>
-      route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: fixtureBody() }),
+      route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: fixtureBody(keepDeletedTweetVisible) }),
     );
   });
 
@@ -190,5 +214,26 @@ describe('twitter image upload local browser fixture', { timeout: 90_000 }, () =
     }, { page });
     expect(result.success).toBe(false);
     expect(await page.evaluate('window.__fixture.posted')).toEqual([]);
+  });
+
+  it('deletes a tweet by ID through the menu and confirmation', async () => {
+    const result = await handlerOf('delete')({ tweet: '1234567890' }, { page });
+    expect(result.success, JSON.stringify(result)).toBe(true);
+    expect(result.data).toEqual({ deleted: true, tweetId: '1234567890' });
+    expect(await page.evaluate('window.__fixture')).toMatchObject({
+      menuOpened: true,
+      deleteMenuClicked: true,
+      deleteConfirmed: true,
+    });
+    expect(await page.evaluate<string>('location.href')).toContain('/home');
+  });
+
+  it('does not report deletion when the target tweet remains visible', async () => {
+    keepDeletedTweetVisible = true;
+
+    const result = await handlerOf('delete')({ tweet: '1234567890' }, { page });
+
+    expect(result.success, JSON.stringify(result)).toBe(false);
+    expect(result.message).toContain('无法确认删除成功');
   });
 });
