@@ -51,6 +51,24 @@ jobs:
           echo "announce=true" >> "$GITHUB_OUTPUT"
           echo "Major/minor release; announcement enabled: $TAG_NAME"
 
+      - name: Load release metadata for manual runs
+        if: github.event_name == 'workflow_dispatch' && steps.version.outputs.announce == 'true'
+        run: |
+          set -e
+          METADATA=$(gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json name,body)
+          NAME=$(node -e 'const x=JSON.parse(process.argv[1]);console.log(x.name||"")' "$METADATA")
+          BODY=$(node -e 'const x=JSON.parse(process.argv[1]);console.log(x.body||"")' "$METADATA")
+          {
+            echo "RELEASE_NAME<<EOF"
+            echo "$NAME"
+            echo "EOF"
+            echo "RELEASE_BODY<<EOF"
+            echo "$BODY"
+            echo "EOF"
+          } >> "$GITHUB_ENV"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - uses: actions/checkout@v4
         if: steps.version.outputs.announce == 'true'
 
