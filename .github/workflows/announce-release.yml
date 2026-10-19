@@ -98,7 +98,7 @@ jobs:
             BODY=$(printf '%s' "$RELEASE_BODY" | sed -e 's/\r$//' -e '/^## /,$d' | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | sed 's/^ //;s/ $//')
           fi
           TWEET="🚀 ${NAME} is live: ${BODY} npm: https://www.npmjs.com/package/@xbrowser/cli?activeTab=versions"
-          TWEET=$(node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const out=s.trim().replace(/\s+/g," ");console.log(out.slice(0,280))}' <<< "$TWEET")
+          TWEET=$(node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const out=s.trim().replace(/\s+/g," ");console.log(out.slice(0,280))})' <<< "$TWEET")
           printf '%s' "$TWEET" > output/twitter/tweet.txt
           {
             echo "TWEET<<EOF"
