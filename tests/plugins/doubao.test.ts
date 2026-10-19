@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/doubao/index.ts';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const mockSite = {
   command: vi.fn(),
@@ -10,6 +13,37 @@ const mockSite = {
 const mockXCLI = {
   createSite: vi.fn(() => mockSite),
 };
+
+function createTempImage(name: string): string {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'doubao-video-')), name);
+  fs.writeFileSync(file, 'test');
+  return file;
+}
+
+function getVideoHandler(): (...args: unknown[]) => Promise<unknown> {
+  const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'video');
+  if (!call) throw new Error('video command not found');
+  return call[1].handler as (...args: unknown[]) => Promise<unknown>;
+}
+
+function createVideoCtx(mockPage: Record<string, unknown> = {}) {
+  return {
+    page: {
+      url: vi.fn(() => 'https://www.doubao.com/chat/'),
+      goto: vi.fn(),
+      waitForTimeout: vi.fn(),
+      waitForSelector: vi.fn(),
+      waitForFunction: vi.fn(),
+      keyboard: { press: vi.fn(async () => undefined) },
+      mouse: { click: vi.fn(async () => undefined) },
+      evaluate: vi.fn(() => Promise.resolve('task123')),
+      ...mockPage,
+    },
+    cdpEndpoint: 'http://localhost:9221',
+    sessionId: 'test',
+    __loginChecked: true,
+  };
+}
 
 describe('doubao plugin', () => {
   beforeEach(() => {
@@ -89,6 +123,83 @@ describe('doubao plugin', () => {
     const config = cmd[1] as Record<string, unknown>;
     expect(config.description).toContain('视频生成');
     expect(config.scope).toBe('browser');
+  });
+
+  describe('video attachments', () => {
+    it('should declare CSV attachment and first/last frame parameters', () => {
+      const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'video')!;
+      const config = cmd[1] as { examples?: Array<{ cmd: string }> };
+      const examples = (config.examples || []).map((e) => e.cmd).join('\n');
+      expect(examples).toContain('--paths');
+      expect(examples).toContain('--firstFrame');
+      expect(examples).toContain('--lastFrame');
+    });
+
+    it('should reject conflicting path and paths before uploading', async () => {
+      const handler = getVideoHandler();
+      const ctx = createVideoCtx();
+      const result = await handler({
+        prompt: 'test',
+        path: '/tmp/a.jpg',
+        paths: '/tmp/b.jpg',
+      }, ctx);
+      expect(result).toMatchObject({ success: false, message: '参数错误' });
+      expect(ctx.page.waitForTimeout).toHaveBeenCalledTimes(1);
+    });
+
+    it('should reject a missing attachment before uploading', async () => {
+      const handler = getVideoHandler();
+      const ctx = createVideoCtx();
+      const result = await handler({ prompt: 'test', firstFrame: '/not/exists.jpg' }, ctx);
+      expect(result).toMatchObject({ success: false, message: '附件文件不存在: /not/exists.jpg' });
+    });
+
+    it('should upload generic attachments in CSV order and report deduped files', async () => {
+      const first = createTempImage('first.jpg');
+      const second = createTempImage('second.jpg');
+      const handler = getVideoHandler();
+      const ctx = createVideoCtx();
+      const result = await handler({
+        prompt: '对比参考图',
+        paths: `${first},${second}`,
+      }, ctx);
+      const data = ((result as Record<string, unknown>).data ?? {}) as Record<string, unknown>;
+      expect(data.attachments).toEqual([
+        { semantic: '附件', path: first },
+        { semantic: '附件', path: second },
+      ]);
+      const provider = data.provider as Record<string, unknown>;
+      expect(provider.attachments).toEqual(data.attachments);
+      expect(JSON.stringify((result as Record<string, unknown>).tips)).toContain('✓ 已上传 2 个附件');
+    });
+
+    it('should upload deduplicated first and last frame attachments', async () => {
+      const first = createTempImage('first.jpg');
+      const last = createTempImage('last.jpg');
+      const handler = getVideoHandler();
+      const ctx = createVideoCtx();
+      const result = await handler({
+        prompt: '从日出过渡到日落',
+        firstFrame: first,
+        lastFrame: last,
+      }, ctx);
+      const data = ((result as Record<string, unknown>).data ?? {}) as Record<string, unknown>;
+      expect(data.attachments).toEqual([
+        { semantic: '首帧', path: first },
+        { semantic: '尾帧', path: last },
+      ]);
+      expect(JSON.stringify((result as Record<string, unknown>).tips)).toContain('✓ 已上传 2 个附件');
+    });
+
+    it('should expose a single last-frame semantic in result and tips', async () => {
+      const only = createTempImage('only.jpg');
+      const handler = getVideoHandler();
+      const ctx = createVideoCtx();
+      const result = await handler({ prompt: '让画面动起来', lastFrame: only }, ctx);
+      const data = ((result as Record<string, unknown>).data ?? {}) as Record<string, unknown>;
+      expect(data.attachments).toEqual([{ semantic: '尾帧', path: only }]);
+      expect(JSON.stringify((result as Record<string, unknown>).tips)).toContain('✓ 已上传 1 个尾帧');
+    });
   });
 
   it('should register video-status command', () => {

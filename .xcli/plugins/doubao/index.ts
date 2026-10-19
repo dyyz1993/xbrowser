@@ -8,7 +8,7 @@ import {
   mediaTaskResultSchema,
   type MediaTaskResult,
 } from '../shared/media-contract.js';
-import { buildTips, uploadFileViaDataTransfer, handleChatAttachments } from '../shared/ai-chat-base.js';
+import { buildTips, uploadFileViaDataTransfer, handleChatAttachments, parsePathsCsv } from '../shared/ai-chat-base.js';
 import { extractAllHDImages } from '../shared/image-lightbox.js';
 import { clickButtonByText } from '../shared/file-upload.js';
 import path from 'path';
@@ -1285,17 +1285,26 @@ export default function (xcli: XCLIAPI): void {
   //  VIDEO GENERATION (async - 3 commands)
   // ═══════════════════════════════════════════════════
 
-  //  10. video — 提交视频生成
+  //  10. video — 提交视频生成（支持通用附件；首/尾帧是同一条提示词里的语义标记）
   site.command('video', {
-    description: '提交视频生成任务（异步，返回 taskId）',
+    description: '提交视频生成任务（异步，支持单/多张图片附件，可显式标记首/尾帧）',
     scope: 'browser',
     parameters: z.object({
       prompt: z.string().describe('视频描述提示词'),
       model: z.enum(['Seedance2.0']).optional().describe('视频模型：Seedance2.0'),
+      path: z.string().optional().describe('单附件路径（默认作为图片参考；首/尾帧用 --lastFrame 或 --firstFrame）'),
+      paths: z.string().optional().describe('多附件路径（CSV；与 --type image 搭配）'),
+      type: z.enum(['image', 'file']).optional().describe('附件类型（保留兼容字段；当前上传流程自动按文件注入）'),
+      firstFrame: z.string().optional().describe('首帧图片路径'),
+      lastFrame: z.string().optional().describe('尾帧图片路径'),
     }),
     examples: [
       { cmd: 'xbrowser doubao video --prompt "一只猫在草地上奔跑"', description: '提交视频生成' },
       { cmd: 'xbrowser doubao video --prompt "赛博朋克城市夜景" --model Seedance2.0', description: '指定模型' },
+      { cmd: 'xbrowser doubao video --prompt "参考这张图生成视频" --path /abs/ref.jpg', description: '图片附件' },
+      { cmd: 'xbrowser doubao video --prompt "对比参考图生成视频" --paths /abs/a.jpg,/abs/b.jpg', description: '多张图片附件' },
+      { cmd: 'xbrowser doubao video --prompt "让画面动起来" --lastFrame /abs/end.jpg', description: '尾帧附件' },
+      { cmd: 'xbrowser doubao video --prompt "从日出过渡到日落" --firstFrame /abs/start.jpg --lastFrame /abs/end.jpg', description: '首尾帧附件' },
     ],
     result: mediaTaskResultSchema,
     handler: async (params, ctx) => {
@@ -1305,6 +1314,60 @@ export default function (xcli: XCLIAPI): void {
         await ensurePage(page, ctx);
         await page.waitForTimeout(2000);
         const tips = buildTips(ctx);
+
+        const attachments = [
+          ...(params.path ? [{ path: params.path, semantic: '附件' }] : []),
+          ...(params.paths ? parsePathsCsv(params.paths).map((p) => ({ path: p, semantic: '附件' })) : []),
+          ...(params.firstFrame ? [{ path: params.firstFrame, semantic: '首帧' }] : []),
+          ...(params.lastFrame ? [{ path: params.lastFrame, semantic: '尾帧' }] : []),
+        ];
+        const seen = new Set<string>();
+        const attachmentList = attachments.filter((item) => {
+          const absPath = path.resolve(item.path);
+          if (seen.has(absPath)) return false;
+          seen.add(absPath);
+          return true;
+        });
+
+        if (params.path && params.paths) {
+          return fail('参数错误', ['--path 与 --paths 不能同时使用']);
+        }
+        for (const item of attachmentList) {
+          const absPath = path.resolve(item.path);
+          if (!fs.existsSync(absPath)) {
+            return fail(`附件文件不存在: ${item.path}`, [...tips, `缺少${item.semantic}: ${absPath}`]);
+          }
+        }
+
+        const attachmentErrors: string[] = [];
+        if (attachmentList.length > 0) {
+          for (const [index, item] of attachmentList.entries()) {
+            const absPath = path.resolve(item.path);
+            if (index > 0) {
+              const clicked = await clickButtonByText(page, '+');
+              if (!clicked) {
+                attachmentErrors.push(`第 ${index + 1}/${attachmentList.length} 个${item.semantic}: 找不到"+"添加按钮`);
+                continue;
+              }
+              await page.waitForTimeout(500);
+            }
+            const uploaded = await uploadFileViaDataTransfer(page, absPath);
+            if (uploaded) {
+              await page.waitForTimeout(1200);
+            } else {
+              attachmentErrors.push(`第 ${index + 1}/${attachmentList.length} 个${item.semantic}: 找不到 file input 或上传失败`);
+            }
+          }
+          if (attachmentErrors.length > 0) {
+            return fail('附件上传失败', [...tips, ...attachmentErrors]);
+          }
+          tips.push(`✓ 已上传 ${attachmentList.length} 个${attachmentList.length === 1 ? attachmentList[0]!.semantic : '附件'}`);
+        }
+
+        const attachmentNotes = attachmentList
+          .map((item) => `- ${item.semantic}: ${path.basename(item.path)}`)
+          .join('\n');
+        const message = `生成视频: ${params.prompt}${attachmentNotes ? `\n${attachmentNotes}` : ''}`;
 
         const inputFound = await page.evaluate((msg: string) => {
           const selectors = ['textarea', '[contenteditable="true"]', '[role="textbox"]', '[class*="chat-input"] textarea'];
@@ -1322,7 +1385,7 @@ export default function (xcli: XCLIAPI): void {
             }
           }
           return false;
-        }, `生成视频: ${params.prompt}`);
+        }, message);
 
         if (!inputFound) throw new Error('找不到输入框');
 
@@ -1341,15 +1404,25 @@ export default function (xcli: XCLIAPI): void {
           return urlParts ? urlParts[1] : '';
         });
 
+        const safeTaskId = typeof taskId === 'string' ? taskId : '';
+        const attachmentsResult = attachmentList.map((item) => ({
+          semantic: item.semantic,
+          path: path.resolve(item.path),
+        }));
+        const taskResult = toDoubaoTaskResult({
+          taskId: safeTaskId || `doubao-video-${Date.now()}`,
+          status: 'submitted',
+        });
         return ok({
-          ...toDoubaoTaskResult({
-            taskId: taskId || `doubao-video-${Date.now()}`,
-            status: 'submitted',
-            provider: { providerTaskId: taskId || null },
-          }),
+          ...taskResult,
           prompt: params.prompt,
-        }, taskId
-            ? [...tips, `taskId: ${taskId}`]
+          attachments: attachmentsResult,
+          provider: {
+            providerTaskId: safeTaskId || null,
+            attachments: attachmentsResult,
+          },
+        }, safeTaskId
+            ? [...tips, `taskId: ${safeTaskId}`]
             : [...tips, '无法提取 taskId，请使用 video-status 检查任务状态']);
       } catch {
         return fail('未知错误', ['提交视频生成失败']);
