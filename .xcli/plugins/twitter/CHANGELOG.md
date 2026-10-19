@@ -1,5 +1,15 @@
 # Changelog
 
+## [4.1.0] - 2026-10-19
+
+### Added
+- `post` and `reply` support image attachments with clipboard paste first and safe file-input fallback
+- `delete` removes an owned tweet by tweet ID or URL and verifies the tweet disappears
+- Command metadata now includes all 11 registered commands
+
+### Changed
+- Updated command metadata and plugin version for marketplace distribution
+
 ## [2.0.0] - 2026-05-10
 
 ### Added

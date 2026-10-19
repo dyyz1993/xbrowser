@@ -19,7 +19,7 @@
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
   "type": "module",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "xbrowser": {
     "author": "XBrowser Team",
     "commands": [
@@ -28,7 +28,12 @@
       "timeline",
       "replies",
       "liked",
-      "search-image"
+      "search-image",
+      "post",
+      "reply",
+      "retweet",
+      "like",
+      "delete"
     ],
     "description": "X (Twitter) 数据采集插件（XHR 拦截模式）",
     "name": "twitter",
@@ -42,6 +47,6 @@
       "twitter",
       "social-media"
     ],
-    "version": "4.0.0"
+    "version": "4.1.0"
   }
 }
