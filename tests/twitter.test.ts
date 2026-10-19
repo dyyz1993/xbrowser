@@ -90,13 +90,13 @@ describe('Twitter Plugin', () => {
       }));
     });
 
-    it('should register 11 commands', () => {
-      expect(mockSite.command).toHaveBeenCalledTimes(11);
+    it('should register 12 commands', () => {
+      expect(mockSite.command).toHaveBeenCalledTimes(12);
     });
 
     it('should register expected command names', () => {
       const names = Array.from(commands.keys());
-      expect(names).toEqual(['search', 'profile', 'timeline', 'replies', 'liked', 'search-image', 'post', 'reply', 'retweet', 'like', 'delete']);
+      expect(names).toEqual(['search', 'profile', 'timeline', 'replies', 'liked', 'search-image', 'post', 'post-api', 'reply', 'retweet', 'like', 'delete']);
     });
 
     it('should register login and logout handlers', () => {
@@ -104,7 +104,8 @@ describe('Twitter Plugin', () => {
       expect(mockSite.logout).toHaveBeenCalledTimes(1);
     });
 
-    it('all commands should have scope browser', () => {
+    it('all browser commands should have scope browser', () => {
+      commands.delete('post-api');
       for (const [, cfg] of commands) {
         expect(cfg.scope).toBe('browser');
       }
