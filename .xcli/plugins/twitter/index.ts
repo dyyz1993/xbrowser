@@ -172,7 +172,9 @@ async function pasteImages(
       await (page as PageWithOptionalFront).bringToFront?.();
       const editor = page.locator('[data-testid="tweetTextarea_0"]');
       await editor.click({ timeout: 5000 });
-      await writeClipboardImage(filePath);
+      if (process.env.XBROWSER_TWITTER_TEST_PASTE !== '1') {
+        await writeClipboardImage(filePath);
+      }
       await sendPasteKeystroke(page, filePath);
       await waitForAttachmentCount(page, pasted + 1, 12_000);
       pasted += 1;
