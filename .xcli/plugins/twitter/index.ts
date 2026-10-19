@@ -103,7 +103,7 @@ async function writeClipboardImage(filePath: string): Promise<void> {
 }
 
 async function sendPasteKeystroke(page: Page, filePath: string): Promise<void> {
-  if (process.env.XBROWSER_TWITTER_TEST_PASTE === '1') {
+  if (process.env.XBROWSER_TWITTER_FORCE_PASTE === '1') {
     const bytes = await fs.promises.readFile(filePath);
     await page.evaluate(async (payload: { data: string; name: string }) => {
       const binary = atob(payload.data);
@@ -218,8 +218,11 @@ async function uploadImages(
   const initialCount = await countAttachments(page).catch(() => 0);
   let pasted = 0;
   let pasteReason: string | undefined;
-  const canPaste = process.platform === 'darwin'
-    && process.env.XBROWSER_TWITTER_DISABLE_PASTE !== '1';
+  const canPaste = process.env.XBROWSER_TWITTER_DISABLE_PASTE !== '1'
+    && (
+      process.platform === 'darwin'
+      || process.env.XBROWSER_TWITTER_FORCE_PASTE === '1'
+    );
 
   if (canPaste) {
     const result = await pasteImages(page, filePaths);

@@ -95,9 +95,11 @@ describe('twitter image upload local browser fixture', { timeout: 90_000 }, () =
   afterEach(async () => {
     await context.close();
     delete process.env.XBROWSER_TWITTER_DISABLE_PASTE;
+    delete process.env.XBROWSER_TWITTER_FORCE_PASTE;
   });
 
   it('posts one image through native clipboard paste', async () => {
+    process.env.XBROWSER_TWITTER_FORCE_PASTE = '1';
     const [image] = await makeImages('/tmp', 1);
     const result = await handlerOf('post')({ text: 'paste one', image }, { page });
 
@@ -115,6 +117,7 @@ describe('twitter image upload local browser fixture', { timeout: 90_000 }, () =
   });
 
   it('posts multiple images sequentially', async () => {
+    process.env.XBROWSER_TWITTER_FORCE_PASTE = '1';
     const images = await makeImages('/tmp', 3);
     const result = await handlerOf('post')({ text: 'paste many', images: images.join(',') }, { page });
 
