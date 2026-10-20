@@ -1,0 +1,41 @@
+{
+  "startUrl": "https://juejin.cn/login",
+  "actions": [
+    {
+      "id": 1,
+      "type": "input",
+      "timestamp": 1000,
+      "url": "https://juejin.cn/login",
+      "pageTitle": "登录",
+      "element": { "tag": "input", "type": "text", "selector": "#username", "text": "", "placeholder": "账号" },
+      "value": "alice"
+    },
+    {
+      "id": 2,
+      "type": "input",
+      "timestamp": 1200,
+      "url": "https://juejin.cn/login",
+      "pageTitle": "登录",
+      "element": { "tag": "input", "type": "password", "selector": "#password", "text": "" },
+      "value": "testpass123"
+    },
+    {
+      "id": 3,
+      "type": "click",
+      "timestamp": 1400,
+      "url": "https://juejin.cn/login",
+      "pageTitle": "登录",
+      "element": { "tag": "button", "selector": "#login", "text": "登录" }
+    },
+    {
+      "id": 4,
+      "type": "filechooser",
+      "timestamp": 3000,
+      "url": "https://juejin.cn/upload",
+      "pageTitle": "上传",
+      "files": { "names": ["cover.png", "article.md"], "count": 2, "isMultiple": true }
+    }
+  ],
+  "checkpoints": [],
+  "contextChanges": []
+}

@@ -27,7 +27,7 @@ describe('summarize 端到端', () => {
       noLlm: true,
       dryRun: true,
     });
-    expect(result.totalActions).toBe(6);
+    expect(result.totalActions).toBe(4);
     expect(result.topics).toHaveLength(2);
     const intents = result.topics.map(t => t.intent);
     expect(intents).toEqual(expect.arrayContaining(['login', 'upload']));
