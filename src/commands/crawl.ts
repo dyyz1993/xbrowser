@@ -261,7 +261,7 @@ export const crawlCommand = registerCommand({
     allowSubdomains: z.boolean().default(false),
     allowExternalLinks: z.boolean().default(false),
     allowBackwardCrawling: z.boolean().default(false),
-	    enableSpa: z.boolean().default(true).describe('Disable to skip SPA route detection'),
+    enableSpa: z.boolean().default(true).describe('Disable to skip SPA route detection'),
     format: z.enum(['markdown', 'html']).default('markdown'),
     onlyMainContent: z.boolean().default(true),
     concurrency: z.number().default(3),
@@ -324,7 +324,13 @@ export const crawlCommand = registerCommand({
         const firstLinks = await extractLinks(seedPage, startUrl.origin);
         // If SPA mode enabled, also detect Vue/React routes and add to queue
         if (options.enableSpa) {
-          const spaRoutes = await detectSpaRoutes(seedPage, startUrl.origin);
+          let spaRoutes: string[] = [];
+          try {
+            spaRoutes = await detectSpaRoutes(seedPage, startUrl.origin);
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            process.stderr.write(`[SPA] Route detection failed: ${message}\n`);
+          }
           for (const route of spaRoutes) {
             try {
               const absNorm = normalizeUrl(stripHashAnchorQuery(route));

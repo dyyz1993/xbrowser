@@ -349,4 +349,11 @@ describe('Crawl - Command Registration', () => {
     expect(cmd?.name).toBe('crawl');
     expect(cmd?.scope).toBe('project');
   });
+
+  it('keeps SPA detection enabled by default and opt-out only', async () => {
+    const { getCommand } = await import('../../src/commands/index.js');
+    const cmd = getCommand('crawl');
+    const parameters = cmd?.parameters as { shape?: Record<string, unknown> } | undefined;
+    expect(parameters?.shape?.enableSpa).toBeDefined();
+  });
 });
