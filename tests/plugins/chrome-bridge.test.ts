@@ -243,6 +243,26 @@ describe('chrome-bridge plugin', () => {
     expect(body.cmd).toBe('task-close');
   });
 
+  it('routes cdp, task, attach, and finish through healthy-socket selection', async () => {
+    const fetchMock = vi.fn((_url: unknown, _init?: unknown): Promise<{ json(): Promise<unknown> }> => Promise.resolve({
+      json: () => Promise.resolve({ ok: true, data: {} }),
+    }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { site, xcli } = makeMock();
+    chromeBridge(xcli as never);
+
+    await getCmd(site, 'cdp')({ method: 'Runtime.evaluate', params: { expression: '1' } }, {});
+    await getCmd(site, 'task')({ action: 'list' }, {});
+    await getCmd(site, 'attach')({ task: 'demo' }, {});
+    await getCmd(site, 'finish')({}, {});
+
+    for (const call of fetchMock.mock.calls) {
+      expect(String(call[0])).not.toContain('client=0');
+      expect(String(call[0])).toBe('http://127.0.0.1:9347/exec');
+    }
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
   it('registers attach and finish among commands', () => {
     const { site, xcli } = makeMock();
     chromeBridge(xcli as never);

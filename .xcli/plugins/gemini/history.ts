@@ -9,6 +9,17 @@ import {
 
 const DOWNLOAD_DIR = path.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads');
 
+type HistoryRuntime = {
+  ev: typeof ev;
+  sleep: typeof sleep;
+};
+
+const runtime: HistoryRuntime = { ev, sleep };
+
+export function setHistoryRuntime(next: Partial<HistoryRuntime>): void {
+  Object.assign(runtime, next);
+}
+
 type Session = { title: string; href: string };
 
 async function listSessions(tabId: number): Promise<Session[]> {
@@ -25,25 +36,66 @@ async function listSessions(tabId: number): Promise<Session[]> {
 async function waitForVideo(tabId: number, secs: number): Promise<string | null> {
   for (let i = 0; i < secs / 2; i++) {
     await sleep(2000);
-    const raw = await ev<string>('JSON.stringify({hasVideo:!!document.querySelector("video"),src:(document.querySelector("video")||{}).src||""})', tabId);
+    const raw = await ev<string>('JSON.stringify({hasVideo:!!document.querySelector("video"),src:((document.querySelector("video")||{}).currentSrc||(document.querySelector("video")||{}).src||"")})', tabId);
     const s = JSON.parse(raw || '{}') as { hasVideo: boolean; src: string };
     if (s.hasVideo && s.src.startsWith('http')) return s.src;
   }
   return null;
 }
 
-async function downloadVideo(tabId: number, videoSrc: string): Promise<{ data: string; size: number } | null> {
-  const val = await ev<string>(
-    `(async()=>{const r=await fetch("${videoSrc}",{credentials:"include"});` +
-    `if(!r.ok)return "ERR:"+r.status;` +
-    `const b=await r.arrayBuffer();const u8=new Uint8Array(b);let s="";` +
-    `for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));` +
-    `return "data:video/mp4;base64,"+btoa(s)})()`,
-    tabId,
-  );
-  if (!val?.startsWith('data:')) return null;
-  const buf = Buffer.from(val.split(',')[1], 'base64');
-  return { data: val, size: buf.length };
+export async function downloadVideo(tabId: number, videoSrc: string): Promise<{ data: string; size: number; buffer: Buffer } | null> {
+  // Do not await the download inside Runtime.evaluate: chrome-bridge rejects a
+  // single debugger call after 12s. Keep the fetch running in the page and
+  // poll its small JSON state instead.
+  const setupExpression = buildVideoDownloadSetupExpression(videoSrc);
+  const setup = await runtime.ev<string>(setupExpression, tabId);
+  if (typeof setup !== 'string') return null;
+
+  let total = 0;
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    const raw = await runtime.ev<string>('JSON.stringify(window.__xVideoState||{})', tabId);
+    const state = typeof raw === 'string' ? JSON.parse(raw || '{}') as { ready?: boolean; size?: number; error?: string | null } : raw ?? {};
+    if (state.error) return null;
+    if (state.ready === true && Number(state.size) > 0) {
+      total = Number(state.size);
+      break;
+    }
+    await runtime.sleep(500);
+  }
+  if (!total) return null;
+
+  const chunks: Buffer[] = [];
+  const chunkSize = 768 * 1024;
+  for (let offset = 0; offset < total; offset += chunkSize) {
+    const chunk = await runtime.ev<string>(
+      `(async()=>{
+        const blob=window.__xVideoBlob;
+        if(!blob) return "ERR:missing blob";
+        const part=blob.slice(${offset},Math.min(${offset + chunkSize},blob.size));
+        const u8=new Uint8Array(await part.arrayBuffer());
+        let text="";
+        for(let i=0;i<u8.length;i+=0x8000)text+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));
+        return btoa(text);
+      })()`,
+      tabId,
+    );
+    if (typeof chunk !== 'string' || chunk.startsWith('ERR:')) return null;
+    chunks.push(Buffer.from(chunk, 'base64'));
+  }
+  await runtime.ev('delete window.__xVideoBlob;delete window.__xVideoState', tabId);
+  return { data: 'data:video/mp4;base64,', size: chunks.reduce((sum, chunk) => sum + chunk.length, 0), buffer: Buffer.concat(chunks) };
+}
+
+/** Retained for callers/tests that need a stable setup expression contract. */
+export function buildVideoDownloadSetupExpression(videoSrc: string): string {
+  return `(window.__xVideoState={ready:false,size:0,error:null},
+    fetch(${JSON.stringify(videoSrc)},{credentials:"include"}).then(async(r)=>{
+      if(!r.ok) throw new Error("HTTP "+r.status);
+      window.__xVideoBlob=await r.blob();
+      window.__xVideoState={ready:true,size:window.__xVideoBlob.size,error:null};
+    }).catch((e)=>{window.__xVideoState={ready:false,size:0,error:String(e)}}),
+    JSON.stringify(window.__xVideoState))`;
 }
 
 interface CommandRegistrar {
@@ -104,7 +156,7 @@ export function registerHistoryCommands(site: CommandRegistrar): void {
         const filePath = path.join(DOWNLOAD_DIR, `gemini_history_${Date.now()}.mp4`);
         const result = await downloadVideo(tabId, videoUrl);
         if (!result) return fail('视频下载失败');
-        fs.writeFileSync(filePath, Buffer.from(result.data.split(',')[1], 'base64'));
+        fs.writeFileSync(filePath, result.buffer);
 
         return ok(mediaDownloadResultSchema.parse({
           ok: true,
@@ -117,6 +169,51 @@ export function registerHistoryCommands(site: CommandRegistrar): void {
           `会话URL: ${target.href}`,
           `已从历史记录下载: ${filePath}`,
         ]);
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : '下载失败');
+      } finally {
+        await bridgeExec('task-close', { name: taskId });
+      }
+    },
+  });
+
+  site.command('download-video', {
+    description: '从指定 Gemini 会话 URL 下载已生成视频（不重新生成）',
+    scope: 'project' as const,
+    parameters: z.object({
+      url: z.string().url().describe('Gemini 会话 URL'),
+      timeout: z.number().min(10).max(180).default(60).describe('等待视频加载秒数'),
+    }),
+    result: mediaDownloadResultSchema,
+    examples: [{
+      cmd: 'xbrowser gemini download-video --url https://gemini.google.com/app/xxx',
+      description: '恢复下载已生成视频',
+    }],
+    handler: async (params: { url: string; timeout: number }) => {
+      const taskId = `download-${Date.now()}`;
+      const open = await bridgeExec('task-open', { name: taskId, url: params.url });
+      if (!open?.ok) return fail('chrome-bridge 未启动');
+      const tabId = (open.data as { tabId: number }).tabId;
+
+      try {
+        await sleep(8000);
+        const videoUrl = await waitForVideo(tabId, params.timeout);
+        if (!videoUrl) return fail('视频加载超时', [`会话URL: ${params.url}`]);
+
+        fs.mkdirSync(DOWNLOAD_DIR, { recursive: true });
+        const filePath = path.join(DOWNLOAD_DIR, `gemini_session_${Date.now()}.mp4`);
+        const result = await downloadVideo(tabId, videoUrl);
+        if (!result) return fail('视频下载失败', [`mediaUrl: ${videoUrl}`]);
+        fs.writeFileSync(filePath, result.buffer);
+        if (fs.statSync(filePath).size < 10_000) throw new Error('下载内容异常');
+
+        return ok(mediaDownloadResultSchema.parse({
+          ok: true,
+          taskId,
+          mediaUrl: videoUrl,
+          localPath: filePath,
+          sizeBytes: fs.statSync(filePath).size,
+        }), [`会话URL: ${params.url}`, `已下载: ${filePath}`]);
       } catch (error) {
         return fail(error instanceof Error ? error.message : '下载失败');
       } finally {

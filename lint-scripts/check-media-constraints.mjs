@@ -30,6 +30,7 @@ const STATUS_COMMANDS = new Set([
   'status', 'result',
 ]);
 const REQUIRED_RESULT_FIELDS = ['taskId', 'status', 'mediaUrl', 'localPath'];
+const GEMINI_UPLOAD_FILE = join(PLUGINS_DIR, 'gemini', 'generate.ts');
 
 const args = new Set(process.argv.slice(2));
 const allowUpdate = args.has('--update');
@@ -109,6 +110,22 @@ for (const pluginName of pluginDirs()) {
     if (GENERATE_COMMANDS.has(commandName) && !hasModeVerification(configText, source)) {
       debt.push(`${key}: switches a generation mode but does not verify the selected mode before submit`);
     }
+  }
+}
+
+// Gemini image attachments cross the OS clipboard boundary. CDP key events
+// cannot carry macOS clipboard image bytes, so requiring System Events also
+// prevents reintroducing the silent no-op Cmd+V failure.
+if (existsSync(GEMINI_UPLOAD_FILE)) {
+  const source = readFileSync(GEMINI_UPLOAD_FILE, 'utf8');
+  const executable = stripComments(source);
+  const pasteBoundary = executable.includes('System Events')
+    && executable.includes('keystroke "v" using command down')
+    && executable.includes('img[alt="attachment"]');
+  if (!pasteBoundary) {
+    errors.push(
+      'gemini.generate: image attachments must use macOS System Events paste and verify visible attachment previews',
+    );
   }
 }
 

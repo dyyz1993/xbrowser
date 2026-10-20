@@ -36,7 +36,7 @@ xbrowser --cdp 9221 doubao <command>
 | `image-cutout` | AI 抠图（背景移除） |
 | `image-vary` | 以图生图（Variation），基于参考图生成变体 |
 | `my-creations` | 查看创作历史（图片/视频/全部） |
-| `video` | 提交视频生成任务（异步） |
+| `video` | 提交视频生成任务（异步；支持单/多张图片附件，`--lastFrame` / `--firstFrame` 会作为首/尾帧语义一起提交） |
 | `video-status` | 检查视频生成任务状态 |
 | `video-result` | 获取已完成视频的 URL |
 | `music` | 通过豆包音乐生成面板创建音乐 |
@@ -79,6 +79,9 @@ xbrowser --cdp 9221 doubao my-creations
 ```
 ```bash
 xbrowser --cdp 9221 doubao video
+```
+```bash
+xbrowser --cdp 9221 doubao video --prompt "让画面动起来" --lastFrame /absolute/path/end.jpg
 ```
 ```bash
 xbrowser --cdp 9221 doubao video-status

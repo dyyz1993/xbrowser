@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import plugin from '../../.xcli/plugins/gemini/index.ts';
 import { parseUsageText, usageCommandHandler } from '../../.xcli/plugins/gemini/usage.ts';
 import { musicCommandHandler, musicStatusHandler, setMusicDownloader, setMusicRuntime } from '../../.xcli/plugins/gemini/music.ts';
+import { setGenerateRuntime, uploadAttachments } from '../../.xcli/plugins/gemini/generate.ts';
+import { buildVideoDownloadSetupExpression, downloadVideo, setHistoryRuntime } from '../../.xcli/plugins/gemini/history.ts';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -50,13 +52,109 @@ const ALL_COMMANDS = [
   'task-open', 'task-close', 'task-list',
   'generate-image', 'generate-video',
   'history-list', 'history-download-video',
+  'download-video',
   'music', 'music-status',
 ];
 
 describe('gemini plugin', () => {
+  afterAll(() => {
+    vi.restoreAllMocks();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     plugin(mockXCLI as unknown as Parameters<typeof plugin>[0]);
+  });
+
+  describe('video recovery', () => {
+    afterEach(() => {
+      setHistoryRuntime({ ev: vi.fn(), sleep: vi.fn() });
+      setGenerateRuntime({ bridgeExec: vi.fn(), cdp: vi.fn(), ev: vi.fn(), sleep: vi.fn(), pasteImage: undefined });
+    });
+
+    it('downloads Gemini video in bounded debugger calls', async () => {
+      const bytes = Buffer.from('test-video-bytes');
+      const expressions: string[] = [];
+      setHistoryRuntime({
+        ev: vi.fn((expression: string) => {
+          expressions.push(expression);
+          if (expression.includes('window.__xVideoState={ready:false')) {
+            return Promise.resolve('{"ready":false,"size":0,"error":null}');
+          }
+          if (expression.includes('JSON.stringify(window.__xVideoState')) {
+            return Promise.resolve(`{"ready":true,"size":${bytes.length},"error":null}`);
+          }
+          if (expression.includes('blob.slice')) {
+            return Promise.resolve(bytes.toString('base64'));
+          }
+          if (expression.includes('delete window.__xVideoBlob')) {
+            return Promise.resolve(undefined);
+          }
+          return Promise.resolve(undefined);
+        }) as never,
+        sleep: vi.fn(() => Promise.resolve()) as never,
+      });
+
+      const setup = buildVideoDownloadSetupExpression('https://gemini.example/video.mp4');
+      expect(setup).toContain('window.__xVideoState={ready:false');
+      expect(setup).toContain('credentials:"include"');
+
+      const result = await downloadVideo(42, 'https://gemini.example/video.mp4');
+      expect(result?.buffer.equals(bytes)).toBe(true);
+      expect(result?.size).toBe(bytes.length);
+      expect(expressions.filter(expression => expression.includes('blob.slice'))).toHaveLength(1);
+    });
+
+    it('returns a resumable session task after generation timeout', async () => {
+      const fs = await import('node:fs');
+      const os = await import('node:os');
+      const path = await import('node:path');
+      const first = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gemini-video-')), 'first.png');
+      const last = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'gemini-video-')), 'last.png');
+      fs.writeFileSync(first, 'first');
+      fs.writeFileSync(last, 'last');
+      let attachmentCount = 0;
+      setGenerateRuntime({
+        bridgeExec: vi.fn((command: string) => command === 'task-open'
+          ? Promise.resolve({ ok: true, data: { tabId: 88 } })
+          : Promise.resolve({ ok: true })) as never,
+        cdp: vi.fn(() => Promise.resolve(undefined)) as never,
+        ev: vi.fn((expression: string) => {
+          if (expression.includes('alt="attachment"')) return Promise.resolve(++attachmentCount);
+          if (expression.includes('ready:document.readyState')) return Promise.resolve('{"ready":"complete","editor":true}');
+          if (expression.includes('toolbox-drawer')) return Promise.resolve('{"open":true}');
+          if (expression.includes('aria-label') && expression.includes('上传和工具')) {
+            return Promise.resolve('{ "x": 0, "y": 0, "width": 10, "height": 10 }');
+          }
+          if (expression.includes('targetLabel') || expression.includes('制作视频')) {
+            return Promise.resolve('{ "x": 0, "y": 0, "width": 10, "height": 10 }');
+          }
+          if (expression.includes('取消选择')) return Promise.resolve(true);
+          if (expression.includes('activeElement')) return Promise.resolve(true);
+          if (expression.includes('textContent||""')) return Promise.resolve('从首帧平滑运镜到尾帧');
+          if (expression.includes('aria-label') && expression.includes('发送')) return Promise.resolve(true);
+          if (expression.includes('location.href')) return Promise.resolve('https://gemini.google.com/app/session-88');
+          if (expression.includes('JSON.stringify({imgs:')) {
+            return Promise.resolve('{"imgs":[],"videos":[]}');
+          }
+          return Promise.resolve(undefined);
+        }) as never,
+        sleep: vi.fn(() => Promise.resolve()) as never,
+        pasteImage: vi.fn(() => Promise.resolve()) as never,
+      });
+
+      const handler = getHandler('generate-video');
+      const result = await handler({
+        prompt: '从首帧平滑运镜到尾帧',
+        timeout: 30,
+        firstFrame: first,
+        lastFrame: last,
+      }) as Record<string, unknown>;
+      const data = (result.data ?? {}) as Record<string, unknown>;
+      expect(result.success).toBe(true);
+      expect(data.status).toBe('timeout');
+      expect(data.sessionUrl).toContain('/session-88');
+    });
   });
 
   // ─── 注册测试 ───
@@ -205,6 +303,15 @@ describe('gemini plugin', () => {
       expect(data.weekly.usedPercent).toBe(1);
       expect(data.sourceUrl).toContain('/usage');
       expect(page.goto).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('download-video command', () => {
+    it('should have project scope and a session URL parameter', () => {
+      const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'download-video');
+      const config = cmd![1] as Record<string, unknown>;
+      expect(config.scope).toBe('project');
+      expect(JSON.stringify(config.parameters)).toContain('url');
     });
   });
 
@@ -409,6 +516,90 @@ describe('gemini plugin', () => {
       }) as unknown as Record<string, unknown>;
       expect(result.success).toBe(false);
       expect(result.message).toContain('等待音乐超时');
+    });
+  });
+
+  describe('generate command', () => {
+    afterEach(() => {
+      setGenerateRuntime({ bridgeExec: vi.fn(), cdp: vi.fn(), ev: vi.fn(), sleep: vi.fn(), pasteImage: undefined });
+    });
+
+    it('reports Google anti-automation blocks before missing-tool errors', async () => {
+      setGenerateRuntime({
+        bridgeExec: vi.fn((command: string) => {
+          if (command === 'task-open') return Promise.resolve({ ok: true, data: { tabId: 77 } });
+          return Promise.resolve({ ok: true });
+        }) as never,
+        cdp: vi.fn(() => Promise.resolve(undefined)) as never,
+        ev: vi.fn((expression: string) => {
+          if (expression.includes('location.href')) {
+            return Promise.resolve({
+              href: 'https://www.google.com/sorry/index?continue=https://gemini.google.com/app',
+              text: '我们的系统检测到您的计算机网络中存在异常流量',
+            });
+          }
+          return Promise.resolve('null');
+        }) as never,
+        sleep: vi.fn(() => Promise.resolve()) as never,
+      });
+
+      const handler = getHandler('generate-video');
+      const result = await handler({ prompt: 'a calm sea', timeout: 30 }) as Record<string, unknown>;
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('Google 反自动化拦截');
+    });
+
+    it('declares CSV attachments and first/last-frame parameters', () => {
+      const video = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'generate-video');
+      const config = (video![1] as { parameters: { shape?: Record<string, unknown> } }).parameters;
+      expect(JSON.stringify(config)).toContain('firstFrame');
+      expect(JSON.stringify(config)).toContain('lastFrame');
+      expect(JSON.stringify(config)).toContain('paths');
+    });
+
+    it('rejects conflicting path and paths before uploading', async () => {
+      const handler = getHandler('generate-video');
+      setGenerateRuntime({
+        bridgeExec: vi.fn(() => Promise.resolve({ ok: true, data: { tabId: 42 } })) as never,
+        cdp: vi.fn(() => Promise.resolve(undefined)) as never,
+        ev: vi.fn(() => Promise.resolve({ ready: 'complete', editor: true })) as never,
+        sleep: vi.fn(() => Promise.resolve()) as never,
+      });
+      const result = await handler({ prompt: 'test', timeout: 30, path: '/a.png', paths: '/b.png' }) as Record<string, unknown>;
+      expect(result).toMatchObject({ success: false, message: '参数错误' });
+    });
+
+    it('rejects missing attachments before uploading', async () => {
+      const handler = getHandler('generate-video');
+      setGenerateRuntime({
+        bridgeExec: vi.fn(() => Promise.resolve({ ok: true, data: { tabId: 42 } })) as never,
+        cdp: vi.fn(() => Promise.resolve(undefined)) as never,
+        ev: vi.fn(() => Promise.resolve({ ready: 'complete', editor: true })) as never,
+        sleep: vi.fn(() => Promise.resolve()) as never,
+      });
+      const result = await handler({ prompt: 'test', timeout: 30, firstFrame: '/not-exists.png' }) as Record<string, unknown>;
+      expect(result.message).toContain('附件文件不存在');
+    });
+
+    it('uploads attachments one by one with DOM count verification', async () => {
+      const pasteImage = vi.fn(async (): Promise<void> => undefined);
+      let count = 0;
+      setGenerateRuntime({
+        bridgeExec: vi.fn((command: string) => command === 'task-open'
+          ? Promise.resolve({ ok: true, data: { tabId: 42 } })
+          : Promise.resolve({ ok: true })) as never,
+        cdp: vi.fn(() => Promise.resolve(undefined)) as never,
+        ev: vi.fn(() => Promise.resolve(++count)) as never,
+        sleep: vi.fn(() => Promise.resolve()) as never,
+        pasteImage,
+      });
+
+      const uploaded = await uploadAttachments(42, [
+        { path: '/tmp/first.png', semantic: '首帧' },
+        { path: '/tmp/last.png', semantic: '尾帧' },
+      ]);
+      expect(pasteImage).toHaveBeenCalledTimes(2);
+      expect(uploaded).toBe(2);
     });
   });
 

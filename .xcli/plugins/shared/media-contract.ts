@@ -95,6 +95,7 @@ export function normalizeMediaStatus(value: unknown): MediaStatus {
   if (COMPLETED_HINTS.some((hint) => raw.includes(hint))) return 'completed';
   if (FAILED_HINTS.some((hint) => raw.includes(hint))) return 'failed';
   if (raw === '3') return 'completed';
+  if (raw === 'timeout' || raw === 'timed out') return 'timeout';
   if (PROCESSING_HINTS.some((hint) => raw.includes(hint))) return 'processing';
   return 'processing';
 }

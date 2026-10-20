@@ -16,7 +16,8 @@ async function bridgeExec(cmd: string, args: Record<string, unknown> = {}): Prom
 async function cdp<T = unknown>(method: string, params: Record<string, unknown>, tabId: number): Promise<T> {
   const r = await bridgeExec('cdp', { method, params, tabId });
   if (!r?.ok) throw new Error(r?.error || 'bridge failed');
-  return (r.data as { data?: T })?.data as T;
+  const data = r.data as { data?: unknown } | undefined;
+  return (data?.data ?? r.data) as T;
 }
 
 async function ev<T = unknown>(expression: string, tabId: number): Promise<T> {

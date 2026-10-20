@@ -1,7 +1,7 @@
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
-import { buildTips, batchUploadFiles, handleChatAttachments } from '../shared/ai-chat-base.js';
+import { buildTips, createAttachmentUploadOptions, handleChatAttachments, uploadFilesPreferClipboard } from '../shared/ai-chat-base.js';
 
 type Page = import('../types').Page;
 
@@ -515,7 +515,8 @@ export default function (xcli: XCLIAPI): void {
       ];
       if (list.length === 0) return fail('参数错误', ['--path 或 --paths 至少二选一']);
 
-      const r = await batchUploadFiles(page, list);
+      const options = createAttachmentUploadOptions(page);
+      const r = await uploadFilesPreferClipboard(page, list, options);
       if (r.errors.length > 0) tips.push(...r.errors.map((e) => `⚠ ${e}`));
       if (r.uploaded === 0) {
         return fail('上传失败', ['找不到 file input，请检查 Claude 是否支持该类型']);
