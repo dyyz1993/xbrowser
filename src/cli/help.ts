@@ -35,6 +35,7 @@ Commands:
   scroll <direction> [--distance N] Scroll page
 
   screenshot [--full-page] [--base64]  Take screenshot
+  snapshot                          Page snapshot: interactive @refs by default (--type aria/text/dom for other modes)
   eval <expression>                 Evaluate JS
   wait <selector> [--timeout <ms>]  Wait for element (-s <sel>)
   waitForTimeout <ms>               Wait for milliseconds

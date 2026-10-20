@@ -463,21 +463,24 @@ xbrowser screenshot --type jpeg --quality 90
 
 ### snapshot
 
-Get accessibility snapshot.
+Get a page snapshot. Interactive refs are the default; explicitly request `aria`, `text`, `dom`, or `all` for other formats.
 
 ```bash
 xbrowser snapshot [options]
 ```
 
 **Options:**
-- `--selector <css>` - Snapshot specific element
-- `--interactiveOnly` - Only interactive elements
+- `--type <mode>` - `interactive` (default), `aria`, `text`, `dom`, or `all`
+- `--selector <css>` - Snapshot a specific subtree
+- `--selectors` - Include a ref-to-CSS-selector map
+- `--all` - Include hidden interactive targets
 
 **Examples:**
 ```bash
 xbrowser snapshot
+xbrowser snapshot --type aria
 xbrowser snapshot --selector "#main"
-xbrowser snapshot --interactive-only
+xbrowser snapshot --selectors
 ```
 
 ## Frame Commands

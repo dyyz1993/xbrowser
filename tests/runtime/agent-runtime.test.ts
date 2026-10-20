@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { AgentObservation } from '../../src/runtime/types.js';
 import type { Page } from '../../src/browser-shim.js';
 import { actOnPage, buildSelectorMap, formatObservationCompact, observePage, waitForPage } from '../../src/runtime/agent-runtime.js';
 import { clearAllRefs } from '../../src/runtime/ref-store.js';
@@ -21,11 +20,8 @@ describe('agent runtime', () => {
             role: 'button',
             name: 'Submit',
             tag: 'button',
-            visible: true,
             enabled: true,
             editable: false,
-            box: { x: 10, y: 20, width: 80, height: 30 },
-            actions: ['click', 'hover'],
           },
         ],
       }),
@@ -44,14 +40,18 @@ describe('agent runtime', () => {
       role: 'button',
       name: 'Submit',
     }));
+    // 字段精简：box/actions/visible/timestamp 不应出现在输出中（详见 docs/snapshot-benchmark.md）
+    expect(observation.targets[0]).not.toHaveProperty('box');
+    expect(observation.targets[0]).not.toHaveProperty('actions');
+    expect(observation.targets[0]).not.toHaveProperty('visible');
+    expect(observation).not.toHaveProperty('timestamp');
   });
 
   it('formats compact observation output with selector map', async () => {
-    const observation: AgentObservation = {
+    const observation = {
       url: 'https://example.com/login',
       title: 'Login',
       screenHash: 'abc123',
-      timestamp: '2026-06-04T00:00:00.000Z',
       targets: [
         {
           ref: 'e1',
@@ -59,10 +59,8 @@ describe('agent runtime', () => {
           role: 'textbox',
           name: 'Email',
           tag: 'input',
-          visible: true,
           enabled: true,
           editable: true,
-          actions: ['fill', 'type', 'click', 'hover'],
         },
         {
           ref: 'e2',
@@ -70,10 +68,8 @@ describe('agent runtime', () => {
           role: 'button',
           name: 'Sign In',
           tag: 'button',
-          visible: true,
           enabled: false,
           editable: false,
-          actions: ['click', 'hover'],
         },
       ],
     };
@@ -102,10 +98,8 @@ describe('agent runtime', () => {
               role: 'button',
               name: 'Submit',
               tag: 'button',
-              visible: true,
               enabled: true,
               editable: false,
-              actions: ['click', 'hover'],
             },
           ],
         })
@@ -138,10 +132,8 @@ describe('agent runtime', () => {
               role: 'button',
               name: 'Submit',
               tag: 'button',
-              visible: true,
               enabled: true,
               editable: false,
-              actions: ['click', 'hover'],
             },
           ],
         })
@@ -194,16 +186,18 @@ describe('agent runtime', () => {
   });
 
   it('waitForPage waits for text', async () => {
-    // waitForPage uses page.evaluate + TreeWalker for text matching
+    const waitFor = vi.fn().mockResolvedValue(undefined);
     const page = {
-      evaluate: vi.fn().mockResolvedValue(true),
+      getByText: vi.fn().mockReturnValue({
+        first: vi.fn().mockReturnValue({ waitFor }),
+      }),
     } as unknown as Page;
 
     const result = await waitForPage(page, { text: 'Success', timeout: 100 });
 
     expect(result.success).toBe(true);
     expect(result.matched).toBe('text');
-    expect(page.evaluate).toHaveBeenCalled();
+    expect(page.getByText).toHaveBeenCalledWith('Success');
   });
 
   it('waitForPage waits for a URL glob', async () => {

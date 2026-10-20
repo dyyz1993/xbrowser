@@ -20,6 +20,10 @@ export interface BrowserCommandDefinition<
    * The executor will resolve `eN` ref values to real selectors before calling the handler.
    */
   selectorParams?: string[];
+  /**
+   * Usage examples shown in `--help` output. Rendered by xcli-core's helpGenerator.
+   */
+  examples?: Array<{ cmd: string; description?: string; output?: string }>;
   handler: (params: z.infer<P>, ctx: BrowserCommandContext) => Promise<unknown>;
 }
 
@@ -33,6 +37,7 @@ export interface RegisteredCommand {
   readonly parameters?: ZodType<unknown>;
   readonly result?: ZodType<unknown>;
   readonly selectorParams?: string[];
+  readonly examples?: Array<{ cmd: string; description?: string; output?: string }>;
   readonly handler: (
     params: Record<string, unknown>,
     ctx: BrowserCommandContext
@@ -68,6 +73,7 @@ export function registerCommand<P extends ZodType<unknown, ZodTypeDef, unknown>>
     parameters: def.parameters,
     result: def.result,
     selectorParams: def.selectorParams,
+    examples: def.examples,
     handler: def.handler as RegisteredCommand['handler'],
   };
   registry.set(cmd.name, cmd);

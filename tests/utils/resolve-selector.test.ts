@@ -111,10 +111,8 @@ describe('resolveRefParams', () => {
         role: 'button',
         name: 'Submit',
         tag: 'button',
-        visible: true,
         enabled: true,
         editable: false,
-        actions: ['click'],
       },
     ]);
     const page = { locator: vi.fn() } as unknown as Page;
