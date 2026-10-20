@@ -49,6 +49,39 @@ async function wanxApi(
   }, { url: `${API_BASE}${apiPath}`, payload: body }) as unknown as Promise<Record<string, unknown>>;
 }
 
+function apiOk(response: Record<string, unknown>): boolean {
+  return response.code === 200 || response.code === 0 || response.success === true;
+}
+
+function apiError(response: Record<string, unknown>): string {
+  return String(response.errorMsg || response.msg || response.message || JSON.stringify(response));
+}
+
+type WanxBalance = {
+  availableCount: number;
+  raw: Record<string, unknown>;
+};
+
+async function getBalance(page: Page): Promise<WanxBalance> {
+  const response = await wanxApi(page, '/wanx/api/common/imagineCount', { clientChannel: 'PC' });
+  if (!response) throw new Error('查询余额返回空');
+  if (!apiOk(response)) throw new Error(`查询余额失败: ${apiError(response)}`);
+  const data = (response.data || {}) as Record<string, unknown>;
+  const candidates = [
+    data.availableCount,
+    data.availableNum,
+    data.remainCount,
+    data.balance,
+    data.point,
+    data.score,
+  ];
+  const raw = Number(candidates.find(value => value !== undefined && value !== null));
+  return {
+    availableCount: Number.isFinite(raw) ? raw : 0,
+    raw: data,
+  };
+}
+
 async function uploadImageToOss(page: Page, filePath: string): Promise<string> {
   const fileBuffer = fs.readFileSync(filePath);
   const hash = crypto.createHash('md5').update(fileBuffer).digest('hex');
@@ -92,7 +125,7 @@ export default function (xcli: XCLIAPI): void {
         const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
         if (!page) return false;
         const resp = await wanxApi(page, '/wanx/api/common/userInfo/get', { clientChannel: 'PC' });
-        return resp.code === 200 || resp.code === 0 || resp.success === true;
+        return apiOk(resp);
       } catch {
         return false;
       }
@@ -100,39 +133,84 @@ export default function (xcli: XCLIAPI): void {
   });
 
   /* ════════════════════════════════════════════
-     1. sign — 签到
+     1. sign / balance — 签到和余额
      ════════════════════════════════════════════ */
   site.command('sign', {
-    description: '万相签到，领取灵感奖励，查询剩余次数',
+    description: '万相签到；只调用已知的安全签到接口，不消费创作次数',
     scope: 'browser',
-    result: z.object({ signed: z.boolean(), bonus: z.number(), availableCount: z.number() }).passthrough(),
-    parameters: z.object({}),
+    result: z.object({
+      signed: z.boolean(),
+      alreadySigned: z.boolean().optional(),
+      bonus: z.number().optional(),
+      availableCount: z.number(),
+      rawBalance: z.record(z.string(), z.unknown()),
+    }).passthrough(),
+    parameters: z.object({
+      force: z.boolean().optional().default(false).describe('签到接口失败时是否返回失败；默认宽松处理为已签到/不支持'),
+    }),
     examples: [
       { cmd: 'xbrowser wanx sign --cdp 9221', description: '签到并查询剩余次数' },
+      { cmd: 'xbrowser wanx sign --force --cdp 9221', description: '签到接口失败时报错' },
     ],
-    handler: async (_params, ctx) => {
+    handler: async (params, ctx) => {
       try {
         const page = getPage(ctx);
         const tips = buildTips(ctx);
         await ensurePage(page);
 
         const signResp = await wanxApi(page, '/wanx/api/common/inspiration/dailySign', {});
-        const signed = signResp.code === 200 || signResp.code === 0 || signResp.success === true;
-        tips.push(signed ? '✅ 签到成功' : `⚠ 签到: ${String(signResp.msg || signResp.message || '已签到过')}`);
+        const signed = apiOk(signResp);
+        const reason = apiError(signResp);
+        if (!signed && params.force && !/已签到|重复|signed|already/i.test(reason)) {
+          return fail(`签到失败: ${reason}`, [...tips]);
+        }
 
-        const rewardResp = await wanxApi(page, '/wanx/api/common/inspiration/dailySignReward', {});
-        const rewardData = rewardResp.data as Record<string, unknown> | undefined;
-        const bonus = Number(rewardData?.reward || rewardData?.bonus || 0);
-        tips.push(`🎁 签到奖励: ${bonus}`);
+        // The reward endpoint returned 401 in a signed-out probe, so treat it
+        // as optional until a logged-in response proves its real shape.
+        let bonus: number | undefined;
+        const rewardResp = await wanxApi(page, '/wanx/api/common/inspiration/dailySignReward', {}).catch(() => null);
+        if (rewardResp && apiOk(rewardResp)) {
+          const rewardData = (rewardResp.data || {}) as Record<string, unknown>;
+          const value = Number(rewardData.reward ?? rewardData.bonus);
+          if (Number.isFinite(value)) bonus = value;
+        }
 
-        const countResp = await wanxApi(page, '/wanx/api/common/imagineCount', {});
-        const countData = countResp.data as Record<string, unknown> | undefined;
-        const availableCount = Number(countData?.availableCount || 0);
-        tips.push(`📊 剩余创作次数: ${availableCount}`);
+        const balance = await getBalance(page).catch((error: unknown) => { throw error instanceof Error ? error : new Error(String(error)); });
+        tips.push(signed ? '✅ 签到成功' : `⚠ 签到未执行: ${reason}`);
+        if (bonus !== undefined) tips.push(`🎁 签到奖励: ${bonus}`);
+        tips.push(`📊 剩余创作次数/积分: ${balance.availableCount}`);
 
-        return ok({ signed, bonus, availableCount }, tips);
+        return ok({
+          signed,
+          alreadySigned: !signed,
+          bonus,
+          availableCount: balance.availableCount,
+          rawBalance: balance.raw,
+        }, tips);
       } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['签到失败']);
+      }
+    },
+  });
+
+  site.command('balance', {
+    description: '查询万相剩余创作次数/积分',
+    scope: 'browser',
+    result: z.object({ availableCount: z.number(), raw: z.record(z.string(), z.unknown()) }).passthrough(),
+    parameters: z.object({}),
+    examples: [
+      { cmd: 'xbrowser wanx balance --cdp 9221', description: '查询余额' },
+    ],
+    handler: async (_params, ctx) => {
+      try {
+        const page = getPage(ctx);
+        const tips = buildTips(ctx);
+        await ensurePage(page);
+        const balance = await getBalance(page);
+        tips.push(`📊 剩余创作次数/积分: ${balance.availableCount}`);
+        return ok({ availableCount: balance.availableCount, raw: balance.raw }, tips);
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : '未知错误', ['查询余额失败']);
       }
     },
   });
@@ -161,6 +239,16 @@ export default function (xcli: XCLIAPI): void {
         const page = getPage(ctx);
         const tips = buildTips(ctx);
         await ensurePage(page);
+
+        const balance = await getBalance(page);
+        tips.push(`📊 剩余创作次数/积分: ${balance.availableCount}`);
+        if (balance.availableCount <= 0) {
+          return fail('万相余额不足', [
+            ...tips,
+            '请先执行: xbrowser wanx sign --cdp 9221',
+            '签到成功后再重新提交视频生成',
+          ]);
+        }
 
         let baseImage = '';
         let tailImage = '';
@@ -206,7 +294,10 @@ export default function (xcli: XCLIAPI): void {
         tips.push(`🎬 提交生成: "${params.prompt.slice(0, 50)}${params.prompt.length > 50 ? '...' : ''}"`);
 
         const genResp = await wanxApi(page, '/wanx/api/common/imageGen', taskBody);
-        const taskId = String(genResp.data || '');
+        const rawTaskId = typeof genResp.data === 'string' || typeof genResp.data === 'number'
+          ? genResp.data
+          : (genResp.data as Record<string, unknown> | undefined)?.taskId;
+        const taskId = String(rawTaskId ?? '');
 
         if (!taskId || taskId === 'undefined' || taskId === 'null' || taskId === '') {
           return fail(
