@@ -486,7 +486,7 @@ describe('gemini plugin', () => {
         ev: vi.fn((expression: string) => {
           if (expression.includes('img[alt="attachment"]')) return Promise.resolve(++count);
           if (expression.includes('location.href')) return Promise.resolve('https://gemini.google.com/app');
-          if (expression.includes('readyState')) return Promise.resolve({ ready: 'complete', editor: true });
+          if (expression.includes('readyState')) return Promise.resolve(JSON.stringify({ ready: 'complete', editor: true }));
           if (expression.includes('上传和工具') || expression.includes('制作视频')) return Promise.resolve(JSON.stringify({ x: 1, y: 1, width: 1, height: 1 }));
           if (expression.includes('取消选择')) return Promise.resolve(true);
           if (expression.includes('mat-card')) return Promise.resolve(JSON.stringify({ open: true }));
