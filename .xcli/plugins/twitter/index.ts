@@ -35,7 +35,7 @@ interface ImageUploadResult {
 type PageWithOptionalFront = Page & { bringToFront?: () => Promise<void> };
 
 function recordTwitterMistake(
-  command: 'post' | 'reply' | 'delete',
+  command: 'post' | 'post-api' | 'reply' | 'delete',
   reason: string,
   context: Record<string, unknown> = {},
 ): void {
@@ -899,7 +899,7 @@ export default function (xcli: XCLIAPI): void {
         }, ['推文已通过 X API 发布']);
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
-        recordTwitterMistake('post', reason, { command: 'post-api' });
+        recordTwitterMistake('post-api', reason, { command: 'post-api' });
         return fail(reason);
       }
     },

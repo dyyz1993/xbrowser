@@ -59,6 +59,34 @@ describe('twitter plugin', () => {
     expect(result.shape.id).toBeDefined();
   });
 
+  it('post-api should fail safely without credentials', async () => {
+    const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'post-api');
+    const previous = {
+      consumerKey: process.env.X_CONSUMER_KEY,
+      consumerSecret: process.env.X_CONSUMER_SECRET,
+      accessToken: process.env.X_ACCESS_TOKEN,
+      accessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET,
+    };
+    delete process.env.X_CONSUMER_KEY;
+    delete process.env.X_CONSUMER_SECRET;
+    delete process.env.X_ACCESS_TOKEN;
+    delete process.env.X_ACCESS_TOKEN_SECRET;
+
+    try {
+      const result = await cmd![1].handler({ text: 'hello' }) as {
+        success: boolean;
+        message?: string;
+      };
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('缺少 X API 环境变量');
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   it('should have login and logout', () => {
     expect(mockSite.login).toHaveBeenCalled();
     expect(mockSite.logout).toHaveBeenCalled();
