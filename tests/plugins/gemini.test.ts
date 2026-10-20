@@ -51,6 +51,7 @@ const ALL_COMMANDS = [
   'task-open', 'task-close', 'task-list',
   'generate-image', 'generate-video',
   'history-list', 'history-download-video',
+  'download-video',
   'music', 'music-status',
 ];
 
@@ -206,6 +207,15 @@ describe('gemini plugin', () => {
       expect(data.weekly.usedPercent).toBe(1);
       expect(data.sourceUrl).toContain('/usage');
       expect(page.goto).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('download-video command', () => {
+    it('should have project scope and a session URL parameter', () => {
+      const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'download-video');
+      const config = cmd![1] as Record<string, unknown>;
+      expect(config.scope).toBe('project');
+      expect(JSON.stringify(config.parameters)).toContain('url');
     });
   });
 
