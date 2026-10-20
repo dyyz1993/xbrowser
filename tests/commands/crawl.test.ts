@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { detectSpaRoutes } from '../../src/commands/crawl.js';
 import { normalizeUrl, shouldSkipUrl, getBaseDomain, isSpaHashRoute, deduplicateUrls } from '../../src/utils/url.js';
 
 interface CrawlOptions {
@@ -355,5 +356,23 @@ describe('Crawl - Command Registration', () => {
     const cmd = getCommand('crawl');
     const parameters = cmd?.parameters as { shape?: Record<string, unknown> } | undefined;
     expect(parameters?.shape?.enableSpa).toBeDefined();
+  });
+});
+
+describe('detectSpaRoutes', () => {
+  function createPage(evaluate: unknown) {
+    return { evaluate } as { evaluate: never };
+  }
+
+  it('adds Vue Router routes exposed by a Vue 2 root instance', async () => {
+    // Inline script scan; keep it empty so runtime routes are deterministic.
+    const evaluate = vi.fn().mockResolvedValueOnce('').mockResolvedValueOnce([
+      'https://example.com/#/about',
+    ]);
+
+    const routes = await detectSpaRoutes(createPage(evaluate), 'https://example.com/');
+
+    expect(routes).toEqual(['https://example.com/#/about']);
+    expect(evaluate).toHaveBeenCalledTimes(2);
   });
 });

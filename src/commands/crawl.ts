@@ -41,11 +41,11 @@ async function extractLinks(page: Page, origin: string): Promise<string[]> {
 /**
  * Lightweight SPA route hint detection.
  * Scans inline <script> content for route-like path strings.
- * No framework-specific runtime detection, no external JS fetch.
+ * Falls back to Vue Router runtime routes when the application exposes them.
  * The heavy lifting is done by extractLinks() — this only catches
  * routes referenced in JS config that don't appear as <a> elements.
  */
-async function detectSpaRoutes(page: Page, origin: string): Promise<string[]> {
+export async function detectSpaRoutes(page: Pick<Page, 'evaluate'>, origin: string): Promise<string[]> {
   const routeSet = new Set<string>();
   const pathRegex = /['"`](\/[a-zA-Z0-9_\-/]+)['"`]/g;
   const isParamRoute = (p: string) => p.includes(':') || p.includes('*');
@@ -64,8 +64,34 @@ async function detectSpaRoutes(page: Page, origin: string): Promise<string[]> {
     }
   } catch { /* inline script scan failed */ }
 
+  try {
+    const vueRoutes = await page.evaluate<string[]>((evalOrigin: string) => {
+      const win = window as unknown as Record<string, unknown>;
+      const vue3App = win.__vue_app__ as Record<string, unknown> | undefined;
+      const globalProperties = ((vue3App?.config as Record<string, unknown> | undefined)
+        ?.globalProperties as Record<string, unknown> | undefined);
+      let router = globalProperties?.$router as Record<string, unknown> | undefined;
+
+      if (!router) {
+        const root = document.querySelector('#app');
+        const vm = root
+          ? (root as unknown as Record<string, unknown>).__vue__ as Record<string, unknown> | undefined
+          : undefined;
+        const rootVm = vm?.$root as Record<string, unknown> | undefined;
+        router = (vm?.$router ?? rootVm?.$router) as Record<string, unknown> | undefined;
+      }
+
+      const routeList = ((router?.options as Record<string, unknown> | undefined)
+        ?.routes as Array<{ path?: string }> | undefined) ?? [];
+      return routeList
+        .filter(route => route.path && route.path !== '/' && !route.path.includes(':') && !route.path.includes('*'))
+        .map(route => `${evalOrigin.replace(/\/$/, '')}/#${route.path}`);
+    }, origin);
+    for (const route of vueRoutes) routeSet.add(route);
+  } catch { /* Vue runtime unavailable */ }
+
   return Array.from(routeSet).map(p =>
-    `${origin.replace(/\/$/, '')}${p.startsWith('/') ? '' : '/'}${p}`
+    p.startsWith('http') ? p : `${origin.replace(/\/$/, '')}${p.startsWith('/') ? '' : '/'}${p}`
   );
 }
 
