@@ -644,6 +644,13 @@ CDP connection / Chromium
 债务记录在 `lint-scripts/media-constraints-baseline.json`，只允许收敛，
 不允许新增。
 
+Gemini 图片附件上传另有一条 2026-10-20 实测错题：CDP
+`Input.dispatchKeyEvent(Cmd+V)` 只是把快捷键事件送进 renderer，不会把
+macOS 系统剪贴板里的 PNG/JPEG 字节交给页面，因此 Gemini 不会生成附件
+预览。图片附件必须走“写入 OS 剪贴板 → 激活 Chrome → System Events 发
+真实 Cmd+V”，并以页面中新增的附件预览数量逐张验收；不能用单次成功或
+命令返回值冒充上传成功。
+
 媒体产物契约还有一条运行时约束：只有字节已经真实写入目标路径，才允许把
 `localPath` 标记为可下载；`sizeBytes` 应来自同一次下载字节，而不是事后
 重新读盘。测试替身也必须满足同一语义，否则在干净 CI 环境会掩盖未落盘产物。

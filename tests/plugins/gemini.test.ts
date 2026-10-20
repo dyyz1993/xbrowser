@@ -415,7 +415,7 @@ describe('gemini plugin', () => {
 
   describe('generate command', () => {
     afterEach(() => {
-      setGenerateRuntime({ bridgeExec: vi.fn(), cdp: vi.fn(), ev: vi.fn(), sleep: vi.fn() });
+      setGenerateRuntime({ bridgeExec: vi.fn(), cdp: vi.fn(), ev: vi.fn(), sleep: vi.fn(), pasteImage: undefined });
     });
 
     it('reports Google anti-automation blocks before missing-tool errors', async () => {
@@ -441,6 +441,75 @@ describe('gemini plugin', () => {
       const result = await handler({ prompt: 'a calm sea', timeout: 30 }) as Record<string, unknown>;
       expect(result.success).toBe(false);
       expect(result.message).toContain('Google 反自动化拦截');
+    });
+
+    it('declares CSV attachments and first/last-frame parameters', () => {
+      const video = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'generate-video');
+      const config = (video![1] as { parameters: { shape?: Record<string, unknown> } }).parameters;
+      expect(JSON.stringify(config)).toContain('firstFrame');
+      expect(JSON.stringify(config)).toContain('lastFrame');
+      expect(JSON.stringify(config)).toContain('paths');
+    });
+
+    it('rejects conflicting path and paths before uploading', async () => {
+      const handler = getHandler('generate-video');
+      setGenerateRuntime({
+        bridgeExec: vi.fn(() => Promise.resolve({ ok: true, data: { tabId: 42 } })) as never,
+        cdp: vi.fn(() => Promise.resolve(undefined)) as never,
+        ev: vi.fn(() => Promise.resolve({ ready: 'complete', editor: true })) as never,
+        sleep: vi.fn(() => Promise.resolve()) as never,
+      });
+      const result = await handler({ prompt: 'test', timeout: 30, path: '/a.png', paths: '/b.png' }) as Record<string, unknown>;
+      expect(result).toMatchObject({ success: false, message: '参数错误' });
+    });
+
+    it('rejects missing attachments before uploading', async () => {
+      const handler = getHandler('generate-video');
+      setGenerateRuntime({
+        bridgeExec: vi.fn(() => Promise.resolve({ ok: true, data: { tabId: 42 } })) as never,
+        cdp: vi.fn(() => Promise.resolve(undefined)) as never,
+        ev: vi.fn(() => Promise.resolve({ ready: 'complete', editor: true })) as never,
+        sleep: vi.fn(() => Promise.resolve()) as never,
+      });
+      const result = await handler({ prompt: 'test', timeout: 30, firstFrame: '/not-exists.png' }) as Record<string, unknown>;
+      expect(result.message).toContain('附件文件不存在');
+    });
+
+    it('uploads attachments one by one with DOM count verification', async () => {
+      const pasteImage = vi.fn(async (): Promise<void> => undefined);
+      let count = 0;
+      setGenerateRuntime({
+        bridgeExec: vi.fn((command: string) => command === 'task-open'
+          ? Promise.resolve({ ok: true, data: { tabId: 42 } })
+          : Promise.resolve({ ok: true })) as never,
+        cdp: vi.fn(() => Promise.resolve(undefined)) as never,
+        ev: vi.fn((expression: string) => {
+          if (expression.includes('img[alt="attachment"]')) return Promise.resolve(++count);
+          if (expression.includes('location.href')) return Promise.resolve('https://gemini.google.com/app');
+          if (expression.includes('readyState')) return Promise.resolve({ ready: 'complete', editor: true });
+          if (expression.includes('上传和工具') || expression.includes('制作视频')) return Promise.resolve(JSON.stringify({ x: 1, y: 1, width: 1, height: 1 }));
+          if (expression.includes('取消选择')) return Promise.resolve(true);
+          if (expression.includes('mat-card')) return Promise.resolve(JSON.stringify({ open: true }));
+          if (expression.includes('activeElement')) return Promise.resolve(true);
+          if (expression.includes('textContent')) return Promise.resolve('transition');
+          if (expression.includes('发送')) return Promise.resolve(true);
+          return Promise.resolve(null);
+        }) as never,
+        sleep: vi.fn(() => Promise.resolve()) as never,
+        pasteImage,
+      });
+
+      const handler = getHandler('generate-video');
+      const result = await handler({
+        prompt: 'transition',
+        timeout: 30,
+        firstFrame: '/tmp/first.png',
+        lastFrame: '/tmp/last.png',
+      }) as Record<string, unknown>;
+
+      expect(pasteImage).toHaveBeenCalledTimes(2);
+      expect(JSON.stringify(result.tips)).toContain('已上传并验证 2 个附件');
+      expect(JSON.stringify(result.tips)).toContain('系统剪贴板真实粘贴');
     });
   });
 

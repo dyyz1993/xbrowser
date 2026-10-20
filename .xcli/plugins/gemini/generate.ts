@@ -2,6 +2,8 @@ import { z } from 'zod/v4';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { bridgeExec, cdp, ev, sleep } from './bridge.js';
 import {
   createMediaArtifact,
@@ -12,6 +14,7 @@ import {
 } from '../shared/media-contract.js';
 
 const DOWNLOAD_DIR = path.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads');
+const execFileAsync = promisify(execFile);
 
 type SendResult = { typed: boolean; sent: boolean; text: string };
 type MediaMode = 'image' | 'video';
@@ -21,12 +24,88 @@ type Runtime = {
   cdp: typeof cdp;
   ev: typeof ev;
   sleep: typeof sleep;
+  pasteImage?: (tabId: number, filePath: string) => Promise<void>;
 };
 
-const runtime: Runtime = { bridgeExec, cdp, ev, sleep };
+const runtime: Runtime = { bridgeExec, cdp, ev, sleep, pasteImage: undefined };
 
 export function setGenerateRuntime(next: Partial<Runtime>): void {
   Object.assign(runtime, next);
+}
+
+interface Attachment {
+  path: string;
+  semantic: string;
+}
+
+type GenerateParams = {
+  prompt: string;
+  timeout: number;
+  ratio?: string;
+  path?: string;
+  paths?: string;
+  firstFrame?: string;
+  lastFrame?: string;
+};
+
+function parsePathsCsv(value: string): string[] {
+  return value.split(',').map(item => item.trim()).filter(Boolean);
+}
+
+function buildAttachmentList(params: GenerateParams): Attachment[] {
+  const attachments = [
+    ...(params.path ? [{ path: params.path, semantic: '附件' }] : []),
+    ...(params.paths ? parsePathsCsv(params.paths).map(item => ({ path: item, semantic: '附件' })) : []),
+    ...(params.firstFrame ? [{ path: params.firstFrame, semantic: '首帧' }] : []),
+    ...(params.lastFrame ? [{ path: params.lastFrame, semantic: '尾帧' }] : []),
+  ];
+  const seen = new Set<string>();
+  return attachments.filter(item => {
+    const absolute = path.resolve(item.path);
+    if (seen.has(absolute)) return false;
+    seen.add(absolute);
+    return true;
+  });
+}
+
+async function countAttachments(tabId: number): Promise<number> {
+  const value = await runtime.ev<number>(
+    '[...document.querySelectorAll(\'img[alt="attachment"]\')].filter(img=>img.getBoundingClientRect().width>0).length',
+    tabId,
+  );
+  return typeof value === 'number' ? value : Number(value ?? 0);
+}
+
+async function waitForAttachments(tabId: number, expected: number, timeoutMs = 15000): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  let current = 0;
+  while (Date.now() < deadline) {
+    current = await countAttachments(tabId).catch(() => 0);
+    if (current >= expected) return current;
+    await runtime.sleep(250);
+  }
+  throw new Error(`附件上传验证失败：当前 ${current} 个，期望 ${expected} 个`);
+}
+
+async function pasteImageWithSystemEvents(tabId: number, filePath: string): Promise<void> {
+  if (process.platform !== 'darwin') {
+    throw new Error('Gemini 图片附件当前仅支持 macOS 系统剪贴板粘贴');
+  }
+  const extension = path.extname(filePath).toLowerCase();
+  const flavor = extension === '.jpg' || extension === '.jpeg' ? '«class JPEG»' : '«class PNGf»';
+  const applePath = filePath.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+  // CDP key events do not carry OS clipboard image bytes. The browser must
+  // receive a real macOS paste through System Events.
+  await runtime.cdp('Page.bringToFront', {}, tabId);
+  const focusExpr = '(()=>{const e=document.querySelector(".ql-editor[contenteditable=true]");if(!e)return false;e.focus();return document.activeElement===e})()';
+  const focused = await runtime.ev<string | boolean>(focusExpr, tabId);
+  if (focused !== true && focused !== 'true') throw new Error('Gemini 输入框未聚焦，无法接收系统粘贴');
+  await execFileAsync('osascript', [
+    '-e', 'tell application "Google Chrome" to activate',
+    '-e', 'delay 0.2',
+    '-e', `set the clipboard to (read (POSIX file "${applePath}") as ${flavor})`,
+    '-e', 'tell application "System Events" to keystroke "v" using command down',
+  ], { timeout: 8000 });
 }
 
 async function assertGeminiAccessible(tabId: number): Promise<void> {
@@ -34,9 +113,16 @@ async function assertGeminiAccessible(tabId: number): Promise<void> {
     'JSON.stringify({href:location.href,text:(document.body&&document.body.innerText||"").slice(0,500)})',
     tabId,
   );
-  const state = typeof raw === 'string'
-    ? JSON.parse(raw || '{}') as { href?: string; text?: string }
-    : raw as { href?: string; text?: string };
+  let state = raw as { href?: string; text?: string } | null;
+  if (typeof raw === 'string' && raw !== '') {
+    try {
+      state = JSON.parse(raw) as { href?: string; text?: string };
+    } catch {
+      state = { href: raw, text: '' };
+    }
+  }
+  if (!state) return;
+  if (!state) return;
   const blocked = /google\.com\/sorry/i.test(state.href ?? '')
     || /异常流量|unusual traffic/i.test(state.text ?? '');
   if (blocked) {
@@ -107,7 +193,8 @@ async function selectGenerationMode(tabId: number, media: MediaMode): Promise<vo
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await runtime.sleep(300);
     const state = await runtime.ev<string | { open?: boolean }>('JSON.stringify({open:!!document.querySelector("mat-card,toolbox-drawer")})', tabId);
-    if (typeof state === 'object' && state.open === true) break;
+    const drawer = typeof state === 'string' ? JSON.parse(state || '{}') as { open?: boolean } : state;
+    if (drawer?.open === true) break;
   }
 
   const targetExpression = '(' + ((expected: string) => {
@@ -148,9 +235,10 @@ async function selectGenerationMode(tabId: number, media: MediaMode): Promise<vo
 
 async function snapshot(tabId: number) {
   const raw = await runtime.ev<string>('JSON.stringify({imgs:[...document.querySelectorAll("img")].map(i=>({src:(i.currentSrc||i.src),w:i.getBoundingClientRect().width,h:i.getBoundingClientRect().height,nw:i.naturalWidth,nh:i.naturalHeight})).filter(x=>x.w>100&&x.h>100),videos:[...document.querySelectorAll("video")].map(v=>({src:v.src||"",duration:v.duration}))})', tabId);
-  return JSON.parse(typeof raw === 'string' ? raw : JSON.stringify(raw ?? {})) as {
-    imgs: Array<{ src: string; nw: number; nh: number }>;
-    videos: Array<{ src: string; duration: number | null }>;
+  const parsed = typeof raw === 'string' ? JSON.parse(raw || '{}') as Record<string, unknown> : raw ?? {};
+  return {
+    imgs: Array.isArray(parsed.imgs) ? parsed.imgs as Array<{ src: string; nw: number; nh: number }> : [],
+    videos: Array.isArray(parsed.videos) ? parsed.videos as Array<{ src: string; duration: number | null }> : [],
   };
 }
 
@@ -201,12 +289,13 @@ async function saveBlobImage(tabId: number, blobUrl: string, filePath: string): 
 
 const generateResult = mediaTaskResultSchema.extend({
   prompt: z.string(),
+  attachments: z.array(z.object({ semantic: z.string(), path: z.string() })).optional(),
   download: mediaDownloadResultSchema,
 });
 
 async function generate(
   media: 'image' | 'video',
-  params: { prompt: string; timeout: number; ratio?: string },
+  params: GenerateParams,
 ): Promise<ReturnType<typeof ok> | ReturnType<typeof fail>> {
   const taskId = `${media}-${Date.now()}`;
   const tips: string[] = [];
@@ -218,13 +307,44 @@ async function generate(
 
   try {
     await assertGeminiAccessible(tabId);
+    const attachments = buildAttachmentList(params);
+    if (params.path && params.paths) {
+      return fail('参数错误', [...tips, '--path 与 --paths 不能同时使用']);
+    }
+    for (const item of attachments) {
+      if (!fs.existsSync(path.resolve(item.path))) {
+        return fail(`附件文件不存在: ${item.path}`, [...tips, `缺少${item.semantic}: ${path.resolve(item.path)}`]);
+      }
+    }
     const ready = await waitForReady(tabId, 60);
     if (!ready) return fail('Gemini 页面加载超时', tips);
+    if (attachments.length > 0) {
+      const initialCount = await countAttachments(tabId).catch(() => 0);
+      for (const [index, item] of attachments.entries()) {
+        const absolutePath = path.resolve(item.path);
+        try {
+          await (runtime.pasteImage ?? pasteImageWithSystemEvents)(tabId, absolutePath);
+          await waitForAttachments(tabId, initialCount + index + 1);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          return fail('附件上传失败', [
+            ...tips,
+            `已验证 ${index}/${attachments.length} 个附件`,
+            `失败文件: ${absolutePath}`,
+            `原因: ${reason}`,
+            'Gemini 只接受系统级剪贴板粘贴；CDP Cmd+V 不携带 OS 剪贴板图片数据',
+          ]);
+        }
+      }
+      tips.push(`✓ 已上传并验证 ${attachments.length} 个附件（系统剪贴板真实粘贴）`);
+    }
     await selectGenerationMode(tabId, media);
 
     const fullPrompt = params.ratio && media === 'image'
       ? `${params.prompt}\n\nAspect ratio: ${params.ratio}`
-      : params.prompt;
+      : attachments.length > 0
+        ? `${params.prompt}\n\nAttachments in order:\n${attachments.map(item => `- ${item.semantic}: ${path.basename(item.path)}`).join('\n')}`
+        : params.prompt;
 
     const before = await snapshot(tabId);
     const beforeUrls = { imgs: before.imgs.map((x) => x.src), videos: before.videos.map((x) => x.src) };
@@ -282,6 +402,7 @@ async function generate(
     return ok({
       ...task,
       prompt: params.prompt,
+      attachments: attachments.map(item => ({ semantic: item.semantic, path: path.resolve(item.path) })),
       download: mediaDownloadResultSchema.parse({
         ok: Boolean(localPath),
         taskId,
@@ -309,10 +430,14 @@ export function registerGenerateCommands(site: CommandRegistrar): void {
       prompt: z.string().describe('图片描述'),
       timeout: z.number().min(15).max(600).default(180).describe('等待生成秒数'),
       ratio: z.enum(['1:1', '16:9', '9:16', '4:3', '3:4']).optional().describe('宽高比'),
+      path: z.string().optional().describe('单附件路径（默认图片参考）'),
+      paths: z.string().optional().describe('多附件路径（CSV）'),
+      firstFrame: z.string().optional().describe('首帧图片路径'),
+      lastFrame: z.string().optional().describe('尾帧图片路径'),
     }),
     result: generateResult,
     examples: [{ cmd: 'xbrowser gemini generate-image --prompt "赛博朋克城市夜景" --ratio 16:9', description: '生成图片' }],
-    handler: async (params: { prompt: string; timeout: number; ratio?: string }) => generate('image', params),
+    handler: async (params: GenerateParams) => generate('image', params),
   };
 
   const videoConfig = {
@@ -321,10 +446,14 @@ export function registerGenerateCommands(site: CommandRegistrar): void {
     parameters: z.object({
       prompt: z.string().describe('视频描述'),
       timeout: z.number().min(30).max(900).default(420).describe('等待生成秒数'),
+      path: z.string().optional().describe('单附件路径（默认图片参考）'),
+      paths: z.string().optional().describe('多附件路径（CSV；建议绝对路径）'),
+      firstFrame: z.string().optional().describe('首帧图片路径'),
+      lastFrame: z.string().optional().describe('尾帧图片路径'),
     }),
     result: generateResult,
     examples: [{ cmd: 'xbrowser gemini generate-video --prompt "日落海浪" --timeout 420', description: '生成视频' }],
-    handler: async (params: { prompt: string; timeout: number }) => generate('video', params),
+    handler: async (params: GenerateParams) => generate('video', params),
   };
 
   site.command('generate-image', imageConfig);
