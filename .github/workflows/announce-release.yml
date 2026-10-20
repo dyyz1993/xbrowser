@@ -1,4 +1,4 @@
-name: Render release tweet
+name: Announce release
 
 on:
   release:
@@ -9,6 +9,11 @@ on:
         description: Release tag (for example v1.30.0)
         required: true
         type: string
+      dry_run:
+        description: Render the tweet without posting
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -18,13 +23,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  render-major-release-tweet:
+  tweet-major-release:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:
       TAG_NAME: ${{ github.event.release.tag_name || inputs.tag }}
       RELEASE_NAME: ${{ github.event.release.name }}
       RELEASE_BODY: ${{ github.event.release.body }}
+      DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run != false }}
     steps:
       - name: Check version class
         id: version
@@ -63,8 +69,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+      - uses: actions/checkout@v4
+        if: steps.version.outputs.announce == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.version.outputs.announce == 'true'
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+        if: steps.version.outputs.announce == 'true'
+
+      - run: npm run build
+        if: steps.version.outputs.announce == 'true'
+      - run: npm link
+        if: steps.version.outputs.announce == 'true'
+
       - name: Render announcement
-        id: render
         if: steps.version.outputs.announce == 'true'
         run: |
           set -e
@@ -78,25 +100,34 @@ jobs:
           TWEET="🚀 ${NAME} is live: ${BODY} npm: https://www.npmjs.com/package/@xbrowser/cli?activeTab=versions"
           TWEET=$(node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const out=s.trim().replace(/\s+/g," ");console.log(out.slice(0,280))})' <<< "$TWEET")
           printf '%s' "$TWEET" > output/twitter/tweet.txt
-          echo "Rendered (${#TWEET} chars):"
-          cat output/twitter/tweet.txt
           {
-            echo "tweet<<EOF"
+            echo "TWEET<<EOF"
             echo "$TWEET"
             echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-          {
-            echo "### Rendered release tweet"
-            echo
-            echo '```text'
-            echo "$TWEET"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } >> "$GITHUB_ENV"
+          echo "Rendered ($${#TWEET} chars):"
+          cat output/twitter/tweet.txt
 
-      - name: Upload tweet for local publishing
-        if: steps.version.outputs.announce == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-tweet
-          path: output/twitter/tweet.txt
-          retention-days: 7
+      - name: Post announcement
+        if: steps.version.outputs.announce == 'true' && env.DRY_RUN != 'true'
+        run: |
+          set -e
+          TWEET_FILE=output/twitter/tweet.txt
+          RESULT=$(xbrowser twitter post-api --text "$(cat "$TWEET_FILE")" --json)
+          node -e '
+            let input = "";
+            process.stdin.on("data", chunk => input += chunk);
+            process.stdin.on("end", () => {
+              const result = JSON.parse(input);
+              if (!result.success) {
+                console.error(result.error || "Twitter API post failed");
+                process.exit(1);
+              }
+              console.log(`Published tweet: https://x.com/i/web/status/${result.data.id}`);
+            });
+          ' <<< "$RESULT"
+        env:
+          X_CONSUMER_KEY: ${{ secrets.X_CONSUMER_KEY }}
+          X_CONSUMER_SECRET: ${{ secrets.X_CONSUMER_SECRET }}
+          X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
+          X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
