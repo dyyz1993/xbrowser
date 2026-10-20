@@ -11,6 +11,7 @@ import type { CommandContext } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
 import path from 'path';
 import fs from 'fs';
+import { uploadImagesPreferClipboard, type GeneralUploadOptions } from './clipboard-upload.js';
 
 /**
  * Build standard tips array for AI plugin commands.
@@ -158,15 +159,43 @@ export async function handleChatAttachments(
     return;
   }
 
-  // 3. 批量上传（image / file 模式）
-  const r = await batchUploadFiles(page, list, '+');
+  // 3. 批量上传（image / file 模式）：剪贴板优先，file input/DataTransfer 兜底
+  const options = createAttachmentUploadOptions(page);
+  options.initialCount = await countAttachments(page).catch(() => 0);
+  const r = await uploadImagesPreferClipboard(page, list, options);
   for (const e of r.errors) tips.push(`⚠ ${e}`);
   if (r.uploaded > 0) {
-    tips.push(`✓ 已上传 ${r.uploaded}/${list.length} 个附件`);
+    tips.push(`✓ 已上传 ${r.uploaded}/${list.length} 个附件（${r.method === 'paste' ? '剪贴板' : 'file input'}）`);
   } else {
     tips.push('⚠ 上传失败，找不到 file input');
   }
 }
+
+async function countAttachments(page: Page): Promise<number> {
+  return page.evaluate(() => {
+    const nodes = document.querySelectorAll<HTMLElement>(
+      '[data-testid*="attachment"] img, [class*="upload-preview"] img, [class*="image-preview"] img, img[class*="image-"]'
+    );
+    return Array.from(nodes).filter((node) => {
+      const rect = node.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    }).length;
+  });
+}
+
+export function createAttachmentUploadOptions(page: Page): GeneralUploadOptions {
+  return {
+    editorSelector: 'textarea, [contenteditable="true"], [role="textbox"]',
+    initialCount: 0,
+    waitForAttachmentCount: async expected => {
+      const current = await countAttachments(page).catch(() => 0);
+      if (current < expected) throw new Error(`等待附件预览超时：当前 ${current}，期望 ${expected}`);
+      return current;
+    },
+  };
+}
+
+export const uploadFilesPreferClipboard = uploadImagesPreferClipboard;
 
 /**
  * 批量上传多个文件到常驻的 file input（AGENTS.md §10.0.3.1）

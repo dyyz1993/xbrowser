@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { promisify } from 'node:util';
+import { uploadFileViaDataTransfer } from './ai-chat-base.js';
 import type { Page } from '../types.js';
 
 const execFileAsync = promisify(execFile);
@@ -100,4 +101,60 @@ export async function setImagesOnFileInput(
   }));
   await page.setInputFiles('input[type="file"]', files);
   return true;
+}
+
+export interface GeneralUploadOptions extends ClipboardUploadOptions {
+  browserName?: string;
+}
+
+/**
+ * Unified site upload strategy: trusted clipboard paste first, then a
+ * deterministic file-input/DataTransfer fallback. Paste success is always
+ * verified by caller-provided DOM attachment counting.
+ */
+export async function uploadImagesPreferClipboard(
+  page: Page,
+  filePaths: string[],
+  options: GeneralUploadOptions,
+): Promise<UploadPreferClipboardResult> {
+  if (filePaths.length === 0) return { files: [], uploaded: 0, method: 'file-input', errors: [] };
+  const errors: string[] = [];
+  const absPaths = filePaths.map((filePath) => path.resolve(filePath)).filter((filePath) => {
+    if (fs.existsSync(filePath)) return true;
+    errors.push(`文件不存在: ${filePath}`);
+    return false;
+  });
+  if (absPaths.length === 0) return { files: [], uploaded: 0, method: 'file-input', errors };
+
+  const paste = await pasteImagesFromClipboard(page, absPaths, options);
+  if (paste.ok) {
+    return { files: absPaths, uploaded: absPaths.length, method: 'paste', errors };
+  }
+  if (paste.pasted > 0) {
+    errors.push(`剪贴板部分成功后状态不确定: ${paste.reason ?? 'unknown error'}`);
+  }
+
+  const remaining = absPaths.slice(paste.pasted);
+  const fallbackErrors = errors.length;
+  for (const [index, filePath] of remaining.entries()) {
+    const uploaded = await uploadFileViaDataTransfer(page, filePath);
+    if (!uploaded) errors.push(`第 ${paste.pasted + index + 1}/${absPaths.length} 个文件上传失败: ${path.basename(filePath)}`);
+  }
+  const uploaded = remaining.length - (errors.length - fallbackErrors);
+  const failed = new Set(errors.map((error) => error.split(': ').at(-1)));
+  return {
+    files: absPaths.filter((filePath) => !failed.has(path.basename(filePath))),
+    uploaded,
+    method: 'file-input',
+    errors,
+    reason: paste.reason,
+  };
+}
+
+export interface UploadPreferClipboardResult {
+  files: string[];
+  uploaded: number;
+  method: 'paste' | 'file-input';
+  errors: string[];
+  reason?: string;
 }
