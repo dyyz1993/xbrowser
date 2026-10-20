@@ -276,11 +276,12 @@ export default function (xcli: XCLIAPI): void {
 
         const balance = await getBalance(page, region);
         tips.push(`📊 剩余创作次数/积分: ${balance.availableCount}`);
-        if (balance.availableCount <= 0) {
-          return fail('万相余额不足', [
+        const minimumCredits = 15;
+        if (balance.availableCount < minimumCredits) {
+          return fail(`万相灵感值不足：当前 ${balance.availableCount}，视频生成至少 ${minimumCredits}`, [
             ...tips,
-            '请先执行: xbrowser wanx sign --cdp 9221',
-            '签到成功后再重新提交视频生成',
+            '请充值或领取灵感值后再提交视频生成',
+            '查询余额: xbrowser wanx balance --cdp 9221',
           ]);
         }
 
@@ -305,25 +306,51 @@ export default function (xcli: XCLIAPI): void {
           tips.push('✅ 尾帧上传完成');
         }
 
-        const taskBody = {
-          deductMode: 'relax_mode',
-          taskType: 'image_to_video',
-          taskInput: {
-            subType: 'basic',
-            modelVersion: '2_7',
-            prompt: params.prompt,
-            promptMeta: {
-              originPrompt: params.prompt,
-              orderedKeys: [],
-              refs: {},
-            },
-            generationMode: 'imaginative',
-            baseImage,
-            tailImage,
-            selectedResolution: params.resolution || '720P',
-            duration: params.duration || 5,
-          },
-        };
+        const hasFirstOrLastFrame = Boolean(params.firstFrame || params.lastFrame);
+        const taskBody = hasFirstOrLastFrame
+          ? {
+              deductMode: 'credit_mode',
+              taskType: 'image_to_video',
+              taskInput: {
+                subType: 'basic',
+                modelVersion: '2_7',
+                prompt: params.prompt,
+                promptMeta: {
+                  originPrompt: params.prompt,
+                  orderedKeys: [],
+                  refs: {},
+                },
+                generationMode: 'imaginative',
+                baseImage,
+                tailImage,
+                selectedResolution: params.resolution || '720P',
+                duration: params.duration || 5,
+              },
+            }
+          : {
+              deductMode: 'credit_mode',
+              taskType: 'omni_video_generate',
+              taskInput: {
+                subType: 'basic',
+                modelVersion: '3_0',
+                prompt: params.prompt,
+                promptMeta: {
+                  originPrompt: params.prompt,
+                  orderedKeys: [],
+                  refs: {},
+                },
+                selectedResolution: params.resolution || '720P',
+                ratio: 'adaptive',
+                thinkMode: false,
+                audio: true,
+                reference: {
+                  type: 'ref-element',
+                  refElementIds: [],
+                },
+                elements: {},
+                duration: params.duration || 5,
+              },
+            };
 
         tips.push(`🎬 提交生成: "${params.prompt.slice(0, 50)}${params.prompt.length > 50 ? '...' : ''}"`);
 

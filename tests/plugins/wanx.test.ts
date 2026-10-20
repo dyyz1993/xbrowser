@@ -91,8 +91,8 @@ describe('wanx plugin', () => {
       const mockEvaluate = vi.fn(((...args: unknown[]) => {
         const spec = args[1] as { url?: string } | ((...evalArgs: unknown[]) => unknown) | undefined;
         const url = spec && typeof spec === 'object' ? String(spec.url || '') : '';
-        if (typeof spec === 'function') return Promise.resolve({ code: 200, data: { availableCount: 5 }, success: true });
-        if (url.includes('imagineCount')) return Promise.resolve({ code: 200, data: { availableCount: 5 }, success: true });
+        if (typeof spec === 'function') return Promise.resolve({ code: 200, data: { availableCount: 20 }, success: true });
+        if (url.includes('imagineCount')) return Promise.resolve({ code: 200, data: { availableCount: 20 }, success: true });
         if (url.includes('imageGen')) return Promise.resolve({ code: 200, data: 'task123', success: true });
         return Promise.resolve({ code: 200, data: 'task123', success: true });
       }) as unknown as Page['evaluate']);
@@ -105,10 +105,43 @@ describe('wanx plugin', () => {
     it('blocks generation before uploads when balance is zero', async () => {
       const handler = getHandler('video');
       const ctx = makeCtx();
-      ctx.page.evaluate = vi.fn(() => Promise.resolve({ code: 200, data: { availableCount: 0 }, success: true }));
+      ctx.page.evaluate = vi.fn(() => Promise.resolve({ code: 200, data: { availableCount: 14 }, success: true }));
       const result = await handler({ prompt: '一只猫' }, ctx);
-      expect(result).toMatchObject({ success: false, message: '万相余额不足' });
-      expect(JSON.stringify(result)).toContain('xbrowser wanx sign');
+      expect(result).toMatchObject({ success: false, message: expect.stringContaining('万相灵感值不足') });
+      expect(JSON.stringify(result)).toContain('xbrowser wanx balance');
+    });
+  });
+
+  describe('new text-to-video request', () => {
+    it('submits Wan 3.0 omni video parameters', async () => {
+      const handler = getHandler('video');
+      const ctx = makeCtx();
+      const calls: unknown[] = [];
+      ctx.page.evaluate = vi.fn((() =>
+        Promise.resolve({ code: 200, data: { availableCount: 20 }, success: true })) as unknown as Page['evaluate']);
+      ctx.page.evaluate = vi.fn(((...args: unknown[]) => {
+        calls.push(args[1]);
+        if (String((args[1] as { url?: string } | undefined)?.url || '').includes('imageGen')) {
+          return Promise.resolve({ code: 200, data: 'task-3-0', success: true });
+        }
+        return Promise.resolve({ code: 200, data: { availableCount: 20 }, success: true });
+      }) as unknown as Page['evaluate']);
+      const result = await handler({ prompt: '一只橙猫走向窗户' }, ctx);
+      const submit = calls.find(arg => String((arg as { url?: string } | undefined)?.url || '').includes('imageGen'));
+      expect(submit).toMatchObject({
+        url: 'https://wanx.biz.aliyun.com/wanx/api/common/imageGen',
+        payload: {
+          deductMode: 'credit_mode',
+          taskType: 'omni_video_generate',
+          taskInput: {
+            modelVersion: '3_0',
+            ratio: 'adaptive',
+            audio: true,
+            duration: 5,
+          },
+        },
+      });
+      expect(((result as Record<string, unknown>).data as Record<string, unknown>).taskId).toBe('task-3-0');
     });
   });
 
