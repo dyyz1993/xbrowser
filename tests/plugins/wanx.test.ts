@@ -128,6 +128,46 @@ describe('wanx plugin', () => {
     });
   });
 
+  describe('region routing', () => {
+    it('uses the international API base from create.wan.video', async () => {
+      const handler = getHandler('balance');
+      const ctx = makeCtx({
+        page: {
+          goto: vi.fn(),
+          waitForTimeout: vi.fn(),
+          evaluate: vi.fn((fn: unknown, arg: { url?: string }) => {
+            if (typeof fn === 'function' || arg?.url?.includes('imagineCount')) {
+              return Promise.resolve({ code: 200, data: { availableCount: 6 }, success: true });
+            }
+            return Promise.resolve({ code: 200, data: {}, success: true });
+          }),
+          url: vi.fn(() => 'https://create.wan.video/explore'),
+        },
+      });
+      const result = await handler({ region: 'auto' }, ctx);
+      const data = (result as Record<string, unknown>).data as Record<string, unknown>;
+      expect(data.region).toBe('intl');
+      expect(ctx.page.goto).not.toHaveBeenCalled();
+    });
+
+    it('navigates to the domestic site for the cn region', async () => {
+      const handler = getHandler('balance');
+      const ctx = makeCtx({
+        page: {
+          goto: vi.fn(),
+          waitForTimeout: vi.fn(),
+          evaluate: vi.fn((() =>
+            Promise.resolve({ code: 200, data: { availableCount: 6 }, success: true })) as unknown as Page['evaluate']),
+          url: vi.fn(() => 'https://create.wan.video/explore'),
+        },
+      });
+      const result = await handler({ region: 'cn' }, ctx);
+      const data = (result as Record<string, unknown>).data as Record<string, unknown>;
+      expect(data.region).toBe('cn');
+      expect(ctx.page.goto).toHaveBeenCalledWith('https://tongyi.aliyun.com/wan/explore', expect.anything());
+    });
+  });
+
   it('should register login hook', () => {
     expect(mockSite.login).toHaveBeenCalledTimes(1);
   });
