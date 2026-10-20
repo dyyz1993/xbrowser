@@ -43,9 +43,24 @@ let lastDisconnectAt = null;
 let lastHello = null; // { extId, v, at }
 let lastNoClientLogAt = 0;
 
+function terminateClient(id, reason) {
+  const c = clients.get(id);
+  if (!c) return;
+  try { c.ws.terminate(); } catch {}
+  clients.delete(id);
+  lastDisconnectAt = Date.now();
+  log(reason, `#${id} total=${clients.size}`);
+  for (const [pid, p] of pending) {
+    if (p.clientId === id) {
+      pending.delete(pid); clearTimeout(p.timer); p.reject(new Error(`extension dead (${reason})`));
+    }
+  }
+}
+
 const wss = new WebSocketServer({ port: PORT });
 wss.on('connection', (ws) => {
   const id = nextId++;
+  let extId = null;
   clients.set(id, { ws, connectedAt: Date.now(), lastSeen: Date.now(), aliveMisses: 0 });
   log('connect', `#${id} total=${clients.size}`);
   ws.on('pong', () => {
@@ -58,7 +73,10 @@ wss.on('connection', (ws) => {
     let msg;
     try { msg = JSON.parse(String(raw)); } catch { return; }
     if (msg.hello) {
-      lastHello = { extId: String(msg.extId || ''), v: String(msg.v || ''), at: Date.now() };
+      extId = String(msg.extId || '');
+      const current = clients.get(id);
+      if (current) current.extId = extId;
+      lastHello = { extId, v: String(msg.v || ''), at: Date.now() };
       try { writeFileSync(EXT_META_FILE, JSON.stringify(lastHello, null, 2)); } catch {}
       log('hello', `extId=${lastHello.extId} v=${lastHello.v}`);
       return;
@@ -98,17 +116,7 @@ setInterval(() => {
     // 协议 ping 不派发 JS 事件——两路并发双保险
     try { c.ws.send(JSON.stringify({ ka: 1 })); } catch {}
     c.aliveMisses++;
-    if (c.aliveMisses >= 2) {
-      log('ka-drop', `#${id} 两轮无 pong，terminate`);
-      try { c.ws.terminate(); } catch {}
-      clients.delete(id);
-      lastDisconnectAt = Date.now();
-      for (const [pid, p] of pending) {
-        if (p.clientId === id) {
-          pending.delete(pid); clearTimeout(p.timer); p.reject(new Error('extension dead (ka)'));
-        }
-      }
-    }
+    if (c.aliveMisses >= 2) terminateClient(id, 'ka-drop');
   }
   // 无客户端心跳（每 5 分钟最多一条，防止日志刷屏）
   if (clients.size === 0 && lastDisconnectAt && Date.now() - lastNoClientLogAt > 5 * 60 * 1000) {
@@ -164,7 +172,12 @@ function handleExec(req, res, cmd, args, clientSel) {
       // 默认路由：选"最近 pong 且未超探"的活连接（revive/重连风暴会遗留
       // 大量僵尸 TCP（server 从未收到 close），固定取 all[0] 会路由到死
       // 连接 60s 超时——按 lastSeen 倒序取健康者，僵尸交给 ka 探测回收）
-      const healthy = all.filter(([, c]) => c.aliveMisses === 0 || Date.now() - (c.lastSeen ?? 0) < 80_000);
+      // New sockets may arrive before the browser sends hello. They are eligible
+      // only briefly; once hello identifies the extension, pin routing to it.
+      const expected = lastHello?.extId;
+      const healthy = all.filter(([, c]) => c.ws.readyState === 1 && (
+        !expected || !c.extId || c.extId === expected
+      ));
         entry = healthy.sort((a, b) => (b[1].lastSeen ?? 0) - (a[1].lastSeen ?? 0))[0] || all[0];
     }
     if (!entry) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'no extension connected' })); return; }
