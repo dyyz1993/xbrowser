@@ -254,6 +254,31 @@ export interface RecordingSummary {
   checkpoints: CheckpointEntry[];
 }
 
+export interface CompactSummaryFlowItem {
+  step: number;
+  action: string;
+}
+
+export interface CompactSummaryApi {
+  method: string;
+  url: string;
+  path: string;
+  status: number;
+  contentType: string;
+  responseSize: number;
+  requestBody?: unknown;
+}
+
+export interface RecordingCompactSummary {
+  startUrl: string;
+  recordedAt: string;
+  durationMs: number;
+  totalActions: number;
+  totalNetworkRequests: number;
+  flow: CompactSummaryFlowItem[];
+  keyApis: CompactSummaryApi[];
+}
+
 export type CheckpointType = 'dialog' | 'captcha' | 'login' | 'iframe' | 'slider' | 'custom';
 
 export interface CheckpointEntry {

@@ -11,6 +11,7 @@ export type {
   ContextChange,
   RecordingStep,
   RecordingSummary,
+  RecordingCompactSummary,
   RecordingData,
   RecordingControlFile,
   ElementRef,

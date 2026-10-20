@@ -709,6 +709,12 @@ Stop and save recording.
 xbrowser record stop --output <file>
 ```
 
+For daemon/session recordings, the recorder additionally writes a compact
+LLM-friendly summary to `~/.xbrowser/sessions/<session>/recordings/summary-compact.json`.
+It contains recording totals, a merged action flow capped at 100 items, and up
+to 20 of the largest JSON fetch/XHR requests. The existing `summary.json` and
+`summary.md` files remain unchanged.
+
 ### replay
 
 Replay recording.

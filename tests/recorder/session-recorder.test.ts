@@ -9,7 +9,9 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { SessionRecorder } from '../../src/recorder/session-recorder.js';
-import { mkdirSync, rmSync, existsSync } from 'fs';
+import { mkdirSync, rmSync, existsSync, readFileSync } from 'fs';
+import { homedir } from 'os';
+import { join } from 'path';
 import { resolve } from 'path';
 import { tmpdir } from 'os';
 
@@ -307,6 +309,28 @@ describe('SessionRecorder', () => {
         element: { tag: 'button', selector: '#submit', text: 'Submit', strategy: 'id', confidence: 'high' },
       });
 
+      await recorder.stop();
+      const compactPath = join(homedir(), '.xbrowser', 'sessions', 'test-session', 'recordings', 'summary-compact.json');
+      expect(existsSync(compactPath)).toBe(true);
+      const compact = JSON.parse(readFileSync(compactPath, 'utf-8')) as { flow: Array<{ action: string }> };
+      expect(compact.flow.map(item => item.action)).toEqual([
+        'fill #email value=test@test.com',
+        'click #submit text=Submit',
+      ]);
+
+      recorder = new SessionRecorder(mockContext as any, mockPage as any, 'test-session');
+      await startRecording('https://example.com');
+      await recorder.recordCommandAction({
+        type: 'cdp-fill',
+        selector: '#email',
+        value: 'test@test.com',
+        element: { tag: 'input', selector: '#email', text: '', strategy: 'id', confidence: 'high' },
+      });
+      await recorder.recordCommandAction({
+        type: 'cdp-click',
+        selector: '#submit',
+        element: { tag: 'button', selector: '#submit', text: 'Submit', strategy: 'id', confidence: 'high' },
+      });
       // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
       const { data, summary } = await recorder.stop();
 
