@@ -4,6 +4,7 @@ import { z } from 'zod/v4';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { createMediaTask, mediaTaskResultSchema } from '../shared/media-contract.js';
 
 type Page = import('../types').Page;
 
@@ -134,6 +135,36 @@ async function uploadImageToOss(page: Page, filePath: string, region: Exclude<Wa
   if (!uploadResp.ok) throw new Error(`OSS 上传失败: ${uploadResp.status}`);
 
   return String(ossData?.objectUrl || ossData?.cdnUrl || '');
+}
+
+async function downloadToFile(url: string, localPath: string): Promise<number> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`下载失败: HTTP ${response.status}`);
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  if (bytes.length < 1024) throw new Error(`下载内容异常: ${bytes.length} bytes`);
+  fs.writeFileSync(localPath, bytes);
+  return bytes.length;
+}
+
+async function downloadImageTask(
+  task: Record<string, unknown>,
+  taskId: string,
+): Promise<{ directory: string; files: Array<{ resourceId: string; url: string; localPath: string; sizeBytes: number }> }> {
+  const directory = path.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads', 'wanx', taskId);
+  fs.mkdirSync(directory, { recursive: true });
+  const results = (task.taskResult || []) as Array<Record<string, unknown>>;
+  const files: Array<{ resourceId: string; url: string; localPath: string; sizeBytes: number }> = [];
+  for (const item of results) {
+    const resourceId = String(item.resourceId || `${taskId}_${files.length}`);
+    const url = String(item.downloadUrl || item.url || '');
+    if (!url.startsWith('http')) continue;
+    const extension = path.extname(new URL(url).pathname) || '.png';
+    const localPath = path.join(directory, `${resourceId}${extension}`);
+    const sizeBytes = await downloadToFile(url, localPath);
+    files.push({ resourceId, url, localPath, sizeBytes });
+  }
+  if (files.length === 0) throw new Error('任务已完成但没有可下载图片');
+  return { directory, files };
 }
 
 /* ───────── plugin entry ───────── */
@@ -414,6 +445,148 @@ export default function (xcli: XCLIAPI): void {
         );
       } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', ['生成视频失败']);
+      }
+    },
+  });
+
+  site.command('image', {
+    description: '生成万相 2.7 Pro 图片；提交前检查灵感值',
+    scope: 'browser',
+    result: mediaTaskResultSchema.extend({
+      prompt: z.string(),
+      region: z.string(),
+    }).passthrough(),
+    parameters: z.object({
+      prompt: z.string().describe('图片描述'),
+      ratio: z.enum(['1:1', '16:9', '9:16']).optional().default('1:1'),
+      resolution: z.enum(['2K']).optional().default('2K'),
+      wait: z.boolean().optional().default(false).describe('是否等待生成完成并下载'),
+      region: z.enum(['auto', 'cn', 'intl']).optional().default('auto'),
+    }),
+    examples: [
+      { cmd: 'xbrowser wanx image --prompt "一只橙猫在阳光厨房里走向窗户" --cdp 9221', description: '生成 4 张图片' },
+      { cmd: 'xbrowser wanx image --prompt "真实摄影风格厨房" --wait --cdp 9221', description: '生成并下载' },
+    ],
+    handler: async (params, ctx) => {
+      try {
+        const page = getPage(ctx);
+        const tips = buildTips(ctx);
+        const region = await ensurePage(page, params.region || 'auto');
+        const balance = await getBalance(page, region);
+        if (balance.availableCount < 2) {
+          return fail(`万相灵感值不足：当前 ${balance.availableCount}，图片生成至少 2`, [...tips, '查询: xbrowser wanx balance --cdp 9221']);
+        }
+
+        const taskBody = {
+          deductMode: 'credit_mode',
+          taskType: 'text_to_image',
+          taskInput: {
+            subType: 'basic',
+            modelVersion: '2_7',
+            generationMode: 'imaginative',
+            modelIds: [],
+            prompt: params.prompt,
+            selectedResolution: params.resolution || '2K',
+            ratio: params.ratio || '1:1',
+          },
+        };
+        const genResp = await wanxApi(page, '/wanx/api/common/imageGen', taskBody, region);
+        if (!apiOk(genResp)) return fail(`提交图片任务失败: ${apiError(genResp)}`, [...tips]);
+        const taskId = String(genResp.data || '');
+        if (!taskId) return fail('提交图片任务失败: 返回 taskId 为空', [...tips]);
+        tips.push(`taskId: ${taskId}`);
+
+        if (!params.wait) {
+          return ok(createMediaTask({
+            taskId,
+            site: 'wanx',
+            kind: 'image',
+            status: 'submitted',
+            providerStatus: 'text_to_image',
+            sessionName: 'generate',
+          }), [...tips, `查询/下载: xbrowser wanx image-result --taskId ${taskId} --region ${region} --cdp 9221`]);
+        }
+
+        const deadline = Date.now() + 180000;
+        while (Date.now() < deadline) {
+          const listResp = await wanxApi(page, '/wanx/api/common/v2/task/pagingList', { pageSize: 20, mediaType: 'image' }, region);
+          const tasks = (listResp.data || []) as Array<Record<string, unknown>>;
+          const task = tasks.find(item => String(item.taskId) === taskId);
+          if (task && Number(task.status) === 2) {
+            const result = await downloadImageTask(task, taskId);
+            tips.push(`已下载 ${result.files.length} 张图片到 ${result.directory}`);
+            return ok({
+              ...createMediaTask({
+                taskId,
+                site: 'wanx',
+                kind: 'image',
+                status: 'completed',
+                providerStatus: 'completed',
+                sessionName: 'generate',
+              }),
+              prompt: params.prompt,
+              region,
+              ...result,
+            }, tips);
+          }
+          if (task && Number(task.status) === 3) return fail('图片生成失败', [...tips]);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+        return ok({
+          ...createMediaTask({
+            taskId,
+            site: 'wanx',
+            kind: 'image',
+            status: 'timeout',
+            providerStatus: 'processing',
+            sessionName: 'generate',
+          }),
+          prompt: params.prompt,
+          region,
+        }, [...tips, '等待超时', `查询/下载: xbrowser wanx image-result --taskId ${taskId} --region ${region} --cdp 9221`]);
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : '未知错误', ['生成图片失败']);
+      }
+    },
+  });
+
+  site.command('image-result', {
+    description: '查询万相图片任务并下载结果',
+    scope: 'browser',
+    result: z.object({
+      taskId: z.string(),
+      status: z.string(),
+      region: z.string(),
+      directory: z.string().optional(),
+      files: z.array(z.object({ resourceId: z.string(), url: z.string(), localPath: z.string(), sizeBytes: z.number() })).optional(),
+    }).passthrough(),
+    parameters: z.object({
+      taskId: z.string().describe('image 返回的任务 ID'),
+      region: z.enum(['auto', 'cn', 'intl']).optional().default('auto'),
+      download: z.boolean().optional().default(true),
+    }),
+    examples: [
+      { cmd: 'xbrowser wanx image-result --taskId xxx --cdp 9221', description: '查询并下载' },
+    ],
+    handler: async (params, ctx) => {
+      try {
+        const page = getPage(ctx);
+        const tips = buildTips(ctx);
+        const region = await ensurePage(page, params.region || 'auto');
+        const listResp = await wanxApi(page, '/wanx/api/common/v2/task/pagingList', { pageSize: 20, mediaType: 'image' }, region);
+        if (!apiOk(listResp)) return fail(`查询图片任务失败: ${apiError(listResp)}`, [...tips]);
+        const tasks = (listResp.data || []) as Array<Record<string, unknown>>;
+        const task = tasks.find(item => String(item.taskId) === params.taskId);
+        if (!task) return fail(`未找到图片任务: ${params.taskId}`, [...tips]);
+        const status = Number(task.status) === 2 ? 'completed' : Number(task.status) === 3 ? 'failed' : 'processing';
+        if (status !== 'completed' || !params.download) {
+          return ok({ taskId: params.taskId, status, region }, [...tips, `状态: ${status}`]);
+        }
+        const result = await downloadImageTask(task, params.taskId);
+        tips.push(`已下载 ${result.files.length} 张图片到 ${result.directory}`);
+        return ok({ taskId: params.taskId, status, region, ...result }, tips);
+      } catch (error) {
+        return fail(error instanceof Error ? error.message : '未知错误', ['查询图片任务失败']);
       }
     },
   });

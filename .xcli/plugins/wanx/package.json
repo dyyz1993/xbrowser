@@ -26,9 +26,11 @@
       "sign",
       "balance",
       "video",
-      "result"
+      "result",
+      "image",
+      "image-result"
     ],
-    "description": "万相(Wanx) AI 视频生成 — 文生视频、图生视频、签到、余额查询",
+    "description": "万相(Wanx) AI 图片/视频生成 — 签到、余额、查询与下载",
     "name": "wanx",
     "site": "https://tongyi.aliyun.com/wan/explore",
     "requiresLogin": true,

@@ -44,12 +44,12 @@ describe('wanx plugin', () => {
   });
 
   it('should register 4 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(4);
+    expect(mockSite.command).toHaveBeenCalledTimes(6);
   });
 
-  it('should register sign, balance, video, result commands', () => {
+  it('should register sign, balance, image, image-result, video, result commands', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
-    expect(names).toEqual(expect.arrayContaining(['sign', 'balance', 'video', 'result']));
+    expect(names).toEqual(expect.arrayContaining(['sign', 'balance', 'image', 'image-result', 'video', 'result']));
   });
 
   it('each command should have description, scope, parameters, and handler', () => {
@@ -81,6 +81,62 @@ describe('wanx plugin', () => {
       const data = (result as Record<string, unknown>).data as Record<string, unknown>;
       expect(data.availableCount).toBe(7);
       expect(data.raw).toMatchObject({ point: 7 });
+    });
+  });
+
+  describe('image commands', () => {
+    it('submits the verified Wan 2.7 image request', async () => {
+      const handler = getHandler('image');
+      const ctx = makeCtx();
+      const calls: unknown[] = [];
+      ctx.page.evaluate = vi.fn(((...args: unknown[]) => {
+        calls.push(args[1]);
+        const url = String((args[1] as { url?: string } | undefined)?.url || '');
+        if (url.includes('imageGen')) return Promise.resolve({ code: 200, data: 'image-task', success: true });
+        return Promise.resolve({ code: 200, data: { availableCount: 4 }, success: true });
+      }) as unknown as Page['evaluate']);
+      const result = await handler({ prompt: '阳光厨房里的橙猫' }, ctx);
+      const submit = calls.find(arg => String((arg as { url?: string } | undefined)?.url || '').includes('imageGen'));
+      expect(submit).toMatchObject({
+        payload: {
+          deductMode: 'credit_mode',
+          taskType: 'text_to_image',
+          taskInput: {
+            modelVersion: '2_7',
+            selectedResolution: '2K',
+            ratio: '1:1',
+          },
+        },
+      });
+      expect(((result as Record<string, unknown>).data as Record<string, unknown>).taskId).toBe('image-task');
+    });
+
+    it('downloads completed image task results', async () => {
+      const handler = getHandler('image-result');
+      const ctx = makeCtx();
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = vi.fn(async () => new Response('x'.repeat(2048), { status: 200 })) as unknown as typeof fetch;
+      ctx.page.evaluate = vi.fn(((...args: unknown[]) => {
+        const url = String((args[1] as { url?: string } | undefined)?.url || '');
+        if (url.includes('pagingList')) {
+          return Promise.resolve({
+            code: 200,
+            success: true,
+            data: [{
+              taskId: 'image-task',
+              status: 2,
+              taskResult: [{ resourceId: 'image-task_0', downloadUrl: 'https://cdn.wanx.aliyuncs.com/a.png' }],
+            }],
+          });
+        }
+        return Promise.resolve({ code: 200, data: {}, success: true });
+      }) as unknown as Page['evaluate']);
+      const result = await handler({ taskId: 'image-task', download: true }, ctx);
+      globalThis.fetch = originalFetch;
+      const data = (result as Record<string, unknown>).data as Record<string, unknown>;
+      expect(result).toMatchObject({ success: true });
+      expect(data.status).toBe('completed');
+      expect(data.files).toHaveLength(1);
     });
   });
 
