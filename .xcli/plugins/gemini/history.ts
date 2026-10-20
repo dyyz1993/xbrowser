@@ -9,6 +9,17 @@ import {
 
 const DOWNLOAD_DIR = path.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads');
 
+type HistoryRuntime = {
+  ev: typeof ev;
+  sleep: typeof sleep;
+};
+
+const runtime: HistoryRuntime = { ev, sleep };
+
+export function setHistoryRuntime(next: Partial<HistoryRuntime>): void {
+  Object.assign(runtime, next);
+}
+
 type Session = { title: string; href: string };
 
 async function listSessions(tabId: number): Promise<Session[]> {
@@ -32,24 +43,34 @@ async function waitForVideo(tabId: number, secs: number): Promise<string | null>
   return null;
 }
 
-async function downloadVideo(tabId: number, videoSrc: string): Promise<{ data: string; size: number; buffer: Buffer } | null> {
-  const setup = await ev<string>(
-    `(async()=>{
-      const r=await fetch("${videoSrc}",{credentials:"include"});
-      if(!r.ok) return "ERR:"+r.status;
-      window.__xbrowserVideoBlob=await r.blob();
-      return "OK:"+window.__xbrowserVideoBlob.size;
-    })()`,
-    tabId,
-  );
-  if (!setup?.startsWith?.('OK:')) return null;
-  const total = Number(setup.slice(3));
+export async function downloadVideo(tabId: number, videoSrc: string): Promise<{ data: string; size: number; buffer: Buffer } | null> {
+  // Do not await the download inside Runtime.evaluate: chrome-bridge rejects a
+  // single debugger call after 12s. Keep the fetch running in the page and
+  // poll its small JSON state instead.
+  const setupExpression = buildVideoDownloadSetupExpression(videoSrc);
+  const setup = await runtime.ev<string>(setupExpression, tabId);
+  if (typeof setup !== 'string') return null;
+
+  let total = 0;
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    const raw = await runtime.ev<string>('JSON.stringify(window.__xVideoState||{})', tabId);
+    const state = typeof raw === 'string' ? JSON.parse(raw || '{}') as { ready?: boolean; size?: number; error?: string | null } : raw ?? {};
+    if (state.error) return null;
+    if (state.ready === true && Number(state.size) > 0) {
+      total = Number(state.size);
+      break;
+    }
+    await runtime.sleep(500);
+  }
+  if (!total) return null;
+
   const chunks: Buffer[] = [];
   const chunkSize = 768 * 1024;
   for (let offset = 0; offset < total; offset += chunkSize) {
-    const chunk = await ev<string>(
+    const chunk = await runtime.ev<string>(
       `(async()=>{
-        const blob=window.__xbrowserVideoBlob;
+        const blob=window.__xVideoBlob;
         if(!blob) return "ERR:missing blob";
         const part=blob.slice(${offset},Math.min(${offset + chunkSize},blob.size));
         const u8=new Uint8Array(await part.arrayBuffer());
@@ -59,11 +80,22 @@ async function downloadVideo(tabId: number, videoSrc: string): Promise<{ data: s
       })()`,
       tabId,
     );
-    if (!chunk || chunk.startsWith('ERR:')) return null;
+    if (typeof chunk !== 'string' || chunk.startsWith('ERR:')) return null;
     chunks.push(Buffer.from(chunk, 'base64'));
   }
-  await ev('delete window.__xbrowserVideoBlob', tabId);
+  await runtime.ev('delete window.__xVideoBlob;delete window.__xVideoState', tabId);
   return { data: 'data:video/mp4;base64,', size: chunks.reduce((sum, chunk) => sum + chunk.length, 0), buffer: Buffer.concat(chunks) };
+}
+
+/** Retained for callers/tests that need a stable setup expression contract. */
+export function buildVideoDownloadSetupExpression(videoSrc: string): string {
+  return `(window.__xVideoState={ready:false,size:0,error:null},
+    fetch(${JSON.stringify(videoSrc)},{credentials:"include"}).then(async(r)=>{
+      if(!r.ok) throw new Error("HTTP "+r.status);
+      window.__xVideoBlob=await r.blob();
+      window.__xVideoState={ready:true,size:window.__xVideoBlob.size,error:null};
+    }).catch((e)=>{window.__xVideoState={ready:false,size:0,error:String(e)}}),
+    JSON.stringify(window.__xVideoState))`;
 }
 
 interface CommandRegistrar {

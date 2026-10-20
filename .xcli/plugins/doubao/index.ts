@@ -168,21 +168,25 @@ async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
     await page.waitForTimeout(2000);
   }
   if (ctx) {
-    const isLogin = (ctx as unknown as Record<string, unknown>).__loginChecked as boolean;
-    if (!isLogin) {
-      (ctx as unknown as Record<string, unknown>).__loginChecked = true;
-      const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 300) || '') as string;
-      if (bodyText.includes('登录') && bodyText.includes('注册') && !bodyText.includes('豆包')) {
-        const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint;
-        throw new Error(
-          '豆包 (Doubao) 未登录！\n' +
-          (cdp
-            ? '  使用 --cdp 连接的浏览器未登录豆包，请先在浏览器中登录。\n  或运行: xbrowser doubao login'
-            : '  请使用 --cdp 参数连接已登录的浏览器:\n    xbrowser doubao list --cdp http://localhost:9221')
-        );
-      }
+    if (!await isDoubaoLoggedIn(page)) {
+      const cdp = (ctx as unknown as Record<string, unknown>).cdpEndpoint;
+      throw new Error(
+        '豆包 (Doubao) 未登录！\n' +
+        (cdp
+          ? '  使用 --cdp 连接的浏览器未登录豆包，请先在浏览器中登录。\n  或运行: xbrowser doubao login'
+          : '  请使用 --cdp 参数连接已登录的浏览器:\n    xbrowser doubao list --cdp http://localhost:9221')
+      );
     }
   }
+}
+
+async function isDoubaoLoggedIn(page: Page): Promise<boolean> {
+  const url = page.url();
+  if (url.includes('/login') || url.includes('/auth') || url.includes('/passport')) return false;
+  const bodyText = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 500) || '') as string;
+  const loginDialog = /请登录|扫码登录|账号登录/.test(bodyText);
+  const workingApp = /发送|输入|你的视频生成好了/.test(bodyText);
+  return !loginDialog || workingApp;
 }
 
 async function safeClickSelector(page: Page, selector: string): Promise<boolean> {
@@ -229,6 +233,37 @@ async function safeClickByText(page: Page, text: string): Promise<boolean> {
 }
 
 export default function (xcli: XCLIAPI): void {
+  async function ensureVideoMode(page: Page): Promise<void> {
+    await page.waitForTimeout(300);
+    const hasMode = await page.evaluate(() => {
+      const text = document.body?.textContent || '';
+      return /Seedance|视频生成|自动\s*·\s*10s/.test(text);
+    });
+    if (hasMode) return;
+    const clicked = await safeClickByText(page, '视频生成');
+    if (!clicked) throw new Error('未能切换到视频生成模式');
+    await page.waitForTimeout(1000);
+    const confirmed = await page.evaluate(() => {
+      const text = document.body?.textContent || '';
+      return /Seedance|自动\s*·\s*10s/.test(text);
+    });
+    if (!confirmed) throw new Error('视频生成模式验证失败');
+  }
+
+  async function confirmGeneration(page: Page): Promise<void> {
+    await page.waitForTimeout(2000);
+    await safeClickByText(page, '确认');
+    await page.waitForTimeout(800);
+    await page.keyboard.type('确认，请开始生成视频。');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(1500);
+    const acknowledged = await page.waitForFunction(() => {
+      const text = document.body?.textContent || '';
+      return /已收到|开始生成|生成中|视频生成/.test(text);
+    }, { timeout: 5000 }).then(() => true).catch(() => false);
+    if (!acknowledged) throw new Error('豆包未确认开始生成，请检查页面');
+  }
+
   const site = xcli.createSite({
     name: 'doubao',
     url: DB_URL,
@@ -1448,10 +1483,11 @@ export default function (xcli: XCLIAPI): void {
 
         if (!inputFound) throw new Error('找不到输入框');
 
+        await ensureVideoMode(page);
         await page.waitForTimeout(500);
         await submitMessage(page);
         tips.push('视频生成任务已提交');
-        await page.waitForTimeout(2000);
+        await confirmGeneration(page);
 
         const taskId = await page.evaluate(() => {
           const idEls = document.querySelectorAll('[class*="task-id"], [class*="job-id"], [data-task-id]');
@@ -1483,8 +1519,8 @@ export default function (xcli: XCLIAPI): void {
         }, safeTaskId
             ? [...tips, `taskId: ${safeTaskId}`]
             : [...tips, '无法提取 taskId，请使用 video-status 检查任务状态']);
-      } catch {
-        return fail('未知错误', ['提交视频生成失败']);
+      } catch (error) {
+        return fail('未知错误', ['提交视频生成失败', `原因: ${error instanceof Error ? error.message : String(error)}`]);
       }
     },
   });

@@ -363,11 +363,21 @@ async function generate(
     tips.push('已提交提示词');
 
     const mediaUrl = await pollMedia(tabId, beforeUrls, media, params.timeout);
+    const sessionUrl = await runtime.ev<string>('JSON.stringify(location.href)', tabId);
+    const session = typeof sessionUrl === 'string' ? sessionUrl : JSON.stringify(sessionUrl ?? '') || '""';
     if (!mediaUrl) {
-      const sessionUrl = await runtime.ev<string>('JSON.stringify(location.href)', tabId);
-      const session = typeof sessionUrl === 'string' ? sessionUrl : JSON.stringify(sessionUrl ?? '') || '""';
-      return fail(`等待 ${params.timeout}s 未检测到${media === 'image' ? '图片' : '视频'}`, [
-        ...tips, `会话URL（可稍后重新打开下载）: ${session}`,
+      return ok(createMediaTask({
+        taskId,
+        site: 'gemini',
+        kind: media,
+        status: 'timeout',
+        providerStatus: 'session-active',
+        sessionName: taskId,
+        sessionUrl: session,
+      }), [
+        ...tips,
+        `等待 ${params.timeout}s 未检测到${media === 'image' ? '图片' : '视频'}`,
+        `会话URL（稍后可用 gemini download-video 恢复）: ${session}`,
       ]);
     }
 
@@ -383,9 +393,6 @@ async function generate(
       const base64 = await fetchAsBase64(tabId, mediaUrl);
       if (base64) { fs.writeFileSync(filePath, Buffer.from(base64, 'base64')); localPath = filePath; }
     }
-
-    const sessionUrl = await runtime.ev<string>('JSON.stringify(location.href)', tabId);
-    const session = typeof sessionUrl === 'string' ? sessionUrl : JSON.stringify(sessionUrl ?? '') || '""';
 
     const task = createMediaTask({
       taskId,

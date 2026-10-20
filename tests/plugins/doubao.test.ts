@@ -33,9 +33,9 @@ function createVideoCtx(mockPage: Record<string, unknown> = {}) {
       goto: vi.fn(),
       waitForTimeout: vi.fn(),
       waitForSelector: vi.fn(),
-      waitForFunction: vi.fn(),
+      waitForFunction: vi.fn(() => Promise.resolve(true)),
       bringToFront: vi.fn(async () => undefined),
-      keyboard: { press: vi.fn(async () => undefined) },
+      keyboard: { press: vi.fn(async () => undefined), type: vi.fn(async () => undefined) },
       mouse: { click: vi.fn(async () => undefined) },
       locator: vi.fn(() => ({
         first: () => ({
@@ -46,12 +46,16 @@ function createVideoCtx(mockPage: Record<string, unknown> = {}) {
       setFileDialogInterception: vi.fn(async () => undefined),
       setInputFiles: vi.fn(async () => undefined),
       evaluate: vi.fn()
-        .mockImplementationOnce(() => Promise.resolve(0))
-        .mockImplementationOnce(() => Promise.resolve({ x: 370, y: 717, width: 36, height: 36 }))
-        .mockImplementationOnce(() => Promise.resolve(1))
-        .mockImplementationOnce(() => Promise.resolve(true))
-        .mockImplementationOnce(() => Promise.resolve({ found: true, disabled: false, clicked: true }))
-        .mockImplementation(() => Promise.resolve('task123')),
+        .mockImplementation((expression: unknown) => {
+          const source = typeof expression === 'string' ? expression : String(expression);
+          if (source.includes('querySelectorAll') && source.includes('getBoundingClientRect')) return Promise.resolve(0);
+          if (source.includes('videoModeReady') || /Seedance|视频生成/.test(source)) return Promise.resolve(true);
+          if (source.includes('querySelectorAll') && source.includes('textContent?.trim()')) {
+            return Promise.resolve({ x: 10, y: 10, width: 10, height: 10 });
+          }
+          if (source.includes('task-id') || source.includes('job-id')) return Promise.resolve('task123');
+          return Promise.resolve(true);
+        }),
       ...mockPage,
     },
     cdpEndpoint: 'http://localhost:9221',
