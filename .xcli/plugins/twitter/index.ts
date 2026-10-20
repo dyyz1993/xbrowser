@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import { createHmac, randomBytes } from 'node:crypto';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { execFile } from 'child_process';
@@ -34,7 +35,7 @@ interface ImageUploadResult {
 type PageWithOptionalFront = Page & { bringToFront?: () => Promise<void> };
 
 function recordTwitterMistake(
-  command: 'post' | 'reply' | 'delete',
+  command: 'post' | 'post-api' | 'reply' | 'delete',
   reason: string,
   context: Record<string, unknown> = {},
 ): void {
@@ -61,6 +62,82 @@ function tweetIdOrUrl(value: string): string {
   const tweetId = match?.[1];
   if (!tweetId) throw new Error('无法从输入解析推文 ID');
   return tweetId;
+}
+
+interface TwitterApiCredentials {
+  consumerKey: string;
+  consumerSecret: string;
+  accessToken: string;
+  accessTokenSecret: string;
+}
+
+function getTwitterApiCredentials(): TwitterApiCredentials | null {
+  const credentials = {
+    consumerKey: process.env.X_CONSUMER_KEY,
+    consumerSecret: process.env.X_CONSUMER_SECRET,
+    accessToken: process.env.X_ACCESS_TOKEN,
+    accessTokenSecret: process.env.X_ACCESS_TOKEN_SECRET,
+  };
+  if (
+    !credentials.consumerKey ||
+    !credentials.consumerSecret ||
+    !credentials.accessToken ||
+    !credentials.accessTokenSecret
+  ) {
+    return null;
+  }
+  return {
+    consumerKey: credentials.consumerKey,
+    consumerSecret: credentials.consumerSecret,
+    accessToken: credentials.accessToken,
+    accessTokenSecret: credentials.accessTokenSecret,
+  };
+}
+
+function encodeRfc3986(value: string): string {
+  return encodeURIComponent(value)
+    .replace(/!/g, '%21')
+    .replace(/\*/g, '%2A')
+    .replace(/'/g, '%27')
+    .replace(/\(/g, '%28')
+    .replace(/\)/g, '%29');
+}
+
+function buildOauth1AuthorizationHeader(
+  credentials: TwitterApiCredentials,
+  method: string,
+  url: string,
+): string {
+  const oauthParameters: Record<string, string> = {
+    oauth_consumer_key: credentials.consumerKey,
+    oauth_nonce: randomBytes(16).toString('hex'),
+    oauth_signature_method: 'HMAC-SHA1',
+    oauth_timestamp: Math.floor(Date.now() / 1000).toString(),
+    oauth_token: credentials.accessToken,
+    oauth_version: '1.0',
+  };
+
+  const parameterString = Object.entries(oauthParameters)
+    .map(([key, value]) => `${encodeRfc3986(key)}=${encodeRfc3986(value)}`)
+    .sort()
+    .join('&');
+  const signatureBase = [
+    method.toUpperCase(),
+    encodeRfc3986(url),
+    encodeRfc3986(parameterString),
+  ].join('&');
+  const signingKey = `${encodeRfc3986(credentials.consumerSecret)}&${encodeRfc3986(credentials.accessTokenSecret)}`;
+  const signature = createHmac('sha1', signingKey)
+    .update(signatureBase)
+    .digest('base64');
+
+  return `OAuth ${[
+    ...Object.entries(oauthParameters),
+    ['oauth_signature', signature],
+  ]
+    .map(([key, value]) => `${encodeRfc3986(key)}="${encodeRfc3986(value)}"`)
+    .sort()
+    .join(', ')}`;
 }
 
 function collectImagePaths(params: ImageParameters): string[] {
@@ -738,6 +815,92 @@ export default function (xcli: XCLIAPI): void {
       } catch (error) {
         if (error instanceof Error) recordTwitterMistake('post', error.message, { command: 'post' });
         return fail(error instanceof Error ? error.message : '发布失败');
+      }
+    },
+  });
+
+  // ─── 12. post-api (OAuth 1.0a) ───────────────
+
+  site.command('post-api', {
+    description: '通过 X API v2 发布推文（适合 CI）',
+    scope: 'cli',
+    parameters: z.object({
+      text: z.string().min(1).max(280).describe('推文内容（最多280字符）'),
+      image: z.string().optional().describe('单张图片绝对路径（JPEG/PNG/GIF/WEBP）'),
+    }),
+    examples: [
+      { cmd: 'xbrowser twitter post-api --text "Release ready"', description: '通过 API 发布版本推文' },
+    ],
+    result: z.object({
+      posted: z.boolean(),
+      id: z.string(),
+      text: z.string(),
+    }).passthrough(),
+    handler: async params => {
+      const credentials = getTwitterApiCredentials();
+      if (!credentials) {
+        return fail('缺少 X API 环境变量', [
+          '需要 X_CONSUMER_KEY / X_CONSUMER_SECRET / X_ACCESS_TOKEN / X_ACCESS_TOKEN_SECRET',
+        ]);
+      }
+
+      try {
+        let mediaId: string | undefined;
+        if (params.image) {
+          if (!path.isAbsolute(params.image)) {
+            return fail('图片路径必须是绝对路径');
+          }
+          const media = await fs.promises.readFile(params.image);
+          const uploadUrl = 'https://upload.twitter.com/1.1/media/upload.json';
+          const uploadForm = new FormData();
+          uploadForm.append('media_data', media.toString('base64'));
+          const uploadResponse = await fetch(uploadUrl, {
+            method: 'POST',
+            headers: {
+              Authorization: buildOauth1AuthorizationHeader(credentials, 'POST', uploadUrl),
+            },
+            body: uploadForm,
+          });
+          const uploadResult = await uploadResponse.json() as {
+            media_id_string?: string;
+            errors?: Array<{ message?: string }>;
+          };
+          if (!uploadResponse.ok || !uploadResult.media_id_string) {
+            return fail(uploadResult.errors?.[0]?.message || `图片上传失败 (HTTP ${uploadResponse.status})`);
+          }
+          mediaId = uploadResult.media_id_string;
+        }
+
+        const tweetUrl = 'https://api.twitter.com/2/tweets';
+        const response = await fetch(tweetUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: buildOauth1AuthorizationHeader(credentials, 'POST', tweetUrl),
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            text: params.text,
+            ...(mediaId ? { media: { media_ids: [mediaId] } } : {}),
+          }),
+        });
+        const result = await response.json() as {
+          data?: { id?: string; text?: string };
+          title?: string;
+          detail?: string;
+        };
+        if (!response.ok || !result.data?.id) {
+          return fail(result.detail || result.title || `发布推文失败 (HTTP ${response.status})`);
+        }
+
+        return ok({
+          posted: true,
+          id: result.data.id,
+          text: result.data.text || params.text,
+        }, ['推文已通过 X API 发布']);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        recordTwitterMistake('post-api', reason, { command: 'post-api' });
+        return fail(reason);
       }
     },
   });
