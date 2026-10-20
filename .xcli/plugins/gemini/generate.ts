@@ -12,6 +12,7 @@ import {
   mediaTaskResultSchema,
   type MediaTaskResult,
 } from '../shared/media-contract.js';
+import { checkRefusal } from '../shared/refusal-detect.js';
 
 const DOWNLOAD_DIR = path.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads');
 const execFileAsync = promisify(execFile);
@@ -266,6 +267,14 @@ async function pollMedia(
   const seen = new Set(media === 'image' ? before.imgs : before.videos);
   for (let i = 0; i < secs / 5; i++) {
     await runtime.sleep(5000);
+    const refusal = await checkRefusal({ evaluate: <T, Arg = unknown[]>(fn: string | ((arg: Arg, ...rest: never[]) => T), _arg?: Arg) => runtime.ev<T>(String(fn), tabId) }, [
+      '.model-response-text',
+      'message-content',
+      '.response-container',
+    ]).catch(() => ({ refused: false, reason: null, text: '' }));
+    if (refusal.refused && refusal.reason) {
+      throw new Error(`Gemini 拒绝生成（${refusal.reason}）：${refusal.text.slice(0, 100)}`);
+    }
     const s = await snapshot(tabId);
     const arr = media === 'image' ? s.imgs : s.videos;
     for (const x of arr) {
