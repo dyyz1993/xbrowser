@@ -112,6 +112,7 @@ export interface Page {
   screenshot(options?: Record<string, unknown>): Promise<unknown>;
   click(selector: string, options?: Record<string, unknown>): Promise<void>;
   setInputFiles(selector: string, files: unknown, options?: Record<string, unknown>): Promise<void>;
+  setFileDialogInterception?(enabled: boolean): Promise<void>;
   addInitScript(script: string | ((...args: never[]) => unknown)): Promise<void>;
   route(pattern: string | RegExp, handler: (route: RouteLike) => Promise<void> | void): Promise<void>;
   unroute(pattern: string | RegExp, handler?: (route: RouteLike) => Promise<void> | void): Promise<void>;

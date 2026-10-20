@@ -9,6 +9,7 @@ import {
   type MediaTaskResult,
 } from '../shared/media-contract.js';
 import { buildTips, uploadFileViaDataTransfer, handleChatAttachments, parsePathsCsv } from '../shared/ai-chat-base.js';
+import { pasteImagesFromClipboard, setImagesOnFileInput } from '../shared/clipboard-upload.js';
 import { extractAllHDImages } from '../shared/image-lightbox.js';
 import { clickButtonByText } from '../shared/file-upload.js';
 import path from 'path';
@@ -1285,7 +1286,7 @@ export default function (xcli: XCLIAPI): void {
   //  VIDEO GENERATION (async - 3 commands)
   // ═══════════════════════════════════════════════════
 
-  //  10. video — 提交视频生成（支持通用附件；首/尾帧是同一条提示词里的语义标记）
+  //  10. video — 提交视频生成（剪贴板优先上传附件；首/尾帧是提示词里的语义标记）
   site.command('video', {
     description: '提交视频生成任务（异步，支持单/多张图片附件，可显式标记首/尾帧）',
     scope: 'browser',
@@ -1339,27 +1340,85 @@ export default function (xcli: XCLIAPI): void {
           }
         }
 
-        const attachmentErrors: string[] = [];
-        if (attachmentList.length > 0) {
-          for (const [index, item] of attachmentList.entries()) {
-            const absPath = path.resolve(item.path);
-            if (index > 0) {
-              const clicked = await clickButtonByText(page, '+');
-              if (!clicked) {
-                attachmentErrors.push(`第 ${index + 1}/${attachmentList.length} 个${item.semantic}: 找不到"+"添加按钮`);
-                continue;
-              }
-              await page.waitForTimeout(500);
-            }
-            const uploaded = await uploadFileViaDataTransfer(page, absPath);
-            if (uploaded) {
-              await page.waitForTimeout(1200);
-            } else {
-              attachmentErrors.push(`第 ${index + 1}/${attachmentList.length} 个${item.semantic}: 找不到 file input 或上传失败`);
-            }
+        const uploadPage = page;
+
+        async function countVideoAttachments(): Promise<number> {
+          return uploadPage.evaluate(() => {
+            const candidates = document.querySelectorAll<HTMLElement>(
+              '[data-testid*="attachment"] img, [class*="upload-preview"] img, [class*="image-preview"] img, img[class*="image-"]'
+            );
+            return Array.from(candidates).filter((el) => {
+              const rect = el.getBoundingClientRect();
+              return rect.width > 0 && rect.height > 0;
+            }).length;
+          });
+        }
+
+        async function waitForVideoAttachments(expected: number, timeoutMs = 12000): Promise<number> {
+          const deadline = Date.now() + timeoutMs;
+          let current = -1;
+          while (Date.now() < deadline) {
+            current = await countVideoAttachments().catch(() => 0);
+            if (current >= expected) return current;
+            await uploadPage.waitForTimeout(250);
           }
-          if (attachmentErrors.length > 0) {
-            return fail('附件上传失败', [...tips, ...attachmentErrors]);
+          throw new Error(`等待附件预览超时：当前 ${current}，期望 ${expected}`);
+        }
+
+        async function clickUploadControl(): Promise<boolean> {
+          const box = await uploadPage.evaluate(() => {
+            const input = document.querySelector('input[type="file"]');
+            const button = input?.parentElement?.querySelector('button') ??
+              [...document.querySelectorAll('button svg path')]
+                .find(path => (path.getAttribute('d') || '').startsWith('M12.0005 2.'))
+                ?.closest('button');
+            if (!button) return null;
+            const rect = button.getBoundingClientRect();
+            return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+          }) as { x: number; y: number; width: number; height: number } | null;
+          if (!box) return false;
+          await uploadPage.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+          return true;
+        }
+
+        if (attachmentList.length > 0) {
+          const filePaths = attachmentList.map((item) => path.resolve(item.path));
+          const canPaste = process.env.XBROWSER_DISABLE_CLIPBOARD_PASTE !== '1';
+          const initialCount = await countVideoAttachments().catch(() => 0);
+          let pasted = 0;
+          let pasteReason: string | undefined;
+          if (canPaste) {
+            const result = await pasteImagesFromClipboard(uploadPage, filePaths, {
+              editorSelector: 'textarea, [contenteditable="true"], [role="textbox"]',
+              browserName: 'Chromium',
+              exec: process.env.XBROWSER_TEST_CLIPBOARD === '1' ? async () => undefined : undefined,
+              verifyPaste: process.env.XBROWSER_TEST_CLIPBOARD === '1' ? async () => undefined : undefined,
+              initialCount,
+              waitForAttachmentCount: expected => waitForVideoAttachments(expected),
+            });
+            pasted = result.ok ? filePaths.length : result.pasted;
+            pasteReason = result.reason;
+            if (result.ok) tips.push('✓ 已通过剪贴板粘贴上传附件');
+          }
+          const remaining = filePaths.slice(pasted);
+          if (remaining.length > 0) {
+            try {
+              await (uploadPage as PluginPage).setFileDialogInterception?.(true).catch(() => {});
+              const uploadClicked = await clickUploadControl();
+              if (!uploadClicked) throw new Error('找不到上传按钮');
+              await uploadPage.waitForTimeout(500);
+              const inputAvailable = await setImagesOnFileInput(uploadPage, remaining);
+              if (!inputAvailable) throw new Error('找不到上传入口');
+              await waitForVideoAttachments(initialCount + filePaths.length);
+              tips.push('⚠ 剪贴板不可用，已改用 file input 兜底');
+            } catch (error) {
+              const reason = error instanceof Error ? error.message : String(error);
+              return fail('附件上传失败', [
+                ...tips,
+                `剪贴板结果: ${pasted}/${filePaths.length}${pasteReason ? `，${pasteReason}` : ''}`,
+                `file input 兜底失败: ${reason}`,
+              ]);
+            }
           }
           tips.push(`✓ 已上传 ${attachmentList.length} 个${attachmentList.length === 1 ? attachmentList[0]!.semantic : '附件'}`);
         }

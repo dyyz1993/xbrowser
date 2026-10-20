@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import plugin from '../../.xcli/plugins/doubao/index.ts';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -34,9 +34,24 @@ function createVideoCtx(mockPage: Record<string, unknown> = {}) {
       waitForTimeout: vi.fn(),
       waitForSelector: vi.fn(),
       waitForFunction: vi.fn(),
+      bringToFront: vi.fn(async () => undefined),
       keyboard: { press: vi.fn(async () => undefined) },
       mouse: { click: vi.fn(async () => undefined) },
-      evaluate: vi.fn(() => Promise.resolve('task123')),
+      locator: vi.fn(() => ({
+        first: () => ({
+          click: vi.fn(async () => undefined),
+          count: vi.fn(async () => 1),
+        }),
+      })),
+      setFileDialogInterception: vi.fn(async () => undefined),
+      setInputFiles: vi.fn(async () => undefined),
+      evaluate: vi.fn()
+        .mockImplementationOnce(() => Promise.resolve(0))
+        .mockImplementationOnce(() => Promise.resolve({ x: 370, y: 717, width: 36, height: 36 }))
+        .mockImplementationOnce(() => Promise.resolve(1))
+        .mockImplementationOnce(() => Promise.resolve(true))
+        .mockImplementationOnce(() => Promise.resolve({ found: true, disabled: false, clicked: true }))
+        .mockImplementation(() => Promise.resolve('task123')),
       ...mockPage,
     },
     cdpEndpoint: 'http://localhost:9221',
@@ -46,8 +61,13 @@ function createVideoCtx(mockPage: Record<string, unknown> = {}) {
 }
 
 describe('doubao plugin', () => {
+  afterEach(() => {
+    delete process.env.XBROWSER_TEST_CLIPBOARD;
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.XBROWSER_TEST_CLIPBOARD = '1';
     plugin(mockXCLI as unknown as Parameters<typeof plugin>[0]);
   });
 
