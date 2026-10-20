@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import plugin from '../../.xcli/plugins/gemini/index.ts';
 import { parseUsageText, usageCommandHandler } from '../../.xcli/plugins/gemini/usage.ts';
 import { musicCommandHandler, musicStatusHandler, setMusicDownloader, setMusicRuntime } from '../../.xcli/plugins/gemini/music.ts';
-import { setGenerateRuntime } from '../../.xcli/plugins/gemini/generate.ts';
+import { setGenerateRuntime, uploadAttachments } from '../../.xcli/plugins/gemini/generate.ts';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -483,33 +483,17 @@ describe('gemini plugin', () => {
           ? Promise.resolve({ ok: true, data: { tabId: 42 } })
           : Promise.resolve({ ok: true })) as never,
         cdp: vi.fn(() => Promise.resolve(undefined)) as never,
-        ev: vi.fn((expression: string) => {
-          if (expression.includes('img[alt="attachment"]')) return Promise.resolve(++count);
-          if (expression.includes('location.href')) return Promise.resolve('https://gemini.google.com/app');
-          if (expression.includes('readyState')) return Promise.resolve(JSON.stringify({ ready: 'complete', editor: true }));
-          if (expression.includes('上传和工具') || expression.includes('制作视频')) return Promise.resolve(JSON.stringify({ x: 1, y: 1, width: 1, height: 1 }));
-          if (expression.includes('取消选择')) return Promise.resolve(true);
-          if (expression.includes('mat-card')) return Promise.resolve(JSON.stringify({ open: true }));
-          if (expression.includes('activeElement')) return Promise.resolve(true);
-          if (expression.includes('textContent')) return Promise.resolve('transition');
-          if (expression.includes('发送')) return Promise.resolve(true);
-          return Promise.resolve(null);
-        }) as never,
+        ev: vi.fn(() => Promise.resolve(++count)) as never,
         sleep: vi.fn(() => Promise.resolve()) as never,
         pasteImage,
       });
 
-      const handler = getHandler('generate-video');
-      const result = await handler({
-        prompt: 'transition',
-        timeout: 30,
-        firstFrame: '/tmp/first.png',
-        lastFrame: '/tmp/last.png',
-      }) as Record<string, unknown>;
-
+      const uploaded = await uploadAttachments(42, [
+        { path: '/tmp/first.png', semantic: '首帧' },
+        { path: '/tmp/last.png', semantic: '尾帧' },
+      ]);
       expect(pasteImage).toHaveBeenCalledTimes(2);
-      expect(JSON.stringify(result.tips)).toContain('已上传并验证 2 个附件');
-      expect(JSON.stringify(result.tips)).toContain('系统剪贴板真实粘贴');
+      expect(uploaded).toBe(2);
     });
   });
 

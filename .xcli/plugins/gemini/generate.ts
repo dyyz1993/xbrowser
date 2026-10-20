@@ -87,6 +87,21 @@ async function waitForAttachments(tabId: number, expected: number, timeoutMs = 1
   throw new Error(`附件上传验证失败：当前 ${current} 个，期望 ${expected} 个`);
 }
 
+export async function uploadAttachments(tabId: number, attachments: Attachment[]): Promise<number> {
+  const initialCount = await countAttachments(tabId).catch(() => 0);
+  for (const [index, item] of attachments.entries()) {
+    const absolutePath = path.resolve(item.path);
+    try {
+      await (runtime.pasteImage ?? pasteImageWithSystemEvents)(tabId, absolutePath);
+      await waitForAttachments(tabId, initialCount + index + 1);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      throw new Error(`已验证 ${index}/${attachments.length} 个附件；失败文件: ${absolutePath}；原因: ${reason}`);
+    }
+  }
+  return attachments.length;
+}
+
 async function pasteImageWithSystemEvents(tabId: number, filePath: string): Promise<void> {
   if (process.platform !== 'darwin') {
     throw new Error('Gemini 图片附件当前仅支持 macOS 系统剪贴板粘贴');
@@ -319,24 +334,17 @@ async function generate(
     const ready = await waitForReady(tabId, 60);
     if (!ready) return fail('Gemini 页面加载超时', tips);
     if (attachments.length > 0) {
-      const initialCount = await countAttachments(tabId).catch(() => 0);
-      for (const [index, item] of attachments.entries()) {
-        const absolutePath = path.resolve(item.path);
-        try {
-          await (runtime.pasteImage ?? pasteImageWithSystemEvents)(tabId, absolutePath);
-          await waitForAttachments(tabId, initialCount + index + 1);
-        } catch (error) {
-          const reason = error instanceof Error ? error.message : String(error);
-          return fail('附件上传失败', [
-            ...tips,
-            `已验证 ${index}/${attachments.length} 个附件`,
-            `失败文件: ${absolutePath}`,
-            `原因: ${reason}`,
-            'Gemini 只接受系统级剪贴板粘贴；CDP Cmd+V 不携带 OS 剪贴板图片数据',
-          ]);
-        }
+      try {
+        const uploaded = await uploadAttachments(tabId, attachments);
+        tips.push(`✓ 已上传并验证 ${uploaded} 个附件（系统剪贴板真实粘贴）`);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        return fail('附件上传失败', [
+          ...tips,
+          reason,
+          'Gemini 只接受系统级剪贴板粘贴；CDP Cmd+V 不携带 OS 剪贴板图片数据',
+        ]);
       }
-      tips.push(`✓ 已上传并验证 ${attachments.length} 个附件（系统剪贴板真实粘贴）`);
     }
     await selectGenerationMode(tabId, media);
 
