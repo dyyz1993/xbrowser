@@ -29,7 +29,7 @@ function getVideoHandler(): (...args: unknown[]) => Promise<unknown> {
 function createVideoCtx(mockPage: Record<string, unknown> = {}) {
   return {
     page: {
-      url: vi.fn(() => 'https://www.doubao.com/chat/'),
+      url: vi.fn(() => 'https://www.doubao.com/chat/38448285459015426'),
       goto: vi.fn(),
       waitForTimeout: vi.fn(),
       waitForSelector: vi.fn(),
@@ -54,6 +54,9 @@ function createVideoCtx(mockPage: Record<string, unknown> = {}) {
             return Promise.resolve({ x: 10, y: 10, width: 10, height: 10 });
           }
           if (source.includes('task-id') || source.includes('job-id')) return Promise.resolve('task123');
+          if (source.includes('location.href') || source.includes('window.location')) {
+            return Promise.resolve('https://www.doubao.com/chat/38448285459015426');
+          }
           return Promise.resolve(true);
         }),
       ...mockPage,
@@ -223,6 +226,80 @@ describe('doubao plugin', () => {
       const data = ((result as Record<string, unknown>).data ?? {}) as Record<string, unknown>;
       expect(data.attachments).toEqual([{ semantic: '尾帧', path: only }]);
       expect(JSON.stringify((result as Record<string, unknown>).tips)).toContain('✓ 已上传 1 个尾帧');
+    });
+  });
+
+  describe('video recovery', () => {
+    function getStatusHandler(): (...args: unknown[]) => Promise<unknown> {
+      const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'video-status');
+      if (!call) throw new Error('video-status command not found');
+      return call[1].handler as (...args: unknown[]) => Promise<unknown>;
+    }
+
+    function getResultHandler(): (...args: unknown[]) => Promise<unknown> {
+      const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'video-result');
+      if (!call) throw new Error('video-result command not found');
+      return call[1].handler as (...args: unknown[]) => Promise<unknown>;
+    }
+
+    function createRecoveryCtx() {
+      const ctx = createVideoCtx();
+      ctx.page.url = vi.fn(() => 'about:blank');
+      ctx.page.evaluate = vi.fn((expression: unknown) => {
+        const source = typeof expression === 'string' ? expression : String(expression);
+        if (source.includes('querySelectorAll') && source.includes('video')) {
+          return Promise.resolve({
+            status: 'completed',
+            statusText: 'video ready',
+            mediaUrl: 'https://v11-vdl.doubao.com/example.mp4',
+          });
+        }
+        return Promise.resolve(true);
+      });
+      return ctx;
+    }
+
+    it('rejects an invalid task before navigation', async () => {
+      const statusHandler = getStatusHandler();
+      const resultHandler = getResultHandler();
+      const ctx = createRecoveryCtx();
+      for (const handler of [statusHandler, resultHandler]) {
+        const result = await handler({ task: 'legacy-id' }, ctx);
+        expect(result).toMatchObject({ success: false, message: '任务 ID 无效' });
+        expect(ctx.page.goto).not.toHaveBeenCalled();
+      }
+    });
+
+    it('navigates to the encoded session and decodes the prompt', async () => {
+      const prompt = '从首帧推进到尾帧';
+      const taskId = `doubao-video:38448285459015426:${Buffer.from(prompt).toString('base64url')}`;
+      const ctx = createRecoveryCtx();
+      const statusHandler = getStatusHandler();
+      const result = await statusHandler({ task: taskId, timeout: 1 }, ctx);
+      const data = ((result as Record<string, unknown>).data ?? {}) as Record<string, unknown>;
+      expect(result).toMatchObject({ success: true });
+      expect(data.kind).toBe('video');
+      expect(data.sessionUrl).toBe('https://www.doubao.com/chat/38448285459015426');
+      expect(ctx.page.goto).toHaveBeenCalledWith('https://www.doubao.com/chat/38448285459015426', expect.anything());
+
+      const resultHandler = getResultHandler();
+      const downloadCtx = createRecoveryCtx();
+      downloadCtx.page.evaluate = vi.fn((expression: unknown) => {
+        const source = typeof expression === 'string' ? expression : String(expression);
+        if (source.includes('querySelectorAll') && source.includes('video')) {
+          return Promise.resolve({
+            status: 'completed',
+            statusText: 'video ready',
+            mediaUrl: 'https://v11-vdl.doubao.com/example.mp4',
+          });
+        }
+        if (source.includes('fetch(mediaUrl')) {
+          return Promise.resolve(Buffer.from('x'.repeat(2048)).toString('base64'));
+        }
+        return Promise.resolve('');
+      });
+      const download = await resultHandler({ task: taskId, timeout: 1 }, downloadCtx) as Record<string, unknown>;
+      expect(download.success).toBe(true);
     });
   });
 

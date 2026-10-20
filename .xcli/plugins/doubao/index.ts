@@ -66,6 +66,7 @@ function formatFileSize(bytes: number): string {
 
 function toDoubaoTaskResult(input: {
   taskId: string;
+  kind: 'video' | 'audio' | 'image';
   status: 'submitted' | 'processing' | 'completed' | 'failed' | 'timeout';
   conversationUrl?: string;
   mediaUrl?: string | null;
@@ -76,7 +77,7 @@ function toDoubaoTaskResult(input: {
   const task = createMediaTask({
     taskId: input.taskId,
     site: 'doubao',
-    kind: 'audio',
+    kind: input.kind,
     status: input.status,
     sessionName: 'default',
     sessionUrl: input.conversationUrl,
@@ -89,13 +90,68 @@ function toDoubaoTaskResult(input: {
     artifacts: [createMediaArtifact({
       artifactId: `${input.taskId}-artifact`,
       taskId: input.taskId,
-      kind: 'audio',
+      kind: input.kind,
       status: input.status,
       mediaUrl: input.mediaUrl,
       sizeBytes: input.sizeBytes,
       provider: input.provider,
     })],
   };
+}
+
+function conversationIdFromUrl(url: string): string | null {
+  return url.match(/\/chat\/([^/?#]+)/)?.[1] || null;
+}
+
+function sessionUrlFromTask(taskId: string): string | null {
+  const conversationId = taskId.match(/^doubao-video:([^:]+):/)?.[1];
+  return conversationId ? `${DB_URL}/chat/${conversationId}` : null;
+}
+
+function promptFromTask(taskId: string): string {
+  const encoded = taskId.match(/^doubao-video:[^:]+:(.+)$/s)?.[1] || '';
+  try {
+    return Buffer.from(encoded, 'base64url').toString('utf8');
+  } catch {
+    return '';
+  }
+}
+
+type ConversationVideoState = {
+  status: 'submitted' | 'processing' | 'completed' | 'failed' | 'timeout';
+  statusText: string;
+  mediaUrl: string | null;
+};
+
+async function inspectConversationVideo(page: Page, prompt: string): Promise<ConversationVideoState> {
+  return page.evaluate((needle: string) => {
+    const normalized = needle.trim().toLowerCase().replace(/\s+/g, ' ');
+    const containers = [...document.querySelectorAll('div')]
+      .filter(node => node.querySelector('video') && (node.innerText || '').length > 0);
+    const matches = normalized
+      ? containers.filter(node => {
+          const scope: Element[] = [];
+          let parent: Element | null = node.parentElement;
+          while (parent && scope.length < 6) {
+            scope.push(parent);
+            parent = parent.parentElement;
+          }
+          return [...scope, node].some(item => {
+            const text = (item.textContent || '').toLowerCase().replace(/\s+/g, ' ');
+            return normalized.split(' ').every(word => text.includes(word));
+          });
+        })
+      : containers;
+    const target = matches.at(-1) || containers.at(-1);
+    if (!target) return { status: 'processing' as const, statusText: 'video not found', mediaUrl: '' };
+    const text = (target.innerText || '').toLowerCase();
+    const video = target.querySelector('video');
+    const source = video?.currentSrc || video?.src || target.querySelector('video source')?.getAttribute('src') || '';
+    if (source.startsWith('http')) return { status: 'completed' as const, statusText: 'video ready', mediaUrl: source };
+    if (/生成失败|出错|failed|error/.test(text)) return { status: 'failed' as const, statusText: 'generation failed', mediaUrl: '' };
+    if (/生成中|预计等待|处理中|视频生成好了|视频生成/.test(text)) return { status: 'processing' as const, statusText: 'generating', mediaUrl: '' };
+    return { status: 'processing' as const, statusText: 'waiting', mediaUrl: '' };
+  }, prompt) as unknown as ConversationVideoState;
 }
 
 function toDoubaoDownloadResult(input: { taskId: string; mediaUrl: string | null; localPath?: string | null; size?: number; error?: string }) {
@@ -1184,6 +1240,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok(toDoubaoTaskResult({
           taskId: `doubao-cutout-${Date.now()}`,
+          kind: 'image',
           status: resultUrl ? 'completed' : 'processing',
           mediaUrl: resultUrl || null,
           provider: { source: absPath },
@@ -1249,6 +1306,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok(toDoubaoTaskResult({
           taskId: `doubao-vary-${Date.now()}`,
+          kind: 'image',
           status: 'submitted',
           provider: { source: absPath, prompt: params.prompt },
         }), tips);
@@ -1489,6 +1547,10 @@ export default function (xcli: XCLIAPI): void {
         tips.push('视频生成任务已提交');
         await confirmGeneration(page);
 
+        const conversationUrl = page.url();
+        const conversationId = conversationIdFromUrl(conversationUrl);
+        if (!conversationId) throw new Error('无法获取豆包会话 ID，不能创建可恢复任务');
+
         const taskId = await page.evaluate(() => {
           const idEls = document.querySelectorAll('[class*="task-id"], [class*="job-id"], [data-task-id]');
           for (const el of idEls) {
@@ -1499,26 +1561,32 @@ export default function (xcli: XCLIAPI): void {
           return urlParts ? urlParts[1] : '';
         });
 
-        const safeTaskId = typeof taskId === 'string' ? taskId : '';
+        const providerTaskId = typeof taskId === 'string' ? taskId : '';
+        const stableTaskId = `doubao-video:${conversationId}:${Buffer.from(params.prompt).toString('base64url')}`;
         const attachmentsResult = attachmentList.map((item) => ({
           semantic: item.semantic,
           path: path.resolve(item.path),
         }));
         const taskResult = toDoubaoTaskResult({
-          taskId: safeTaskId || `doubao-video-${Date.now()}`,
+          taskId: stableTaskId,
+          kind: 'video',
           status: 'submitted',
+          conversationUrl,
         });
         return ok({
           ...taskResult,
           prompt: params.prompt,
           attachments: attachmentsResult,
           provider: {
-            providerTaskId: safeTaskId || null,
+            providerTaskId: providerTaskId || null,
             attachments: attachmentsResult,
+            conversationId,
           },
-        }, safeTaskId
-            ? [...tips, `taskId: ${safeTaskId}`]
-            : [...tips, '无法提取 taskId，请使用 video-status 检查任务状态']);
+        }, [
+          ...tips,
+          `taskId: ${stableTaskId}`,
+          `会话URL: ${conversationUrl}`,
+        ]);
       } catch (error) {
         return fail('未知错误', ['提交视频生成失败', `原因: ${error instanceof Error ? error.message : String(error)}`]);
       }
@@ -1530,44 +1598,43 @@ export default function (xcli: XCLIAPI): void {
     description: '检查视频生成任务状态（pending/processing/completed/failed）',
     scope: 'browser',
     parameters: z.object({
-      task: z.string().describe('任务 ID'),
+      task: z.string().describe('video 返回的稳定任务 ID（doubao-video:<conversationId>:...）'),
+      prompt: z.string().optional().describe('提交时的视频提示词，用于在同一会话中精确定位'),
+      timeout: z.coerce.number().int().min(1).max(600).optional().default(60)
+        .describe('等待生成完成的秒数'),
     }),
     examples: [
-      { cmd: 'xbrowser doubao video-status --task abc123', description: '检查状态' },
+      { cmd: 'xbrowser doubao video-status --task "doubao-video:38448285459015426:..." --prompt "厨房对话"', description: '检查状态' },
     ],
     result: mediaTaskResultSchema,
     handler: async (params, ctx) => {
       try {
         const page = ctx.page;
         if (!page) throw new Error("需要浏览器页面");
-        await ensurePage(page, ctx);
-        await page.waitForTimeout(1000);
         const tips = buildTips(ctx);
+        const sessionUrl = sessionUrlFromTask(params.task);
+        if (!sessionUrl) return fail('任务 ID 无效', [...tips, '必须使用 video 返回的 doubao-video:<conversationId>:... 标识']);
 
-        const status = await page.evaluate((_taskId: string) => {
-          const allText = document.body.textContent || '';
-          const statusEl = document.querySelector(
-            '[class*="status"], [class*="progress"], [class*="state"]'
-          );
-          const statusText = statusEl?.textContent?.trim().toLowerCase() || '';
+        if (!page.url().startsWith(sessionUrl)) {
+          await page.goto(sessionUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        }
+        await page.waitForTimeout(2000);
 
-          if (statusText.includes('完成') || statusText.includes('completed') || statusText.includes('success')) return 'completed';
-          if (statusText.includes('失败') || statusText.includes('failed') || statusText.includes('error')) return 'failed';
-          if (statusText.includes('处理') || statusText.includes('processing') || statusText.includes('生成')) return 'processing';
-          if (statusText.includes('等待') || statusText.includes('pending') || statusText.includes('排队')) return 'pending';
-
-          if (allText.includes('完成') || allText.includes('已生成')) return 'completed';
-          if (allText.includes('失败') || allText.includes('出错')) return 'failed';
-          if (allText.includes('生成中') || allText.includes('处理中')) return 'processing';
-          if (allText.includes('排队') || allText.includes('等待')) return 'pending';
-
-          return 'unknown';
-        }, params.task);
+        const prompt = params.prompt || promptFromTask(params.task);
+        const deadline = Date.now() + params.timeout * 1000;
+        let state = await inspectConversationVideo(page, prompt);
+        while (state.status === 'processing' && Date.now() < deadline) {
+          await page.waitForTimeout(3000);
+          state = await inspectConversationVideo(page, prompt);
+        }
 
         return ok(toDoubaoTaskResult({
           taskId: params.task,
-          status: status === 'pending' ? 'submitted' : status as 'submitted' | 'processing' | 'completed' | 'failed' | 'timeout',
-          provider: { providerStatus: status },
+          kind: 'video',
+          status: state.status,
+          conversationUrl: sessionUrl,
+          mediaUrl: state.mediaUrl,
+          provider: { providerStatus: state.statusText },
         }), tips);
       } catch {
         return fail('未知错误', ['检查状态失败']);
@@ -1577,10 +1644,13 @@ export default function (xcli: XCLIAPI): void {
 
   //  12. video-result — 获取视频结果
   site.command('video-result', {
-    description: '获取已完成视频的 URL',
+    description: '获取已完成视频并下载到本地',
     scope: 'browser',
     parameters: z.object({
       task: z.string().describe('任务 ID'),
+      prompt: z.string().optional().describe('提交时的视频提示词，用于在同一会话中精确定位'),
+      timeout: z.coerce.number().int().min(1).max(600).optional().default(60)
+        .describe('等待生成完成的秒数'),
     }),
     examples: [
       { cmd: 'xbrowser doubao video-result --task abc123', description: '获取视频 URL' },
@@ -1590,28 +1660,26 @@ export default function (xcli: XCLIAPI): void {
       try {
         const page = ctx.page;
         if (!page) throw new Error("需要浏览器页面");
-        await ensurePage(page, ctx);
-        await page.waitForTimeout(1000);
         const tips = buildTips(ctx);
+        const sessionUrl = sessionUrlFromTask(params.task);
+        if (!sessionUrl) return fail('任务 ID 无效', [...tips, '必须使用 video 返回的 doubao-video:<conversationId>:... 标识']);
 
-        const videoUrl = await page.evaluate(() => {
-          const videos = document.querySelectorAll('video source[src], video[src]');
-          for (const v of videos) {
-            const src = v.getAttribute('src') || (v as HTMLSourceElement).src || '';
-            if (src.startsWith('http')) return src;
-          }
-          const links = document.querySelectorAll('a[href*=".mp4"], a[href*="video"], a[class*="download"]');
-          for (const a of links) {
-            const href = a.getAttribute('href');
-            if (href && href.startsWith('http')) return href;
-          }
-          return '';
-        }) as string;
+        if (!page.url().startsWith(sessionUrl)) {
+          await page.goto(sessionUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        }
+        await page.waitForTimeout(2000);
 
+        const prompt = params.prompt || promptFromTask(params.task);
+        const deadline = Date.now() + params.timeout * 1000;
+        let state = await inspectConversationVideo(page, prompt);
+        while (state.status === 'processing' && Date.now() < deadline) {
+          await page.waitForTimeout(3000);
+          state = await inspectConversationVideo(page, prompt);
+        }
+
+        const videoUrl = state.mediaUrl;
         if (!videoUrl) {
-          const allText = await page.evaluate(() => document.body.textContent?.slice(0, 500) || '') as string;
-          const statusMatch = allText.match(/(完成|失败|生成|error|failed|completed|success)/i);
-          tips.push(`状态提示: ${statusMatch?.[0] || '任务可能还在处理'}`);
+          tips.push(`状态提示: ${state.statusText}`);
         }
 
 
@@ -1628,10 +1696,10 @@ export default function (xcli: XCLIAPI): void {
         return ok(toDoubaoDownloadResult({
           taskId: params.task,
           mediaUrl: null,
-          error: 'video not ready',
+          error: state.status === 'failed' ? 'generation failed' : 'video not ready',
         }), tips);
-      } catch {
-        return fail('未知错误', ['获取视频结果失败']);
+      } catch (error) {
+        return fail('未知错误', ['获取视频结果失败', `原因: ${error instanceof Error ? error.message : String(error)}`]);
       }
     },
   });
@@ -2057,6 +2125,7 @@ export default function (xcli: XCLIAPI): void {
             return ok({
               ...toDoubaoTaskResult({
                 taskId: params.taskId || `doubao-music-${Date.now()}`,
+                kind: 'audio',
                 status: 'completed',
                 conversationUrl,
                 mediaUrl: audioUrl,
@@ -2097,6 +2166,7 @@ export default function (xcli: XCLIAPI): void {
             return ok({
               ...toDoubaoTaskResult({
                 taskId: params.taskId || `doubao-music-${Date.now()}`,
+                kind: 'audio',
                 status: 'failed',
                 conversationUrl,
                 provider: { mode, lyric: params.lyric },
@@ -2112,6 +2182,7 @@ export default function (xcli: XCLIAPI): void {
           return ok({
             ...toDoubaoTaskResult({
               taskId: params.taskId || `doubao-music-${Date.now()}`,
+              kind: 'audio',
               status: 'timeout',
               conversationUrl,
               provider: { mode, lyric: params.lyric },
@@ -2131,6 +2202,7 @@ export default function (xcli: XCLIAPI): void {
         return ok({
           ...toDoubaoTaskResult({
             taskId: params.taskId || `doubao-music-${Date.now()}`,
+            kind: 'audio',
             status: 'submitted',
             conversationUrl,
             provider: { mode, style: params.style, mood: params.mood, voice: params.voice },
@@ -2181,6 +2253,7 @@ export default function (xcli: XCLIAPI): void {
           const downloaded = await downloadMedia(page, audioUrl, 'music');
           return ok(toDoubaoTaskResult({
             taskId: params.task || `doubao-status-${Date.now()}`,
+            kind: 'audio',
             status: 'completed',
             mediaUrl: audioUrl,
             localPath: downloaded.localPath,
@@ -2207,6 +2280,7 @@ export default function (xcli: XCLIAPI): void {
 
         return ok(toDoubaoTaskResult({
           taskId: params.task || `doubao-status-${Date.now()}`,
+          kind: 'audio',
           status: status === 'pending' ? 'submitted' : status as 'submitted' | 'processing' | 'completed' | 'failed' | 'timeout',
         }), [
             ...tips,
