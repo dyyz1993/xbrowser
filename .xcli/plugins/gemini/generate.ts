@@ -29,48 +29,64 @@ export function setGenerateRuntime(next: Partial<Runtime>): void {
   Object.assign(runtime, next);
 }
 
+async function assertGeminiAccessible(tabId: number): Promise<void> {
+  const raw = await runtime.ev<string>(
+    'JSON.stringify({href:location.href,text:(document.body&&document.body.innerText||"").slice(0,500)})',
+    tabId,
+  );
+  const state = typeof raw === 'string'
+    ? JSON.parse(raw || '{}') as { href?: string; text?: string }
+    : raw as { href?: string; text?: string };
+  const blocked = /google\.com\/sorry/i.test(state.href ?? '')
+    || /异常流量|unusual traffic/i.test(state.text ?? '');
+  if (blocked) {
+    throw new Error(`Gemini 被 Google 反自动化拦截（${state.href ?? 'unknown URL'}）：请更换网络/代理后重试`);
+  }
+}
+
 async function waitForReady(tabId: number, secs: number): Promise<boolean> {
   for (let i = 0; i < secs; i++) {
     try {
-      const s = await ev<Record<string, unknown>>(
+      const s = await runtime.ev<Record<string, unknown>>(
         'JSON.stringify({ready:document.readyState,editor:!!document.querySelector(".ql-editor[contenteditable=true]"),text:document.body.innerText.length})',
         tabId,
       );
-      const parsed = JSON.parse((s as unknown as string)) as { ready: string; editor: boolean; text: number };
-      if (parsed.ready === 'complete' && parsed.editor && parsed.text > 100) return true;
+      const state = typeof s === 'string' ? JSON.parse(s || '{}') as Record<string, unknown> : s;
+      if (state.ready === 'complete' && state.editor === true) return true;
     } catch { /* tab not ready */ }
-    await sleep(1000);
+    await runtime.sleep(1000);
   }
   return false;
 }
 
 async function sendPrompt(tabId: number, prompt: string): Promise<SendResult> {
   // Bring tab to front so Quill editor can receive Input.insertText
-  await cdp('Page.bringToFront', {}, tabId);
-  await sleep(2000);
+  await runtime.cdp('Page.bringToFront', {}, tabId);
+  await runtime.sleep(2000);
 
   const focusExpr = '(()=>{const e=document.querySelector(".ql-editor[contenteditable=true]");if(!e)return false;e.focus();return document.activeElement===e})()';
-  const focused = await ev<boolean>(focusExpr, tabId);
-  if (!focused) return { typed: false, sent: false, text: 'editor not found' };
+  const focused = await runtime.ev<string | boolean>(focusExpr, tabId);
+  if (focused !== true && focused !== 'true') return { typed: false, sent: false, text: 'editor not found' };
 
-  await cdp('Input.insertText', { text: prompt }, tabId);
-  await sleep(500);
+  await runtime.cdp('Input.insertText', { text: prompt }, tabId);
+  await runtime.sleep(500);
 
-  const text = await ev<string>('JSON.stringify((document.querySelector(".ql-editor[contenteditable=true]")||{}).textContent||"")', tabId);
-  const got = JSON.parse((text as unknown as string) || '""') as string;
+  const text = await runtime.ev<string>('JSON.stringify((document.querySelector(".ql-editor[contenteditable=true]")||{}).textContent||"")', tabId);
+  const got = (typeof text === 'string' ? text : JSON.stringify(text ?? '') || '""') as string;
   if (!got || !prompt.slice(0, 8).split('').every((c) => got.includes(c))) {
     return { typed: false, sent: false, text: got };
   }
 
   const sentExpr = '(()=>{const b=[...document.querySelectorAll("button")].find(x=>{const l=x.getAttribute("aria-label")||"";return (l.includes("发送")||l.includes("Send"))&&!x.disabled&&x.getBoundingClientRect().width>0});if(b){b.click();return true}return false})()';
-  const sent = await ev<boolean>(sentExpr, tabId);
-  return { typed: true, sent: sent === true, text: got };
+  const sent = await runtime.ev<string | boolean>(sentExpr, tabId);
+  return { typed: true, sent: sent === true || sent === 'true', text: got };
 }
 
 async function selectGenerationMode(tabId: number, media: MediaMode): Promise<void> {
   const targetLabel = media === 'image' ? '制作图片' : '制作视频';
   await runtime.cdp('Page.bringToFront', {}, tabId);
   await runtime.sleep(500);
+  await assertGeminiAccessible(tabId);
 
   const tools = await runtime.ev<{ x: number; y: number; width: number; height: number } | null>('(' + (() => {
     const button = [...document.querySelectorAll('button')].find((item) => {
@@ -81,16 +97,17 @@ async function selectGenerationMode(tabId: number, media: MediaMode): Promise<vo
     const rect = button.getBoundingClientRect();
     return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
   }).toString() + ')()', tabId);
-  if (!tools) throw new Error('未找到「上传和工具」按钮');
-  const toolsX = Math.round(tools.x + tools.width / 2);
-  const toolsY = Math.round(tools.y + tools.height / 2);
+  const toolRect = typeof tools === 'string' ? JSON.parse(tools || 'null') as { x?: number; y?: number; width?: number; height?: number } | null : tools;
+  if (!toolRect) throw new Error('未找到「上传和工具」按钮');
+  const toolsX = Math.round((toolRect.x ?? 0) + (toolRect.width ?? 0) / 2);
+  const toolsY = Math.round((toolRect.y ?? 0) + (toolRect.height ?? 0) / 2);
   await runtime.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: toolsX, y: toolsY }, tabId);
   await runtime.cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: toolsX, y: toolsY, button: 'left', clickCount: 1 }, tabId);
   await runtime.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: toolsX, y: toolsY, button: 'left', clickCount: 1 }, tabId);
   for (let attempt = 0; attempt < 10; attempt += 1) {
     await runtime.sleep(300);
-    const state = await runtime.ev<string>('JSON.stringify({open:!!document.querySelector("mat-card,toolbox-drawer")})', tabId);
-    if (JSON.parse(state || '{}').open) break;
+    const state = await runtime.ev<string | { open?: boolean }>('JSON.stringify({open:!!document.querySelector("mat-card,toolbox-drawer")})', tabId);
+    if (typeof state === 'object' && state.open === true) break;
   }
 
   const targetExpression = '(' + ((expected: string) => {
@@ -105,10 +122,11 @@ async function selectGenerationMode(tabId: number, media: MediaMode): Promise<vo
     return { x: button.x, y: button.y, width: button.width, height: button.height };
   }).toString() + `)(${JSON.stringify(targetLabel)})`;
   const target = await runtime.ev<{ x: number; y: number; width: number; height: number } | null>(targetExpression, tabId);
-  if (!target) throw new Error(`工具菜单中没有「${targetLabel}」`);
+  const targetRect = typeof target === 'string' ? JSON.parse(target || 'null') as { x?: number; y?: number; width?: number; height?: number } | null : target;
+  if (!targetRect) throw new Error(`工具菜单中没有「${targetLabel}」`);
 
-  const x = Math.round(target.x + target.width / 2);
-  const y = Math.round(target.y + target.height / 2);
+  const x = Math.round((targetRect.x ?? 0) + (targetRect.width ?? 0) / 2);
+  const y = Math.round((targetRect.y ?? 0) + (targetRect.height ?? 0) / 2);
   await runtime.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y }, tabId);
   await runtime.cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 }, tabId);
   await runtime.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }, tabId);
@@ -122,15 +140,15 @@ async function selectGenerationMode(tabId: number, media: MediaMode): Promise<vo
       });
       return Boolean(button);
     }).toString() + `)(${JSON.stringify(media === 'image' ? '图片' : '视频')})`;
-    const selected = await runtime.ev<boolean>(selectedExpression, tabId);
-    if (selected) return;
+    const selected = await runtime.ev<string | boolean>(selectedExpression, tabId);
+    if (selected === true || selected === 'true') return;
   }
   throw new Error(`切换「${targetLabel}」模式失败`);
 }
 
 async function snapshot(tabId: number) {
-  const raw = await ev<string>('JSON.stringify({imgs:[...document.querySelectorAll("img")].map(i=>({src:(i.currentSrc||i.src),w:i.getBoundingClientRect().width,h:i.getBoundingClientRect().height,nw:i.naturalWidth,nh:i.naturalHeight})).filter(x=>x.w>100&&x.h>100),videos:[...document.querySelectorAll("video")].map(v=>({src:v.src||"",duration:v.duration}))})', tabId);
-  return JSON.parse((raw as unknown as string) || '{}') as {
+  const raw = await runtime.ev<string>('JSON.stringify({imgs:[...document.querySelectorAll("img")].map(i=>({src:(i.currentSrc||i.src),w:i.getBoundingClientRect().width,h:i.getBoundingClientRect().height,nw:i.naturalWidth,nh:i.naturalHeight})).filter(x=>x.w>100&&x.h>100),videos:[...document.querySelectorAll("video")].map(v=>({src:v.src||"",duration:v.duration}))})', tabId);
+  return JSON.parse(typeof raw === 'string' ? raw : JSON.stringify(raw ?? {})) as {
     imgs: Array<{ src: string; nw: number; nh: number }>;
     videos: Array<{ src: string; duration: number | null }>;
   };
@@ -144,7 +162,7 @@ async function pollMedia(
 ): Promise<string | null> {
   const seen = new Set(media === 'image' ? before.imgs : before.videos);
   for (let i = 0; i < secs / 5; i++) {
-    await sleep(5000);
+    await runtime.sleep(5000);
     const s = await snapshot(tabId);
     const arr = media === 'image' ? s.imgs : s.videos;
     for (const x of arr) {
@@ -158,25 +176,25 @@ async function pollMedia(
 }
 
 async function fetchAsBase64(tabId: number, url: string): Promise<string | null> {
-  const val = await ev<string>(
+  const val = await runtime.ev<string>(
     `(async()=>{const r=await fetch("${url}",{credentials:"include"});if(!r.ok)return "ERR:"+r.status;` +
     `const b=await r.arrayBuffer();const u8=new Uint8Array(b);let s="";` +
     `for(let i=0;i<u8.length;i+=0x8000)s+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000));` +
     `return "data:application/octet-stream;base64,"+btoa(s)})()`,
     tabId,
   );
-  return (val && val.startsWith('data:')) ? val.split(',')[1] : null;
+  return typeof val === 'string' && val.startsWith('data:') ? val.split(',')[1] : null;
 }
 
 async function saveBlobImage(tabId: number, blobUrl: string, filePath: string): Promise<boolean> {
   if (!blobUrl.startsWith('blob:')) return false;
-  const val = await ev<string>(
+  const val = await runtime.ev<string>(
     `(async()=>{const img=[...document.querySelectorAll("img")].find(i=>(i.currentSrc||i.src)==="${blobUrl}");` +
     `if(!img)return null;const c=document.createElement("canvas");c.width=img.naturalWidth;c.height=img.naturalHeight;` +
     `c.getContext("2d").drawImage(img,0,0);return c.toDataURL("image/png")})()`,
     tabId,
   );
-  if (!val?.startsWith('data:')) return false;
+  if (typeof val !== 'string' || !val.startsWith('data:')) return false;
   fs.writeFileSync(filePath, Buffer.from(val.split(',')[1], 'base64'));
   return true;
 }
@@ -193,15 +211,16 @@ async function generate(
   const taskId = `${media}-${Date.now()}`;
   const tips: string[] = [];
 
-  const open = await bridgeExec('task-open', { name: taskId, url: 'https://gemini.google.com/app' });
+  const open = await runtime.bridgeExec('task-open', { name: taskId, url: 'https://gemini.google.com/app' });
   if (!open?.ok) return fail('chrome-bridge 未启动，先跑 xbrowser chrome-bridge serve');
   const tabId = (open.data as { tabId: number }).tabId;
   tips.push(`任务分组: xb-task-${taskId}`);
 
   try {
-    await selectGenerationMode(tabId, media);
+    await assertGeminiAccessible(tabId);
     const ready = await waitForReady(tabId, 60);
     if (!ready) return fail('Gemini 页面加载超时', tips);
+    await selectGenerationMode(tabId, media);
 
     const fullPrompt = params.ratio && media === 'image'
       ? `${params.prompt}\n\nAspect ratio: ${params.ratio}`
@@ -217,8 +236,8 @@ async function generate(
 
     const mediaUrl = await pollMedia(tabId, beforeUrls, media, params.timeout);
     if (!mediaUrl) {
-      const sessionUrl = await ev<string>('JSON.stringify(location.href)', tabId);
-      const session = JSON.parse(sessionUrl || '""') as string;
+      const sessionUrl = await runtime.ev<string>('JSON.stringify(location.href)', tabId);
+      const session = typeof sessionUrl === 'string' ? sessionUrl : JSON.stringify(sessionUrl ?? '') || '""';
       return fail(`等待 ${params.timeout}s 未检测到${media === 'image' ? '图片' : '视频'}`, [
         ...tips, `会话URL（可稍后重新打开下载）: ${session}`,
       ]);
@@ -237,8 +256,8 @@ async function generate(
       if (base64) { fs.writeFileSync(filePath, Buffer.from(base64, 'base64')); localPath = filePath; }
     }
 
-    const sessionUrl = await ev<string>('JSON.stringify(location.href)', tabId);
-    const session = JSON.parse(sessionUrl || '""') as string;
+    const sessionUrl = await runtime.ev<string>('JSON.stringify(location.href)', tabId);
+    const session = typeof sessionUrl === 'string' ? sessionUrl : JSON.stringify(sessionUrl ?? '') || '""';
 
     const task = createMediaTask({
       taskId,

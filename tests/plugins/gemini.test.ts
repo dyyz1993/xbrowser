@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import plugin from '../../.xcli/plugins/gemini/index.ts';
 import { parseUsageText, usageCommandHandler } from '../../.xcli/plugins/gemini/usage.ts';
 import { musicCommandHandler, musicStatusHandler, setMusicDownloader, setMusicRuntime } from '../../.xcli/plugins/gemini/music.ts';
+import { setGenerateRuntime } from '../../.xcli/plugins/gemini/generate.ts';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -409,6 +410,37 @@ describe('gemini plugin', () => {
       }) as unknown as Record<string, unknown>;
       expect(result.success).toBe(false);
       expect(result.message).toContain('等待音乐超时');
+    });
+  });
+
+  describe('generate command', () => {
+    afterEach(() => {
+      setGenerateRuntime({ bridgeExec: vi.fn(), cdp: vi.fn(), ev: vi.fn(), sleep: vi.fn() });
+    });
+
+    it('reports Google anti-automation blocks before missing-tool errors', async () => {
+      setGenerateRuntime({
+        bridgeExec: vi.fn((command: string) => {
+          if (command === 'task-open') return Promise.resolve({ ok: true, data: { tabId: 77 } });
+          return Promise.resolve({ ok: true });
+        }) as never,
+        cdp: vi.fn(() => Promise.resolve(undefined)) as never,
+        ev: vi.fn((expression: string) => {
+          if (expression.includes('location.href')) {
+            return Promise.resolve({
+              href: 'https://www.google.com/sorry/index?continue=https://gemini.google.com/app',
+              text: '我们的系统检测到您的计算机网络中存在异常流量',
+            });
+          }
+          return Promise.resolve('null');
+        }) as never,
+        sleep: vi.fn(() => Promise.resolve()) as never,
+      });
+
+      const handler = getHandler('generate-video');
+      const result = await handler({ prompt: 'a calm sea', timeout: 30 }) as Record<string, unknown>;
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('Google 反自动化拦截');
     });
   });
 

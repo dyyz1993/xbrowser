@@ -12,6 +12,7 @@ import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 
 const BRIDGE_PORT = 9346;
+const BRIDGE_HTTP = 'http://127.0.0.1:9347';
 
 const serveResult = z.object({
   running: z.boolean(),
@@ -68,6 +69,14 @@ export default function (xcli: XCLIAPI): void {
     description: 'Chrome 扩展控制通道：插件装进用户浏览器，xbrowser 经 WS 直接控制（无需调试端口）',
     requiresLogin: false,
   });
+
+  async function postBridge(body: Record<string, unknown>): Promise<{ ok?: boolean; data?: unknown; error?: string } | null> {
+    return fetch(`${BRIDGE_HTTP}/exec`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(r => r.json()).catch(() => null);
+  }
 
   site.command('serve', {
     description: '启动 bridge 服务（独立常驻进程：WS 9346 + HTTP 9347）',
@@ -183,10 +192,7 @@ export default function (xcli: XCLIAPI): void {
     ],
     handler: async (params) => {
       const body = { cmd: 'attach', args: { ...(params.task ? { task: params.task } : {}) } };
-      const r = await fetch('http://127.0.0.1:9347/exec?client=0', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }).then(r => r.json()).catch(() => null);
+      const r = await postBridge(body);
       if (!r) return fail('bridge 未启动或无扩展连接');
       if (r.ok !== true) return fail(r.error || 'extension error');
       const d = r.data as { tabId?: number; groupId?: number; url?: string; title?: string };
@@ -206,10 +212,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({}),
     examples: [{ cmd: 'xbrowser chrome-bridge finish', description: '收尾清理任务组' }],
     handler: async () => {
-      const r = await fetch('http://127.0.0.1:9347/exec?client=0', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cmd: 'task-close', args: {} }),
-      }).then(r => r.json()).catch(() => null);
+      const r = await postBridge({ cmd: 'task-close', args: {} });
       if (!r) return fail('bridge 未启动或无扩展连接');
       if (r.ok !== true) return fail(r.error || 'extension error');
       const d = r.data as { closed?: number; ungrouped?: number };
@@ -254,9 +257,9 @@ export default function (xcli: XCLIAPI): void {
       }
       // S212：大参数（base64 图片等）必须走 POST body——GET query 在 URL 超长时
       // 直接连接失败，症状是「bridge 未启动」（实为 URL 上限，与 attach/cdp 同修）
-      const r = await fetch('http://127.0.0.1:9347/exec' + (params.client ? `?client=${encodeURIComponent(params.client)}` : ''), {
+      const r = await fetch(`${BRIDGE_HTTP}/exec` + (params.client ? `?client=${encodeURIComponent(params.client)}` : ''), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cmd: params.cmd, args: JSON.parse(argsStr) as Record<string, unknown> }),
+        body: JSON.stringify({ cmd: params.cmd, args: JSON.parse(argsStr) as Record<string, unknown>, client: params.client }),
       }).then(r => r.json()).catch(() => null);
       if (!r) return fail('bridge 未启动或无扩展连接');
       return r.ok === true ? ok({ cmd: params.cmd, result: r.data }) : fail(r.error || 'extension error');
@@ -292,10 +295,7 @@ export default function (xcli: XCLIAPI): void {
       if (params.tabId != null) args.tabId = params.tabId;
       if (params.task != null) args.task = params.task;
       const body = { cmd: 'cdp', args };
-      const r = await fetch('http://127.0.0.1:9347/exec?client=0', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }).then(r => r.json()).catch(() => null);
+      const r = await postBridge(body);
       if (!r) return fail('bridge 未启动或无扩展连接');
       return r.ok === true ? ok({ method: params.method, result: r.data }) : fail(r.error || 'extension error');
     },
@@ -320,10 +320,7 @@ export default function (xcli: XCLIAPI): void {
         ...(params.name ? { name: params.name } : {}),
         ...(params.url ? { url: params.url } : {}),
       }};
-      const r = await fetch('http://127.0.0.1:9347/exec?client=0', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      }).then(r => r.json()).catch(() => null);
+      const r = await postBridge(body);
       if (!r) return fail('bridge 未启动或无扩展连接');
       return r.ok === true ? ok(r.data) : fail(r.error || 'extension error');
     },
@@ -341,10 +338,7 @@ export default function (xcli: XCLIAPI): void {
     examples: [{ cmd: 'xbrowser chrome-bridge open https://example.com', description: '打开页面' }],
     handler: async (params) => {
       // S212：与 exec 同修——POST body 传参，免 URL 长度上限
-      const r = await fetch('http://127.0.0.1:9347/exec', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cmd: 'navigate', args: { url: params.url, ...(params.task ? { task: params.task } : {}), ...(params.tabId != null ? { tabId: params.tabId } : {}) } }),
-      }).then(r => r.json()).catch(() => null);
+      const r = await postBridge({ cmd: 'navigate', args: { url: params.url, ...(params.task ? { task: params.task } : {}), ...(params.tabId != null ? { tabId: params.tabId } : {}) } });
       if (!r) return fail('bridge 未启动或无扩展连接');
       return r.ok === true ? ok({ url: params.url, result: r.data }) : fail(r.error || 'extension error');
     },
