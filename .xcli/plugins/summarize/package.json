@@ -1,0 +1,47 @@
+{
+  "_marketplace": {
+    "slug": "summarize",
+    "url": "https://marketplace.xbrowser.dev"
+  },
+  "author": "dyyz1993",
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "license": "MIT",
+  "description": "录制操作知识库沉淀：把录制产物切分、汇总、沉淀成站点操作知识库（索引/大纲/操作手册）",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "summarize",
+    "knowledge-base"
+  ],
+  "main": "index.ts",
+  "name": "xbrowser-plugin-summarize",
+  "peerDependencies": {
+    "@dyyz1993/xcli-core": ">=1.0.0"
+  },
+  "type": "module",
+  "version": "0.1.0",
+  "xbrowser": {
+    "author": "dyyz1993",
+    "commands": [
+      "summarize",
+      "list",
+      "show",
+      "rebuild",
+      "reindex"
+    ],
+    "description": "录制操作知识库沉淀",
+    "name": "summarize",
+    "site": "local",
+    "sites": [
+      "summarize"
+    ],
+    "slug": "summarize",
+    "tags": [
+      "summarize",
+      "knowledge-base"
+    ],
+    "version": "0.1.0"
+  }
+}
