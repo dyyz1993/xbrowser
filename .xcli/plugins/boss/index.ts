@@ -1,6 +1,8 @@
 import { z } from "zod/v4";
 import type { XCLIAPI } from "@dyyz1993/xcli-core";
 import { ok, fail } from "@dyyz1993/xcli-core";
+import { mkdir, appendFile } from "fs/promises";
+import { dirname, join } from "path";
 import type { Page } from "../types.js";
 import {
   textOf,
@@ -93,6 +95,58 @@ const resumeResult = z.object({
 const chatReplyResult = z.object({
   sent: z.boolean(),
   to: z.string().optional(),
+});
+
+const applyResult = z.object({
+  dryRun: z.boolean(),
+  quota: z.object({
+    used: z.number(),
+    limit: z.number(),
+  }),
+  candidates: z.array(
+    z.object({
+      title: z.string(),
+      company: z.string(),
+      salary: z.string(),
+      url: z.string(),
+      reason: z.string(),
+    }),
+  ),
+  submitted: z.array(
+    z.object({
+      title: z.string(),
+      company: z.string(),
+      salary: z.string(),
+      url: z.string(),
+      success: z.boolean(),
+      status: z.string(),
+    }),
+  ).optional(),
+  stoppedAt: z.string().optional(),
+});
+
+const smartReplyResult = z.object({
+  mode: z.enum(["draft", "sent"]),
+  quota: z.object({
+    used: z.number(),
+    limit: z.number(),
+  }),
+  replies: z.array(
+    z.object({
+      conversation: z.string(),
+      company: z.string(),
+      intent: z.string(),
+      job: z.object({
+        title: z.string(),
+        salary: z.string(),
+        requirements: z.string(),
+      }),
+      reply: z.string(),
+      sent: z.boolean(),
+      duplicateBlocked: z.boolean(),
+    }),
+  ),
+  reportPath: z.string().optional(),
 });
 
 type BridgeResponse = {
@@ -233,6 +287,144 @@ async function openReusableBossTab(
 async function closeBossTab(page: Page): Promise<void> {
   await page.close().catch(() => {});
 }
+
+const DEFAULT_COMPANY_BLOCKLIST = [
+  "美团",
+  "腾讯",
+  "阿里",
+  "阿里巴巴",
+  "字节",
+  "字节跳动",
+  "华为",
+  "网易",
+  "京东",
+  "百度",
+  "拼多多",
+  "小米",
+  "快手",
+  "滴滴",
+  "美团点评",
+];
+
+type SalaryRange = { min: number; max: number; months: number | null };
+
+export function parseMonthlySalaryK(input: string): SalaryRange | null {
+  const match = input
+    .replace(/\s+/g, "")
+    .match(/^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)K(?:·(\d+)薪)?$/);
+  if (!match) return null;
+  return {
+    min: Number(match[1]),
+    max: Number(match[2]),
+    months: match[3] ? Number(match[3]) : null,
+  };
+}
+
+export function isEligibleApplySalary(input: string): boolean {
+  const salary = parseMonthlySalaryK(input);
+  return !!salary && salary.min >= 20 && salary.max >= 28;
+}
+
+export function companyIsBlocked(
+  company: string,
+  extraBlocklist: readonly string[] = [],
+): boolean {
+  const terms = [...DEFAULT_COMPANY_BLOCKLIST, ...extraBlocklist]
+    .map(term => term.trim())
+    .filter(Boolean);
+  return terms.some(term => company.includes(term));
+}
+
+type DailyQuota = {
+  date: string;
+  count: number;
+  sentMessages?: Array<{ conversation: string; reply: string }>;
+};
+
+function today(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+type PluginStorage = {
+  get<T>(key: string): Promise<T | null>;
+  set<T>(key: string, value: T): Promise<void>;
+};
+
+function storageOf(ctx: unknown): PluginStorage | null {
+  const storage = (ctx as { storage?: unknown }).storage;
+  if (!storage || typeof storage !== "object") return null;
+  const candidate = storage as Partial<PluginStorage>;
+  if (typeof candidate.get !== "function" || typeof candidate.set !== "function") {
+    return null;
+  }
+  return candidate as PluginStorage;
+}
+
+async function readDailyQuota(
+  storage: PluginStorage | null,
+  key: string,
+): Promise<DailyQuota> {
+  const saved = await storage?.get<DailyQuota>(key).catch(() => null);
+  return saved?.date === today() ? saved : { date: today(), count: 0 };
+}
+
+async function incrementDailyQuota(
+  storage: PluginStorage | null,
+  key: string,
+  quota: DailyQuota,
+  by = 1,
+): Promise<DailyQuota> {
+  const next = { ...quota, date: today(), count: quota.count + by };
+  await storage?.set(key, next).catch(() => undefined);
+  return next;
+}
+
+type Intent = "interview" | "jd" | "experience" | "salary";
+
+export function classifyMessageIntent(message: string): Intent {
+  if (/面试|电话|视频|沟通时间|方便聊聊|约/.test(message)) return "interview";
+  if (/JD|岗位描述|职位描述|职责|要求/.test(message)) return "jd";
+  if (/薪资|期望薪资|待遇|报酬|工资/.test(message)) return "salary";
+  return "experience";
+}
+
+export function buildSmartReply(input: {
+  intent: Intent;
+  sender: string;
+  job: Pick<JobDetailData, "jobTitle" | "salary" | "description">;
+  resume: Pick<ResumeData, "name" | "experience" | "status" | "advantage">;
+}): string {
+  const requirements = input.job.description
+    .replace(/\s+/g, " ")
+    .slice(0, 120);
+  const experience = input.resume.experience || "10年经验";
+  const availability = input.resume.status || "随时到岗";
+  if (input.intent === "interview") {
+    return `${input.sender}您好，${input.job.jobTitle}（${input.job.salary}）与我的方向匹配。我${experience}，${availability}，方便按您建议的时间面试；可先看我的项目与工程化经验，若需补充材料我随后提供。`;
+  }
+  if (input.intent === "jd") {
+    return `${input.sender}您好，已读 ${input.job.jobTitle} 岗位信息。核心要求可概括为：${requirements}。我在前端/Node 全栈、AI 工具链和自动化工程上有落地产品，能对齐该职责；如需完整材料我可进一步整理发送。`;
+  }
+  if (input.intent === "salary") {
+    return `${input.sender}您好，该岗位 ${input.job.salary} 在我的可沟通范围内。我会结合职责、团队与技术栈综合评估，也欢迎说明绩效与项目激励结构；我们可以先完成技术沟通再确认细节。`;
+  }
+  return `${input.sender}您好，我${experience}，${availability}。${input.job.jobTitle}（${input.job.salary}）要求：${requirements}。我有前端、Node.js、AI 工具链与团队负责经验，可提供可验证的开源和产品成果，期待进一步沟通。`;
+}
+
+function redactContact(value: string): string {
+  return value
+    .replace(/1[3-9]\d{9}/g, "1**********")
+    .replace(/[\w.+-]+@[\w.-]+/g, "[email]");
+}
+
+async function appendSmartReplyLog(
+  path: string,
+  entry: Record<string, unknown>,
+): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await appendFile(path, JSON.stringify(entry, null, 2) + "\n", "utf8");
+}
+
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -1052,6 +1244,388 @@ export default function (xcli: XCLIAPI): void {
         throw error;
       } finally {
         if (tab && !tab.reusable) await closeBossTab(tab.page);
+      }
+    },
+  });
+
+  site.command("apply", {
+    description:
+      "筛选并投递 Boss 职位；默认 dry-run，仅输出可投递清单，不点击沟通/投递",
+    scope: "page",
+    loginRequired: "required",
+    result: applyResult,
+    parameters: z.object({
+      query: z.string().optional().default("AI工程师").describe("职位关键词"),
+      city: z.string().optional().describe("城市代码，如 101280100"),
+      limit: z.coerce.number().optional().default(20).describe("筛选岗位数量"),
+      dryRun: z.coerce.boolean().optional().default(true).describe("只生成清单，不点击"),
+      dailyLimit: z.coerce.number().optional().default(20).describe("每日投递上限"),
+      blocklist: z.string().optional().describe("追加排除公司，逗号分隔"),
+    }),
+    examples: [
+      {
+        cmd: 'xbrowser boss apply --query "AI工程师" --dry-run true',
+        description: "生成投递清单",
+      },
+    ],
+    handler: async (params, ctx) => {
+      const storage = storageOf(ctx);
+      const quota = await readDailyQuota(storage, "boss_apply_daily_quota");
+      if (quota.count >= params.dailyLimit) {
+        return ok({
+          dryRun: params.dryRun,
+          quota: { used: quota.count, limit: params.dailyLimit },
+          candidates: [],
+          submitted: [],
+          stoppedAt: "daily-limit",
+        }, [`今日已投递 ${quota.count}/${params.dailyLimit} 个岗位，已达上限`]);
+      }
+
+      let searchTab: BossTab | null = null;
+      let jobs: Array<{
+        title: string;
+        company: string;
+        salary: string;
+        detailUrl: string;
+      }> = [];
+      try {
+        searchTab = await openReadOnlyBossTab(ctx, "boss-apply-search");
+        if (!searchTab) {
+          recordBossMistake(
+            "apply",
+            "无法从 BrowserCommandContext 创建独立采集 tab",
+            "boss-apply-search",
+          );
+          return fail("需要浏览器上下文以创建独立采集 tab");
+        }
+        await searchTab.page.goto(
+          `https://www.zhipin.com/web/geek/job?query=${encodeURIComponent(params.query)}&city=${params.city ?? ""}&__xbrowser_tab=boss-apply-search`,
+          { waitUntil: "domcontentloaded", timeout: 20000 },
+        );
+        await searchTab.page.waitForTimeout(3000);
+        const health = await searchTab.page
+          .evaluate(bossMemoryExpression())
+          .catch(() => null);
+        const healthError = assertBossMemory(health as never);
+        if (healthError) {
+          recordBossMistake("apply", healthError, searchTab.name);
+          return fail(healthError);
+        }
+        const raw = await searchTab.page.evaluate<string>(`
+          JSON.stringify([...document.querySelectorAll('.job-card-box')].slice(0, ${params.limit}).map(card => {
+            const link = card.querySelector('a[href*=job_detail]');
+            const href = link ? link.getAttribute('href') : '';
+            const absolute = href && href.startsWith('http')
+              ? href
+              : 'https://www.zhipin.com' + (href || '');
+            return {
+              title: card.querySelector('.job-name')?.textContent?.trim() ?? '',
+              company: card.querySelector('.boss-name')?.textContent?.trim() ?? '',
+              salary: card.querySelector('.job-salary')?.textContent?.trim() ?? '',
+              detailUrl: absolute,
+            };
+          }))
+        `);
+        jobs = JSON.parse(raw) as typeof jobs;
+      } catch (error) {
+        recordBossMistake(
+          "apply",
+          error instanceof Error ? error.message : String(error),
+          searchTab?.name ?? "boss-apply-search",
+        );
+        return fail(`读取投递候选失败：${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        if (searchTab && !searchTab.reusable) await closeBossTab(searchTab.page);
+      }
+
+      const extraBlocklist = (params.blocklist ?? "")
+        .split(",")
+        .map(value => value.trim())
+        .filter(Boolean);
+      const candidates = jobs
+        .filter(job => isEligibleApplySalary(job.salary))
+        .filter(job => !companyIsBlocked(job.company, extraBlocklist))
+        .map(job => ({
+          title: job.title,
+          company: job.company,
+          salary: job.salary,
+          url: job.detailUrl,
+          reason: "salary-and-company-passed",
+        }));
+
+      if (params.dryRun) {
+        return ok({
+          dryRun: true,
+          quota: { used: quota.count, limit: params.dailyLimit },
+          candidates,
+          submitted: [],
+        }, [`dry-run：${candidates.length} 个岗位符合条件，未点击任何按钮`]);
+      }
+
+      const submitted: Array<{
+        title: string;
+        company: string;
+        salary: string;
+        url: string;
+        success: boolean;
+        status: string;
+      }> = [];
+      let currentQuota = quota;
+      for (const [index, job] of candidates.entries()) {
+        if (currentQuota.count >= params.dailyLimit) {
+          return ok({
+            dryRun: false,
+            quota: { used: currentQuota.count, limit: params.dailyLimit },
+            candidates,
+            submitted,
+            stoppedAt: "daily-limit",
+          });
+        }
+        let applyTab: BossTab | null = null;
+        try {
+          applyTab = await openReadOnlyBossTab(ctx, `boss-apply-${index + 1}`);
+          if (!applyTab) throw new Error("无法创建独立投递 tab");
+          const url = `${job.url}${job.url.includes("?") ? "&" : "?"}__xbrowser_tab=${encodeURIComponent(applyTab.name)}`;
+          await applyTab.page.goto(url, {
+            waitUntil: "domcontentloaded",
+            timeout: 20000,
+          });
+          await applyTab.page.waitForTimeout(2000);
+          const button = await applyTab.page.evaluate<{
+            x: number;
+            y: number;
+            confirm?: { x: number; y: number };
+          } | null>(`
+            (() => {
+              const el = [...document.querySelectorAll('.btn-startchat, a, button')]
+                .find(el => /立即沟通|投递简历|申请职位/.test(el.innerText || '') && el.getBoundingClientRect().width > 0);
+              if (!el) return null;
+              const r = el.getBoundingClientRect();
+              const confirmEl = [...document.querySelectorAll('button, a')]
+                .find(el => /确定|确认/.test(el.innerText || '') && el.getBoundingClientRect().width > 0);
+              const cr = confirmEl?.getBoundingClientRect();
+              return {
+                x: r.x + r.width / 2,
+                y: r.y + r.height / 2,
+                ...(cr ? { confirm: { x: cr.x + cr.width / 2, y: cr.y + cr.height / 2 } } : {}),
+              };
+            })()
+          `).catch(() => null);
+          if (!button) throw new Error("未找到可见沟通或投递按钮");
+          await applyTab.page.mouse.move(button.x - 10, button.y - 5, { steps: 4 });
+          await applyTab.page.mouse.click(button.x, button.y);
+          await applyTab.page.waitForTimeout(800);
+          if (button.confirm) {
+            await applyTab.page.mouse.click(button.confirm.x, button.confirm.y);
+            await applyTab.page.waitForTimeout(800);
+          }
+          const verified = await applyTab.page.evaluate<boolean>(`
+            Boolean(
+              location.href.includes('/web/geek/chat') ||
+              document.querySelector('.chat-input, .job-chat, [class*=chat-input]')
+            )
+          `).catch(() => false);
+          if (!verified) throw new Error("未验证到沟通会话或投递成功状态");
+          currentQuota = await incrementDailyQuota(
+            storage,
+            "boss_apply_daily_quota",
+            currentQuota,
+          );
+          submitted.push({ ...job, success: true, status: "conversation-created" });
+        } catch (error) {
+          recordBossMistake(
+            "apply",
+            error instanceof Error ? error.message : String(error),
+            applyTab?.name ?? `boss-apply-${index + 1}`,
+          );
+          submitted.push({
+            ...job,
+            success: false,
+            status: error instanceof Error ? error.message : String(error),
+          });
+        } finally {
+          if (applyTab && !applyTab.reusable) await closeBossTab(applyTab.page);
+        }
+        if (index < Math.min(candidates.length, params.dailyLimit - currentQuota.count) - 1) {
+          await sleep(45_000 + Math.floor(Math.random() * 75_001));
+        }
+      }
+      return ok({
+        dryRun: false,
+        quota: { used: currentQuota.count, limit: params.dailyLimit },
+        candidates,
+        submitted,
+      });
+    },
+  });
+
+  site.command("smart-reply", {
+    description:
+      "根据会话消息与职位信息生成确定性回复；默认 draft 不发送，--send true 才真实发送",
+    scope: "page",
+    loginRequired: "required",
+    result: smartReplyResult,
+    parameters: z.object({
+      keyword: z.string().optional().describe("指定会话关键词；缺省处理最近会话"),
+      limit: z.coerce.number().optional().default(5).describe("处理会话数量"),
+      send: z.coerce.boolean().optional().default(false).describe("默认仅生成草稿"),
+      dailyLimit: z.coerce.number().optional().default(10).describe("每日发送上限"),
+      report: z.string().optional().default("output/boss-apply/smart-reply-drafts.jsonl").describe("上下文与草稿日志"),
+    }),
+    examples: [
+      { cmd: "xbrowser boss smart-reply --limit 5", description: "生成 5 条回复草稿" },
+    ],
+    handler: async (params, ctx) => {
+      const storage = storageOf(ctx);
+      const quotaKey = "boss_smart_reply_daily_quota";
+      let quota = await readDailyQuota(storage, quotaKey);
+      quota.sentMessages ??= [];
+      let chatTab: BossTab | null = null;
+      let resumeTab: BossTab | null = null;
+      let detailTab: BossTab | null = null;
+      const reportPath = join(ctx.cwd, params.report);
+      const replies: Array<{
+        conversation: string;
+        company: string;
+        intent: string;
+        job: { title: string; salary: string; requirements: string };
+        reply: string;
+        sent: boolean;
+        duplicateBlocked: boolean;
+      }> = [];
+
+      try {
+        chatTab = await openReadOnlyBossTab(ctx, "boss-smart-chat");
+        if (!chatTab) throw new Error("无法创建独立会话采集 tab");
+        resumeTab = await openReadOnlyBossTab(ctx, "boss-smart-resume");
+        if (!resumeTab) throw new Error("无法创建独立简历采集 tab");
+        detailTab = await openReadOnlyBossTab(ctx, "boss-smart-detail");
+        if (!detailTab) throw new Error("无法创建独立职位详情 tab");
+
+        await chatTab.page.goto(
+          "https://www.zhipin.com/web/geek/chat?__xbrowser_tab=boss-smart-chat",
+          { waitUntil: "domcontentloaded", timeout: 20000 },
+        );
+        await chatTab.page.waitForTimeout(4000);
+        const rawChats = await chatTab.page.evaluate<string>(`
+          JSON.stringify((function(){
+            ${textOf.toString()}
+            const extract = ${extractChats.toString()};
+            return extract(${params.limit});
+          })())
+        `);
+        const chats = JSON.parse(rawChats) as ChatData[];
+
+        await resumeTab.page.goto(
+          "https://www.zhipin.com/web/geek/resume?__xbrowser_tab=boss-smart-resume",
+          { waitUntil: "domcontentloaded", timeout: 20000 },
+        );
+        await resumeTab.page.waitForTimeout(4000);
+        const rawResume = await resumeTab.page.evaluate<string>(`
+          JSON.stringify((function(){
+            ${textOf.toString()}
+            ${parseResumeContact.toString()}
+            const extract = ${extractResume.toString()};
+            return extract();
+          })())
+        `);
+        const resume = JSON.parse(rawResume) as ResumeData;
+
+        for (const chat of chats) {
+          if (params.keyword && !`${chat.sender}${chat.company}`.includes(params.keyword)) continue;
+          const intent = classifyMessageIntent(chat.preview);
+          const job = {
+            jobTitle: chat.preview.slice(0, 40) || "待确认岗位",
+            salary: "",
+            company: chat.company,
+            location: "",
+            experience: "",
+            education: "",
+            description: chat.preview,
+          } satisfies JobDetailData;
+          const reply = buildSmartReply({
+            intent,
+            sender: chat.sender,
+            job,
+            resume,
+          });
+          const conversationKey = `${chat.sender}|${chat.company}|${chat.role}`;
+          const duplicateBlocked = (quota.sentMessages ?? []).some(
+            item => item.conversation === conversationKey && item.reply === reply,
+          );
+          const canSend =
+            params.send &&
+            !duplicateBlocked &&
+            quota.count < params.dailyLimit;
+          if (canSend) {
+            const target = await chatTab.page.evaluate<{ x: number; y: number } | null>(`
+              (() => {
+                const el = [...document.querySelectorAll('.friend-content')]
+                  .find(el => el.innerText.includes(${JSON.stringify(chat.sender)}));
+                if (!el) return null;
+                const r = el.getBoundingClientRect();
+                return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+              })()
+            `).catch(() => null);
+            if (!target) throw new Error(`未找到会话 ${chat.sender}`);
+            await chatTab.page.mouse.click(target.x, target.y);
+            await chatTab.page.waitForTimeout(1000);
+            await chatTab.page.fill(".chat-input", reply, { timeout: 10000 });
+            const sendButton = await chatTab.page.evaluate<{ x: number; y: number } | null>(`
+              (() => {
+                const r = document.querySelector('.btn-send')?.getBoundingClientRect();
+                return r && r.width ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+              })()
+            `).catch(() => null);
+            if (!sendButton) throw new Error("未找到发送按钮");
+            await chatTab.page.mouse.click(sendButton.x, sendButton.y);
+            await chatTab.page.waitForTimeout(1000);
+            const verified = await chatTab.page.evaluate<boolean>(`
+              [...document.querySelectorAll('.message-item')].some(el => el.innerText.includes(${JSON.stringify(reply.slice(0, 30))}))
+            `).catch(() => false);
+            if (!verified) throw new Error("发送后未验证到消息");
+            quota = await incrementDailyQuota(storage, quotaKey, quota);
+            quota.sentMessages = [...(quota.sentMessages ?? []), { conversation: conversationKey, reply }];
+            await storage?.set(quotaKey, quota).catch(() => undefined);
+          }
+          const item = {
+            conversation: conversationKey,
+            company: chat.company,
+            intent,
+            job: {
+              title: job.jobTitle,
+              salary: job.salary,
+              requirements: job.description.replace(/\s+/g, " ").slice(0, 180),
+            },
+            reply,
+            sent: canSend,
+            duplicateBlocked,
+          };
+          replies.push(item);
+          await appendSmartReplyLog(reportPath, {
+            ...item,
+            reply: redactContact(item.reply),
+            job: { ...item.job, requirements: redactContact(item.job.requirements) },
+          });
+        }
+
+        return ok({
+          mode: params.send ? "sent" : "draft",
+          quota: { used: quota.count, limit: params.dailyLimit },
+          replies,
+          reportPath,
+        });
+      } catch (error) {
+        recordBossMistake(
+          "smart-reply",
+          error instanceof Error ? error.message : String(error),
+          chatTab?.name ?? "boss-smart-chat",
+        );
+        return fail(`智能回复失败：${error instanceof Error ? error.message : String(error)}`);
+      } finally {
+        if (detailTab && !detailTab.reusable) await closeBossTab(detailTab.page);
+        if (resumeTab && !resumeTab.reusable) await closeBossTab(resumeTab.page);
+        if (chatTab && !chatTab.reusable) await closeBossTab(chatTab.page);
       }
     },
   });
