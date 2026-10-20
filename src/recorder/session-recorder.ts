@@ -19,7 +19,7 @@ import { createNetworkCaptureState, handleNetworkRequest, handleNetworkResponse 
 import { injectActionScript } from './script-injector.js';
 import { ACTION_SIGNAL_SCRIPT, CHECKPOINT_OVERLAY_SCRIPT } from './injection-scripts.js';
 import { getSelectorGeneratorScript } from './selector-utils.js';
-import { buildSummary } from './summary-builder.js';
+import { buildCompactSummary, buildSummary } from './summary-builder.js';
 import { buildMarkdownSummary } from './markdown-summary.js';
 import { detectCheckpoints, verifyAction } from './observation-insights.js';
 import {
@@ -31,7 +31,7 @@ import type { UserAction, RecordingData, RecordingSummary, RecordingControlFile,
 export type {
   ClickContextItem, ClickContextElement, ClickContextStateChange, ClickContext,
   UserAction, NetworkEntry, ContextChange, ElementRef,
-  RecordingStep, RecordingSummary, CheckpointType, CheckpointEntry,
+  RecordingStep, RecordingSummary, RecordingCompactSummary, CheckpointType, CheckpointEntry,
   RecordingData, RecordingControlFile, ActionSignal,
 } from './recording-types.js';
 
@@ -937,6 +937,8 @@ export class SessionRecorder {
     const lines = data.actions.map(a => JSON.stringify(a)).join('\n') + '\n';
     writeFileSync(jsonlPath, lines, 'utf-8');
     writeFileSync(join(this.recordingsDir, 'summary.json'), JSON.stringify(summary, null, 2), 'utf-8');
+    const compactSummary = buildCompactSummary(data, this.startedAt);
+    writeFileSync(join(this.recordingsDir, 'summary-compact.json'), JSON.stringify(compactSummary, null, 2), 'utf-8');
     writeFileSync(join(this.recordingsDir, 'summary.md'), buildMarkdownSummary(data, summary), 'utf-8');
   }
 

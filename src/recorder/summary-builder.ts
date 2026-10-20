@@ -1,8 +1,11 @@
 import type {
   ActionSignal,
+  CompactSummaryFlowItem,
+  ContextChange,
   ElementRef,
   NetworkEntry,
   RecordingData,
+  RecordingCompactSummary,
   RecordingStep,
   RecordingSummary,
   UserAction,
@@ -10,6 +13,112 @@ import type {
 
 const POST_WINDOW = 5000;
 const MERGE_WINDOW = 2000;
+const COMPACT_MAX_FLOW_ITEMS = 100;
+const COMPACT_MAX_API_ITEMS = 20;
+
+export function buildCompactSummary(
+  data: RecordingData,
+  startedAt: number,
+): RecordingCompactSummary {
+  const flow: CompactSummaryFlowItem[] = [];
+  let lastInputKey = '';
+  const events: Array<{
+    timestamp: number;
+    action?: UserAction;
+    contextChange?: ContextChange;
+  }> = [
+    ...data.actions.map(action => ({ timestamp: action.timestamp, action })),
+    ...data.contextChanges.map(contextChange => ({ timestamp: contextChange.timestamp, contextChange })),
+  ].sort((a, b) => a.timestamp - b.timestamp);
+
+  for (const event of events) {
+    if (flow.length >= COMPACT_MAX_FLOW_ITEMS) break;
+
+    if (event.contextChange) {
+      if (event.contextChange.type !== 'navigate' || !event.contextChange.url) continue;
+      lastInputKey = '';
+      flow.push({
+        step: flow.length + 1,
+        action: `navigate ${event.contextChange.url}`,
+      });
+      continue;
+    }
+
+    const action = event.action;
+    if (!action) continue;
+
+    const selector = action.element?.selector
+      || action.element?.ariaLabel
+      || action.element?.placeholder
+      || action.element?.tag
+      || '';
+    const text = (action.element?.text || '').trim();
+    const target = selector || text || action.url || 'unknown';
+    let description = '';
+
+    if (action.type === 'input' || action.type === 'cdp-fill') {
+      const inputKey = `${action.type}|${target}`;
+      if (inputKey === lastInputKey) continue;
+      lastInputKey = inputKey;
+      description = `fill ${target} value=${truncate(action.value || '', 60)}`;
+    } else if (action.type === 'click' || action.type === 'cdp-click') {
+      lastInputKey = '';
+      description = `click ${target}${text ? ` text=${truncate(text, 60)}` : ''}`;
+    } else if (action.type === 'change') {
+      lastInputKey = '';
+      description = `change ${target} value=${truncate(action.value || '', 60)}`;
+    } else if (action.type === 'submit') {
+      lastInputKey = '';
+      description = `submit ${target}`;
+    } else if (action.type === 'hover') {
+      lastInputKey = '';
+      description = `hover ${target}`;
+    } else if (action.type === 'drag') {
+      lastInputKey = '';
+      description = `drag from (${action.drag?.fromX ?? 0},${action.drag?.fromY ?? 0}) to (${action.drag?.toX ?? 0},${action.drag?.toY ?? 0})`;
+    } else if (action.type === 'drop') {
+      lastInputKey = '';
+      description = `drop ${action.files?.count ?? 1} file(s) on ${target}`;
+    } else {
+      continue;
+    }
+
+    flow.push({ step: flow.length + 1, action: description });
+  }
+
+  const keyApis = data.network
+    .filter(entry => (
+      (entry.resourceType === 'fetch' || entry.resourceType === 'xhr')
+      && entry.contentType.toLowerCase().includes('json')
+    ))
+    .sort((a, b) => b.responseSize - a.responseSize)
+    .slice(0, COMPACT_MAX_API_ITEMS)
+    .map(entry => ({
+      method: entry.method,
+      url: entry.url,
+      path: entry.path,
+      status: entry.status,
+      contentType: entry.contentType,
+      responseSize: entry.responseSize,
+      ...(entry.requestBody === undefined ? {} : { requestBody: entry.requestBody }),
+    }));
+
+  return {
+    startUrl: data.startUrl,
+    recordedAt: new Date(startedAt).toISOString(),
+    durationMs: Math.max(0, Date.now() - startedAt),
+    totalActions: data.actions.length,
+    totalNetworkRequests: data.network.length,
+    flow,
+    keyApis,
+  };
+}
+
+function truncate(value: string, maxLength: number): string {
+  return value.length > maxLength
+    ? `${value.slice(0, Math.max(0, maxLength - 3))}...`
+    : value;
+}
 
 export function buildSummary(data: RecordingData, startedAt: number): RecordingSummary {
 const steps: RecordingStep[] = [];
