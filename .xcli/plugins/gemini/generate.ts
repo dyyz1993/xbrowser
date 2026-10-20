@@ -440,8 +440,8 @@ export function registerGenerateCommands(site: CommandRegistrar): void {
       ratio: z.enum(['1:1', '16:9', '9:16', '4:3', '3:4']).optional().describe('宽高比'),
       path: z.string().optional().describe('单附件路径（默认图片参考）'),
       paths: z.string().optional().describe('多附件路径（CSV）'),
-      firstFrame: z.string().optional().describe('首帧图片路径'),
-      lastFrame: z.string().optional().describe('尾帧图片路径'),
+      firstFrame: z.string().optional().describe('首帧图片路径（作为通用附件并在提示词标注顺序；非站点专用首尾帧接口）'),
+      lastFrame: z.string().optional().describe('尾帧图片路径（作为通用附件并在提示词标注顺序；非站点专用首尾帧接口）'),
     }),
     result: generateResult,
     examples: [{ cmd: 'xbrowser gemini generate-image --prompt "赛博朋克城市夜景" --ratio 16:9', description: '生成图片' }],
@@ -456,11 +456,14 @@ export function registerGenerateCommands(site: CommandRegistrar): void {
       timeout: z.number().min(30).max(900).default(420).describe('等待生成秒数'),
       path: z.string().optional().describe('单附件路径（默认图片参考）'),
       paths: z.string().optional().describe('多附件路径（CSV；建议绝对路径）'),
-      firstFrame: z.string().optional().describe('首帧图片路径'),
-      lastFrame: z.string().optional().describe('尾帧图片路径'),
+      firstFrame: z.string().optional().describe('首帧图片路径（作为通用附件并在提示词标注顺序；非站点专用首尾帧接口）'),
+      lastFrame: z.string().optional().describe('尾帧图片路径（作为通用附件并在提示词标注顺序；非站点专用首尾帧接口）'),
     }),
     result: generateResult,
-    examples: [{ cmd: 'xbrowser gemini generate-video --prompt "日落海浪" --timeout 420', description: '生成视频' }],
+    examples: [
+      { cmd: 'xbrowser gemini generate-video --prompt "日落海浪" --timeout 420', description: '生成视频' },
+      { cmd: 'xbrowser gemini generate-video --prompt "从首帧平滑运镜到尾帧" --firstFrame /abs/start.png --lastFrame /abs/end.png', description: '上传两张图片作为通用附件并标注语义顺序' },
+    ],
     handler: async (params: GenerateParams) => generate('video', params),
   };
 
