@@ -12,6 +12,7 @@ import { buildTips, uploadFileViaDataTransfer, handleChatAttachments, parsePaths
 import { pasteImagesFromClipboard, setImagesOnFileInput } from '../shared/clipboard-upload.js';
 import { extractAllHDImages } from '../shared/image-lightbox.js';
 import { clickButtonByText } from '../shared/file-upload.js';
+import { checkRefusal } from '../shared/refusal-detect.js';
 import path from 'path';
 import fs from 'fs';
 import type { PluginPage, PluginElementHandle, PluginRoute } from '../types.js';
@@ -917,6 +918,17 @@ export default function (xcli: XCLIAPI): void {
         const startTime = Date.now();
         while (Date.now() - startTime < 120000) {
           await page.waitForTimeout(3000);
+          if (allImageUrls.length === 0) {
+            const refusal = await checkRefusal(page, [
+              '[class*="flow-markdown-body"]',
+              '[class*="receive-msg"]',
+              '[class*="answer-content"]',
+            ]).catch(() => ({ refused: false, reason: null, text: '' }));
+            if (refusal.refused && refusal.reason) {
+              tips.push(`⚠️ 豆包拒绝生图（${refusal.reason}）：${refusal.text.slice(0, 100)}`);
+              return fail('豆包拒绝生图', [...remoteTips, ...tips]);
+            }
+          }
           // Check for captcha/verification first
           try {
             captchaDetected = await page.evaluate(() => {

@@ -4,6 +4,7 @@ import { z } from 'zod/v4';
 import path from 'path';
 import fs from 'fs';
 import type { PluginPage, PluginElementHandle } from '../types.js';
+import { checkRefusal } from '../shared/refusal-detect.js';
 
 type Page = import('../types').Page;
 type Response = import('../types').Response;
@@ -244,6 +245,15 @@ async function waitForImages(page: Page, timeoutMs: number): Promise<string[]> {
         if (!urls.includes(u)) urls.push(u);
       }
       if (urls.length > 0) return urls;
+    }
+
+    const refusal = await checkRefusal(page, [
+      'div.answer-common-card',
+      'div.chat-answers-card-wrap',
+      '[class*="markdown"]',
+    ]).catch(() => ({ refused: false, reason: null, text: '' }));
+    if (refusal.refused && refusal.reason) {
+      throw new Error(`QWEN_REFUSAL:${refusal.reason}:${refusal.text.slice(0, 100)}`);
     }
 
     await new Promise(r => setTimeout(r, 2000));
