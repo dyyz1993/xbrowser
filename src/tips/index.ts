@@ -5,10 +5,6 @@ import { ContextTracker } from './context-tracker.js';
 import { TipGenerator, buildSnapshot } from './tip-generator.js';
 import { detectAntiBot, formatDetectionMessage, type DetectionConfig } from '../lib/anti-bot.js';
 
-// Smart-tips 需等 SPA 弹层渲染后再做 DOM diff。此前固定同步等待 500ms 且每条
-// 命令都付（bench 实测：静态页 eval 命令 508ms ≈ 全部是这个等待，见
-// output/benchmark）。默认降为 120ms —— 仍覆盖快弹层，慢渲染弹层会被后续
-// 命令的 beforeCommand 快照兜住。XBROWSER_TIPS_DEBOUNCE 可调，0 完全跳过。
 function tipsDebounceMs(): number {
   const v = parseInt(process.env.XBROWSER_TIPS_DEBOUNCE ?? '120', 10);
   return Number.isFinite(v) && v > 0 ? v : 0;
@@ -44,8 +40,69 @@ export class TipsManager {
   private beforeSnapshot: Snapshot | null = null;
   private lastDetectionTime = 0;
 
+  // CDP 弹窗事件检测（filechooser / dialog / popup）
+  private detectedEvents: Array<{ type: string; message: string; selector?: string; commandName: string }> = [];
+  private eventListenersAttached = false;
+  private lastCommandName = '';
+
   async beforeCommand(page: Page, commandName: string, params: Record<string, unknown>): Promise<void> {
     this.contextTracker.record(commandName, params);
+    this.lastCommandName = commandName;
+
+    // 挂 CDP 弹窗事件监听（只挂一次）
+    if (!this.eventListenersAttached && typeof page.on === 'function') {
+      this.eventListenersAttached = true;
+
+      // dialog（alert / confirm / prompt / beforeunload）
+      page.on('dialog', (dialog: unknown) => {
+        const d = dialog as { type: () => string; message: () => string };
+        try {
+          this.detectedEvents.push({
+            type: 'dialog',
+            message: `[${d.type()}] ${d.message().slice(0, 200)}`,
+            commandName: this.lastCommandName,
+          });
+        } catch { /* ignore */ }
+      });
+
+      // filechooser（文件选择弹窗）
+      page.on('filechooser', (chooser: unknown) => {
+        const c = chooser as { selector?: string; isMultiple?: boolean };
+        try {
+          this.detectedEvents.push({
+            type: 'filechooser',
+            message: `文件选择弹窗${c.isMultiple ? '（多选）' : ''}：selector=${c.selector || 'input[type=file]'}`,
+            selector: c.selector,
+            commandName: this.lastCommandName,
+          });
+        } catch { /* ignore */ }
+      });
+
+      // popup（新窗口/window.open）
+      page.on('popup', (info: unknown) => {
+        const p = info as { url?: string; windowName?: string };
+        try {
+          this.detectedEvents.push({
+            type: 'popup',
+            message: `新窗口弹窗：url=${p.url || '(unknown)'}${p.windowName ? ` name=${p.windowName}` : ''}`,
+            commandName: this.lastCommandName,
+          });
+        } catch { /* ignore */ }
+      });
+
+      // download（文件下载：started/completed）
+      page.on('download', (info: unknown) => {
+        const d = info as { state?: string; filename?: string; url?: string };
+        try {
+          const stateLabel = d.state === 'completed' ? '完成' : d.state === 'canceled' ? '取消' : '开始';
+          this.detectedEvents.push({
+            type: 'download',
+            message: `文件下载${stateLabel}：${d.filename || 'unknown'}${d.url ? ` (${d.url.slice(0, 80)})` : ''}`,
+            commandName: this.lastCommandName,
+          });
+        } catch { /* ignore */ }
+      });
+    }
 
     if (!this.domWatcher) {
       this.domWatcher = new DomWatcher(page);
@@ -98,7 +155,12 @@ export class TipsManager {
   }
 
   async afterCommand(): Promise<SmartTip[]> {
-    if (!this.domWatcher || !this.beforeSnapshot) return [];
+    if (!this.domWatcher || !this.beforeSnapshot) {
+      // 即使没有 DOM snapshot，也返回检测到的 CDP 弹窗事件
+      const cdpTips = this.collectCdpEventTips();
+      this.detectedEvents = [];
+      return cdpTips;
+    }
 
     await this.debounce();
 
@@ -109,13 +171,54 @@ export class TipsManager {
       const newElements = this.generator.diff(this.beforeSnapshot, afterSnapshot, currentElements);
       const tips = this.generator.generate(newElements);
 
+      // 合并 CDP 弹窗事件检测
+      const cdpTips = this.collectCdpEventTips();
+      tips.push(...cdpTips);
+
       this.beforeSnapshot = null;
+      this.detectedEvents = [];
 
       return tips;
     } catch {
+      const cdpTips = this.collectCdpEventTips();
       this.beforeSnapshot = null;
-      return [];
+      this.detectedEvents = [];
+      return cdpTips;
     }
+  }
+
+  /**
+   * 把检测到的 CDP 弹窗事件转成 SmartTip
+   * 包括：dialog（alert/confirm/prompt）、filechooser（文件选择弹窗）、popup（新窗口）
+   */
+  private collectCdpEventTips(): SmartTip[] {
+    if (this.detectedEvents.length === 0) return [];
+
+    return this.detectedEvents.map((evt) => {
+      const suggestions: string[] = [];
+
+      if (evt.type === 'dialog') {
+        suggestions.push('此弹窗可能阻塞后续操作');
+        suggestions.push('如需自动处理：使用 page.on("dialog") 拦截');
+      } else if (evt.type === 'filechooser') {
+        suggestions.push('此弹窗由页面操作触发（如点击上传按钮）');
+        suggestions.push('如需自动处理：使用 --path/--paths 参数上传文件');
+      } else if (evt.type === 'popup') {
+        suggestions.push('页面尝试打开新窗口（可能被浏览器拦截）');
+        suggestions.push('如需处理：检查弹窗拦截设置或使用 page.on("popup") 监听');
+      } else if (evt.type === 'download') {
+        suggestions.push('页面触发了文件下载');
+        suggestions.push('如需控制路径：page.setDownloadBehavior(path)');
+      }
+
+      return {
+        category: evt.type as SmartTip['category'],
+        priority: 'p1' as const,
+        message: `🔔 [弹窗检测] ${evt.message}（触发命令: ${evt.commandName || '未知'}）`,
+        selector: evt.selector,
+        suggestions,
+      };
+    });
   }
 
   private debounce(): Promise<void> {
@@ -140,6 +243,9 @@ export class TipsManager {
     this.contextTracker.clear();
     this.domWatcher = null;
     this.lastDetectionTime = 0;
+    this.detectedEvents = [];
+    this.eventListenersAttached = false;
+    this.lastCommandName = '';
   }
 }
 

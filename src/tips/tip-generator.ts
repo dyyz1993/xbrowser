@@ -108,6 +108,9 @@ export class TipGenerator {
   private categoryLabel(category: TipCategory): string {
     const labels: Record<TipCategory, string> = {
       dialog: 'Dialog',
+      filechooser: 'File Chooser',
+      popup: 'Popup',
+      download: 'Download',
       modal: 'Modal',
       popover: 'Popover',
       notification: '通知',

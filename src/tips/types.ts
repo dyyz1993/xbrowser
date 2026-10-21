@@ -9,6 +9,9 @@ export type TipCategory =
   | 'dropdown'
   | 'tooltip'
   | 'overlay'
+  | 'filechooser'
+  | 'popup'
+  | 'download'
   | 'unknown';
 
 export interface DetectedElement {
@@ -26,7 +29,8 @@ export interface DetectedElement {
 export interface SmartTip {
   priority: TipPriority;
   category: TipCategory;
-  element: DetectedElement;
+  element?: DetectedElement;
+  selector?: string;
   message: string;
   suggestions: string[];
 }
