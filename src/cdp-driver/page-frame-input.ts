@@ -8,7 +8,7 @@
  */
 
 import type { CDPConnection } from './connection.js';
-import type { XBMouse } from './types.js';
+import type { XBMouse, XBKeyboard } from './types.js';
 import { XBMouseImpl } from './mouse.js';
 import { errMsg } from '../utils/error.js';
 
@@ -18,6 +18,22 @@ interface FrameInputDeps {
   resolveFrameSession(urlIncludes: string): Promise<string>;
   /** iframe 上下文求值（读写 frame 内 DOM） */
   evaluateInFrame<R = unknown>(urlIncludes: string, expression: string): Promise<R>;
+  /** 主页面上下文求值（同进程 iframe 的祖先偏移查询用） */
+  evaluateMain<R = unknown>(expression: string): Promise<R>;
+  /** 主页面鼠标（同进程 iframe 的输入派发通道——Input 事件按 hit-test 落进同进程 iframe） */
+  pageMouse: XBMouse;
+  /** 主页面键盘（同进程 iframe 填写用——逐键 dispatchKeyEvent，焦点已由点击落在目标元素） */
+  pageKeyboard: XBKeyboard;
+  /** 完整 frame 树（含嵌套——同进程 iframe 祖先链构造用） */
+  frameTreeNodes(): Promise<FrameNode>;
+}
+
+/** getFrameTree 节点（递归） */
+type FrameNode = { frame: { id: string; url: string }; childFrames?: FrameNode[] };
+
+/** 同进程 iframe 错误识别（resolveFrameSession 对无独立 target 的帧抛出） */
+function isSameProcessError(err: unknown): boolean {
+  return /同进程/.test(String(err));
 }
 
 /** CDP 层 session 失效（OOPIF 被 Chrome 异步销毁/验证码 iframe 重建） */
@@ -77,11 +93,78 @@ export class FrameInputService {
     selector: string,
     opts: { timeoutMs?: number } = {},
   ): Promise<{ x: number; y: number }> {
+    try {
+      const rect = await this.pollFrameRect(urlIncludes, selector, opts.timeoutMs ?? 5000);
+      const x = rect.x + rect.width / 2;
+      const y = rect.y + rect.height / 2;
+      await this.runFrameMouse(urlIncludes, (mouse) => mouse.click(x, y, { elementWidth: rect.width, elementHeight: rect.height }));
+      return { x, y };
+    } catch (err) {
+      if (!isSameProcessError(err)) throw err;
+      return this.clickInSameProcessFrame(urlIncludes, selector, opts);
+    }
+  }
+
+  /**
+   * 同进程跨源 iframe 点击（站点隔离按 eTLD+1 分组——qq.com 子域 iframe 同进程
+   * 但跨源，DOM 进不去、也没有独立 target；输入派发到主 session，Input 事件按
+   * hit-test 落进 iframe，isTrusted=true）。坐标 = 祖先 iframe 偏移累加 + 局部 rect。
+   */
+  private async clickInSameProcessFrame(
+    urlIncludes: string,
+    selector: string,
+    opts: { timeoutMs?: number } = {},
+  ): Promise<{ x: number; y: number }> {
+    this.cache.delete(urlIncludes); // iframe 若从 OOPIF 变同进程，旧 session 缓存作废（防输入误路由）
+    const { ox, oy } = await this.resolveFrameViewportOffset(urlIncludes);
     const rect = await this.pollFrameRect(urlIncludes, selector, opts.timeoutMs ?? 5000);
-    const x = rect.x + rect.width / 2;
-    const y = rect.y + rect.height / 2;
-    await this.runFrameMouse(urlIncludes, (mouse) => mouse.click(x, y, { elementWidth: rect.width, elementHeight: rect.height }));
+    const x = ox + rect.x + rect.width / 2;
+    const y = oy + rect.y + rect.height / 2;
+    await this.deps.pageMouse.click(x, y, { elementWidth: rect.width, elementHeight: rect.height });
     return { x, y };
+  }
+
+  /**
+   * 目标帧在主页面视口中的偏移：沿 getFrameTree 祖先链逐帧查询
+   * 「src 匹配子帧 URL 的 iframe 元素」的视口 rect 并累加（嵌套帧每层一次求值）。
+   */
+  private async resolveFrameViewportOffset(urlIncludes: string): Promise<{ ox: number; oy: number }> {
+    const nodes = await this.deps.frameTreeNodes();
+    const norm = (u: string): string => (u || '').replace(/\/+$/, '');
+    const findPath = (node: FrameNode, path: FrameNode[]): FrameNode[] | null => {
+      const next = [...path, node];
+      if (norm(node.frame.url).includes(norm(urlIncludes))) return next;
+      for (const child of node.childFrames ?? []) {
+        const hit = findPath(child, next);
+        if (hit) return hit;
+      }
+      return null;
+    };
+    const path = findPath(nodes, []);
+    if (!path || path.length < 2) throw new Error(`no ancestor chain for frame "${urlIncludes}"`);
+
+    let ox = 0;
+    let oy = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+      const parent = path[i];
+      const child = path[i + 1];
+      const isRoot = i === 0;
+      // URL 匹配三级：完整包含 → 去参数包含 → origin 相等（子帧 URL 常是
+      // 重定向后的路径，与 DOM src 的 path 不同——graph.qq.com authorize→show 实测）
+      const expr = `(function(){var u=${JSON.stringify(child.frame.url)};var hit=null;var ou='';try{ou=new URL(u).origin;}catch(e){}` +
+        "[...document.querySelectorAll('iframe')].forEach(function(f){if(hit)return;var s=f.src||'';if(!s)return;" +
+        "var os='';try{os=new URL(s).origin;}catch(e){}" +
+        "if(s.indexOf(u)>=0||u.indexOf(s)>=0||(ou&&os&&ou===os))hit=f;});" +
+        'if(!hit)return null;var r=hit.getBoundingClientRect();return JSON.stringify({x:r.x,y:r.y});})()';
+      const raw = isRoot
+        ? await this.deps.evaluateMain<string | null>(expr)
+        : await this.deps.evaluateInFrame<string | null>(parent.frame.url, expr);
+      if (!raw) throw new Error(`ancestor frame offset not found for "${child.frame.url.slice(0, 60)}"`);
+      const off = JSON.parse(String(raw)) as { x: number; y: number };
+      ox += off.x;
+      oy += off.y;
+    }
+    return { ox, oy };
   }
 
   /** 在 OOPIF 内填输入框：点击聚焦 → el.select() 全选 → insertText 整体替换 → 回读验证 */
@@ -94,10 +177,37 @@ export class FrameInputService {
     try {
       return await this.fillInFrameInner(urlIncludes, selector, text, opts);
     } catch (err) {
+      if (isSameProcessError(err)) return this.fillInSameProcessFrame(urlIncludes, selector, text, opts);
       if (!isSessionDeadError(err)) throw err;
       this.cache.delete(urlIncludes);
       return this.fillInFrameInner(urlIncludes, selector, text, opts);
     }
+  }
+
+  /** 同进程跨源 iframe 填写：主 session 点击聚焦 + insertText + frame 内回读 */
+  private async fillInSameProcessFrame(
+    urlIncludes: string,
+    selector: string,
+    text: string,
+    opts: { timeoutMs?: number } = {},
+  ): Promise<{ value: string }> {
+    const { ox, oy } = await this.resolveFrameViewportOffset(urlIncludes);
+    const rect = await this.pollFrameRect(urlIncludes, selector, opts.timeoutMs ?? 5000);
+    const x = ox + rect.x + rect.width / 2;
+    const y = oy + rect.y + rect.height / 2;
+    await this.deps.pageMouse.click(x, y, { elementWidth: rect.width, elementHeight: rect.height });
+    await this.deps.evaluateInFrame(
+      urlIncludes,
+      `(function(){var el=document.querySelector(${JSON.stringify(selector)});if(el&&typeof el.select==='function')el.select();return true;})()`,
+    );
+    // 逐键 trusted 输入（焦点已由点击落在目标元素）。不用 Input.insertText：
+    // 实测主 session 上该方法报 "wasn't found"（frame session 可用，主通道不可用）
+    await this.deps.pageKeyboard.type(text, { delay: 18 });
+    const readback = await this.deps.evaluateInFrame<string>(
+      urlIncludes,
+      `(function(){var el=document.querySelector(${JSON.stringify(selector)});return el?String(el.value??''):'';})()`,
+    );
+    return { value: readback ?? '' };
   }
 
   private async fillInFrameInner(
@@ -107,8 +217,10 @@ export class FrameInputService {
     opts: { timeoutMs?: number } = {},
   ): Promise<{ value: string }> {
     await this.clickInFrame(urlIncludes, selector, opts);
+    // OOPIF：insertText 发到 frame session；同进程 iframe（clickInFrame 走了
+    // 主 session fallback，无 frame session 缓存）：insertText 发到主 session
+    //（焦点已在目标元素上，Input 事件按焦点路由）
     const cached = this.cache.get(urlIncludes);
-    if (!cached) throw new Error(`frame session lost for "${urlIncludes}"`);
     // 原生 select() 全选（方法调用，非合成事件）→ insertText 替换选区，
     // 与 page.fill 的"先清空再输入"语义对齐（cleared=true）。
     // 不用 triple-click：CDP clickCount 序列无法合成 1→2→3，选不中。
@@ -116,7 +228,13 @@ export class FrameInputService {
       urlIncludes,
       `(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (el && typeof el.select === 'function') el.select(); return true; })()`,
     );
-    await this.deps.conn.send('Input.insertText', { text }, cached.sessionId);
+    // 输入路由：OOPIF（有 frame session）走 insertText；同进程 iframe
+    //（clickInFrame 已走主 session fallback、无 frame session）走主键盘逐键
+    if (cached) {
+      await this.deps.conn.send('Input.insertText', { text }, cached.sessionId);
+    } else {
+      await this.deps.pageKeyboard.type(text, { delay: 18 });
+    }
     const readback = await this.deps.evaluateInFrame<string>(
       urlIncludes,
       `(() => { const el = document.querySelector(${JSON.stringify(selector)}); return el ? String(el.value ?? '') : ''; })()`,
