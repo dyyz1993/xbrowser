@@ -26,6 +26,8 @@ import {
 import { WSServer } from '../../src/websocket-server.js';
 import type { Page } from '../../src/browser-shim.js';
 import WebSocket from 'ws';
+import type { IncomingMessage, Server, ServerResponse } from 'node:http';
+import { previewHTML } from '../../src/daemon/preview-templates.js';
 
 type ViewInfo = {
   id: string;
@@ -39,6 +41,12 @@ type SnapshotResult = {
   type: 'snapshot_result';
   data: { data: string; format: string } | null;
   error?: string;
+};
+
+type ViewerUI = {
+  page: Page;
+  clickQrTab(): Promise<void>;
+  openPreview(): Promise<void>;
 };
 
 const fixture = `<!doctype html>
@@ -159,6 +167,27 @@ function send(ws: WebSocket, message: unknown): void {
   ws.send(JSON.stringify(message));
 }
 
+async function openViewerUI(hostPage: Page, port: number, targetSessionName: string): Promise<ViewerUI> {
+  const viewer = await hostPage.context().newPage();
+  await viewer.setViewportSize({ width: 1280, height: 900 });
+  await viewer.goto(`http://127.0.0.1:${port}/preview/${targetSessionName}`, {
+    waitUntil: 'domcontentloaded',
+    timeout: 10_000,
+  });
+  await viewer.waitForSelector('.view-tab', { state: 'visible', timeout: 10_000 });
+  return {
+    page: viewer,
+    clickQrTab: async () => {
+      await viewer.getByText('Login QR code', { exact: false }).click({ timeout: 10_000 });
+      await viewer.waitForSelector('#snapshot-preview', { state: 'visible', timeout: 10_000 });
+    },
+    openPreview: async () => {
+      await viewer.locator('#snapshot-preview').click({ timeout: 10_000 });
+      await viewer.waitForSelector('#snapshot-fullscreen', { state: 'visible', timeout: 10_000 });
+    },
+  };
+}
+
 async function decodeImage(buffer: Buffer): Promise<{ width: number; height: number; data: Buffer }> {
   // PNG metadata extraction is enough for this test's generated PNG/WebP outputs;
   // use sharp for dimensions when available without adding a runtime dependency.
@@ -176,6 +205,8 @@ describeE2E('E2E: viewer image and QR regions', () => {
   let server: WSServer;
   let page: Page;
   let ws: WebSocket;
+  let viewerPort: number;
+  let httpServer: Server;
 
   beforeAll(async () => {
     fs.mkdirSync(outputDir, { recursive: true });
@@ -195,13 +226,27 @@ describeE2E('E2E: viewer image and QR regions', () => {
     server = new WSServer({ port: 0 });
     server.registerSession(sessionName, page);
 
-    const bound = await new Promise<number>((resolve, reject) => {
-      const httpServer = require('node:http').createServer();
-      httpServer.listen(0, '127.0.0.1', () => resolve(httpServer.address().port));
+    viewerPort = await new Promise<number>((resolve, reject) => {
+      httpServer = require('node:http').createServer((req: IncomingMessage, res: ServerResponse) => {
+        const urlPath = (req.url || '/').replace(/\?.*$/, '');
+        if (urlPath === '/preview' || urlPath.startsWith('/preview/')) {
+          const targetSession = urlPath.replace(/^\/preview\/?/, '').replace(/\/+$/, '') || 'default';
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+          res.end(previewHTML(targetSession, req.headers.host || '127.0.0.1'));
+          return;
+        }
+        res.writeHead(404);
+        res.end('Not Found');
+      });
+      httpServer.listen(0, '127.0.0.1', () => {
+        const address = httpServer.address();
+        if (address && typeof address === 'object') resolve(address.port);
+        else reject(new Error('Failed to bind viewer HTTP server'));
+      });
       httpServer.on('error', reject);
       void server.attachToServer(httpServer, '/preview');
     });
-    ws = new WebSocket(`ws://127.0.0.1:${bound}/preview/${sessionName}`);
+    ws = new WebSocket(`ws://127.0.0.1:${viewerPort}/preview/${sessionName}`);
     await new Promise<void>((resolve, reject) => {
       ws.once('open', resolve);
       ws.once('error', reject);
@@ -211,6 +256,7 @@ describeE2E('E2E: viewer image and QR regions', () => {
   afterAll(async () => {
     ws?.close();
     await server?.stop().catch(() => undefined);
+    httpServer?.close();
     server?.unregisterSession(sessionName);
     await closeSessionByName(sessionName);
     await destroyBrowser();
@@ -218,6 +264,7 @@ describeE2E('E2E: viewer image and QR regions', () => {
   });
 
   it('detects meaningful image regions and rejects noise', async () => {
+    const viewer = await openViewerUI(page, viewerPort, sessionName);
     const update = await waitForMessage<{ type: 'views_update'; views: ViewInfo[] }>(
       ws,
       value => (value as { type?: string })?.type === 'views_update',
@@ -234,12 +281,15 @@ describeE2E('E2E: viewer image and QR regions', () => {
     expect(ids).not.toContain('offscreen');
     expect(update.views[0]?.kind).toBe('qr');
 
-    // Viewer-level “before” evidence: screenshot the actual page shown to the viewer.
-    const before = await page.screenshot({ type: 'png' });
-    fs.writeFileSync(path.join(outputDir, 'viewer-before.png'), before);
+    // Capture the actual Viewer shell before interaction: toolbar, view tabs, and canvas.
+    await viewer.page.waitForTimeout(1_000);
+    const before = await viewer.page.screenshot({ type: 'png' });
+    fs.writeFileSync(path.join(outputDir, 'viewer-ui-before.png'), before);
+    await viewer.page.close();
   }, 20_000);
 
   it('recaptures a QR region at scale 4 and captures the viewer preview state', async () => {
+    const viewer = await openViewerUI(page, viewerPort, sessionName);
     const update = await waitForMessage<{ type: 'views_update'; views: ViewInfo[] }>(
       ws,
       value => (value as { type?: string })?.type === 'views_update',
@@ -267,11 +317,14 @@ describeE2E('E2E: viewer image and QR regions', () => {
     expect(decoded.width).toBeGreaterThanOrEqual(qr!.rect.width * 4 - 2);
     expect(decoded.height).toBeGreaterThanOrEqual(qr!.rect.height * 4 - 2);
 
-    // Viewer-level “after” evidence: this page screenshot simulates the visible
-    // viewer canvas state after the preview has been populated. The test page
-    // remains unchanged, while recaptured evidence proves the higher-resolution asset.
-    const after = await page.screenshot({ type: 'png' });
-    fs.writeFileSync(path.join(outputDir, 'viewer-after.png'), after);
+    // Exercise the real Viewer interaction path: click the QR tab, wait for the
+    // bottom-right preview, open fullscreen, then capture the Viewer shell itself.
+    await viewer.clickQrTab();
+    await viewer.openPreview();
+    await viewer.page.waitForTimeout(300);
+    const after = await viewer.page.screenshot({ type: 'png' });
+    fs.writeFileSync(path.join(outputDir, 'viewer-ui-after.png'), after);
     expect(after.length).toBeGreaterThan(0);
+    await viewer.page.close();
   }, 20_000);
 });
