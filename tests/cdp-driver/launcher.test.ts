@@ -95,3 +95,26 @@ describe('launchChrome — Chrome not found guidance', () => {
     }
   });
 });
+
+describe('joinCdpHttpUrl', () => {
+  it('should append JSON API paths after the endpoint pathname', async () => {
+    const { joinCdpHttpUrl } = await import('../../src/cdp-driver/launcher.js');
+
+    expect(joinCdpHttpUrl('http://localhost:9222', '/json/version'))
+      .toBe('http://localhost:9222/json/version');
+  });
+
+  it('should preserve query strings used by multi-user CDP gateways', async () => {
+    const { joinCdpHttpUrl } = await import('../../src/cdp-driver/launcher.js');
+
+    expect(joinCdpHttpUrl('http://localhost:9221?key=cdp_user_1', '/json/list'))
+      .toBe('http://localhost:9221/json/list?key=cdp_user_1');
+  });
+
+  it('should normalize a trailing slash before appending the API path', async () => {
+    const { joinCdpHttpUrl } = await import('../../src/cdp-driver/launcher.js');
+
+    expect(joinCdpHttpUrl('http://localhost:9221///?key=cdp_user_1', '/json/version'))
+      .toBe('http://localhost:9221/json/version?key=cdp_user_1');
+  });
+});
