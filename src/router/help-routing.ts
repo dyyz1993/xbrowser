@@ -125,6 +125,7 @@ const SUBCOMMAND_HELP: Record<string, string> = {
   filter: 'filter <file> [--include <type>] [--exclude <type>]',
   test: 'test <name> [--cdp <endpoint>]',
   viewer: 'viewer [--session <name>]',
+  'console-panel': 'console-panel [--port <port>]',
   kill: 'kill [--all]',
   net: 'net [--cdp <endpoint>]',
 };

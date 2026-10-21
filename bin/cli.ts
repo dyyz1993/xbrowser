@@ -18,7 +18,7 @@ async function main() {
     // Only cleanup browser for short-lived commands.
     // Long-running server commands (preview, serve) manage their own lifecycle.
     const command = process.argv[2];
-    const isLongRunning = command === 'preview' || command === 'serve' || command === 'mcp';
+    const isLongRunning = command === 'preview' || command === 'serve' || command === 'mcp' || command === 'console-panel';
     if (!isLongRunning) {
       // Ensure all async resources (CDP WebSocket, timers, proxy agents) are cleaned up
       // so the process can exit cleanly.

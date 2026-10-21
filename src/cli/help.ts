@@ -98,6 +98,7 @@ Commands:
   remote <url> [command] [--token <t>] Execute on remote server
   run <file>                        Execute commands from file
   viewer [--name <n>]               Generate viewer URL
+  console-panel [--port <n>]       Readonly Console Facade overview
   help                              Show this help
   --version                         Show version
 Plugin Commands:
