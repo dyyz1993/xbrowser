@@ -31,7 +31,7 @@ export class MediaService {
         y: Math.round(opts.clip.y),
         width: Math.round(Math.max(1, opts.clip.width)),
         height: Math.round(Math.max(1, opts.clip.height)),
-        scale: 1,
+        scale: opts.clip.scale ?? 1,
       };
       params.clip = clip;
     }
