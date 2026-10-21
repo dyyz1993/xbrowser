@@ -46,6 +46,33 @@ jobs:
           node -e "import('./dist/index.js').then(() => console.log('module import OK')).catch(e => { console.error(e); process.exit(1); })"
           echo "✅ All smoke tests passed"
 
-      - run: npm publish --access public
+      # Publishing is triggered by any package.json change, including dependency
+      # updates that do not bump the version. Treat an already-published version
+      # as a successful no-op, but fail closed if the registry check itself fails.
+      - name: Check whether this version is already published
+        id: published
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "Checking @xbrowser/cli@$VERSION on npm"
+          set +e
+          OUTPUT=$(npm view "@xbrowser/cli@$VERSION" version --json 2>&1)
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 0 ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "@xbrowser/cli@$VERSION is already published; skipping."
+            exit 0
+          fi
+          if echo "$OUTPUT" | grep -q 'E404'; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "@xbrowser/cli@$VERSION is not published; publishing."
+            exit 0
+          fi
+          echo "$OUTPUT"
+          echo "::error::Unable to determine whether @xbrowser/cli@$VERSION is published"
+          exit 1
+
+      - if: steps.published.outputs.exists == 'false'
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
