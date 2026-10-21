@@ -376,16 +376,20 @@ export class XBPageImpl implements XBPage {
 
     // Get current URL
     try {
-      const info = await this.conn.send<{ url: string; title: string }>(
+      const info = await this.conn.send<{ targetInfo?: { url?: string }; url?: string }>(
         'Target.getTargetInfo',
         { targetId: this._targetId },
       );
-      this._url = info.url;
+      // CDP 返回 { targetInfo: { url, ... } }——旧代码读顶层 info.url 恒为
+      // undefined，把 _url 打成 undefined（实证：viewer 切回旧 tab 后帧头
+      // 无 url 字段，preview 页 URL 栏不更新）。
+      const curUrl = info.targetInfo?.url ?? info.url;
+      if (curUrl) this._url = curUrl;
       // Auto-attached pages (target=_blank, window.open) already finished
       // loading BEFORE we attached — the load events fired without us. Mark
       // the load state as reached, or every waitForLoadState('load'/'dom…')
       // needlessly burns its full timeout (d07: 30s per call).
-      if (info.url && info.url !== 'about:blank' && info.url !== '') {
+      if (curUrl && curUrl !== 'about:blank' && curUrl !== '') {
         this._loadState = { loadFired: true, domContentFired: true, networkIdle: true };
       }
     } catch { /* target info optional */ }
