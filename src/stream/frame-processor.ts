@@ -233,8 +233,13 @@ export class FrameProcessor {
   ): Promise<Buffer> {
     const buffer = Buffer.from(data, 'base64');
 
-    const needsResize = config.scale < 1 && !!viewportWidth && !!viewportHeight;
     const needsCrop = !!cropConfig;
+    // A cropped frame must never be resized against the full-page viewport.
+    // Crop coordinates use the full viewport as their reference, but the
+    // resulting image has the crop box's own dimensions.
+    const needsResize =
+      (needsCrop && !!cropConfig)
+      || (config.scale < 1 && !!viewportWidth && !!viewportHeight);
     const needsReencode =
       config.format !== this.screencastFormat || config.quality !== this.screencastQuality;
 
@@ -274,9 +279,15 @@ export class FrameProcessor {
     }
 
     if (needsResize) {
-      const newWidth = Math.round((viewportWidth ?? 0) * config.scale);
-      const newHeight = Math.round((viewportHeight ?? 0) * config.scale);
-      processed = processed.resize(newWidth, newHeight);
+      const newWidth = Math.round(
+        cropConfig ? cropConfig.width : (viewportWidth ?? 0) * config.scale,
+      );
+      const newHeight = Math.round(
+        cropConfig ? cropConfig.height : (viewportHeight ?? 0) * config.scale,
+      );
+      if (newWidth > 0 && newHeight > 0) {
+        processed = processed.resize(newWidth, newHeight);
+      }
     }
 
     if (config.format === 'jpeg') {

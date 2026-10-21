@@ -101,7 +101,12 @@ export class ScreencastCapturer {
         // the next frame immediately, raising the effective FPS ceiling.
         cdp.send('Page.screencastFrameAck', { sessionId: params.sessionId }).catch(() => {});
 
-        const viewport = {
+        // CDP metadata can report the pre-emulation window size while the
+        // screencast frame itself uses the page's emulated CSS viewport.
+        // Crop coordinates come from page DOM rects, so the logical page
+        // viewport is the authoritative reference.
+        const logicalViewport = page.viewportSize();
+        const viewport = logicalViewport ?? {
           width: params.metadata?.deviceWidth || this.maxWidth,
           height: params.metadata?.deviceHeight || this.maxHeight,
         };

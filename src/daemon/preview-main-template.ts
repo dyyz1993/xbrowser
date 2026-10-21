@@ -211,6 +211,7 @@ $('reconnect-btn').addEventListener('click',()=>{
 // Preview shows in bottom-right for 5s with countdown → click to fullscreen
 var snapshotDataUrl=null;
 var snapshotCountdownTimer=null;
+var suppressSnapshotPreview=false;
 $('snapshot-btn').addEventListener('click',function(){
   var btn=$('snapshot-btn');
   btn.textContent='⏳';
@@ -226,6 +227,11 @@ function requestSnapshot(clip,scale){
 var snapshotPendingHandler=function(msg){
   if(msg.type==='snapshot_result'&&msg.data){
     var data=msg.data;
+    if(suppressSnapshotPreview){
+      suppressSnapshotPreview=false;
+      $('snapshot-btn').textContent='📷';
+      return;
+    }
     snapshotDataUrl='data:image/'+(data.format||'png')+';base64,'+data.data;
     var img=$('snapshot-img');
     img.src=snapshotDataUrl;
@@ -274,6 +280,15 @@ $('snapshot-preview').addEventListener('click',function(){
 $('snapshot-fullscreen').addEventListener('click',function(){
   this.style.display='none';
 });
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){
+    var fullscreen=$('snapshot-fullscreen');
+    if(fullscreen.style.display==='flex'){
+      fullscreen.style.display='none';
+      e.stopPropagation();
+    }
+  }
+},true);
 // Auto-detect dead connection: if no frames for 30s, show warning
 let lastFrameAt=Date.now();
 setInterval(()=>{
@@ -392,13 +407,24 @@ function connectWS(){
             statLatency=Math.max(0,Date.now()-header.data.timestamp);
           }
           const blob=new Blob([jpegData],{type:'image/jpeg'});
-          createImageBitmap(blob).then(function(bmp){
-            drawFrame(bmp);
-            bmp.close();
-          });
-          canvas.style.display='block';
-          wait.style.display='none';
-           if(header.data.viewport&&!viewportLocked&&!viewSwitching){remoteViewport=header.data.viewport;viewportLocked=true;resizeCanvas();}
+          var incomingViewport=header.data.viewport;
+          if(incomingViewport&&!viewportLocked&&!viewSwitching){
+            remoteViewport={width:incomingViewport.width,height:incomingViewport.height};
+            viewportLocked=true;
+            resizeCanvas();
+          }
+          // During view switches the server can still deliver one in-flight
+          // full-page frame after the crop status arrives. Drawing it while
+          // remoteViewport remains the crop size produces a stretched corner.
+          var viewportMatches=!incomingViewport||(incomingViewport.width===remoteViewport.width&&incomingViewport.height===remoteViewport.height);
+          if(viewportMatches){
+            createImageBitmap(blob).then(function(bmp){
+              drawFrame(bmp);
+              bmp.close();
+            });
+            canvas.style.display='block';
+            wait.style.display='none';
+          }
           if(header.data.url&&header.data.url!==currentUrl){
             currentUrl=header.data.url;
             urlEl.textContent=currentUrl;
@@ -599,7 +625,14 @@ function selectView(vid){
     var v=detectedViews.find(function(x){return x.id===vid});
     if(v){
       if(v.kind==='image'||v.kind==='qr'){
+        suppressSnapshotPreview=true;
         requestSnapshot(v.rect,v.kind==='qr'?4:2);
+        if(!originalViewport) originalViewport={width:remoteViewport.width,height:remoteViewport.height};
+        sendMsg({type:'select_view',rect:v.rect});
+        remoteViewport={width:v.rect.width,height:v.rect.height};
+        viewportLocked=true;
+        resizeCanvas();
+        renderViewTabs();
         return;
       }
       if(!originalViewport) originalViewport={width:remoteViewport.width,height:remoteViewport.height};
