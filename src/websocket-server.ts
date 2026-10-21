@@ -38,6 +38,8 @@ export type WSMessage =
 export interface ViewInfo {
   id: string;
   label: string;
+  kind: 'view' | 'image' | 'qr';
+  src?: string;
   rect: { x: number; y: number; width: number; height: number };
 }
 
