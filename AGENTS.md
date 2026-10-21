@@ -11,6 +11,10 @@ npm run lint:plugin-contract                     # 插件契约快速检查（30
 npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 ```
 
+**持久化错题本（必读）**：[`docs/mistakes.md`](docs/mistakes.md)——运行时同一错误 ≥3 次
+自动沉淀（按日期），收录根因与修复。开工前先读一遍，别重蹈覆辙；修复错误后
+回填该条目的「根因/修复」两行。
+
 **关键路径** — 每次改代码后至少跑：`npm run typecheck && npm run lint`
 
 ## 1. 项目原则
@@ -739,7 +743,8 @@ chrome-bridge / CDP 插件参考 `.xcli/plugins/gemini/music.ts` 的可注入
 完整模板、反例和测试模板见 `docs/media-plugin-template.md`。
 静态守卫：`npm run lint:media-constraints`。
 运行时错题本见 `docs/architecture.md` 的“错题本”章节：同一错误第 3 次
-会被 `constrained`，`npm run lint:mistakes` 会失败。
+会被 `constrained`，`npm run lint:mistakes` 会失败；**第 3 次同时自动沉淀进
+`docs/mistakes.md`（Markdown 持久错题本，按日期记录，Agent 必读）**。
 
 Boss 采集链路同样禁止合成输入：`dispatchEvent(new InputEvent(...))` 会被
 CDP Guard 拒绝，DOM `click()` 是可检测的 `isTrusted=false` 事件。会话选择
@@ -1535,6 +1540,7 @@ xbrowser plugin schema <plugin> <cmd>       # 看插件 schema
 | 完整命令 | `docs/commands.md` |
 | 架构 | `docs/architecture.md` |
 | 插件开发 | `docs/plugin-guide.md`（1456 行，主参考） |
+| 持久化错题本（必读） | `docs/mistakes.md`（≥3 次错误自动沉淀，按日期） |
 | 录制回放 | `docs/recording.md` |
 | 验证码交互 | `docs/captcha-interaction.md` |
 | 钩子系统 | `docs/hook-system-boundary.md` / `docs/hook-system-proposal.md` |
