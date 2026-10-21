@@ -24,6 +24,8 @@ interface CropEntry {
 export class StreamCoordinator {
   private lastFrameData: string | null = null;
   private lastFrameViewport: { width: number; height: number } | null = null;
+  private lastUncroppedFrameData: string | null = null;
+  private lastUncroppedFrameViewport: { width: number; height: number } | null = null;
   private readonly stateManager = new StreamStateManager();
   private readonly frameRateController = new FrameRateController();
   private readonly frameProcessor = new FrameProcessor();
@@ -69,6 +71,8 @@ export class StreamCoordinator {
   clearLastFrame(): void {
     this.lastFrameData = null;
     this.lastFrameViewport = null;
+    this.lastUncroppedFrameData = null;
+    this.lastUncroppedFrameViewport = null;
   }
 
   // -----------------------------------------------------------------------
@@ -87,8 +91,9 @@ export class StreamCoordinator {
     return (frame: ScreencastFrame) => {
       resetStaticSnapshotTimer();
       (async () => {
-        this.lastFrameData = frame.data.toString('base64');
-        this.lastFrameViewport = frame.viewport;
+        const data = frame.data.toString('base64');
+        this.lastUncroppedFrameData = data;
+        this.lastUncroppedFrameViewport = frame.viewport;
 
         this.stateManager.onFrameReceived();
         const config = this.stateManager.getConfig();
@@ -98,7 +103,7 @@ export class StreamCoordinator {
         }
 
         await this.processAndBroadcast(
-          this.lastFrameData,
+          data,
           frame.viewport,
           sessionId,
           frame.sessionId,
@@ -117,7 +122,8 @@ export class StreamCoordinator {
   async takeStaticSnapshot(sessionId: string, page: Page, clientCount: number): Promise<void> {
     if (clientCount <= 0) return;
 
-    let viewport = page.viewportSize();
+    const logicalViewport = page.viewportSize();
+    let viewport = logicalViewport;
     if (!viewport) {
       try {
         viewport = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
@@ -125,11 +131,12 @@ export class StreamCoordinator {
     }
 
     const screenshot = await page.screenshot({ type: 'jpeg', quality: 100 });
-    this.lastFrameData = screenshot.toString('base64');
-    this.lastFrameViewport = viewport;
+    const data = screenshot.toString('base64');
+    this.lastUncroppedFrameData = data;
+    this.lastUncroppedFrameViewport = viewport;
 
     await this.processAndBroadcast(
-      this.lastFrameData,
+      data,
       viewport!,
       sessionId,
       sessionId,
@@ -144,10 +151,15 @@ export class StreamCoordinator {
    * replay and crop changes).
    */
   async replayLastFrame(sessionId: string): Promise<void> {
-    if (!this.lastFrameData || !this.lastFrameViewport) return;
+    // Always replay the uncropped source. Keeping this cache separate from
+    // processed frames makes that invariant explicit and prevents a future
+    // capture optimization from accidentally replaying a crop as a crop.
+    const data = this.lastUncroppedFrameData ?? this.lastFrameData;
+    const viewport = this.lastUncroppedFrameViewport ?? this.lastFrameViewport;
+    if (!data || !viewport) return;
     await this.processAndBroadcast(
-      this.lastFrameData,
-      this.lastFrameViewport,
+      data,
+      viewport,
       sessionId,
       sessionId,
       crypto.randomUUID(),
@@ -185,9 +197,25 @@ export class StreamCoordinator {
   ): Promise<void> {
     const config = this.stateManager.getConfig();
     const crop = this.sessionCrops.get(sessionId);
-    const cropConfig: CropConfig | undefined = crop ? crop.box : undefined;
-    const effectiveViewport = crop
-      ? { width: crop.box.width, height: crop.box.height }
+    // Crop rectangles are relative to the full logical viewport. They do not
+    // need to end at its bottom-right corner (a QR near the top-left is the
+    // common case), but they must still fit inside the current viewport.
+    const cropFitsViewport = crop
+      ? crop.box.x >= 0
+        && crop.box.y >= 0
+        && crop.box.x + crop.box.width <= frameViewport.width + 1
+        && crop.box.y + crop.box.height <= frameViewport.height + 1
+      : true;
+    const cropConfig: CropConfig | undefined = crop && cropFitsViewport ? crop.box : undefined;
+    // A cropped stream frame may itself be delivered at the crop's logical
+    // size (for example a CDP crop or a future capture optimization). It must
+    // not be cropped a second time using viewport-relative coordinates.
+    const frameIsAlreadyCrop = crop && !cropConfig
+      && Math.abs(frameViewport.width - crop.box.width) <= 1
+      && Math.abs(frameViewport.height - crop.box.height) <= 1;
+    const processCrop: CropConfig | undefined = frameIsAlreadyCrop ? undefined : cropConfig;
+    const effectiveViewport = cropConfig
+      ? { width: cropConfig.width, height: cropConfig.height }
       : frameViewport;
 
     // Adjust compression based on actual frame size vs full viewport.
@@ -203,11 +231,12 @@ export class StreamCoordinator {
     const processedBuffer = await this.frameProcessor.process(
       frameData,
       adjustedConfig,
-      // Pass the ORIGINAL viewport (not cropped) so crop coordinates
-      // can be scaled correctly from viewport space to frame pixel space.
-      crop ? frameViewport.width : effectiveViewport.width,
-      crop ? frameViewport.height : effectiveViewport.height,
-      cropConfig,
+      // The full viewport maps crop coordinates to source-frame pixels.
+      // FrameProcessor sizes the final crop from cropConfig, never from this
+      // full-page viewport.
+      frameViewport.width,
+      frameViewport.height,
+      processCrop,
     );
     const header = Buffer.from(JSON.stringify({
       type: 'screenshot',
@@ -216,7 +245,7 @@ export class StreamCoordinator {
         id: frameId,
         timestamp: frameTimestamp,
         url: frameUrl,
-        viewport: effectiveViewport,
+        viewport: cropConfig ? effectiveViewport : frameViewport,
         streamState: this.stateManager.getState(),
         fps: this.frameRateController.getCurrentFps(),
       },
@@ -224,6 +253,8 @@ export class StreamCoordinator {
     const headerLen = Buffer.alloc(4);
     headerLen.writeUInt32BE(header.length, 0);
     const payload = Buffer.concat([headerLen, header, processedBuffer]);
+    this.lastFrameData = frameData;
+    this.lastFrameViewport = frameViewport;
     this.sink.broadcastBinaryToSession(sessionId, payload);
   }
 }

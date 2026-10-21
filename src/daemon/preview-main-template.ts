@@ -407,13 +407,24 @@ function connectWS(){
             statLatency=Math.max(0,Date.now()-header.data.timestamp);
           }
           const blob=new Blob([jpegData],{type:'image/jpeg'});
-          createImageBitmap(blob).then(function(bmp){
-            drawFrame(bmp);
-            bmp.close();
-          });
-          canvas.style.display='block';
-          wait.style.display='none';
-           if(header.data.viewport&&!viewportLocked&&!viewSwitching){remoteViewport=header.data.viewport;viewportLocked=true;resizeCanvas();}
+          var incomingViewport=header.data.viewport;
+          if(incomingViewport&&!viewportLocked&&!viewSwitching){
+            remoteViewport={width:incomingViewport.width,height:incomingViewport.height};
+            viewportLocked=true;
+            resizeCanvas();
+          }
+          // During view switches the server can still deliver one in-flight
+          // full-page frame after the crop status arrives. Drawing it while
+          // remoteViewport remains the crop size produces a stretched corner.
+          var viewportMatches=!incomingViewport||(incomingViewport.width===remoteViewport.width&&incomingViewport.height===remoteViewport.height);
+          if(viewportMatches){
+            createImageBitmap(blob).then(function(bmp){
+              drawFrame(bmp);
+              bmp.close();
+            });
+            canvas.style.display='block';
+            wait.style.display='none';
+          }
           if(header.data.url&&header.data.url!==currentUrl){
             currentUrl=header.data.url;
             urlEl.textContent=currentUrl;
@@ -620,6 +631,8 @@ function selectView(vid){
         sendMsg({type:'select_view',rect:v.rect});
         remoteViewport={width:v.rect.width,height:v.rect.height};
         viewportLocked=true;
+        resizeCanvas();
+        renderViewTabs();
         return;
       }
       if(!originalViewport) originalViewport={width:remoteViewport.width,height:remoteViewport.height};

@@ -118,6 +118,64 @@ async function decodeQrFromImage(buffer: Buffer): Promise<{ data: string; width:
   return { data: result.data, width, height };
 }
 
+async function waitForViewerCanvasQr(
+  page: Page,
+  expected: string,
+  outputDir: string,
+  name: string,
+  timeoutMs = 10_000,
+): Promise<Buffer> {
+  const deadline = Date.now() + timeoutMs;
+  let lastError = '';
+  while (Date.now() < deadline) {
+    const dataUrl = await page.evaluate<string>(() => {
+      const canvas = document.querySelector('#screen') as HTMLCanvasElement | null;
+      return canvas?.toDataURL('image/png') ?? '';
+    });
+    if (dataUrl.startsWith('data:image/png;base64,')) {
+      const image = Buffer.from(dataUrl.slice('data:image/png;base64,'.length), 'base64');
+      try {
+        const decoded = await decodeQrFromImage(image);
+        if (decoded.data === expected) {
+          fs.writeFileSync(path.join(outputDir, name), image);
+          return image;
+        }
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err);
+      }
+    }
+    await page.waitForTimeout(250);
+  }
+  throw new Error(`Viewer canvas did not render a scannable QR (${lastError || 'no QR found'})`);
+}
+
+async function decodeCanvasRegionFromScreenshot(
+  page: Page,
+  screenshot: Buffer,
+  outputDir: string,
+  name: string,
+): Promise<{ data: string; width: number; height: number }> {
+  const rect = await page.evaluate<{ x: number; y: number; width: number; height: number }>(() => {
+    const canvas = document.querySelector('#screen') as HTMLCanvasElement | null;
+    if (!canvas) return { x: 0, y: 0, width: 0, height: 0 };
+    const box = canvas.getBoundingClientRect();
+    return { x: box.x, y: box.y, width: box.width, height: box.height };
+  });
+  expect(rect.width).toBeGreaterThan(0);
+  expect(rect.height).toBeGreaterThan(0);
+  const region = await sharp(screenshot)
+    .extract({
+      left: Math.max(0, Math.round(rect.x)),
+      top: Math.max(0, Math.round(rect.y)),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    })
+    .png()
+    .toBuffer();
+  fs.writeFileSync(path.join(outputDir, name), region);
+  return decodeQrFromImage(region);
+}
+
 async function waitForMessage<T>(
   ws: WebSocket,
   predicate: (value: unknown) => boolean,
@@ -160,6 +218,28 @@ async function waitForMessage<T>(
 
 function send(ws: WebSocket, message: unknown): void {
   ws.send(JSON.stringify(message));
+}
+
+function captureStreamFrames(ws: WebSocket, outputDir: string): void {
+  let sequence = 0;
+  const headers: unknown[] = [];
+  ws.on('message', (raw: WebSocket.RawData, isBinary: boolean) => {
+    if (!isBinary) return;
+    const bytes = typeof raw === 'string'
+      ? Buffer.from(raw, 'utf8')
+      : Buffer.from(raw as unknown as Uint8Array);
+    try {
+      const headerLength = bytes.readUInt32BE(0);
+      const header = JSON.parse(bytes.subarray(4, 4 + headerLength).toString('utf8'));
+      if (header.type !== 'screenshot') return;
+      sequence += 1;
+      fs.writeFileSync(path.join(outputDir, `stream-frame-${String(sequence).padStart(3, '0')}.jpeg`), bytes.subarray(4 + headerLength));
+      headers.push({ sequence, ...header });
+      fs.writeFileSync(path.join(outputDir, 'stream-frames.json'), JSON.stringify(headers, null, 2));
+    } catch {
+      // Diagnostic listener only; malformed stream frames should not fail the test.
+    }
+  });
 }
 
 async function openViewerUI(hostPage: Page, port: number, targetSessionName: string): Promise<ViewerUI> {
@@ -233,6 +313,7 @@ describeE2E('E2E: viewer image and QR regions', () => {
       ws.once('open', resolve);
       ws.once('error', reject);
     });
+    captureStreamFrames(ws, outputDir);
   }, 30_000);
 
   afterAll(async () => {
@@ -269,9 +350,24 @@ describeE2E('E2E: viewer image and QR regions', () => {
     fs.writeFileSync(path.join(outputDir, 'viewer-ui-before.png'), before);
     await viewer.clickQrTab();
     await viewer.waitForLiveRefresh();
-    await viewer.page.waitForTimeout(1_500);
+    await viewer.page.waitForFunction(
+      () => document.querySelector('#stat-viewport')?.textContent?.trim() === '124x124',
+      undefined,
+      { timeout: 10_000 },
+    );
+    await waitForViewerCanvasQr(viewer.page, QR_TEXT, outputDir, 'viewer-canvas-live.png');
     const liveRegion = await viewer.page.screenshot({ type: 'png' });
     fs.writeFileSync(path.join(outputDir, 'viewer-ui-live-region.png'), liveRegion);
+    const screenshotQr = await decodeCanvasRegionFromScreenshot(
+      viewer.page,
+      liveRegion,
+      outputDir,
+      'viewer-ui-live-region-canvas.png',
+    );
+    expect(screenshotQr.data).toBe(QR_TEXT);
+    // At least one cropped stream frame must exist by the time the live view
+    // is ready.
+    expect(fs.readdirSync(outputDir).some(file => /^stream-frame-\d+\.jpeg$/.test(file))).toBe(true);
     await viewer.page.close();
   }, 20_000);
 
@@ -313,11 +409,56 @@ describeE2E('E2E: viewer image and QR regions', () => {
     // scale-4 recapture but must not cover the live viewport with a preview modal.
     await viewer.clickQrTab();
     await viewer.waitForLiveRefresh();
-    await viewer.page.waitForTimeout(1_500);
-    await viewer.page.waitForTimeout(300);
+    await viewer.page.waitForFunction(
+      () => document.querySelector('#stat-viewport')?.textContent?.trim() === '124x124',
+      undefined,
+      { timeout: 10_000 },
+    );
+    await waitForViewerCanvasQr(viewer.page, QR_TEXT, outputDir, 'viewer-canvas-after.png');
     const after = await viewer.page.screenshot({ type: 'png' });
+    const viewerCanvasState = await viewer.page.evaluate(() => {
+      const canvas = document.querySelector('#screen') as HTMLCanvasElement | null;
+      return canvas ? { width: canvas.width, height: canvas.height, cssWidth: canvas.style.width, cssHeight: canvas.style.height } : null;
+    });
+    fs.writeFileSync(path.join(outputDir, 'viewer-canvas-state.json'), JSON.stringify(viewerCanvasState, null, 2));
     fs.writeFileSync(path.join(outputDir, 'viewer-ui-after.png'), after);
+    const afterScreenshotQr = await decodeCanvasRegionFromScreenshot(
+      viewer.page,
+      after,
+      outputDir,
+      'viewer-ui-after-canvas.png',
+    );
+    expect(afterScreenshotQr.data).toBe(QR_TEXT);
     await sharp(recaptured).png().toFile(path.join(outputDir, 'qr-recaptured.png'));
+    // Server stream crop frames can race with a CDP stream crop before the
+    // corresponding static snapshot settles. Validate that at least one
+    // cropped stream frame actually decodes to the expected payload.
+    const latestCrop = await (async () => {
+      const candidates = fs.readdirSync(outputDir)
+        .filter(file => /^stream-frame-\d+\.jpeg$/.test(file))
+        .sort()
+        .reverse();
+      for (const file of candidates) {
+        const metadata = await sharp(path.join(outputDir, file)).metadata();
+        if (metadata.width === 124 && metadata.height === 124) {
+          try {
+            const decoded = await decodeQrFromImage(fs.readFileSync(path.join(outputDir, file)));
+            if (decoded.data === QR_TEXT) return file;
+          } catch {
+            // A non-crop or partially compressed race frame is not proof yet.
+          }
+        }
+      }
+      return undefined;
+    })();
+    expect(latestCrop).toBeDefined();
+    const liveCropPath = path.join(outputDir, latestCrop!);
+    const liveCrop = await decodeQrFromImage(fs.readFileSync(liveCropPath));
+    expect(liveCrop.data).toBe(QR_TEXT);
+    fs.writeFileSync(
+      path.join(outputDir, 'stream-crop-scan-result.json'),
+      JSON.stringify({ source: path.basename(liveCropPath), decodedText: liveCrop.data }, null, 2),
+    );
     expect(after.length).toBeGreaterThan(0);
     await viewer.page.close();
   }, 20_000);

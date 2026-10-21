@@ -318,9 +318,8 @@ describe('WSServer', () => {
         '',
       );
 
-      // process() receives the ORIGINAL viewport (1920×1080), not the crop
-      // size, so crop coordinates can be scaled from viewport to pixel space.
-      // The 2nd arg is the adjusted compression config object.
+      // The full viewport maps crop coordinates to source pixels. The final
+      // output dimensions come from cropConfig inside FrameProcessor.
       expect(processSpy).toHaveBeenCalledWith(
         'base64data',
         expect.anything(),
@@ -329,6 +328,36 @@ describe('WSServer', () => {
         { x: 50, y: 50, width: 400, height: 300 },
       );
 
+      processSpy.mockRestore();
+    });
+
+    it('should not crop an already-cropped frame a second time', async () => {
+      const sc = getSC(server);
+      const box = { x: 50, y: 50, width: 400, height: 300 };
+      sc.setCrop(sessionId, { selector: 'view', box });
+
+      const processSpy = vi.spyOn(
+        (sc as unknown as Record<string, unknown>).frameProcessor as import('../src/stream/frame-processor.js').FrameProcessor,
+        'process',
+      ).mockResolvedValue(Buffer.from('fake'));
+
+      await sc.processAndBroadcast(
+        'base64data',
+        { width: box.width, height: box.height },
+        sessionId,
+        sessionId,
+        'crop-frame',
+        Date.now(),
+        '',
+      );
+
+      expect(processSpy).toHaveBeenCalledWith(
+        'base64data',
+        expect.anything(),
+        box.width,
+        box.height,
+        undefined,
+      );
       processSpy.mockRestore();
     });
   });
