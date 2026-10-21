@@ -190,6 +190,10 @@ describe('FrameInputService (frameMouse cache + liveness re-attach)', () => {
       conn: conn as never,
       resolveFrameSession,
       evaluateInFrame: evaluateInFrame as never,
+      evaluateMain: vi.fn().mockResolvedValue(null),
+      pageMouse: { click: vi.fn().mockResolvedValue(undefined) } as never,
+      pageKeyboard: { type: vi.fn().mockResolvedValue(undefined) } as never,
+      frameTreeNodes: vi.fn().mockResolvedValue({ frame: { id: 'F0', url: 'about:blank' } }),
     });
     return { svc, resolveFrameSession, conn, probes, evaluateInFrame };
   }

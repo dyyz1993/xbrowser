@@ -32,6 +32,9 @@ vi.mock('@dyyz1993/xcli-core', () => ({
   helpGenerator: vi.fn(() => ({ generate: vi.fn() })),
 }));
 
+vi.mock('../src/client/daemon-client.js', () => ({
+  forwardExec: vi.fn().mockResolvedValue(null),
+}));
 vi.mock('../src/executor.js', () => ({
   executeChain: vi.fn().mockResolvedValue({
     success: true,
@@ -1021,6 +1024,7 @@ describe('router', () => {
   it('keeps eval script with spaces intact after command word', async () => {
     // `eval <script>` is intercepted before chain parsing and routed
     // base64url-encoded, so ';' and newlines inside the script survive.
+    // (daemon forwardExec is mocked to null → local chain path is asserted.)
     const { executeChain } = await import('../src/executor.js');
     const { handleBrowserCommand } = await import('../src/cli/index.js');
     vi.mocked(executeChain).mockResolvedValueOnce({

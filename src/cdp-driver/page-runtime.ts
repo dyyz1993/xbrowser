@@ -1,5 +1,11 @@
 import type { CDPConnection } from './connection.js';
 
+/** Page.getFrameTree 节点（递归） */
+export interface FrameNode {
+  frame: { id: string; url: string };
+  childFrames?: FrameNode[];
+}
+
 export interface XBElementHandleLike {
   asElement(): { boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null> } | null;
 }
@@ -131,6 +137,22 @@ export class RuntimeEvaluationService {
     const target = all.find((f) => f.id !== mainId && f.url.includes(urlIncludes));
 
     if (target) {
+      // 首选 Page.createIsolatedWorld：按 frameId 同步拿执行上下文，一发必中
+      // （旧实现靠 Runtime.executionContextCreated 事件窗口 400ms 收集，
+      // headless 负载下时序不稳会漏——mail.qq.com 实战冒烟实证三路未命中）
+      try {
+        const world = await this.options.conn.send<{ executionContextId: number }>(
+          'Page.createIsolatedWorld',
+          { frameId: target.id, grantUniveralAccess: true, allowUniversalAccessFromFileURLs: true },
+          this.options.sessionId,
+        );
+        if (world?.executionContextId) {
+          return await evalIn(this.options.sessionId, world.executionContextId);
+        }
+      } catch { /* 落到事件窗口兜底 */ }
+
+      // 兜底：Runtime.executionContextCreated 事件窗口收集（isolated world
+      // 不可用时——tunnel 扩展链路等）
       const contexts: Array<{ id: number; frameId: string }> = [];
       const onCtx = (raw: unknown): void => {
         const c = (raw as CtxEvent)?.context;
@@ -197,6 +219,12 @@ export class RuntimeEvaluationService {
       // frame 树查询失败不掩盖主错误
     }
     throw new Error(`no OOPIF target for "${urlIncludes}"（用 'xbrowser frames' 查看可见的 iframe target；OOPIF 只在 Target.getTargets 里出现）`);
+  }
+
+  /** 完整 frame 树（递归含嵌套——同进程 iframe 祖先链构造用） */
+  async frameTreeNodes(): Promise<FrameNode> {
+    const tree = await this.options.conn.send<{ frameTree: FrameNode }>('Page.getFrameTree', undefined, this.options.sessionId);
+    return tree.frameTree;
   }
 
   /** 浏览器级 iframe target 列表（OOPIF 可见性——Page.getFrameTree 看不到它们） */
