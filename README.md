@@ -286,8 +286,8 @@ xbrowser --cdp auto "goto https://example.com , title"
 | `screenshot` | 截取页面截图 | `xbrowser screenshot` |
 | `screenshot --full-page` | 全页截图 | `xbrowser screenshot --full-page` |
 | `screenshot --type jpeg` | 指定格式 | `xbrowser screenshot --type jpeg` |
-| `snapshot` | 获取页面元素快照（Accessibility tree） | `xbrowser snapshot` |
-| `snapshot --interactive-only` | 仅交互元素 | `xbrowser snapshot --interactive-only` |
+| `snapshot` | 获取可操作交互元素 `@ref` 快照 | `xbrowser snapshot` |
+| `snapshot --type aria` | 获取页面大纲 / accessibility tree | `xbrowser snapshot --type aria` |
 
 ### DOM 结构
 
