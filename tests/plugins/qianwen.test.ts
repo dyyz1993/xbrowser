@@ -2,7 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/qianwen/index.ts';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn(), isLoggedIn: vi.fn(() => Promise.resolve(false)) };
-const mockXCLI = { createSite: vi.fn(() => mockSite) };
+const mockXCLI = { createSite: vi.fn((_config: Record<string, unknown>) => mockSite) };
+
+function getIsLogin(): (ctx: unknown) => Promise<boolean> {
+  const config = mockXCLI.createSite.mock.calls[0]![0] as { isLogin: (ctx: unknown) => Promise<boolean> };
+  return config.isLogin;
+}
 
 function getHandler(name: string): (...args: unknown[]) => Promise<unknown> {
   const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === name);
@@ -62,6 +67,20 @@ describe('qianwen plugin', () => {
 
   it('should create site with requiresLogin true', () => {
     expect(mockXCLI.createSite).toHaveBeenCalledWith(expect.objectContaining({ requiresLogin: true }));
+  });
+
+  it('treats blank CDP pages as navigable', async () => {
+    const isLogin = getIsLogin();
+
+    await expect(isLogin({ page: undefined })).resolves.toBe(true);
+    await expect(isLogin({ page: { url: () => 'about:blank' } })).resolves.toBe(true);
+    await expect(isLogin({ page: { url: () => '' } })).resolves.toBe(true);
+  });
+
+  it('detects an explicit login URL', async () => {
+    await expect(getIsLogin()({
+      page: { url: () => 'https://www.qianwen.com/login' },
+    })).resolves.toBe(false);
   });
 
   it('should register 5 commands', () => {

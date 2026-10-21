@@ -55,15 +55,16 @@ export default function (xcli: XCLIAPI): void {
     isLogin: async (ctx) => {
       try {
         const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-        if (!page) return false;
+        if (!page) return true;
         // DeepSeek 未登录时会在 URL 中带 /login 或在 body 显示"登录"
         const url = page.url();
+        if (!url || url === 'about:blank' || url === '') return true;
         if (url.includes('/login') || url.includes('/auth')) return false;
         const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
-        if (!body || body.includes('登录') && body.includes('注册')) return false;
+        if (body.includes('登录') && body.includes('注册')) return false;
         return true;
       } catch {
-        return false;
+        return true;
       }
     },
   });
