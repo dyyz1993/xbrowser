@@ -47,6 +47,7 @@ type ViewerUI = {
   page: Page;
   clickQrTab(): Promise<void>;
   openPreview(): Promise<void>;
+  closePreview(): Promise<void>;
 };
 
 const fixture = `<!doctype html>
@@ -185,6 +186,10 @@ async function openViewerUI(hostPage: Page, port: number, targetSessionName: str
       await viewer.locator('#snapshot-preview').click({ timeout: 10_000 });
       await viewer.waitForSelector('#snapshot-fullscreen', { state: 'visible', timeout: 10_000 });
     },
+    closePreview: async () => {
+      await viewer.keyboard.press('Escape');
+      await viewer.waitForSelector('#snapshot-fullscreen', { state: 'hidden', timeout: 10_000 });
+    },
   };
 }
 
@@ -285,6 +290,11 @@ describeE2E('E2E: viewer image and QR regions', () => {
     await viewer.page.waitForTimeout(1_000);
     const before = await viewer.page.screenshot({ type: 'png' });
     fs.writeFileSync(path.join(outputDir, 'viewer-ui-before.png'), before);
+    await viewer.clickQrTab();
+    await viewer.closePreview();
+    await viewer.page.waitForTimeout(1_500);
+    const liveRegion = await viewer.page.screenshot({ type: 'png' });
+    fs.writeFileSync(path.join(outputDir, 'viewer-ui-live-region.png'), liveRegion);
     await viewer.page.close();
   }, 20_000);
 

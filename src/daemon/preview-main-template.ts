@@ -274,6 +274,15 @@ $('snapshot-preview').addEventListener('click',function(){
 $('snapshot-fullscreen').addEventListener('click',function(){
   this.style.display='none';
 });
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){
+    var fullscreen=$('snapshot-fullscreen');
+    if(fullscreen.style.display==='flex'){
+      fullscreen.style.display='none';
+      e.stopPropagation();
+    }
+  }
+},true);
 // Auto-detect dead connection: if no frames for 30s, show warning
 let lastFrameAt=Date.now();
 setInterval(()=>{
@@ -600,6 +609,10 @@ function selectView(vid){
     if(v){
       if(v.kind==='image'||v.kind==='qr'){
         requestSnapshot(v.rect,v.kind==='qr'?4:2);
+        if(!originalViewport) originalViewport={width:remoteViewport.width,height:remoteViewport.height};
+        sendMsg({type:'select_view',rect:v.rect});
+        remoteViewport={width:v.rect.width,height:v.rect.height};
+        viewportLocked=true;
         return;
       }
       if(!originalViewport) originalViewport={width:remoteViewport.width,height:remoteViewport.height};
