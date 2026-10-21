@@ -211,6 +211,7 @@ $('reconnect-btn').addEventListener('click',()=>{
 // Preview shows in bottom-right for 5s with countdown → click to fullscreen
 var snapshotDataUrl=null;
 var snapshotCountdownTimer=null;
+var suppressSnapshotPreview=false;
 $('snapshot-btn').addEventListener('click',function(){
   var btn=$('snapshot-btn');
   btn.textContent='⏳';
@@ -226,6 +227,11 @@ function requestSnapshot(clip,scale){
 var snapshotPendingHandler=function(msg){
   if(msg.type==='snapshot_result'&&msg.data){
     var data=msg.data;
+    if(suppressSnapshotPreview){
+      suppressSnapshotPreview=false;
+      $('snapshot-btn').textContent='📷';
+      return;
+    }
     snapshotDataUrl='data:image/'+(data.format||'png')+';base64,'+data.data;
     var img=$('snapshot-img');
     img.src=snapshotDataUrl;
@@ -608,6 +614,7 @@ function selectView(vid){
     var v=detectedViews.find(function(x){return x.id===vid});
     if(v){
       if(v.kind==='image'||v.kind==='qr'){
+        suppressSnapshotPreview=true;
         requestSnapshot(v.rect,v.kind==='qr'?4:2);
         if(!originalViewport) originalViewport={width:remoteViewport.width,height:remoteViewport.height};
         sendMsg({type:'select_view',rect:v.rect});
