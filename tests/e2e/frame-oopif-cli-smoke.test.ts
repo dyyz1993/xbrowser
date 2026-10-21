@@ -14,10 +14,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn, type ChildProcess } from 'child_process';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { launchChrome } from '../../src/cdp-driver/launcher.js';
+import { findChrome, launchChrome } from '../../src/cdp-driver/launcher.js';
 import { killAllDaemonProcesses } from '../../src/daemon/daemon.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -92,6 +92,28 @@ async function cli(args: string[], timeoutMs = 90_000): Promise<{ success: boole
   return { success: true, data, message };
 }
 
+function findCIPackagedChromium(): string | undefined {
+  const base = process.env.PLAYWRIGHT_BROWSERS_PATH;
+  if (!base) return undefined;
+  try {
+    const entries = readdirSync(base).filter(name => name.startsWith('chromium-')).sort().reverse();
+    for (const entry of entries) {
+      for (const executable of [
+        `chrome-linux/chrome`,
+        `chrome-linux64/chrome`,
+        `chrome-mac/Chromium.app/Contents/MacOS/Chromium`,
+        `chrome-mac-arm64/Chromium.app/Contents/MacOS/Chromium`,
+      ]) {
+        const candidate = join(base, entry, executable);
+        if (existsSync(candidate)) return candidate;
+      }
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
 const CLI_READY = existsSync(CLI);
 
 describe.skipIf(!CLI_READY)('OOPIF --frame CLI 冒烟（dist/cli.js 端到端）', { timeout: 420_000, hookTimeout: 120_000 } as never, () => {
@@ -135,6 +157,7 @@ describe.skipIf(!CLI_READY)('OOPIF --frame CLI 冒烟（dist/cli.js 端到端）
       `http://c.localhost:${p2}`, `http://d.localhost:${p2}`,
     ].join(',');
     const r = await launchChrome({
+      executablePath: findCIPackagedChromium() ?? findChrome() ?? undefined,
       headless: true,
       args: [
         '--no-sandbox',
