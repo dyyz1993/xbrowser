@@ -291,12 +291,13 @@ export default function (xcli: XCLIAPI): void {
     isLogin: async (ctx) => {
       try {
         const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-        if (!page) return false;
+        if (!page) return true;
         const url = page.url();
+        if (url === 'about:blank' || url === '' || !url.includes('qianwen.com')) return true;
         if (url.includes('/login') || url.includes('/auth') || url.includes('/passport')) return false;
         return checkLogin(page);
       } catch {
-        return false;
+        return true;
       }
     },
   });

@@ -9,7 +9,7 @@ const mockSite = {
 };
 
 const mockXCLI = {
-  createSite: vi.fn(() => mockSite),
+  createSite: vi.fn((_config: Record<string, unknown>) => mockSite),
 };
 
 function getHandler(name: string): Function {
@@ -53,6 +53,31 @@ describe('qwen plugin', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     plugin(mockXCLI as unknown as Parameters<typeof plugin>[0]);
+  });
+
+  describe('login state', () => {
+    function getIsLogin(): (ctx: unknown) => Promise<boolean> {
+      const config = mockXCLI.createSite.mock.calls[0]![0] as { isLogin: (ctx: unknown) => Promise<boolean> };
+      return config.isLogin;
+    }
+
+    it('should treat a missing page as navigable rather than logged out', async () => {
+      await expect(getIsLogin()({ page: undefined })).resolves.toBe(true);
+    });
+
+    it('should treat blank and off-site pages as navigable', async () => {
+      const isLogin = getIsLogin();
+
+      await expect(isLogin({ page: { url: () => 'about:blank' } })).resolves.toBe(true);
+      await expect(isLogin({ page: { url: () => '' } })).resolves.toBe(true);
+      await expect(isLogin({ page: { url: () => 'https://example.com' } })).resolves.toBe(true);
+    });
+
+    it('should detect an explicit login URL', async () => {
+      await expect(getIsLogin()({
+        page: { url: () => 'https://www.qianwen.com/login' },
+      })).resolves.toBe(false);
+    });
   });
 
   it('should create site with correct config', () => {
