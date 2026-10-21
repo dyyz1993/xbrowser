@@ -35,6 +35,15 @@ export function extractSessionNameFromArgv(argv: string[]): string {
   return process.env.XBROWSER_SESSION || 'default';
 }
 
+/** 全局 --frame <url-substring>：OOPIF 路由默认值（链内每个子命令继承） */
+export function extractFrameFromArgv(argv: string[]): string | undefined {
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === '--frame' && argv[i + 1]) return argv[i + 1];
+    if (typeof argv[i] === 'string' && argv[i].startsWith('--frame=')) return argv[i].slice(7);
+  }
+  return undefined;
+}
+
 export async function handleStdinMode(stdinCommands: string[], argv?: string[]): Promise<void> {
   // Each stdin line is independent; use sequence mode instead of short-circuiting.
   const chain = stdinCommands.join(' ; ');
@@ -42,6 +51,7 @@ export async function handleStdinMode(stdinCommands: string[], argv?: string[]):
     fileMode: true,
     cdpEndpoint: argv ? extractCdpFromArgv(argv) : undefined,
     sessionName: argv ? extractSessionNameFromArgv(argv) : 'default',
+    frame: argv ? extractFrameFromArgv(argv) : undefined,
   });
   printChainResult(chainResult);
   if (!chainResult.success) throw new Error('Command failed');
@@ -66,7 +76,7 @@ export async function handleEvalMode(argv: string[]): Promise<void> {
 }
 
 export function findEvalStart(argv: string[]): number {
-  const flagsWithValue = new Set(['--session', '--cdp']);
+  const flagsWithValue = new Set(['--session', '--cdp', '--frame']);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '-e' || a === '--eval') return -1;
@@ -85,9 +95,16 @@ export function findEvalStart(argv: string[]): number {
 export async function handleEvalScript(parts: string[], argv: string[]): Promise<void> {
   const cdpEndpoint = extractCdpFromArgv(argv);
   const sessionName = extractSessionNameFromArgv(argv);
+  // 输出模式 flag 不能混进表达式（曾把 --json 拼进脚本尾部造成语法错）
+  const mode = argv.some((a) => a === '--json' || a.startsWith('--json=') || a === '-j') ? 'json'
+    : argv.some((a) => a === '--yaml' || a.startsWith('--yaml=')) ? 'yaml' : 'text';
   if (parts[0] === '--script-b64' && parts[1]) {
-    const chainResult = await executeChain(`eval --script-b64 ${parts[1]}`, { cdpEndpoint, sessionName });
-    printChainResult(chainResult);
+    const chainResult = await executeChain(`eval --script-b64 ${parts[1]}`, { cdpEndpoint, sessionName, frame: extractFrameFromArgv(argv) });
+    if (mode === 'json' || mode === 'yaml') {
+      outputEnvelope({ success: chainResult.success, data: chainResult.steps[chainResult.steps.length - 1]?.data ?? null, duration: chainResult.totalDuration }, { command: 'eval' }, mode);
+    } else {
+      printChainResult(chainResult);
+    }
     if (!chainResult.success) throw new Error('Command failed');
     return;
   }
@@ -101,10 +118,11 @@ export async function handleEvalScript(parts: string[], argv: string[]): Promise
       i++;
       continue;
     }
-    if (part === '--session' || part === '--cdp') {
+    if (part === '--session' || part === '--cdp' || part === '--frame') {
       i++;
       continue;
     }
+    if (part === '--json' || part === '--yaml' || part === '-j') continue;
     scriptLines.push(part);
   }
   const script = scriptLines.join('\n');
@@ -117,7 +135,11 @@ export async function handleEvalScript(parts: string[], argv: string[]): Promise
     ? `eval --frame ${frame} --script-b64 ${b64}`
     : `eval --script-b64 ${b64}`;
   const chainResult = await executeChain(chain, { cdpEndpoint, sessionName });
-  printChainResult(chainResult);
+  if (mode === 'json' || mode === 'yaml') {
+    outputEnvelope({ success: chainResult.success, data: chainResult.steps[chainResult.steps.length - 1]?.data ?? null, duration: chainResult.totalDuration }, { command: 'eval' }, mode);
+  } else {
+    printChainResult(chainResult);
+  }
   if (!chainResult.success) throw new Error('Command failed');
 }
 
@@ -127,7 +149,11 @@ export async function handleChainInput(input: string, argv?: string[]): Promise<
     : false;
   const hasYaml = argv ? argv.some((a) => a === '--yaml' || a.startsWith('--yaml=')) : false;
   const mode = hasJson ? 'json' : hasYaml ? 'yaml' : 'text';
-  const chainResult = await executeChain(input, { cdpEndpoint: extractCdpFromArgv(argv ?? []) });
+  const chainResult = await executeChain(input, {
+    cdpEndpoint: extractCdpFromArgv(argv ?? []),
+    sessionName: extractSessionNameFromArgv(argv ?? []),
+    frame: argv ? extractFrameFromArgv(argv) : undefined,
+  });
   if (mode === 'json' || mode === 'yaml') {
     outputEnvelope(
       {

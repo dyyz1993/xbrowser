@@ -44,3 +44,4 @@ jobs:
         env:
           XBROWSER_REGISTRY: https://marketplace.xbrowser.dev
           XBROWSER_CHROMIUM_PATH: ''
+          PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright

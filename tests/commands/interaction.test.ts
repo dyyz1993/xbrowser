@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Page } from '../../src/browser-shim.js';
+import type { BrowserCommandContext } from '../../src/context.js';
 
 function createMockPage(): Page {
   return {
@@ -95,5 +96,72 @@ describe('Interaction Commands', () => {
   it('evaluate should run JS expression', async () => {
     await mockPage.evaluate('1+1');
     expect(mockPage.evaluate).toHaveBeenCalledWith('1+1');
+  });
+
+  describe('--frame OOPIF routing (click/fill handlers)', () => {
+    function createFrameCtx(): { ctx: BrowserCommandContext; page: Page } {
+      const page = createMockPage();
+      (page as unknown as Record<string, unknown>).clickInFrame = vi.fn().mockResolvedValue({ x: 54, y: 247 });
+      (page as unknown as Record<string, unknown>).fillInFrame = vi.fn().mockResolvedValue({ value: '403357' });
+      const ctx = {
+        page,
+        browser: {},
+        browserContext: {},
+        sessionId: 'test-session',
+        args: [],
+        options: {},
+        cwd: '/tmp',
+        storage: { get: vi.fn(), set: vi.fn(), delete: vi.fn(), clear: vi.fn(), keys: vi.fn() },
+        output: { mode: 'text', showTips: false, color: false, emoji: false },
+        error: vi.fn(),
+        config: {},
+        site: {} as never,
+        cliName: 'xbrowser',
+      } as unknown as BrowserCommandContext;
+      return { ctx, page };
+    }
+
+    it('click --frame resolves selector inside the OOPIF and returns frame-local coords', async () => {
+      const { ctx, page } = createFrameCtx();
+      const { clickCommand } = await import('../../src/commands/interaction.js');
+      const result = await clickCommand.handler(
+        { selector: '.tc-fg-item.tc-slider-normal', waitCaptcha: false, waitCaptchaTimeout: 180000, frame: 'captcha.gtimg.com' },
+        ctx
+      );
+      expect(page.clickInFrame).toHaveBeenCalledWith('captcha.gtimg.com', '.tc-fg-item.tc-slider-normal');
+      expect(page.click).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        success: true,
+        data: { selector: '.tc-fg-item.tc-slider-normal', frame: 'captcha.gtimg.com', x: 54, y: 247 },
+        tips: [],
+      });
+    });
+
+    it('fill --frame uses fillInFrame and reports readback value', async () => {
+      const { ctx, page } = createFrameCtx();
+      const { fillCommand } = await import('../../src/commands/interaction.js');
+      const result = await fillCommand.handler(
+        { selector: '#sms-code', value: '403357', frame: 'captcha.gtimg.com' },
+        ctx
+      );
+      expect(page.fillInFrame).toHaveBeenCalledWith('captcha.gtimg.com', '#sms-code', '403357');
+      expect(page.fill).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        success: true,
+        data: { selector: '#sms-code', value: '403357', cleared: true, frame: 'captcha.gtimg.com' },
+        tips: [],
+      });
+    });
+
+    it('global ctx.frame applies when command-level --frame absent', async () => {
+      const { ctx, page } = createFrameCtx();
+      ctx.frame = 'pay.example.com';
+      const { clickCommand } = await import('../../src/commands/interaction.js');
+      await clickCommand.handler(
+        { selector: '#pay-btn', waitCaptcha: false, waitCaptchaTimeout: 180000 },
+        ctx
+      );
+      expect(page.clickInFrame).toHaveBeenCalledWith('pay.example.com', '#pay-btn');
+    });
   });
 });

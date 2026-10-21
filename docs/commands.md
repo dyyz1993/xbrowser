@@ -331,6 +331,7 @@ xbrowser mouse <action> [args]
 **Options:**
 - `--steps <n>` - Number of steps for movement (default: 1)
 - `--button <type>` - Mouse button: `left`, `right`, `middle`
+- `--frame <url-substring>` - 在 URL 含此子串的**跨域 iframe（OOPIF）**内操作——输入派发到 iframe 自己的 CDP session（进程隔离下唯一可信通道），坐标使用 **iframe 局部坐标系**
 
 **Examples:**
 ```bash
@@ -339,7 +340,61 @@ xbrowser mouse move 100 200 --steps 10
 xbrowser mouse click 100 200
 xbrowser mouse click 100 200 --button right
 xbrowser mouse dblclick 100 200
+
+# OOPIF 内拖滑块（验证码）：局部坐标 + steps 拟人轨迹
+xbrowser mouse move --frame captcha.gtimg.com --x 54 --y 247
+xbrowser mouse drag --frame captcha.gtimg.com --x 209 --y 247 --steps 30
 ```
+
+## Cross-Origin iframe (OOPIF) Commands
+
+跨域 iframe（验证码、支付窗）运行在独立渲染进程里，主页面 JS 的合成事件进不去，
+主页面 session 的坐标输入也会被进程隔离挡住。xbrowser 用 `--frame` 一把钥匙打开：
+**eval / click / fill / mouse 都接受 `--frame <url-substring>`**（全局 flag 或单命令
+flag 皆可，单命令优先），所有读写与输入都路由到 iframe 自己的 session。
+
+**全局 flag（链内所有命令继承）：**
+```bash
+xbrowser --frame captcha.gtimg.com "eval 'document.title' && click '.btn'"
+```
+
+### frames
+
+列出页面所有 frame——**跨域 OOPIF 也可见**（标 `oopif: true` + `targetId`，它们
+只出现在浏览器级 target 列表，普通 frame 树看不到）。每帧附 `parentUrl` / `depth`
+层级（逐层 DOM 巡航重建——CDP frame 树对 OOPIF 不可见，实测 getFrameTree 只返回
+主帧）；URL 子串歧义时输出 `warnings` 提示写更精确的子串。
+
+```bash
+xbrowser frames
+# { "frames": [
+#   { "index": 0, "url": "http://page.example/a",                    "depth": 0 },
+#   { "index": 1, "url": "https://captcha.gtimg.com/...", "oopif": true,
+#     "targetId": "C6F2...", "parentUrl": "http://page.example/a",   "depth": 1 },
+#   { "index": 2, "url": "https://t.captcha.qq.com/...",  "oopif": true,
+#     "targetId": "24D9...", "parentUrl": "https://captcha.gtimg.com/...", "depth": 2 }
+# ], "warnings": [] }
+```
+
+### 标准验证码链（腾讯防水墙实测流程）
+
+```bash
+# 1. 找到 OOPIF（记下 URL 子串，如 captcha.gtimg.com）
+xbrowser frames
+
+# 2. iframe 内读 DOM（坐标是 iframe 局部坐标系）
+xbrowser "eval --frame captcha.gtimg.com 'JSON.stringify((r=>({x:r.x+r.width/2,y:r.y+r.height/2}))(document.querySelector(\".tc-fg-item.tc-slider-normal\").getBoundingClientRect()))'"
+
+# 3. frame session 内拖动（move 到滑块 → drag 到目标；buttons 位掩码自动携带）
+xbrowser "mouse move --frame captcha.gtimg.com --x 54 --y 247 && mouse drag --frame captcha.gtimg.com --x 209 --y 247 --steps 30"
+
+# 4. 校验结果
+xbrowser "eval --frame captcha.gtimg.com 'getComputedStyle(document.querySelector(\".tc-success\")).display'"
+```
+
+**嵌套 iframe 不需要 `--frame a --frame b`**：每层跨域 iframe 都是独立 CDP target，
+按 URL 子串直接命中最内层即可（target 列表是平铺的）。同进程（同源）iframe 用普通
+click/fill 即可，locator 层已支持坐标偏移。
 
 ## Evaluate Commands
 
@@ -351,11 +406,15 @@ Evaluate JavaScript expression.
 xbrowser eval <expression>
 ```
 
+**Options:**
+- `--frame <url-substring>` - 在 URL 含此子串的 iframe 里执行（跨域 OOPIF 亦可——绕过同源策略的调试通道）
+
 **Examples:**
 ```bash
 xbrowser eval "document.title"
 xbrowser eval "document.querySelectorAll('a').length"
 xbrowser eval "window.scrollY"
+xbrowser eval --frame captcha.gtimg.com "document.querySelector('.tc-success').style.display"
 ```
 
 ## Storage Commands

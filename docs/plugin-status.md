@@ -1,14 +1,14 @@
 # 插件完成度看板
 
 > **自动生成，请勿手改** · 由 `lint-scripts/check-plugin-status.mjs` 生成
-> 生成时间：2026-10-19 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
+> 生成时间：2026-10-21 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
 
 ## 汇总
 
 | 指标 | 值 |
 |------|-----|
-| 插件总数 | 123 |
-| ✅ 已完成（有实现+有测试） | 123 |
+| 插件总数 | 125 |
+| ✅ 已完成（有实现+有测试） | 125 |
 | 🟡 有实现无测试 | 0 |
 | 🔴 scaffold 待实现 | 0 |
 | **当前债务** | **0** |
@@ -25,7 +25,7 @@
 | 插件 | 行数 | 命令数 | scope |
 |------|------|--------|-------|
 
-## ✅ 已完成（123）
+## ✅ 已完成（125）
 
 | 插件 | 命令数 | scope |
 |------|--------|-------|
@@ -75,7 +75,7 @@
 | facebook | 5 | `browser` |
 | flickr | 1 | `browser` |
 | freepik | 1 | `browser` |
-| gemini | 12 | `page`, `project` |
+| gemini | 13 | `page`, `project` |
 | geo-analysis | 9 | `browser`, `global` |
 | gettyimages | 1 | `browser` |
 | github | 6 | `browser` |
@@ -97,6 +97,7 @@
 | juejin | 6 | `browser`, `page` |
 | kimi | 1 | `browser` |
 | login-bridge | 5 | `page`, `project` |
+| marketplace | 3 | `cli` |
 | maven | 1 | `project` |
 | medium | 5 | `browser`, `page` |
 | mureka | 6 | `browser` |
@@ -129,6 +130,7 @@
 | stats | 6 | `browser`, `cli` |
 | steam | 1 | `browser` |
 | substack | 1 | `browser` |
+| summarize | 5 | `project` |
 | suno | 4 | `browser` |
 | taobao | 11 | `browser` |
 | tdx | 1 | `project` |
@@ -136,11 +138,11 @@
 | ths | 1 | `page` |
 | tieba | 1 | `page` |
 | tumblr | 1 | `browser` |
-| twitter | 11 | `browser` |
+| twitter | 12 | `browser`, `cli` |
 | udio | 6 | `browser` |
 | unsplash | 1 | `browser` |
 | v2ex | 2 | `browser` |
-| wanx | 3 | `browser` |
+| wanx | 6 | `browser` |
 | weibo | 3 | `browser` |
 | weread | 1 | `project` |
 | wikidata | 2 | `project` |
