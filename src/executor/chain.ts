@@ -26,7 +26,7 @@ import type { ChainExecutionResult, ChainStepResult, HookOutput } from './types.
 
 export async function executeChain(
   input: string,
-  options?: { cdpEndpoint?: string; sessionName?: string; fileMode?: boolean },
+  options?: { cdpEndpoint?: string; sessionName?: string; fileMode?: boolean; frame?: string },
   executeCommand?: (name: string, params: Record<string, unknown>, session: string, opts?: { cdpEndpoint?: string; skipCleanup?: boolean }) => Promise<{ success: boolean; data: unknown; message?: string; tips?: ChainStepResult['tips']; hookOutputs?: HookOutput[] }>
 ): Promise<ChainExecutionResult> {
   const pipelines = parseCommandChain(input, { fileMode: options?.fileMode });
@@ -81,6 +81,11 @@ export async function executeChain(
         }
 
         const { params } = parseCommandArgs(cmdName, cmdArgs, unquote);
+        // 全局 --frame：链内每个内置子命令继承（executor 剥离后挂 ctx，
+        // 命令级 --frame 参数优先于该默认值）
+        if (options?.frame && params._frame === undefined && params.frame === undefined) {
+          params._frame = options.frame;
+        }
         if (cmdName === 'goto' && params.url) {
           const existing = await findOrRestoreSession(sessionName, options?.cdpEndpoint);
           if (!existing) {

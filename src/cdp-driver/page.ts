@@ -38,6 +38,7 @@ import { NetworkRouteService } from './page-routes.js';
 import { NavigationService } from './page-navigation.js';
 import { DomQueryService } from './page-dom.js';
 import { RuntimeEvaluationService } from './page-runtime.js';
+import { FrameInputService } from './page-frame-input.js';
 import { queryJS } from './selector-utils.js';
 
 
@@ -76,6 +77,7 @@ export class XBPageImpl implements XBPage {
   private readonly navigationService: NavigationService;
   private readonly domQueryService: DomQueryService;
   private readonly runtimeEvaluationService: RuntimeEvaluationService;
+  private readonly frameInputService: FrameInputService;
 
   // Network tracking for waitForLoadState('networkidle')
   private inflightRequests = new Set<string>();
@@ -142,6 +144,11 @@ export class XBPageImpl implements XBPage {
       sessionId,
       isClosed: () => this._closed,
       url: () => this.url(),
+    });
+    this.frameInputService = new FrameInputService({
+      conn,
+      resolveFrameSession: (urlIncludes) => this.runtimeEvaluationService.resolveFrameSession(urlIncludes),
+      evaluateInFrame: <R,>(urlIncludes: string, expression: string) => this.evaluateInFrame<R>(urlIncludes, expression),
     });
     this.domQueryService = new DomQueryService({
       conn,
@@ -547,6 +554,34 @@ export class XBPageImpl implements XBPage {
 
   async evaluateInFrame<R = unknown>(urlIncludes: string, expression: string): Promise<R> {
     return this.runtimeEvaluationService.evaluateInFrame<R>(urlIncludes, expression);
+  }
+
+  /** 浏览器级 iframe target 列表（OOPIF 可见——frames 命令用） */
+  async listFrameTargets(): Promise<Array<{ url: string; targetId: string }>> {
+    return this.runtimeEvaluationService.listFrameTargets();
+  }
+
+  /**
+   * 拿到指定 OOPIF 的鼠标（Input 域派发进 iframe 渲染进程，isTrusted=true）。
+   * 坐标语义：iframe 局部坐标（与该 session 内 getBoundingClientRect 一致）。
+   * session 失效自动重 attach（鼠标位置会重置，需重读目标坐标）。
+   */
+  async frameMouse(urlIncludes: string, opts?: { fresh?: boolean }): Promise<XBMouse> {
+    return this.frameInputService.frameMouse(urlIncludes, opts);
+  }
+
+  async runFrameMouse<T>(urlIncludes: string, fn: (mouse: XBMouse) => Promise<T>): Promise<T> {
+    return this.frameInputService.runFrameMouse(urlIncludes, fn);
+  }
+
+  /** 在 OOPIF 内点击选择器命中的元素（轮询等待 + stealth 落点） */
+  async clickInFrame(urlIncludes: string, selector: string, opts?: { timeoutMs?: number }): Promise<{ x: number; y: number }> {
+    return this.frameInputService.clickInFrame(urlIncludes, selector, opts);
+  }
+
+  /** 在 OOPIF 内填输入框（点击聚焦 + insertText + 回读） */
+  async fillInFrame(urlIncludes: string, selector: string, text: string, opts?: { timeoutMs?: number }): Promise<{ value: string }> {
+    return this.frameInputService.fillInFrame(urlIncludes, selector, text, opts);
   }
 
   async evaluateHandle(

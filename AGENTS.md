@@ -1255,6 +1255,41 @@ await page.fill('.chat-input', text);
 
 封装在 `.xcli/plugins/shared/file-upload.ts` 的 `clickButtonByText(page, text)` 已用真实 mouse 事件。
 
+### 跨域 iframe（OOPIF）：`--frame` 一把钥匙（2026-10-21 实战定型）
+
+验证码（captcha.gtimg.com）、支付窗等跨域 iframe 跑在**独立渲染进程**里，有两堵墙：
+① 同源策略——主页面 JS 连 `contentDocument` 都拿不到，`el.click()`/`dispatchEvent`
+根本进不去；② 进程隔离——**主页面 session 上派发的坐标输入（mouse）也进不去**
+（qqmail 验证码 4 次页面级拖动全败的实证），必须 attach 到 iframe 自己的 CDP
+target（`Target.getTargets` 里 `type==='iframe'`，平铺列出、嵌套也直接命中）再派发。
+
+**xbrowser 原生解法**：`eval` / `click` / `fill` / `mouse` 都接受
+`--frame <url-substring>`（全局 flag 链内继承，单命令 flag 优先）。读写走
+`evaluateInFrame`，输入走 frame session 的 Input 域（isTrusted=true，
+**坐标是 iframe 局部坐标系**，拖动自动带 buttons 位掩码）。同进程（同源）
+iframe 不需要它——普通 click/fill 的 locator 层已支持坐标偏移。
+
+```bash
+# 1. 看见 OOPIF（标 oopif:true + targetId + parentUrl/depth 层级；普通 frames 命令看不到它们）
+xbrowser frames
+
+# 2. iframe 内读 DOM / 拖滑块 / 校验——全部原生命令
+xbrowser "eval --frame captcha.gtimg.com '<拿滑块 rect>'"
+xbrowser "mouse move --frame captcha.gtimg.com --x 54 --y 247 && mouse drag --frame captcha.gtimg.com --x 209 --y 247 --steps 30"
+xbrowser "eval --frame captcha.gtimg.com '<验证 .tc-success>'"
+
+# 全局 flag：链内所有命令继承（后面命令语法与原来完全一致）
+xbrowser --frame captcha.gtimg.com "eval '...' && click '.btn'"
+```
+
+驱动层 API（插件内用）：`page.evaluateInFrame(urlIncludes, expr)` /
+`page.frameMouse(urlIncludes)`（缓存 session、失效自动重 attach）/
+`page.clickInFrame(url, selector)` / `page.fillInFrame(url, selector, text)` /
+`page.listFrameTargets()`。
+
+坑：OOPIF session 上 `Page.captureScreenshot` 会报 "Command can only be
+executed on top-level targets"——截图一律用页面级（画面本就含 iframe 像素）。
+
 ### 文件上传：不要点 file input
 
 **绝对不要**：

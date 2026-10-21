@@ -307,7 +307,11 @@ describe('router', () => {
     await routeCommand(['goto https://example.com && title']);
     exit.restore();
 
-    expect(executeChain).toHaveBeenCalledWith('goto https://example.com && title', { cdpEndpoint: undefined });
+    expect(executeChain).toHaveBeenCalledWith('goto https://example.com && title', {
+      cdpEndpoint: undefined,
+      sessionName: 'default',
+      frame: undefined,
+    });
   });
 
   it('outputs error when chain fails in single arg mode', async () => {
