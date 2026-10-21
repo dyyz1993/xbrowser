@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>反自动化对抗测试场</title>
+<style>
+  body { font-family: sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; }
+  .box { border: 1px solid #ccc; padding: 16px; margin: 12px 0; border-radius: 8px; }
+  h2 { margin-top: 0; }
+  #log { background: #1a1a2e; color: #0f0; padding: 12px; border-radius: 6px; font-family: monospace;
+         font-size: 13px; min-height: 200px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; }
+  button { padding: 10px 20px; margin: 4px; font-size: 14px; cursor: pointer; border-radius: 6px; border: 1px solid #555; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  input, textarea { padding: 8px; font-size: 14px; width: 300px; border-radius: 6px; border: 1px solid #555; }
+  .label { color: #666; font-size: 12px; }
+</style>
+</head>
+<body>
+<h1>🎯 反自动化对抗测试场</h1>
+<p class="label">用于验证 xbrowser 各种 CDP 输入方式是否被正确转发到 DOM。每种操作记录 isTrusted + 事件详情。</p>
+
+<div class="box">
+  <h2>1. 按钮点击测试</h2>
+  <button id="testBtn" data-testid="test-btn">点我</button>
+  <p class="label">监听 click 事件，记录 isTrusted / target / 时间戳</p>
+</div>
+
+<div class="box">
+  <h2>2. 输入框测试（input）</h2>
+  <input id="testInput" type="text" placeholder="在这里输入" data-testid="test-input" />
+  <p class="label">监听 keydown / input / change，记录 isTrusted</p>
+</div>
+
+<div class="box">
+  <h2>3. Textarea 测试（模拟 DeepSeek）</h2>
+  <textarea id="testTextarea" placeholder="给 DeepSeek 发送消息" data-testid="test-textarea"></textarea>
+  <button id="sendBtn" class="ds-button--primary" data-testid="send-btn" style="display:inline-block;width:40px;height:40px;border-radius:50%;background:#4a6cf7;color:white;border:none;font-size:18px;">↑</button>
+  <p class="label">textarea + 圆形发送按钮。Enter 或点按钮触发 submit（记录到 log）</p>
+</div>
+
+<div class="box">
+  <h2>4. CDP 痕迹检测</h2>
+  <div id="cdpDetect"></div>
+</div>
+
+<div class="box">
+  <h2>5. 事件日志</h2>
+  <div id="log"></div>
+  <button onclick="document.getElementById('log').textContent=''">清空日志</button>
+</div>
+
+<script>
+const logEl = document.getElementById('log');
+function log(msg) {
+  const ts = new Date().toISOString().slice(11, 23);
+  const line = `[${ts}] ${msg}`;
+  logEl.textContent += line + '\n';
+  logEl.scrollTop = logEl.scrollHeight;
+  // 同时存到 window 供 CDP evaluate 读取
+  window.__antiLog = (window.__antiLog || []);
+  window.__antiLog.push({ ts, msg });
+}
+
+// 1. 按钮点击
+const btn = document.getElementById('testBtn');
+btn.addEventListener('click', (e) => {
+  log(`CLICK on #testBtn | isTrusted=${e.isTrusted} | target=${e.target.tagName} | detail=${e.detail}`);
+});
+
+// 2. input
+const input = document.getElementById('testInput');
+['keydown', 'keyup', 'input', 'change'].forEach(evt => {
+  input.addEventListener(evt, (e) => {
+    log(`INPUT ${evt.toUpperCase()} | isTrusted=${e.isTrusted} | key=${e.key||'(n/a)'} | value="${e.target.value}"`);
+  });
+});
+
+// 3. textarea + send
+const ta = document.getElementById('testTextarea');
+const sendBtn = document.getElementById('sendBtn');
+let submitCount = 0;
+
+function submit() {
+  submitCount++;
+  log(`SUBMIT #${submitCount} | textarea="${ta.value}" | 清空后发送`);
+  ta.value = '';
+  ta.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+ta.addEventListener('keydown', (e) => {
+  log(`TEXTAREA keydown | isTrusted=${e.isTrusted} | key=${e.key} | value="${ta.value}"`);
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    log(`  → Enter 触发 submit`);
+    submit();
+  }
+});
+
+ta.addEventListener('input', (e) => {
+  log(`TEXTAREA input | isTrusted=${e.isTrusted} | value="${ta.value}"`);
+});
+
+sendBtn.addEventListener('click', (e) => {
+  log(`SENDBTN click | isTrusted=${e.isTrusted} | target=${e.target.tagName} | textarea="${ta.value}"`);
+  submit();
+});
+
+// 4. CDP 痕迹检测
+const detectEl = document.getElementById('cdpDetect');
+const checks = {
+  'navigator.webdriver': navigator.webdriver,
+  'window.cdc_adoQpoasnfa76pfcZLmcfl_Array': typeof window.cdc_adoQpoasnfa76pfcZLmcfl_Array,
+  'window.cdc_adoQpoasnfa76pfcZLmcfl_Promise': typeof window.cdc_adoQpoasnfa76pfcZLmcfl_Promise,
+  'window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol': typeof window.cdc_adoQpoasnfa76pfcZLmcfl_Symbol,
+  'Permissions API overridden': typeof navigator.permissions?.query,
+  'plugins.length': navigator.plugins?.length,
+  'languages': navigator.languages?.length,
+};
+let detectHtml = '<ul>';
+for (const [k, v] of Object.entries(checks)) {
+  detectHtml += `<li><b>${k}</b>: ${v}</li>`;
+}
+detectHtml += '</ul>';
+detectEl.innerHTML = detectHtml;
+log('页面加载完成。检测 CDP 痕迹：' + JSON.stringify(checks));
+
+// 暴露读取接口
+window.__antiGetLog = () => JSON.stringify(window.__antiLog || []);
+window.__antiClearLog = () => { window.__antiLog = []; logEl.textContent = ''; };
+</script>
+</body>
+</html>
