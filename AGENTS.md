@@ -1295,6 +1295,38 @@ xbrowser --frame captcha.gtimg.com "eval '...' && click '.btn'"
 坑：OOPIF session 上 `Page.captureScreenshot` 会报 "Command can only be
 executed on top-level targets"——截图一律用页面级（画面本就含 iframe 像素）。
 
+#### 通道判断法（eTLD+1）与 frames 列表局限
+
+- **跨根域**（如 captcha.gtimg.com 嵌在 mail.qq.com）= OOPIF，走 frame session
+  派发；**同根域子域**（如 ptlogin2.qq.com 嵌在 mail.qq.com）= 同进程，走主
+  session + 祖先视口偏移。**代码已自动 fallback，无须手工判断**，但排查问题时
+  先分清这两种形态。
+- `frames` 列表局限：嵌套在 OOPIF 内部的 frame（如 ptlogin2 藏在 graph.qq.com
+  里面）**不会出现在列表里，但 `--frame` 一样能命中**——列表不可信时直接用
+  `--frame <子串>` 试，或在父帧里 eval `document.querySelectorAll('iframe')` 找 src。
+
+#### 腾讯验证码题型对照（2026-10 实战沉淀）
+
+| 模板/特征 | 题型 | 关键选择器（均在 --frame captcha.gtimg.com 内） |
+|-----------|------|------------------------------------------------|
+| `drag_ele.html` | 图片语义选择题（6 宫格选 1） | 题面 `#instructionText`（DOM 文本完整可靠）；图区 `#tcOperation`（280x200 @局部(10,26)，单张背景图 3x2 均分）；确定 `#embedVerifyBtn`（@局部(250,4)） |
+| `tc-fg-item.tc-slider-normal` | 滑块拖动 | 手柄 `.tc-fg-item.tc-slider-normal`；成功 `.tc-success` |
+
+- **解题套路**：`eval --frame` 读题面 DOM → 页面截图视觉定位目标格（格心公式
+  `x=10+93.3*(列+0.5)`, `y=26+100*(行+0.5)`）→ `mouse click --frame` →
+  `click --frame '#embedVerifyBtn'`。**题面以 DOM 文本为准**——截图里中文会
+  截断换行。
+- **通过判据**：captcha OOPIF 从 frames 列表消失 + 服务端返回业务报错（如
+  "账号或密码不正确"）而非验证码报错。
+- headless 环境常被升级成图片选择题（而非滑块）；题型动态，别硬编码。
+
+#### QQ 登录页踩坑（mail.qq.com 实战）
+
+- 登录框在嵌套 iframe：graph.qq.com → `xui.ptlogin2.qq.com`（`--frame ptlogin2` 命中）
+- 默认扫码 tab——先 `click --frame ptlogin2 '#switcher_plogin'` 切密码登录，
+  否则 `#u/#p` 存在但 rect=0 不可见
+- 错误提示（`#err_m`）**数秒后自动从 DOM 清除**——证据必须提交后立刻截图/读取
+
 ### 文件上传：不要点 file input
 
 **绝对不要**：

@@ -104,7 +104,7 @@ export async function handleEvalScript(parts: string[], argv: string[]): Promise
   // getFrameTree 在空浏览器上三路未命中（mail.qq.com 实战冒烟实证）
   const emit = (result: { success: boolean; data: unknown; message?: string }, duration: number): void => {
     if (mode === 'json' || mode === 'yaml') {
-      outputEnvelope({ success: result.success, data: result.data, ...(result.message ? { error: result.message } : {}), duration }, { command: 'eval' }, mode);
+      outputEnvelope({ success: result.success, data: result.data, message: result.message, duration }, { command: 'eval' }, mode);
     } else {
       printChainResult({ success: result.success, steps: [{ command: 'eval', raw: 'eval', success: result.success, data: result.data, duration }], totalDuration: duration });
     }

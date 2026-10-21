@@ -328,7 +328,7 @@ xbrowser mouse <action> [args]
 - `click <x> <y>` - Click at coordinates
 - `dblclick <x> <y>` - Double-click at coordinates
 
-**Options:**
+**Options:**（位置参数 `mouse click 100 200` 与 flag 形式 `mouse click --x 100 --y 200` 等价；配 `--frame` 时两种都可用，推荐 flag 形式更不易歧义）
 - `--steps <n>` - Number of steps for movement (default: 1)
 - `--button <type>` - Mouse button: `left`, `right`, `middle`
 - `--frame <url-substring>` - 在 URL 含此子串的**跨域 iframe（OOPIF）**内操作——输入派发到 iframe 自己的 CDP session（进程隔离下唯一可信通道），坐标使用 **iframe 局部坐标系**

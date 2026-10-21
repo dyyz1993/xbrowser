@@ -236,7 +236,8 @@ export async function handleBrowserCommand(
           type: options.type as string | undefined,
           selector: (options.selector || options.s) as string | undefined,
           base64: !!(options.base64),
-          output: (options.output || options.o || args[0]) as string | undefined,
+          // --path 与 --output 等价（docs 曾写 --path 被静默忽略——fresh-agent 冒烟摩擦点 1）
+          output: (options.output || options.o || options.path || args[0]) as string | undefined,
         };
         break;
       case 'ua': {
