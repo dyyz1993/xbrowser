@@ -105,8 +105,15 @@ describe.skipIf(!CLI_READY)('OOPIF --frame CLI 冒烟（dist/cli.js 端到端）
   let FRAME_D = '';
 
   beforeAll(async () => {
-    // 同版本旧 daemon 不会触发版本重启——显式停，首个 CLI 调用自动从本仓 dist 拉新
-    await killAllDaemonProcesses().catch(() => {});
+    // 同版本旧 daemon 不会触发版本重启——显式停，首个 CLI 调用自动从本仓 dist 拉新。
+    // killAll 后必须确认 9224 真正释放：版本号不变时残留 daemon 会让 CLI 静默
+    // 连上旧代码（实测症状：frame 相关命令间歇性全挂，且每次失败点漂移）。
+    for (let attempt = 0; attempt < 6; attempt++) {
+      await killAllDaemonProcesses().catch(() => {});
+      const alive = await fetch('http://localhost:9224/health', { signal: AbortSignal.timeout(500) }).then(r => r.ok).catch(() => false);
+      if (!alive) break;
+      await new Promise((r) => setTimeout(r, 800));
+    }
 
     const s2 = await startServer((req, res) => {
       const host = (req.headers.host || '').split(':')[0];
@@ -127,7 +134,16 @@ describe.skipIf(!CLI_READY)('OOPIF --frame CLI 冒烟（dist/cli.js 端到端）
       `http://localhost:${p1}`, `http://127.0.0.1:${p1}`,
       `http://c.localhost:${p2}`, `http://d.localhost:${p2}`,
     ].join(',');
-    const r = await launchChrome({ headless: true, args: ['--no-sandbox', '--disable-gpu', '--site-per-process', `--isolate-origins=${isolate}`] });
+    const r = await launchChrome({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-gpu',
+        '--site-per-process',
+        '--enable-features=IsolateOrigins,site-per-process',
+        `--isolate-origins=${isolate}`,
+      ],
+    });
     chrome = r;
     CDP = `http://127.0.0.1:${r.port}`;
   }, 120_000);
