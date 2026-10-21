@@ -105,7 +105,16 @@ export class SessionManager extends EventEmitter {
     page: Page,
     options?: { interval?: number; quality?: number; type?: 'jpeg' | 'png'; width?: number; height?: number },
   ): void {
-    if (this.screencasts.has(sessionId)) return;
+    // Session already registered: re-registering with the SAME page is a
+    // no-op (idempotent re-registration after every command), but with a
+    // DIFFERENT page (e.g. after `tab switch` rebound the session's active
+    // page) we must rebind the screencast to the new page — otherwise the
+    // viewer stays pinned to the tab that was active at registration time.
+    if (this.screencasts.has(sessionId)) {
+      if (this.screencasts.get(sessionId)!.page === page) return;
+      this.updateSessionPage(sessionId, page);
+      return;
+    }
 
     this.screencasts.set(sessionId, {
       capturer: new ScreencastCapturer({
@@ -134,6 +143,61 @@ export class SessionManager extends EventEmitter {
         this.emit('auto-bind', clientId, sessionId);
       }
     }
+  }
+
+  // Per-session serialization for page switches: rapid `tab switch` commands
+  // must not interleave stopCapture/startCapture on the shared capturer.
+  private readonly pageSwitchTasks = new Map<string, Promise<void>>();
+
+  /**
+   * Rebind an already-registered session to a new Page (e.g. after
+   * `tab switch` / `tab new` / `tab close` rebound the session's active
+   * page). Moves the ElementMonitor to the new page, notifies viewers via
+   * the `page-switched` event, and restarts the capturer when it is
+   * streaming so frames immediately come from the new tab.
+   */
+  updateSessionPage(sessionId: string, page: Page): void {
+    const sc = this.screencasts.get(sessionId);
+    if (!sc || sc.page === page) return;
+
+    // ElementMonitor holds a 'load' listener + focus/scan pollers on the old
+    // page — stop it and re-create on the new page.
+    const oldMonitor = this.monitors.get(sessionId);
+    if (oldMonitor) {
+      oldMonitor.stop();
+      this.monitors.delete(sessionId);
+    }
+    const monitor = new ElementMonitor(
+      page,
+      (msg) => this.emit('broadcast', sessionId, msg),
+      (msg) => this.emit('broadcast', sessionId, msg),
+      () => this.getSessionClientCount(sessionId),
+    );
+    this.monitors.set(sessionId, monitor);
+    monitor.start();
+
+    sc.page = page;
+    this.emit('page-switched', sessionId, page);
+
+    // Restart capture on the new page, serialized per session. startCapturer
+    // reads sc.page (already the new page) and fires a static snapshot, so a
+    // static new tab is visible in the viewer right away.
+    const prev = this.pageSwitchTasks.get(sessionId) ?? Promise.resolve();
+    const task = prev.catch(() => {}).then(async () => {
+      const cur = this.screencasts.get(sessionId);
+      // Superseded by a newer switch or session torn down while queued.
+      if (!cur || cur.page !== page) return;
+      if (cur.capturer.isActive()) {
+        await cur.capturer.stopCapture().catch(() => {});
+      }
+      if (this.screencasts.get(sessionId) === cur && !cur.capturer.isActive() && cur.clientCount > 0) {
+        await this.startCapturer(sessionId).catch(() => {});
+      }
+    });
+    this.pageSwitchTasks.set(sessionId, task);
+    task.finally(() => {
+      if (this.pageSwitchTasks.get(sessionId) === task) this.pageSwitchTasks.delete(sessionId);
+    });
   }
 
   unregisterSession(sessionId: string): void {
