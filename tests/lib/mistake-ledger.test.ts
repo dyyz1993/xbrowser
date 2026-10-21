@@ -121,3 +121,43 @@ describe('mistake-ledger', () => {
     expect(listMistakes(ledgerPath)).toEqual([]);
   });
 });
+
+describe('persistent markdown graduation (docs/mistakes.md)', () => {
+  it('第 3 次出现自动沉淀进 Markdown 持久错题本（按日期、含待补字段）', async () => {
+    const { recordMistake } = await import('../../src/lib/mistake-ledger.js');
+    const { readFileSync, writeFileSync, mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = mkdtempSync(join(tmpdir(), 'mistakes-md-'));
+    const json = join(dir, 'ledger.json');
+    const md = join(dir, 'docs', 'mistakes.md');
+    process.env.XBROWSER_MISTAKES_MD = md;
+    try {
+      writeFileSync(json, '{"version":1,"entries":{}}');
+      const input = { category: 'FATAL: unknown', command: 'fill', message: 'element "#z" not found within 5000ms' };
+      expect(recordMistake(input, json).newlyConstrained).toBe(false);
+      expect(recordMistake(input, json).newlyConstrained).toBe(false);
+      expect(recordMistake(input, json).newlyConstrained).toBe(true); // 毕业
+      const md1 = readFileSync(md, 'utf8');
+      expect(md1).toContain('# 持久化错题本');
+      expect(md1).toMatch(/## \d{4}-\d{2}-\d{2} · fill · element/);
+      expect(md1).toContain('**根因**: （待补');
+      // 第 4 次：计数继续但 Markdown 幂等（同指纹锚点不重复落笔）
+      expect(recordMistake(input, json).newlyConstrained).toBe(false);
+      const md2 = readFileSync(md, 'utf8');
+      expect(md2.match(/## /g)?.length).toBe(md1.match(/## /g)?.length);
+    } finally {
+      delete process.env.XBROWSER_MISTAKES_MD;
+    }
+  });
+
+  it('persistentMistakesPath：环境变量覆盖优先', async () => {
+    const { persistentMistakesPath } = await import('../../src/lib/mistake-ledger.js');
+    process.env.XBROWSER_MISTAKES_MD = '/tmp/x/mistakes.md';
+    try {
+      expect(persistentMistakesPath()).toBe('/tmp/x/mistakes.md');
+    } finally {
+      delete process.env.XBROWSER_MISTAKES_MD;
+    }
+  });
+});
