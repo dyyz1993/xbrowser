@@ -120,6 +120,17 @@ export class XBBrowserImpl implements XBBrowser {
     this._emitter.emit('disconnected');
   }
 
+  async disconnect(): Promise<void> {
+    if (this._disconnected) return;
+    this._disconnected = true;
+    if (this._exitHandler) {
+      process.removeListener('exit', this._exitHandler);
+      this._exitHandler = null;
+    }
+    await this.conn.close();
+    this._emitter.emit('disconnected');
+  }
+
   async newContext(opts: XBContextOptions = {}): Promise<XBContext> {
     // S194: launch 级 stealthConfig 作为 context 默认（显式 opts 优先）
     if (this.launchOpts?.stealthConfig && !opts.stealthConfig) {

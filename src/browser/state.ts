@@ -16,6 +16,8 @@ export interface ManagedSession {
   lastActivityAt: number;
   isCDP?: boolean;
   cdpEndpoint?: string;
+  /** True when CDP attach reused an existing user tab; close must only disconnect. */
+  reusedExistingPage?: boolean;
 }
 
 export interface SessionDiskMeta {

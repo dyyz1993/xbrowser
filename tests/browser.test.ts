@@ -161,6 +161,18 @@ describe('browser', () => {
     });
   });
 
+  function makeCDPPage(pageUrl: string) {
+    return {
+      url: vi.fn().mockReturnValue(pageUrl),
+      goto: vi.fn().mockResolvedValue(undefined),
+      on: vi.fn(),
+      close: vi.fn(),
+      evaluate: vi.fn().mockResolvedValue(true),
+      isClosed: vi.fn().mockReturnValue(false),
+      bringToFront: vi.fn().mockResolvedValue(undefined),
+    };
+  }
+
   describe('createSession', () => {
     it('should create a new session with default options', async () => {
       const session = await createSession('test-session');
@@ -191,45 +203,24 @@ describe('browser', () => {
       expect(mockPage.goto).not.toHaveBeenCalled();
     });
 
-    it('should handle CDP sessions with existing pages', async () => {
-      const existingPage = {
-        url: vi.fn().mockReturnValue('https://existing.com'),
-        goto: vi.fn(),
-        on: vi.fn(),
-        close: vi.fn(),
-        evaluate: vi.fn().mockResolvedValue(true),
-        isClosed: vi.fn().mockReturnValue(false),
-      };
+    it('creates a new CDP tab when no target URL is supplied', async () => {
+      const existingPage = makeCDPPage('https://existing.com');
       mockBrowser.contexts.mockReturnValue([mockContext]);
       mockContext.pages.mockReturnValue([existingPage]);
 
-      const session = await createSession('cdp-session', undefined, {
+      const session = await createSession('cdp-no-url', undefined, {
         cdpEndpoint: 'ws://test',
       });
 
       expect(session.isCDP).toBe(true);
-      expect(session.page).toBe(existingPage);
+      expect(session.page).not.toBe(existingPage);
+      expect(mockContext.newPage).toHaveBeenCalled();
     });
 
-    it('should prioritize page whose hostname matches the requested URL', async () => {
-      const geminiPage = {
-        url: vi.fn().mockReturnValue('https://ai.google.dev/gemini-api/docs'),
-        goto: vi.fn(),
-        on: vi.fn(),
-        close: vi.fn(),
-        evaluate: vi.fn().mockResolvedValue(true),
-        isClosed: vi.fn().mockReturnValue(false),
-      };
-      const doubaoPage = {
-        url: vi.fn().mockReturnValue('https://www.doubao.com/chat/create-image'),
-        goto: vi.fn(),
-        on: vi.fn(),
-        close: vi.fn(),
-        evaluate: vi.fn().mockResolvedValue(true),
-        isClosed: vi.fn().mockReturnValue(false),
-      };
-      // gemini is "first" (would be picked by old buggy code)
-      // doubao is "second" but hostname matches
+    it('prioritizes an exact hostname match and marks it reused', async () => {
+      const geminiPage = makeCDPPage('https://ai.google.dev/gemini-api/docs');
+      const doubaoPage = makeCDPPage('https://www.doubao.com/chat/create-image');
+      // gemini is first; hostname matching must select doubao.
       mockBrowser.contexts.mockReturnValue([mockContext]);
       mockContext.pages.mockReturnValue([geminiPage, doubaoPage]);
 
@@ -237,30 +228,22 @@ describe('browser', () => {
         cdpEndpoint: 'ws://test',
       });
 
-      expect(session.isCDP).toBe(true);
-      // 关键断言：选中 doubao 页面，不是 gemini
       expect(session.page).toBe(doubaoPage);
-      expect(session.page).not.toBe(geminiPage);
+      expect(session.reusedExistingPage).toBe(true);
     });
 
-    it('should fall back to any non-blank page when no hostname matches', async () => {
-      const anyPage = {
-        url: vi.fn().mockReturnValue('https://any-other-site.com'),
-        goto: vi.fn().mockResolvedValue(undefined),
-        on: vi.fn(),
-        close: vi.fn(),
-        evaluate: vi.fn().mockResolvedValue(true),
-        isClosed: vi.fn().mockReturnValue(false),
-      };
+    it('creates a new CDP tab instead of stealing an unrelated existing page', async () => {
+      const anyPage = makeCDPPage('https://any-other-site.com');
       mockBrowser.contexts.mockReturnValue([mockContext]);
       mockContext.pages.mockReturnValue([anyPage]);
 
-      const session = await createSession('fallback', 'https://www.doubao.com/chat', {
+      const session = await createSession('fallback-new-tab', 'https://www.doubao.com/chat', {
         cdpEndpoint: 'ws://test',
       });
 
-      // 没有匹配的 doubao，应该退回 anyPage
-      expect(session.page).toBe(anyPage);
+      expect(session.page).not.toBe(anyPage);
+      expect(mockContext.newPage).toHaveBeenCalled();
+      expect(session.reusedExistingPage).toBe(false);
     });
   });
 

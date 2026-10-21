@@ -30,6 +30,7 @@ export async function createSessionImpl(
   let context: BrowserContext;
   let page: Page;
 
+  let reusedExistingPage = false;
   if (isCDP) {
     // Defense (2026-08-15 rung-2, browser-agent-product 真实站点冒烟):
     // attach 后 contexts 枚举出的 page 的 url() 可能为 null（内部 target info
@@ -110,7 +111,11 @@ export async function createSessionImpl(
           const pUrl0 = await resolvePageUrl(p);
           if (ownedUrls.has(pUrl0)) continue;
           const pUrl = pUrl0;
-          if (isRealPageUrl(pUrl) && pUrl.includes(targetHostname)) {
+          let hostnameMatches = false;
+          try {
+            hostnameMatches = new URL(pUrl).hostname === targetHostname;
+          } catch { /* unresolved or invalid URL */ }
+          if (isRealPageUrl(pUrl) && hostnameMatches) {
             targetPage = p;
             break;
           }
@@ -119,22 +124,8 @@ export async function createSessionImpl(
       }
     }
 
-    // 第二遍：fallback 到任意非空白、非 chrome:// 页面（占用检查 S97）
-    if (!targetPage) {
-      for (const ctx of contexts) {
-        const pages = ctx.pages();
-        for (const p of pages) {
-          const pUrl0 = await resolvePageUrl(p);
-          if (ownedUrls.has(pUrl0)) continue;
-          const pUrl = pUrl0;
-          if (isRealPageUrl(pUrl)) {
-            targetPage = p;
-            break;
-          }
-        }
-        if (targetPage) break;
-      }
-    }
+    // Do not fall back to an arbitrary tab. An unmatched page may be the
+    // user's active workspace; navigating or closing it later is destructive.
 
     if (!targetPage && options?.cdpEndpoint) {
       const targets = await deps.getCDPTargets(options.cdpEndpoint);
@@ -145,11 +136,15 @@ export async function createSessionImpl(
       for (const ssn of sessions.list()) {
         try { const u = ssn.page?.url(); if (u && u !== 'about:blank') ownedUrlsT.add(u); } catch { /* ignore */ }
       }
-      const matchTarget = targets.find(t =>
-        t.url && t.url !== 'about:blank' && !t.url.startsWith('chrome://') && !t.url.startsWith('chrome-untrusted://') && !t.url.startsWith('chrome-error://') &&
-        !ownedUrlsT.has(t.url) &&
-        (url ? t.url === url || t.url.includes(new URL(url).hostname) : true)
-      );
+      const matchTarget = targets.find(t => {
+        if (!t.url || !isRealPageUrl(t.url) || ownedUrlsT.has(t.url)) return false;
+        if (!url) return false;
+        try {
+          return new URL(t.url).hostname === targetHostname;
+        } catch {
+          return false;
+        }
+      });
       if (matchTarget && matchTarget.url) {
         // d07 第六层（S82）：复用已有 page —— 旧逻辑每条命令 newPage 复制
         // target（3 条命令繁殖 9 个 tab，S72 七 tab 泥潭的真根因）。
@@ -177,31 +172,14 @@ export async function createSessionImpl(
       }
     }
 
+    const targetPageExisted = !!targetPage;
     if (!targetPage) {
-      const pages = context.pages();
-      if (pages.length > 1) {
-        // d07 第六层最小切片（S81）：多 tab 时优先激活 tab ——
-        // visibilityState=visible 的 tab 全浏览器唯一（后台 tab 全 hidden）。
-        // pages[0] 是注册顺序不是激活顺序（S72 七 tab 泥潭的选错根因）。
-        try {
-          const owned = new Set<unknown>();
-          for (const ssn of sessions.list()) owned.add(ssn.page);
-          for (const p of pages) {
-            if (owned.has(p)) continue; // 他 session 占用的 page 不抢（S95）
-            const vis = await p.evaluate<string>('document.visibilityState').catch(() => 'hidden');
-            if (vis === 'visible') { targetPage = p; break; }
-          }
-        } catch { /* best-effort */ }
-      }
-      if (!targetPage && pages.length > 0) {
-        targetPage = pages[0];
-      }
-      if (!targetPage) {
-        targetPage = await context.newPage();
-      }
+      targetPage = await context.newPage();
     }
 
     page = targetPage;
+    // targetPage is always assigned here; reuse means it existed before the final new-page branch.
+    reusedExistingPage = targetPageExisted;
 
     // CDP 多 tab 激活保障（S72 掘金实战）：同源多 tab 时 attach 可能选中
     // 后台 tab —— 后台 tab 的输入管线被节流/挂起，Input.dispatchMouseEvent
@@ -231,6 +209,7 @@ export async function createSessionImpl(
     browser: b,
     isCDP,
     cdpEndpoint: options?.cdpEndpoint,
+    ...(isCDP ? { reusedExistingPage } : {}),
   });
   deps.logSessionEvent('create_session', `name="${name}" id="${session.id}" url="${url || '(no url)'}" isCDP=${isCDP} cdpEndpoint=${options?.cdpEndpoint || '(none)'}`);
   await deps.installNetworkCapture(page, name);

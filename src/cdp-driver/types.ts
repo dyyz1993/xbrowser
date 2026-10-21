@@ -13,6 +13,11 @@ export interface XBBrowser {
   readonly disconnected: boolean;
 
   close(): Promise<void>;
+  /**
+   * Disconnect this WebSocket without closing pages or contexts. This is the
+   * safe cleanup path when a session attached to an existing user tab.
+   */
+  disconnect(): Promise<void>;
   newContext(opts?: XBContextOptions): Promise<XBContext>;
   contexts(): XBContext[];
   /**

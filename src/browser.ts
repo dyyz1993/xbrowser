@@ -408,15 +408,16 @@ export async function closeSessionByName(name: string): Promise<boolean> {
     if (session.name === name || session.id === name) {
       logSessionEvent('close_session', `name="${session.name}" id="${session.id}" url="${session.page.url()}"`);
       if (session.isCDP) {
-        // CDP mode (external browser): do NOT close the page/tab or context.
-        // The page belongs to the user's browser — closing it would destroy
-        // their current tab and force them to re-navigate.
-        // We only disconnect the WebSocket and remove the session reference.
-        // The browser process, all tabs, and login state are preserved.
-        if (session.browser) {
-          // browser.close() on external CDP has no childProcess,
-          // so it only disconnects the WebSocket — safe to call.
-          await session.browser.close().catch(() => {});
+        if (session.reusedExistingPage) {
+          // Attached to an existing user tab: only hang up the CDP WebSocket.
+          // Closing the page/context here could delete the user's workspace.
+          logSessionEvent('close_session', `name="${session.name}" — reused existing tab, disconnecting only`);
+          await session.browser.disconnect().catch(() => {});
+        } else {
+          // xbrowser created this tab; close it, then disconnect the connection
+          // without touching the external browser or other user tabs.
+          await session.page.close().catch(() => {});
+          await session.browser.disconnect().catch(() => {});
         }
       } else {
         // Non-CDP mode (self-launched browser): close context + browser.
