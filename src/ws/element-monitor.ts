@@ -152,23 +152,73 @@ export class ElementMonitor {
   private async scanElements(): Promise<void> {
     if (this.getClientCount() <= 0) return;
     try {
-      type ElInfo = { tag: string; id: string; cls: string; rect: { x: number; y: number; width: number; height: number } };
+      type ElInfo = {
+        tag: string;
+        id: string;
+        cls: string;
+        kind: 'view' | 'image' | 'qr';
+        src?: string;
+        text?: string;
+        rect: { x: number; y: number; width: number; height: number };
+      };
       const elements: ElInfo[] = await this.page.evaluate(() => {
-        const sel = '[role="dialog"],dialog,[class*="modal"],[class*="popup"],[class*="overlay"],[class*="drawer"],form';
+        const sel = [
+          '[role="dialog"]',
+          'dialog',
+          '[class*="modal"]',
+          '[class*="popup"]',
+          '[class*="overlay"]',
+          '[class*="drawer"]',
+          'form',
+          'img',
+          'canvas',
+        ].join(',');
         const els = document.querySelectorAll(sel);
         const results: ElInfo[] = [];
         const vpW = window.innerWidth, vpH = window.innerHeight;
         for (const el of els) {
           const r = el.getBoundingClientRect();
-          if (r.width < 50 || r.height < 30) continue;
-          if (r.width * r.height > vpW * vpH * 0.9) continue;
           const style = window.getComputedStyle(el);
           if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') continue;
+          if (r.bottom < 0 || r.right < 0 || r.top > vpH || r.left > vpW) continue;
+
           const htmlEl = el as HTMLElement;
+          const isImage = el.tagName === 'IMG' || el.tagName === 'CANVAS';
+          const semantic = `${el.id} ${typeof htmlEl.className === 'string' ? htmlEl.className : ''} ${el.getAttribute('alt') || ''} ${el.getAttribute('title') || ''} ${el.getAttribute('src') || ''}`.toLowerCase();
+          const looksLikeQr = isImage && /(qr|qrcode|barcode|二维码)/.test(semantic);
+          const square = Math.abs(r.width - r.height) <= Math.max(8, Math.min(r.width, r.height) * 0.12);
+
+          if (isImage) {
+            // Small UI chrome, icons, trackers, and partial/offscreen images are noise.
+            if (r.width < 48 || r.height < 48) continue;
+            if (r.width > vpW || r.height > vpH) continue;
+            if (looksLikeQr && !square) continue;
+            if (!looksLikeQr && !el.getAttribute('src') && !el.getAttribute('alt') && !el.getAttribute('title')) continue;
+          } else {
+            if (r.width < 50 || r.height < 30) continue;
+            if (r.width * r.height > vpW * vpH * 0.9) continue;
+          }
+
+          let kind: ElInfo['kind'] = 'view';
+          let src: string | undefined;
+          let text: string | undefined;
+          if (looksLikeQr) {
+            kind = 'qr';
+            src = el.getAttribute('src') || undefined;
+            text = el.getAttribute('alt') || el.getAttribute('title') || undefined;
+          } else if (isImage) {
+            kind = 'image';
+            src = el.getAttribute('src') || undefined;
+            text = el.getAttribute('alt') || el.getAttribute('title') || undefined;
+          }
+
           results.push({
             tag: el.tagName,
             id: el.id || '',
             cls: (typeof htmlEl.className === 'string' ? htmlEl.className : '').slice(0, 40),
+            kind,
+            ...(src ? { src } : {}),
+            ...(text ? { text } : {}),
             rect: { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) },
           });
         }
@@ -199,9 +249,18 @@ export class ElementMonitor {
       // Sort deduped result by area descending (largest first = most relevant)
       deduped.sort((a, b) => b.rect.width * b.rect.height - a.rect.width * a.rect.height);
 
+      // QR candidates are most often the reason a user needs a cropped viewer view.
+      deduped.sort((a, b) => Number(b.kind === 'qr') - Number(a.kind === 'qr'));
+
       const views = deduped.map((e, i) => ({
         id: 'el-' + i + '-' + (e.id || e.tag),
-        label: e.id || e.cls || e.tag,
+        label: e.kind === 'qr'
+          ? (e.text || 'QR code')
+          : e.kind === 'image'
+            ? (e.text || e.src || 'Image')
+            : (e.id || e.cls || e.tag),
+        kind: e.kind,
+        ...(e.src ? { src: e.src } : {}),
         rect: e.rect,
       }));
       this.onViewsUpdate({ type: 'views_update', views });

@@ -60,6 +60,9 @@ interface MockDomElement {
   tag: string;
   id?: string;
   className?: string;
+  alt?: string;
+  title?: string;
+  src?: string;
   rect: { x: number; y: number; width: number; height: number };
   display?: string;
   visibility?: string;
@@ -79,6 +82,8 @@ function withMockDom<T>(
     tagName: e.tag,
     id: e.id || '',
     className: e.className || '',
+    classList: e.className ? e.className.split(/\s+/).filter(Boolean) : [],
+    getAttribute: (name: string) => (name === 'alt' ? e.alt : name === 'title' ? e.title : name === 'src' ? e.src : null) as string | null,
     getBoundingClientRect: () => e.rect,
     _computedStyle: {
       display: e.display ?? 'block',
@@ -342,6 +347,8 @@ describe('WSServer view tabs', () => {
       expect(normalized).toContain('[class*="overlay"]');
       expect(normalized).toContain('[class*="drawer"]');
       expect(normalized).toContain('form');
+      expect(normalized).toContain('img');
+      expect(normalized).toContain('canvas');
     });
 
     it('should filter out elements smaller than 50x30', async () => {
@@ -422,6 +429,52 @@ describe('WSServer view tabs', () => {
       expect(result).toHaveLength(1);
       const kept = result[0] as { cls: string };
       expect(kept.cls).toContain('drawer');
+    });
+
+    it('should extract visible images as image views', async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+      const scanFn = getElementScanFn();
+
+      const result = withMockDom(
+        {
+          viewportWidth: 1000,
+          viewportHeight: 800,
+          elements: [
+            { tag: 'IMG', alt: 'Product photo', src: 'product.png', rect: { x: 20, y: 20, width: 200, height: 150 } },
+            { tag: 'IMG', alt: 'Small icon', src: 'icon.png', rect: { x: 20, y: 20, width: 20, height: 20 } },
+            { tag: 'IMG', alt: 'Hidden', src: 'hidden.png', rect: { x: 20, y: 20, width: 100, height: 100 }, visibility: 'hidden' },
+          ],
+        },
+        () => (scanFn!() as Array<{ kind: string; src?: string; text?: string }>),
+      );
+
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({ kind: 'image', src: 'product.png', text: 'Product photo' });
+    });
+
+    it('should extract semantic QR candidates and skip non-square or hidden ones', async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+      const scanFn = getElementScanFn();
+
+      const result = withMockDom(
+        {
+          viewportWidth: 1000,
+          viewportHeight: 800,
+          elements: [
+            { tag: 'IMG', className: 'qrcode', src: 'qr.png', rect: { x: 10, y: 10, width: 120, height: 120 } },
+            { tag: 'IMG', alt: 'qrcode badge', src: 'wide.png', rect: { x: 10, y: 10, width: 180, height: 90 } },
+            { tag: 'CANVAS', title: 'Login 二维码', rect: { x: 10, y: 10, width: 120, height: 120 } },
+            { tag: 'IMG', className: 'lazy qr', src: 'offscreen.png', rect: { x: 10, y: 900, width: 100, height: 100 }, visibility: 'hidden' },
+          ],
+        },
+        () => (scanFn!() as Array<{ kind: string; src?: string; text?: string }>),
+      );
+
+      const qrResults = result.filter(item => item.kind === 'qr');
+      expect(qrResults).toHaveLength(2);
+      expect(qrResults.every(item => item.src !== 'wide.png' && item.src !== 'offscreen.png')).toBe(true);
+      expect(result.some(item => item.src === 'qr.png')).toBe(true);
+      expect(result.some(item => item.text === 'Login 二维码')).toBe(true);
     });
   });
 });

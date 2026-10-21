@@ -102,6 +102,41 @@ describe('WSServer', () => {
       });
     });
 
+    it('should capture a clipped screenshot with requested scale', async () => {
+      const page = getSM(server).getPageForSession(sessionId) as Page & {
+        screenshot: ReturnType<typeof vi.fn>;
+      };
+      page.screenshot = vi.fn().mockResolvedValue(Buffer.from('image'));
+      const sendSpy = vi.fn();
+      getSM(server).addClient({
+        id: 'snapshot-client',
+        sessionId,
+        ws: { send: sendSpy, close: vi.fn(), on: vi.fn() } as unknown as import('../src/ws/session-manager.js').WSLike,
+      });
+
+      await server['handleInboundMessage']('snapshot-client', {
+        type: 'snapshot_request',
+        format: 'webp',
+        quality: 95,
+        clip: { x: 10, y: 20, width: 120, height: 120 },
+        scale: 4,
+      });
+
+      expect(page.screenshot).toHaveBeenCalledWith({
+        type: 'webp',
+        quality: 95,
+        clip: { x: 10, y: 20, width: 120, height: 120, scale: 4 },
+      });
+      expect(sendSpy).toHaveBeenCalled();
+      const message = JSON.parse(sendSpy.mock.calls[0][0] as string) as {
+        type: string;
+        data: { data: string; format: string };
+      };
+      expect(message.type).toBe('snapshot_result');
+      expect(message.data.format).toBe('webp');
+      expect(message.data.data).toBe(Buffer.from('image').toString('base64'));
+    });
+
     it('should forward click to page', async () => {
       const page = getSM(server).getPageForSession(sessionId) as Page;
 

@@ -351,7 +351,7 @@ export interface XBScreenshotOptions {
   type?: 'png' | 'jpeg' | 'webp';
   quality?: number;
   fullPage?: boolean;
-  clip?: { x: number; y: number; width: number; height: number };
+  clip?: { x: number; y: number; width: number; height: number; scale?: number };
   omitBackground?: boolean;
   timeout?: number;
 }

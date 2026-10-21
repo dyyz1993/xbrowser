@@ -214,9 +214,13 @@ var snapshotCountdownTimer=null;
 $('snapshot-btn').addEventListener('click',function(){
   var btn=$('snapshot-btn');
   btn.textContent='⏳';
-  // Request high-quality screenshot from daemon
-  sendMsg({type:'snapshot_request',format:'webp',quality:90});
+  requestSnapshot();
 });
+function requestSnapshot(clip,scale){
+  var btn=$('snapshot-btn');
+  if(btn) btn.textContent='⏳';
+  sendMsg({type:'snapshot_request',format:'webp',quality:95,...(clip?{clip:clip,scale:scale||1}:{})});
+}
 // Handle snapshot response
 // (added to ws.onmessage handler below)
 var snapshotPendingHandler=function(msg){
@@ -594,6 +598,10 @@ function selectView(vid){
   }else{
     var v=detectedViews.find(function(x){return x.id===vid});
     if(v){
+      if(v.kind==='image'||v.kind==='qr'){
+        requestSnapshot(v.rect,v.kind==='qr'?4:2);
+        return;
+      }
       if(!originalViewport) originalViewport={width:remoteViewport.width,height:remoteViewport.height};
       sendMsg({type:'select_view',rect:v.rect});
       remoteViewport={width:v.rect.width,height:v.rect.height};

@@ -38,6 +38,8 @@ export type WSMessage =
 export interface ViewInfo {
   id: string;
   label: string;
+  kind: 'view' | 'image' | 'qr';
+  src?: string;
   rect: { x: number; y: number; width: number; height: number };
 }
 
@@ -52,7 +54,13 @@ export type WSInboundMessage =
   | { type: 'solved' }
   | { type: 'reconnect' }
   | { type: 'health_ping'; ts: number }
-  | { type: 'snapshot_request'; format?: string; quality?: number }
+  | {
+      type: 'snapshot_request';
+      format?: string;
+      quality?: number;
+      clip?: { x: number; y: number; width: number; height: number };
+      scale?: number;
+    }
   | { type: 'bind'; sessionId: string }
   | { type: 'input_mouse'; action: 'move' | 'down' | 'up' | 'click'; x: number; y: number; button?: 'left' | 'middle' | 'right' }
   | { type: 'input_keyboard'; action: 'down' | 'up'; key: string; modifiers?: number }
@@ -471,7 +479,11 @@ export class WSServer extends EventEmitter {
         return;
       }
       const fmt = (msg.format === 'webp') ? 'webp' : 'png';
-      page.screenshot({ type: fmt, quality: fmt === 'webp' ? (msg.quality ?? 90) : undefined })
+      page.screenshot({
+        type: fmt,
+        quality: fmt === 'webp' ? (msg.quality ?? 90) : undefined,
+        ...(msg.clip ? { clip: { ...msg.clip, scale: msg.scale } } : {}),
+      })
         .then((buf: Buffer) => {
           this.sendToClient(clientId, {
             type: 'snapshot_result',
