@@ -1,4 +1,5 @@
 import { executeChain } from '../executor.js';
+import { forwardExec } from '../client/daemon-client.js';
 import { getCommandNames } from '../commands/command-registry.js';
 import { printChainResult } from '../cli/chain-output.js';
 import { outputEnvelope } from '../cli/output.js';
@@ -98,13 +99,20 @@ export async function handleEvalScript(parts: string[], argv: string[]): Promise
   // 输出模式 flag 不能混进表达式（曾把 --json 拼进脚本尾部造成语法错）
   const mode = argv.some((a) => a === '--json' || a.startsWith('--json=') || a === '-j') ? 'json'
     : argv.some((a) => a === '--yaml' || a.startsWith('--yaml=')) ? 'yaml' : 'text';
+  // eval script 形态必须优先转发 daemon——本地 executeChain 会新起独立
+  // Chrome（不与 goto/frames 的 daemon session 共享），--frame 的
+  // getFrameTree 在空浏览器上三路未命中（mail.qq.com 实战冒烟实证）
+  const emit = (result: { success: boolean; data: unknown; message?: string }, duration: number): void => {
+    if (mode === 'json' || mode === 'yaml') {
+      outputEnvelope({ success: result.success, data: result.data, ...(result.message ? { error: result.message } : {}), duration }, { command: 'eval' }, mode);
+    } else {
+      printChainResult({ success: result.success, steps: [{ command: 'eval', raw: 'eval', success: result.success, data: result.data, duration }], totalDuration: duration });
+    }
+  };
+
   if (parts[0] === '--script-b64' && parts[1]) {
     const chainResult = await executeChain(`eval --script-b64 ${parts[1]}`, { cdpEndpoint, sessionName, frame: extractFrameFromArgv(argv) });
-    if (mode === 'json' || mode === 'yaml') {
-      outputEnvelope({ success: chainResult.success, data: chainResult.steps[chainResult.steps.length - 1]?.data ?? null, duration: chainResult.totalDuration }, { command: 'eval' }, mode);
-    } else {
-      printChainResult(chainResult);
-    }
+    emit({ success: chainResult.success, data: chainResult.steps[chainResult.steps.length - 1]?.data ?? null, message: chainResult.steps[chainResult.steps.length - 1]?.message }, chainResult.totalDuration);
     if (!chainResult.success) throw new Error('Command failed');
     return;
   }
@@ -131,15 +139,21 @@ export async function handleEvalScript(parts: string[], argv: string[]): Promise
     throw new Error('Command failed');
   }
   const b64 = Buffer.from(script, 'utf8').toString('base64url');
+  // 优先转发 daemon（与 goto/frames 共享同一浏览器 session）；daemon 不可达再本地
+  const forwarded = await forwardExec('eval', {
+    ...(frame ? { frame } : {}),
+    'script-b64': b64,
+  }, sessionName, cdpEndpoint).catch(() => null);
+  if (forwarded) {
+    emit({ success: forwarded.success, data: forwarded.data, message: forwarded.message }, 0);
+    if (!forwarded.success) throw new Error('Command failed');
+    return;
+  }
   const chain = frame
     ? `eval --frame ${frame} --script-b64 ${b64}`
     : `eval --script-b64 ${b64}`;
   const chainResult = await executeChain(chain, { cdpEndpoint, sessionName });
-  if (mode === 'json' || mode === 'yaml') {
-    outputEnvelope({ success: chainResult.success, data: chainResult.steps[chainResult.steps.length - 1]?.data ?? null, duration: chainResult.totalDuration }, { command: 'eval' }, mode);
-  } else {
-    printChainResult(chainResult);
-  }
+  emit({ success: chainResult.success, data: chainResult.steps[chainResult.steps.length - 1]?.data ?? null, message: chainResult.steps[chainResult.steps.length - 1]?.message }, chainResult.totalDuration);
   if (!chainResult.success) throw new Error('Command failed');
 }
 

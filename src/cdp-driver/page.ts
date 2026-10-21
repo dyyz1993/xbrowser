@@ -149,6 +149,10 @@ export class XBPageImpl implements XBPage {
       conn,
       resolveFrameSession: (urlIncludes) => this.runtimeEvaluationService.resolveFrameSession(urlIncludes),
       evaluateInFrame: <R,>(urlIncludes: string, expression: string) => this.evaluateInFrame<R>(urlIncludes, expression),
+      evaluateMain: <R,>(expression: string) => this.evaluate<R>(expression),
+      pageMouse: this.mouse,
+      pageKeyboard: this.keyboard,
+      frameTreeNodes: () => this.runtimeEvaluationService.frameTreeNodes(),
     });
     this.domQueryService = new DomQueryService({
       conn,
