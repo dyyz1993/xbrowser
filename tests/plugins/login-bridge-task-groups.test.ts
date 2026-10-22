@@ -51,6 +51,7 @@ type ChromeLike = {
     onUpdated: { addListener: ReturnType<typeof vi.fn>; removeListener: ReturnType<typeof vi.fn> };
     onReplaced: { addListener: ReturnType<typeof vi.fn> };
     create: (options: { url: string; active: boolean }) => Promise<Tab>;
+    update: (tabId: number, changeInfo: { url?: string }) => Promise<unknown>;
     group: (options: { tabIds: number | number[] }) => Promise<number>;
     remove: (tabId: number) => Promise<void>;
   };
