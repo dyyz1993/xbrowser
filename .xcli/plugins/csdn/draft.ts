@@ -9,6 +9,7 @@
  */
 import { z } from 'zod/v4';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import type { CommandContext } from '@dyyz1993/xcli-core';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -182,7 +183,11 @@ export function registerDraftCommand(deps: DraftDeps): void {
       })
       .passthrough(),
     examples: [{ cmd: 'xbrowser csdn draft --title "T" --file a.md --images c1.png,c2.png', description: '发草稿（含图）' }],
-    handler: async (params: { title: string; content?: string; file?: string; images?: string }, _ctx: unknown) => {
+    handler: async (params: { title: string; content?: string; file?: string; images?: string }, ctx: CommandContext) => {
+      // 约定：scope=page 命令须校验页面并在提供时导航（seo-plugins-comprehensive 契约测试）
+      const ctxAny = ctx as unknown as { page?: { goto: (u: string, o?: Record<string, unknown>) => Promise<unknown> } };
+      if (!ctxAny.page) throw new Error('需要浏览器页面');
+      await ctxAny.page.goto(MD_EDITOR_URL, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => { });
       const fsp = await import('fs/promises');
       const content = params.content || (params.file ? fsp.readFile(params.file, 'utf-8') : '');
       const body = await content;
