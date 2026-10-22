@@ -637,7 +637,10 @@ const executors = {
       const tabs = await chrome.tabs.query({ groupId: existing.id });
       if (tabs.length > 0) return { tabId: tabs[tabs.length - 1].id, groupId: existing.id, reused: true };
     }
-    const tab = await chrome.tabs.create({ url: url || 'about:blank', active: false }); // 后台创建，不抢焦点
+    // S213: about:blank 先行——先创建空白页完成 attach+注入，再导航到目标 URL。
+    // 否则 tab 创建即加载，attach 常输给页面内联脚本（beforeunload 劫持注册先于压制落地）。
+    const startUrl = 'about:blank';
+    const tab = await chrome.tabs.create({ url: startUrl, active: false }); // 后台创建，不抢焦点
     const group = await chrome.tabs.group({ tabIds: [tab.id] });
     await chrome.tabGroups.update(group, {
       title: 'xb-task-' + taskName,
@@ -645,28 +648,8 @@ const executors = {
     });
     // S164: 任务 tab 预置可见性一致性层（失败降级为普通任务 tab，不阻塞）
     const stealth = await enableTaskStealth(tab.id).catch((e) => ({ ok: false, error: String(e) }));
-    // S213: 注册竞态修补——tab 创建即开始加载，attach+注入常输给页面内联脚本
-    //（beforeunload 注册先于压制落地=弹窗复活）。重载一次让 document_start
-    // 注入从真正的文档起点生效。静默失败降级（不影响 task-open 返回）。
-    if (stealth.ok) {
-      await new Promise((resolve) => {
-        const dbg = { tabId: tab.id };
-        const onDone = () => {
-          chrome.debugger.onEvent.removeListener(listener);
-          chrome.tabs.onUpdated.removeListener(twice);
-          resolve();
-        };
-        const listener = (src, method) => {
-          if (src.tabId === tab.id && method === 'Page.loadEventFired') onDone();
-        };
-        const twice = (id, info) => {
-          if (id === tab.id && info.status === 'complete') onDone();
-        };
-        chrome.debugger.onEvent.addListener(listener);
-        chrome.tabs.onUpdated.addListener(twice);
-        try { chrome.tabs.reload(tab.id, { bypassCache: false }); } catch (e) { onDone(); }
-        setTimeout(onDone, 15000); // 兜底：加载事件丢失时不悬挂
-      });
+    if (url && url !== startUrl) {
+      await chrome.tabs.update(tab.id, { url }).catch(() => {});
     }
     return { tabId: tab.id, groupId: group, stealth: stealth.ok };
   }),
