@@ -5,46 +5,74 @@ import { __setHumanizeSleeperForTests } from '../../.xcli/plugins/shared/humaniz
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
 
-function createLocator(visible: boolean) {
-  const locator = {
-    first: vi.fn(() => locator),
-    isVisible: vi.fn(async () => visible),
-    fill: vi.fn(async () => undefined),
-    click: vi.fn(async () => undefined),
-    focus: vi.fn(async () => undefined),
-    pressSequentially: vi.fn(async () => undefined),
-  };
-  return locator;
-}
+/**
+ * 测试隔离：真实机器上 chrome-bridge 可能在线，会让通道解析走 bridge 分支，
+ * 污染本地通道断言。统一 mock fetch 让 bridge 判定为不可用。
+ */
+const realFetch = globalThis.fetch;
 
-function createPage(options: { title?: boolean; editor?: boolean; publish?: boolean } = {}) {
-  const title = createLocator(options.title ?? true);
-  const editor = createLocator(options.editor ?? true);
-  const publish = createLocator(options.publish ?? true);
-  const page = {
-    goto: vi.fn(async () => undefined),
-    waitForLoadState: vi.fn(async () => undefined),
-    waitForTimeout: vi.fn(async () => undefined),
-    url: vi.fn(() => options.publish === false ? 'https://my.oschina.net/u/1/blog/ai-write' : 'https://my.oschina.net/blog/123'),
-    locator: vi.fn((selector: string) => {
-      if (selector.includes('标题')) return title;
-      if (selector.includes('tiptap')) return editor;
-      if (selector.includes('发布文章')) return publish;
-      return createLocator(false);
-    }),
-    keyboard: { insertText: vi.fn(async () => undefined) },
+beforeEach(() => {
+  globalThis.fetch = vi.fn(async () => {
+    throw new Error('ECONNREFUSED');
+  }) as never;
+});
+
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
+
+/**
+ * OSC 发布已迁到共享发布层（`shared/publishing/`），本地通道走
+ * `LocalPageAdapter`：正文用 `editor.commands.setContent` 写入 Tiptap，
+ * 发布是「顶栏按钮弹 Popconfirm → 弹窗内确定并发布」两层。
+ */
+function createPage(options: { editorReady?: boolean; url?: string } = {}) {
+  const s = {
+    url: options.url ?? 'https://my.oschina.net/u/1/blog/ai-write',
+    editorReady: options.editorReady ?? true,
   };
-  return { page, title, editor, publish };
+  const page = {
+    goto: vi.fn(async () => {}),
+    waitForLoadState: vi.fn(async () => {}),
+    waitForTimeout: vi.fn(() => new Promise<void>((r) => { setTimeout(r, 5); })),
+    url: vi.fn(() => s.url),
+    mouse: { click: vi.fn(async () => {}) },
+    keyboard: { insertText: vi.fn(async () => {}) },
+    evaluate: vi.fn(async (expr: string) => {
+      if (expr.includes('.tiptap.ProseMirror')) {
+        return s.editorReady ? { len: 900, imgs: 1, gt: 0 } : null;
+      }
+      if (expr.includes('Object.getOwnPropertyDescriptor')) return true;
+      if (expr.includes('.ant-popover-inner')) return true;
+      if (expr.includes('请输入文章标题')) return true;
+      if (expr === 'location.href') return s.url;
+      // locateByText：页面表达式里带上了候选文本（JSON 字符串），按它匹配
+      if (expr.includes('elementsFromPoint')) {
+        if (expr.includes('确定并发布')) {
+          return JSON.stringify({ x: 1774, y: 524, text: '确定并发布', tag: 'BUTTON' });
+        }
+        if (expr.includes('发布文章')) {
+          return JSON.stringify({ x: 1786, y: 32, text: '发布文章', tag: 'BUTTON' });
+        }
+      }
+      return undefined;
+    }),
+  };
+  return { page, state: s };
 }
 
 function handlerOf(name: string): (params: unknown, ctx: unknown) => Promise<Record<string, unknown>> {
   const call = mockSite.command.mock.calls.find((item: unknown[]) => item[0] === name);
   if (!call) throw new Error(`command ${name} missing`);
-  return call[1].handler;
+  return (call[1] as { handler: (p: unknown, c: unknown) => Promise<Record<string, unknown>> }).handler;
 }
 
 function ctxFor(page: ReturnType<typeof createPage>['page']) {
-  return { page, cdpEndpoint: 'http://localhost:9222', waitForHuman: vi.fn(async () => ({ solved: true })) };
+  return {
+    page,
+    cdpEndpoint: 'http://localhost:9222',
+    waitForHuman: vi.fn(async () => ({ solved: true })),
+  };
 }
 
 describe('oschina plugin', () => {
@@ -63,7 +91,8 @@ describe('oschina plugin', () => {
       name: 'oschina',
       requiresLogin: true,
     }));
-    expect(mockSite.command.mock.calls.map((item: unknown[]) => item[0])).toEqual(['login', 'draft', 'publish']);
+    expect(mockSite.command.mock.calls.map((item: unknown[]) => item[0]).sort())
+      .toEqual(['draft', 'login', 'publish']);
   });
 
   it('rejects draft without content or file', async () => {
@@ -72,29 +101,50 @@ describe('oschina plugin', () => {
     expect(result.message).toBe('必须提供 --content 或 --file 参数');
   });
 
-  it('fills TipTap editor for a draft', async () => {
+  it('fills TipTap editor via setContent for a draft', async () => {
     const harness = createPage();
-    const result = await handlerOf('draft')({ title: 'Hello', content: 'World' }, ctxFor(harness.page));
-    expect(harness.title.pressSequentially).toHaveBeenCalledWith('H', { delay: 0 });
-    expect(harness.editor.click).toHaveBeenCalledTimes(1);
-    expect(harness.page.keyboard.insertText).toHaveBeenCalledWith('World');
+    const result = await handlerOf('draft')(
+      { title: 'Hello', content: 'World' },
+      ctxFor(harness.page),
+    );
+    // 正文走 editor.commands.setContent，不是 insertText
+    const exprs = harness.page.evaluate.mock.calls.map((c) => c[0] as string).join('\n');
+    expect(exprs).toContain('setContent');
+    expect(exprs).toContain('clearContent(true)');
     expect(result.success).toBe(true);
-    expect(result.data).toMatchObject({ title: 'Hello', saved: true });
+    expect(result.data).toMatchObject({ title: 'Hello', channel: 'local' });
   });
 
-  it('reports publish confirmation based on final URL', async () => {
-    const harness = createPage();
-    const result = await handlerOf('publish')({ title: 'Hello', content: 'World' }, ctxFor(harness.page));
-    expect(harness.publish.click).toHaveBeenCalledTimes(1);
-    expect(result.data).toMatchObject({ title: 'Hello', published: true, url: 'https://my.oschina.net/blog/123' });
+  it('fails draft when TipTap instance missing', async () => {
+    const harness = createPage({ editorReady: false });
+    const result = await handlerOf('draft')(
+      { title: 'Hello', content: 'World' },
+      ctxFor(harness.page),
+    );
+    expect(result.success).toBe(false);
+    expect(String(result.message)).toContain('Tiptap');
   });
 
-  it('marks publish as needing human confirmation when still on editor', async () => {
-    const harness = createPage({ publish: true });
-    harness.page.url.mockReturnValue('https://my.oschina.net/u/1/blog/ai-write');
-    const result = await handlerOf('publish')({ title: 'Hello', content: 'World' }, ctxFor(harness.page));
-    expect(result.data).toMatchObject({ published: false });
-    const tips = (result.tips ?? []) as Array<{ message?: string }>;
-    expect(tips.some((tip) => tip?.message?.includes('请人工确认') ?? false)).toBe(true);
+  it('publish reports failure when it stays on the editor', async () => {
+    const harness = createPage({ url: 'https://my.oschina.net/u/1/blog/ai-write' });
+    const result = await handlerOf('publish')(
+      { title: 'Hello', content: 'World' },
+      ctxFor(harness.page),
+    );
+    expect(result.success).toBe(false);
+  });
+
+  it('publish succeeds and returns the blog URL', async () => {
+    const harness = createPage({ url: 'https://my.oschina.net/u/1/blog/19781123' });
+    const result = await handlerOf('publish')(
+      { title: 'Hello', content: 'World' },
+      ctxFor(harness.page),
+    );
+    expect(result.success).toBe(true);
+    expect(result.data).toMatchObject({
+      title: 'Hello',
+      published: true,
+      url: 'https://my.oschina.net/u/1/blog/19781123',
+    });
   });
 });
