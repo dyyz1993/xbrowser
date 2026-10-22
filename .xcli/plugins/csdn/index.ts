@@ -5,7 +5,6 @@ import type { Page } from '../types.js';
 
 import { randomPause, humanClick, humanBrowse, humanFill } from '../shared/humanize.js';
 import { registerCsdnDraft } from './draft.js';
-import { registerCsdnPublishing } from './publishing.js';
 
 
 function resolvePage(ctx: CommandContext): { page: Page; tips: string[] } {
@@ -346,8 +345,6 @@ export default function (xcli: XCLIAPI): void {
   });
 
   registerCsdnDraft(site);
-  // publish-fast 走共享发布层（chrome-bridge 优先，跳过 waitForHuman 人工门）
-  registerCsdnPublishing(site);
 
   site.login(async (ctx) => {
     const page = ctx.page;

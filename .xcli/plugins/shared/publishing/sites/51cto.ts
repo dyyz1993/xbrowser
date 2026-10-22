@@ -74,10 +74,8 @@ export const ctoPublisher: SitePublisher = {
   site: '51cto',
 
   async open(adapter: PageAdapter): Promise<void> {
-    await adapter.evaluate(`(function(){
-      window.scrollTo(0, 0);
-      return 'ok';
-    })()`);
+    // task-open 是异步导航——返回时目标页可能还在加载，先等 ready
+    await adapter.waitReady();
     // 等编辑器挂载（wukong 异步 boot）
     await waitFor(async () => {
       const ready = await adapter.evaluate<boolean>(`(function(){
@@ -87,6 +85,13 @@ export const ctoPublisher: SitePublisher = {
       })()`);
       return ready ? true : null;
     }, { timeout: 20000, interval: 500 });
+    // 编辑器挂载 ≠ 页面加载完——wukong 后续还会重渲染一次。
+    // 太早注入会被那次重渲染清空（实测注入后 1s 内模型才有内容）。
+    await sleep(1500);
+    await adapter.evaluate(`(function(){
+      window.scrollTo(0, 0);
+      return 'ok';
+    })()`);
   },
 
   async setTitle(adapter: PageAdapter, title: string): Promise<void> {
@@ -114,7 +119,10 @@ export const ctoPublisher: SitePublisher = {
       return {
         len: (ce.textContent || '').length,
         imgs: ce.querySelectorAll('img').length,
-        gt: (ce.innerHTML.match(/&gt;/g) || []).length
+        gt: (Array.prototype.slice.call(ce.querySelectorAll('blockquote, p'))
+          .filter(function(el){ return el.querySelector('code') === null; })
+          .map(function(el){ return el.textContent || ''; }).join('')
+          .match(/&gt;/g) || []).length
       };
     })()`);
     if (!stats) throw new Error('51CTO 编辑器未挂载');

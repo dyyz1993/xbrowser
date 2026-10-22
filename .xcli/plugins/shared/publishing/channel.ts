@@ -35,6 +35,8 @@ import {
   openTaskTab,
   closeTaskTab,
   trustedClick,
+  bringToFront,
+  waitForDocumentReady,
 } from './bridge.js';
 
 export type PublishChannel = 'bridge' | 'local';
@@ -66,6 +68,19 @@ export interface PageAdapter {
     exact?: boolean;
     requireViewport?: boolean;
   }): Promise<boolean>;
+  /** 等待文档进入 ready 状态（bridge 的 task-open 是异步导航，返回时页面可能还在加载） */
+  waitReady(timeout?: number): Promise<boolean>;
+  /**
+   * 可信键盘输入（CDP Input.insertText，isTrusted=true）。
+   *
+   * 强受控编辑器（wukong / ProseMirror / CKEditor）会拒收合成事件与
+   * HTML 直注——只有真实键盘事件能存活。文本越长耗时越久。
+   */
+  insertText(text: string): Promise<void>;
+  /** 点击元素中心（可信事件） */
+  clickSelector(selector: string): Promise<boolean>;
+  /** 把页面切到前台（后台 tab 的可信输入会被 Chrome 静默丢弃） */
+  bringToFront(): Promise<void>;
 }
 
 /** bridge 通道适配器 */
@@ -98,6 +113,44 @@ export class BridgePageAdapter implements PageAdapter {
     const point = await this.locateByText(options);
     if (!point) return false;
     await this.clickAt(point.x, point.y);
+    return true;
+  }
+
+  async waitReady(timeout = 20000): Promise<boolean> {
+    return waitForDocumentReady(this.bridge, this.tabId, timeout);
+  }
+
+  async bringToFront(): Promise<void> {
+    await bringToFront(this.bridge, this.tabId);
+  }
+
+  async insertText(text: string): Promise<void> {
+    // 后台 tab 的可信输入会被 Chrome 静默丢弃——先切前台
+    await this.bringToFront();
+    // 分块：单次 insertText 太大会被截断
+    const chunk = 3000;
+    for (let i = 0; i < text.length; i += chunk) {
+      await this.bridge.call('cdp', {
+        method: 'Input.insertText',
+        params: { text: text.slice(i, i + chunk) },
+        tabId: this.tabId,
+      });
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+
+  async clickSelector(selector: string): Promise<boolean> {
+    const point = await this.evaluate<string | null>(`(function(){
+      var el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return null;
+      el.scrollIntoView({ block: 'center' });
+      var r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return null;
+      return JSON.stringify({ x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2) });
+    })()`);
+    if (!point) return false;
+    const p = JSON.parse(point) as { x: number; y: number };
+    await this.clickAt(p.x, p.y);
     return true;
   }
 }
@@ -171,6 +224,59 @@ export class LocalPageAdapter implements PageAdapter {
     await this.clickAt(point.x, point.y);
     return true;
   }
+
+  async waitReady(timeout = 20000): Promise<boolean> {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      const ready = await this.page
+        .evaluate<string>('document.readyState')
+        .catch(() => undefined);
+      // 必须等 'complete'——'interactive' 时 DOM 已可读但仍在解析，
+      // 后续的编辑器初始化会重渲染，把刚注入的内容清掉。
+      if (ready === 'complete') return true;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    return false;
+  }
+
+  async bringToFront(): Promise<void> {
+    const page = this.page as unknown as { bringToFront?: () => Promise<void> };
+    await page.bringToFront?.();
+  }
+
+  async insertText(text: string): Promise<void> {
+    await this.bringToFront();
+    const keyboard = this.page.keyboard;
+    if (keyboard?.insertText) {
+      const chunk = 3000;
+      for (let i = 0; i < text.length; i += chunk) {
+        await keyboard.insertText(text.slice(i, i + chunk));
+        await this.page.waitForTimeout(300);
+      }
+      return;
+    }
+    // 无 keyboard.insertText 时退化为 DOM 写入（仅对弱编辑器有效）
+    await this.page.evaluate(
+      `(function(){ var ta = document.querySelector('[contenteditable=true]');` +
+      ` if (ta) { ta.focus(); ta.textContent = ${JSON.stringify(text)};` +
+      ` ta.dispatchEvent(new Event('input', { bubbles: true })); } })()`,
+    );
+  }
+
+  async clickSelector(selector: string): Promise<boolean> {
+    const point = await this.evaluate<string | null>(`(function(){
+      var el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return null;
+      el.scrollIntoView({ block: 'center' });
+      var r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return null;
+      return JSON.stringify({ x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2) });
+    })()`);
+    if (!point) return false;
+    const p = JSON.parse(point) as { x: number; y: number };
+    await this.clickAt(p.x, p.y);
+    return true;
+  }
 }
 
 /** 通道解析结果 */
@@ -208,10 +314,8 @@ export async function resolveChannel(opts: {
   }
 
   if (!opts.page) {
-    throw new Error(
-      '没有可用通道：chrome-bridge 扩展未连接，且没有本地浏览器页面。' +
-        '请先跑 `xbrowser chrome-bridge serve` 并在 Chrome 中启用扩展，或改用带 --cdp 的会话。',
-    );
+    // 与仓库其他插件保持一致：无 page 时统一抛「需要浏览器页面」
+    throw new Error('需要浏览器页面');
   }
   await opts.page.goto(opts.localUrl, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => undefined);
   return {
@@ -233,8 +337,8 @@ export async function releaseChannel(resolution: ChannelResolution): Promise<voi
 export interface SitePublisher {
   /** 站点标识（任务分组名用） */
   readonly site: string;
-  /** 打开编辑器 */
-  open(adapter: PageAdapter): Promise<void>;
+  /** 打开编辑器（options 承载站点特定的额外参数，如 OSChina 的 uid） */
+  open(adapter: PageAdapter, options?: Record<string, unknown>): Promise<void>;
   /** 填标题 */
   setTitle(adapter: PageAdapter, title: string): Promise<void>;
   /** 填正文 */

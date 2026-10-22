@@ -16,6 +16,8 @@ function createAdapter(initial: Record<string, unknown> = {}) {
   const clicks: Array<{ x: number; y: number }> = [];
   const texts: Array<{ text: string; scope?: string; exact?: boolean }> = [];
   const locations: Array<{ text: string; scope?: string; exact?: boolean }> = [];
+  const inserted: string[] = [];
+  const selectors: string[] = [];
 
   const adapter = {
     channel: 'local' as const,
@@ -53,8 +55,21 @@ function createAdapter(initial: Record<string, unknown> = {}) {
       texts.push({ text: String(options.text), scope: options.scope, exact: options.exact });
       return state.__clickOk !== false;
     },
+    async waitReady(): Promise<boolean> {
+      return true;
+    },
+    async insertText(text: string): Promise<void> {
+      inserted.push(text);
+    },
+    async clickSelector(selector: string): Promise<boolean> {
+      selectors.push(selector);
+      return state.__clickOk !== false;
+    },
+    async bringToFront(): Promise<void> {
+      /* 本地通道无前台概念 */
+    },
   };
-  return { adapter, state, expressions, clicks, texts, locations };
+  return { adapter, state, expressions, clicks, texts, locations, inserted, selectors };
 }
 
 /**
@@ -106,13 +121,13 @@ describe('publishing/channel', () => {
 
   describe('resolveChannel', () => {
 
-    it('bridge 不可用且无 page 时给出明确错误', async () => {
+    it('bridge 不可用且无 page 时提示需要浏览器页面', async () => {
       globalThis.fetch = vi.fn(async () => {
         throw new Error('ECONNREFUSED');
       }) as never;
       await expect(
         resolveChannel({ taskName: 'pub-x', localUrl: 'https://x.com' }),
-      ).rejects.toThrow(/chrome-bridge 扩展未连接/);
+      ).rejects.toThrow('需要浏览器页面');
     });
 
     it('bridge 不可用但有 page 时回退 local 通道', async () => {

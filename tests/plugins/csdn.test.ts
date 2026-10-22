@@ -50,7 +50,7 @@ function createMockCtx(page?: ReturnType<typeof createMockPage>) {
   };
 }
 
-const ALL_COMMANDS = ['login', 'publish', 'update-profile', 'fetch-articles', 'draft', 'publish-fast'];
+const ALL_COMMANDS = ['login', 'publish', 'update-profile', 'fetch-articles', 'draft'];
 
 describe('csdn plugin', () => {
   beforeEach(() => {
@@ -70,8 +70,8 @@ describe('csdn plugin', () => {
     );
   });
 
-  it('should register 6 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(6);
+  it('should register 5 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(5);
   });
 
   it('should register expected command names', () => {

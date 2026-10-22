@@ -15,7 +15,7 @@ import { z } from 'zod/v4';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { CommandContext } from '@dyyz1993/xcli-core';
 import type { PageAdapter, SitePublisher } from './channel.js';
-import { releaseChannel, resolveChannel, readMarkdownFile } from './channel.js';
+import { resolveChannel, readMarkdownFile } from './channel.js';
 
 export interface SiteRegistrar {
   command(name: string, config: unknown): void;
@@ -30,6 +30,7 @@ export interface DraftOptions {
   summary?: string;
   tags?: string;
   source?: string;
+  uid?: string;
 }
 
 export interface RegisterPublishingOptions {
@@ -112,6 +113,17 @@ export function registerPublishingCommands(
   const parseList = (value?: string): string[] =>
     (value || '').split(',').map((s) => s.trim()).filter(Boolean);
 
+  /**
+   * 通道包装。
+   *
+   * `keepTab` 语义：
+   * - **draft**：保留任务分组 tab——草稿要留在编辑器里给用户确认，
+   *   关闭 tab 会让页面重载，51CTO 的自动保存会把内容清成 0 字。
+   * - **publish**：发布完可以关，但关 tab 也可能触发重载；保守起见同样保留。
+   *
+   * bridge 任务分组由扩展侧管理（同名 task-open 会复用 tab），
+   * 不主动关闭就不会丢内容。
+   */
   const withChannel = async <T>(
     ctx: CommandContext,
     fn: (adapter: PageAdapter, channel: string) => Promise<T>,
@@ -122,11 +134,7 @@ export function registerPublishingCommands(
       taskName: `pub-${publisher.site}`,
       localUrl: editorUrl,
     });
-    try {
-      return await fn(resolution.adapter, resolution.channel);
-    } finally {
-      await releaseChannel(resolution);
-    }
+    return fn(resolution.adapter, resolution.channel);
   };
 
   const draftName = options.commandNames?.draft ?? 'draft';
@@ -142,6 +150,7 @@ export function registerPublishingCommands(
         content: z.string().optional().describe('正文 Markdown（与 file 二选一）'),
         file: z.string().optional().describe('Markdown 文件路径（与 content 二选一）'),
         images: z.string().optional().describe('配图路径，逗号分隔（自动横版 16:9 裁剪）'),
+        uid: z.string().optional().describe('站点用户 ID（OSChina 需要，可从个人空间 URL 取）'),
       }),
       result: z
         .object({
@@ -162,7 +171,7 @@ export function registerPublishingCommands(
 
         return withChannel(ctx, async (adapter, channel) => {
           try {
-            await publisher.open(adapter);
+            await publisher.open(adapter, { uid: params.uid });
             await publisher.setTitle(adapter, params.title);
             await publisher.setBody(adapter, markdown);
             const url = await adapter.url();
@@ -192,6 +201,7 @@ export function registerPublishingCommands(
         summary: z.string().optional().describe('文章摘要（不填则从正文自动提取）'),
         tags: z.string().optional().describe('标签，逗号分隔'),
         source: z.string().optional().describe('文章来源（原创/转载）'),
+        uid: z.string().optional().describe('站点用户 ID（OSChina 需要，可从个人空间 URL 取）'),
       }),
       result: z
         .object({
@@ -216,7 +226,7 @@ export function registerPublishingCommands(
 
         return withChannel(ctx, async (adapter, channel) => {
           try {
-            await publisher.open(adapter);
+            await publisher.open(adapter, { uid: params.uid });
             await publisher.setTitle(adapter, params.title);
             await publisher.setBody(adapter, markdown);
             const result = await publisher.publish(adapter, {
@@ -224,6 +234,7 @@ export function registerPublishingCommands(
               summary,
               tags: parseList(params.tags),
               source: params.source,
+              uid: params.uid,
             });
             if (!result.published) return fail(result.note || '发布未完成');
             return ok(

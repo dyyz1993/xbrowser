@@ -51,7 +51,7 @@ function createMockCtx(page?: ReturnType<typeof createMockPage>) {
   };
 }
 
-const ALL_COMMANDS = ['publish-fast', 'login', 'publish', 'draft', 'upload-image', 'update-profile', 'fetch-articles'];
+const ALL_COMMANDS = ['login', 'publish', 'draft', 'upload-image', 'update-profile', 'fetch-articles'];
 
 describe('juejin plugin', () => {
   beforeEach(() => {
@@ -71,8 +71,8 @@ describe('juejin plugin', () => {
     );
   });
 
-  it('should register 7 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(7);
+  it('should register 6 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(6);
   });
 
   it('should register expected command names', () => {

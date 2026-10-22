@@ -5,6 +5,7 @@ import type { Page } from '../types.js';
 
 import { randomPause } from '../shared/humanize.js';
 import { registerCnblogsPublishing } from './publishing.js';
+import { checkLoggedIn } from '../shared/publishing/login-probe.js';
 
 /**
  * 博客园插件。
@@ -34,10 +35,11 @@ export default function (xcli: XCLIAPI): void {
     description: '博客园 - 老牌中文技术博客平台 (DA 80+, 百度权重极高)',
     requiresLogin: true,
     isLogin: async (ctx) => {
+      // bridge 优先——用户登录态在用户自己的 Chrome 里（发布走 bridge 通道）
       const ctxAny = ctx as unknown as Record<string, unknown>;
       const page = ctxAny.page as Page | undefined;
-      if (!page) return true;
-      try {
+      return checkLoggedIn('cnblogs', 'https://i.cnblogs.com/posts', async () => {
+        if (!page) return true;
         const url = page.url();
         if (url.includes('account.cnblogs.com/signin')) return false;
         const body = await page.evaluate(
@@ -46,9 +48,7 @@ export default function (xcli: XCLIAPI): void {
         if (!body) return false;
         if (body.includes('用户名或密码错误')) return false;
         return true;
-      } catch {
-        return true;
-      }
+      });
     },
   });
 

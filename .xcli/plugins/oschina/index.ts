@@ -4,6 +4,7 @@ import { ok } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
 import { randomPause } from '../shared/humanize.js';
 import { registerOschinaPublishing } from './publishing.js';
+import { checkLoggedIn } from '../shared/publishing/login-probe.js';
 
 /**
  * 开源中国（OSChina）插件。
@@ -33,19 +34,18 @@ export default function (xcli: XCLIAPI): void {
     description: '开源中国 oschina - 开源/技术资讯社区 (DA 75+)',
     requiresLogin: true,
     isLogin: async (ctx) => {
+      // bridge 优先——用户登录态在用户自己的 Chrome 里（发布走 bridge 通道）
       const ctxAny = ctx as unknown as Record<string, unknown>;
       const page = ctxAny.page as Page | undefined;
-      if (!page) return true;
-      try {
+      return checkLoggedIn('oschina', 'https://my.oschina.net', async () => {
+        if (!page) return true;
         const url = page.url();
         if (url.includes('/login')) return false;
         const body = await page.evaluate(
           () => document.body?.textContent?.trim().slice(0, 300) || '',
         ) as string;
         return body.length > 50 && !body.includes('登录注册');
-      } catch {
-        return true;
-      }
+      });
     },
   });
 

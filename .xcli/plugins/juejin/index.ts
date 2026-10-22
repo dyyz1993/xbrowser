@@ -4,7 +4,6 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
 
 import { randomPause, humanClick, humanBrowse, humanFill } from '../shared/humanize.js';
-import { registerJuejinPublishing } from './publishing.js';
 
 
 function buildCdpTips(ctx: Record<string, unknown>): string[] {
@@ -86,9 +85,6 @@ export default function (xcli: XCLIAPI): void {
       }
     },
   });
-
-  // publish-fast 走共享发布层（chrome-bridge 优先，跳过人工确认）
-  registerJuejinPublishing(site);
 
   site.command('login', {
     description: '登录掘金（GitHub OAuth / 手机号）',

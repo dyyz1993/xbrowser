@@ -4,6 +4,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
 import { randomPause } from '../shared/humanize.js';
 import { register51ctoPublishing } from './publishing.js';
+import { checkLoggedIn } from '../shared/publishing/login-probe.js';
 
 /**
  * 51CTO 博客插件。
@@ -61,18 +62,21 @@ export default function (xcli: XCLIAPI): void {
     description: '51CTO - IT技术/运维/认证社区 (DA 65+, 运维内容权重高)',
     requiresLogin: true,
     isLogin: async (ctx) => {
+      // bridge 优先——用户登录态在用户自己的 Chrome 里（发布走 bridge 通道）
       const ctxAny = ctx as unknown as Record<string, unknown>;
       const page = ctxAny.page as Page | undefined;
-      if (!page) return true;
-      // 文字启发式不可靠（未登录入口"登录注册"藏在页脚，已登录页也含该串）——
-      // 确定性探测：发布页未登录时硬重定向 home.51cto.com/login
-      try {
-        await page.goto(PUBLISH_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
-        await page.waitForTimeout(1200);
-        return !(await page.url()).includes('home.51cto.com');
-      } catch {
-        return true;
-      }
+      return checkLoggedIn('51cto', PUBLISH_URL, async () => {
+        if (!page) return true;
+        // 文字启发式不可靠（未登录入口"登录注册"藏在页脚，已登录页也含该串）——
+        // 确定性探测：发布页未登录时硬重定向 home.51cto.com/login
+        try {
+          await page.goto(PUBLISH_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
+          await page.waitForTimeout(1200);
+          return !(await page.url()).includes('home.51cto.com');
+        } catch {
+          return true;
+        }
+      });
     },
   });
 

@@ -79,6 +79,16 @@ export async function cdpCall<T = unknown>(
 }
 
 /**
+ * 把 tab 切到前台。
+ *
+ * 后台 tab 的可信输入会被 Chrome **静默丢弃**（不报错，值就是写不进去）——
+ * 这是"手动测能成功、插件跑就失败"的常见根因。
+ */
+export async function bringToFront(bridge: BridgeTransport, tabId: number): Promise<void> {
+  await bridge.call('cdp', { method: 'Page.bringToFront', params: {}, tabId }).catch(() => undefined);
+}
+
+/**
  * 可信点击（CDP Input 域，isTrusted=true）。
  *
  * 关键：`mouseMoved` 的 callback 会被 Chrome 合成器推迟到帧渲染（重页面
@@ -193,14 +203,29 @@ export async function clickByText(
   return true;
 }
 
-/** 打开命名任务分组 tab，返回 tabId */
+/**
+ * 打开命名任务分组 tab，返回 tabId。
+ *
+ * 关键：**同名分组复用 tab 时不会重新导航**（实测 `reused: true` 时
+ * URL 保持旧值）。发布场景每次都要在目标编辑器页上，所以复用后必须
+ * 显式导航一次。
+ */
 export async function openTaskTab(
   bridge: BridgeTransport,
   name: string,
   url: string,
 ): Promise<number> {
-  const opened = (await bridge.call('task-open', { name, url })) as { tabId?: number };
+  const opened = (await bridge.call('task-open', { name, url })) as {
+    tabId?: number;
+    reused?: boolean;
+  };
   if (!opened?.tabId) throw new Error(`bridge task-open 失败（${name}）——扩展未连接？`);
+  if (opened.reused) {
+    // 复用 tab：强制导航到目标 URL（否则停在旧页面）
+    await bridge
+      .call('navigate', { url, tabId: opened.tabId })
+      .catch(() => undefined);
+  }
   return opened.tabId;
 }
 
@@ -233,4 +258,34 @@ export async function waitFor<T>(
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * 等待 tab 的 document 进入 ready 状态。
+ *
+ * bridge 的 task-open 是**异步导航**（about:blank 先行 → 注入 → 跳转目标），
+ * 返回时目标页可能还在 loading。此时直接 evaluate 会拿到空 DOM——
+ * 表现为「编辑器未挂载」的超时。
+ */
+export async function waitForDocumentReady(
+  bridge: BridgeTransport,
+  tabId: number,
+  timeout = 20000,
+): Promise<boolean> {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    try {
+      const r = (await bridge.call('evaluate', {
+        expression: 'document.readyState',
+        tabId,
+      })) as { value?: string };
+      // 必须等 'complete'——'interactive' 时 DOM 已可读但仍在解析，
+      // 后续的编辑器初始化会重渲染，把刚注入的内容清掉。
+      if (r?.value === 'complete') return true;
+    } catch {
+      // tab 尚未就绪（导航中）——继续等
+    }
+    await sleep(400);
+  }
+  return false;
 }
