@@ -101,6 +101,7 @@ async function loadBackgroundWithTaskOpen() {
       onRemoved: { addListener: vi.fn(), removeListener: vi.fn() },
       onUpdated: { addListener: vi.fn(), removeListener: vi.fn() },
       onReplaced: { addListener: vi.fn() },
+      update: vi.fn(async () => ({})),
       create: vi.fn(async () => ({ id: 777 })),
       group: vi.fn(async () => 555),
       remove: vi.fn(async () => {}),

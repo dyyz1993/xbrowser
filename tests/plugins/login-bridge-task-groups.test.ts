@@ -133,6 +133,7 @@ function createChrome() {
       onRemoved: { addListener: vi.fn(), removeListener: vi.fn() },
       onUpdated: { addListener: vi.fn(), removeListener: vi.fn() },
       onReplaced: { addListener: vi.fn() },
+      update: vi.fn(async () => ({})),
       create: async (options) => {
         createdCount += 1;
         const tab: Tab = { id: nextTabId++, groupId: -1, url: options.url };
