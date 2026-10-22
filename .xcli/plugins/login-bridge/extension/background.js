@@ -448,13 +448,7 @@ async function ensurePersistentStealth(tabId) {
   // here—probing with Runtime.evaluate adds needless round trips on every
   // command and can contend with the caller's next debugger operation.
   if (stealthTabs.has(tabId)) {
-    // cdp-detach or an external DevTools detach invalidates the registry.
-    // Try a cheap attach: Chrome reports "already attached" only when the
-    // live target still exists; otherwise this performs the missing attach.
-    const result = await enableTaskStealth(tabId).catch(() => ({ ok: false }));
-    if (result?.ok === true) return true;
-    stealthTabs.delete(tabId);
-    return false;
+    return true;
   }
   const result = await enableTaskStealth(tabId).catch(() => ({ ok: false }));
   return result?.ok === true;
@@ -1133,6 +1127,36 @@ const executors = {
 
   // S120：可信点击（chrome.debugger Input.dispatchMouseEvent）——
   // 页面 el.click() 是合成事件，ProseMirror 等框架不认；可信点击等价鼠标。
+  trustedDrag: async ({ sx, sy, ex, ey, steps, tabId }) => {
+    const target = tabId ?? await getTaskTabId();
+    return await ensurePersistentStealth(target).then((persistent) =>
+      runDebugger(target, 'trusted-drag', 30000, (resolve) => {
+        const dbg = { tabId: target };
+        const n = Math.max(10, Math.min(80, steps || 40));
+        const mkStep = (i) => {
+          if (i > n) {
+            setTimeout(() => {
+              chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent',
+                { type: 'mouseReleased', x: ex, y: ey, button: 'left', buttons: 0, clickCount: 1 },
+                () => resolve({ ok: true, dragged: sx + ',' + sy + '->' + ex + ',' + ey, steps: n, persistent }));
+            }, 120);
+            return;
+          }
+          const t = i / n;
+          const progress = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2;
+          const px = Math.round((sx + (ex - sx) * progress + (Math.random()-0.5)*1.0) * 10) / 10;
+          const py = Math.round((sy + (ey - sy) * progress + Math.sin(t * Math.PI * 3) * 1.2 + (Math.random()-0.5)*0.6) * 10) / 10;
+          chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent',
+            { type: 'mouseMoved', x: px, y: py, button: 'left', buttons: 1 }, () => {});
+          setTimeout(() => mkStep(i + 1), 12 + Math.random() * 6);
+        };
+        chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent',
+          { type: 'mousePressed', x: sx, y: sy, button: 'left', buttons: 1, clickCount: 1 }, () => {
+            setTimeout(() => mkStep(1), 100);
+          });
+      }));
+  },
+
   trustedClick: async ({ x, y, tabId }) => {
     const target = tabId ?? await getTaskTabId();
     return await ensurePersistentStealth(target).then((persistent) =>
