@@ -45,6 +45,27 @@ const WS_BRIDGE = 'ws://127.0.0.1:9346';
    *   rAF 垫片：hidden tab 的 rAF 完全静默是硬伤——垫片保证"会回调"，
    *   帧距受后台定时器节流限制（~1000ms），属已知残留（L3），文档明示不掩盖。
    */
+
+  /**
+   * S213 打断源压制（用户 2026-10-22 定：CDP 注入强吃弹窗）：
+   *  - beforeunload 注册吞掉（拦截 addEventListener，离开确认无从产生）
+   *  - alert/confirm/prompt 三件套消音（r30 语义：confirm false / prompt null）
+   * 适用于任务 tab（自动化流程 tab），普通用户浏览 tab 不挂本源。
+   */
+  var DIALOG_SUPPRESSION_SOURCE = [
+    "(function(){",
+    "  if (window.__xbDialogSuppressed) return; window.__xbDialogSuppressed = true;",
+    '  var oAEL = EventTarget.prototype.addEventListener;',
+    '  EventTarget.prototype.addEventListener = function (type, fn, opts) {',
+    '    if (type === "beforeunload") return undefined;',
+    '    return oAEL.call(this, type, fn, opts);',
+    '  };',
+    '  window.alert = function () {};',
+    '  window.confirm = function () { return false; };',
+    '  window.prompt = function () { return null; };',
+    "})();",
+  ].join("\n");
+
   var VISIBILITY_STEALTH_SOURCE = [
     '(function(){',
     '  if (window.__xbVisStealth) return; window.__xbVisStealth = true;',
@@ -165,6 +186,7 @@ const WS_BRIDGE = 'ws://127.0.0.1:9346';
 
   return {
     VISIBILITY_STEALTH_SOURCE: VISIBILITY_STEALTH_SOURCE,
+    DIALOG_SUPPRESSION_SOURCE: DIALOG_SUPPRESSION_SOURCE,
     generateMousePath: generateMousePath,
     planWarmup: planWarmup,
   };
@@ -173,6 +195,19 @@ const WS_BRIDGE = 'ws://127.0.0.1:9346';
 // END inlined stealth-common.cjs
 
 const stealthTabs = new Set(); // S169: 重建内联块时误删，补回
+
+// S213 打断源兜底：注入源生效前已注册的 beforeunload（或绕过路径）仍弹出时，
+// 任务 tab 自动接受（离开确认=离开；alert 无按钮语义同 accept）。
+chrome.debugger.onEvent.addListener(function (source, method, params) {
+  if (method !== 'Page.javascriptDialogOpening' || !params) return;
+  var tabId = source.tabId;
+  if (tabId === undefined || !stealthTabs.has(tabId)) return;
+  try {
+    chrome.debugger.sendCommand(source, 'Page.handleJavaScriptDialog', { accept: true }, function () {
+      recordDiagnostic('dialog-autoaccept', { tabId: tabId, type: params.type });
+    });
+  } catch (e) { /* 会话已拆 */ }
+});
 
 // S186: 检测观测器 spy 源（document_start 注入，收集 descriptor 查询）
 const SPY_SOURCE = [
@@ -229,8 +264,12 @@ async function enableTaskStealth(tabId) {
       { source: StealthCommon.VISIBILITY_STEALTH_SOURCE }, (r) => resolve(r));
   });
   if (chrome.runtime.lastError) return { ok: false, error: chrome.runtime.lastError.message };
+  // S213 打断源压制：beforeunload 吞注册 + alert/confirm/prompt 消音（后续文档）
+  await send('Page.addScriptToEvaluateOnNewDocument',
+    { source: StealthCommon.DIALOG_SUPPRESSION_SOURCE });
   // 立即对当前文档生效（addScriptToEvaluateOnNewDocument 只管后续文档）
   await send('Runtime.evaluate', { expression: StealthCommon.VISIBILITY_STEALTH_SOURCE });
+  await send('Runtime.evaluate', { expression: StealthCommon.DIALOG_SUPPRESSION_SOURCE });
   await recordDiagnostic('stealth-ready', { tabId, elapsedMs: Date.now() - startedAt });
   stealthTabs.add(tabId);
   return { ok: true, tabId, identifier: reg?.identifier, persistent: true };
