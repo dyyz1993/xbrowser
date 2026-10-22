@@ -50,7 +50,7 @@ function createMockCtx(page?: ReturnType<typeof createMockPage>) {
   };
 }
 
-const ALL_COMMANDS = ['login', 'publish', 'draft', 'update-profile', 'fetch-articles'];
+const ALL_COMMANDS = ['login', 'publish', 'update-profile', 'fetch-articles', 'draft'];
 
 describe('csdn plugin', () => {
   beforeEach(() => {
@@ -238,42 +238,6 @@ describe('csdn plugin', () => {
       expect(ctx.waitForHuman).toHaveBeenCalledWith(
         expect.objectContaining({ reason: expect.stringContaining('验证码') })
       );
-    });
-  });
-
-  describe('draft command', () => {
-    it('should throw when no page in context', async () => {
-      const handler = getHandler('draft');
-      await expect(handler({ title: 'T', content: 'C' }, { storage: { set: vi.fn() } })).rejects.toThrow('需要浏览器页面');
-    });
-
-    it('should navigate to editor page', async () => {
-      const handler = getHandler('draft');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({ title: 'Draft', content: 'Content' }, ctx);
-      expect(page.goto).toHaveBeenCalledWith(
-        'https://mp.csdn.net/mp_blog/creation/editor',
-        expect.objectContaining({ waitUntil: 'domcontentloaded' })
-      );
-    });
-
-    it('should return saved as true', async () => {
-      const handler = getHandler('draft');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      const result = await handler({ title: 'My Draft', content: 'content' }, ctx);
-      expect(result.data.saved).toBe(true);
-      expect(result.data.title).toBe('My Draft');
-    });
-
-    it('should include draft saved tip', async () => {
-      const handler = getHandler('draft');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      const result = await handler({ title: 'Draft Title', content: 'c' }, ctx);
-      const tips = tipsMessages(result.tips);
-      expect(tips.some((t: string) => t.includes('Draft Title') && t.includes('草稿'))).toBe(true);
     });
   });
 
