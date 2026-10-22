@@ -43,6 +43,7 @@ type ChromeLike = {
       callback: (result?: unknown) => void,
     ) => void;
     onDetach: { addListener: ReturnType<typeof vi.fn> };
+    onEvent: { addListener: ReturnType<typeof vi.fn> };
   };
   tabs: {
     query: (query: { groupId?: number; active?: boolean; currentWindow?: boolean; url?: string }) => Promise<Tab[]>;
@@ -122,6 +123,7 @@ function createChrome() {
         callback(method === 'Page.addScriptToEvaluateOnNewDocument' ? { identifier: 'script' } : undefined);
       },
       onDetach: { addListener: vi.fn() },
+      onEvent: { addListener: vi.fn() },
     },
     tabs: {
       query: async (query) => {
