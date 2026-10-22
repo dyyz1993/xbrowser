@@ -65,3 +65,10 @@
 - **典型错误**: `GraphQL: 3 of 3 required status checks are expected`（checks 实际全绿）
 - **根因**: ① 并发合并使 PR 变 BEHIND，需 `gh api PUT pulls/N/update-branch` 拉平；② update-branch 触发 checks 重跑，`gh pr checks --watch` 在新 checks 注册前会退出，随即合并必撞竞态；③ 轮询 break 条件误把 BLOCKED（中间态）当终态。
 - **修复**: 正确姿势——update-branch 后轮询 `gh pr view -q .mergeStateStatus`，**只认 CLEAN/DIRTY 为终态**（BLOCKED = 还在跑），到 CLEAN 再 `gh pr merge --squash --delete-branch --admin`。
+## 2026-10-22 · boss detail · 职位详情不存在：http://a.example/1
+<!-- fingerprint:boss-collector::detail::职位详情不存在：<url> -->
+- **类别**: boss-collector
+- **首次/最近**: 2026-10-22T17:16:00 → 2026-10-22T17:16:00（累计 3 次）
+- **典型错误**: 职位详情不存在：http://a.example/1
+- **根因**: （待补——修复时填写）
+- **修复**: （待补——填 PR 号或修复说明）
