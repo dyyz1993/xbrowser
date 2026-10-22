@@ -27,7 +27,7 @@ describe('S213 DIALOG_SUPPRESSION_SOURCE（vm 单测）', () => {
     const sandbox: Record<string, unknown> = { window: {}, EventTarget: FreshET };
     sandbox.window = sandbox;
     runInNewContext(SUPPRESSION_SOURCE, sandbox);
-    const w = sandbox.window as { alert: () => void; confirm: () => boolean; prompt: () => null };
+    const w = sandbox.window as { alert: () => void; confirm: (msg?: string) => boolean; prompt: (msg?: string) => string | null };
     expect(typeof w.alert).toBe('function');
     expect(w.confirm('离开此网站?')).toBe(false);
     expect(w.prompt('输入')).toBeNull();
@@ -54,7 +54,7 @@ type DebuggerMock = {
   attach: (target: unknown, version: string, callback: (error?: unknown) => void) => void;
   sendCommand: (target: unknown, method: string, params: unknown, callback: (result?: unknown) => void) => void;
   onDetach: { addListener: ReturnType<typeof vi.fn> };
-  onEvent: { addListener: ReturnType<typeof vi.fn> };
+  onEvent: { addListener: ReturnType<typeof vi.fn>; removeListener: ReturnType<typeof vi.fn> };
 };
 
 function createDebuggerMock() {

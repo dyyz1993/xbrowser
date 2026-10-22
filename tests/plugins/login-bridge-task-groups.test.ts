@@ -47,8 +47,8 @@ type ChromeLike = {
   };
   tabs: {
     query: (query: { groupId?: number; active?: boolean; currentWindow?: boolean; url?: string }) => Promise<Tab[]>;
-    onRemoved: { addListener: ReturnType<typeof vi.fn> };
-    onUpdated: { addListener: ReturnType<typeof vi.fn> };
+    onRemoved: { addListener: ReturnType<typeof vi.fn>; removeListener: ReturnType<typeof vi.fn> };
+    onUpdated: { addListener: ReturnType<typeof vi.fn>; removeListener: ReturnType<typeof vi.fn> };
     onReplaced: { addListener: ReturnType<typeof vi.fn> };
     create: (options: { url: string; active: boolean }) => Promise<Tab>;
     group: (options: { tabIds: number | number[] }) => Promise<number>;
