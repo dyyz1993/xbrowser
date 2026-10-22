@@ -1203,6 +1203,15 @@ xbrowser marketplace publish <plugin-name> --registry https://your-registry.com
 提示的可信管线（`page.mouse` / trusted fill / `page.setInputFiles`）。测试
 或观测流量必须显式加 `/* @xb-probe */` 才能跳过拦截。
 
+**铁律（2026-10-22 用户定，重犯高发）：所有插件、所有通道的自动化输入必须经过 CDP Guard。**
+chrome-bridge 通道（HTTP 9347 `/exec` → 扩展 → chrome.debugger）同样过同一套
+规则引擎（`.xcli/plugins/chrome-bridge/guard.mjs`）：`cdp`/`evaluate` 命令展开成
+CDP 形态喂引擎，扩展侧 `click`（= `el.click()` 合成）恒拒；引擎不可用时危险
+命令熔断（宁关不裸奔）。新增任何通往浏览器的通道时，**必须**在入口挂
+`checkBridgeCommand` 同款守卫——没有守卫的通道就是裸奔通道。拦截必须把
+`[CDP-Guard] 原因 | 替代: 用法` 完整透传到 CLI/调用方（`message` 键进信封，
+不是 `error` 键——input-modes 曾错位吞提示）。
+
 需要自然化瞬移鼠标或粘贴式输入时，设置 `XBROWSER_HUMANIZE_CDP=on`：
 Guard 会把长距离 `mouseMoved` 展开成 trusted 贝塞尔轨迹，把 `insertText`
 展开成带节奏的完整键盘事件流；不注入 JS，不改变既有默认行为。

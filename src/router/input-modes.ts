@@ -104,9 +104,11 @@ export async function handleEvalScript(parts: string[], argv: string[]): Promise
   // getFrameTree 在空浏览器上三路未命中（mail.qq.com 实战冒烟实证）
   const emit = (result: { success: boolean; data: unknown; message?: string }, duration: number): void => {
     if (mode === 'json' || mode === 'yaml') {
+      // message 必须以 message 键传入——outputEnvelope/formatEnvelope 从 message 映射到
+      // 信封 error 字段（曾误塞 error 键，[CDP-Guard] 拦截提示被吃成 error:null）
       outputEnvelope({ success: result.success, data: result.data, message: result.message, duration }, { command: 'eval' }, mode);
     } else {
-      printChainResult({ success: result.success, steps: [{ command: 'eval', raw: 'eval', success: result.success, data: result.data, duration }], totalDuration: duration });
+      printChainResult({ success: result.success, steps: [{ command: 'eval', raw: 'eval', success: result.success, data: result.data, message: result.message, duration }], totalDuration: duration });
     }
   };
 
