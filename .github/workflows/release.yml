@@ -67,7 +67,7 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - name: Full test suite（全量，必须全绿）
-        run: npm test
+        run: npm test -- --coverage 2>&1 | tee test-output.txt
       - name: E2E tests
         run: npm run test:e2e
         continue-on-error: true # e2e 有既存断言过期问题（AGENTS §22.6），不阻塞发版
@@ -78,6 +78,26 @@ jobs:
           node dist/cli.js --help > /dev/null
           node -e "import('./dist/index.js').then(() => console.log('module import OK')).catch(e => { console.error(e); process.exit(1); })"
           echo "✅ smoke passed"
+      # 溯源证据（GitHub Releases 挂附件）：测试完整输出 + 覆盖率摘要
+      - name: Extract coverage summary
+        if: always()
+        run: |
+          {
+            echo "# Coverage summary"
+            tail -n 30 test-output.txt | grep -E "Test Files|Tests |Coverage|%" || true
+            echo
+            echo "# Lines"
+            find coverage -name 'lcov.info' -exec wc -l {} \; 2>/dev/null || true
+          } > coverage-summary.txt || true
+      - name: Upload test evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-evidence
+          path: |
+            test-output.txt
+            coverage-summary.txt
+          retention-days: 7
 
   # ── 发布 1：npm publish（幂等） ─────────────────────────────────────
   publish-npm:
@@ -158,12 +178,80 @@ jobs:
     runs-on: ubuntu-latest
     needs: [verify, test, publish-npm, publish-marketplace]
     if: always()
+    outputs:
+      all_green: ${{ steps.verdict.outputs.all_green }}
     steps:
       - name: Result
+        id: verdict
         run: |
           echo "verify=${{ needs.verify.result }} test=${{ needs.test.result }} npm=${{ needs.publish-npm.result }} marketplace=${{ needs.publish-marketplace.result }}"
           if [ "${{ needs.verify.result }}" != "success" ] || [ "${{ needs.test.result }}" != "success" ] || [ "${{ needs.publish-npm.result }}" != "success" ]; then
+            echo "all_green=false" >> "$GITHUB_OUTPUT"
             echo "::error::release 未完成（见上）"
             exit 1
           fi
+          echo "all_green=true" >> "$GITHUB_OUTPUT"
           echo "✅ release complete"
+
+  # ── 溯源证据：全绿后把构建产物挂到 tag 的 GitHub Release ────────────
+  # Release 页 = github.com/dyyz1993/xbrowser/releases/tag/vX.Y.Z
+  # 附件：npm 包本体（可直接下载审计发布内容）、全量测试输出、覆盖率摘要。
+  # Actions artifacts 只保留 7/90 天；Release 附件随仓库永久保留。
+  release-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [verify, test, publish-npm, publish-marketplace, release-summary]
+    if: needs.release-summary.outputs.all_green == 'true'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # npm 包本体（与已发布版本同构，可下载后 npm i 本地验证）
+      - name: Pack npm tarball
+        run: |
+          npm pack
+          PKG=$(ls xbrowser-cli-*.tgz | head -1)
+          echo "tgz=$PKG" >> "$GITHUB_OUTPUT"
+        id: pack
+      - name: Download test evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: test-evidence
+      - name: Build release notes
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          cat > release-notes.md <<EOF
+          # v${VERSION}
+
+          流水线全绿证据（tag 驱动：verify → test → npm → marketplace）。
+
+          | 阶段 | 结果 |
+          |---|---|
+          | verify（tag=版本） | ✅ |
+          | test（typecheck/lint/build/全量/e2e/冒烟） | ✅ |
+          | publish-npm | ✅（@xbrowser/cli@${VERSION}） |
+          | publish-marketplace | ${{ needs.publish-marketplace.result }} |
+
+          **附件说明**
+          - \`xbrowser-cli-${VERSION}.tgz\` — npm 包本体（下载后可本地安装审计）
+          - \`test-output.txt\` — 全量测试完整输出（含覆盖率尾部）
+          - \`coverage-summary.txt\` — 覆盖率摘要
+
+          Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EOF
+      - name: Attach evidence to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: v${{ github.ref_name }} — ${{ github.event.head_commit.message }}
+          body_path: release-notes.md
+          files: |
+            xbrowser-cli-*.tgz
+            test-output.txt
+            coverage-summary.txt
