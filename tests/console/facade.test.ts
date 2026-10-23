@@ -1,4 +1,26 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+
+/**
+ * 测试隔离：facade 会真实探测 127.0.0.1:9347（chrome-bridge）与 9355
+ * （login-bridge）。本机服务在线与否会让 availableEnvironments 在 1/2
+ * 间漂移——CI（无本地服务）恒为 1。统一 stub fetch 返回"服务在线"。
+ */
+const realFetch = globalThis.fetch;
+beforeEach(() => {
+  globalThis.fetch = vi.fn(async (input: unknown) => {
+    const url = String(input);
+    if (url.includes(':9347/status')) {
+      return { ok: true, json: async () => ({ running: true, clients: [{ id: 'ext' }] }) };
+    }
+    if (url.includes(':9355/cookies')) {
+      return { ok: true, json: async () => ({ cookies: [] }) };
+    }
+    return { ok: false, json: async () => ({}) };
+  }) as never;
+});
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
 
 const {
   mockDaemonPing,
