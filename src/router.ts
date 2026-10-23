@@ -95,7 +95,7 @@ export async function routeCommand(
     // apply to the FIRST non-flag argument (xbrowser "goto url" style). A
     // space-containing arg that comes AFTER a command word (fill "#kw" "a b c")
     // is a VALUE — re-splitting it truncated fill values to the first word.
-    const globalFlags = new Set(['--session', '--cdp', '--json', '--yaml', '--output', '--timeout', '--help', '-h', '--version']);
+    const globalFlags = new Set(['--session', '--cdp', '--json', '--yaml', '--output', '--timeout', '--help', '-h', '--version', '--frame', '--target', '--tab']);
     let chainArgIdx = -1;
     let seenCommandWord = false;
     for (let i = 0; i < argv.length; i++) {

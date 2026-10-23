@@ -11,7 +11,15 @@ npm run lint:plugin-contract                     # 插件契约快速检查（30
 npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 ```
 
+**持久化错题本（必读）**：[`docs/mistakes.md`](docs/mistakes.md)——运行时同一错误 ≥3 次
+自动沉淀（按日期），收录根因与修复。开工前先读一遍，别重蹈覆辙；修复错误后
+回填该条目的「根因/修复」两行。
+
 **关键路径** — 每次改代码后至少跑：`npm run typecheck && npm run lint`
+
+**官方品牌标识** — xbrowser 使用 Aurora Ecosystem X；主标源文件为
+[`branding/mark.svg`](branding/mark.svg)，完整颜色、用法与衍生资产见
+[`docs/brand/xbrowser.md`](docs/brand/xbrowser.md)。修改项目 logo 前必须先读该契约。
 
 ## 1. 项目原则
 
@@ -739,7 +747,8 @@ chrome-bridge / CDP 插件参考 `.xcli/plugins/gemini/music.ts` 的可注入
 完整模板、反例和测试模板见 `docs/media-plugin-template.md`。
 静态守卫：`npm run lint:media-constraints`。
 运行时错题本见 `docs/architecture.md` 的“错题本”章节：同一错误第 3 次
-会被 `constrained`，`npm run lint:mistakes` 会失败。
+会被 `constrained`，`npm run lint:mistakes` 会失败；**第 3 次同时自动沉淀进
+`docs/mistakes.md`（Markdown 持久错题本，按日期记录，Agent 必读）**。
 
 Boss 采集链路同样禁止合成输入：`dispatchEvent(new InputEvent(...))` 会被
 CDP Guard 拒绝，DOM `click()` 是可检测的 `isTrusted=false` 事件。会话选择
@@ -1198,6 +1207,15 @@ xbrowser marketplace publish <plugin-name> --registry https://your-registry.com
 提示的可信管线（`page.mouse` / trusted fill / `page.setInputFiles`）。测试
 或观测流量必须显式加 `/* @xb-probe */` 才能跳过拦截。
 
+**铁律（2026-10-22 用户定，重犯高发）：所有插件、所有通道的自动化输入必须经过 CDP Guard。**
+chrome-bridge 通道（HTTP 9347 `/exec` → 扩展 → chrome.debugger）同样过同一套
+规则引擎（`.xcli/plugins/chrome-bridge/guard.mjs`）：`cdp`/`evaluate` 命令展开成
+CDP 形态喂引擎，扩展侧 `click`（= `el.click()` 合成）恒拒；引擎不可用时危险
+命令熔断（宁关不裸奔）。新增任何通往浏览器的通道时，**必须**在入口挂
+`checkBridgeCommand` 同款守卫——没有守卫的通道就是裸奔通道。拦截必须把
+`[CDP-Guard] 原因 | 替代: 用法` 完整透传到 CLI/调用方（`message` 键进信封，
+不是 `error` 键——input-modes 曾错位吞提示）。
+
 需要自然化瞬移鼠标或粘贴式输入时，设置 `XBROWSER_HUMANIZE_CDP=on`：
 Guard 会把长距离 `mouseMoved` 展开成 trusted 贝塞尔轨迹，把 `insertText`
 展开成带节奏的完整键盘事件流；不注入 JS，不改变既有默认行为。
@@ -1254,6 +1272,73 @@ await page.fill('.chat-input', text);
 ```
 
 封装在 `.xcli/plugins/shared/file-upload.ts` 的 `clickButtonByText(page, text)` 已用真实 mouse 事件。
+
+### 跨域 iframe（OOPIF）：`--frame` 一把钥匙（2026-10-21 实战定型）
+
+验证码（captcha.gtimg.com）、支付窗等跨域 iframe 跑在**独立渲染进程**里，有两堵墙：
+① 同源策略——主页面 JS 连 `contentDocument` 都拿不到，`el.click()`/`dispatchEvent`
+根本进不去；② 进程隔离——**主页面 session 上派发的坐标输入（mouse）也进不去**
+（qqmail 验证码 4 次页面级拖动全败的实证），必须 attach 到 iframe 自己的 CDP
+target（`Target.getTargets` 里 `type==='iframe'`，平铺列出、嵌套也直接命中）再派发。
+
+**xbrowser 原生解法**：`eval` / `click` / `fill` / `mouse` 都接受
+`--frame <url-substring>`（全局 flag 链内继承，单命令 flag 优先）。读写走
+`evaluateInFrame`，输入走 frame session 的 Input 域（isTrusted=true，
+**坐标是 iframe 局部坐标系**，拖动自动带 buttons 位掩码）。同进程（同源）
+iframe 不需要它——普通 click/fill 的 locator 层已支持坐标偏移。
+
+```bash
+# 1. 看见 OOPIF（标 oopif:true + targetId + parentUrl/depth 层级；普通 frames 命令看不到它们）
+xbrowser frames
+
+# 2. iframe 内读 DOM / 拖滑块 / 校验——全部原生命令
+xbrowser "eval --frame captcha.gtimg.com '<拿滑块 rect>'"
+xbrowser "mouse move --frame captcha.gtimg.com --x 54 --y 247 && mouse drag --frame captcha.gtimg.com --x 209 --y 247 --steps 30"
+xbrowser "eval --frame captcha.gtimg.com '<验证 .tc-success>'"
+
+# 全局 flag：链内所有命令继承（后面命令语法与原来完全一致）
+xbrowser --frame captcha.gtimg.com "eval '...' && click '.btn'"
+```
+
+驱动层 API（插件内用）：`page.evaluateInFrame(urlIncludes, expr)` /
+`page.frameMouse(urlIncludes)`（缓存 session、失效自动重 attach）/
+`page.clickInFrame(url, selector)` / `page.fillInFrame(url, selector, text)` /
+`page.listFrameTargets()`。
+
+坑：OOPIF session 上 `Page.captureScreenshot` 会报 "Command can only be
+executed on top-level targets"——截图一律用页面级（画面本就含 iframe 像素）。
+
+#### 通道判断法（eTLD+1）与 frames 列表局限
+
+- **跨根域**（如 captcha.gtimg.com 嵌在 mail.qq.com）= OOPIF，走 frame session
+  派发；**同根域子域**（如 ptlogin2.qq.com 嵌在 mail.qq.com）= 同进程，走主
+  session + 祖先视口偏移。**代码已自动 fallback，无须手工判断**，但排查问题时
+  先分清这两种形态。
+- `frames` 列表局限：嵌套在 OOPIF 内部的 frame（如 ptlogin2 藏在 graph.qq.com
+  里面）**不会出现在列表里，但 `--frame` 一样能命中**——列表不可信时直接用
+  `--frame <子串>` 试，或在父帧里 eval `document.querySelectorAll('iframe')` 找 src。
+
+#### 腾讯验证码题型对照（2026-10 实战沉淀）
+
+| 模板/特征 | 题型 | 关键选择器（均在 --frame captcha.gtimg.com 内） |
+|-----------|------|------------------------------------------------|
+| `drag_ele.html` | 图片语义选择题（6 宫格选 1） | 题面 `#instructionText`（DOM 文本完整可靠）；图区 `#tcOperation`（280x200 @局部(10,26)，单张背景图 3x2 均分）；确定 `#embedVerifyBtn`（@局部(250,4)） |
+| `tc-fg-item.tc-slider-normal` | 滑块拖动 | 手柄 `.tc-fg-item.tc-slider-normal`；成功 `.tc-success` |
+
+- **解题套路**：`eval --frame` 读题面 DOM → 页面截图视觉定位目标格（格心公式
+  `x=10+93.3*(列+0.5)`, `y=26+100*(行+0.5)`）→ `mouse click --frame` →
+  `click --frame '#embedVerifyBtn'`。**题面以 DOM 文本为准**——截图里中文会
+  截断换行。
+- **通过判据**：captcha OOPIF 从 frames 列表消失 + 服务端返回业务报错（如
+  "账号或密码不正确"）而非验证码报错。
+- headless 环境常被升级成图片选择题（而非滑块）；题型动态，别硬编码。
+
+#### QQ 登录页踩坑（mail.qq.com 实战）
+
+- 登录框在嵌套 iframe：graph.qq.com → `xui.ptlogin2.qq.com`（`--frame ptlogin2` 命中）
+- 默认扫码 tab——先 `click --frame ptlogin2 '#switcher_plogin'` 切密码登录，
+  否则 `#u/#p` 存在但 rect=0 不可见
+- 错误提示（`#err_m`）**数秒后自动从 DOM 清除**——证据必须提交后立刻截图/读取
 
 ### 文件上传：不要点 file input
 
@@ -1468,6 +1553,7 @@ xbrowser plugin schema <plugin> <cmd>       # 看插件 schema
 | 完整命令 | `docs/commands.md` |
 | 架构 | `docs/architecture.md` |
 | 插件开发 | `docs/plugin-guide.md`（1456 行，主参考） |
+| 持久化错题本（必读） | `docs/mistakes.md`（≥3 次错误自动沉淀，按日期） |
 | 录制回放 | `docs/recording.md` |
 | 验证码交互 | `docs/captcha-interaction.md` |
 | 钩子系统 | `docs/hook-system-boundary.md` / `docs/hook-system-proposal.md` |

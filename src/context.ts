@@ -17,6 +17,8 @@ export interface BrowserCommandContext extends Omit<CommandContext, 'waitForHuma
   browserContext: BrowserContext;
   sessionId?: string;
   cdpEndpoint?: string;
+  /** 全局 --frame <url-substring>：命令级 --frame 优先于此默认值（OOPIF 路由） */
+  frame?: string;
   waitForHuman?: (options?: WaitForHumanOptions) => Promise<WaitForHumanResult>;
   detectAntiBot?: (page: Page, config?: DetectionConfig) => Promise<DetectionResult>;
 }

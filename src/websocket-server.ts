@@ -180,6 +180,15 @@ export class WSServer extends EventEmitter {
     this.sessionManager.on('screencast-stopped', (sessionId: string) => {
       this.emit('screencast-stopped', sessionId);
     });
+
+    // Session rebound to a different page (tab switch) — tell connected
+    // viewers so the URL bar follows the newly active tab immediately
+    // (frames alone only update it after the next capture).
+    this.sessionManager.on('page-switched', (sessionId: string, page: Page) => {
+      // Never replay a cached frame from the previous tab.
+      this.streamCoordinator.clearLastFrame();
+      this.broadcastToSession(sessionId, { type: 'navigation', url: page.url(), title: '' });
+    });
   }
 
   // -----------------------------------------------------------------------

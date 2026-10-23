@@ -17,6 +17,7 @@ import { WebSocketServer } from 'ws';
 import { appendFileSync, mkdirSync, statSync, writeFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { checkBridgeCommand } from './guard.mjs';
 
 const PORT = parseInt(process.argv[2] || '9346', 10);
 const LOG_DIR = join(homedir(), '.xbrowser', 'logs');
@@ -161,6 +162,25 @@ const httpSrv = http.createServer((req, res) => {
 });
 
 function handleExec(req, res, cmd, args, clientSel) {
+  // CDP Guard 铁律：bridge 通道与主通道同一套规则引擎——危险命令（cdp/click/evaluate
+  // 中的合成事件等）在发往扩展前被拦，返回 [CDP-Guard] 原因 + 替代用法（403）
+  checkBridgeCommand(cmd, args).then((guard) => {
+    if (guard.blocked) {
+      log('exec-guard', `cmd=${cmd} rule=${guard.ruleId || '-'}`);
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: guard.message, guard: true, ruleId: guard.ruleId }));
+      return;
+    }
+    handleExecInner(req, res, cmd, args, clientSel);
+  }).catch((e) => {
+    // 守卫检查自身崩溃 → 熔断（fail-closed）：守卫不可用 = 通道不可用，绝不裸奔
+    log('exec-guard-crash', `cmd=${cmd} ${String(e && e.message || e).slice(0, 100)}`);
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, error: '[CDP-Guard] 守卫检查异常，通道已熔断: ' + String(e && e.message || e), guard: true }));
+  });
+}
+
+function handleExecInner(req, res, cmd, args, clientSel) {
   {
     // client 选择（S108）：多浏览器同时连入时可选目标。默认 0（最先连入）；
     // ?client=last 用最新连入的；?client=N 用第 N 个。

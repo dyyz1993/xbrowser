@@ -58,6 +58,28 @@ describe('Evaluate Commands', () => {
       );
       expect(result).toEqual({ success: true, data: { result: obj }, tips: [] });
     });
+
+    it('should evaluate inside frame with --frame (command-level)', async () => {
+      const ctx = createMockContext('in-frame-title');
+      (ctx.page as unknown as Record<string, unknown>).evaluateInFrame = vi.fn().mockResolvedValue('in-frame-title');
+      const { evaluateCommand } = await import('../../src/commands/evaluate.js');
+      const result = await evaluateCommand.handler(
+        { expression: 'document.title', frame: 'captcha.gtimg.com' },
+        ctx
+      );
+      expect(ctx.page.evaluateInFrame).toHaveBeenCalledWith('captcha.gtimg.com', 'document.title');
+      expect(ctx.page.evaluate).not.toHaveBeenCalled();
+      expect(result).toEqual({ success: true, data: { result: 'in-frame-title' }, tips: [] });
+    });
+
+    it('should fall back to global ctx.frame when command-level --frame absent', async () => {
+      const ctx = createMockContext('in-frame-title');
+      (ctx.page as unknown as Record<string, unknown>).evaluateInFrame = vi.fn().mockResolvedValue('in-frame-title');
+      ctx.frame = 'captcha.gtimg.com';
+      const { evaluateCommand } = await import('../../src/commands/evaluate.js');
+      await evaluateCommand.handler({ expression: 'document.title' }, ctx);
+      expect(ctx.page.evaluateInFrame).toHaveBeenCalledWith('captcha.gtimg.com', 'document.title');
+    });
   });
 
 });

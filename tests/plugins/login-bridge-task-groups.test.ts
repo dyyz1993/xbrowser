@@ -43,13 +43,15 @@ type ChromeLike = {
       callback: (result?: unknown) => void,
     ) => void;
     onDetach: { addListener: ReturnType<typeof vi.fn> };
+    onEvent: { addListener: ReturnType<typeof vi.fn>; removeListener: ReturnType<typeof vi.fn> };
   };
   tabs: {
     query: (query: { groupId?: number; active?: boolean; currentWindow?: boolean; url?: string }) => Promise<Tab[]>;
-    onRemoved: { addListener: ReturnType<typeof vi.fn> };
-    onUpdated: { addListener: ReturnType<typeof vi.fn> };
+    onRemoved: { addListener: ReturnType<typeof vi.fn>; removeListener: ReturnType<typeof vi.fn> };
+    onUpdated: { addListener: ReturnType<typeof vi.fn>; removeListener: ReturnType<typeof vi.fn> };
     onReplaced: { addListener: ReturnType<typeof vi.fn> };
     create: (options: { url: string; active: boolean }) => Promise<Tab>;
+    update: (tabId: number, changeInfo: { url?: string }) => Promise<unknown>;
     group: (options: { tabIds: number | number[] }) => Promise<number>;
     remove: (tabId: number) => Promise<void>;
   };
@@ -122,15 +124,17 @@ function createChrome() {
         callback(method === 'Page.addScriptToEvaluateOnNewDocument' ? { identifier: 'script' } : undefined);
       },
       onDetach: { addListener: vi.fn() },
+      onEvent: { addListener: vi.fn(), removeListener: vi.fn() },
     },
     tabs: {
       query: async (query) => {
         if (query.url) return tabs.filter((tab) => (tab.url ?? '').includes('example.com'));
         return query.groupId == null ? tabs : tabs.filter((tab) => tab.groupId === query.groupId);
       },
-      onRemoved: { addListener: vi.fn() },
-      onUpdated: { addListener: vi.fn() },
+      onRemoved: { addListener: vi.fn(), removeListener: vi.fn() },
+      onUpdated: { addListener: vi.fn(), removeListener: vi.fn() },
       onReplaced: { addListener: vi.fn() },
+      update: vi.fn(async () => ({})),
       create: async (options) => {
         createdCount += 1;
         const tab: Tab = { id: nextTabId++, groupId: -1, url: options.url };

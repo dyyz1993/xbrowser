@@ -45,6 +45,27 @@ const WS_BRIDGE = 'ws://127.0.0.1:9346';
    *   rAF 垫片：hidden tab 的 rAF 完全静默是硬伤——垫片保证"会回调"，
    *   帧距受后台定时器节流限制（~1000ms），属已知残留（L3），文档明示不掩盖。
    */
+
+  /**
+   * S213 打断源压制（用户 2026-10-22 定：CDP 注入强吃弹窗）：
+   *  - beforeunload 注册吞掉（拦截 addEventListener，离开确认无从产生）
+   *  - alert/confirm/prompt 三件套消音（r30 语义：confirm false / prompt null）
+   * 适用于任务 tab（自动化流程 tab），普通用户浏览 tab 不挂本源。
+   */
+  var DIALOG_SUPPRESSION_SOURCE = [
+    "(function(){",
+    "  if (window.__xbDialogSuppressed) return; window.__xbDialogSuppressed = true;",
+    '  var oAEL = EventTarget.prototype.addEventListener;',
+    '  EventTarget.prototype.addEventListener = function (type, fn, opts) {',
+    '    if (type === "beforeunload") return undefined;',
+    '    return oAEL.call(this, type, fn, opts);',
+    '  };',
+    '  window.alert = function () {};',
+    '  window.confirm = function () { return false; };',
+    '  window.prompt = function () { return null; };',
+    "})();",
+  ].join("\n");
+
   var VISIBILITY_STEALTH_SOURCE = [
     '(function(){',
     '  if (window.__xbVisStealth) return; window.__xbVisStealth = true;',
@@ -165,6 +186,7 @@ const WS_BRIDGE = 'ws://127.0.0.1:9346';
 
   return {
     VISIBILITY_STEALTH_SOURCE: VISIBILITY_STEALTH_SOURCE,
+    DIALOG_SUPPRESSION_SOURCE: DIALOG_SUPPRESSION_SOURCE,
     generateMousePath: generateMousePath,
     planWarmup: planWarmup,
   };
@@ -173,6 +195,19 @@ const WS_BRIDGE = 'ws://127.0.0.1:9346';
 // END inlined stealth-common.cjs
 
 const stealthTabs = new Set(); // S169: 重建内联块时误删，补回
+
+// S213 打断源兜底：注入源生效前已注册的 beforeunload（或绕过路径）仍弹出时，
+// 任务 tab 自动接受（离开确认=离开；alert 无按钮语义同 accept）。
+chrome.debugger.onEvent.addListener(function (source, method, params) {
+  if (method !== 'Page.javascriptDialogOpening' || !params) return;
+  var tabId = source.tabId;
+  if (tabId === undefined || !stealthTabs.has(tabId)) return;
+  try {
+    chrome.debugger.sendCommand(source, 'Page.handleJavaScriptDialog', { accept: true }, function () {
+      recordDiagnostic('dialog-autoaccept', { tabId: tabId, type: params.type });
+    });
+  } catch (e) { /* 会话已拆 */ }
+});
 
 // S186: 检测观测器 spy 源（document_start 注入，收集 descriptor 查询）
 const SPY_SOURCE = [
@@ -229,8 +264,12 @@ async function enableTaskStealth(tabId) {
       { source: StealthCommon.VISIBILITY_STEALTH_SOURCE }, (r) => resolve(r));
   });
   if (chrome.runtime.lastError) return { ok: false, error: chrome.runtime.lastError.message };
+  // S213 打断源压制：beforeunload 吞注册 + alert/confirm/prompt 消音（后续文档）
+  await send('Page.addScriptToEvaluateOnNewDocument',
+    { source: StealthCommon.DIALOG_SUPPRESSION_SOURCE });
   // 立即对当前文档生效（addScriptToEvaluateOnNewDocument 只管后续文档）
   await send('Runtime.evaluate', { expression: StealthCommon.VISIBILITY_STEALTH_SOURCE });
+  await send('Runtime.evaluate', { expression: StealthCommon.DIALOG_SUPPRESSION_SOURCE });
   await recordDiagnostic('stealth-ready', { tabId, elapsedMs: Date.now() - startedAt });
   stealthTabs.add(tabId);
   return { ok: true, tabId, identifier: reg?.identifier, persistent: true };
@@ -409,13 +448,7 @@ async function ensurePersistentStealth(tabId) {
   // here—probing with Runtime.evaluate adds needless round trips on every
   // command and can contend with the caller's next debugger operation.
   if (stealthTabs.has(tabId)) {
-    // cdp-detach or an external DevTools detach invalidates the registry.
-    // Try a cheap attach: Chrome reports "already attached" only when the
-    // live target still exists; otherwise this performs the missing attach.
-    const result = await enableTaskStealth(tabId).catch(() => ({ ok: false }));
-    if (result?.ok === true) return true;
-    stealthTabs.delete(tabId);
-    return false;
+    return true;
   }
   const result = await enableTaskStealth(tabId).catch(() => ({ ok: false }));
   return result?.ok === true;
@@ -598,7 +631,10 @@ const executors = {
       const tabs = await chrome.tabs.query({ groupId: existing.id });
       if (tabs.length > 0) return { tabId: tabs[tabs.length - 1].id, groupId: existing.id, reused: true };
     }
-    const tab = await chrome.tabs.create({ url: url || 'about:blank', active: false }); // 后台创建，不抢焦点
+    // S213: about:blank 先行——先创建空白页完成 attach+注入，再导航到目标 URL。
+    // 否则 tab 创建即加载，attach 常输给页面内联脚本（beforeunload 劫持注册先于压制落地）。
+    const startUrl = 'about:blank';
+    const tab = await chrome.tabs.create({ url: startUrl, active: false }); // 后台创建，不抢焦点
     const group = await chrome.tabs.group({ tabIds: [tab.id] });
     await chrome.tabGroups.update(group, {
       title: 'xb-task-' + taskName,
@@ -606,6 +642,9 @@ const executors = {
     });
     // S164: 任务 tab 预置可见性一致性层（失败降级为普通任务 tab，不阻塞）
     const stealth = await enableTaskStealth(tab.id).catch((e) => ({ ok: false, error: String(e) }));
+    if (url && url !== startUrl) {
+      await chrome.tabs.update(tab.id, { url }).catch(() => {});
+    }
     return { tabId: tab.id, groupId: group, stealth: stealth.ok };
   }),
   'task-close': ({ name }) => enqueueLifecycle(async () => {
@@ -1088,6 +1127,36 @@ const executors = {
 
   // S120：可信点击（chrome.debugger Input.dispatchMouseEvent）——
   // 页面 el.click() 是合成事件，ProseMirror 等框架不认；可信点击等价鼠标。
+  trustedDrag: async ({ sx, sy, ex, ey, steps, tabId }) => {
+    const target = tabId ?? await getTaskTabId();
+    return await ensurePersistentStealth(target).then((persistent) =>
+      runDebugger(target, 'trusted-drag', 30000, (resolve) => {
+        const dbg = { tabId: target };
+        const n = Math.max(10, Math.min(80, steps || 40));
+        const mkStep = (i) => {
+          if (i > n) {
+            setTimeout(() => {
+              chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent',
+                { type: 'mouseReleased', x: ex, y: ey, button: 'left', buttons: 0, clickCount: 1 },
+                () => resolve({ ok: true, dragged: sx + ',' + sy + '->' + ex + ',' + ey, steps: n, persistent }));
+            }, 120);
+            return;
+          }
+          const t = i / n;
+          const progress = t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2, 3)/2;
+          const px = Math.round((sx + (ex - sx) * progress + (Math.random()-0.5)*1.0) * 10) / 10;
+          const py = Math.round((sy + (ey - sy) * progress + Math.sin(t * Math.PI * 3) * 1.2 + (Math.random()-0.5)*0.6) * 10) / 10;
+          chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent',
+            { type: 'mouseMoved', x: px, y: py, button: 'left', buttons: 1 }, () => {});
+          setTimeout(() => mkStep(i + 1), 12 + Math.random() * 6);
+        };
+        chrome.debugger.sendCommand(dbg, 'Input.dispatchMouseEvent',
+          { type: 'mousePressed', x: sx, y: sy, button: 'left', buttons: 1, clickCount: 1 }, () => {
+            setTimeout(() => mkStep(1), 100);
+          });
+      }));
+  },
+
   trustedClick: async ({ x, y, tabId }) => {
     const target = tabId ?? await getTaskTabId();
     return await ensurePersistentStealth(target).then((persistent) =>

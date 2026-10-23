@@ -193,6 +193,6 @@ These are handled by the router, not the command registry:
 | `--json` | Output as JSON |
 | `--yaml` | Output as YAML |
 | `--session <name>` | Session name (default: `XBROWSER_SESSION` env or `"default"`) |
-| `--cdp <endpoint>` | CDP connection (default: `XBROWSER_CDP` env or auto-launch) |
+| `--cdp <endpoint>` | CDP connection (default: `XBROWSER_CDP` env or auto-launch). 连「用户正在用的浏览器」不用这个——用 `xbrowser chrome-bridge status` 起手的扩展通道（见 SKILL.md「Browser Session Priority」） |
 | `--help` / `-h` | Show help |
 | `--version` / `-v` | Show version |

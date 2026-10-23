@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">xbrowser line browser prompt concept</title>
+  <desc id="desc">A line drawn browser top bar and command prompt.</desc>
+  <defs>
+    <linearGradient id="bg" x1="70" y1="52" x2="442" y2="460" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1E3A8A"/>
+      <stop offset="1" stop-color="#4F46E5"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g fill="none" stroke="#F8FAFC" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M129 235V184C129 163 146 146 167 146H345C366 146 383 163 383 184V235" stroke-width="16"/>
+    <path d="M130 235H382" stroke-width="16" opacity=".9"/>
+    <circle cx="171" cy="190" r="8" stroke-width="10"/>
+    <circle cx="199" cy="190" r="8" stroke-width="10" opacity=".64"/>
+    <circle cx="227" cy="190" r="8" stroke-width="10" opacity=".36"/>
+    <path d="M158 292L247 352L158 412" stroke="#A5F3FC" stroke-width="28"/>
+    <path d="M285 412H351" stroke="#F8FAFC" stroke-width="28"/>
+  </g>
+</svg>
