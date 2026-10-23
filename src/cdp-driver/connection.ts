@@ -185,6 +185,8 @@ export class CDPConnection extends EventEmitter {
     params?: Record<string, unknown>,
     sessionId?: string,
     timeoutMs?: number,
+    /** 内部用：__sequence 步骤派发跳过 guard 重评估（防递归展开，见序列分支注释） */
+    skipSequence?: boolean,
   ): Promise<T> {
     // Runtime.evaluate 在重页面（如豆包 SPA）加载期间会因主线程繁忙排队很久，
     // 30s 会在页面「实际能加载成功」的场景下误报超时
@@ -192,7 +194,7 @@ export class CDPConnection extends EventEmitter {
 
     // CDP Guard：全命令面过滤（第二十五季）。危险指令在发往浏览器前被
     // block（含 errorCode + 替代方案提示）；XBROWSER_CDP_GUARD=off 跳过。
-    if (this.guard) {
+    if (this.guard && !skipSequence) {
       const decision = this.guard.evaluate({
         method,
         params: params ?? {},
@@ -204,10 +206,23 @@ export class CDPConnection extends EventEmitter {
       }
       if (decision && decision.action === 'transform' && Array.isArray((decision.transformedParams as Record<string, unknown> | undefined)?.__sequence)) {
         const sequence = (decision.transformedParams as { __sequence: Array<{ method: string; params: Record<string, unknown>; delayMs?: number }> }).__sequence;
+        // 中间轨迹点 fire-and-forget：mouseMoved 的 CDP 回调会被渲染合成器
+        // 推迟到下一次帧提交（重页面/后台 tab 实测 5-12s/次，issue #397），
+        // 串行 await 会把 28 步轨迹放大成分钟级甚至击穿超时。只对最后一个
+        // 步骤等回执——它通常是落点按下/抬起，语义上必须确认送达。
+        //
+        // 序列步骤派发传 skipSequence=true：序列是 guard 自己的产出，若中
+        // 间点再次命中 transform 规则（大距离下贝塞尔步长可能超过 32px 阈
+        // 值）会无限递归展开。
         let last: unknown;
-        for (const step of sequence) {
+        for (let i = 0; i < sequence.length; i++) {
+          const step = sequence[i];
           if (step.delayMs) await new Promise((resolve) => setTimeout(resolve, step.delayMs));
-          last = await this.send(step.method, step.params, sessionId, effectiveTimeout);
+          if (i < sequence.length - 1) {
+            void this.send(step.method, step.params, sessionId, effectiveTimeout, true).catch(() => undefined);
+          } else {
+            last = await this.send(step.method, step.params, sessionId, effectiveTimeout, true);
+          }
         }
         return last as T;
       }
