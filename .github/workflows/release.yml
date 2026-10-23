@@ -130,7 +130,7 @@ jobs:
   # 自动更新（服务端 DB 驱动）。跳过条件：手动 dispatch 勾选 skip_marketplace。
   publish-marketplace:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     needs: publish-npm
     if: >-
       !github.event.inputs.skip_marketplace &&
