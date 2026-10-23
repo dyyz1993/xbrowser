@@ -96,6 +96,25 @@ export async function uploadImageViaBridge(
       await new Promise((res) => setTimeout(res, 2000));
     }
     const b64 = opts.file.toString('base64');
+    // 装 XHR 钩子截获签名响应（window.__sig 由钩子写——漏装会静默失败，
+    // 实战脚本 csdn-exact-replica.mjs 有、产品化初版漏了）
+    await bridge.call('evaluate', {
+      expression: `(function(){
+        window.__sig = null;
+        var os = XMLHttpRequest.prototype.send;
+        var oo = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(m, u) { this.__u = String(u); return oo.apply(this, arguments); };
+        XMLHttpRequest.prototype.send = function() {
+          var x = this;
+          if (/upload\\/signature/i.test(x.__u || '')) {
+            x.addEventListener('load', function() { try { window.__sig = JSON.parse(x.responseText); } catch (e) {} });
+          }
+          return os.apply(this, arguments);
+        };
+        return 'hooked';
+      })()`,
+      tabId,
+    });
     // 触发真实签名（cfw change）
     await bridge.call('evaluate', {
       expression:

@@ -15,6 +15,12 @@ import { z } from 'zod/v4';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { CommandContext } from '@dyyz1993/xcli-core';
 import type { PageAdapter, SitePublisher } from './channel.js';
+import {
+  extractLocalImagePaths,
+  replaceImagePaths,
+  uploadImagesForSite,
+} from './image-upload.js';
+import { createHttpBridge } from './bridge.js';
 import { resolveChannel, readMarkdownFile } from './channel.js';
 
 export interface SiteRegistrar {
@@ -70,7 +76,7 @@ async function landscapeCrop(path: string): Promise<void> {
   }
 }
 
-/** 读取正文 + 插图 */
+/** 读取正文 + 插图（本地路径占位——上传后在 channel 内换成 CDN URL） */
 async function loadBody(params: DraftOptions, options: RegisterPublishingOptions): Promise<string> {
   const raw = params.content || (params.file ? await readMarkdownFile(params.file) : '');
   if (!raw) return '';
@@ -93,6 +99,42 @@ async function loadBody(params: DraftOptions, options: RegisterPublishingOptions
     inserted++;
   }
   return out.join('\n');
+}
+
+/**
+ * 上传本地图片并替换 markdown 里的路径为 CDN URL。
+ *
+ * 在 channel 内（编辑器已打开）执行：51CTO 的 paste 上传需要本站编辑器
+ * 上下文；博客园/OSChina 走 CSDN 通用图床（跨站引用，实战实证）。
+ * markdown 里已是 http(s) 的图不动——只换本地路径。
+ */
+async function uploadAndInlineImages(
+  markdown: string,
+  site: string,
+  adapter: PageAdapter,
+): Promise<{ markdown: string; uploaded: string[] }> {
+  const localPaths = extractLocalImagePaths(markdown);
+  if (!localPaths.length) return { markdown, uploaded: [] };
+
+  const fsp = await import('node:fs/promises');
+  const payloads: Array<{ path: string; base64: string }> = [];
+  for (const p of localPaths) {
+    try {
+      const buf = await fsp.readFile(p);
+      payloads.push({ path: p, base64: buf.toString('base64') });
+    } catch {
+      // 本地文件不存在：保留原路径（后续 setBody 校验会暴露）
+    }
+  }
+  if (!payloads.length) return { markdown, uploaded: [] };
+
+  // bridge 通道才有 CSDN 图床直传；本地通道下 51CTO paste 仍可用
+  const bridge = createHttpBridge();
+  const mapping = await uploadImagesForSite(site, adapter, bridge, payloads);
+  return {
+    markdown: replaceImagePaths(markdown, mapping),
+    uploaded: Array.from(mapping.values()),
+  };
 }
 
 /** 注册 draft / publish 命令 */
@@ -172,11 +214,13 @@ export function registerPublishingCommands(
         return withChannel(ctx, async (adapter, channel) => {
           try {
             await publisher.open(adapter, { uid: params.uid });
+            // 本地配图先上传换 CDN URL（51CTO 走本站 paste，其余走 CSDN 图床）
+            const { markdown: withCdn } = await uploadAndInlineImages(markdown, publisher.site, adapter);
             await publisher.setTitle(adapter, params.title);
-            await publisher.setBody(adapter, markdown);
+            await publisher.setBody(adapter, withCdn);
             const url = await adapter.url();
             return ok(
-              { title: params.title, channel, url, chars: markdown.length },
+              { title: params.title, channel, url, chars: withCdn.length },
               [`已填入 ${publisher.site} 编辑器（通道：${channel}），请确认后发布`],
             );
           } catch (e) {
@@ -227,8 +271,10 @@ export function registerPublishingCommands(
         return withChannel(ctx, async (adapter, channel) => {
           try {
             await publisher.open(adapter, { uid: params.uid });
+            // 本地配图先上传换 CDN URL（51CTO 走本站 paste，其余走 CSDN 图床）
+            const { markdown: withCdn } = await uploadAndInlineImages(markdown, publisher.site, adapter);
             await publisher.setTitle(adapter, params.title);
-            await publisher.setBody(adapter, markdown);
+            await publisher.setBody(adapter, withCdn);
             const result = await publisher.publish(adapter, {
               category: params.category,
               summary,
