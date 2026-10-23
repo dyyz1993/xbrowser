@@ -152,6 +152,54 @@ async function verifyToken(input: {
   return result.data ?? {};
 }
 
+/** 发验证码到邮箱 */
+async function sendLoginCode(input: { email: string; registry: string }): Promise<void> {
+  const response = await fetch(`${input.registry}/api/auth/send-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: input.email }),
+  });
+  const result = parseRegistryResponse<{ success?: boolean; error?: string }>(
+    await response.text(),
+  );
+  if (!response.ok || !result.success) {
+    throw new Error(result.error || `验证码发送失败 (HTTP ${response.status})`);
+  }
+}
+
+/** 用邮箱 + 6 位验证码换 API token */
+async function loginWithEmailCode(input: {
+  email: string;
+  code: string;
+  registry: string;
+}): Promise<{ token: string; profile: VerifyProfile }> {
+  const response = await fetch(`${input.registry}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: input.email, emailCode: input.code }),
+  });
+  const result = parseRegistryResponse<{
+    success?: boolean;
+    error?: string;
+    data?: { token?: string; profile?: VerifyProfile };
+  }>(await response.text());
+  if (!response.ok || !result.success || !result.data?.token) {
+    throw new Error(result.error || `验证码登录失败 (HTTP ${response.status})`);
+  }
+  return { token: result.data.token, profile: result.data.profile ?? {} };
+}
+
+/** 从终端读一行输入（CLI scope 需要交互式输入） */
+async function readLine(prompt: string): Promise<string> {
+  const { createInterface } = await import('node:readline/promises');
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  try {
+    return (await rl.question(prompt)).trim();
+  } finally {
+    rl.close();
+  }
+}
+
 function authorName(pkg: PackageJson): string {
   if (typeof pkg.author === 'string') return pkg.author;
   return pkg.author?.name || pkg.xbrowser?.author || 'Unknown';
@@ -166,18 +214,55 @@ export default function marketplacePlugin(xcli: XCLIAPI): void {
   });
 
   site.command('login', {
-    description: '保存 Marketplace API token',
+    description: '登录 Marketplace（邮箱验证码自动登录，或直接保存 API token）',
     scope: 'cli',
     parameters: z.object({
-      token: z.string().describe('Marketplace API token（来自 xbrowser.dev/account）'),
+      token: z.string().optional().describe('Marketplace API token（不填则走邮箱验证码登录）'),
+      email: z.string().optional().describe('注册邮箱（走邮箱验证码登录）'),
+      code: z.string().optional().describe('6 位验证码（不填则交互式询问）'),
       registry: z.string().optional().describe('Marketplace 地址，默认 https://xbrowser.dev'),
     }),
     examples: [
-      { cmd: 'xbrowser marketplace login --token YOUR_API_TOKEN', description: '保存官方 Marketplace token' },
+      { cmd: 'xbrowser marketplace login --email you@example.com', description: '邮箱验证码登录（自动落盘 token）' },
+      { cmd: 'xbrowser marketplace login --token YOUR_API_TOKEN', description: '直接保存 token' },
     ],
     result: z.object({ loggedIn: z.boolean(), username: z.string().optional() }),
     handler: async (params, ctx) => {
       const registry = baseUrl(ctx, params.registry);
+
+      // ── 路径 A：邮箱验证码登录 ──
+      if (!params.token && params.email) {
+        try {
+          await sendLoginCode({ email: params.email, registry });
+          const code =
+            params.code ?? (await readLine(`验证码已发送到 ${params.email}，请输入 6 位验证码: `));
+          if (!/^\d{6}$/.test(code)) {
+            return fail('验证码格式不正确（应为 6 位数字）');
+          }
+          const { token, profile } = await loginWithEmailCode({
+            email: params.email,
+            code,
+            registry,
+          });
+          await ctx.storage.set<StoredToken>(TOKEN_STORAGE_KEY, {
+            token,
+            baseUrl: registry,
+            savedAt: Date.now(),
+          });
+          return ok(
+            { loggedIn: true, username: profile.username },
+            [`已登录 Marketplace: ${registry}${profile.username ? `（${profile.username}）` : ''}`],
+          );
+        } catch (error) {
+          return fail(error instanceof Error ? error.message : String(error));
+        }
+      }
+
+      // ── 路径 B：直接保存 token ──
+      if (!params.token) {
+        return fail('请提供 --email <邮箱>（验证码登录）或 --token <API token>');
+      }
+
       try {
         const profile = await verifyToken({ token: params.token, registry });
         await ctx.storage.set<StoredToken>(TOKEN_STORAGE_KEY, {
