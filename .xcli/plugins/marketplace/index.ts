@@ -76,6 +76,9 @@ function baseUrl(ctx: CommandContext, override?: string): string {
 }
 
 async function getToken(ctx: CommandContext): Promise<string | undefined> {
+  // CI 优先：release workflow 注入的 token（无需本地 login 落盘）
+  const envToken = process.env.XBROWSER_MARKETPLACE_TOKEN;
+  if (envToken) return envToken;
   const stored = await ctx.storage.get<StoredToken>(TOKEN_STORAGE_KEY);
   return stored?.token || undefined;
 }

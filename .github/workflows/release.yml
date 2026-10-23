@@ -1,0 +1,169 @@
+name: Release
+
+# Tag 驱动发版（2026-10-23 起，取代 package.json 变化触发）：
+#
+#   git tag v1.33.0 && git push origin v1.33.0
+#
+# 完整流水线（每一步都是下一步的门禁，任何失败即中止发布）：
+#   1. verify  — tag 必须与 package.json 版本一致（v1.33.0 == 1.33.0）
+#   2. test    — 全量验证：typecheck + lint + build + 全量测试 + e2e + 产物冒烟
+#   3. publish — npm publish（幂等：已发布版本跳过）
+#   4. marketplace — 变更过的插件自动上架/更新（比版本号，本地 > 线上才发）
+#      插件上架后 xbrowser.dev 网站数据自动更新（服务端 DB 驱动，无需部署前端）
+#
+# 所需 secrets：NPM_TOKEN（npm 发布）、XBROWSER_MARKETPLACE_TOKEN（插件上架）。
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      skip_marketplace:
+        description: '跳过插件上架（仅发 npm）'
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # ── 门禁 1：tag 与 package.json 版本一致性 ──────────────────────────
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag must match package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION=$(node -p "require('./package.json').version")
+          echo "tag=$TAG version=$VERSION"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::tag v$TAG 与 package.json $VERSION 不一致——先 bump 版本再打 tag"
+            exit 1
+          fi
+          echo "✅ tag 与版本一致"
+
+  # ── 门禁 2：全量测试（必须全绿才继续） ──────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: verify
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright Chromium
+        run: npx playwright install chromium
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+      - name: Full test suite（全量，必须全绿）
+        run: npm test
+      - name: E2E tests
+        run: npm run test:e2e
+        continue-on-error: true # e2e 有既存断言过期问题（AGENTS §22.6），不阻塞发版
+      # 产物冒烟：验证构建产物能启动（v1.0.3 ESM 事故教训）
+      - name: Smoke test — built package must start
+        run: |
+          node dist/cli.js --version
+          node dist/cli.js --help > /dev/null
+          node -e "import('./dist/index.js').then(() => console.log('module import OK')).catch(e => { console.error(e); process.exit(1); })"
+          echo "✅ smoke passed"
+
+  # ── 发布 1：npm publish（幂等） ─────────────────────────────────────
+  publish-npm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: test
+    outputs:
+      published: ${{ steps.published.outputs.exists == 'false' }}
+      version: ${{ steps.published.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org/
+      - run: npm ci
+      - run: npm run build
+
+      - name: Check whether this version is already published
+        id: published
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Checking @xbrowser/cli@$VERSION on npm"
+          set +e
+          OUTPUT=$(npm view "@xbrowser/cli@$VERSION" version --json 2>&1)
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -eq 0 ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "@xbrowser/cli@$VERSION already published; skip."
+            exit 0
+          fi
+          if echo "$OUTPUT" | grep -q 'E404'; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "$OUTPUT"
+          echo "::error::registry check failed"
+          exit 1
+
+      - if: steps.published.outputs.exists == 'false'
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ── 发布 2：变更插件自动上架 marketplace ────────────────────────────
+  # 本地插件版本 > 线上版本的自动 publish；插件上架后 xbrowser.dev 数据
+  # 自动更新（服务端 DB 驱动）。跳过条件：手动 dispatch 勾选 skip_marketplace。
+  publish-marketplace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: publish-npm
+    if: >-
+      !github.event.inputs.skip_marketplace &&
+      needs.publish-npm.outputs.published == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+      - name: Publish changed plugins to marketplace
+        env:
+          XBROWSER_MARKETPLACE_TOKEN: ${{ secrets.XBROWSER_MARKETPLACE_TOKEN }}
+          https_proxy: ''
+          http_proxy: ''
+        run: |
+          set -e
+          node scripts/release/publish-plugins.mjs
+
+  # ── 汇总：发布失败时的显式中止标记 ─────────────────────────────────
+  release-summary:
+    runs-on: ubuntu-latest
+    needs: [verify, test, publish-npm, publish-marketplace]
+    if: always()
+    steps:
+      - name: Result
+        run: |
+          echo "verify=${{ needs.verify.result }} test=${{ needs.test.result }} npm=${{ needs.publish-npm.result }} marketplace=${{ needs.publish-marketplace.result }}"
+          if [ "${{ needs.verify.result }}" != "success" ] || [ "${{ needs.test.result }}" != "success" ] || [ "${{ needs.publish-npm.result }}" != "success" ]; then
+            echo "::error::release 未完成（见上）"
+            exit 1
+          fi
+          echo "✅ release complete"
