@@ -5,15 +5,28 @@
  * 用法（release.yml 里）：
  *   XBROWSER_MARKETPLACE_TOKEN=xxx node scripts/release/publish-plugins.mjs
  *
+ * 实现说明（v2，2026-10-23 两次超时教训后重写）：
+ * - 不再 shell 出 `node dist/cli.js marketplace publish`——每次 CLI 启动
+ *   加载全部插件 schema，单次 ~3 分钟，7 个插件撑爆任何 timeout。
+ *   改为直接 HTTP 调 /api/plugins/publish（tar 打包 + multipart 上传），
+ *   单插件秒级。
+ * - 版本查询并发（42 次串行 fetch 曾吃掉数分钟）。
+ *
  * 行为：
- * - 遍历 .xcli/plugins/ 下各目录的 package.json
- * - 有 xbrowser 元数据 + 有 MARKETPLACE 三件套（CHANGELOG/MARKET_DESCRIPTION/LICENSE）
- *   的才算可上架插件（避免把 shared/、chrome-bridge 等内部目录发上去）
- * - 与 xbrowser.dev 的 /api/plugins?q=<slug> 比版本，本地 > 线上才 publish
- * - 单个插件失败不阻塞其他插件（best-effort），最后汇总；全部失败才退出非零
+ * - 遍历 .xcli/plugins 下各目录的 package.json
+ * - 有 xbrowser.slug + 三件套（CHANGELOG/MARKET_DESCRIPTION/LICENSE）的
+ *   才算可上架插件（避免把 shared/ 等内部目录发上去）
+ * - 与 xbrowser.dev 精确端点比版本，本地 > 线上才 publish
+ * - 单个失败不阻塞其他（best-effort）；全部失败才退出非零
  */
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
+import { execFile as execFileCb } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFile = promisify(execFileCb);
 
 const PLUGINS_DIR = join(process.cwd(), '.xcli', 'plugins');
 const REGISTRY = process.env.XBROWSER_REGISTRY || 'https://xbrowser.dev';
@@ -24,16 +37,12 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-/** 判断插件目录是否具备上架条件 */
 function isPublishable(dir, pkg) {
-  if (!pkg.xbrowser || !pkg.xbrowser.slug) return false;
-  const trio = ['CHANGELOG.md', 'MARKET_DESCRIPTION.md', 'LICENSE']
+  if (!pkg.xbrowser?.slug) return false;
+  return ['CHANGELOG.md', 'MARKET_DESCRIPTION.md', 'LICENSE']
     .every((f) => existsSync(join(dir, f)));
-  return trio;
 }
 
-/** 查询 marketplace 线上版本（无则 null = 未上架）。
- * 注意：精确端点 /api/plugins/<slug>（q= 是模糊搜索，目标不一定在首页）。 */
 async function remoteVersion(slug) {
   try {
     const res = await fetch(`${REGISTRY}/api/plugins/${encodeURIComponent(slug)}`);
@@ -55,19 +64,67 @@ function versionGt(a, b) {
   return false;
 }
 
-async function publishOne(slug, dir) {
-  // 复用 CLI 的 marketplace publish（token 走 env，插件已支持）
-  const { execFile } = await import('node:child_process');
-  const { promisify } = await import('node:util');
-  const run = promisify(execFile);
-  const { stdout, stderr } = await run('node', [
-    'dist/cli.js', 'marketplace', 'publish',
-    '--directory', dir,
-    '--skipDocs',
-  ], { env: { ...process.env } });
-  const out = `${stdout}${stderr}`;
-  const m = out.match(/version\s+(\S+)/);
-  console.log(`  published ${slug} ${m ? m[1] : ''}`);
+async function createTarball(directory, slug, version) {
+  const file = join(tmpdir(), `xbrowser-${slug}-${version}-${Date.now()}.tar.gz`);
+  await execFile('tar', [
+    '--exclude=node_modules',
+    '--exclude=.git',
+    '--exclude=.DS_Store',
+    '-czf', file,
+    '-C', directory,
+    '.',
+  ]);
+  return file;
+}
+
+async function publishOne(slug, dir, pkg) {
+  const meta = pkg.xbrowser ?? {};
+  const tarball = await createTarball(dir, slug, pkg.version);
+  const tarBuf = readFileSync(tarball);
+
+  const authorName = typeof pkg.author === 'string'
+    ? pkg.author
+    : pkg.author?.name || meta.author || 'Unknown';
+
+  const metadata = {
+    name: meta.slug || pkg.name,
+    slug,
+    version: pkg.version,
+    description: pkg.description || '',
+    author: authorName,
+    license: meta.license || pkg.license || 'MIT',
+    tags: meta.tags || pkg.keywords || [],
+    sites: meta.sites || [],
+    commands: meta.commands || [],
+    ...(meta.repositoryUrl || (typeof pkg.repository === 'object' ? pkg.repository?.url : undefined)
+      ? { repositoryUrl: meta.repositoryUrl || pkg.repository?.url }
+      : {}),
+    ...(meta.homepageUrl || (typeof pkg.homepage === 'object' ? pkg.homepage?.url : undefined)
+      ? { homepageUrl: meta.homepageUrl || pkg.homepage?.url }
+      : {}),
+    ...(meta.npmPackage ? { npmPackage: meta.npmPackage } : {}),
+    ...(meta.seoDescription ? { seoDescription: meta.seoDescription } : {}),
+    storageType: 'r2',
+    skipDocsValidation: true,
+  };
+
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+  form.append('files', new Blob([tarBuf], { type: 'application/gzip' }), `${slug}-${pkg.version}.tar.gz`);
+  form.append('checksum', `sha256-${createHash('sha256').update(tarBuf).digest('hex')}`);
+
+  const res = await fetch(`${REGISTRY}/api/plugins/publish`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${TOKEN}` },
+    body: form,
+  });
+  const text = await res.text();
+  let body;
+  try { body = JSON.parse(text); } catch { body = null; }
+  if (!res.ok || !body?.success) {
+    throw new Error(`HTTP ${res.status}: ${String(body?.error || text).slice(0, 200)}`);
+  }
+  return body.data || {};
 }
 
 async function main() {
@@ -75,11 +132,6 @@ async function main() {
     .filter((e) => e.isDirectory())
     .map((e) => e.name);
 
-  const published = [];
-  const skipped = [];
-  const failed = [];
-
-  // 先并发收集所有候选与线上版本（42 次串行 fetch 会吃掉数分钟——CI 实测超时）
   const candidates = [];
   for (const name of entries) {
     const dir = join(PLUGINS_DIR, name);
@@ -92,23 +144,31 @@ async function main() {
       continue;
     }
     if (!isPublishable(dir, pkg)) continue;
-    candidates.push({ dir, slug: pkg.xbrowser.slug, local: pkg.version });
+    candidates.push({ dir, pkg });
   }
-  const remotes = await Promise.all(candidates.map((c) => remoteVersion(c.slug)));
+  const remotes = await Promise.all(
+    candidates.map((c) => remoteVersion(c.pkg.xbrowser.slug)),
+  );
 
-  for (let idx = 0; idx < candidates.length; idx++) {
-    const { dir, slug, local } = candidates[idx];
-    const remote = remotes[idx];
+  const published = [];
+  const skipped = [];
+  const failed = [];
+
+  for (let i = 0; i < candidates.length; i++) {
+    const { dir, pkg } = candidates[i];
+    const slug = pkg.xbrowser.slug;
+    const local = pkg.version;
+    const remote = remotes[i];
 
     if (remote && !versionGt(local, remote)) {
-      skipped.push(`${slug}@${local}（线上 ${remote}，无更新）`);
+      skipped.push(`${slug}@${local}（线上 ${remote}）`);
       continue;
     }
 
-    console.log(`↑ ${slug}: ${remote ?? '未上架'} → ${local}`);
+    console.log(`↑ ${slug}: ${remote ?? '新上架'} → ${local}`);
     try {
-      await publishOne(slug, dir);
-      published.push(`${slug}@${local}`);
+      const result = await publishOne(slug, dir, pkg);
+      published.push(`${slug}@${result.version || local}${result.status ? `(${result.status})` : ''}`);
     } catch (e) {
       console.error(`::warning::${slug} 上架失败：${String(e.message).slice(0, 200)}`);
       failed.push(slug);
