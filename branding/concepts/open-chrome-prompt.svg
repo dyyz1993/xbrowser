@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">xbrowser open browser chrome prompt concept</title>
+  <desc id="desc">A minimal browser top bar above a command prompt.</desc>
+  <defs>
+    <linearGradient id="bg" x1="68" y1="54" x2="444" y2="458" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1E3A8A"/>
+      <stop offset="1" stop-color="#4F46E5"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M129 230V183C129 162 146 145 167 145H345C366 145 383 162 383 183V230" fill="none" stroke="#FFFFFF" stroke-width="24" stroke-linecap="round"/>
+  <path d="M130 230H382" stroke="#FFFFFF" stroke-width="20" stroke-linecap="round"/>
+  <circle cx="171" cy="188" r="10" fill="#FFFFFF"/>
+  <circle cx="202" cy="188" r="10" fill="#FFFFFF" opacity=".68"/>
+  <circle cx="233" cy="188" r="10" fill="#FFFFFF" opacity=".38"/>
+  <path d="M157 286L247 348L157 410" fill="none" stroke="#A5F3FC" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M285 410H351" fill="none" stroke="#FFFFFF" stroke-width="48" stroke-linecap="round"/>
+</svg>

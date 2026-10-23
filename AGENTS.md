@@ -17,6 +17,10 @@ npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 
 **关键路径** — 每次改代码后至少跑：`npm run typecheck && npm run lint`
 
+**官方品牌标识** — xbrowser 使用 Aurora Ecosystem X；主标源文件为
+[`branding/mark.svg`](branding/mark.svg)，完整颜色、用法与衍生资产见
+[`docs/brand/xbrowser.md`](docs/brand/xbrowser.md)。修改项目 logo 前必须先读该契约。
+
 ## 1. 项目原则
 
 - **第一原则：所有自动化脚本 → 插件**。任何 `*.ts`/`*.mjs`/`*.cjs` 调研脚本、爬虫、数据采集、发布工具，都应放在 `.xcli/plugins/<name>/` 下，作为站点插件或扩展命令插件存在，**不要**散落在仓库根目录或 `scripts/` 中。

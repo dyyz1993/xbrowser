@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">xbrowser official logo mark</title>
+  <desc id="desc">An Aurora-colored ecosystem X below a compact browser chrome line.</desc>
+  <defs>
+    <linearGradient id="background" x1="70" y1="52" x2="442" y2="460" gradientUnits="userSpaceOnUse"><stop stop-color="#172554"/><stop offset="1" stop-color="#4338CA"/></linearGradient>
+    <radialGradient id="browser" cx="156" cy="215" r="150" gradientUnits="userSpaceOnUse"><stop stop-color="#F8FAFC"/><stop offset=".64" stop-color="#F8FAFC"/><stop offset=".78" stop-color="#C9DCF8" stop-opacity=".62"/><stop offset=".86" stop-color="#AFCFF4" stop-opacity="0"/></radialGradient>
+    <radialGradient id="speed" cx="356" cy="215" r="150" gradientUnits="userSpaceOnUse"><stop stop-color="#67E8F9"/><stop offset=".64" stop-color="#67E8F9"/><stop offset=".78" stop-color="#91DCF7" stop-opacity=".62"/><stop offset=".86" stop-color="#AFCFF4" stop-opacity="0"/></radialGradient>
+    <radialGradient id="plugins" cx="156" cy="377" r="150" gradientUnits="userSpaceOnUse"><stop stop-color="#C4B5FD"/><stop offset=".64" stop-color="#C4B5FD"/><stop offset=".78" stop-color="#C6C9F8" stop-opacity=".62"/><stop offset=".86" stop-color="#AFCFF4" stop-opacity="0"/></radialGradient>
+    <radialGradient id="marketplace" cx="356" cy="377" r="150" gradientUnits="userSpaceOnUse"><stop stop-color="#93C5FD"/><stop offset=".64" stop-color="#93C5FD"/><stop offset=".78" stop-color="#ACCDF7" stop-opacity=".62"/><stop offset=".86" stop-color="#AFCFF4" stop-opacity="0"/></radialGradient>
+    <mask id="x-mask" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512"><rect width="512" height="512" fill="#000"/><path d="M156 215L356 377M356 215L156 377" fill="none" stroke="#FFF" stroke-width="48" stroke-linecap="round"/></mask>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#background)"/>
+  <path d="M151 145H159M182 145H190M213 145H221M248 145H361" fill="none" stroke="#C7D2FE" stroke-width="16" stroke-linecap="round"/>
+  <g mask="url(#x-mask)"><rect x="108" y="167" width="296" height="258" fill="#AFCFF4"/><circle cx="156" cy="215" r="175" fill="url(#browser)"/><circle cx="356" cy="215" r="175" fill="url(#speed)"/><circle cx="156" cy="377" r="175" fill="url(#plugins)"/><circle cx="356" cy="377" r="175" fill="url(#marketplace)"/></g>
+</svg>

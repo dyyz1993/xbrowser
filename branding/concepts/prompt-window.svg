@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">xbrowser prompt window concept</title>
+  <desc id="desc">A browser window with a command prompt and cursor.</desc>
+  <defs>
+    <linearGradient id="panel" x1="32" y1="28" x2="480" y2="484" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#172554"/>
+      <stop offset="1" stop-color="#312E81"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#panel)"/>
+  <path d="M89 173V125C89 105 105 89 125 89H387C407 89 423 105 423 125V387C423 407 407 423 387 423H125C105 423 89 407 89 387V173Z" fill="none" stroke="#E0E7FF" stroke-width="24"/>
+  <path d="M101 174H411" stroke="#E0E7FF" stroke-width="24"/>
+  <circle cx="134" cy="133" r="11" fill="#60A5FA"/>
+  <circle cx="168" cy="133" r="11" fill="#818CF8"/>
+  <path d="M169 248L250 303L169 358" fill="none" stroke="#67E8F9" stroke-width="34" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M280 357H356" stroke="#F8FAFC" stroke-width="34" stroke-linecap="round"/>
+</svg>
