@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">xbrowser tab X concept</title>
+  <desc id="desc">An X built from two browser tab strokes.</desc>
+  <defs>
+    <linearGradient id="bg" x1="72" y1="64" x2="448" y2="452" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F766E"/>
+      <stop offset="1" stop-color="#4338CA"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M137 175H226L375 337H286Z" fill="#FFFFFF"/>
+  <path d="M375 175H286L137 337H226Z" fill="#A5F3FC"/>
+</svg>

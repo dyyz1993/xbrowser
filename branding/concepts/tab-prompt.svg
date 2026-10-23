@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">xbrowser tab prompt concept</title>
+  <desc id="desc">A single browser tab framing a command prompt.</desc>
+  <defs>
+    <linearGradient id="bg" x1="68" y1="56" x2="444" y2="458" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1E3A8A"/>
+      <stop offset="1" stop-color="#4F46E5"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M142 184V151C142 132 157 117 176 117H272L309 154H336C355 154 370 169 370 188V211" fill="none" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M158 259L251 323L158 387" fill="none" stroke="#A5F3FC" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M286 387H351" fill="none" stroke="#FFFFFF" stroke-width="48" stroke-linecap="round"/>
+</svg>

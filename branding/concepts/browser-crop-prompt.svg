@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">xbrowser browser crop prompt concept</title>
+  <desc id="desc">A cropped browser window with a command prompt.</desc>
+  <defs>
+    <linearGradient id="bg" x1="66" y1="56" x2="444" y2="456" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#172554"/>
+      <stop offset="1" stop-color="#4338CA"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M104 261V156C104 133 123 114 146 114H332C355 114 374 133 374 156V366C374 389 355 408 332 408H146C123 408 104 389 104 366V333" fill="none" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round"/>
+  <path d="M105 209H373" stroke="#FFFFFF" stroke-width="22"/>
+  <circle cx="145" cy="161" r="11" fill="#FFFFFF"/>
+  <circle cx="179" cy="161" r="11" fill="#FFFFFF" opacity=".68"/>
+  <circle cx="213" cy="161" r="11" fill="#FFFFFF" opacity=".38"/>
+  <path d="M151 264L229 317L151 370" fill="none" stroke="#67E8F9" stroke-width="43" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M264 370H320" fill="none" stroke="#FFFFFF" stroke-width="43" stroke-linecap="round"/>
+</svg>
