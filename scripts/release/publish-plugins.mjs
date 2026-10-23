@@ -122,7 +122,9 @@ async function publishOne(slug, dir, pkg) {
   let body;
   try { body = JSON.parse(text); } catch { body = null; }
   if (!res.ok || !body?.success) {
-    throw new Error(`HTTP ${res.status}: ${String(body?.error || text).slice(0, 200)}`);
+    const err = new Error(`HTTP ${res.status}: ${String(body?.error || text).slice(0, 200)}`);
+    err.status = res.status;
+    throw err;
   }
   return body.data || {};
 }
@@ -153,6 +155,7 @@ async function main() {
   const published = [];
   const skipped = [];
   const failed = [];
+  const forbidden = [];
 
   for (let i = 0; i < candidates.length; i++) {
     const { dir, pkg } = candidates[i];
@@ -171,7 +174,10 @@ async function main() {
       published.push(`${slug}@${result.version || local}${result.status ? `(${result.status})` : ''}`);
     } catch (e) {
       console.error(`::warning::${slug} 上架失败：${String(e.message).slice(0, 200)}`);
-      failed.push(slug);
+      // 403 = 线上条目属其他作者（Only the plugin author）——权限边界，
+      // 非流水线问题，单独分类（全为 403 时不判流水线失败）
+      if (e.status === 403) forbidden.push(slug);
+      else failed.push(slug);
     }
   }
 
@@ -179,10 +185,16 @@ async function main() {
   console.log(`published: ${published.length ? published.join(', ') : '（无）'}`);
   console.log(`skipped:   ${skipped.length ? skipped.join('; ') : '（无）'}`);
   console.log(`failed:    ${failed.length ? failed.join(', ') : '（无）'}`);
+  console.log(`forbidden: ${forbidden.length ? forbidden.join(', ') : '（无）'}（其他作者条目，需原作者/管理员更新）`);
 
+  // 判定：有真实失败（非 403）且无一成功 → 流水线失败。
+  // 全为 403：权限边界（线上条目属其他作者），提示不阻断——这不是发版流程的问题。
   if (published.length === 0 && failed.length > 0) {
-    console.error('::error::全部插件上架失败');
+    console.error('::error::插件上架存在真实失败（非权限）');
     process.exit(1);
+  }
+  if (forbidden.length > 0) {
+    console.log(`::notice::${forbidden.length} 个插件为其他作者条目（403），跳过更新`);
   }
 }
 
