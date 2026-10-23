@@ -132,9 +132,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: publish-npm
-    if: >-
-      !github.event.inputs.skip_marketplace &&
-      needs.publish-npm.outputs.published == 'true'
+    # 只由手动 skip_marketplace 控制——npm 已发布（重打 tag 幂等跳过）时
+    # 插件上架仍要跑（补上架场景，v1.33.0 实测踩过）
+    if: ${{ !github.event.inputs.skip_marketplace }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
