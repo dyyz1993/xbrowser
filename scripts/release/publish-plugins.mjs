@@ -79,6 +79,8 @@ async function main() {
   const skipped = [];
   const failed = [];
 
+  // 先并发收集所有候选与线上版本（42 次串行 fetch 会吃掉数分钟——CI 实测超时）
+  const candidates = [];
   for (const name of entries) {
     const dir = join(PLUGINS_DIR, name);
     const pkgPath = join(dir, 'package.json');
@@ -90,10 +92,13 @@ async function main() {
       continue;
     }
     if (!isPublishable(dir, pkg)) continue;
+    candidates.push({ dir, slug: pkg.xbrowser.slug, local: pkg.version });
+  }
+  const remotes = await Promise.all(candidates.map((c) => remoteVersion(c.slug)));
 
-    const slug = pkg.xbrowser.slug;
-    const local = pkg.version;
-    const remote = await remoteVersion(slug);
+  for (let idx = 0; idx < candidates.length; idx++) {
+    const { dir, slug, local } = candidates[idx];
+    const remote = remotes[idx];
 
     if (remote && !versionGt(local, remote)) {
       skipped.push(`${slug}@${local}（线上 ${remote}，无更新）`);
