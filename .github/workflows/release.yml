@@ -100,10 +100,33 @@ jobs:
           retention-days: 7
 
   # ── 发布 1：npm publish（幂等） ─────────────────────────────────────
+  # ── 待审批推送：全绿后推手机（停在审批门前发的最后一条） ────────────
+  notify-pending:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    needs: [verify, test]
+    steps:
+      - name: Push approval request to Drel
+        continue-on-error: true   # 推送失败不阻塞发布链
+        run: |
+          curl -s -m 15 -G "$DREL_URL" \
+            --data-urlencode "title=xbrowser ${{ github.ref_name }} 待审批" \
+            --data-urlencode "body=测试全绿。点开审批后才会发布 npm 与插件。" \
+            --data-urlencode "icon=$ICON" \
+            --data-urlencode "url=$RUN_URL" || echo "::warning::Drel 推送失败（不阻塞）"
+        env:
+          DREL_URL: ${{ secrets.DREL_PUSH_URL }}
+          ICON: https://raw.githubusercontent.com/dyyz1993/xbrowser/master/branding/mark-192.png
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
   publish-npm:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: test
+    needs: [test, notify-pending]
+    # 审批门：production environment 配置了 required reviewer（dyyz1993）。
+    # 跑到此 job 会暂停，GitHub 通知 + 上面的 Drel 推送提醒；手机/网页点
+    # Approve and deploy 才继续，Reject 或 30 天超时则中止。
+    environment: production
     outputs:
       published: ${{ steps.published.outputs.exists == 'false' }}
       version: ${{ steps.published.outputs.version }}
@@ -255,3 +278,16 @@ jobs:
             xbrowser-cli-*.tgz
             test-output.txt
             coverage-summary.txt
+      - name: Push release notice to Drel
+        continue-on-error: true
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          curl -s -m 15 -G "$DREL_URL" \
+            --data-urlencode "title=xbrowser v${VERSION} 已正式发布" \
+            --data-urlencode "body=审批通过，npm 与插件已发布，溯源附件已挂。" \
+            --data-urlencode "icon=$ICON" \
+            --data-urlencode "url=https://github.com/dyyz1993/xbrowser/releases/tag/v${VERSION}" \
+            > /dev/null || echo "::warning::Drel 推送失败（不影响发布结果）"
+        env:
+          DREL_URL: ${{ secrets.DREL_PUSH_URL }}
+          ICON: https://raw.githubusercontent.com/dyyz1993/xbrowser/master/branding/mark-192.png
