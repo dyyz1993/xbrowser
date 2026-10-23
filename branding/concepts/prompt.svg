@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">xbrowser minimal prompt concept</title>
+  <desc id="desc">A command prompt glyph for xbrowser.</desc>
+  <defs>
+    <linearGradient id="bg" x1="76" y1="50" x2="438" y2="462" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#172554"/>
+      <stop offset="1" stop-color="#3730A3"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M149 176L267 256L149 336" fill="none" stroke="#67E8F9" stroke-width="52" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M304 337H371" fill="none" stroke="#FFFFFF" stroke-width="52" stroke-linecap="round"/>
+</svg>

@@ -8,12 +8,18 @@ import type { XBMouse } from './types.js';
 import type { CDPConnection } from './connection.js';
 import { bezierTrajectory, landingOffset, rand as sRand, DEFAULT_STEALTH_CONFIG as CFG } from './stealth.js';
 
+/** Web 标准按钮位掩码（e.buttons）：left=1, right=2, middle=4 */
+function buttonBit(button: 'left' | 'right' | 'middle'): number {
+  return button === 'left' ? 1 : button === 'right' ? 2 : 4;
+}
+
 export class XBMouseImpl implements XBMouse {
   private conn: CDPConnection;
   private sessionId: string | undefined;
   private _x = 0;
   private _y = 0;
   private _button: 'none' | 'left' | 'right' | 'middle' = 'none';
+  private _buttons = 0;
 
   constructor(conn: CDPConnection, sessionId?: string) {
     this.conn = conn;
@@ -46,7 +52,7 @@ export class XBMouseImpl implements XBMouse {
       let _truncated = false;
       for (const p of traj) {
         if (Date.now() - _tb > 5000) { _truncated = true; break; }
-        await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y, button: this._button });
+        await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y, button: this._button, buttons: this._buttons });
         this._x = p.x; this._y = p.y;
         await sleep(p.delay);
       }
@@ -54,7 +60,7 @@ export class XBMouseImpl implements XBMouse {
       if (_truncated) {
         // 截断后必须补发终点事件 —— 浏览器鼠标位置停在半路，
         // 后续 press/release 虽用正确坐标但 hover 态不对（d07 实测按钮不触发）
-        await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: tx, y: ty, button: this._button });
+        await this.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: tx, y: ty, button: this._button, buttons: this._buttons });
       }
       await sleep(sRand(...CFG.aimPause));
     } else {
@@ -65,7 +71,7 @@ export class XBMouseImpl implements XBMouse {
     const rx = stealth ? this._x + sRand(...CFG.releaseDrift) * (Math.random() < .5 ? -1 : 1) : this._x;
     const ry = stealth ? this._y + sRand(...CFG.releaseDrift) * (Math.random() < .5 ? -1 : 1) : this._y;
     this._x = rx; this._y = ry;
-    await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rx, y: ry, button, clickCount: opts.clickCount ?? 1 });
+    await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rx, y: ry, button, buttons: this._buttons, clickCount: opts.clickCount ?? 1 });
     for (let i = 1; i < (opts.clickCount ?? 1); i++) {
       if (opts.delay) await sleep(opts.delay);
       await this.down({ button }); await this.up({ button });
@@ -79,11 +85,15 @@ export class XBMouseImpl implements XBMouse {
   async down(opts: { button?: 'left' | 'right' | 'middle'; clickCount?: number } = {}): Promise<void> {
     const button = opts.button ?? 'left';
     this._button = button;
+    // buttons 位掩码必须在派发前置位：按住期间的 mouseMoved 读的是它
+    // （OOPIF 滑块实测：move 不带 buttons:1 会被判未按住）
+    this._buttons |= buttonBit(button);
     await this.send('Input.dispatchMouseEvent', {
       type: 'mousePressed',
       x: this._x,
       y: this._y,
       button,
+      buttons: this._buttons,
       // r23: press 必须与 release 声明同一 clickCount——Chrome 按序列计数
       // 合成 click/dblclick，press 缺声明会把计数器重置（dblclick 永不合成）
       clickCount: opts.clickCount ?? 1,
@@ -98,8 +108,11 @@ export class XBMouseImpl implements XBMouse {
       x: this._x,
       y: this._y,
       button,
+      // release 先带位发送再清位（Puppeteer 同序——DOM mouseup 的 buttons 反映释放后状态）
+      buttons: this._buttons,
       clickCount: opts.clickCount ?? 1,
     });
+    this._buttons &= ~buttonBit(button);
   }
 
   async move(x: number, y: number, opts: { steps?: number; stealth?: boolean } = {}): Promise<void> {
@@ -123,6 +136,7 @@ export class XBMouseImpl implements XBMouse {
         x: this._x,
         y: this._y,
         button: this._button,
+        buttons: this._buttons,
       });
     }
 
@@ -140,9 +154,10 @@ export class XBMouseImpl implements XBMouse {
   async drag(x: number, y: number, opts: { steps?: number } = {}): Promise<void> {
     const stealth = process.env.XBROWSER_STEALTH !== 'off';
     await this.send('Input.dispatchMouseEvent', {
-      type: 'mousePressed', x: this._x, y: this._y, button: 'left', clickCount: 1,
+      type: 'mousePressed', x: this._x, y: this._y, button: 'left', buttons: 1, clickCount: 1,
     });
     this._button = 'left';
+    this._buttons |= 1;
     // 按住移动：HTML5 拖拽启动需要移动超过阈值（约 4-8px）且逐帧移动
     const steps = opts.steps ?? Math.max(10, Math.min(24, Math.round(Math.hypot(x - this._x, y - this._y) / 20)));
     const fx = this._x, fy = this._y;
@@ -152,15 +167,21 @@ export class XBMouseImpl implements XBMouse {
       this._x = fx + (x - fx) * t;
       this._y = fy + (y - fy) * t;
       await this.send('Input.dispatchMouseEvent', {
-        type: 'mouseMoved', x: this._x, y: this._y, button: this._button,
+        type: 'mouseMoved', x: this._x, y: this._y, button: this._button, buttons: this._buttons,
       });
     }
     this._x = x; this._y = y;
     await sleep(sRand(60, 140)); // drop 前的悬停放手节奏
     await this.send('Input.dispatchMouseEvent', {
-      type: 'mouseReleased', x, y, button: 'left', clickCount: 1,
+      type: 'mouseReleased', x, y, button: 'left', buttons: this._buttons, clickCount: 1,
     });
     this._button = 'none';
+    this._buttons &= ~1;
+  }
+
+  async wheelAt(x: number, y: number, deltaX: number, deltaY: number): Promise<void> {
+    await this.move(x, y);
+    await this.wheel(deltaX, deltaY);
   }
 
   async wheel(deltaX: number, deltaY: number): Promise<void> {
@@ -168,6 +189,7 @@ export class XBMouseImpl implements XBMouse {
       type: 'mouseWheel',
       x: this._x,
       y: this._y,
+      buttons: this._buttons,
       deltaX,
       deltaY,
     });

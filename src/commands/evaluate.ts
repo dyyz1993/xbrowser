@@ -34,8 +34,9 @@ export const evaluateCommand = registerCommand({
     });
     engine.stop();
 
-    const result = p.frame
-      ? await ctx.page.evaluateInFrame(p.frame, expression)
+    const frame = p.frame ?? ctx.frame;
+    const result = frame
+      ? await ctx.page.evaluateInFrame(frame, expression)
       : await ctx.page.evaluate(expression);
     const response = ok({ result });
     if (decision && decision.severity === 'danger') {

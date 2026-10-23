@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">xbrowser minimal X concept</title>
+  <desc id="desc">A minimal X for xbrowser.</desc>
+  <defs>
+    <linearGradient id="bg" x1="64" y1="48" x2="448" y2="464" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#4F46E5"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M159 151L353 361" fill="none" stroke="#FFFFFF" stroke-width="62" stroke-linecap="round"/>
+  <path d="M353 151L159 361" fill="none" stroke="#C8F5FF" stroke-width="62" stroke-linecap="round"/>
+</svg>

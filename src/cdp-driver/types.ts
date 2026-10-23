@@ -161,6 +161,30 @@ export interface XBPage {
    */
   evaluateInFrame<R = unknown>(urlIncludes: string, expression: string): Promise<R>;
 
+  // ── OOPIF 输入（验证码/支付窗等跨域 iframe 的操作面） ──
+
+  /** 浏览器级 iframe target 列表（OOPIF 只在这里可见，Page.getFrameTree 看不到） */
+  listFrameTargets(): Promise<Array<{ url: string; targetId: string }>>;
+
+  /**
+   * 指定 OOPIF 的鼠标——Input 域事件派发到 iframe 自己的 session 才进得去
+   * （主页面 session 的输入被进程隔离挡在外面）。坐标 = iframe 局部坐标。
+   */
+  frameMouse(urlIncludes: string, opts?: { fresh?: boolean }): Promise<XBMouse>;
+
+  /**
+   * 带重试的 frame 鼠标操作：session 失效（OOPIF 被 Chrome 异步销毁/
+   * 验证码 iframe 重建）时强制重 attach 再做一次。fn 内不要缓存 mouse
+   * 跨调用使用——重试时实例会换新（鼠标位置重置）。
+   */
+  runFrameMouse<T>(urlIncludes: string, fn: (mouse: XBMouse) => Promise<T>): Promise<T>;
+
+  /** 在 OOPIF 内点击选择器命中的元素（轮询等待 + stealth 落点） */
+  clickInFrame(urlIncludes: string, selector: string, opts?: { timeoutMs?: number }): Promise<{ x: number; y: number }>;
+
+  /** 在 OOPIF 内填输入框（点击聚焦 + insertText + 回读） */
+  fillInFrame(urlIncludes: string, selector: string, text: string, opts?: { timeoutMs?: number }): Promise<{ value: string }>;
+
   // Page management
   bringToFront(): Promise<void>;
   setExtraHTTPHeaders(headers: Record<string, string>): Promise<void>;
@@ -265,12 +289,14 @@ export interface XBElementHandle {
 // ── Mouse ──────────────────────────────────────────────────────
 
 export interface XBMouse {
-  click(x: number, y: number, opts?: { button?: 'left' | 'right' | 'middle'; clickCount?: number; delay?: number; stealth?: boolean }): Promise<void>;
+  click(x: number, y: number, opts?: { button?: 'left' | 'right' | 'middle'; clickCount?: number; delay?: number; stealth?: boolean; /** 元素宽高——stealth 落点偏移用（XBMouseImpl 已支持） */ elementWidth?: number; elementHeight?: number }): Promise<void>;
   dblclick(x: number, y: number, opts?: { button?: 'left' | 'right' | 'middle' }): Promise<void>;
   down(opts?: { button?: 'left' | 'right' | 'middle' }): Promise<void>;
   up(opts?: { button?: 'left' | 'right' | 'middle' }): Promise<void>;
   move(x: number, y: number, opts?: { steps?: number }): Promise<void>;
   wheel(deltaX: number, deltaY: number): Promise<void>;
+  /** 先移动到 (x,y) 再派发滚轮（trusted mouseWheel） */
+  wheelAt(x: number, y: number, deltaX: number, deltaY: number): Promise<void>;
   /** Drag from current position to (x,y) — drives the real HTML5 DnD pipeline */
   drag(x: number, y: number, opts?: { steps?: number }): Promise<void>;
 }

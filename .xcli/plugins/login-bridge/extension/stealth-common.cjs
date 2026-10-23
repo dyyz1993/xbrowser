@@ -33,6 +33,27 @@
    *   rAF 垫片：hidden tab 的 rAF 完全静默是硬伤——垫片保证"会回调"，
    *   帧距受后台定时器节流限制（~1000ms），属已知残留（L3），文档明示不掩盖。
    */
+
+  /**
+   * S213 打断源压制（用户 2026-10-22 定：CDP 注入强吃弹窗）：
+   *  - beforeunload 注册吞掉（拦截 addEventListener，离开确认无从产生）
+   *  - alert/confirm/prompt 三件套消音（r30 语义：confirm false / prompt null）
+   * 适用于任务 tab（自动化流程 tab），普通用户浏览 tab 不挂本源。
+   */
+  var DIALOG_SUPPRESSION_SOURCE = [
+    "(function(){",
+    "  if (window.__xbDialogSuppressed) return; window.__xbDialogSuppressed = true;",
+    '  var oAEL = EventTarget.prototype.addEventListener;',
+    '  EventTarget.prototype.addEventListener = function (type, fn, opts) {',
+    '    if (type === "beforeunload") return undefined;',
+    '    return oAEL.call(this, type, fn, opts);',
+    '  };',
+    '  window.alert = function () {};',
+    '  window.confirm = function () { return false; };',
+    '  window.prompt = function () { return null; };',
+    "})();",
+  ].join("\n");
+
   var VISIBILITY_STEALTH_SOURCE = [
     '(function(){',
     '  if (window.__xbVisStealth) return; window.__xbVisStealth = true;',
@@ -153,6 +174,7 @@
 
   return {
     VISIBILITY_STEALTH_SOURCE: VISIBILITY_STEALTH_SOURCE,
+    DIALOG_SUPPRESSION_SOURCE: DIALOG_SUPPRESSION_SOURCE,
     generateMousePath: generateMousePath,
     planWarmup: planWarmup,
   };

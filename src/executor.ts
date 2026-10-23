@@ -140,6 +140,14 @@ export async function executeCommand(
     params = rest;
   }
 
+  // --frame <url-substring>: 全局 OOPIF 路由默认值，剥离后挂 ctx（命令级 --frame 优先）
+  const _frame = params._frame as string | undefined;
+  if (_frame) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { _frame: _u, ...rest } = params;
+    params = rest;
+  }
+
   let targetPageOverride: { url: string; title: string } | null = null;
   if (_target && extraOpts?.cdpEndpoint) {
     const { findTargetPage } = await import('./browser.js');
@@ -222,6 +230,7 @@ export async function executeCommand(
     browserContext: session?.context as BrowserCommandContext['browserContext'],
     sessionId: session?.id,
     cdpEndpoint: session?.cdpEndpoint || extraOpts?.cdpEndpoint,
+    frame: _frame,
     args: [],
     options: {},
     cwd: process.cwd(),
@@ -471,7 +480,7 @@ export async function executeCommand(
 
 export async function executeChain(
   input: string,
-  options?: { cdpEndpoint?: string; sessionName?: string; fileMode?: boolean }
+  options?: { cdpEndpoint?: string; sessionName?: string; fileMode?: boolean; frame?: string }
 ): Promise<ChainExecutionResult> {
   return executeChainImpl(input, options, executeCommand);
 }

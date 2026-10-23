@@ -4,6 +4,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
 
 import { randomPause, humanClick, humanBrowse, humanFill } from '../shared/humanize.js';
+import { registerCsdnDraft } from './draft.js';
 
 
 function resolvePage(ctx: CommandContext): { page: Page; tips: string[] } {
@@ -207,68 +208,6 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
-  site.command('draft', {
-    description: '在 CSDN 保存草稿',
-    loginRequired: 'required',
-    scope: 'page',
-    parameters: z.object({
-      title: z.string().describe('文章标题'),
-      content: z.string().describe('文章内容（Markdown）'),
-    }),
-    examples: [
-      {
-        cmd: 'xbrowser csdn draft --title "草稿" --content "# 草稿内容"',
-        description: '保存为草稿',
-      },
-    ],
-    result: z.object({ title: z.string(), saved: z.boolean(), url: z.string() }).passthrough(),
-    handler: async (params, ctx) => {
-      const { page, tips } = resolvePage(ctx);
-
-      try {
-        await page.goto('https://mp.csdn.net/mp_blog/creation/editor', {
-          waitUntil: 'domcontentloaded',
-          timeout: 20000,
-        });
-        await page.waitForLoadState('domcontentloaded');
-        await randomPause(2800, 5200);
-        await humanBrowse(page, 3000);
-
-        const titleInput = page.locator(
-          'input[placeholder*="标题"], input[placeholder*="请输入"], input[name*="title"], input[class*="article-bar-title"]'
-        ).first();
-        if (await titleInput.isVisible().catch(() => false)) {
-          await humanFill(page, titleInput, params.title);
-        }
-
-        await randomPause(350, 650);
-
-        const editor = page.locator(
-          'div[contenteditable="true"][class*="editor"], div[contenteditable="true"][class*="markdown"], textarea[class*="editor"], div[class*="CodeMirror"], div[contenteditable="true"]'
-        ).first();
-        if (await editor.isVisible().catch(() => false)) {
-          await humanClick(page, editor);
-          await page.keyboard.insertText(params.content);
-        }
-
-        const saveBtn = page.locator(
-          'button:has-text("保存草稿"), button:has-text("保存"), button[class*="draft"], [class*="btn-draft"]'
-        ).first();
-        if (await saveBtn.isVisible().catch(() => false)) {
-          await humanClick(page, saveBtn);
-          await randomPause(1400, 2600);
-        }
-
-        return ok({
-            title: params.title,
-            saved: true,
-            url: page.url(),
-          }, [...tips, `草稿 "${params.title}" 已保存`]);
-      } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误', tips);
-      }
-    },
-  });
 
   site.command('update-profile', {
     description: '更新 CSDN 个人资料（添加外链）',
@@ -404,6 +343,8 @@ export default function (xcli: XCLIAPI): void {
       }
     },
   });
+
+  registerCsdnDraft(site);
 
   site.login(async (ctx) => {
     const page = ctx.page;

@@ -10,6 +10,7 @@ function createMockContext(): BrowserCommandContext {
         up: vi.fn().mockResolvedValue(undefined),
         click: vi.fn().mockResolvedValue(undefined),
         dblclick: vi.fn().mockResolvedValue(undefined),
+        drag: vi.fn().mockResolvedValue(undefined),
         wheel: vi.fn().mockResolvedValue(undefined),
       },
     },
@@ -113,5 +114,51 @@ describe('Mouse Command', () => {
     );
     expect(ctx.page.mouse.dblclick).toHaveBeenCalledWith(100, 200, { button: 'left' });
     expect(result).toEqual({ success: true, data: { action: 'dblclick', x: 100, y: 200 }, tips: [] });
+  });
+
+  describe('--frame OOPIF routing', () => {
+    function attachFrameMouse(ctx: BrowserCommandContext): Record<string, ReturnType<typeof vi.fn>> {
+      const frameMouse = {
+        move: vi.fn().mockResolvedValue(undefined),
+        down: vi.fn().mockResolvedValue(undefined),
+        up: vi.fn().mockResolvedValue(undefined),
+        click: vi.fn().mockResolvedValue(undefined),
+        dblclick: vi.fn().mockResolvedValue(undefined),
+        drag: vi.fn().mockResolvedValue(undefined),
+      };
+      (ctx.page as unknown as Record<string, unknown>).runFrameMouse = vi.fn(
+        async (_url: string, fn: (m: unknown) => Promise<unknown>) => fn(frameMouse),
+      );
+      return frameMouse;
+    }
+
+    it('routes actions to frameMouse when --frame given (page mouse untouched)', async () => {
+      const { mouseCommand } = await import('../../src/commands/mouse.js');
+      const frameMouse = attachFrameMouse(ctx);
+      await mouseCommand.handler(
+        { action: 'drag', x: 209, y: 247, steps: 30, frame: 'captcha.gtimg.com' },
+        ctx
+      );
+      expect(ctx.page.runFrameMouse).toHaveBeenCalledWith('captcha.gtimg.com', expect.any(Function));
+      expect(frameMouse.drag).toHaveBeenCalledWith(209, 247, { steps: 30 });
+      expect(ctx.page.mouse.drag).not.toHaveBeenCalled();
+    });
+
+    it('global ctx.frame works as default', async () => {
+      const { mouseCommand } = await import('../../src/commands/mouse.js');
+      const frameMouse = attachFrameMouse(ctx);
+      ctx.frame = 'captcha.gtimg.com';
+      await mouseCommand.handler({ action: 'move', x: 54, y: 247 }, ctx);
+      expect(ctx.page.runFrameMouse).toHaveBeenCalledWith('captcha.gtimg.com', expect.any(Function));
+      expect(frameMouse.move).toHaveBeenCalledWith(54, 247, { steps: 1 });
+    });
+
+    it('command-level --frame overrides ctx.frame default', async () => {
+      const { mouseCommand } = await import('../../src/commands/mouse.js');
+      attachFrameMouse(ctx);
+      ctx.frame = 'default.example.com';
+      await mouseCommand.handler({ action: 'click', x: 1, y: 2, frame: 'override.example.com' }, ctx);
+      expect(ctx.page.runFrameMouse).toHaveBeenCalledWith('override.example.com', expect.any(Function));
+    });
   });
 });

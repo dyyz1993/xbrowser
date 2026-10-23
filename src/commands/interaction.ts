@@ -17,13 +17,24 @@ export const clickCommand = registerCommand({
     delay: z.number().optional(),
     waitCaptcha: z.boolean().optional().default(false).describe('点击后检测 captcha 并等待解决'),
     waitCaptchaTimeout: z.number().int().optional().default(180000).describe('Captcha 等待超时（毫秒）'),
+    frame: z.string().optional().describe('URL 含此子串的 OOPIF——选择器在跨域 iframe 的 DOM 内解析并点击（进程隔离下唯一可信通道）'),
   }),
   result: z.object({
     selector: z.string(),
     newTab: z.object({ url: z.string(), title: z.string() }).optional(),
     captcha: z.any().optional(),
+    frame: z.string().optional(),
+    x: z.number().optional(),
+    y: z.number().optional(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
+    // OOPIF 路由：选择器在跨域 iframe 内解析，Input 派发到 iframe 自己的 session
+    const frameTarget = p.frame ?? ctx.frame;
+    if (frameTarget) {
+      const { x, y } = await ctx.page.clickInFrame(frameTarget, p.selector);
+      return ok({ selector: p.selector, frame: frameTarget, x, y });
+    }
+
     // 用 Promise 监听新 Tab 打开事件（target="_blank" 链接等）
     let detectedNewPage: Page | undefined;
     let cleanup: (() => void) | undefined;
@@ -133,14 +144,23 @@ export const fillCommand = registerCommand({
     selector: z.string(),
     value: z.string(),
     clear: z.boolean().optional(),
+    frame: z.string().optional().describe('URL 含此子串的 OOPIF——在跨域 iframe 内填入（聚焦点击 + insertText + 回读）'),
   }),
   result: z.object({
     selector: z.string(),
     value: z.string(),
     cleared: z.boolean(),
     reactMode: z.boolean().optional(),
+    frame: z.string().optional(),
   }),
   handler: async (p, ctx: BrowserCommandContext) => {
+    // OOPIF 路由：聚焦点击 + triple-click 全选 + insertText 替换 + 回读验证
+    const frameTarget = p.frame ?? ctx.frame;
+    if (frameTarget) {
+      const { value } = await ctx.page.fillInFrame(frameTarget, p.selector, p.value);
+      return ok({ selector: p.selector, value, cleared: true, frame: frameTarget });
+    }
+
     const page = ctx.page;
 
     // Default: clear the field before filling (unless explicitly disabled with --clear false)

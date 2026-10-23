@@ -236,7 +236,8 @@ export async function handleBrowserCommand(
           type: options.type as string | undefined,
           selector: (options.selector || options.s) as string | undefined,
           base64: !!(options.base64),
-          output: (options.output || options.o || args[0]) as string | undefined,
+          // --path 与 --output 等价（docs 曾写 --path 被静默忽略——fresh-agent 冒烟摩擦点 1）
+          output: (options.output || options.o || options.path || args[0]) as string | undefined,
         };
         break;
       case 'ua': {
@@ -311,7 +312,9 @@ export async function handleBrowserCommand(
         //           mouse 960 655 --action click (action flag + positional coords)
         // Flatten args in case shell quoting merged them (e.g. "move 100 200")
         const flatArgs = args.flatMap(a => a.split(/\s+/).filter(Boolean));
-        const argActionIdx = flatArgs.findIndex(a => ['move','click','dblclick','down','up'].includes(a));
+        // drag/wheel 必须在列（OOPIF 标准验证码链第一条就是 mouse drag——曾缺席导致
+        // CLI 层 "action: Required"，AGENTS §14 文档形态跑不通）
+        const argActionIdx = flatArgs.findIndex(a => ['move','click','dblclick','down','up','drag','wheel'].includes(a));
         const action = (options.action as string) || (argActionIdx >= 0 ? flatArgs[argActionIdx] : undefined);
         // Coordinates: --x/--y flags win; otherwise the two tokens after the
         // action token (2026-09-13-01: when action came from --action, x/y were
@@ -555,6 +558,15 @@ export async function handleBrowserCommand(
 	  if (tabIndex !== undefined) {
 	    params = { ...params, _tabIndex: Number(tabIndex) };
 	  }
+
+  // --frame can be command-local or global. A local pair wins as `frame`;
+  // otherwise the global flag becomes `_frame` and executor exposes it as ctx.frame.
+  const commandFrameIndex = args.findIndex((arg, index) => arg === '--frame' && typeof args[index + 1] === 'string');
+  if (commandFrameIndex >= 0) {
+    params = { ...params, frame: args[commandFrameIndex + 1] };
+  } else if (typeof options.frame === 'string') {
+    params = { ...params, _frame: options.frame };
+  }
 
 	  const result = cdpEndpoint
 	    ? await executeCommand(cmdName, params, sessionName, { cdpEndpoint })

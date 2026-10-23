@@ -148,23 +148,48 @@ xbrowser --cdp auto title                               # Auto-discover
 
 ### Browser Session Priority (决策顺序，实战经验)
 
-**先查有没有可复用的浏览器，再考虑自起**——大多数站需要登录态，headless 新起必败：
+**第一判断：用户说的「现有/当前/我的浏览器」指哪个？**——这是最容易走错的一步：
+
+| 用户的话 | 指的是什么 | 正确通道 |
+|---------|-----------|---------|
+| 「用我现有的浏览器」「我当前浏览器」「别开新的」「复用我的登录态」「在我浏览器里操作」 | **用户正在使用的那个 Chrome 窗口**（全部登录态 + 全部标签页） | **chrome-bridge 扩展通道**（不是 `--cdp`！`--cdp` 连不上没开调试端口的浏览器） |
+| 「连 9221 / 9222」「连调试实例」 | 带 `--remote-debugging-port` 启动的实例 | `xbrowser --cdp <port>` |
+| 没提浏览器 + 纯公开页面 | 无所谓 | headless 自起兜底 |
+
+**「现有浏览器」三步探活（听到这句话必走，按序执行）：**
 
 ```bash
-# 1. 先探活已开的浏览器（按端口试）
-curl -s -m 3 http://localhost:9222/json/version   # 自动化实例（xyz-mac 等）
-curl -s -m 3 http://localhost:9221/json/version   # 用户日常浏览器
-# 活着 → --cdp 连它（复用登录态，零成本）
-# 死了 → 2a. 重启自动化实例（登录态在 profile 里）或 2b. cookie 迁移（login-bridge）
+xbrowser chrome-bridge status   # ① running=true? clients>0?（clients=扩展已连上用户 Chrome）
+xbrowser chrome-bridge serve    # ② status 报未启动 → 起服务（独立常驻进程）
+xbrowser chrome-bridge revive   # ③ 服务在但 clients=0 → 唤醒扩展 SW（只开一个新标签页）
+```
+
+通了之后，按场景选入口：
+
+```bash
+xbrowser chrome-bridge task open --name <task> --url <url>  # 新建受控 tab（后台采集/发布任务首选，可 finish 清理）
+xbrowser chrome-bridge attach --task "描述"                  # 接管用户当前 tab（需要用户看得见的操作）
+xbrowser chrome-bridge exec --cmd evaluate --args '{...}' --tab-id <id>  # 在被接管 tab 上执行
+xbrowser chrome-bridge finish                               # 收尾：自建 tab 关闭，用户 tab 脱组保留
+```
+
+**用户没提「现有浏览器」时**，再按登录态决策——大多数站需要登录态，headless 新起必败：
+
+```bash
+# 先探活调试端口实例
+curl -s -m 3 http://localhost:9222/json/version   # 自动化实例
+curl -s -m 3 http://localhost:9221/json/version   # 用户日常浏览器（开了调试端口才有）
+# 活着 → --cdp 连它；死了 → bridge 通道（见上）或重启实例
 ```
 
 | 场景 | 正确选择 |
 |------|---------|
-| 需要登录态（知乎/微博/淘宝/ASC） | **必须**连用户浏览器或 CDP 实例——headless 新起必败 |
+| 用户说「现有/我的/当前浏览器」 | **chrome-bridge**，见上，先 `status` 探活 |
+| 需要登录态（知乎/微博/淘宝/ASC） | bridge 优先；不行再连 CDP 实例——headless 新起必败 |
 | cookie 已迁移到 CDP 实例 | 连实例（与用户浏览器解耦，可并发） |
 | 纯公开页面 | 随意，headless 兜底 |
 
-注意：CDP trusted 输入要求目标 tab **visible**（`document.visibilityState`），tab 被遮挡时点击/键入被静默丢弃——操作前先查。
+注意：CDP trusted 输入要求目标 tab **visible**（`document.visibilityState`），tab 被遮挡时点击/键入被静默丢弃——操作前先查。bridge 通道同理，后台 tab 的可信输入会被静默丢弃，`insertText` 前先 `bringToFront`。
 
 ### Environment Variables
 
