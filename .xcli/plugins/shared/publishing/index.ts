@@ -79,6 +79,14 @@ export {
 } from './sites/csdn.js';
 
 export {
+  extractLocalImagePaths,
+  replaceImagePaths,
+  uploadViaEditorPaste,
+  uploadViaCsdnObs,
+  uploadImagesForSite,
+} from './image-upload.js';
+
+export {
   type BridgeBootstrap,
   bootstrapInUserChrome,
   releaseBootstrap,
