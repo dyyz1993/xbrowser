@@ -15,6 +15,7 @@ import {
   handleSession,
   handleTest,
   handleViewer,
+  handleConsoleServe,
 } from '../cli/index.js';
 import { handleRemote, handleServe, startMcpServer } from './services.js';
 
@@ -96,6 +97,9 @@ export async function dispatchSubcommand(request: SubcommandRequest): Promise<bo
       return true;
     case 'net':
       await handleNetCommand(cmdArgs, options, mode, sessionName);
+      return true;
+    case 'console-panel':
+      await handleConsoleServe(cmdArgs, options, mode);
       return true;
     default:
       return false;
