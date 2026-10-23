@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">xbrowser route X concept</title>
+  <desc id="desc">Two browser automation routes cross to form an X.</desc>
+  <defs>
+    <linearGradient id="route" x1="76" y1="78" x2="430" y2="432" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#4F46E5"/>
+    </linearGradient>
+  </defs>
+  <circle cx="256" cy="256" r="222" fill="#EFF6FF"/>
+  <circle cx="256" cy="256" r="215" fill="none" stroke="#C7D2FE" stroke-width="8"/>
+  <path d="M125 124C194 124 195 195 256 256C317 317 318 388 387 388" fill="none" stroke="url(#route)" stroke-width="44" stroke-linecap="round"/>
+  <path d="M387 124C318 124 317 195 256 256C195 317 194 388 125 388" fill="none" stroke="#0891B2" stroke-width="44" stroke-linecap="round"/>
+  <circle cx="125" cy="124" r="30" fill="#1D4ED8"/>
+  <circle cx="387" cy="124" r="30" fill="#0E7490"/>
+  <circle cx="125" cy="388" r="30" fill="#0E7490"/>
+  <circle cx="387" cy="388" r="30" fill="#4338CA"/>
+</svg>

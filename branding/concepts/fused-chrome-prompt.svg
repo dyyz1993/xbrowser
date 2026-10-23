@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">xbrowser fused browser chrome prompt concept</title>
+  <desc id="desc">A command prompt below a unified dotted browser chrome line.</desc>
+  <defs>
+    <linearGradient id="bg" x1="70" y1="52" x2="442" y2="460" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#172554"/>
+      <stop offset="1" stop-color="#4338CA"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <g transform="translate(0 -52)">
+    <path d="M151 193H159M182 193H190M213 193H221M248 193H361" fill="none" stroke="#C7D2FE" stroke-width="16" stroke-linecap="round"/>
+    <path d="M145 273L248 343L145 413" fill="none" stroke="#67E8F9" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M287 413H360" fill="none" stroke="#F8FAFC" stroke-width="48" stroke-linecap="round"/>
+  </g>
+</svg>

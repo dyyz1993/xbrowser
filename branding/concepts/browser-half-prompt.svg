@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">xbrowser half browser prompt concept</title>
+  <desc id="desc">The upper half of a browser window containing a command prompt.</desc>
+  <defs>
+    <linearGradient id="bg" x1="70" y1="52" x2="442" y2="460" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1E3A8A"/>
+      <stop offset="1" stop-color="#4F46E5"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <path d="M112 258V157C112 132 132 112 157 112H355C380 112 400 132 400 157V258" fill="none" stroke="#FFFFFF" stroke-width="26" stroke-linecap="round"/>
+  <path d="M113 207H399" stroke="#FFFFFF" stroke-width="22"/>
+  <circle cx="154" cy="160" r="11" fill="#FFFFFF"/>
+  <circle cx="188" cy="160" r="11" fill="#FFFFFF" opacity=".68"/>
+  <circle cx="222" cy="160" r="11" fill="#FFFFFF" opacity=".38"/>
+  <path d="M157 290L247 352L157 414" fill="none" stroke="#A5F3FC" stroke-width="48" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M285 414H351" fill="none" stroke="#FFFFFF" stroke-width="48" stroke-linecap="round"/>
+</svg>
