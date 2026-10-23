@@ -999,49 +999,47 @@ function tipsToMessages(tips: Tip[] | undefined): string[] {
 
 ## 12.2 npm 发版流程（2026-06-23）
 
-> **xbrowser 的 npm 发布靠 `package.json` 版本号变化触发，不是 git tag。**
+> **xbrowser 的发版靠 git tag 触发（v1.33.0 起）**：打 tag → 全量测试门禁（必须全绿）→ 自动 npm publish → 变更插件自动上架 marketplace。旧的「package.json 变化触发」已退役。
 
 ### 触发机制
 
-`.github/workflows/publish.yml` 监听：
+`.github/workflows/release.yml` 监听 tag：
 ```yaml
 on:
   push:
-    branches: [master]
-    paths: ['package.json']   # ← 只有 package.json 变化才触发
+    tags: ['v*']   # ← git tag vX.Y.Z 触发
 ```
 
-**含义**：任何 push 到 master 且 `package.json` 有改动（通常是版本号 bump），自动触发 `npm publish`。
+**流水线**（每步都是下一步的门禁）：
+1. **verify** — tag 必须与 package.json 版本一致
+2. **test** — typecheck + lint + build + 全量测试 + e2e + 产物冒烟（全绿才继续）
+3. **publish-npm** — npm publish（幂等，已发布版本跳过）
+4. **publish-marketplace** — 比版本号，本地 > 线上的插件自动上架（`scripts/release/publish-plugins.mjs`；插件上架后 xbrowser.dev 数据自动更新）
 
-### 发版步骤（标准流程）
+### 发版步骤（tag 驱动，v1.33.0 起）
 
 ```bash
-# 1. 从 origin/master 切干净的发布分支
+# 1. 从 origin/master 切干净的发布分支，bump 版本号
 git checkout -b release/v<X.Y.Z> origin/master
+#    改 package.json 的 version（PATCH/MINOR/MAJOR 同前）
+npm install --package-lock-only   # lock 同步
 
-# 2. bump 版本号（手动改 package.json 的 version 字段）
-#    PATCH: 1.0.2 → 1.0.3（bug 修复 / 重构）
-#    MINOR: 1.0.x → 1.1.0（新功能，向后兼容）
-#    MAJOR: 1.x.0 → 2.0.0（不兼容 API 变更）
-
-# 3. 提交
-git add package.json
+# 2. 提交 + PR + 等 CI 绿 + 合并（squash）
+git add package.json package-lock.json
 git commit -m "chore(release): bump version to v<X.Y.Z>"
-
-# 4. push + 开 PR
 git push -u origin release/v<X.Y.Z>
-gh pr create --base master --head release/v<X.Y.Z> \
-  --title "chore(release): bump version to v<X.Y.Z>" \
-  --body "版本号 bump 触发 npm publish"
+gh pr create ... && gh pr merge <N> --squash --delete-branch --admin
 
-# 5. 等 CI 绿（lint + typecheck + build + test 必须全过）
+# 3. 同步本地 master 后打 tag 推送 —— 这一下触发完整流水线
+git checkout master && git reset --hard origin/master
+git tag v<X.Y.Z>
+git push origin v<X.Y.Z>
 
-# 6. 合并 PR（squash merge）
-gh pr merge <PR_NUMBER> --squash --delete-branch --admin
-
-# 7. 合并后 publish.yml 自动触发 → npm publish
-#    验证：npm view @xbrowser/cli version
+# 4. release.yml 自动执行：verify → 全量测试门禁 → npm publish → 插件上架
+#    验证：gh run watch（release workflow）→ npm view @xbrowser/cli version
 ```
+
+**回滚 tag**：`git tag -d v<X.Y.Z> && git push origin :refs/tags/v<X.Y.Z>`（npm 已发的版本无法撤回，只能发新版本）。
 
 ### 验证发布
 
