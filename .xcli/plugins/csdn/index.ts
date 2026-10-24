@@ -5,6 +5,7 @@ import type { Page } from '../types.js';
 
 import { randomPause, humanClick, humanBrowse, humanFill } from '../shared/humanize.js';
 import { registerCsdnDraft } from './draft.js';
+import { checkLoggedIn } from '../shared/publishing/login-probe.js';
 
 
 function resolvePage(ctx: CommandContext): { page: Page; tips: string[] } {
@@ -27,19 +28,22 @@ export default function (xcli: XCLIAPI): void {
     description: 'CSDN SEO 外链 - 中文技术平台 (DA 80+, 百度排名 #1)',
     requiresLogin: true,
     isLogin: async (ctx) => {
+      // bridge 优先——发布走 bridge 通道时登录态在用户 Chrome 里
       const ctxAny = ctx as unknown as Record<string, unknown>;
       const page = ctxAny.page as import('../types').Page;
-      if (!page) return true;
-      try {
-        const url = page.url();
-        if (url.includes('/passport')) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
-        if (!body) return false;
-        if (body.includes('登录')) return false;
-        return true;
-      } catch {
-        return true;
-      }
+      return checkLoggedIn('csdn', 'https://mp.csdn.net/mp_blog/manage/article', async () => {
+        if (!page) return true;
+        try {
+          const url = page.url();
+          if (url.includes('/passport')) return false;
+          const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
+          if (!body) return false;
+          if (body.includes('登录')) return false;
+          return true;
+        } catch {
+          return true;
+        }
+      });
     },
   });
 

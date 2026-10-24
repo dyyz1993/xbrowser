@@ -103,4 +103,79 @@ describe('插图位置（封面在引言后、其余在二级标题后）', () =
     expect(out).toContain('![封面](https://x/1.png)');
     expect(out).toContain('![配图 2](https://x/2.png)');
   });
+
+  // ── 防双份粘贴（ERR-20261024-001）──
+  it('paste expression must selectAll+delete before paste and verify length ratio', async () => {
+    // 从已注册 handler 触发一次 draft，抓 bridge.evaluate 收到的 paste 表达式
+    const evalCalls: string[] = [];
+    const bridgeCalls: Array<{ cmd: string; args: Record<string, unknown> }> = [];
+    const bridgeStub = {
+      call: async (cmd: string, args: Record<string, unknown>) => {
+        bridgeCalls.push({ cmd, args });
+        if (cmd === 'evaluate') {
+          const expr = String(args.expression || '');
+          evalCalls.push(expr);
+          if (expr.includes('pre.editor__inner') && expr.includes('ClipboardEvent')) {
+            return { value: 1500 }; // 单份写入成功
+          }
+          if (expr.includes('article-bar__title')) return { value: 10 };
+          return { value: true };
+        }
+        if (cmd === 'task-open') return { tabId: 42 };
+        return {};
+      },
+    };
+    // 动态 import draft 模块（绕过默认 bridge 实例）
+    const mod = await import('../../.xcli/plugins/csdn/draft.js');
+    let captured: ((p: Record<string, unknown>, c: unknown) => Promise<Record<string, unknown>>) | null = null;
+    const site = { command: (name: string, cfg: Record<string, unknown>) => {
+      if (name === 'draft') captured = cfg.handler as typeof captured;
+    } };
+    mod.registerDraftCommand({ site, bridge: bridgeStub } as never);
+    const handler = captured!;
+    expect(handler).toBeTypeOf('function');
+    const res = await handler(
+      { title: 'T', content: 'x'.repeat(1200) },
+      { page: { goto: async () => {} } },
+    ) as { success: boolean; data?: { chars?: number }; message?: string };
+
+    const pasteExpr = evalCalls.find((e) => e.includes('ClipboardEvent'));
+    expect(pasteExpr).toBeDefined();
+    // 原子三步：全选（selectNodeContents）+ 删除（execCommand delete）+ paste
+    expect(pasteExpr).toContain('selectNodeContents');
+    expect(pasteExpr).toContain('execCommand("delete")');
+    // 单份成功路径：写入 1500 ≈ 预期 1200 的 1.25 倍 → 通过
+    expect(res.success).toBe(true);
+  });
+
+  it('must fail when pasted length exceeds 1.5x of markdown (double-paste guard)', async () => {
+    const bridgeStub = {
+      call: async (cmd: string, args: Record<string, unknown>) => {
+        if (cmd === 'evaluate') {
+          const expr = String(args.expression || '');
+          if (expr.includes('ClipboardEvent')) {
+            return { value: 3000 }; // 双份：预期 1200 写成 3000
+          }
+          if (expr.includes('article-bar__title')) return { value: 10 };
+          return { value: true };
+        }
+        if (cmd === 'task-open') return { tabId: 42 };
+        return {};
+      },
+    };
+    const mod = await import('../../.xcli/plugins/csdn/draft.js');
+    let captured: ((p: Record<string, unknown>, c: unknown) => Promise<Record<string, unknown>>) | null = null;
+    const site = { command: (name: string, cfg: Record<string, unknown>) => {
+      if (name === 'draft') captured = cfg.handler as typeof captured;
+    } };
+    mod.registerDraftCommand({ site, bridge: bridgeStub } as never);
+    const handler = captured!;
+    expect(handler).toBeTypeOf('function');
+    const res = await handler(
+      { title: 'T', content: 'x'.repeat(1200) },
+      { page: { goto: async () => {} } },
+    ) as { success: boolean; message?: string };
+    expect(res.success).toBe(false);
+    expect(String(res.message)).toContain('重复粘贴');
+  });
 });
