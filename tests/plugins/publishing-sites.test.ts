@@ -153,7 +153,10 @@ describe('publishing/channel', () => {
     it('bridge 可用时走 bridge 通道并打开任务分组 tab', async () => {
       globalThis.fetch = vi.fn(async (_url: unknown, init: unknown) => {
         const body = JSON.parse((init as { body: string }).body) as { cmd: string };
-        const data = body.cmd === 'task-open' ? { tabId: 999 } : [];
+        // evaluate 是窗口守卫（checkWindowReady）在 task-open 之后发的探针
+        let data: unknown = [];
+        if (body.cmd === 'task-open') data = { tabId: 999 };
+        else if (body.cmd === 'evaluate') data = { value: JSON.stringify({ ow: 900, oh: 640 }) };
         return Promise.resolve({ json: async () => ({ ok: true, data }) });
       }) as never;
       const res = await resolveChannel({
