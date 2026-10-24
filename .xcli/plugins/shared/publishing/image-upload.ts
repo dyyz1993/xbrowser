@@ -202,13 +202,20 @@ export async function uploadViaCsdnObs(
         form.append('file', f);
         var ur = await fetch(${JSON.stringify(host)}, { method: 'POST', body: form });
         var t = await ur.text();
-        return 'status:' + ur.status + ' body:' + t.slice(0, 600);
+        var loc = ur.headers.get('Location') || ur.headers.get('CallbackResponse') || '';
+        return 'status:' + ur.status + ' loc:' + loc.slice(0, 300) + ' body:' + t.slice(0, 600);
       })()`,
       tabId,
     })) as { value?: string };
     const out = String(r?.value ?? '');
-    const m = out.match(/https:\/\/i-blog\.csdnimg\.cn\/[^\s"]+/);
-    if (!m) throw new Error(`CSDN OBS 上传失败: ${out.slice(0, 200)}`);
+    const m = out.match(/https:\/\/i-blog\.csdnimg\.cn\/[^\s"']+|https:\/\/[^\s"]*csdnimg[^\s"]+/);
+    // 匹配到裸域名（无 path）= body 为空的 200——OBS 已接收，直接用签名里的 filePath 拼 URL
+    if (m && m[0].length > 'https://i-blog.csdnimg.cn/'.length + 5) return m[0];
+    const filePath = String((sig as Record<string, unknown>).filePath ?? '');
+    if (/^status:200/.test(out) && filePath) {
+      return `https://i-blog.csdnimg.cn/${filePath.replace(/^\/+/, '')}`;
+    }
+    if (!m) throw new Error(`CSDN OBS 上传失败: ${out.slice(0, 400)}`);
     return m[0];
   } finally {
     await bridge.call('task-close', { name: helperName }).catch(() => undefined);

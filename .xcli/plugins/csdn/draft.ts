@@ -169,8 +169,14 @@ export async function uploadImageViaBridge(
       tabId,
     })) as { value?: string };
     const out = String(r?.value ?? '');
-    const m = out.match(/https:\/\/i-blog\.csdnimg\.cn\/[^\s"]+/);
-    if (!m) throw new Error(`OBS 上传失败: ${out.slice(0, 200)}`);
+    const m = out.match(/https:\/\/i-blog\.csdnimg\.cn\/[^\s"']+|https:\/\/[^\s"]*csdnimg[^\s"]+/);
+    // body 为空的 200 = OBS 已接收但回调无 JSON——用签名 filePath 拼 CDN URL
+    if (m && m[0].length > 'https://i-blog.csdnimg.cn/'.length + 5) return m[0];
+    const filePath = String(d.filePath ?? '');
+    if (/^status:200/.test(out) && filePath) {
+      return `https://i-blog.csdnimg.cn/${filePath.replace(/^\/+/, '')}`;
+    }
+    if (!m) throw new Error(`OBS 上传失败: ${out.slice(0, 400)}`);
     return m[0];
   } finally {
     await bridge.call('task-close', { name: opts.helperName }).catch(() => { });
@@ -228,11 +234,18 @@ export function registerDraftCommand(deps: DraftDeps): void {
       const tabId = opened?.tabId;
       if (!tabId) return fail('MD 编辑器 tab 打开失败');
       await new Promise((res) => setTimeout(res, 6000));
-      // 正文 PRE paste
+      // 正文 PRE paste——原子三步防双份（ERR-20261024-001）：
+      // ① Selection 全选 + execCommand delete 清空现有内容（tab 复用时残留旧稿）
+      // ② paste 单份 ③ 校验长度 ≈ markdown 长度（>1.5× 判为重复粘贴）
+      const expectedChars = markdown.length;
       const paste = (await deps.bridge.call('evaluate', {
         expression:
           '/* @xb-probe */(async function(){var pre=document.querySelector("pre.editor__inner");' +
           'if(!pre)return "no-pre";pre.focus();' +
+          'var sel=window.getSelection();var range=document.createRange();' +
+          'range.selectNodeContents(pre);sel.removeAllRanges();sel.addRange(range);' +
+          'document.execCommand("delete");' +
+          'await new Promise(function(r){setTimeout(r,300);});' +
           'var dt=new DataTransfer();dt.setData("text/plain", ' +
           JSON.stringify(markdown) +
           ');pre.dispatchEvent(new ClipboardEvent("paste",{clipboardData:dt,bubbles:true,cancelable:true}));' +
@@ -242,6 +255,9 @@ export function registerDraftCommand(deps: DraftDeps): void {
       })) as { value?: number };
       const chars = Number(paste?.value ?? 0);
       if (chars < 1000) return fail(`正文写入异常（${chars} 字符）`);
+      if (chars > expectedChars * 1.5) {
+        return fail(`正文疑似重复粘贴（${chars} 字符 > 预期 ${expectedChars} 的 1.5 倍）——已中止，请重试`);
+      }
       // 标题
       await deps.bridge.call('evaluate', {
         expression:
