@@ -88,6 +88,30 @@ describe('publishing/md-to-html', () => {
     });
   });
 
+  describe('表格（GFM）', () => {
+    it('表头 + 分隔行渲染成 table', () => {
+      const md = '| 来源 | 值 |\n|------|-----|\n| id 字段 | 2097465168825415129 |';
+      const html = markdownToHtml(md);
+      expect(html).toContain('<table');
+      expect(html).toContain('<th>来源</th>');
+      expect(html).toContain('<td>2097465168825415129</td>');
+      expect(html).not.toContain('|------|');
+    });
+
+    it('单行竖线文本不误判为表格', () => {
+      const html = markdownToHtml('| 只是普通文本 |');
+      expect(html).not.toContain('<table');
+      expect(html).toContain('<p>');
+    });
+
+    it('表格结束后恢复正常段落', () => {
+      const md = '| a | b |\n|---|---|\n| 1 | 2 |\n\n表格之后的段落';
+      const html = markdownToHtml(md);
+      expect(html).toContain('</tbody></table>');
+      expect(html).toContain('表格之后的段落');
+    });
+  });
+
   describe('insertImageAfter', () => {
     it('在锚点行后插入图片', () => {
       const md = '# 标题\n\n> 引言\n\n正文';

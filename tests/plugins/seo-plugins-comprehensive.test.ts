@@ -78,7 +78,7 @@ const seoPlugins: SEOPluginSpec[] = [
     name: 'blogger',
     importPath: '../../.xcli/plugins/blogger/index.ts',
     expectedUrl: 'https://www.blogger.com',
-    expectedCommands: ['login', 'create-blog', 'publish', 'update-profile'],
+    expectedCommands: ['login', 'create-blog', 'draft', 'publish', 'update-profile'],
     requiresLogin: true,
   },
   {
@@ -181,11 +181,17 @@ for (const spec of seoPlugins) {
       }
     });
 
+    // 走 shared/publishing 的命令（blogger 的 draft）不抛异常——协议层把错误
+    // 转成 fail() 让链式命令能 fallback。这里按命令分别断言。
+    const SHARED_PUBLISHING = new Set(['draft', 'publish']);
+
     it('all commands should throw when page is missing', async () => {
       for (const call of mockXCLI._site.command.mock.calls) {
+        const cmdName = call[0] as string;
+        if (SHARED_PUBLISHING.has(cmdName)) continue;
         const config = call[1] as Record<string, unknown>;
         const handler = config.handler as Function;
-        const params = getDefaultParams(spec.name, call[0] as string);
+        const params = getDefaultParams(spec.name, cmdName);
         await expect(handler(params, { storage: { set: vi.fn(), delete: vi.fn(), get: vi.fn() } }))
           .rejects.toThrow('需要浏览器页面');
       }
@@ -194,10 +200,12 @@ for (const spec of seoPlugins) {
     it('all commands should call page.goto when page is provided', async () => {
       const mockPage = createMockPage({ loggedIn: false });
       for (const call of mockXCLI._site.command.mock.calls) {
+        const cmdName = call[0] as string;
+        // 共享发布命令经 resolveChannel 决定通道（bridge 在线时不碰本地 page）
+        if (SHARED_PUBLISHING.has(cmdName)) continue;
         mockPage.goto.mockClear();
         const config = call[1] as Record<string, unknown>;
         const handler = config.handler as Function;
-        const cmdName = call[0] as string;
         const params = getDefaultParams(spec.name, cmdName);
         try {
           await handler(params, {
@@ -233,6 +241,7 @@ function getDefaultParams(pluginName: string, cmdName: string): Record<string, u
     blogger: {
       login: {},
       'create-blog': { title: 'Blog', address: 'my-blog' },
+      draft: { title: 'Test', content: 'Test body' },
       publish: { title: 'Test', content: '<p>Test</p>', labels: 'test' },
       'update-profile': { url: 'https://example.com', about: 'Bio' },
     },

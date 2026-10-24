@@ -728,3 +728,50 @@ unhandledrejection: DELETE /api/articles/2097465168825415200/draft  → 404
 - **Resolved**: 2026-10-25
 - **Notes**: 真因是上游 JS 精度丢失（divergence 71），不是反自动化也不是坐标准确性问题。修法是取 `record.url` 里的字符串 id
 ---
+
+## [ERR-20261025-001] chrome-bridge 窗口状态三连坑（点击静默失效 / 分组报错 / 僵尸 tab）
+
+**Logged**: 2026-10-25
+**Priority**: high
+**Status**: open（chunk 3 待修）
+**Area**: chrome-bridge
+
+### Summary
+
+Blogger 发布端到端反复「点了没反应」，连续排查出三个互不相同、但都会伪装成
+「反自动化」的环境层原因。
+
+### Error
+
+```
+① 点击无效（EVENTS: []）      → Chrome 无可见窗口，tab 的 outerWidth = 0
+② Grouping is not supported   → win-open 建的 popup 窗口让 tabs.group() 整体失效
+③ reused: true 但 tabs 为空   → 扩展 registry 里的僵尸 tab，每次"复用"一个死 tab
+```
+
+### Context
+
+三次的探测证据链（都是同一种误诊路径）：
+
+| 现象 | 一开始的归因 | 实证后真因 |
+|------|-------------|-----------|
+| 点击后页面无变化 | 站点反自动化 | ① tab 无窗口，CDP Input 不派发 |
+| `task-open` 全挂 | 扩展坏了 | ② popup 窗口不支持 tab 分组 |
+| 点击永远无效 | 坐标算错 | ③ 复用了已销毁的 tab |
+
+判据：`Page.bringToFront` 返回 ok、`elementFromPoint` 能命中、JS `.click()`
+能触发，**唯独坐标派发没反应** → 优先查 `outerWidth/outerHeight` 是否为 0。
+
+### Suggested Fix
+
+1. 发布前先体检：`evaluate('JSON.stringify({ow:outerWidth,oh:outerHeight})')`，
+   `ow === 0` 直接判环境不可用，别继续重试点击。
+2. 不要用 `win-open` 做发布通道——它建的是 popup，会毒化同浏览器后续所有
+   `task-open`（`Grouping is not supported`）。需要真实窗口时让用户开一个。
+3. `task-open` 返回 `reused: true` 时，**先验证 tab 还活着**再复用；
+   扩展侧应在复用前 `chrome.tabs.get()` 探测，拿不到就重建。
+
+### Metadata
+- Reproducible: yes（Chrome 156 / 扩展 1.5.1）
+- Related Files: `.xcli/plugins/shared/publishing/bridge.ts`
+- See Also: ERR-20261024-002（同一类「先归因反自动化、后用插桩证伪」的误诊）

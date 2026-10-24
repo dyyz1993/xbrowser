@@ -29,6 +29,7 @@ import {
   type BridgeTransport,
   type ElementPoint,
   createHttpBridge,
+  checkWindowReady,
   evaluateInTab,
   isBridgeAvailable,
   locateByText,
@@ -40,6 +41,43 @@ import {
 } from './bridge.js';
 
 export type PublishChannel = 'bridge' | 'local';
+
+/**
+ * 在**同源 iframe** 内求值。
+ *
+ * 宿主页面用 `contentDocument` 拿到 iframe 文档，再用该文档的 `defaultView`
+ * 构造一个真正的 iframe 作用域函数执行——**必须走 `Function` 构造，不能用
+ * `.call(doc)`**：后者只换 `this`，`expression` 里的 `document` 仍然指向
+ * 宿主页，会静默读写错误对象（实测踩坑：写入的正文进了宿主 document）。
+ *
+ * 跨源 iframe 的 `contentDocument` 为 `null`，此时返回 `null` 让调用方
+ * 决定怎么处理（不会静默成功）。
+ */
+async function evaluateInIframe<T>(
+  hostEvaluate: <R>(expr: string) => Promise<R>,
+  iframeSelector: string,
+  expression: string,
+): Promise<T> {
+  const wrapper = `(function(){
+    var f = document.querySelector(${JSON.stringify(iframeSelector)});
+    if (!f) return { err: 'iframe-not-found' };
+    var d;
+    try { d = f.contentDocument; } catch (e) { return { err: 'cross-origin' }; }
+    if (!d) return { err: 'cross-origin' };
+    var win = d.defaultView;
+    if (!win) return { err: 'no-window' };
+    try {
+      // 在 iframe 自己的全局作用域里执行，document/window 才真的是 iframe 的
+      var fn = new win.Function(${JSON.stringify(expression)});
+      return { ok: fn.call(win) };
+    } catch (e) {
+      return { err: 'eval-failed: ' + String((e && e.message) || e).slice(0, 120) };
+    }
+  })()`;
+  const raw = await hostEvaluate<{ err?: string; ok?: T }>(wrapper);
+  if (!raw || raw.err) return null as T;
+  return raw.ok as T;
+}
 
 export interface PageAdapter {
   readonly channel: PublishChannel;
@@ -81,6 +119,14 @@ export interface PageAdapter {
   clickSelector(selector: string): Promise<boolean>;
   /** 把页面切到前台（后台 tab 的可信输入会被 Chrome 静默丢弃） */
   bringToFront(): Promise<void>;
+  /**
+   * 在**同源 iframe** 内求值（Blogger 的正文编辑器就是这种形态）。
+   *
+   * 用 `contentDocument` 直通——跨源 iframe 会抛错，调用方需自行判断。
+   * `expression` 在 iframe 文档的作用域里执行，可访问 `document` / `window`，
+   * 但**看不到宿主页面的变量**。
+   */
+  evaluateInIframe<T = unknown>(iframeSelector: string, expression: string): Promise<T>;
 }
 
 /** bridge 通道适配器 */
@@ -152,6 +198,10 @@ export class BridgePageAdapter implements PageAdapter {
     const p = JSON.parse(point) as { x: number; y: number };
     await this.clickAt(p.x, p.y);
     return true;
+  }
+
+  evaluateInIframe<T = unknown>(iframeSelector: string, expression: string): Promise<T> {
+    return evaluateInIframe<T>(this.evaluate.bind(this), iframeSelector, expression);
   }
 }
 
@@ -277,6 +327,10 @@ export class LocalPageAdapter implements PageAdapter {
     await this.clickAt(p.x, p.y);
     return true;
   }
+
+  evaluateInIframe<T = unknown>(iframeSelector: string, expression: string): Promise<T> {
+    return evaluateInIframe<T>(this.evaluate.bind(this), iframeSelector, expression);
+  }
 }
 
 /** 通道解析结果 */
@@ -306,6 +360,12 @@ export async function resolveChannel(opts: {
   if (preferBridge && (await isBridgeAvailable(port))) {
     const bridge = createHttpBridge(port);
     const tabId = await openTaskTab(bridge, opts.taskName, opts.localUrl);
+    // 无可见窗口时 CDP 坐标点击静默失效——提前失败，别让调用方以为「点了没反应」
+    const win = await checkWindowReady(bridge, tabId);
+    if (!win.ok) {
+      await closeTaskTab(bridge, opts.taskName).catch(() => undefined);
+      throw new Error(`chrome-bridge：${win.reason ?? '窗口不可用'}`);
+    }
     return {
       adapter: new BridgePageAdapter(bridge, tabId),
       channel: 'bridge',
