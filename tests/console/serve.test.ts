@@ -42,3 +42,44 @@ describe('console serve', () => {
     expect(mockBuildOverview).toHaveBeenCalled();
   });
 });
+
+describe('console serve（补：静态端点与容错）', () => {
+  let serverRef2: Server | null = null;
+
+  afterEach(async () => {
+    await fetch('http://127.0.0.1:9225/health', { method: 'DELETE' }).catch(() => {});
+    serverRef2?.close();
+    serverRef2 = null;
+  });
+
+  it('根路径返回 HTML（含标题），未知路径 404，健康端点独立于 overview 构建', async () => {
+    mockBuildOverview.mockResolvedValue({ readonly: true, stats: {} });
+    const serveModule = await import('../../src/console/serve.js');
+    serverRef2 = (serveModule as unknown as { __serverForTests?: Server }).__serverForTests ?? null;
+    void handleConsoleServe([], {}, 'json');
+    await vi.waitFor(async () => {
+      const health = await get('/health');
+      expect(health.status).toBe(200);
+    });
+
+    const root = await get('/');
+    expect(root.status).toBe(200);
+    expect(root.text).toContain('<html');
+
+    const notFound = await get('/no-such-path');
+    expect(notFound.status).toBe(404);
+  });
+
+  it('overview 构建失败时 /api/overview 返回 5xx 而非挂死', async () => {
+    mockBuildOverview.mockRejectedValue(new Error('source down'));
+    const serveModule = await import('../../src/console/serve.js');
+    serverRef2 = (serveModule as unknown as { __serverForTests?: Server }).__serverForTests ?? null;
+    void handleConsoleServe([], {}, 'json');
+    await vi.waitFor(async () => {
+      const health = await get('/health');
+      expect(health.status).toBe(200);
+    });
+    const api = await get('/api/overview');
+    expect(api.status).toBeGreaterThanOrEqual(500);
+  });
+});

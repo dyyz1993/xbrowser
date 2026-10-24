@@ -18,6 +18,10 @@ on:
     tags: ['v*']
   workflow_dispatch:
     inputs:
+      dry_run:
+        description: '演练模式：只跑 verify+test，不发布任何东西（流水线改动的安全验证）'
+        type: boolean
+        default: false
       skip_marketplace:
         description: '跳过插件上架（仅发 npm）'
         type: boolean
@@ -38,7 +42,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Tag must match package.json version
+      - name: Tag must match package.json version (dry_run 时跳过——dispatch 无 tag)
+        if: ${{ !inputs.dry_run }}
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           VERSION=$(node -p "require('./package.json').version")
@@ -61,16 +66,39 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - name: Cache Playwright
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
       - name: Install Playwright Chromium
         run: npx playwright install chromium
+      - run: npm run build
+      - run: npm link
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm run build
       - name: Full test suite（全量，必须全绿）
         run: npm test -- --coverage 2>&1 | tee test-output.txt
-      - name: E2E tests
-        run: npm run test:e2e
-        continue-on-error: true # e2e 有既存断言过期问题（AGENTS §22.6），不阻塞发版
+      # e2e 硬门禁（2026-10-23 审计后升级）：setup 与 e2e.yml 完全一致
+      # （npm link + registry/browsers env——此前缺这两样导致偶发失败）；
+      # 失败自动重试一次消化 flaky（m5 时序），重跑仍败则挡发版。
+      - name: E2E tests（hard gate, retry once on flake）
+        run: |
+          set +e
+          npm run test:e2e
+          STATUS=$?
+          set -e
+          if [ "$STATUS" -ne 0 ]; then
+            echo "::warning::e2e 首跑失败，10s 后重试一次（flaky 消化）"
+            sleep 10
+            npm run test:e2e
+          fi
+        env:
+          XBROWSER_REGISTRY: https://marketplace.xbrowser.dev
+          XBROWSER_CHROMIUM_PATH: ''
+          PLAYWRIGHT_BROWSERS_PATH: /home/runner/.cache/ms-playwright
       # 产物冒烟：验证构建产物能启动（v1.0.3 ESM 事故教训）
       - name: Smoke test — built package must start
         run: |
@@ -105,6 +133,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     needs: [verify, test]
+    if: ${{ !inputs.dry_run }}
     steps:
       - name: Push approval request to Drel
         continue-on-error: true   # 推送失败不阻塞发布链
@@ -123,6 +152,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [test, notify-pending]
+    if: ${{ !inputs.dry_run }}
     # 审批门：production environment 配置了 required reviewer（dyyz1993）。
     # 跑到此 job 会暂停，GitHub 通知 + 上面的 Drel 推送提醒；手机/网页点
     # Approve and deploy 才继续，Reject 或 30 天超时则中止。
@@ -207,14 +237,23 @@ jobs:
       - name: Result
         id: verdict
         run: |
-          echo "verify=${{ needs.verify.result }} test=${{ needs.test.result }} npm=${{ needs.publish-npm.result }} marketplace=${{ needs.publish-marketplace.result }}"
-          if [ "${{ needs.verify.result }}" != "success" ] || [ "${{ needs.test.result }}" != "success" ] || [ "${{ needs.publish-npm.result }}" != "success" ]; then
+          echo "verify=${{ needs.verify.result }} test=${{ needs.test.result }} npm=${{ needs.publish-npm.result }} marketplace=${{ needs.publish-marketplace.result }} dry_run=${{ inputs.dry_run }}"
+          if [ "${{ needs.verify.result }}" != "success" ] || [ "${{ needs.test.result }}" != "success" ]; then
             echo "all_green=false" >> "$GITHUB_OUTPUT"
             echo "::error::release 未完成（见上）"
             exit 1
           fi
+          if [ "${{ inputs.dry_run }}" != "true" ] && [ "${{ needs.publish-npm.result }}" != "success" ]; then
+            echo "all_green=false" >> "$GITHUB_OUTPUT"
+            echo "::error::release 未完成（publish-npm 未成功）"
+            exit 1
+          fi
           echo "all_green=true" >> "$GITHUB_OUTPUT"
-          echo "✅ release complete"
+          if [ "${{ inputs.dry_run }}" == "true" ]; then
+            echo "✅ dry-run complete（verify+test 通过，未发布任何东西）"
+          else
+            echo "✅ release complete"
+          fi
 
   # ── 溯源证据：全绿后把构建产物挂到 tag 的 GitHub Release ────────────
   # Release 页 = github.com/dyyz1993/xbrowser/releases/tag/vX.Y.Z
