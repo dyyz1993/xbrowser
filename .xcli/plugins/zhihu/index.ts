@@ -1,4 +1,5 @@
 import { z } from 'zod/v4';
+import { checkLoggedIn } from '../shared/publishing/login-probe.js';
 import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page, PluginPage, PluginElementHandle, PluginRoute } from '../types.js';
@@ -608,21 +609,24 @@ export default function (xcli: XCLIAPI): void {
     description: '知乎 - 知识问答与内容采集 (DA 93)',
     requiresLogin: true,
     isLogin: async (ctx) => {
+      // bridge 优先——登录态在用户 Chrome 里（本地 page 没登录会误判）
       const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page | null;
-      if (!page) return true;
-      try {
-        const url = page.url();
-        if (url.includes('/login') || url.includes('/signin')) return false;
-        const loggedIn = await page.evaluate(() =>
-          !!document.querySelector(
-            'button[class*="profile"],[class*="Avatar"],[class*="user"],' +
-            'a[href*="/people/"],.AppHeader-profile'
-          )
-        );
-        return loggedIn;
-      } catch {
-        return true;
-      }
+      return checkLoggedIn('zhihu', 'https://www.zhihu.com/people/self', async () => {
+        if (!page) return true;
+        try {
+          const url = page.url();
+          if (url.includes('/login') || url.includes('/signin')) return false;
+          const loggedIn = await page.evaluate(() =>
+            !!document.querySelector(
+              'button[class*="profile"],[class*="Avatar"],[class*="user"],' +
+              'a[href*="/people/"],.AppHeader-profile'
+            )
+          );
+          return loggedIn;
+        } catch {
+          return true;
+        }
+      });
     },
   });
 

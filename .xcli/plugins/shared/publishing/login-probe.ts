@@ -28,6 +28,7 @@ export const LOGIN_URL_PATTERNS = {
   oschina: [/\/home\/login/i, /my\.oschina\.net\/login/i],
   '51cto': [/home\.51cto\.com/i],
   csdn: [/passport\.csdn\.net/i, /login\.csdn\.net/i],
+  zhihu: [/\/signin/i, /\/login/i, /signin\.zhihu\.com/i],
   juejin: [/juejin\.cn\/login/i],
 } as const;
 
