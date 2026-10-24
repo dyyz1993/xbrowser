@@ -5,7 +5,7 @@
  * 反例（ERR-20261022-010）：先做全局 HTML 转义（`>` → `&gt;`）再匹配
  * `^>` 引用块，引用块永远匹配不上，页面渲染成字面 `>`。
  *
- * 覆盖：标题 / 引用 / 有序无序列表 / 粗体 / 行内代码 / 代码块 / 图片 / 分隔线。
+ * 覆盖：标题 / 引用 / 有序无序列表 / 表格 / 粗体 / 行内代码 / 代码块 / 图片 / 分隔线。
  */
 
 /** HTML 实体转义（仅用于段落内部的裸文本） */
@@ -26,6 +26,21 @@ function isThematicBreak(text: string): boolean {
   return /^(-{3,}|\*{3,}|_{3,})$/.test(text.trim());
 }
 
+/** 表格行判定：以 `|` 开头结尾的 GFM 行 */
+function isTableRow(text: string): boolean {
+  return /^\s*\|.*\|\s*$/.test(text);
+}
+
+/** 表格分隔行判定：`| --- | :--: |` */
+function isTableSeparator(text: string): boolean {
+  return /^\s*\|[\s:|-]+\|\s*$/.test(text) && text.includes('-');
+}
+
+/** 拆分表格单元格（去掉首尾竖线） */
+function splitTableCells(text: string): string[] {
+  return text.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+}
+
 /**
  * Markdown → HTML。
  *
@@ -37,6 +52,7 @@ export function markdownToHtml(markdown: string): string {
   const out: string[] = [];
   let inCode = false;
   let listKind: 'ul' | 'ol' | null = null;
+  let inTable = false;
 
   const closeList = (): void => {
     if (listKind) {
@@ -45,10 +61,20 @@ export function markdownToHtml(markdown: string): string {
     }
   };
 
-  for (const raw of lines) {
+  const closeTable = (): void => {
+    if (inTable) {
+      out.push('</tbody></table>');
+      inTable = false;
+    }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+
     // 代码块围栏
     if (raw.trimStart().startsWith('```')) {
       closeList();
+      closeTable();
       inCode = !inCode;
       out.push(inCode ? '<pre><code>' : '</code></pre>');
       continue;
@@ -57,6 +83,26 @@ export function markdownToHtml(markdown: string): string {
       out.push(escapeHtml(raw));
       continue;
     }
+
+    // 表格：表头行 + 紧跟分隔行才成立（单靠一行 `| a | b |` 不算表格）
+    if (isTableRow(raw) && !isTableSeparator(raw) && isTableSeparator(lines[i + 1] ?? '')) {
+      closeList();
+      closeTable();
+      const headers = splitTableCells(raw);
+      out.push(
+        '<table border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse">'
+        + '<thead><tr>' + headers.map((h) => `<th>${renderInline(escapeHtml(h))}</th>`).join('') + '</tr></thead><tbody>',
+      );
+      inTable = true;
+      i++; // 跳过分隔行
+      continue;
+    }
+    if (inTable && isTableRow(raw)) {
+      const cells = splitTableCells(raw);
+      out.push('<tr>' + cells.map((c) => `<td>${renderInline(escapeHtml(c))}</td>`).join('') + '</tr>');
+      continue;
+    }
+    if (inTable) closeTable();
 
     // 无序列表（`---` 是分隔线不是列表项——先排除分隔线形态）
     const ulMatch = raw.match(/^\s*[-*+]\s+(.*)$/);
@@ -113,6 +159,7 @@ export function markdownToHtml(markdown: string): string {
   }
 
   closeList();
+  closeTable();
   if (inCode) out.push('</code></pre>');
   return out.join('\n');
 }

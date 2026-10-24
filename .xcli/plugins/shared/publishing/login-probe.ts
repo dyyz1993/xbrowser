@@ -30,6 +30,9 @@ export const LOGIN_URL_PATTERNS = {
   csdn: [/passport\.csdn\.net/i, /login\.csdn\.net/i],
   zhihu: [/\/signin/i, /\/login/i, /signin\.zhihu\.com/i],
   juejin: [/juejin\.cn\/login/i],
+  // 注意：blogger 正常页面 URL 也会带 authuser=0，不能拿它当登录页特征
+  blogger: [/accounts\.google\.com\/ServiceLogin/i, /accounts\.google\.com\/v3\/signin/i],
+  wordpress: [/wordpress\.com\/log-in/i, /\/login\?redirect_to/i],
 } as const;
 
 export type LoginSite = keyof typeof LOGIN_URL_PATTERNS;

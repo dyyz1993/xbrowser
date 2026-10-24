@@ -101,6 +101,12 @@ export async function trustedClick(
   x: number,
   y: number,
 ): Promise<void> {
+  // 后台 tab 的可信鼠标事件会被 Chrome 静默丢弃（AGENTS.md §14 记录的已知坑）。
+  // daemon 创建的 tab 默认在后台——不切前台，点击就是「发了但没反应」。
+  await bridge
+    .call('cdp', { method: 'Page.bringToFront', params: {}, tabId })
+    .catch(() => undefined);
+  await new Promise((r) => setTimeout(r, 150));
   await bridge.call('cdp', {
     method: 'Input.dispatchMouseEvent',
     params: { type: 'mouseMoved', x, y, buttons: 0 },

@@ -21,7 +21,10 @@ function createMockLocator() {
     fill: vi.fn(() => Promise.resolve()),
   };
   const first = vi.fn(() => item);
-  return { first, isVisible: item.isVisible, click: item.click, fill: item.fill };
+  // Blogger 页面的定位链会用到 .filter({ hasText }) —— mock 必须支持，否则链式调用炸
+  const filter = vi.fn(() => self);
+  const self: any = { first, isVisible: item.isVisible, click: item.click, fill: item.fill, filter };
+  return self;
 }
 
 function createMockPage() {
@@ -57,7 +60,7 @@ function createMockCtx(page?: ReturnType<typeof createMockPage>) {
   };
 }
 
-const ALL_COMMANDS = ['login', 'create-blog', 'publish', 'update-profile'];
+const ALL_COMMANDS = ['login', 'create-blog', 'draft', 'publish', 'update-profile'];
 
 describe('blogger plugin', () => {
   beforeEach(() => {
@@ -77,8 +80,8 @@ describe('blogger plugin', () => {
     );
   });
 
-  it('should register 4 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(4);
+  it('should register 5 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(5);
   });
 
   it('should register expected command names', () => {
@@ -186,79 +189,44 @@ describe('blogger plugin', () => {
       await expect(handler({ title: 'Test', address: 'test' }, ctx)).rejects.toThrow('需要浏览器页面上下文');
     });
 
-    it('should navigate to blog create page', async () => {
+    it('should open the reading dashboard (create-blog.g is an SPA route)', async () => {
       const handler = getHandler('create-blog');
       const page = createMockPage();
       const ctx = createMockCtx(page);
       await handler({ title: 'My Blog', address: 'my-blog' }, ctx);
       expect(page.goto).toHaveBeenCalledWith(
-        'https://www.blogger.com/blog/create',
+        'https://www.blogger.com/dashboard/reading',
         expect.objectContaining({ waitUntil: 'domcontentloaded' })
       );
     });
 
-    it('should return blog title and address in data', async () => {
+    it('should fail when the create CTA is not visible', async () => {
       const handler = getHandler('create-blog');
       const page = createMockPage();
       const ctx = createMockCtx(page);
       const result = await handler({ title: 'My Blog', address: 'my-blog' }, ctx);
-      expect(result.data.title).toBe('My Blog');
-      expect(result.data.address).toBe('my-blog');
-    });
-
-    it('should call waitForHuman for CAPTCHA completion', async () => {
-      const handler = getHandler('create-blog');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({ title: 'T', address: 'a' }, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalledWith(
-        expect.objectContaining({ autoDetect: true })
-      );
+      expect(result.success).toBe(false);
     });
   });
 
-  describe('publish command', () => {
-    it('should throw when no page in context', async () => {
-      const handler = getHandler('publish');
-      const ctx = createMockCtx();
-      await expect(handler({ title: 'Test', content: 'Hello' }, ctx)).rejects.toThrow('需要浏览器页面上下文');
+  describe('publish command (shared publishing protocol)', () => {
+    it('should be registered by registerPublishingCommands', () => {
+      const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
+      expect(names).toContain('publish');
+      expect(names).toContain('draft');
     });
 
-    it('should navigate to post create page', async () => {
+    it('should fail when neither content nor file provided', async () => {
       const handler = getHandler('publish');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({ title: 'SEO Guide', content: '<p>content</p>' }, ctx);
-      expect(page.goto).toHaveBeenCalledWith(
-        'https://www.blogger.com/blog/post/create/',
-        expect.objectContaining({ waitUntil: 'domcontentloaded' })
-      );
+      const ctx = createMockCtx(createMockPage());
+      const result = await handler({ title: 'T' }, ctx);
+      expect(result.success).toBe(false);
     });
 
-    it('should return title and labels in data', async () => {
-      const handler = getHandler('publish');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      const result = await handler({ title: 'SEO Guide', content: 'body', labels: 'seo,marketing' }, ctx);
-      expect(result.data.title).toBe('SEO Guide');
-      expect(result.data.labels).toBe('seo,marketing');
-    });
-
-    it('should include publish tip', async () => {
-      const handler = getHandler('publish');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      const result = await handler({ title: 'My Post', content: 'body' }, ctx);
-      expect(firstTip(result.tips)).toContain('My Post');
-      expect(firstTip(result.tips)).toContain('Blogger');
-    });
-
-    it('should call waitForHuman before publish', async () => {
-      const handler = getHandler('publish');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({ title: 'T', content: 'C' }, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalled();
+    it('should declare title/file/images parameters', () => {
+      const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'publish')!;
+      const shape = (call[1] as { parameters: { shape: Record<string, unknown> } }).parameters.shape;
+      expect(Object.keys(shape)).toEqual(expect.arrayContaining(['title', 'content', 'file', 'images']));
     });
   });
 

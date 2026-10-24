@@ -18,6 +18,7 @@ function createAdapter(initial: Record<string, unknown> = {}) {
   const locations: Array<{ text: string; scope?: string; exact?: boolean }> = [];
   const inserted: string[] = [];
   const selectors: string[] = [];
+  const iframeCalls: string[] = [];
 
   const adapter = {
     channel: 'local' as const,
@@ -68,8 +69,12 @@ function createAdapter(initial: Record<string, unknown> = {}) {
     async bringToFront(): Promise<void> {
       /* 本地通道无前台概念 */
     },
+    async evaluateInIframe<T>(iframeSelector: string, _expression: string): Promise<T> {
+      iframeCalls.push(iframeSelector);
+      return (state.__iframeResult ?? null) as T;
+    },
   };
-  return { adapter, state, expressions, clicks, texts, locations, inserted, selectors };
+  return { adapter, state, expressions, clicks, texts, locations, inserted, selectors, iframeCalls };
 }
 
 /**

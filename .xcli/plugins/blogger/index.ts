@@ -1,6 +1,9 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
-import { ok } from '@dyyz1993/xcli-core';
+import { ok, fail } from '@dyyz1993/xcli-core';
+import { bloggerPublisher } from '../shared/publishing/sites/blogger.js';
+import { registerPublishingCommands } from '../shared/publishing/commands.js';
+import { checkLoggedIn } from '../shared/publishing/login-probe.js';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -9,18 +12,21 @@ export default function (xcli: XCLIAPI): void {
     description: 'Blogger.com SEO 外链 - Google 免费博客平台 (DA 89, dofollow)',
     requiresLogin: true,
     isLogin: async (ctx) => {
+      // bridge 优先——Google 登录态在用户 Chrome 里，本地 page 看不到
       const page = ctx.page;
-      if (!page) return true;
-      try {
-        const url = page.url();
-        if (url.includes('/login') || url.includes('/signin')) return false;
-        const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
-        if (!body) return false;
-        if (body.includes('Sign in')) return false;
-        return true;
-      } catch {
-        return true;
-      }
+      return checkLoggedIn('blogger', 'https://www.blogger.com/home', async () => {
+        if (!page) return true;
+        try {
+          const url = page.url();
+          if (url.includes('/login') || url.includes('/signin')) return false;
+          const body = await page.evaluate(() => document.body?.textContent?.trim().slice(0, 200) || '') as string;
+          if (!body) return false;
+          if (body.includes('Sign in')) return false;
+          return true;
+        } catch {
+          return true;
+        }
+      });
     },
   });
 
@@ -84,119 +90,64 @@ export default function (xcli: XCLIAPI): void {
       const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
-      await page.goto('https://www.blogger.com/blog/create', {
+      // 抽屉里那份「创建博客」坐标是负的（收起状态），必须用可见的那份
+      await page.goto('https://www.blogger.com/dashboard/reading', {
         waitUntil: 'domcontentloaded',
-        timeout: 15000,
+        timeout: 20000,
       });
-      await page.waitForLoadState('networkidle');
-      await page.waitForTimeout(2000);
+      await page.waitForTimeout(6000);
 
-      const titleInput = page.locator(
-        'input[aria-label*="Title"], input[aria-label*="title"], input[name="title"]'
-      ).first();
-      if (await titleInput.isVisible().catch(() => false)) {
-        await titleInput.fill(params.title);
+      const cta = page.locator('div[jsname="VdueEf"] [role="button"]').filter({ hasText: '创建博客' }).first();
+      if (!(await cta.isVisible().catch(() => false))) {
+        return fail('找不到「创建博客」按钮（页面可能还在加载）');
       }
+      await cta.click();
+      await page.waitForTimeout(6000);
 
-      const addressInput = page.locator(
-        'input[aria-label*="Address"], input[aria-label*="address"], input[name="address"]'
-      ).first();
-      if (await addressInput.isVisible().catch(() => false)) {
-        await addressInput.fill(params.address);
+      // 第一步：名称
+      const titleInput = page.locator('input[aria-label="标题"]').first();
+      if (!(await titleInput.isVisible().catch(() => false))) {
+        return fail('创建博客弹窗未出现');
       }
+      await titleInput.fill(params.title);
+      await page.waitForTimeout(1500);
 
-      const result = await ctx.waitForHuman?.({
-        reason: 'Complete blog creation (resolve CAPTCHA if present)',
-        timeout: 120,
-        autoDetect: true,
-      });
+      // 「下一步」限定在选名称那个弹窗里——侧边栏抽屉也是 role=dialog
+      const dialog1 = page.locator('[role="dialog"]').filter({ hasText: '选择一个名称' }).first();
+      const nextBtn = dialog1.locator('[role="button"]').filter({ hasText: /^下一步$/ }).first();
+      await nextBtn.click();
+      await page.waitForTimeout(7000);
 
-      return ok({
-          title: params.title,
-          address: params.address,
-          completed: result?.solved ?? false,
-          url: page.url(),
-        }, [
-          result?.solved
-            ? `博客 "${params.title}" 创建完成`
-            : `博客 "${params.title}" 创建待确认`,
-        ]);
+      // 第二步：地址
+      const dialog2 = page.locator('[role="dialog"]').filter({ hasText: '网址' }).first();
+      const addrInput = dialog2.locator('input').first();
+      if (!(await addrInput.isVisible().catch(() => false))) {
+        return fail('地址输入框未出现');
+      }
+      await addrInput.fill(params.address);
+      await page.waitForTimeout(4000);
+
+      const saveBtn = dialog2.locator('[role="button"]').filter({ hasText: /^保存$/ }).first();
+      await saveBtn.click();
+      await page.waitForTimeout(15000);
+
+      // 保存成功会跳到博客后台（blog/posts/<id>）
+      const url = page.url();
+      const created = /blog\/posts\/\d+/.test(url);
+
+      return ok(
+        { title: params.title, address: params.address, completed: created, url },
+        [created ? `博客「${params.title}」创建完成` : '保存后未检测到跳转，请到后台确认'],
+      );
     },
   });
 
-  site.command('publish', {
-    description: '在 Blogger 发布文章（dofollow 外链）',
-    loginRequired: 'required',
-    scope: 'page',
-    parameters: z.object({
-      title: z.string().describe('文章标题'),
-      content: z.string().describe('文章内容（HTML 或纯文本）'),
-      labels: z.string().optional().describe('标签，逗号分隔'),
-    }),
-    examples: [
-      {
-        cmd: 'xbrowser blogger publish --title "SEO Guide" --content "<p>Check out <a href=\'https://example.com\'>my site</a></p>" --labels "seo,marketing"',
-        description: '发布带外链的文章',
-      },
-    ],
-    result: z.object({ title: z.string(), labels: z.string().optional(), url: z.string() }).passthrough(),
-    handler: async (params, ctx) => {
-      const page = ctx.page;
-      if (!page) throw new Error('需要浏览器页面上下文');
-
-      await page.goto('https://www.blogger.com/blog/post/create/', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000,
-      });
-      await page.waitForLoadState('networkidle');
-      await page.waitForTimeout(3000);
-
-      const titleInput = page.locator(
-        'input[aria-label*="Title"], input[aria-label*="title"], input[name="title"], h1[contenteditable]'
-      ).first();
-      if (await titleInput.isVisible().catch(() => false)) {
-        await titleInput.click();
-        await titleInput.fill(params.title);
-      }
-
-      const editorBody = page.locator(
-        '[aria-label*="Compose"], [contenteditable="true"].editable, div.editable, [aria-label*="Post body"]'
-      ).first();
-      if (await editorBody.isVisible().catch(() => false)) {
-        await editorBody.click();
-        await page.keyboard.insertText(params.content);
-      }
-
-      if (params.labels) {
-        const labelsInput = page.locator(
-          'input[aria-label*="Label"], input[name="labels"], input[aria-label*="label"]'
-        ).first();
-        if (await labelsInput.isVisible().catch(() => false)) {
-          await labelsInput.fill(params.labels);
-        }
-      }
-
-      await ctx.waitForHuman?.({
-        reason: 'Review and publish post (resolve CAPTCHA if present)',
-        timeout: 120,
-        autoDetect: true,
-      });
-
-      const publishBtn = page.locator(
-        'button:has-text("Publish"), button:has-text("发布"), [data-action="publish"]'
-      ).first();
-      if (await publishBtn.isVisible().catch(() => false)) {
-        await publishBtn.click();
-        await page.waitForTimeout(3000);
-      }
-
-      return ok({
-          title: params.title,
-          labels: params.labels,
-          url: page.url(),
-        }, [`文章 "${params.title}" 已在 Blogger 发布`]);
-    },
+  registerPublishingCommands(site, {
+    // 本地通道用：直接进博客后台（blogId 由登录用户的第一个博客决定）
+    editorUrl: 'https://www.blogger.com/home',
+    publisher: bloggerPublisher,
   });
+
 
   site.command('update-profile', {
     description: '更新 Blogger 个人资料（添加外链）',
