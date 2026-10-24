@@ -89,6 +89,39 @@ export async function bringToFront(bridge: BridgeTransport, tabId: number): Prom
 }
 
 /**
+ * 检查 tab 所在窗口是否可接收信任输入。
+ *
+ * 无可见窗口时 `outerWidth/outerHeight` 为 0：这种 tab 上 `evaluate`、
+ * `elementFromPoint`、JS `.click()` 全部正常，**只有 CDP Input 坐标派发
+ * 静默失效**（ERR-20261025-001）。提前探测能把「点了没反应」变成明确报错。
+ */
+export async function checkWindowReady(
+  bridge: BridgeTransport,
+  tabId: number,
+): Promise<{ ok: boolean; reason?: string }> {
+  const raw = await bridge
+    .call('evaluate', {
+      expression: 'JSON.stringify({ow:outerWidth,oh:outerHeight})',
+      tabId,
+    })
+    .then((r) => (r as { value?: string })?.value)
+    .catch(() => undefined);
+  if (!raw) return { ok: false, reason: '无法读取窗口尺寸' };
+  try {
+    const d = JSON.parse(raw) as { ow?: number; oh?: number };
+    if (!d.ow || !d.oh) {
+      return {
+        ok: false,
+        reason: 'Chrome 没有可见窗口（outerWidth=0）——CDP 坐标点击不会生效，请先打开一个 Chrome 窗口',
+      };
+    }
+    return { ok: true };
+  } catch {
+    return { ok: false, reason: `窗口尺寸解析失败：${String(raw).slice(0, 60)}` };
+  }
+}
+
+/**
  * 可信点击（CDP Input 域，isTrusted=true）。
  *
  * 关键：`mouseMoved` 的 callback 会被 Chrome 合成器推迟到帧渲染（重页面
@@ -226,7 +259,23 @@ export async function openTaskTab(
     reused?: boolean;
   };
   if (!opened?.tabId) throw new Error(`bridge task-open 失败（${name}）——扩展未连接？`);
+
   if (opened.reused) {
+    // 扩展的 registry 可能残留已销毁的 tab（ERR-20261025-001）：
+    // 这种 tab 上 CDP 能执行 JS，但 Input 事件静默丢弃，表现为「点了没反应」。
+    // 复用时先确认 tab 真的活着，不活就关掉分组重开。
+    const alive = await bridge
+      .call('evaluate', { expression: '1', tabId: opened.tabId })
+      .then(() => true)
+      .catch(() => false);
+    if (!alive) {
+      await closeTaskTab(bridge, name);
+      const reopened = (await bridge.call('task-open', { name, url })) as { tabId?: number };
+      if (!reopened?.tabId) {
+        throw new Error(`bridge task-open 失败（${name}）——复用 tab 已失效且无法重建`);
+      }
+      return reopened.tabId;
+    }
     // 复用 tab：强制导航到目标 URL（否则停在旧页面）
     await bridge
       .call('navigate', { url, tabId: opened.tabId })

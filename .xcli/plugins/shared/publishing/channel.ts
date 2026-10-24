@@ -29,6 +29,7 @@ import {
   type BridgeTransport,
   type ElementPoint,
   createHttpBridge,
+  checkWindowReady,
   evaluateInTab,
   isBridgeAvailable,
   locateByText,
@@ -359,6 +360,12 @@ export async function resolveChannel(opts: {
   if (preferBridge && (await isBridgeAvailable(port))) {
     const bridge = createHttpBridge(port);
     const tabId = await openTaskTab(bridge, opts.taskName, opts.localUrl);
+    // 无可见窗口时 CDP 坐标点击静默失效——提前失败，别让调用方以为「点了没反应」
+    const win = await checkWindowReady(bridge, tabId);
+    if (!win.ok) {
+      await closeTaskTab(bridge, opts.taskName).catch(() => undefined);
+      throw new Error(`chrome-bridge：${win.reason ?? '窗口不可用'}`);
+    }
     return {
       adapter: new BridgePageAdapter(bridge, tabId),
       channel: 'bridge',
