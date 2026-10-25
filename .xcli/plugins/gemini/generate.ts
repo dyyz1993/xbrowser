@@ -179,9 +179,33 @@ async function sendPrompt(tabId: number, prompt: string): Promise<SendResult> {
     return { typed: false, sent: false, text: got };
   }
 
-  const sentExpr = '(()=>{const b=[...document.querySelectorAll("button")].find(x=>{const l=x.getAttribute("aria-label")||"";return (l.includes("发送")||l.includes("Send"))&&!x.disabled&&x.getBoundingClientRect().width>0});if(b){b.click();return true}return false})()';
-  const sent = await runtime.ev<string | boolean>(sentExpr, tabId);
-  return { typed: true, sent: sent === true || sent === 'true', text: got };
+  // 可信点击发送：合成 b.click() 被 CDP-Guard 拦截（isTrusted=false 100% 可检测）。
+  // 查坐标 + elementFromPoint 命中校验 + Input.dispatchMouseEvent 三事件，与其他插件同款。
+  const sendBtn = await runtime.ev<string | null>('(' + (() => {
+    const b = [...document.querySelectorAll('button')].find((x) => {
+      const l = x.getAttribute('aria-label') || '';
+      return (l.includes('发送') || l.includes('Send')) && !x.disabled && x.getBoundingClientRect().width > 0;
+    });
+    if (!b) return null;
+    b.scrollIntoView({ block: 'center' });
+    const r = b.getBoundingClientRect();
+    const cx = Math.round(r.x + r.width / 2);
+    const cy = Math.round(r.y + r.height / 2);
+    const hit = document.elementFromPoint(cx, cy);
+    if (!hit || !(b === hit || b.contains(hit))) return null;
+    return JSON.stringify({ x: cx, y: cy });
+  }).toString() + ')()', tabId);
+  let sent = false;
+  if (typeof sendBtn === 'string' && sendBtn) {
+    const p = JSON.parse(sendBtn) as { x: number; y: number };
+    await runtime.cdp('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y, buttons: 0 }, tabId);
+    await runtime.sleep(120);
+    await runtime.cdp('Input.dispatchMouseEvent', { type: 'mousePressed', x: p.x, y: p.y, button: 'left', buttons: 1, clickCount: 1 }, tabId);
+    await runtime.sleep(80);
+    await runtime.cdp('Input.dispatchMouseEvent', { type: 'mouseReleased', x: p.x, y: p.y, button: 'left', buttons: 0, clickCount: 1 }, tabId);
+    sent = true;
+  }
+  return { typed: true, sent, text: got };
 }
 
 async function selectGenerationMode(tabId: number, media: MediaMode): Promise<void> {
