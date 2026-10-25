@@ -66,9 +66,23 @@ describe('chrome-bridge plugin', () => {
     const { site, xcli } = makeMock();
     chromeBridge(xcli as never);
     expect(xcli.createSite).toHaveBeenCalledWith(expect.objectContaining({ name: 'chrome-bridge' }));
-    for (const name of ['serve', 'status', 'revive', 'exec', 'cdp', 'task', 'open']) {
+    for (const name of ['serve', 'status', 'revive', 'exec', 'cdp', 'task', 'open', 'acceptance']) {
       expect(site.command).toHaveBeenCalledWith(name, expect.anything());
     }
+  });
+
+  it('acceptance declares a structured no-human result contract', () => {
+    const { site, xcli } = makeMock();
+    chromeBridge(xcli as never);
+    const call = site.command.mock.calls.find((c: unknown[]) => c[0] === 'acceptance');
+    expect(call).toBeTruthy();
+    const options = call![1] as { parameters: { shape: Record<string, unknown> }; result: { shape: Record<string, unknown> } };
+    expect(Object.keys(options.parameters.shape)).toEqual(expect.arrayContaining([
+      'extensionId', 'expectedVersion', 'timeoutSeconds', 'skipTrustedClick',
+    ]));
+    expect(Object.keys(options.result.shape)).toEqual(expect.arrayContaining([
+      'ok', 'phase', 'reloaded', 'connected', 'trustedClick', 'cleanup', 'computerUseRequired',
+    ]));
   });
 
   it('serve reports already-running when HTTP status probe succeeds', async () => {
