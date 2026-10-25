@@ -110,7 +110,10 @@ export function registerHistoryCommands(site: CommandRegistrar): void {
     result: z.array(z.object({ title: z.string(), href: z.string() })),
     examples: [{ cmd: 'xbrowser gemini history-list', description: '列出历史会话' }],
     handler: async () => {
-      const open = await bridgeExec('task-open', { name: `history-${Date.now()}` });
+      // 组名必须先存再用——两次 Date.now() 是不同时间戳，close 永远对不上
+      // open 的名字，任务组从此泄漏（实测一次调用即泄漏一个 about:blank 组）
+      const taskName = `history-${Date.now()}`;
+      const open = await bridgeExec('task-open', { name: taskName });
       if (!open?.ok) return fail('chrome-bridge 未启动');
       const tabId = (open.data as { tabId: number }).tabId;
       try {
@@ -118,7 +121,7 @@ export function registerHistoryCommands(site: CommandRegistrar): void {
         const sessions = await listSessions(tabId);
         return ok(sessions, [`共 ${sessions.length} 个会话`]);
       } finally {
-        await bridgeExec('task-close', { name: `history-${Date.now()}` });
+        await bridgeExec('task-close', { name: taskName });
       }
     },
   });
