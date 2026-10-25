@@ -775,3 +775,45 @@ Blogger 发布端到端反复「点了没反应」，连续排查出三个互不
 - Reproducible: yes（Chrome 156 / 扩展 1.5.1）
 - Related Files: `.xcli/plugins/shared/publishing/bridge.ts`
 - See Also: ERR-20261024-002（同一类「先归因反自动化、后用插桩证伪」的误诊）
+
+## [ERR-20261025-002] git reset --hard 抹掉工作区里别人的未提交改动
+
+**Logged**: 2026-10-25
+**Priority**: high
+**Status**: resolved
+**Area**: process
+
+### Summary
+
+本地 master 与远端分叉（我在本地直接 commit 过 9e9fb10，远端是 squash 后的 cc47ddb），
+用 `git reset --hard origin/master` 想对齐，**把工作区里另一个会话未提交的改动一起抹了**
+（`.xcli/plugins/chrome-bridge/index.ts` 一个写了一半的 acceptance 命令，315 行）。
+
+### Error
+
+```
+git reset --hard origin/master
+→ 同目录下另一个会话的 chrome-bridge/index.ts (315 additions) 无声消失
+```
+
+### Context
+
+- 仓库没有 worktree 隔离，多会话共用一个工作区是常态
+- `git status` 里那些"M"文件不一定是我的——提交前必须逐个确认归属
+- 我发现这一点是因为提交时 pre-commit 报语法错（缺失的括号），
+  再看 `git diff HEAD --stat` 发现该文件多出 315 行不是我写的
+
+### Suggested Fix
+
+1. **永远不要在有未提交改动的工作区跑 `git reset --hard`**。要同步远端就
+   `git pull --ff-only`；已分叉就 `git fetch && git reset --hard` **前先
+   `git stash push -u`** 全部保存。
+2. 提交前 `git status` 逐个文件确认归属；不属于自己的改动用
+   `git stash push -u -- <paths>` 隔离，不要 `git add -A`。
+3. 万一已经抹掉：`git fsck --lost-found | grep dangling` + 之前 stash 的
+   commit 对象（`git cat-file -t <sha>` 仍在）可以完整恢复。
+
+### Metadata
+- Reproducible: yes
+- Related Files: `.xcli/plugins/chrome-bridge/index.ts`
+- See Also: —
