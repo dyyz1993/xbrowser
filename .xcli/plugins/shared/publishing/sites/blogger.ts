@@ -105,11 +105,36 @@ export const bloggerPublisher: SitePublisher = {
     if (!clicked) {
       throw new Error('Blogger：找不到「新建博文」按钮（页面可能还在加载，或侧边栏处于收起状态）');
     }
-    // waitFor 超时会 throw，这里显式接住以给出可诊断的错误
+    // 等进入编辑器。
+    //
+    // 判据用「编辑器特征」而不是纯 URL：SPA 跳转时 location.href 有时比 DOM 晚，
+    // 且每次 adapter.url() 都是一次 bridge 往返——轮询太密会把通道打满。
     const beforeClickUrl = url;
-    try {
-      await waitFor(async () => /blog\/post\/edit\//.test(await adapter.url()), { timeout: 25000 });
-    } catch {
+    const entered = await waitFor(
+      async () => {
+        const probe = await adapter.evaluate<string | null>(`JSON.stringify((function(){
+          var f = document.querySelector('iframe.editable');
+          var t = Array.prototype.slice.call(document.querySelectorAll('input[type=text]')).filter(function(e){
+            return e.getAttribute('aria-label') === '标题';
+          })[0];
+          return {
+            url: /blog\\/post\\/edit\\//.test(location.href),
+            body: !!f,
+            title: !!t
+          };
+        })())`);
+        if (!probe) return false;
+        try {
+          const p = JSON.parse(probe) as { url?: boolean; body?: boolean; title?: boolean };
+          return Boolean(p.body || p.title || p.url);
+        } catch {
+          return false;
+        }
+      },
+      { timeout: 25000, interval: 800 },
+    ).catch(() => false);
+
+    if (!entered) {
       const now = await adapter.url().catch(() => '(读取失败)');
       throw new Error(
         `Blogger：点击「新建博文」后未进入编辑器（点击前 ${beforeClickUrl} → 现在 ${now}）`,
@@ -130,7 +155,7 @@ export const bloggerPublisher: SitePublisher = {
         return JSON.stringify({ x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2) });
       })()`);
       return raw;
-    }, { timeout: 20000 });
+    }, { timeout: 20000 }).catch(() => null);
     if (!found) throw new Error('Blogger：找不到标题输入框');
     const p = JSON.parse(found) as { x: number; y: number };
 
@@ -156,7 +181,7 @@ export const bloggerPublisher: SitePublisher = {
 
     // 原子三步：清空 → 单次写入 → 触发 input（防双份粘贴，ERR-20261024-001）
     const result = await adapter.evaluateInIframe<string>(BODY_SELECTOR, `
-      var b = document.body;
+      var b = __doc.body;
       if (!b) return JSON.stringify({ err: 'no-body' });
       b.innerHTML = '';
       b.innerHTML = ${JSON.stringify(html)};
@@ -181,7 +206,7 @@ export const bloggerPublisher: SitePublisher = {
     for (let i = 0; i < 10 && !after; i++) {
       await sleep(500);
       after = await adapter.evaluateInIframe<string>(BODY_SELECTOR, `
-        var b = document.body;
+        var b = __doc.body;
         if (!b) return null;
         return JSON.stringify({ chars: (b.innerText || '').length, tables: b.querySelectorAll('table').length });
       `);
@@ -251,7 +276,7 @@ export const bloggerPublisher: SitePublisher = {
       const url = await adapter.url();
       // 发布成功后 Blogger 跳回博文列表或跳到文章页
       return /blog\/posts\/|\.blogspot\.com\/\d{4}\//.test(url) && !/post\/edit/.test(url);
-    }, { timeout: 30000 });
+    }, { timeout: 30000 }).catch(() => false);
 
     const finalUrl = await adapter.url();
     if (published) {
@@ -264,10 +289,14 @@ export const bloggerPublisher: SitePublisher = {
 /** 等正文 iframe 的 body 可写 */
 async function waitForBody(adapter: PageAdapter, timeout = 25000): Promise<void> {
   let lastError = '(未取到值)';
+  // 后台 tab 的 renderer 被节流，iframe 的 contentDocument 可能取不到——
+  // 先把 tab 激活（这也是后续可信输入的必要条件）。
+  await adapter.bringToFront().catch(() => undefined);
+  // waitFor 超时会 throw（不是返回 false），必须接住才能给出可诊断的信息
   const ok = await waitFor(async () => {
     // 返回值经 JSON 序列化，布尔可能变成 true 或 'true'——两种都认
     try {
-      const raw = await adapter.evaluateInIframe<unknown>(BODY_SELECTOR, `return !!document.body;`);
+      const raw = await adapter.evaluateInIframe<unknown>(BODY_SELECTOR, `return !!__doc.body;`);
       if (raw === true || raw === 'true') return true;
       lastError = `返回 ${JSON.stringify(raw)}`;
       return false;
@@ -275,6 +304,6 @@ async function waitForBody(adapter: PageAdapter, timeout = 25000): Promise<void>
       lastError = String(e instanceof Error ? e.message : e).slice(0, 150);
       return false;
     }
-  }, { timeout });
+  }, { timeout }).catch(() => false);
   if (!ok) throw new Error(`Blogger：正文 iframe 未就绪（${lastError}）`);
 }

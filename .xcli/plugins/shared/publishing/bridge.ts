@@ -22,11 +22,13 @@ export interface BridgeTransport {
 /** 判断 bridge 是否可用（扩展已连接） */
 export async function isBridgeAvailable(port = BRIDGE_PORT): Promise<boolean> {
   try {
+    // 用 ping 而不是 tabs：tabs 要枚举全部标签页 + 计算分组，tab 多时
+    // 会超过超时被误判成「bridge 不可用」，进而把发布误判成未登录。
     const r = await fetch(`http://127.0.0.1:${port}/exec`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cmd: 'tabs', args: {} }),
-      signal: AbortSignal.timeout(1500),
+      body: JSON.stringify({ cmd: 'ping', args: {} }),
+      signal: AbortSignal.timeout(5000),
     }).then((x) => x.json());
     return Boolean(r && (r as BridgeResponse).ok);
   } catch {
@@ -89,16 +91,20 @@ export async function bringToFront(bridge: BridgeTransport, tabId: number): Prom
 }
 
 /**
- * 检查 tab 所在窗口是否可接收信任输入。
+ * 确认 tab 可接收可信输入。
  *
- * 无可见窗口时 `outerWidth/outerHeight` 为 0：这种 tab 上 `evaluate`、
- * `elementFromPoint`、JS `.click()` 全部正常，**只有 CDP Input 坐标派发
- * 静默失效**（ERR-20261025-001）。提前探测能把「点了没反应」变成明确报错。
+ * 注意：**非活跃 tab 的 `outerWidth` 恒为 0**，这不代表没有窗口——调用
+ * `Page.bringToFront` 激活后会恢复成真实尺寸（实测 0 → 1920）。
+ * 所以这里先激活再读，激活后仍为 0 才认为窗口真的不可用。
  */
 export async function checkWindowReady(
   bridge: BridgeTransport,
   tabId: number,
 ): Promise<{ ok: boolean; reason?: string }> {
+  // 先切前台：既是探针，也是后续可信点击的前置条件
+  await bringToFront(bridge, tabId);
+  await new Promise((r) => setTimeout(r, 300));
+
   const raw = await bridge
     .call('evaluate', {
       expression: 'JSON.stringify({ow:outerWidth,oh:outerHeight})',
@@ -112,7 +118,7 @@ export async function checkWindowReady(
     if (!d.ow || !d.oh) {
       return {
         ok: false,
-        reason: 'Chrome 没有可见窗口（outerWidth=0）——CDP 坐标点击不会生效，请先打开一个 Chrome 窗口',
+        reason: 'Chrome 窗口不可用（激活后 outerWidth 仍为 0）——请确认浏览器窗口没有被完全关闭',
       };
     }
     return { ok: true };
@@ -124,6 +130,12 @@ export async function checkWindowReady(
 /**
  * 可信点击（CDP Input 域，isTrusted=true）。
  *
+ * 两个必须的前置条件（都实测踩过）：
+ * 1. **tab 必须在前台**——背景 tab 的 CDP 鼠标事件被 Chrome 静默丢弃
+ * 2. **renderer 必须已恢复尺寸**——非活跃 tab 的 `outerWidth` 为 0，
+ *    `bringToFront` 后需要一段时间才恢复（实测 0→1920 约 1s），
+ *    在恢复之前派发的事件同样收不到。
+ *
  * 关键：`mouseMoved` 的 callback 会被 Chrome 合成器推迟到帧渲染（重页面
  * 实测 5-12s/次），因此这里**不等待** mouseMoved 的返回，只保证事件已
  * 派发；`mousePressed`/`mouseReleased` 仍等待回执。
@@ -134,12 +146,20 @@ export async function trustedClick(
   x: number,
   y: number,
 ): Promise<void> {
-  // 后台 tab 的可信鼠标事件会被 Chrome 静默丢弃（AGENTS.md §14 记录的已知坑）。
-  // daemon 创建的 tab 默认在后台——不切前台，点击就是「发了但没反应」。
   await bridge
     .call('cdp', { method: 'Page.bringToFront', params: {}, tabId })
     .catch(() => undefined);
-  await new Promise((r) => setTimeout(r, 150));
+
+  // 等 renderer 真正恢复尺寸（不是固定 sleep——重页面要更久）
+  for (let i = 0; i < 20; i++) {
+    const ow = await bridge
+      .call('evaluate', { expression: 'outerWidth', tabId })
+      .then((r) => Number((r as { value?: unknown })?.value))
+      .catch(() => 0);
+    if (ow > 0) break;
+    await new Promise((r) => setTimeout(r, 150));
+  }
+
   await bridge.call('cdp', {
     method: 'Input.dispatchMouseEvent',
     params: { type: 'mouseMoved', x, y, buttons: 0 },

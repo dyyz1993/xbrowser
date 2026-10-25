@@ -490,7 +490,22 @@ async function pickWindowId() {
   } catch {}
   return undefined;
 }
+
+// 2026-10-25：**总是**挂到用户窗口上，不要等报错再兜底。
+// SW 里 tabs.create 不带 windowId 会把 tab 放进一个"无窗口"上下文：
+// outerWidth/outerHeight = 0，evaluate / elementFromPoint / JS .click() 全正常，
+// 但 CDP Input 坐标派发被静默丢弃 —— 表现为「点击没反应」，极难归因。
+// 实测对照：用户自己的 tab ow=1920，同一浏览器里插件建的 tab ow=0。
 async function safeCreateTab(opts) {
+  if (opts && opts.windowId !== undefined) {
+    return await chrome.tabs.create(opts);
+  }
+  const preferred = await pickWindowId();
+  if (preferred !== undefined) {
+    try {
+      return await chrome.tabs.create({ ...opts, windowId: preferred });
+    } catch { /* 窗口可能刚被关，走下面的兜底 */ }
+  }
   try {
     return await chrome.tabs.create(opts);
   } catch (e) {
@@ -634,7 +649,9 @@ const executors = {
     // S213: about:blank 先行——先创建空白页完成 attach+注入，再导航到目标 URL。
     // 否则 tab 创建即加载，attach 常输给页面内联脚本（beforeunload 劫持注册先于压制落地）。
     const startUrl = 'about:blank';
-    const tab = await chrome.tabs.create({ url: startUrl, active: false }); // 后台创建，不抢焦点
+    // 必须走 safeCreateTab：显式挂到用户窗口，否则 tab 落在无窗口上下文（outerWidth=0），
+    // CDP 坐标点击会静默失效 —— 见 safeCreateTab 注释。
+    const tab = await safeCreateTab({ url: startUrl, active: false }); // 后台创建，不抢焦点
     const group = await chrome.tabs.group({ tabIds: [tab.id] });
     await chrome.tabGroups.update(group, {
       title: 'xb-task-' + taskName,
@@ -786,6 +803,30 @@ const executors = {
     await touchTaskActivity();
     return { ok: true, tabId: t.id, groupId: gid, url: t.url, title: t.title };
   }),
+  // 诊断：列出所有窗口 + 每个窗口的尺寸，用于排查「tab 落在无窗口上下文」（outerWidth=0）
+  'win-diag': async () => {
+    const out = { lastFocused: null, windows: [] };
+    try {
+      const lf = await chrome.windows.getLastFocused();
+      out.lastFocused = { id: lf.id, type: lf.type, state: lf.state, w: lf.width, h: lf.height, focused: lf.focused };
+    } catch (e) { out.lastFocusedErr = String(e); }
+    try {
+      const all = await chrome.windows.getAll({ populate: true });
+      out.windows = all.map((w) => ({
+        id: w.id, type: w.type, state: w.state, focused: w.focused,
+        w: w.width, h: w.height, tabs: (w.tabs || []).length,
+      }));
+    } catch (e) { out.windowsErr = String(e); }
+    return out;
+  },
+  // 诊断：tab 的 hidden/discarded/active 状态——outerWidth=0 的 tab 通常带 hidden
+  'tab-diag': async () => {
+    const tabs = await chrome.tabs.query({});
+    return tabs.map((t) => ({
+      id: t.id, active: t.active, hidden: t.hidden, discarded: t.discarded,
+      status: t.status, windowId: t.windowId, url: (t.url || '').slice(0, 60),
+    }));
+  },
   // S170: 热更新直达通道——WS 消息在 SW 内执行，chrome.runtime.reload 可靠
   // （popup.html 页面载体的 chrome.runtime 绑定时好时坏，此执行器取代该路径）
   'ext-reload': async () => { setTimeout(() => chrome.runtime.reload(), 50); return { ok: true, reloading: true }; },
@@ -823,7 +864,7 @@ const executors = {
         await chrome.tabs.update(dest, { url, active: false });
         return { ok: true, tabId: dest, movedAside };
       }
-      const tab = await chrome.tabs.create({ url, active: false }); // 后台创建，不抢焦点
+      const tab = await safeCreateTab({ url, active: false }); // 后台创建，不抢焦点（必须挂用户窗口）
       return { ok: true, tabId: tab.id, created: true };
     }
     return { ok: false, error: 'no url' };
