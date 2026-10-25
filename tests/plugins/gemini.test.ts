@@ -132,6 +132,10 @@ describe('gemini plugin', () => {
           if (expression.includes('取消选择')) return Promise.resolve(true);
           if (expression.includes('activeElement')) return Promise.resolve(true);
           if (expression.includes('textContent||""')) return Promise.resolve('从首帧平滑运镜到尾帧');
+          // gemini 发送按钮坐标查询（可信点击改造后返回 JSON 坐标而非布尔）
+          if (expression.includes('elementFromPoint') && expression.includes('发送')) {
+            return Promise.resolve('{ "x": 5, "y": 5 }');
+          }
           if (expression.includes('aria-label') && expression.includes('发送')) return Promise.resolve(true);
           if (expression.includes('location.href')) return Promise.resolve('https://gemini.google.com/app/session-88');
           if (expression.includes('JSON.stringify({imgs:')) {
