@@ -295,6 +295,12 @@ async function pollMedia(
       '.model-response-text',
       'message-content',
       '.response-container',
+      // Gemini 的拒绝消息（"我无法生成该视频"）常渲染在专用容器里，
+      // 上面三个基础选择器取不到——漏掉会让轮询傻等满 timeout（实测 480s）。
+      '[class*="response-container"]',
+      '[class*="model-response"]',
+      '[class*="error-container"]',
+      '[class*="warning-banner"]',
     ]).catch(() => ({ refused: false, reason: null, text: '' }));
     if (refusal.refused && refusal.reason) {
       throw new Error(`Gemini 拒绝生成（${refusal.reason}）：${refusal.text.slice(0, 100)}`);
