@@ -18,6 +18,7 @@ interface AdapterStub {
   clickAt: ReturnType<typeof vi.fn>;
   url: ReturnType<typeof vi.fn>;
   insertText: ReturnType<typeof vi.fn>;
+  bringToFront: ReturnType<typeof vi.fn>;
 }
 
 function createAdapter(opts: {
@@ -32,6 +33,7 @@ function createAdapter(opts: {
   for (const r of opts.iframeResults ?? []) evaluateInIframe.mockResolvedValueOnce(r);
   const clickAt = vi.fn(async () => undefined);
   const insertText = vi.fn(async () => undefined);
+  const bringToFront = vi.fn(async () => undefined);
 
   const adapter = {
     channel: 'bridge' as const,
@@ -44,10 +46,10 @@ function createAdapter(opts: {
     clickByText: vi.fn(),
     waitReady: vi.fn(async () => true),
     clickSelector: vi.fn(),
-    bringToFront: vi.fn(),
+    bringToFront,
   } as unknown as PageAdapter;
 
-  return { adapter, evaluate, evaluateInIframe, clickAt, url, insertText };
+  return { adapter, evaluate, evaluateInIframe, clickAt, url, insertText, bringToFront };
 }
 
 describe('bloggerPublisher', () => {
@@ -100,6 +102,15 @@ describe('bloggerPublisher', () => {
       stub.clickAt.mockImplementation(async (x: number, y: number) => {
         clicked = true;
         return origClick(x, y);
+      });
+      // 点击后进入编辑器：编辑器特征探测返回体/标题命中
+      const origEval = stub.evaluate.getMockImplementation()!;
+      stub.evaluate.mockImplementation(async (expr: string) => {
+        // open() 的「进入编辑器」探测：查 iframe.editable + 标题 input
+        if (expr.includes('iframe.editable') && expr.includes('aria-label')) {
+          return JSON.stringify({ url: clicked, body: clicked, title: clicked });
+        }
+        return origEval(expr);
       });
       (stub.adapter as unknown as { evaluateInIframe: unknown }).evaluateInIframe = vi.fn(async () => 'true');
 

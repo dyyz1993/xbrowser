@@ -45,33 +45,36 @@ export type PublishChannel = 'bridge' | 'local';
 /**
  * 在**同源 iframe** 内求值。
  *
- * 宿主页面用 `contentDocument` 拿到 iframe 文档，再用该文档的 `defaultView`
- * 构造一个真正的 iframe 作用域函数执行——**必须走 `Function` 构造，不能用
- * `.call(doc)`**：后者只换 `this`，`expression` 里的 `document` 仍然指向
- * 宿主页，会静默读写错误对象（实测踩坑：写入的正文进了宿主 document）。
+ * 实现要点（两次踩坑换来的）：
  *
- * 跨源 iframe 的 `contentDocument` 为 `null`，此时返回 `null` 让调用方
- * 决定怎么处理（不会静默成功）。
+ * 1. **不能用 `.call(doc)`** —— 它只换 `this`，`expression` 里的 `document`
+ *    仍然指向宿主页，会静默读写错误对象（实测：正文写进了宿主 document，
+ *    校验却读到宿主页的字符数，看起来"成功"）。
+ * 2. **不能用 `new win.Function`** —— 严格的 CSP（如 Blogger）会直接拒绝
+ *    `Evaluating a string as JavaScript violates the following Content Security Policy`。
+ *
+ * 采用的办法：把 iframe 的 `document` 作为参数传进调用方的表达式，表达式里
+ * 用 `__doc` 代替 `document`。这样既在正确的文档上操作，又不触发 CSP。
+ *
+ * 约定：`expression` 里可用 `__doc`（= iframe document）、`__win`（= 其 window）。
+ * 跨源 iframe 返回 `null`，由调用方决定怎么处理（不会静默成功）。
  */
 async function evaluateInIframe<T>(
   hostEvaluate: <R>(expr: string) => Promise<R>,
   iframeSelector: string,
   expression: string,
 ): Promise<T> {
+  // 把 iframe 文档以参数形式交给表达式，避开 CSP 对字符串求值的限制
   const wrapper = `(function(){
     var f = document.querySelector(${JSON.stringify(iframeSelector)});
     if (!f) return { err: 'iframe-not-found' };
-    var d;
-    try { d = f.contentDocument; } catch (e) { return { err: 'cross-origin' }; }
-    if (!d) return { err: 'cross-origin' };
-    var win = d.defaultView;
-    if (!win) return { err: 'no-window' };
+    var __d;
+    try { __d = f.contentDocument; } catch (e) { return { err: 'cross-origin' }; }
+    if (!__d) return { err: 'cross-origin' };
     try {
-      // 在 iframe 自己的全局作用域里执行，document/window 才真的是 iframe 的
-      var fn = new win.Function(${JSON.stringify(expression)});
-      return { ok: fn.call(win) };
+      return { ok: (function(__doc, __win){ ${expression} })(__d, __d.defaultView) };
     } catch (e) {
-      return { err: 'eval-failed: ' + String((e && e.message) || e).slice(0, 120) };
+      return { err: 'eval-failed: ' + String((e && e.message) || e).slice(0, 140) };
     }
   })()`;
   const raw = await hostEvaluate<{ err?: string; ok?: T }>(wrapper);

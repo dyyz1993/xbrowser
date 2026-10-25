@@ -14,7 +14,11 @@ function createBridge(handlers: Record<string, (args: unknown) => unknown>): Bri
   return {
     call: vi.fn(async (cmd: string, args: unknown) => {
       const h = handlers[cmd];
-      if (!h) throw new Error(`unexpected cmd: ${cmd}`);
+      // checkWindowReady 会先发 Page.bringToFront；未声明时视为成功
+      if (!h) {
+        if (cmd === 'cdp') return {};
+        throw new Error(`unexpected cmd: ${cmd}`);
+      }
       return h(args);
     }),
   } as unknown as BridgeTransport;
@@ -28,13 +32,27 @@ describe('checkWindowReady', () => {
     expect(await checkWindowReady(bridge, 1)).toEqual({ ok: true });
   });
 
-  it('fails when outerWidth is 0 (headless / window closed)', async () => {
+  it('brings the tab to front first (inactive tabs report outerWidth 0)', async () => {
+    let sawBringToFront = false;
+    const bridge = createBridge({
+      cdp: (args) => {
+        if ((args as { method?: string })?.method === 'Page.bringToFront') sawBringToFront = true;
+        return {};
+      },
+      evaluate: () => ({ value: JSON.stringify({ ow: 1920, oh: 958 }) }),
+    });
+    const r = await checkWindowReady(bridge, 1);
+    expect(r.ok).toBe(true);
+    expect(sawBringToFront).toBe(true);
+  });
+
+  it('fails only when outerWidth stays 0 after activation', async () => {
     const bridge = createBridge({
       evaluate: () => ({ value: JSON.stringify({ ow: 0, oh: 0 }) }),
     });
     const r = await checkWindowReady(bridge, 1);
     expect(r.ok).toBe(false);
-    expect(r.reason).toContain('没有可见窗口');
+    expect(r.reason).toContain('激活后 outerWidth 仍为 0');
   });
 
   it('fails when the size cannot be read', async () => {
