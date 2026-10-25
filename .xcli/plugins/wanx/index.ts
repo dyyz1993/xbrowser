@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import { createMediaTask, mediaTaskResultSchema } from '../shared/media-contract.js';
+import { checkLoggedIn } from '../shared/publishing/login-probe.js';
 
 type Page = import('../types').Page;
 
@@ -176,16 +177,19 @@ export default function (xcli: XCLIAPI): void {
     description: '万相(Wanx) AI 视频生成 — 文生视频、图生视频、签到、积分查询',
     requiresLogin: true,
     isLogin: async (ctx) => {
-      try {
-        const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
-        if (!page) return false;
-        const region = resolveRegion(page);
-        await ensurePage(page, region);
-        const resp = await wanxApi(page, '/wanx/api/common/userInfo/get', { clientChannel: 'PC' }, region);
-        return apiOk(resp);
-      } catch {
-        return false;
-      }
+      // bridge 优先——登录态在用户 Chrome 里，本地 page 没登录会误判（同 csdn/zhihu/blogger）
+      const page = (ctx as unknown as Record<string, unknown>).page as Page | undefined;
+      return checkLoggedIn('wanx', WANX_PAGES.cn, async () => {
+        try {
+          if (!page) return false;
+          const region = resolveRegion(page);
+          await ensurePage(page, region);
+          const resp = await wanxApi(page, '/wanx/api/common/userInfo/get', { clientChannel: 'PC' }, region);
+          return apiOk(resp);
+        } catch {
+          return false;
+        }
+      });
     },
   });
 
