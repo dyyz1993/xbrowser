@@ -33,6 +33,8 @@ export const LOGIN_URL_PATTERNS = {
   // 注意：blogger 正常页面 URL 也会带 authuser=0，不能拿它当登录页特征
   blogger: [/accounts\.google\.com\/ServiceLogin/i, /accounts\.google\.com\/v3\/signin/i],
   wordpress: [/wordpress\.com\/log-in/i, /\/login\?redirect_to/i],
+  // 万相：国内 tongyi 登录墙 + 国际站 SSO 跳转（/login? 裸路径也是登录墙）
+  wanx: [/passport\.tongyi\.com/i, /login\.tongyi\.com/i, /aliyun\.com\/login/i, /\/login\?/i],
 } as const;
 
 export type LoginSite = keyof typeof LOGIN_URL_PATTERNS;

@@ -198,24 +198,66 @@ async function extractPageAudio(page: Page): Promise<string | null> {
 
 /** Submit the current message by clicking the send button (or pressing Enter as fallback) */
 async function submitMessage(page: Page): Promise<{ found: boolean; clicked: boolean }> {
-  const sendResult = await page.evaluate(() => {
-    // Doubao's send button ID is #flow-end-msg-send (confirmed via recording)
-    const btn = document.querySelector('#flow-end-msg-send, button[aria-label="Send message"], button[aria-label*="发送"]');
-    if (btn) {
-      const disabled = btn.hasAttribute('disabled') || (btn as HTMLButtonElement).disabled;
-      if (!disabled) {
-        (btn as HTMLElement).click();
-        return { found: true, disabled: false, clicked: true };
-      }
-      return { found: true, disabled: true, clicked: false };
-    }
-    return { found: false, disabled: false, clicked: false };
-  }).catch(() => ({ found: false, disabled: false, clicked: false }));
-
-  if (!sendResult.clicked) {
-    await page.keyboard.press('Enter').catch(() => {});
+  // 必须用真实鼠标点击：合成 el.click() 是 isTrusted=false，豆包前端会忽略——
+  // 实测页面停在落地页、消息根本没发出去，而 DOM 层面看起来"点击成功"。
+  //
+  // 发送按钮是打字之后才由 React 挂载的（落地页初始没有 #flow-end-msg-send），
+  // 打完字立刻查会拿 null → 误走 Enter 兜底（ProseMirror 里 Enter 只换行不发送）。
+  // 所以这里轮询等按钮出现，最多 5s。
+  let rect: string | null = null;
+  for (let i = 0; i < 10 && !rect; i++) {
+    rect = await page.evaluate(() => {
+      const btn = document.querySelector('#flow-end-msg-send, button[aria-label="Send message"], button[aria-label*="发送"]');
+      if (!btn) return null;
+      btn.scrollIntoView({ block: 'center' });
+      const r = btn.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return null;
+      // elementFromPoint 核实命中（坐标不能被浮层压住）
+      const cx = Math.round(r.x + r.width / 2), cy = Math.round(r.y + r.height / 2);
+      const hit = document.elementFromPoint(cx, cy);
+      if (!hit || !(btn === hit || btn.contains(hit))) return null;
+      return JSON.stringify({ x: cx, y: cy });
+    }).catch(() => null);
+    if (!rect) await page.waitForTimeout(500);
   }
-  return sendResult;
+
+  if (rect) {
+    try {
+      const p = JSON.parse(rect as string) as { x: number; y: number };
+      // stealth 贝塞尔在此页实测不可靠（轨迹事件到不了终点按钮），用直点击：
+      // 成功配方的三事件点击（move→down→up），并在点后核实编辑器被清空。
+      const editorLen = (): Promise<number> => page.evaluate(() => {
+        const e = document.querySelector('.tiptap.ProseMirror') || document.querySelector('[contenteditable="true"]');
+        return e ? (e.textContent || '').length : -1;
+      }).catch(() => -1);
+
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        await page.mouse.click(p.x, p.y, { stealth: false });
+        await page.waitForTimeout(2000);
+        const len = await editorLen();
+        if (len === 0 || len === -1) return { found: true, clicked: true };
+        if (attempt === 1) await page.waitForTimeout(1000);
+      }
+      // 两次点击后编辑器仍有内容 → 点击未生效，走 Enter 兜底
+      await page.keyboard.press('Enter').catch(() => {});
+      return { found: true, clicked: false };
+    } catch { /* 落到 Enter 兜底 */ }
+  }
+  await page.keyboard.press('Enter').catch(() => {});
+  return { found: false, clicked: false };
+}
+
+/** 等会话 ID 出现在 URL——消息真正发出的唯一可靠信号（落地页 /chat/ 没有 ID） */
+async function waitForConversationUrl(page: Page, timeoutMs = 15000): Promise<string | null> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    // 直接读 location.href：驱动的 url() 是缓存值，SPA pushState 可能不刷新
+    const href = await page.evaluate(() => location.href).catch(() => '');
+    const id = conversationIdFromUrl(String(href || ''));
+    if (id) return id;
+    await page.waitForTimeout(500);
+  }
+  return null;
 }
 
 async function ensurePage(page: Page, ctx?: CommandContext): Promise<void> {
@@ -314,9 +356,11 @@ export default function (xcli: XCLIAPI): void {
     await page.keyboard.type('确认，请开始生成视频。');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(1500);
+    // 注意：正则里不能有「视频生成」——新会话落地页的快捷菜单就含这四个字，
+    // 会造成已提交的假阳性（实测踩坑）。已提交与否以会话 ID 上 URL 为准。
     const acknowledged = await page.waitForFunction(() => {
       const text = document.body?.textContent || '';
-      return /已收到|开始生成|生成中|视频生成/.test(text);
+      return /已收到|开始生成|生成中/.test(text);
     }, { timeout: 5000 }).then(() => true).catch(() => false);
     if (!acknowledged) throw new Error('豆包未确认开始生成，请检查页面');
   }
@@ -1533,34 +1577,78 @@ export default function (xcli: XCLIAPI): void {
           .join('\n');
         const message = `生成视频: ${params.prompt}${attachmentNotes ? `\n${attachmentNotes}` : ''}`;
 
-        const inputFound = await page.evaluate((msg: string) => {
-          const selectors = ['textarea', '[contenteditable="true"]', '[role="textbox"]', '[class*="chat-input"] textarea'];
-          for (const sel of selectors) {
-            const el = document.querySelector<HTMLTextAreaElement | HTMLDivElement>(sel);
-            if (el) {
-              if ('value' in el) {
-                el.value = msg;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-              } else {
-                el.textContent = msg;
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-              }
+        // 顺序铁律：先切视频模式再打字——模式切换会重渲染编辑器，
+        // 先打字的内容会被 reconciliation 回流清空（实测踩坑）。
+        await ensureVideoMode(page);
+        await page.waitForTimeout(800);
+
+        // ProseMirror 受控编辑器：合成 value/textContent 注入会被即时清空
+        //（AGENTS.md §14 受控编辑器决策树），唯一存活通道是完整键盘事件流
+        // ——与图生图命令同款（click 聚焦 + keyboard.type 逐键）。
+        const inputLocators = [
+          'textarea[class*="input"]',
+          '[contenteditable="true"]',
+          '[role="textbox"]',
+        ];
+        // 聚焦用 evaluate 直选 .tiptap.ProseMirror（实测 locator.click 聚焦后
+        // 打字不落地，el.focus() + 键盘流 100% 存活），失败再退回 locator.click
+        const focusEditor = async (): Promise<boolean> => {
+          const ok = await page.evaluate(() => {
+            const e = document.querySelector<HTMLElement>('.tiptap.ProseMirror')
+              || document.querySelector<HTMLElement>('[contenteditable="true"]');
+            if (!e) return false;
+            e.focus();
+            return document.activeElement === e;
+          }).catch(() => false);
+          if (ok) return true;
+          for (const sel of inputLocators) {
+            const loc = page.locator(sel).first();
+            if (await loc.isVisible().catch(() => false)) {
+              await loc.click().catch(() => {});
               return true;
             }
           }
           return false;
-        }, message);
+        };
 
-        if (!inputFound) throw new Error('找不到输入框');
+        if (!(await focusEditor())) throw new Error('找不到视频输入框');
+        await page.waitForTimeout(300);
 
-        await ensureVideoMode(page);
-        await page.waitForTimeout(500);
+        // 打字 + 存活校验 + 一次重试（受控编辑器可能清空首轮）
+        let typed = 0;
+        for (let attempt = 1; attempt <= 2; attempt++) {
+          await page.keyboard.type(message, { delay: 25, stealth: false });
+          await page.waitForTimeout(500);
+          typed = await page.evaluate(() => {
+            const el = document.querySelector<HTMLElement>('.tiptap.ProseMirror')
+              || document.querySelector<HTMLElement>('[contenteditable="true"], textarea');
+            return el ? (el.textContent || (el as HTMLTextAreaElement).value || '').length : 0;
+          }).catch(() => 0);
+          if (typed >= Math.min(10, message.length)) break;
+          tips.push(`第 ${attempt} 次输入未存活（${typed} 字符），重试`);
+          if (!(await focusEditor())) break;
+        }
+        if (typed < Math.min(10, message.length)) {
+          throw new Error(`输入内容未存活（编辑器内仅 ${typed} 字符）——受控编辑器清空了注入`);
+        }
+
         await submitMessage(page);
+        // 会话 ID 上 URL 才算真的发出去了；拿不到就早退，别带着假状态往下走
+        const earlyConversationId = await waitForConversationUrl(page, 15000);
+        if (!earlyConversationId) {
+          return fail('视频任务提交失败：消息未发出（URL 未出现会话 ID）', [
+            ...tips,
+            '可能原因：发送按钮不可信点击被忽略 / 输入框未聚焦',
+            '请在 viewer 中手动检查豆包页面状态',
+          ]);
+        }
         tips.push('视频生成任务已提交');
         await confirmGeneration(page);
 
-        const conversationUrl = page.url();
-        const conversationId = conversationIdFromUrl(conversationUrl);
+        const conversationUrl = typeof earlyConversationId === 'string'
+          ? String(await page.evaluate(() => location.href).catch(() => page.url()))
+          : page.url();
+        const conversationId = earlyConversationId || conversationIdFromUrl(conversationUrl);
         if (!conversationId) throw new Error('无法获取豆包会话 ID，不能创建可恢复任务');
 
         const taskId = await page.evaluate(() => {

@@ -41,6 +41,7 @@ function createVideoCtx(mockPage: Record<string, unknown> = {}) {
         first: () => ({
           click: vi.fn(async () => undefined),
           count: vi.fn(async () => 1),
+          isVisible: vi.fn(async () => true),
         }),
       })),
       setFileDialogInterception: vi.fn(async () => undefined),
@@ -53,6 +54,12 @@ function createVideoCtx(mockPage: Record<string, unknown> = {}) {
           if (source.includes('querySelectorAll') && source.includes('textContent?.trim()')) {
             return Promise.resolve({ x: 10, y: 10, width: 10, height: 10 });
           }
+          // submitMessage：发送按钮坐标（JSON 字符串）
+          if (source.includes('flow-end-msg-send')) return Promise.resolve(JSON.stringify({ x: 10, y: 10 }));
+          // video 输入存活校验：编辑器字符数（要 ≥10 才算存活）
+          if (source.includes('], textarea')) return Promise.resolve(50);
+          // 点击后清空核实：编辑器已清空（0）
+          if (source.includes('ProseMirror')) return Promise.resolve(0);
           if (source.includes('task-id') || source.includes('job-id')) return Promise.resolve('task123');
           if (source.includes('location.href') || source.includes('window.location')) {
             return Promise.resolve('https://www.doubao.com/chat/38448285459015426');

@@ -31,6 +31,18 @@ export function setupPageEvents(options: {
     );
 
     options.addSubscription(
+      options.conn.subscribe('Page.navigatedWithinDocument', options.sessionId, (params: unknown) => {
+        // SPA 的 pushState/replaceState（豆包建会话、掘金发布跳转等）只触发
+        // 这个事件，不触发 frameNavigated——不订阅它 page.url() 在 SPA 里
+        // 永远返回旧值（实证：doubao video 发送成功但 url() 停在 /chat/，
+        // 插件误判「消息未发出」）。
+        const p = params as { url?: string; frame?: { url?: string } };
+        const url = p?.url ?? p?.frame?.url;
+        if (url) options.setUrl(url);
+      }),
+    );
+
+    options.addSubscription(
       options.conn.subscribe('Page.loadEventFired', options.sessionId, () => {
         options.markLoadFired();
       }),
