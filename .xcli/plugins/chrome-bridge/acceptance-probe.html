@@ -1,0 +1,32 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>xbrowser trusted click acceptance probe</title>
+  <style>
+    body { margin: 0; background: #f5f2ea; font-family: ui-monospace, monospace; }
+    #probe {
+      position: fixed;
+      left: 40px;
+      top: 40px;
+      width: 120px;
+      height: 48px;
+      background: #12665c;
+      color: white;
+      border: 0;
+      border-radius: 8px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body data-probe-result="pending">
+  <button id="probe" data-clicked="false" type="button">Trusted Click</button>
+  <script>
+    document.querySelector('#probe').addEventListener('click', (event) => {
+      if (!event.isTrusted) return;
+      event.currentTarget.dataset.clicked = 'true';
+      document.body.dataset.probeResult = 'trusted-click-passed';
+    });
+  </script>
+</body>
+</html>

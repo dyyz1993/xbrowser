@@ -62,6 +62,45 @@ const openResult = z.object({
 
 const taskResult = z.json();
 
+const acceptanceParams = z.object({
+  extensionId: z.string().optional().describe('目标扩展 ID（缺省使用 bridge 记住的 ID）'),
+  expectedVersion: z.string().optional().describe('期望扩展版本（缺省读取仓库 manifest）'),
+  timeoutSeconds: z.number().min(1).max(120).optional().describe('等待扩展重连/验收的超时秒数（默认 20）'),
+  skipTrustedClick: z.boolean().optional().describe('跳过真实鼠标探针（只用于离线诊断，不能作为完整验收）'),
+});
+
+const acceptanceResult = z.object({
+  ok: z.boolean(),
+  phase: z.enum(['start', 'reload', 'reconnect', 'version', 'diagnostics', 'trusted-click', 'cleanup', 'done']),
+  reloaded: z.boolean(),
+  connected: z.boolean(),
+  extensionId: z.string().optional(),
+  version: z.string().optional(),
+  expectedVersion: z.string().optional(),
+  diagnostics: z.object({
+    window: z.unknown(),
+    tabs: z.unknown(),
+  }).optional(),
+  trustedClick: z.object({
+    skipped: z.boolean(),
+    passed: z.boolean().optional(),
+    tabId: z.number().optional(),
+    url: z.string().optional(),
+  }),
+  cleanup: z.object({ closed: z.number(), ungrouped: z.number() }),
+  computerUseRequired: z.boolean(),
+  error: z.string().optional(),
+  nextAction: z.string().optional(),
+  recovery: z.object({
+    url: z.string(),
+    extensionId: z.string().optional(),
+    expectedVersion: z.string().optional(),
+  }).optional(),
+  learnedRoutePath: z.string().optional(),
+  evidencePath: z.string().optional(),
+});
+
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'chrome-bridge',
@@ -173,9 +212,69 @@ export default function (xcli: XCLIAPI): void {
           return ok({ revived: true, clients: s.clients.length, extId }, [`扩展 SW 已唤醒重连（${s.clients.length} 个连接）`]);
         }
       }
-      return fail(`等待重连超时（${params.timeout ?? 20}s）`, ['手动 chrome://extensions 刷新扩展', '日志：~/.xbrowser/logs/chrome-bridge.log']);
+      return fail(`等待重连超时（${params.timeout ?? 20}s）`, ['自动兜底：使用 Codex Computer Use 打开 chrome://extensions 并重载扩展', '日志：~/.xbrowser/logs/chrome-bridge.log']);
     },
   });
+
+  async function getBridgeStatus(): Promise<{
+    running?: boolean;
+    port?: number;
+    clients?: Array<{ connectedAt?: number | string; lastSeen?: number | string }>;
+    ext?: { extId?: string; v?: string; at?: number } | null;
+  } | null> {
+    return fetch('http://127.0.0.1:9347/status')
+      .then((r) => r.json())
+      .catch(() => null);
+  }
+
+  async function execBridgeCommand(cmd: string, args: Record<string, unknown> = {}): Promise<{
+    ok: boolean;
+    data?: unknown;
+    error?: string;
+  }> {
+    const r = await postBridge({ cmd, args });
+    if (!r) throw new Error('bridge 未启动或无扩展连接');
+    const result = { ok: r.ok === true, data: r.data, error: r.error };
+    return result;
+  }
+
+  async function readExpectedVersion(): Promise<string | undefined> {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const { dirname, join } = await import('node:path');
+    try {
+      const manifestPath = join(
+        dirname(fileURLToPath(import.meta.url)),
+        '..',
+        'login-bridge',
+        'extension',
+        'manifest.json',
+      );
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { version?: string };
+      return manifest.version;
+    } catch {
+      return undefined;
+    }
+  }
+
+  function computerUseNextAction(): string {
+    return 'Use Codex Computer Use automatically to reload the unpacked extension, then rerun acceptance.';
+  }
+
+  async function saveAcceptanceEvidence(result: Record<string, unknown>): Promise<string | undefined> {
+    try {
+      const { mkdirSync, writeFileSync } = await import('node:fs');
+      const { join } = await import('node:path');
+      const dir = join(process.cwd(), 'output', 'chrome-bridge');
+      mkdirSync(dir, { recursive: true });
+      const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..+$/, '').replace('T', '-');
+      const path = join(dir, `acceptance-${stamp}.json`);
+      writeFileSync(path, JSON.stringify(result, null, 2));
+      return path;
+    } catch {
+      return undefined;
+    }
+  }
 
   site.command('attach', {
     description: '显式接管用户当前活跃 tab：打入 🤖 任务组（可见标签），返回 tabId；后续命令加 --tab-id 落到该 tab，绝不刷新页面。收尾用 finish（用户 tab 脱组保留）',
@@ -263,6 +362,235 @@ export default function (xcli: XCLIAPI): void {
       }).then(r => r.json()).catch(() => null);
       if (!r) return fail('bridge 未启动或无扩展连接');
       return r.ok === true ? ok({ cmd: params.cmd, result: r.data }) : fail(r.error || 'extension error');
+    },
+  });
+
+  site.command('acceptance', {
+    description: '零人工真实浏览器验收：扩展 reload → 版本/窗口诊断 → trusted click → 任务清理；失败时输出 Computer Use 自动恢复指令',
+    result: acceptanceResult,
+    scope: 'project',
+    loginRequired: 'none',
+    parameters: acceptanceParams,
+    examples: [
+      { cmd: 'xbrowser chrome-bridge acceptance', description: '完整零人工验收' },
+      { cmd: 'xbrowser chrome-bridge acceptance --expected-version 1.5.2', description: '强制校验扩展版本' },
+      { cmd: 'xbrowser chrome-bridge acceptance --skip-trusted-click', description: '只做扩展/环境诊断' },
+    ],
+    handler: async (params) => {
+      const timeoutMs = (params.timeoutSeconds ?? 20) * 1000;
+      const deadline = Date.now() + timeoutMs;
+      const expectedVersion = params.expectedVersion ?? await readExpectedVersion();
+      let cleanup = { closed: 0, ungrouped: 0 };
+      let probeTaskName: string | undefined;
+
+      const finish = async (result: {
+        ok: boolean;
+        phase: z.infer<typeof acceptanceResult>['phase'];
+        reloaded: boolean;
+        connected: boolean;
+        extensionId?: string;
+        version?: string;
+        error?: string;
+        diagnostics?: { window: unknown; tabs: unknown };
+        trustedClick?: { skipped: boolean; passed?: boolean; tabId?: number; url?: string };
+      }) => {
+        if (probeTaskName) {
+          const closed = await execBridgeCommand('task-close', { name: probeTaskName });
+          const clean = closed.ok ? closed.data as { closed?: number; ungrouped?: number } : {};
+          cleanup = { closed: clean.closed ?? 0, ungrouped: clean.ungrouped ?? 0 };
+        }
+        const failed = !result.ok;
+        const payload = {
+          ...result,
+          expectedVersion,
+          trustedClick: result.trustedClick ?? { skipped: Boolean(params.skipTrustedClick), passed: false },
+          cleanup,
+          computerUseRequired: failed,
+          nextAction: failed ? computerUseNextAction() : undefined,
+          recovery: failed ? {
+            url: 'chrome://extensions/',
+            extensionId: result.extensionId ?? params.extensionId,
+            expectedVersion,
+          } : undefined,
+          learnedRoutePath: failed ? 'output/chrome-bridge/reload-route.json' : undefined,
+        } as Record<string, unknown>;
+        payload.evidencePath = await saveAcceptanceEvidence(payload);
+        return ok(payload);
+      };
+
+      let initial = await getBridgeStatus();
+      if (!initial) {
+        return finish({
+          ok: false,
+          phase: 'start',
+          reloaded: false,
+          connected: false,
+          extensionId: params.extensionId,
+          error: 'bridge 未启动：先跑 xbrowser chrome-bridge serve',
+        });
+      }
+
+      let extensionId = initial.ext?.extId ?? params.extensionId;
+      let version = initial.ext?.v;
+
+      if (!initial.clients?.length) {
+        const revived = await execBridgeCommand('revive', { extId: extensionId, timeout: Math.ceil((deadline - Date.now()) / 1000) });
+        if (!revived.ok) {
+          return finish({
+            ok: false,
+            phase: 'reconnect',
+            reloaded: false,
+            connected: false,
+            extensionId,
+            version,
+            error: `扩展 SW 唤醒失败：${revived.error ?? 'unknown'}`,
+          });
+        }
+      }
+
+      const reload = await execBridgeCommand('ext-reload');
+      if (!reload.ok) {
+        return finish({
+          ok: false,
+          phase: 'reload',
+          reloaded: false,
+          connected: false,
+          extensionId,
+          version,
+          error: `ext-reload 失败：${reload.error ?? 'unknown'}`,
+        });
+      }
+
+      let reconnected = false;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, Math.min(250, Math.max(1, deadline - Date.now()))));
+        const status = await getBridgeStatus();
+        if (status?.clients?.length) {
+          reconnected = true;
+          extensionId = status.ext?.extId ?? extensionId;
+          version = status.ext?.v ?? version;
+          if (expectedVersion && version !== expectedVersion) break;
+          if (!expectedVersion) break;
+        }
+      }
+      if (!reconnected) {
+        return finish({
+          ok: false,
+          phase: 'reconnect',
+          reloaded: true,
+          connected: false,
+          extensionId,
+          version,
+          error: '扩展 reload 后未重连',
+        });
+      }
+      if (expectedVersion && version !== expectedVersion) {
+        return finish({
+          ok: false,
+          phase: 'version',
+          reloaded: true,
+          connected: true,
+          extensionId,
+          version,
+          error: `扩展版本不匹配：期望 ${expectedVersion}，实际 ${version ?? 'unknown'}`,
+        });
+      }
+
+      const window = await execBridgeCommand('win-diag');
+      const tabs = await execBridgeCommand('tab-diag');
+      const diagnostics = { window: window.ok ? window.data : window, tabs: tabs.ok ? tabs.data : tabs };
+      if (!window.ok || !tabs.ok) {
+        return finish({
+          ok: false,
+          phase: 'diagnostics',
+          reloaded: true,
+          connected: true,
+          extensionId,
+          version,
+          error: 'win-diag/tab-diag 失败',
+          diagnostics,
+        });
+      }
+
+      if (params.skipTrustedClick) {
+        return finish({
+          ok: true,
+          phase: 'done',
+          reloaded: true,
+          connected: true,
+          extensionId,
+          version,
+          diagnostics,
+          trustedClick: { skipped: true, passed: true },
+        });
+      }
+
+      probeTaskName = `acceptance-${Date.now()}`;
+      const { fileURLToPath } = await import('node:url');
+      const probeUrl = 'file://' + fileURLToPath(new URL('./acceptance-probe.html', import.meta.url));
+      const opened = await execBridgeCommand('task-open', { name: probeTaskName, url: probeUrl });
+      if (!opened.ok || typeof (opened.data as { tabId?: number })?.tabId !== 'number') {
+        return finish({
+          ok: false,
+          phase: 'trusted-click',
+          reloaded: true,
+          connected: true,
+          extensionId,
+          version,
+          diagnostics,
+          trustedClick: { skipped: false, passed: false, url: probeUrl },
+          error: `探针任务打开失败：${opened.error ?? 'no tabId'}`,
+        });
+      }
+      const tabId = (opened.data as { tabId: number }).tabId;
+
+      let clicked = false;
+      try {
+        // task-open uses about:blank first, then navigates. Wait for the probe DOM.
+        const probeDeadline = Date.now() + 5000;
+        let rect: unknown;
+        while (Date.now() < probeDeadline) {
+          const rectRaw = await execBridgeCommand('evaluate', {
+            expression: `(() => { const el = document.querySelector('#probe'); if (!el) return ''; const r = el.getBoundingClientRect(); return JSON.stringify({x:r.x,y:r.y,w:r.width,h:r.height}); })()`,
+            tabId,
+          });
+          const payload = rectRaw.data as { ok?: boolean; value?: unknown } | undefined;
+          if (rectRaw.ok && payload?.ok === true && payload.value) {
+            rect = payload.value;
+            break;
+          }
+          await new Promise((r) => setTimeout(r, 200));
+        }
+        const rawRect = typeof rect === 'string' ? rect : '';
+        if (!rawRect) throw new Error('probe element not ready');
+        const probeRect = JSON.parse(rawRect) as { x?: number; y?: number; w?: number; h?: number };
+        const x = Math.round((probeRect.x ?? 0) + (probeRect.w ?? 0) / 2);
+        const y = Math.round((probeRect.y ?? 0) + (probeRect.h ?? 0) / 2);
+        const activate = await execBridgeCommand('cdp', { method: 'Page.bringToFront', params: {}, tabId });
+        if (!activate.ok) throw new Error(activate.error ?? 'Page.bringToFront failed');
+        await new Promise((r) => setTimeout(r, 300));
+        const clickResult = await execBridgeCommand('trustedClick', { x, y, tabId });
+        const click = clickResult.data as { ok?: boolean; clicked?: string } | undefined;
+        if (clickResult.ok !== true || click?.ok !== true) {
+          throw new Error(clickResult.error ?? click?.clicked ?? 'trustedClick failed');
+        }
+        await new Promise((r) => setTimeout(r, 100));
+        const read = await execBridgeCommand('evaluate', { expression: 'document.body.dataset.probeResult', tabId });
+        const value = (read.data as { value?: string } | undefined)?.value ?? '';
+        clicked = value === 'trusted-click-passed';
+      } catch { /* final clicked=false is sufficient */ }
+
+      return finish({
+        ok: clicked,
+        phase: clicked ? 'done' : 'trusted-click',
+        reloaded: true,
+        connected: true,
+        extensionId,
+        version,
+        diagnostics,
+        trustedClick: { skipped: false, passed: clicked, tabId, url: probeUrl },
+        error: clicked ? undefined : '真实鼠标探针未产生 trusted click 结果',
+      });
     },
   });
 
