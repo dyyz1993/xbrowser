@@ -12,6 +12,43 @@ function buildCtxTips(ctx: CommandContext): { tips: string[]; hasCdp: boolean } 
   return { tips, hasCdp };
 }
 
+type GithubDeploymentInput = {
+  environment_id?: number;
+  id?: number;
+  node_id?: string;
+  environment?: string;
+  state?: string;
+};
+
+type GithubEnvironment = { id: number };
+
+async function githubRequest<T>(
+  path: string,
+  options: { method?: string; body?: unknown; token?: string } = {}
+): Promise<T> {
+  const token = options.token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+  if (!token) throw new Error('缺少 GitHub token：请设置 GITHUB_TOKEN 或 GH_TOKEN');
+
+  const response = await fetch(`https://api.github.com${path}`, {
+    method: options.method || 'GET',
+    headers: {
+      Accept: 'application/vnd.github+json',
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+
+  const text = await response.text();
+  const data = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    const message = (data as { message?: string } | null)?.message || response.statusText;
+    throw new Error(`GitHub API ${response.status}: ${message}`);
+  }
+  return data as T;
+}
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'github',
@@ -322,6 +359,55 @@ export default function (xcli: XCLIAPI): void {
       }) as { bio: string; name: string; username: string; location: string; company: string; website: string; socialLinks: string[]; avatar: string };
 
       return ok(profile, [...ctxTips, `Profile: ${profile.name} (@${profile.username})`]);
+    },
+  });
+
+  site.command('review-deployment', {
+    description: '审批或拒绝 GitHub Actions 环境部署（无需 GitHub 网页登录）',
+    scope: 'project',
+    parameters: z.object({
+      repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/).describe('仓库（owner/repo）'),
+      runId: z.number().int().positive().describe('Actions run ID'),
+      environment: z.string().min(1).describe('受保护环境名，例如 production'),
+      state: z.enum(['approved', 'rejected']).describe('审批结果'),
+      comment: z.string().optional().describe('审批备注'),
+    }),
+    examples: [{
+      cmd: 'GITHUB_TOKEN=*** xbrowser github review-deployment --repo dyyz1993/xbrowser --run-id 40365039033 --environment production --state approved',
+      description: '通过 production 环境部署审批',
+    }],
+    result: z.object({
+      repo: z.string(),
+      runId: z.number(),
+      environment: z.string(),
+      state: z.string(),
+      deployments: z.array(z.number()),
+      workflowUrl: z.string(),
+    }).passthrough(),
+    handler: async (params) => {
+      const environmentInfo = await githubRequest<GithubEnvironment>(
+        `/repos/${params.repo}/environments/${encodeURIComponent(params.environment)}`
+      );
+      const reviewed = await githubRequest<GithubDeploymentInput[]>(
+        `/repos/${params.repo}/actions/runs/${params.runId}/pending_deployments`,
+        {
+          method: 'POST',
+          body: {
+            environment_ids: [environmentInfo.id],
+            state: params.state,
+            comment: params.comment || `Deployment ${params.state} by xbrowser`,
+          },
+        }
+      );
+
+      return ok({
+        repo: params.repo,
+        runId: params.runId,
+        environment: params.environment,
+        state: params.state,
+      deployments: reviewed.flatMap(item => (typeof item.id === 'number' ? [item.id] : [])),
+        workflowUrl: `https://github.com/${params.repo}/actions/runs/${params.runId}`,
+      }, [`已提交 ${params.environment} 环境的 ${params.state} 审批`]);
     },
   });
 

@@ -31,6 +31,7 @@ xbrowser --cdp 9221 github <command>
 | `get-profile` | 获取 GitHub 用户 Profile 信息 |
 | `create-repo` | 创建 GitHub 仓库 |
 | `edit-readme` | 编辑 GitHub 仓库的 README.md 文件 |
+| `review-deployment` | 通过 GitHub API 审批或拒绝 Actions 受保护环境部署 |
 
 ## 使用示例
 
@@ -52,6 +53,19 @@ xbrowser --cdp 9221 github create-repo
 ```bash
 xbrowser --cdp 9221 github edit-readme
 ```
+
+### Actions 部署审批
+
+```bash
+GITHUB_TOKEN=ghp_xxx xbrowser github review-deployment \
+  --repo dyyz1993/xbrowser \
+  --run-id 40365039033 \
+  --environment production \
+  --state approved \
+  --comment "Approve release"
+```
+
+该命令使用 `POST /repos/{owner}/{repo}/actions/runs/{run_id}/pending_deployments`，不需要打开或登录 GitHub 网页；`state` 可选 `approved` / `rejected`。Token 需要具有目标仓库 Actions/Deployment 审批权限。
 
 ## 注意事项
 
