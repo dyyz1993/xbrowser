@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.34.0] - 2026-10-27
+
+### Added
+- **Blogger publishing protocol**：新增 Blogger 站点发布适配，覆盖新建博文、标题/正文写入、iframe 交互与发布结果验收。
+- **Chrome Bridge zero-human acceptance**：新增 `xbrowser chrome-bridge acceptance`，自动完成扩展 reload、重连与版本校验、窗口/tab 诊断、真实 trusted click 探针和任务组清理；失败时返回机器可读的 Computer Use 恢复指令。
+- **Login Bridge direct cookie read**：新增 `get-site-cookies` executor，可按授权域名直读 cookie，不再必须先归档到 9355 服务。
+- **Release hardening**：发布流水线增加 E2E 硬门禁、dry-run 演练、console 补测与更完整的发布证据。
+
+### Fixed
+- **Publishing reliability**：修复 CSDN 双份粘贴、OBS 空 body、bridge 登录误判、知乎雪花 id 精度丢失，以及 Blogger CSP/窗口/renderer 导致的真机发布失败。
+- **Gemini media flow**：修复视频生成管线、SPA URL 跟踪、提交按钮合成点击被 CDP-Guard 拦截、拒绝检测选择器漏检，以及 history-list 任务组名泄漏。
+- **Chrome task windows**：任务 tab 显式挂载到真实用户窗口，并在激活后测量窗口尺寸，避免 CDP 输入静默丢弃。
+
+## [1.23.1] - 2026-09-10
 ## [1.23.1] - 2026-09-10
 
 ### Added
