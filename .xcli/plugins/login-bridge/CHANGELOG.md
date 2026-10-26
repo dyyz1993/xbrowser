@@ -1,4 +1,9 @@
 
+## [1.5.3] - 2026-10-26
+
+### Added
+- `get-site-cookies` executor returns authorized-site cookies directly over the bridge without archiving them to port 9355.
+
 ## [1.1.0] - 2026-08-31
 
 ### Added

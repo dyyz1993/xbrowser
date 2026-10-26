@@ -233,6 +233,24 @@ describe('login-bridge task groups', () => {
     }]);
   });
 
+  it('get-site-cookies returns authorized cookies directly without archiving them', async () => {
+    const harness = createChrome();
+    const cookieCalls: Array<{ domain?: string }> = [];
+    const originalGet = harness.chrome.cookies.getAll;
+    harness.chrome.cookies.getAll = async (filter?: { domain?: string }) => {
+      if (filter) cookieCalls.push(filter);
+      return originalGet(filter);
+    };
+    const executors = await loadExecutors(harness.chrome);
+
+    const result = await executors['get-site-cookies']({ domain: 'example.com' }) as {
+      ok: boolean; domain: string; count: number; cookies: unknown[];
+    };
+
+    expect(result).toMatchObject({ ok: true, domain: 'example.com', count: 0, cookies: [] });
+    expect(cookieCalls).toEqual([{ domain: 'example.com' }]);
+  });
+
   it('colors each task name with the same stable Chrome color', async () => {
     const harness = createChrome();
     const executors = await loadExecutors(harness.chrome);
