@@ -7,7 +7,7 @@
   "dependencies": {
     "zod": "^3.24.0"
   },
-  "description": "GitHub SEO 外链 - Profile / README / Gist / Repo",
+  "description": "GitHub SEO 外链与 Actions 部署审批",
   "keywords": [
     "xbrowser",
     "xbrowser-plugin",
@@ -20,7 +20,7 @@
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
   "type": "module",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "xbrowser": {
     "author": "dyyz1993",
     "commands": [
@@ -29,9 +29,10 @@
       "create-gist",
       "get-profile",
       "create-repo",
-      "edit-readme"
+      "edit-readme",
+      "review-deployment"
     ],
-    "description": "GitHub SEO 外链 - Profile / README / Gist / Repo",
+    "description": "GitHub SEO 外链与 Actions 部署审批",
     "name": "github",
     "requiresLogin": true,
     "site": "https://github.com",
@@ -44,6 +45,6 @@
       "developer",
       "code"
     ],
-    "version": "4.0.0"
+    "version": "4.1.0"
   }
 }

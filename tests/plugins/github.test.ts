@@ -60,13 +60,13 @@ describe('github plugin', () => {
     );
   });
 
-  it('should register 6 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(6);
+  it('should register 7 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(7);
   });
 
   it('should register expected command names', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
-    expect(names).toEqual(expect.arrayContaining(['update-profile', 'add-social-link', 'create-gist', 'get-profile', 'create-repo', 'edit-readme']));
+    expect(names).toEqual(expect.arrayContaining(['update-profile', 'add-social-link', 'create-gist', 'get-profile', 'create-repo', 'edit-readme', 'review-deployment']));
   });
 
   it('should register login and logout', () => {
@@ -113,6 +113,69 @@ describe('github plugin', () => {
       mockPage.url = vi.fn(() => 'https://gist.github.com/abc123');
       const result = await handler({ filename: 'test.md', content: '# test', public: true }, { page: mockPage });
       expect(result.data.gistUrl).toContain('gist.github.com');
+    });
+  });
+
+  describe('review-deployment command handler', () => {
+    let handler: Function;
+    beforeEach(() => {
+      const call = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'review-deployment');
+      handler = call![1].handler;
+    });
+
+    it('should throw when no GitHub token is configured', async () => {
+      const previousToken = process.env.GITHUB_TOKEN;
+      delete process.env.GITHUB_TOKEN;
+      delete process.env.GH_TOKEN;
+      try {
+        await expect(handler({
+          repo: 'dyyz1993/xbrowser',
+          runId: 40365039033,
+          environment: 'production',
+          state: 'approved',
+        }, {})).rejects.toThrow('缺少 GitHub token');
+      } finally {
+        if (previousToken !== undefined) process.env.GITHUB_TOKEN = previousToken;
+      }
+    });
+
+    it('should submit approval to pending deployments API', async () => {
+      const originalFetch = globalThis.fetch;
+      const previousToken = process.env.GITHUB_TOKEN;
+      process.env.GITHUB_TOKEN = 'test-token';
+      const requests: Array<{ url: string; init?: RequestInit }> = [];
+      globalThis.fetch = vi.fn(async (url: string | URL, init?: RequestInit) => {
+        requests.push({ url: String(url), init });
+        const body = JSON.parse(String(init?.body || '{}'));
+        return new Response(
+          body.environment_ids ? JSON.stringify([{ id: 7341245189 }]) : JSON.stringify({ id: 25155589059 }),
+          { status: 200 }
+        );
+      }) as unknown as typeof fetch;
+
+      try {
+        const result = await handler({
+          repo: 'dyyz1993/xbrowser',
+          runId: 40365039033,
+          environment: 'production',
+          state: 'approved',
+          comment: 'Ship it',
+        }, {});
+
+        expect(requests[0]?.url).toBe('https://api.github.com/repos/dyyz1993/xbrowser/environments/production');
+        expect(requests[1]?.url).toBe('https://api.github.com/repos/dyyz1993/xbrowser/actions/runs/40365039033/pending_deployments');
+        expect(requests[1]?.init?.method).toBe('POST');
+        expect(JSON.parse(String(requests[1]?.init?.body))).toEqual({
+          environment_ids: [25155589059],
+          state: 'approved',
+          comment: 'Ship it',
+        });
+        expect(result.data.deployments).toEqual([7341245189]);
+      } finally {
+        globalThis.fetch = originalFetch;
+        if (previousToken === undefined) delete process.env.GITHUB_TOKEN;
+        else process.env.GITHUB_TOKEN = previousToken;
+      }
     });
   });
 });

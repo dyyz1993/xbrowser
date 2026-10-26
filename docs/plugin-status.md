@@ -1,7 +1,7 @@
 # 插件完成度看板
 
 > **自动生成，请勿手改** · 由 `lint-scripts/check-plugin-status.mjs` 生成
-> 生成时间：2026-10-25 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
+> 生成时间：2026-10-26 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
 
 ## 汇总
 
@@ -78,7 +78,7 @@
 | gemini | 13 | `page`, `project` |
 | geo-analysis | 9 | `browser`, `global` |
 | gettyimages | 1 | `browser` |
-| github | 6 | `browser` |
+| github | 7 | `browser`, `project` |
 | github-trending | 1 | `project` |
 | goofish | 3 | `page` |
 | google | 3 | `browser`, `cli` |
