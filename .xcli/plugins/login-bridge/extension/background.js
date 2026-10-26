@@ -584,6 +584,12 @@ async function sweepIdleTasks() {
 const executors = {
   // Read-only cookie export for a specifically authorized site. This avoids
   // attaching a debugger to a user tab and never exposes values in CLI output.
+  // 直返 Cookie（不推 9355）——用于浏览器 API 直读（页面渲染冻结时仍可用）
+  'get-site-cookies': async ({ domain }) => {
+    const cookies = await exportCookies(typeof domain === 'string' ? domain : '');
+    return { ok: true, domain: domain || '*', count: cookies.length, cookies };
+  },
+
   'export-site-cookies': async ({ domain }) => {
     const site = typeof domain === 'string' ? domain : '';
     const cookies = await exportCookies(site);
