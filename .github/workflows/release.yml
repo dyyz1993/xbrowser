@@ -216,24 +216,24 @@ jobs:
           echo "::error::publish-npm did not enter the production approval gate"
           exit 1
 
-      - name: Mint a run-scoped approval ticket
+      - name: Mint a tenant-scoped approval ticket with GitHub OIDC
         id: ticket
         if: steps.gate.outputs.pending == 'true'
         env:
           GATE_URL: https://approve.xbrowser.dev
-          GATE_SECRET: ${{ secrets.DREL_RELEASE_GATE_SECRET }}
-          REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
           REQUEST_ID: xbrowser-${{ github.run_id }}
         run: |
           set -euo pipefail
-          RESPONSE=$(curl -fsS -X POST "$GATE_URL/ticket" \
-            -H "Authorization: Bearer $GATE_SECRET" \
+          OIDC_TOKEN=$(curl -fsS \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${GATE_URL}" | jq -er '.value')
+          RESPONSE=$(curl -fsS -X POST "$GATE_URL/v1/ci/tickets" \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "$(jq -nc --arg repo "$REPO" --arg environment production \
-              --argjson runId "$RUN_ID" --arg requestId "$REQUEST_ID" \
-              '{repo:$repo,environment:$environment,runId:$runId,requestId:$requestId}')")
+            -d "$(jq -nc --arg environment production --arg requestId "$REQUEST_ID" \
+              '{environment:$environment,requestId:$requestId}')")
           echo "ticket=$(jq -er '.ticket' <<<"$RESPONSE")" >> "$GITHUB_OUTPUT"
+          echo "submit_url=$(jq -er '.submitUrl' <<<"$RESPONSE")" >> "$GITHUB_OUTPUT"
 
       - name: Push approval request to Drel
         if: steps.ticket.outputs.ticket != ''
@@ -245,6 +245,7 @@ jobs:
           ICON: https://raw.githubusercontent.com/dyyz1993/xbrowser/master/branding/mark-192.png
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           TICKET: ${{ steps.ticket.outputs.ticket }}
+          SUBMIT_URL: ${{ steps.ticket.outputs.submit_url }}
         run: |
           set -euo pipefail
           DREL_ORIGIN=$(printf '%s' "$DREL_URL" | sed -E 's#^(https://[^/]+).*#\1#')
@@ -262,7 +263,7 @@ jobs:
               --arg icon "$ICON" \
               --arg url "$RUN_URL" \
               --arg requestId "$REQUEST_ID" \
-              --arg submitURL "$GATE_URL/api/review" \
+              --arg submitURL "$SUBMIT_URL" \
               --arg ticket "$TICKET" \
               '{schema:"webbridgekit.message.v1",type:"approval",deviceKey:$deviceKey,
                 id:$requestId,requestId:$requestId,revision:1,state:"pending",
