@@ -22,6 +22,10 @@ on:
         description: '演练模式：只跑 verify+test，不发布任何东西（流水线改动的安全验证）'
         type: boolean
         default: false
+      gate_only:
+        description: '只验证审批门：跳过 tag/npm/marketplace，但执行真实 production gate'
+        type: boolean
+        default: false
       skip_marketplace:
         description: '跳过插件上架（仅发 npm）'
         type: boolean
@@ -44,8 +48,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - name: Tag must match package.json version (dry_run 时跳过——dispatch 无 tag)
-        if: ${{ !inputs.dry_run }}
+      - name: Tag must match package.json version (dispatch 无 tag 时跳过)
+        if: ${{ !inputs.dry_run && !inputs.gate_only }}
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           VERSION=$(node -p "require('./package.json').version")
@@ -223,7 +227,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [test]
-    if: ${{ !inputs.dry_run }}
+    if: ${{ !inputs.dry_run && !inputs.gate_only }}
     # 审批门：production environment 配置了 required reviewer（dyyz1993）。
     # 跑到此 job 会暂停，GitHub 通知 + 上面的 Drel 推送提醒；手机/网页点
     # Approve and deploy 才继续，Reject 或 30 天超时则中止。
@@ -314,13 +318,13 @@ jobs:
             echo "::error::release 未完成（见上）"
             exit 1
           fi
-          if [ "${{ inputs.dry_run }}" != "true" ] && [ "${{ needs.publish-npm.result }}" != "success" ]; then
+          if [ "${{ inputs.dry_run }}" != "true" ] && [ "${{ inputs.gate_only }}" != "true" ] && [ "${{ needs.publish-npm.result }}" != "success" ]; then
             echo "all_green=false" >> "$GITHUB_OUTPUT"
             echo "::error::release 未完成（publish-npm 未成功）"
             exit 1
           fi
           echo "all_green=true" >> "$GITHUB_OUTPUT"
-          if [ "${{ inputs.dry_run }}" == "true" ]; then
+          if [ "${{ inputs.dry_run }}" == "true" ] || [ "${{ inputs.gate_only }}" == "true" ]; then
             echo "✅ dry-run complete（verify+test 通过，未发布任何东西）"
           else
             echo "✅ release complete"
@@ -334,7 +338,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [verify, test, publish-npm, publish-marketplace, release-summary]
-    if: needs.release-summary.outputs.all_green == 'true'
+    if: needs.release-summary.outputs.all_green == 'true' && inputs.gate_only != true
     permissions:
       contents: write
     steps:
