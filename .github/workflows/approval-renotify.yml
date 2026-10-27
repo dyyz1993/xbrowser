@@ -1,0 +1,68 @@
+name: Approval Renotify
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: GitHub run id waiting at production
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  deployments: read
+
+jobs:
+  renotify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Mint a run-scoped approval ticket
+        id: ticket
+        env:
+          GATE_URL: https://approve.xbrowser.dev
+          GATE_SECRET: ${{ secrets.DREL_RELEASE_GATE_SECRET }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ inputs.run_id }}
+          REQUEST_ID: xbrowser-${{ inputs.run_id }}-renotify-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          RESPONSE=$(curl -fsS -X POST "$GATE_URL/ticket" \
+            -H "Authorization: Bearer $GATE_SECRET" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -nc --arg repo "$REPO" --arg environment production \
+              --argjson runId "$RUN_ID" --arg requestId "$REQUEST_ID" \
+              '{repo:$repo,environment:$environment,runId:$runId,requestId:$requestId}')")
+          echo "ticket=$(jq -er '.ticket' <<<"$RESPONSE")" >> "$GITHUB_OUTPUT"
+          echo "request_id=$REQUEST_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Push approval request to Drel
+        env:
+          DREL_URL: ${{ secrets.DREL_PUSH_URL }}
+          GATE_URL: https://approve.xbrowser.dev
+          REQUEST_ID: ${{ steps.ticket.outputs.request_id }}
+          RUN_ID: ${{ inputs.run_id }}
+          TICKET: ${{ steps.ticket.outputs.ticket }}
+        run: |
+          set -euo pipefail
+          DREL_ORIGIN=$(printf '%s' "$DREL_URL" | sed -E 's#^(https://[^/]+).*#\1#')
+          DREL_DEVICE_KEY=$(printf '%s' "$DREL_URL" | sed -E 's#^https://[^/]+/([^/?#]+).*#\1#')
+          [ "$DREL_ORIGIN" != "$DREL_URL" ] && [ -n "$DREL_DEVICE_KEY" ]
+          curl -fsS -m 15 -X POST "$DREL_ORIGIN/push" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -nc \
+              --arg deviceKey "$DREL_DEVICE_KEY" \
+              --arg title "xbrowser 待审批（新包体验）" \
+              --arg body "测试全绿。这是安装新 Drel 后的新审批请求。" \
+              --arg icon "https://raw.githubusercontent.com/dyyz1993/xbrowser/master/branding/mark-192.png" \
+              --arg url "https://github.com/${{ github.repository }}/actions/runs/$RUN_ID" \
+              --arg requestId "$REQUEST_ID" \
+              --arg submitURL "$GATE_URL/api/review" \
+              --arg ticket "$TICKET" \
+              '{schema:"webbridgekit.message.v1",type:"approval",deviceKey:$deviceKey,
+                id:$requestId,requestId:$requestId,revision:1,state:"pending",
+                title:$title,body:$body,icon:$icon,url:$url,presentation:"native",
+                approval:{responseMode:"thirdParty",
+                  actions:[{id:"approve",title:"通过并发版",style:"primary",resultState:"approved"},
+                           {id:"reject",title:"拒绝",style:"destructive",requiresReason:true,resultState:"rejected"}],
+                  submit:{url:$submitURL,ticket:$ticket}}}')"
