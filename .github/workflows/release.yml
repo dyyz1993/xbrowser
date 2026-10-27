@@ -139,7 +139,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [verify, test]
-    if: ${{ !inputs.dry_run && !inputs.gate_only }}
+    if: ${{ !inputs.dry_run }}
     steps:
       - name: Wait for the production deployment gate
         id: gate
