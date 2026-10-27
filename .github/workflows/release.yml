@@ -22,6 +22,14 @@ on:
         description: '演练模式：只跑 verify+test，不发布任何东西（流水线改动的安全验证）'
         type: boolean
         default: false
+      gate_only:
+        description: '只验证审批门：跳过 tag/npm/marketplace，但执行真实 production gate'
+        type: boolean
+        default: false
+      notify_run_id:
+        description: '仅向已有审批 run 重发 Drel 通知（不跑测试/发布）'
+        type: string
+        default: ''
       skip_marketplace:
         description: '跳过插件上架（仅发 npm）'
         type: boolean
@@ -33,17 +41,63 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
+  deployments: read
   id-token: write
 
 jobs:
+  renotify:
+    if: ${{ inputs.notify_run_id != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Mint ticket and renotify Drel
+        env:
+          GATE_URL: https://approve.xbrowser.dev
+          GATE_SECRET: ${{ secrets.DREL_RELEASE_GATE_SECRET }}
+          DREL_URL: ${{ secrets.DREL_PUSH_URL }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ inputs.notify_run_id }}
+          REQUEST_ID: xbrowser-${{ inputs.notify_run_id }}-renotify-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          RESPONSE=$(curl -fsS -X POST "$GATE_URL/ticket" \
+            -H "Authorization: Bearer $GATE_SECRET" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -nc --arg repo "$REPO" --arg environment production \
+              --argjson runId "$RUN_ID" --arg requestId "$REQUEST_ID" \
+              '{repo:$repo,environment:$environment,runId:$runId,requestId:$requestId}')")
+          TICKET=$(jq -er '.ticket' <<<"$RESPONSE")
+          DREL_ORIGIN=$(printf '%s' "$DREL_URL" | sed -E 's#^(https://[^/]+).*#\1#')
+          DREL_DEVICE_KEY=$(printf '%s' "$DREL_URL" | sed -E 's#^https://[^/]+/([^/?#]+).*#\1#')
+          curl -fsS -m 15 -X POST "$DREL_ORIGIN/push" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -nc \
+              --arg deviceKey "$DREL_DEVICE_KEY" \
+              --arg title "xbrowser 待审批（新包体验）" \
+              --arg body "这是安装新 Drel 后重新发出的审批请求。" \
+              --arg icon "https://raw.githubusercontent.com/dyyz1993/xbrowser/master/branding/mark-192.png" \
+              --arg url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/$RUN_ID" \
+              --arg requestId "$REQUEST_ID" \
+              --arg submitURL "$GATE_URL/api/review" \
+              --arg ticket "$TICKET" \
+              '{schema:"webbridgekit.message.v1",type:"approval",deviceKey:$deviceKey,
+                id:$requestId,requestId:$requestId,revision:1,state:"pending",
+                title:$title,body:$body,icon:$icon,url:$url,presentation:"native",
+                approval:{responseMode:"thirdParty",
+                  actions:[{id:"approve",title:"通过并发版",style:"primary",resultState:"approved"},
+                           {id:"reject",title:"拒绝",style:"destructive",requiresReason:true,resultState:"rejected"}],
+                  submit:{url:$submitURL,ticket:$ticket}}}')"
+
   # ── 门禁 1：tag 与 package.json 版本一致性 ──────────────────────────
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    if: ${{ inputs.notify_run_id == '' }}
     steps:
       - uses: actions/checkout@v4
-      - name: Tag must match package.json version (dry_run 时跳过——dispatch 无 tag)
-        if: ${{ !inputs.dry_run }}
+      - name: Tag must match package.json version (dispatch 无 tag 时跳过)
+        if: ${{ !inputs.dry_run && !inputs.gate_only }}
         run: |
           TAG="${GITHUB_REF_NAME#v}"
           VERSION=$(node -p "require('./package.json').version")
@@ -59,6 +113,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     needs: verify
+    if: ${{ inputs.notify_run_id == '' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -131,28 +186,98 @@ jobs:
   # ── 待审批推送：全绿后推手机（停在审批门前发的最后一条） ────────────
   notify-pending:
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 10
     needs: [verify, test]
     if: ${{ !inputs.dry_run }}
     steps:
-      - name: Push approval request to Drel
-        continue-on-error: true   # 推送失败不阻塞发布链
+      - name: Wait for the production deployment gate
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
         run: |
-          curl -s -m 15 -G "$DREL_URL" \
-            --data-urlencode "title=xbrowser ${{ github.ref_name }} 待审批" \
-            --data-urlencode "body=测试全绿。点开审批后才会发布 npm 与插件。" \
-            --data-urlencode "icon=$ICON" \
-            --data-urlencode "url=$RUN_URL" || echo "::warning::Drel 推送失败（不阻塞）"
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            PENDING=$(curl -fsS \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/$REPO/actions/runs/$RUN_ID/pending_deployments")
+            ENV_ID=$(curl -fsS \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/$REPO/environments/production" | jq -r '.id')
+            if [ "$(jq --argjson id "$ENV_ID" 'map(select(.environment.id == $id)) | length' <<<"$PENDING")" -gt 0 ]; then
+              echo "pending=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::publish-npm did not enter the production approval gate"
+          exit 1
+
+      - name: Mint a tenant-scoped approval ticket with GitHub OIDC
+        id: ticket
+        if: steps.gate.outputs.pending == 'true'
+        env:
+          GATE_URL: https://approve.xbrowser.dev
+          REQUEST_ID: xbrowser-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          OIDC_TOKEN=$(curl -fsS \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${GATE_URL}" | jq -er '.value')
+          RESPONSE=$(curl -fsS -X POST "$GATE_URL/v1/ci/tickets" \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -nc --arg environment production --arg requestId "$REQUEST_ID" \
+              '{environment:$environment,requestId:$requestId}')")
+          echo "ticket=$(jq -er '.ticket' <<<"$RESPONSE")" >> "$GITHUB_OUTPUT"
+          echo "submit_url=$(jq -er '.submitUrl' <<<"$RESPONSE")" >> "$GITHUB_OUTPUT"
+
+      - name: Push approval request to Drel
+        if: steps.ticket.outputs.ticket != ''
+        continue-on-error: true   # 推送失败不阻塞发布链
         env:
           DREL_URL: ${{ secrets.DREL_PUSH_URL }}
+          GATE_URL: https://approve.xbrowser.dev
+          REQUEST_ID: xbrowser-${{ github.run_id }}
           ICON: https://raw.githubusercontent.com/dyyz1993/xbrowser/master/branding/mark-192.png
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TICKET: ${{ steps.ticket.outputs.ticket }}
+          SUBMIT_URL: ${{ steps.ticket.outputs.submit_url }}
+        run: |
+          set -euo pipefail
+          DREL_ORIGIN=$(printf '%s' "$DREL_URL" | sed -E 's#^(https://[^/]+).*#\1#')
+          DREL_DEVICE_KEY=$(printf '%s' "$DREL_URL" | sed -E 's#^https://[^/]+/([^/?#]+).*#\1#')
+          [ "$DREL_ORIGIN" != "$DREL_URL" ] && [ -n "$DREL_DEVICE_KEY" ] || {
+            echo "::warning::DREL_PUSH_URL must contain https://host/<deviceKey>"
+            exit 0
+          }
+          curl -fsS -m 15 -X POST "$DREL_ORIGIN/push" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -nc \
+              --arg deviceKey "$DREL_DEVICE_KEY" \
+              --arg title "xbrowser ${{ github.ref_name }} 待审批" \
+              --arg body "测试全绿。点开审批后才会发布 npm 与插件。" \
+              --arg icon "$ICON" \
+              --arg url "$RUN_URL" \
+              --arg requestId "$REQUEST_ID" \
+              --arg submitURL "$SUBMIT_URL" \
+              --arg ticket "$TICKET" \
+              '{schema:"webbridgekit.message.v1",type:"approval",deviceKey:$deviceKey,
+                id:$requestId,requestId:$requestId,revision:1,state:"pending",
+                title:$title,body:$body,icon:$icon,url:$url,presentation:"native",
+                approval:{responseMode:"thirdParty",
+                  actions:[{id:"approve",title:"通过并发版",style:"primary",resultState:"approved"},
+                           {id:"reject",title:"拒绝",style:"destructive",requiresReason:true,resultState:"rejected"}],
+                  submit:{url:$submitURL,ticket:$ticket}}}')"
 
   publish-npm:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [test, notify-pending]
-    if: ${{ !inputs.dry_run }}
+    needs: [test]
+    if: ${{ !inputs.dry_run && !inputs.gate_only }}
     # 审批门：production environment 配置了 required reviewer（dyyz1993）。
     # 跑到此 job 会暂停，GitHub 通知 + 上面的 Drel 推送提醒；手机/网页点
     # Approve and deploy 才继续，Reject 或 30 天超时则中止。
@@ -198,6 +323,23 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  # ── 审批门专项验证：真实 production gate，但不 checkout/不发布 ────────
+  approval-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [test]
+    if: ${{ inputs.gate_only == true }}
+    environment: production
+    steps:
+      - name: Prove real production gate without publishing
+        run: |
+          set -euo pipefail
+          echo "Approval gate reached."
+          echo "repository=${{ github.repository }}"
+          echo "run_id=${{ github.run_id }}"
+          echo "sha=${{ github.sha }}"
+          echo "No npm, marketplace, tag, or release command is defined in this job."
+
   # ── 发布 2：变更插件自动上架 marketplace ────────────────────────────
   # 本地插件版本 > 线上版本的自动 publish；插件上架后 xbrowser.dev 数据
   # 自动更新（服务端 DB 驱动）。跳过条件：手动 dispatch 勾选 skip_marketplace。
@@ -229,27 +371,34 @@ jobs:
   # ── 汇总：发布失败时的显式中止标记 ─────────────────────────────────
   release-summary:
     runs-on: ubuntu-latest
-    needs: [verify, test, publish-npm, publish-marketplace]
-    if: always()
+    needs: [verify, test, publish-npm, publish-marketplace, approval-gate]
+    # Renotify is a notification-only dispatch for an existing run. It has no
+    # release jobs by design and must not be summarized as a failed release.
+    if: always() && inputs.notify_run_id == ''
     outputs:
       all_green: ${{ steps.verdict.outputs.all_green }}
     steps:
       - name: Result
         id: verdict
         run: |
-          echo "verify=${{ needs.verify.result }} test=${{ needs.test.result }} npm=${{ needs.publish-npm.result }} marketplace=${{ needs.publish-marketplace.result }} dry_run=${{ inputs.dry_run }}"
+          echo "verify=${{ needs.verify.result }} test=${{ needs.test.result }} npm=${{ needs.publish-npm.result }} marketplace=${{ needs.publish-marketplace.result }} approval-gate=${{ needs.approval-gate.result }} dry_run=${{ inputs.dry_run }} gate_only=${{ inputs.gate_only }}"
           if [ "${{ needs.verify.result }}" != "success" ] || [ "${{ needs.test.result }}" != "success" ]; then
             echo "all_green=false" >> "$GITHUB_OUTPUT"
             echo "::error::release 未完成（见上）"
             exit 1
           fi
-          if [ "${{ inputs.dry_run }}" != "true" ] && [ "${{ needs.publish-npm.result }}" != "success" ]; then
+          if [ "${{ inputs.dry_run }}" != "true" ] && [ "${{ inputs.gate_only }}" != "true" ] && [ "${{ needs.publish-npm.result }}" != "success" ]; then
             echo "all_green=false" >> "$GITHUB_OUTPUT"
             echo "::error::release 未完成（publish-npm 未成功）"
             exit 1
           fi
+          if [ "${{ inputs.gate_only }}" == "true" ] && [ "${{ needs.approval-gate.result }}" != "success" ]; then
+            echo "all_green=false" >> "$GITHUB_OUTPUT"
+            echo "::error::release 未完成（approval-gate 未成功）"
+            exit 1
+          fi
           echo "all_green=true" >> "$GITHUB_OUTPUT"
-          if [ "${{ inputs.dry_run }}" == "true" ]; then
+          if [ "${{ inputs.dry_run }}" == "true" ] || [ "${{ inputs.gate_only }}" == "true" ]; then
             echo "✅ dry-run complete（verify+test 通过，未发布任何东西）"
           else
             echo "✅ release complete"
@@ -263,7 +412,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [verify, test, publish-npm, publish-marketplace, release-summary]
-    if: needs.release-summary.outputs.all_green == 'true'
+    if: needs.release-summary.outputs.all_green == 'true' && inputs.gate_only != true
     permissions:
       contents: write
     steps:
