@@ -29,6 +29,90 @@
 
 ---
 
+## [LRN-20261027-001] best_practice
+
+**Logged**: 2026-10-27T14:40:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: infra
+
+### Summary
+
+GitHub Actions 审批 E2E 先跑 no-op workflow，不能为验证审批而发布 npm 或插件。
+
+### Details
+
+在 `production` environment 上新增只含 echo 的 workflow，等 run 进入 `waiting` 后
+用 Worker 签发的 ticket 调 `/api/review`，即可验证 Drel → 第三方 Worker →
+GitHub pending deployment 的审批链路，副作用仅限放行这个 no-op job。真实发布
+workflow 仍应使用 `thirdParty` approval，Drel 不保存第三方状态。当前 no-op run
+`40461318368` 的 ticket/Worker 链路已走到 GitHub 前，但 Cloudflare Secret 中的
+PKCS#8 无效，审批返回 503。
+
+### Suggested Action
+
+以后验证发布审批时先使用独立 no-op workflow，结束后关闭草稿 PR、删除临时分支，
+不要合并验证文件。修复 Cloudflare GitHub App 私钥后先探测 `/run/:id`，200 再
+提交真实 ticket。
+
+### Metadata
+
+- Source: user_feedback
+- Related Files: .github/workflows/approval-e2e-noop.yml, release.yml
+- Tags: github-actions, approval, no-op, production-environment
+- Pattern-Key: release.approval.noop_e2e
+- Recurrence-Count: 2
+- First-Seen: 2026-10-27
+- Last-Seen: 2026-10-27; second occurrence: run 40509509805 approved through `/api/review`, then a second click was rejected because the ticket was already consumed.
+
+### Context Maintenance
+
+- Decay-Type: decision
+- Decay-Rate: durable
+- Authority: 用户明确要求无副作用 requestId 与不发布 npm/插件; Owner: xbrowser release maintainers
+- Revalidation: 当 production environment 保护规则或审批 Worker 契约改变时
+- Validation: pending; Last-Validated: 2026-10-27; Evidence: run 40461318368
+  已 waiting，`/ticket` 200，`/api/review` 503 Invalid PKCS8 input
+- Disposition: retain; Application: applied
+
+---
+
+## [LRN-20261026-011] best_practice
+
+**Logged**: 2026-10-27T03:47:00+08:00
+**Priority**: high
+**Status**: pending
+**Area**: infra
+
+### Summary
+
+GitHub Actions 环境审批应使用 pending deployments API，而不是修改 deployment status
+
+### Details
+
+`createDeploymentStatus` 只改变 deployment 对象状态，不会满足 Actions 受保护环境的排队门，job 仍停留在 `waiting`。正确接口是 `POST /repos/{owner}/{repo}/actions/runs/{run_id}/pending_deployments`，提交环境 ID 与 `approved`/`rejected`。该路径可由服务端 token 授权，供自定义 UI 无浏览器登录调用。2026-10-26 用该 API 放行 run `40365039033`，publish/marketplace/evidence/summary 全部成功。
+
+### Suggested Action
+
+自定义审批界面调用 `xbrowser github review-deployment` 或同名 GitHub API；继续保留 production environment protection，不要用禁用保护规则来绕过审批。
+
+### Metadata
+
+- Source: debugging
+- Related Files: .xcli/plugins/github/index.ts
+- Tags: github-actions, deployment-approval, api, release
+
+### Context Maintenance
+
+- Decay-Type: dependency
+- Decay-Rate: slow; depends on GitHub Actions REST API behavior
+- Authority: GitHub REST API live verification; Owner: release maintainers
+- Revalidation: check pending deployments API documentation when GitHub Actions approval behavior changes
+- Validation: verified; Last-Validated: 2026-10-26; Evidence: run 40365039033 transitioned from waiting to all jobs success after API approval
+- Disposition: retain; Application: applied
+
+---
+
 ## [LRN-20261023-002] correction
 
 **Logged**: 2026-10-23T10:00:00+08:00
@@ -313,3 +397,169 @@ Logo 设计任务应先检查项目的 product-brand-launch 技能并比较多�
 - Source: debugging
 - Tags: javascript, precision, snowflake-id, api-debugging
 - Related: ERR-20261024-002, LRN-20261025-001
+
+---
+
+## [LRN-20261026-006] 任务分组卫生：泄漏的三种来源与清理配方
+
+**Why:** 用户发现浏览器里堆积大量未清理的任务分组——实测 18 组/18 tab 全部是当晚自动化产物。清完剩 15 个 tab 全部是用户自己的，零误伤。
+
+**【关键补遗 2026-10-26】一键清理命令一直存在，我没用它——这是主因之一：**
+`xbrowser chrome-bridge finish` —— 一条命令关闭**所有**任务组（🤖 + xb-task-* 全收，
+用户 attach 入组的 tab 自动脱组保留，S209 保护）。手工逐组 task-close 18 次是笨办法。
+任务批次结束（发布/生成/调试告一段落）**必跑一次 finish**。
+
+**How to apply:**
+1. **泄漏三来源**：① 脚本 task-open 后异常路径没走 task-close（批量脚本每镜开新组、错误路径漏清理）② 插件代码组名错位（history-list 两次 Date.now() 生成不同名——close 永远对不上，#426 已修）③ 显式 xb-task-* 组**设计上不自动回收**（空闲回收只针对 🤖 自动组，S206 设计如此——显式组必须显式关）
+2. **审计配方**：bridge `task-list` 列全部组 → 按 name 前缀归类计数 → `task-close` 逐组关闭 → `task-list` 复核归零 → `tabs` 复核用户 tab 零误伤
+3. **预防**：批量脚本用 try/finally 包 task-close；插件的组名一律先存变量再用；显式组用完即关（要保留给用户确认的内容除外，如 draft 流程）
+4. **收尾铁律**：任务批次结束跑 `xbrowser chrome-bridge finish`（一键清所有任务组，用户 tab 自动脱组保留）——比逐组 task-close 可靠且无遗漏
+5. **机制设计事实**：显式 xb-task-* 组**故意**不参与 10 分钟空闲回收（S206 设计，防止脚本误关用户待确认的草稿 tab）——代价是"脚本忘了关就永久堆积"，所以收尾 finish 是唯一兜底
+
+**Metadata**
+- Source: user_feedback
+- Tags: tab-groups, hygiene, task-close, leak
+- Related: ERR-20261025-001（僵尸 tab）, LRN-20261026-001
+
+---
+
+## [LRN-20261026-007] CF 拦截实测：bridge 通道下 30 连击零拦截（检测误报也要防）
+
+**Why:** 用户问能否过 CF，要求实测 20-30 次连击验证。结果：走用户真实 Chrome（bridge 通道）连续 30 次访问 twitterviewer.net，**0 次被 CF 拦截**——真实浏览器指纹 + 已有的 cf_clearance Cookie + 真实 UA/行为，CF 不出手。另：首轮检测误报（页脚含"Cloudflare"字样触发正则），CF 检测应该看 title（Just a moment）+ #challenge-running 元素，不能全文匹配"Cloudflare"。
+
+**How to apply:**
+1. CF 站走 bridge 通道（用户真实 Chrome）天然免疫——之前 `cf_clearance` Cookie 在，指纹真实，30 连击 2.5-4s 间隔全过
+2. CF 挑战检测标准：`/Just a moment|Checking your browser/i.test(document.title)` 或 `document.querySelector('#challenge-running, #challenge-form')` ——**不要**全文匹配 "Cloudflare"（页脚统计代码会误报）
+3. 真 Turnstile 出现时（iframe[src*="challenges.cloudflare.com"]）：不硬模拟，给 viewer URL 让用户点
+4. headless/独立浏览器跑 CF 站才会高频被拦——那才是需要 stealth 对抗的场景
+
+**Metadata**
+- Source: user_request
+- Tags: cloudflare, cf-bypass, bridge-channel, detection-false-positive
+- Related: login-bridge-plugin（stealth 三层）
+
+---
+
+## [LRN-20261026-008] 抖音视频抓取三通道（bridge 直拿 <video> currentSrc 最快）
+
+**Why:** 用户给了一个抖音短链要抓视频。实测三条路：① curl 解短链拿 awemeId ✓ ② iesdouyin share 页 SSR 数据不含 play_addr（loaderData 只有配置无视频）✗ ③ **bridge 开 tab → `<video>.currentSrc` 直拿 douyinvod CDN 签名 URL → curl 带 Referer 下载 ✓✓**（30 秒全流程）。
+
+**How to apply:**
+1. 短链解析：`curl -sIL https://v.douyin.com/xxx/` 跟 302 拿 `video/(\d+)` 即 awemeId
+2. bridge `task-open` 开 `douyin.com/video/<id>` → 等 8s → evaluate 取 `video.currentSrc` 或 `source[src]`（CDN 签名 URL 有时效，取到立刻用）
+3. 下载必须带 `Referer: https://www.douyin.com/`（否则 CDN 拒绝）
+4. 仓库 douyin 插件有 `detail`/`download` 命令（XHR 拦截 aweme_detail API 拿无水印 bit_rate），适合要元数据/多画质的场景；只要快速拿片走 bridge currentSrc 更轻
+5. HEVC 编码常见（本条 hevc + aac），ffmpeg 处理无碍
+
+**Metadata**
+- Source: user_request
+- Tags: douyin, video-download, bridge, currentSrc
+- Related: LRN-20261026-004（同款页面内取资源思路）
+
+---
+
+## [LRN-20261026-009] GSC 全自动 sitemap 提交成功——四步 UI 闭环配方
+
+**Why:** 用户要求"全自动提交"。GSC 属性 `sc-domain:xbrowser.dev` 此前已验证（发现方式：直接开 search-console 页面自动 302 到 `?resource_id=sc-domain:xbrowser.dev`）。实测用 bridge UI 自动化完成了 sitemap.xml 提交，全程无人工。
+
+**How to apply（GSC sitemap 提交 UI 自动化配方）:**
+1. 开 `search.google.com/search-console/sitemaps?resource_id=sc-domain%3A<域名>` → 已验证则自动进入管理页
+2. 聚焦输入框：**用 `aria-label="输入站点地图网址"` 精确定位**（不能按 width>150 过滤——GSC 顶部还有 URL 检查栏的同尺寸输入框，会打错字到错误的框里）
+3. **先 `select()`+Ctrl+A+Backspace 清残留**（此输入框持久保留上次未提交的文本）
+4. `Input.insertText` 打字（逐键 keyDown 在 Angular Material 组件上不触发 value 更新）
+5. **Enter 提交**（新 UI 无"提交"文字按钮，Enter 是唯一路径）
+6. 验证：页面出现"已提交的网址数"即为成功
+
+**Metadata**
+- Source: debugging
+- Tags: gsc, sitemap, seo, ui-automation
+- Related: LRN-20261026-003（焦点四步闭环）, LRN-20261026-007（CF 30 连击）
+
+---
+
+## [LRN-20261026-010] 【用户硬规则】SEO 推广不要加链接，用关键词收录
+
+**Why:** 用户纠正（2026-10-26）："发送的链接，其实没必要去追加那个网址，因为有网址的话不一定好发布。但是有对应的关键词的话，可能容易收录。" —— 带 URL 的推广内容在多数平台（掘金/知乎/CSDN）会被反推广机制拦截或降权，而**关键词搜索是用户找工具的实际路径**（搜 "xbrowser" 或 "浏览器自动化 CLI" 就能找到 GitHub/npm/官网），所以不需要硬塞链接。
+
+**How to apply:**
+1. 推广文章文末只需保留 `dyyz1993/xbrowser` 或 `xbrowser` 明文关键词，**不要加 URL 链接**
+2. 确保 GitHub 仓库 description 和 npm package description 包含核心搜索关键词（浏览器自动化、browser automation CLI、AI Agent 等）
+3. xbrowser.dev 的 SEO 依赖 GSC sitemap 提交 + GitHub/npm 的自然外链，不靠文章硬塞
+4. 文章标题和正文要包含用户会搜的关键词（"浏览器自动化"、"Playwright 替代"、"AI Agent 浏览器" 等）
+
+**Metadata**
+- Source: user_feedback
+- Tags: seo, promotion, keywords, no-links
+- Related: LRN-20261026-006, user-direction-preferences
+
+### Summary
+
+`notify_run_id` 的 renotify dispatch 是通知专用运行，release-summary 不能把它当成发布失败。
+
+### Details
+
+`notify_run_id != ''` 时 verify/test/publish 全部 skipped，旧 `always()` 的
+release-summary 会因 verify != success 误报 `release 未完成`。已把 summary
+改成 `always() && inputs.notify_run_id == ''`。真实审批 ticket 是一次性的，
+一个 ticket 只能消费一次；同一 GitHub run 审批后不会再有 pending deployment，
+后续点击旧消息/重发票应提示“已处理”，这是预期防重放行为，不是路由错误。
+
+### Context Maintenance
+
+- Pattern-Key: ci-release-renotify-summary
+- Context Maintenance: maintain when renotify mode or release summary gating changes
+- Source: user_feedback
+- Status: resolved
+- Last-Seen: 2026-10-27
+- Recurrence-Count: 1
+- Related Files: .github/workflows/release.yml
+- Tags: github-actions, release, renotify, approval-ticket
+
+---
+
+## [LRN-20261028-001] best_practice
+
+**Logged**: 2026-10-28T04:55:00+08:00
+**Priority**: high
+**Status**: resolved
+**Area**: infra
+
+### Summary
+
+真实多租户审批需要 GitHub OIDC ticket、当前 Drel 身份 ACL、EdDSA actor assertion 和
+pending-deployment provider 四项同时匹配。
+
+### Details
+
+xbrowser release workflow 用 `ACTIONS_ID_TOKEN_REQUEST_TOKEN` 向
+`/v1/ci/tickets` 换 tenant/project-scoped v2 ticket；Drel decision 必须带绑定
+requestId、ticketHash、actionId 的 Ed25519 assertion。第一次旧公钥返回
+`identity_not_linked`，policyVersion 更新后旧 ticket 被拒，必须发新 ticket。
+最终 Drel decision HTTP 200，GitHub run `40575537375` 的 production
+`approval-gate` 成功，`publish-npm` / `publish-marketplace` 保持 skipped。
+
+### Suggested Action
+
+每次更换 Drel 安装或 Keychain 身份后，先从审批身份页导出 Subject/Login/公钥，
+更新 admin project policy，然后用全新 requestId 和 ticket 推送审批；不要复用
+旧 policyVersion 的推送。
+
+### Metadata
+
+- Source: error
+- Related Files: .github/workflows/release.yml, src/multitenant.ts, src/actor.ts
+- Tags: github-oidc, approval, drel-actor, multi-tenant, github-actions
+- Pattern-Key: approval.multi_tenant_oidc_actor
+- Recurrence-Count: 1
+- First-Seen: 2026-10-28
+- Last-Seen: 2026-10-28
+
+### Context Maintenance
+
+- Decay-Type: dependency
+- Decay-Rate: medium; GitHub OIDC / deployment approval API may change
+- Authority: live E2E evidence; Owner: xbrowser + drel-release-gate maintainers
+- Revalidation: OIDC claim names, pending deployment API, ticket format, or actor assertion contract change
+- Validation: verified; Last-Validated: 2026-10-28; Evidence: run 40575537375
+  approval-gate success, publish jobs skipped
+- Disposition: retain; Application: applied
