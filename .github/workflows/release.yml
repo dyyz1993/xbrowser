@@ -139,7 +139,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: [verify, test]
-    if: ${{ !inputs.dry_run }}
+    if: ${{ !inputs.dry_run && !inputs.gate_only }}
     steps:
       - name: Wait for the production deployment gate
         id: gate
@@ -273,6 +273,23 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
+  # ── 审批门专项验证：真实 production gate，但不 checkout/不发布 ────────
+  approval-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [test]
+    if: ${{ inputs.gate_only == true }}
+    environment: production
+    steps:
+      - name: Prove real production gate without publishing
+        run: |
+          set -euo pipefail
+          echo "Approval gate reached."
+          echo "repository=${{ github.repository }}"
+          echo "run_id=${{ github.run_id }}"
+          echo "sha=${{ github.sha }}"
+          echo "No npm, marketplace, tag, or release command is defined in this job."
+
   # ── 发布 2：变更插件自动上架 marketplace ────────────────────────────
   # 本地插件版本 > 线上版本的自动 publish；插件上架后 xbrowser.dev 数据
   # 自动更新（服务端 DB 驱动）。跳过条件：手动 dispatch 勾选 skip_marketplace。
@@ -304,7 +321,7 @@ jobs:
   # ── 汇总：发布失败时的显式中止标记 ─────────────────────────────────
   release-summary:
     runs-on: ubuntu-latest
-    needs: [verify, test, publish-npm, publish-marketplace]
+    needs: [verify, test, publish-npm, publish-marketplace, approval-gate]
     if: always()
     outputs:
       all_green: ${{ steps.verdict.outputs.all_green }}
@@ -312,7 +329,7 @@ jobs:
       - name: Result
         id: verdict
         run: |
-          echo "verify=${{ needs.verify.result }} test=${{ needs.test.result }} npm=${{ needs.publish-npm.result }} marketplace=${{ needs.publish-marketplace.result }} dry_run=${{ inputs.dry_run }}"
+          echo "verify=${{ needs.verify.result }} test=${{ needs.test.result }} npm=${{ needs.publish-npm.result }} marketplace=${{ needs.publish-marketplace.result }} approval-gate=${{ needs.approval-gate.result }} dry_run=${{ inputs.dry_run }} gate_only=${{ inputs.gate_only }}"
           if [ "${{ needs.verify.result }}" != "success" ] || [ "${{ needs.test.result }}" != "success" ]; then
             echo "all_green=false" >> "$GITHUB_OUTPUT"
             echo "::error::release 未完成（见上）"
@@ -321,6 +338,11 @@ jobs:
           if [ "${{ inputs.dry_run }}" != "true" ] && [ "${{ inputs.gate_only }}" != "true" ] && [ "${{ needs.publish-npm.result }}" != "success" ]; then
             echo "all_green=false" >> "$GITHUB_OUTPUT"
             echo "::error::release 未完成（publish-npm 未成功）"
+            exit 1
+          fi
+          if [ "${{ inputs.gate_only }}" == "true" ] && [ "${{ needs.approval-gate.result }}" != "success" ]; then
+            echo "all_green=false" >> "$GITHUB_OUTPUT"
+            echo "::error::release 未完成（approval-gate 未成功）"
             exit 1
           fi
           echo "all_green=true" >> "$GITHUB_OUTPUT"
