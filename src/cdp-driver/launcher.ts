@@ -163,17 +163,11 @@ export async function launchChrome(options: ChromeLaunchOptions = {}): Promise<L
 
   const port = await findFreePort();
   const allArgs: string[] = [
+    ...DEFAULT_ARGS,
     `--remote-debugging-port=${port}`,
     '--remote-allow-origins=*',
-    '--no-sandbox',
-    '--no-first-run',
-    '--no-default-browser-check',
     '--disable-session-crashed-bubble',
-    '--disable-background-timer-throttling',
-    '--disable-backgrounding-occluded-windows',
-    '--disable-renderer-backgrounding',
     '--disable-features=Translate,PasswordLeakDetection',
-    '--disable-popup-blocking',
   ];
 
   if (headless) {
