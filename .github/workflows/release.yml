@@ -371,7 +371,9 @@ jobs:
   release-summary:
     runs-on: ubuntu-latest
     needs: [verify, test, publish-npm, publish-marketplace, approval-gate]
-    if: always()
+    # Renotify is a notification-only dispatch for an existing run. It has no
+    # release jobs by design and must not be summarized as a failed release.
+    if: always() && inputs.notify_run_id == ''
     outputs:
       all_green: ${{ steps.verdict.outputs.all_green }}
     steps:
