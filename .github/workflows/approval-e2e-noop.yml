@@ -1,0 +1,26 @@
+name: Approval E2E No-op
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/approval-e2e-noop.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  production-gate:
+    name: production-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - name: Prove approval without publishing
+        run: |
+          set -euo pipefail
+          echo "Approval E2E gate reached."
+          echo "repository=${{ github.repository }}"
+          echo "run_id=${{ github.run_id }}"
+          echo "sha=${{ github.sha }}"
+          echo "No npm, marketplace, or release command is defined in this workflow."
