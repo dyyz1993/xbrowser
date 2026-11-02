@@ -1309,66 +1309,41 @@ xbrowser plugin install chatgpt
 
 ---
 
-## Marketplace CLI
+## 发布插件（npm 渠道）
 
-### 前置条件
-
-```bash
-# 设置代理（必需，marketplace 在 Cloudflare Workers 上）
-export https_proxy=http://127.0.0.1:7890
-export http_proxy=http://127.0.0.1:7890
-export all_proxy=socks5://127.0.0.1:7890
-```
-
-### 自定义 Registry 地址
-
-默认使用 `https://xbrowser.dev` 作为 marketplace 地址。支持 3 种方式配置自定义 registry：
-
-**1. 命令行参数 `--registry`（单次生效）**
-
-```bash
-xbrowser marketplace publish --registry https://your-registry.com
-xbrowser marketplace login --registry https://your-registry.com --token <key>
-xbrowser admin pending --registry https://your-registry.com
-```
-
-**2. 环境变量 `XBROWSER_REGISTRY`（全局生效）**
-
-```bash
-export XBROWSER_REGISTRY=https://your-registry.com
-xbrowser marketplace publish
-xbrowser admin pending
-```
-
-**3. 登录时持久化**
-
-```bash
-xbrowser marketplace login --registry https://your-registry.com --token <key>
-```
-
-登录成功后 registry 地址会存入 `~/.xbrowser/auth.json`，后续所有 marketplace/admin 命令自动使用该地址，无需重复指定。
-
-**优先级**：`--registry` 参数 > `XBROWSER_REGISTRY` 环境变量 > `~/.xbrowser/auth.json` 中保存的地址 > 默认值 `https://xbrowser.dev`
-
-### 命令列表
-
-| 命令 | 说明 |
-|------|------|
-| `xbrowser plugin list` | 列出已安装的插件 |
-| `xbrowser plugin search <keyword>` | 搜索 marketplace 上的插件 |
-| `xbrowser plugin install <name>` | 从 marketplace 安装插件 |
-| `xbrowser plugin uninstall <name>` | 卸载插件 |
-| `xbrowser marketplace publish <name>` | 发布插件到 marketplace |
-| `xbrowser plugin whoami` | 查看当前登录状态 |
-| `xbrowser plugin reload` | 重新加载所有插件 |
+> ⚠️ 旧的内置 marketplace 发布器（`xbrowser marketplace publish/login`）已移除（216f151），
+> 这些命令在当前 CLI 中不存在。发布插件的官方渠道是 npm；marketplace 上的插件安装
+> （`xbrowser plugin install <name>`）在 npm 未命中时会自动回退到 xbrowser.dev 市场。
 
 ### 发布流程
 
 1. 确保插件在 `.xcli/plugins/` 下开发和测试通过
 2. 补全规范文件（README、CHANGELOG、MARKET_DESCRIPTION）
-3. 更新 `package.json` 版本号
-4. 设置代理环境变量
-5. 执行 `npx xbrowser marketplace publish <name>`
+3. 更新 `package.json` 版本号，包名建议使用 `@xbrowser-plugin-<name>` 或自己的 scope
+4. 在插件目录执行 `npm publish`（无 npm 账号先 `npm login`）
+
+### 安装与搜索
+
+```bash
+xbrowser plugin install <name>              # npm 优先，未命中回退 marketplace
+xbrowser plugin search <keyword>            # 搜索 npm 上的 @xbrowser 插件包
+xbrowser plugin uninstall <name>            # 卸载插件
+xbrowser plugin reload                      # 重新加载所有插件
+```
+
+### Registry 地址（高级）
+
+marketplace 安装源的地址按以下优先级解析（见 `src/config.ts` 的 `getRegistryUrl`）：
+
+1. `--registry` 参数（单次生效）
+2. 环境变量 `XBROWSER_REGISTRY`
+3. 默认值 `https://xbrowser.dev`
+
+```bash
+xbrowser plugin install <name> --registry https://your-registry.com
+# 或
+export XBROWSER_REGISTRY=https://your-registry.com
+```
 
 ---
 
