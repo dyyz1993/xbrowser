@@ -151,6 +151,8 @@ const TARGETS: TargetSpec[] = [
       const avg = scores.reduce((a, b) => a + parseFloat(b), 0) / scores.length;
       if (avg >= 0.7) return `PASS score=${avg.toFixed(1)}（人类水平）`;
       if (avg >= 0.3) return `INCONCLUSIVE score=${avg.toFixed(1)}`;
+      // CI runner IP 被 Google 打 bot 分（2026-11-02 起 master 连续 3 次稳定 0.1 分）——环境无参考价值，降级
+      if (process.env.CI === 'true') return `INCONCLUSIVE score=${avg.toFixed(1)}（CI 环境 runner IP 信誉不可用）`;
       return `FAIL score=${avg.toFixed(1)}（bot 级）`;
     },
   },
