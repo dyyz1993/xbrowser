@@ -98,17 +98,31 @@ export class PluginInstaller {
    *
    * Some marketplace/npm packages import from `../shared/` (e.g. ssr-detect.js,
    * ai-chat-base.ts) but the `shared/` directory is not included in the package.
-   * This method scans the installed plugin's index.ts for such imports and
-   * copies the missing files from the local repository's `.xcli/plugins/shared/`
-   * directory (if available).
+   * This method scans every .ts/.js source file in the installed plugin (not just
+   * index.ts — media plugins like gemini import shared modules from generate.ts,
+   * history.ts, music.ts, etc.) for such imports and copies the missing files
+   * from the local repository's `.xcli/plugins/shared/` directory (if available).
    */
   private async fixSharedDeps(pluginDir: string): Promise<void> {
-    const indexPath = resolve(pluginDir, 'index.ts');
-    if (!existsSync(indexPath)) return;
+    const sourceFiles: string[] = [];
+    const collectSourceFiles = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
+        const full = resolve(dir, entry.name);
+        if (entry.isDirectory()) {
+          collectSourceFiles(full);
+        } else if (/\.(ts|js)$/.test(entry.name)) {
+          sourceFiles.push(full);
+        }
+      }
+    };
+    if (!existsSync(pluginDir)) return;
+    collectSourceFiles(pluginDir);
+    if (sourceFiles.length === 0) return;
 
     let content: string;
     try {
-      content = readFileSync(indexPath, 'utf8');
+      content = sourceFiles.map((f) => readFileSync(f, 'utf8')).join('\n');
     } catch {
       return;
     }
@@ -123,12 +137,13 @@ export class PluginInstaller {
 
     if (missingFiles.length === 0) return;
 
-    // Check which shared/ files are actually missing
+    // Check which shared/ files are actually missing.
+    // Imports use TS ESM specifiers (`../shared/media-contract.js`) while the
+    // repo sources are .ts — resolve the real filename per source when copying.
     const sharedDir = resolve(pluginDir, '..', 'shared');
     const toCopy: string[] = [];
     for (const file of missingFiles) {
-      const targetPath = resolve(sharedDir, file);
-      if (!existsSync(targetPath)) {
+      if (!existsSync(resolve(sharedDir, file)) && !toCopy.includes(file)) {
         toCopy.push(file);
       }
     }
@@ -156,16 +171,24 @@ export class PluginInstaller {
       let allDownloaded = true;
       for (const file of toCopy) {
         try {
-          const url = `${GITHUB_RAW}/${file}`;
-          const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
-          if (resp.ok) {
-            const content = await resp.text();
-            const dst = resolve(sharedDir, file);
-            const dstDir = dirname(dst);
-            if (!existsSync(dstDir)) mkdirSync(dstDir, { recursive: true });
-            writeFileSync(dst, content, 'utf-8');
-            console.log(`✅ Downloaded shared/${file} from GitHub`);
-          } else {
+          // Import specifiers are .js but repo sources are .ts — try both.
+          const candidates = file.endsWith('.js') ? [file, file.replace(/\.js$/, '.ts')] : [file];
+          let downloaded = false;
+          for (const candidate of candidates) {
+            const url = `${GITHUB_RAW}/${candidate}`;
+            const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+            if (resp.ok) {
+              const fileContent = await resp.text();
+              const dst = resolve(sharedDir, candidate);
+              const dstDir = dirname(dst);
+              if (!existsSync(dstDir)) mkdirSync(dstDir, { recursive: true });
+              writeFileSync(dst, fileContent, 'utf-8');
+              console.log(`✅ Downloaded shared/${candidate} from GitHub`);
+              downloaded = true;
+              break;
+            }
+          }
+          if (!downloaded) {
             allDownloaded = false;
             break;
           }
@@ -184,16 +207,22 @@ export class PluginInstaller {
     // Copy missing shared files
     mkdirSync(sharedDir, { recursive: true });
     for (const file of toCopy) {
-      const src = resolve(sourceSharedDir!, file);
-      const dst = resolve(sharedDir, file);
-      if (existsSync(src)) {
+      // Import specifiers are .js but repo sources are .ts — try both.
+      const candidates = file.endsWith('.js') ? [file, file.replace(/\.js$/, '.ts')] : [file];
+      const src = candidates.map((c) => resolve(sourceSharedDir!, c)).find((p) => existsSync(p));
+      if (!src) {
+        console.warn(`⚠️  Could not copy shared/${file}: not found in ${sourceSharedDir!}`);
+        continue;
+      }
+      const dst = resolve(sharedDir, basename(src));
+      {
         try {
           cpSync(dirname(src), dirname(dst), { recursive: true });
-          console.log(`✅ Copied shared/${file} for plugin "${basename(pluginDir)}"`);
+          console.log(`✅ Copied shared/${basename(src)} for plugin "${basename(pluginDir)}"`);
         } catch {
           try {
             copyFileSync(src, dst);
-            console.log(`✅ Copied shared/${file} for plugin "${basename(pluginDir)}"`);
+            console.log(`✅ Copied shared/${basename(src)} for plugin "${basename(pluginDir)}"`);
           } catch {
             console.warn(`⚠️  Could not copy shared/${file}`);
           }
