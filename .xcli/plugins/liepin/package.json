@@ -1,0 +1,17 @@
+{
+  "name": "xbrowser-plugin-liepin",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "type": "module",
+  "description": "猎聘求职助手：登录态检查、投递记录、职位沟通投递、简历中心（chrome-bridge 通道）",
+  "xbrowser": {
+    "name": "liepin",
+    "slug": "liepin",
+    "version": "1.0.0",
+    "author": "dyyz1993",
+    "description": "猎聘求职助手：登录态检查、投递记录、职位沟通投递、简历中心（走 chrome-bridge 用户浏览器通道，复用登录态）",
+    "site": "https://www.liepin.com/",
+    "requiresLogin": false,
+    "commands": ["status", "apply-list", "deliver", "resume-open"]
+  }
+}
