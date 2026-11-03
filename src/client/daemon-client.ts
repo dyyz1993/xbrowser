@@ -181,7 +181,7 @@ export async function forwardExec(
   try {
     return await rpcCall<ExecutionResult>('exec', rpcParams, timeoutMs);
   } catch (e) {
-    return { success: false, data: null, message: errMsg(e), duration: 0 };
+    return { success: false, data: null, message: friendlyDaemonError(e), duration: 0 };
   }
 }
 
@@ -197,7 +197,7 @@ export async function forwardPluginExec(
   try {
     return await rpcCall<ExecutionResult>('plugin:exec', rpcParams, timeoutMs);
   } catch (e) {
-    return { success: false, data: null, message: errMsg(e), duration: 0 };
+    return { success: false, data: null, message: friendlyDaemonError(e), duration: 0 };
   }
 }
 
@@ -211,8 +211,23 @@ export async function forwardChain(
   try {
     return await rpcCall('chain', params, 120000);
   } catch (e) {
-    return { success: false, steps: [], totalDuration: 0, stoppedReason: errMsg(e) };
+    return { success: false, steps: [], totalDuration: 0, stoppedReason: friendlyDaemonError(e) };
   }
+}
+
+/**
+ * Wrap raw transport errors (ECONNREFUSED / timeout) with an actionable hint
+ * instead of surfacing bare `connect ECONNREFUSED 127.0.0.1:9222` (#441).
+ */
+function friendlyDaemonError(e: unknown): string {
+  const msg = errMsg(e);
+  if (/ECONNREFUSED/i.test(msg)) {
+    return `Daemon 或浏览器不可达 (${msg})。请直接重试（daemon 会自动拉起），或检查 --cdp 端口是否有浏览器运行。`;
+  }
+  if (/ETIMEDOUT|EHOSTUNREACH|ENETUNREACH/i.test(msg)) {
+    return `网络不可达 (${msg})。请检查防火墙或 --cdp 端口。`;
+  }
+  return msg;
 }
 
 export async function forwardAgentObserve(

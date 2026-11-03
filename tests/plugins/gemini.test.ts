@@ -18,6 +18,7 @@ function createMockPage(evaluateResult: unknown = '') {
   return {
     url: vi.fn(() => 'https://gemini.google.com/app'),
     goto: vi.fn(() => Promise.resolve()),
+    waitForSelector: vi.fn(() => Promise.resolve()),
     waitForTimeout: vi.fn(() => Promise.resolve()),
     waitForLoadState: vi.fn(() => Promise.resolve()),
     evaluate: vi.fn(() => Promise.resolve(evaluateResult)),
@@ -48,7 +49,7 @@ function createMockCtx(page?: ReturnType<typeof createMockPage>) {
 }
 
 const ALL_COMMANDS = [
-  'list', 'chat', 'usage',
+  'login', 'list', 'chat', 'usage',
   'task-open', 'task-close', 'task-list',
   'generate-image', 'generate-video',
   'history-list', 'history-download-video',
