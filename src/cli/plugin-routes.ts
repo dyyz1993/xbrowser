@@ -7,6 +7,7 @@ import { NPMSearcher } from '../plugin/npm-search.js';
 import { startDaemonProcess, stopDaemonProcess, getDaemonProcessStatus } from '../daemon/daemon.js';
 import { outputEnvelope, outputError } from './output.js';
 import { NPM_REGISTRY_URL, resolveNpmPackageWithFallback } from '../config.js';
+import { getMarketplaceUrl } from '../config.js';
 import { ensureProxyFetch } from '../utils/proxy-fetch.js';
 import { getPluginLoader as getGlobalPluginLoader } from '../utils/plugin-singleton.js';
 import type { PluginCommandContract, PluginContract } from '../plugin/types.js';
@@ -134,6 +135,71 @@ async function infoFromMarketplacePlugin(
   return null;
 }
 
+interface MarketplaceItem {
+  name: string;
+  slug: string;
+  description?: string;
+  version?: string;
+  authorName?: string;
+  downloadCount?: number;
+  tags?: string[];
+  siteUrls?: string[];
+  commands?: string[];
+}
+
+async function searchFromMarketplaceAPI(
+  options: { query?: string; tag?: string; site?: string; limit?: number },
+): Promise<Array<Record<string, unknown>>> {
+  const baseUrl = getMarketplaceUrl();
+  const params = new URLSearchParams();
+  if (options.query) params.set('search', options.query);
+  if (options.tag) params.set('tag', options.tag);
+  if (options.site) params.set('site', options.site);
+  if (options.limit) params.set('limit', String(options.limit));
+  const url = `${baseUrl}/api/plugins?${params.toString()}`;
+
+  const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+  if (!resp.ok) return [];
+  const body = await resp.json() as { success?: boolean; data?: { items?: MarketplaceItem[] } };
+  const items = body.data?.items ?? [];
+  return items.map(item => ({
+    name: item.slug || item.name,
+    slug: item.slug,
+    description: item.description,
+    version: item.version,
+    downloads: item.downloadCount,
+    tags: item.tags,
+    sites: item.siteUrls,
+    commands: item.commands,
+    source: 'marketplace',
+  }));
+}
+
+async function infoFromMarketplaceAPI(
+  slug: string,
+): Promise<Record<string, unknown> | null> {
+  const baseUrl = getMarketplaceUrl();
+  const url = `${baseUrl}/api/plugins/${encodeURIComponent(slug)}`;
+
+  const resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+  if (!resp.ok) return null;
+  const body = await resp.json() as { success?: boolean; data?: MarketplaceItem };
+  if (!body.success || !body.data) return null;
+  const p = body.data;
+  return {
+    name: p.name || slug,
+    slug: p.slug || slug,
+    description: p.description,
+    version: p.version,
+    author: p.authorName,
+    downloads: p.downloadCount ?? 0,
+    tags: p.tags ?? [],
+    sites: p.siteUrls ?? [],
+    commands: p.commands ?? [],
+    source: 'marketplace',
+  };
+}
+
 /**
  * Normalize a plugin name for matching: strip scope/prefix and lowercase.
  * Examples:
@@ -223,6 +289,16 @@ async function handleSearch(
   const pluginResults = await searchFromMarketplacePlugin(searchOpts, loader);
   results.push(...pluginResults);
 
+  // 3. Direct marketplace REST API fallback (plugin not loaded → npm-only blind spot)
+  if (pluginResults.length === 0) {
+    try {
+      const apiResults = await searchFromMarketplaceAPI(searchOpts);
+      results.push(...apiResults);
+    } catch {
+      // marketplace API unreachable — fall through to npm
+    }
+  }
+
   if (pluginResults.length === 0) {
     try {
       const npmResults = await NPMSearcher.search(searchOpts);
@@ -298,6 +374,29 @@ async function handlePluginInfo(
     }
   } catch {
     // Plugin-based info unavailable, fallback to npm
+  }
+
+  try {
+    const apiInfo = await infoFromMarketplaceAPI(slug);
+    if (apiInfo) {
+      const d = apiInfo;
+      if (mode === 'json') {
+        outputEnvelope({ success: true, data: { source: 'marketplace', ...d } }, { command: 'plugin info' }, mode);
+        return;
+      }
+      process.stdout.write(`名称: ${d.name || ''}\n`);
+      process.stdout.write(`版本: ${d.version || ''}\n`);
+      process.stdout.write(`描述: ${d.description || ''}\n`);
+      process.stdout.write(`作者: ${d.author || ''}\n`);
+      process.stdout.write(`命令: ${((d.commands || []) as string[]).join(', ')}\n`);
+      process.stdout.write(`下载量: ${d.downloads || 0}\n`);
+      process.stdout.write(`标签: ${((d.tags || []) as string[]).join(', ')}\n`);
+      process.stdout.write(`网站: ${((d.sites || []) as string[]).join(', ')}\n`);
+      process.stdout.write(`来源: marketplace\n`);
+      return;
+    }
+  } catch {
+    // marketplace API unreachable — fall through to npm
   }
 
   try {

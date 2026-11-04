@@ -38,6 +38,46 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
+  // ── login — 引导用户完成 Google 登录 ──
+  site.command('login', {
+    description: '登录 Gemini（Google 账号）',
+    scope: 'browser',
+    parameters: z.object({
+      timeout: z.number().min(30).max(600).default(300).describe('等待登录完成秒数'),
+    }),
+    examples: [{ cmd: 'xbrowser gemini login', description: '打开 Gemini 并等待完成登录' }],
+    result: z.object({ loggedIn: z.boolean(), url: z.string() }),
+    handler: async (params, ctx) => {
+      const page = ctx.page;
+      if (!page) throw new Error('需要浏览器页面');
+
+      const tips = buildCdpTips(ctx);
+      try {
+        await page.goto(GEMINI_URL, {
+          waitUntil: 'domcontentloaded',
+          timeout: 15000,
+        });
+      } catch {
+        return fail(`无法打开 ${GEMINI_URL}（网络不可达或被阻止）`, tips);
+      }
+
+      await ctx.waitForHuman?.({
+        reason: '请在浏览器中完成 Google 登录',
+        timeout: params.timeout,
+      });
+
+      const url = page.url();
+      const loggedIn = url.includes('gemini.google.com') &&
+        !url.includes('/login') && !url.includes('/signin');
+      await ctx.storage.set('gemini_login', { loggedIn, at: Date.now() });
+
+      return ok({ loggedIn, url }, [
+        ...tips,
+        loggedIn ? 'Gemini 登录成功' : '登录可能未完成，请重跑或检查浏览器',
+      ]);
+    },
+  });
+
   // ── list — 从页面文本提取会话 ──
   site.command('list', {
     description: '列出历史会话',
@@ -49,6 +89,11 @@ export default function (xcli: XCLIAPI): void {
       if (!page) throw new Error("需要浏览器页面");
       const tips = buildCdpTips(ctx);
       try {
+        const url = page.url();
+        if (!url.includes('gemini.google.com')) {
+          await page.goto(GEMINI_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
+          await new Promise(r => setTimeout(r, 3000));
+        }
         const bodyText = await page.evaluate(() => document.body?.innerText || '') as string;
 
         const lines = bodyText.split('\n').map((l: string) => l.trim()).filter((l: string) => l.length > 2);
@@ -63,7 +108,12 @@ export default function (xcli: XCLIAPI): void {
           return true;
         }).slice(0, 30);
 
-        return ok(conversations.map((title: string, i: number) => ({ index: i, title })), tips);
+        return ok(
+          conversations.map((title: string, i: number) => ({ index: i, title })),
+          conversations.length === 0
+            ? [...tips, '登录后即可同步历史会话；先运行 xbrowser gemini login']
+            : tips,
+        );
       } catch (error) {
         return fail((error as Error).message || '未知错误', tips);
       }
@@ -85,9 +135,23 @@ export default function (xcli: XCLIAPI): void {
         try {
           await page.goto(GEMINI_URL + '/app', { waitUntil: 'domcontentloaded', timeout: 20000 });
         } catch {
-          await page.evaluate((u: string) => { window.location.href = u; }, GEMINI_URL + '/app');
+          return fail(`无法打开 ${GEMINI_URL}/app（网络不可达或被阻止）`, [
+            ...tips,
+            '请检查网络连接，或使用 --cdp 连接已有浏览器',
+          ]);
         }
-        await new Promise(r => setTimeout(r, 5000));
+
+        // Wait for interactive element with timeout instead of fixed 5s
+        try {
+          await page.waitForSelector('[contenteditable="true"], [aria-label*="输入提示"]', {
+            timeout: 10000,
+          });
+        } catch {
+          return fail('Gemini 页面加载超时（输入框 10s 未出现）', [
+            ...tips,
+            '如果未登录，先运行: xbrowser gemini login',
+          ]);
+        }
 
         // Type and send message
         const inputSel = '[aria-label*="输入提示"], [contenteditable="true"]';

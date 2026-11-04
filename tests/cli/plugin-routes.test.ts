@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockSearchHandler = vi.fn().mockResolvedValue({ data: { items: [] } });
 
@@ -465,6 +465,168 @@ describe('plugin-routes', () => {
       expect(mockSearchHandler).toHaveBeenCalledWith(
         expect.objectContaining({ limit: 5 }),
         expect.anything(),
+      );
+    });
+  });
+
+  describe('handlePlugin - marketplace REST API fallback (#436)', () => {
+    const mockFetch = vi.fn();
+
+    beforeEach(() => {
+      mockFetch.mockReset();
+      vi.stubGlobal('fetch', mockFetch);
+      process.env.XBROWSER_MARKETPLACE_URL = 'https://mp.example.com';
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      delete process.env.XBROWSER_MARKETPLACE_URL;
+    });
+
+    function envelopeData(callIndex: number): Record<string, unknown> {
+      const callArgs = mockOutputEnvelope.mock.calls[callIndex][0] as Record<string, unknown>;
+      return (callArgs.data ?? {}) as Record<string, unknown>;
+    }
+
+    it('should fall back to marketplace REST API on search when the marketplace plugin is not loaded', async () => {
+      mockFetch.mockImplementation((url: string) => {
+        if (url.startsWith('https://mp.example.com/api/plugins?')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              success: true,
+              data: {
+                items: [{
+                  name: 'MP Only',
+                  slug: 'mp-only',
+                  description: 'Only on marketplace',
+                  version: '1.2.3',
+                  downloadCount: 42,
+                  tags: ['ai'],
+                  siteUrls: ['https://x.example'],
+                  commands: ['do'],
+                }],
+              },
+            }),
+          });
+        }
+        return Promise.reject(new Error('unexpected fetch: ' + url));
+      });
+
+      await handlePlugin(['search', 'mp-only'], {}, 'json');
+
+      const searchUrl = mockFetch.mock.calls
+        .map((c: unknown[]) => String(c[0]))
+        .find((u: string) => u.startsWith('https://mp.example.com/api/plugins?'));
+      expect(searchUrl).toBe('https://mp.example.com/api/plugins?search=mp-only&limit=20');
+
+      const data = envelopeData(0) as { results: Array<Record<string, unknown>>; total: number };
+      expect(data.total).toBe(1);
+      expect(data.results[0]).toMatchObject({
+        name: 'mp-only',
+        slug: 'mp-only',
+        description: 'Only on marketplace',
+        version: '1.2.3',
+        downloads: 42,
+        tags: ['ai'],
+        sites: ['https://x.example'],
+        commands: ['do'],
+        source: 'marketplace',
+      });
+    });
+
+    it('should fall through to npm on search when the marketplace REST API is unreachable', async () => {
+      mockFetch.mockImplementation((url: string) => {
+        if (url.startsWith('https://mp.example.com/')) {
+          return Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:443'));
+        }
+        return Promise.reject(new Error('unexpected fetch: ' + url));
+      });
+      const { NPMSearcher } = await import('../../src/plugin/npm-search.js');
+      vi.mocked(NPMSearcher.search).mockResolvedValueOnce([
+        { name: 'npm-fallback', description: 'From npm', version: '2.0.0', date: '2026-01-01' },
+      ]);
+
+      await handlePlugin(['search', 'whatever'], {}, 'json');
+
+      const data = envelopeData(0) as { results: Array<Record<string, unknown>>; total: number };
+      expect(data.total).toBe(1);
+      expect(data.results[0]).toMatchObject({ name: 'npm-fallback', source: 'npm' });
+    });
+
+    it('should fall back to marketplace REST API for info when the marketplace plugin is unavailable', async () => {
+      mockFetch.mockImplementation((url: string) => {
+        if (url === 'https://mp.example.com/api/plugins/mp-only') {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              success: true,
+              data: {
+                name: 'MP Only',
+                slug: 'mp-only',
+                description: 'Detailed desc',
+                version: '2.0.0',
+                authorName: 'alice',
+                downloadCount: 7,
+                tags: ['t1'],
+                siteUrls: ['https://s.example'],
+                commands: ['do'],
+              },
+            }),
+          });
+        }
+        return Promise.reject(new Error('unexpected fetch: ' + url));
+      });
+
+      await handlePlugin(['info', 'mp-only'], {}, 'json');
+
+      expect(mockFetch.mock.calls.some((c: unknown[]) => String(c[0]) === 'https://mp.example.com/api/plugins/mp-only')).toBe(true);
+      expect(mockOutputEnvelope).toHaveBeenCalledWith(
+        {
+          success: true,
+          data: {
+            source: 'marketplace',
+            name: 'MP Only',
+            slug: 'mp-only',
+            description: 'Detailed desc',
+            version: '2.0.0',
+            author: 'alice',
+            downloads: 7,
+            tags: ['t1'],
+            sites: ['https://s.example'],
+            commands: ['do'],
+          },
+        },
+        { command: 'plugin info' },
+        'json',
+      );
+    });
+
+    it('should fall back to npm for info when the marketplace REST API reports not found', async () => {
+      mockFetch.mockImplementation((url: string) => {
+        if (url.startsWith('https://mp.example.com/')) {
+          return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) });
+        }
+        if (url.includes('registry.npmjs.org')) {
+          return Promise.resolve({
+            ok: true,
+            json: () => Promise.resolve({
+              'dist-tags': { latest: '3.1.0' },
+              versions: {
+                '3.1.0': { name: 'mp-only', description: 'npm desc', author: 'bob', keywords: ['k'], license: 'MIT' },
+              },
+            }),
+          });
+        }
+        return Promise.reject(new Error('unexpected fetch: ' + url));
+      });
+
+      await handlePlugin(['info', 'mp-only'], {}, 'json');
+
+      expect(mockOutputEnvelope).toHaveBeenCalledWith(
+        { success: true, data: { source: 'npm', name: 'mp-only', version: '3.1.0', description: 'npm desc' } },
+        { command: 'plugin info' },
+        'json',
       );
     });
   });

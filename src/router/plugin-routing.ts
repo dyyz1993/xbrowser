@@ -249,12 +249,18 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
                 if (mode === 'json' || mode === 'yaml') {
                   console.log(outputFormatter.format(result.data, { mode: mode as 'json' | 'yaml', color: false, emoji: false }));
                   if (result.tips?.length) {
-                    for (const tip of result.tips) console.error(`\u{1F4A1} ${tip}`);
+                    for (const tip of result.tips) {
+                      const text = typeof tip === 'string' ? tip : (tip as { message?: string }).message;
+                      if (text) console.error(`\u{1F4A1} ${text}`);
+                    }
                   }
                 } else {
                   console.log(outputFormatter.format(result.data, { mode: 'text', color: true, emoji: true }));
                   if (result.tips?.length) {
-                    for (const tip of result.tips) console.log(`  \u{1F4A1} ${tip}`);
+                    for (const tip of result.tips) {
+                      const text = typeof tip === 'string' ? tip : (tip as { message?: string }).message;
+                      if (text) console.log(`  \u{1F4A1} ${text}`);
+                    }
                   }
                 }
               }
