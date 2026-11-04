@@ -48,6 +48,12 @@ function createMockCtx(page?: ReturnType<typeof createMockPage>) {
   };
 }
 
+/** ok()/fail() return Tip objects ({ level, message }); accept plain strings too. */
+function tipMessages(result: unknown): string {
+  const tips = (result as { tips?: Array<string | { message?: string }> }).tips ?? [];
+  return tips.map((t) => typeof t === 'string' ? t : (t.message ?? '')).join(' ');
+}
+
 const ALL_COMMANDS = [
   'login', 'list', 'chat', 'usage',
   'task-open', 'task-close', 'task-list',
@@ -254,6 +260,133 @@ describe('gemini plugin', () => {
       expect(result.success).toBe(true);
       const data = result.data as Record<string, unknown>;
       expect(data).toHaveProperty('conversationUrl');
+    });
+  });
+
+  // ─── login command (#440) ───
+  describe('login command', () => {
+    it('should have browser scope', () => {
+      const cmd = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'login');
+      expect((cmd![1] as Record<string, unknown>).scope).toBe('browser');
+    });
+
+    it('should return fail instead of hanging when goto fails', async () => {
+      const handler = getHandler('login');
+      const page = createMockPage();
+      page.goto = vi.fn(() => Promise.reject(new Error('net down')));
+      const waitForHuman = vi.fn(() => Promise.resolve({ solved: true }));
+      const ctx = { ...createMockCtx(page), waitForHuman };
+
+      const result = await handler({ timeout: 300 }, ctx) as Record<string, unknown>;
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('无法打开 https://gemini.google.com（网络不可达或被阻止）');
+      expect(waitForHuman).not.toHaveBeenCalled();
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+    });
+
+    it('should wait for human, save login state, and report success', async () => {
+      const handler = getHandler('login');
+      const page = createMockPage();
+      const waitForHuman = vi.fn(() => Promise.resolve({ solved: true }));
+      const ctx = { ...createMockCtx(page), waitForHuman };
+
+      const result = await handler({ timeout: 120 }, ctx) as Record<string, unknown>;
+
+      expect(page.goto).toHaveBeenCalledWith(
+        'https://gemini.google.com',
+        expect.objectContaining({ waitUntil: 'domcontentloaded', timeout: 15000 }),
+      );
+      expect(waitForHuman).toHaveBeenCalledWith({
+        reason: '请在浏览器中完成 Google 登录',
+        timeout: 120,
+      });
+      expect(ctx.storage.set).toHaveBeenCalledWith('gemini_login', expect.objectContaining({ loggedIn: true }));
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual({ loggedIn: true, url: 'https://gemini.google.com/app' });
+      expect(tipMessages(result)).toContain('Gemini 登录成功');
+    });
+
+    it('should report incomplete login when the browser stays on the login page', async () => {
+      const handler = getHandler('login');
+      const page = createMockPage();
+      page.url = vi.fn(() => 'https://gemini.google.com/login');
+      const waitForHuman = vi.fn(() => Promise.resolve({ solved: false, timedOut: true }));
+      const ctx = { ...createMockCtx(page), waitForHuman };
+
+      const result = await handler({ timeout: 60 }, ctx) as Record<string, unknown>;
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual({ loggedIn: false, url: 'https://gemini.google.com/login' });
+      expect(ctx.storage.set).toHaveBeenCalledWith('gemini_login', expect.objectContaining({ loggedIn: false }));
+      expect(tipMessages(result)).toContain('登录可能未完成');
+    });
+  });
+
+  // ─── chat command failure paths (#440 挂死场景) ───
+  describe('chat command failure paths', () => {
+    it('should return fail with network hint when the page is unreachable', async () => {
+      const handler = getHandler('chat');
+      const page = createMockPage();
+      page.goto = vi.fn(() => Promise.reject(new Error('ERR_NAME_NOT_RESOLVED')));
+      const ctx = createMockCtx(page);
+
+      const result = await handler({ message: 'hi' }, ctx) as Record<string, unknown>;
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('无法打开 https://gemini.google.com/app（网络不可达或被阻止）');
+      expect(tipMessages(result)).toContain('请检查网络连接');
+      expect(page.waitForSelector).not.toHaveBeenCalled();
+      expect(page.fill).not.toHaveBeenCalled();
+      expect(page.keyboard.press).not.toHaveBeenCalled();
+    });
+
+    it('should return fail instead of hanging when the input box never appears', async () => {
+      const handler = getHandler('chat');
+      const page = createMockPage();
+      page.waitForSelector = vi.fn(() =>
+        Promise.reject(new Error('TimeoutError: locator.waitFor: Timeout 10000ms exceeded.')));
+      const ctx = createMockCtx(page);
+
+      const result = await handler({ message: 'hi' }, ctx) as Record<string, unknown>;
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('Gemini 页面加载超时（输入框 10s 未出现）');
+      expect(tipMessages(result)).toContain('xbrowser gemini login');
+      expect(page.waitForSelector).toHaveBeenCalledWith(
+        '[contenteditable="true"], [aria-label*="输入提示"]',
+        { timeout: 10000 },
+      );
+      expect(page.fill).not.toHaveBeenCalled();
+      expect(page.keyboard.press).not.toHaveBeenCalled();
+    });
+
+    it('should type the message and press Enter on success (regression guard)', async () => {
+      const handler = getHandler('chat');
+      const page = createMockPage();
+      const ctx = createMockCtx(page);
+
+      const result = await handler({ message: 'Hello gemini' }, ctx) as Record<string, unknown>;
+
+      expect(result.success).toBe(true);
+      expect(page.fill).toHaveBeenCalled();
+      expect(page.keyboard.press).toHaveBeenCalledWith('Enter');
+      expect(tipMessages(result)).toContain('消息已发送');
+    });
+  });
+
+  // ─── list command empty state (#440) ───
+  describe('list command empty state', () => {
+    it('should hint login when no conversations are found', async () => {
+      const handler = getHandler('list');
+      const page = createMockPage('');
+      const ctx = createMockCtx(page);
+
+      const result = await handler({}, ctx) as Record<string, unknown>;
+
+      expect(result.success).toBe(true);
+      expect(result.data).toEqual([]);
+      expect(tipMessages(result)).toContain('先运行 xbrowser gemini login');
     });
   });
 
