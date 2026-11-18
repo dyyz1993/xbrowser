@@ -1242,6 +1242,13 @@ executor 在浏览器会话解析前拦截。多客户端并发 = 多 session �
 事件类能力（网络捕获/waitForEvent）显式 NotImplemented——需扩展侧 CDP 事件
 上行（瘦扩展重构项）。插件命令里 `--session` ≡ `--task`（同义词）。
 
+**扩展 reload 验收以版本号为判据（用户定 2026-11-19）**：改 `login-bridge/
+extension/` 任何代码**必须同步 bump manifest.json 版本**（含 package.json 两处
+与 CHANGELOG）。验收 = `xbrowser chrome-bridge acceptance`（reload 后对比
+hello 上报 v 与仓库 manifest，不等即失败）。版本不 bump 时该门空转——只能
+证明"某个旧版本重连了"，证明不了新代码在跑。`/status` 的 `ext.v` 与
+`~/.xbrowser/chrome-bridge-ext.json` 是运行时版本实录。
+
 ### CDP Firewall 检测合成事件（重要！2026-06 豆包实战）
 
 生产站点（豆包、TikTok、抖音等）会监听 `isTrusted` 属性，**JS 触发的合成事件**（`el.click()`、`el.dispatchEvent`）会被识别并可能导致：
