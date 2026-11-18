@@ -568,8 +568,12 @@ export async function handleBrowserCommand(
     params = { ...params, _frame: options.frame };
   }
 
-	  const result = cdpEndpoint
-	    ? await executeCommand(cmdName, params, sessionName, { cdpEndpoint })
+	  // --bridge（全局 flag 或 env）：本会话路由到 chrome-bridge 通道（--session 统一路由）。
+	  // 无任何 flag 时保持裸调用（与既有断言/调用方形状零漂移）。
+	  const bridgeFlag = options.bridge === true || String(options.bridge) === 'true' || process.env.XBROWSER_BRIDGE === '1';
+	  const extra = bridgeFlag ? { cdpEndpoint, bridge: true } : (cdpEndpoint ? { cdpEndpoint } : undefined);
+	  const result = extra
+	    ? await executeCommand(cmdName, params, sessionName, extra)
 	    : await executeCommand(cmdName, params, sessionName);
   if (mode === 'json' || mode === 'yaml') {
     outputEnvelope(result, { command: cmdName }, mode);

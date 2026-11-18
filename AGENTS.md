@@ -21,6 +21,12 @@ npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 [`branding/mark.svg`](branding/mark.svg)，完整颜色、用法与衍生资产见
 [`docs/brand/xbrowser.md`](docs/brand/xbrowser.md)。修改项目 logo 前必须先读该契约。
 
+### 复发防错规则（来自 .learnings 蒸馏）
+
+- `apply_patch` 修改多文件或同一文件多处时，先读取当前内容并按目标拆成最小上下文块；任何一块上下文失配都停止重试，重新读取目标文件。
+- Commit subject 是类型前缀后的文本，最长 80 字符（不是整行 100 字符）；提交前用 CI 正则或等价脚本自检。
+- 「可信点击后无反应」先依次验证 unhandledrejection、实际网络请求、`elementFromPoint` 命中目标，再考虑反自动化；滚动列表必须重新 `scrollIntoView` 并取最新 rect。
+
 ## 1. 项目原则
 
 - **第一原则：所有自动化脚本 → 插件**。任何 `*.ts`/`*.mjs`/`*.cjs` 调研脚本、爬虫、数据采集、发布工具，都应放在 `.xcli/plugins/<name>/` 下，作为站点插件或扩展命令插件存在，**不要**散落在仓库根目录或 `scripts/` 中。
@@ -1228,6 +1234,13 @@ Guard 会把长距离 `mouseMoved` 展开成 trusted 贝塞尔轨迹，把 `inse
 1. `xbrowser chrome-bridge serve` → 启动 WS 9346 + HTTP 9347
 2. 用户 Chrome 里的扩展自动连接（无需重启 Chrome）
 3. 插件命令通过通道下发执行
+
+**--session 统一路由（2026-11-19）**：`--session foo --bridge`（首用标记，meta
+kind=bridge 粘性）把**任意内置命令**路由进用户浏览器——实现层
+`src/browser/bridge-session.ts`（BridgePage 把 XBPage 调用翻译成 /exec），
+executor 在浏览器会话解析前拦截。多客户端并发 = 多 session 天然隔离。
+事件类能力（网络捕获/waitForEvent）显式 NotImplemented——需扩展侧 CDP 事件
+上行（瘦扩展重构项）。插件命令里 `--session` ≡ `--task`（同义词）。
 
 ### CDP Firewall 检测合成事件（重要！2026-06 豆包实战）
 

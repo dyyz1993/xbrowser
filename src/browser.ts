@@ -407,7 +407,10 @@ export async function closeSessionByName(name: string): Promise<boolean> {
   for (const session of sessions) {
     if (session.name === name || session.id === name) {
       logSessionEvent('close_session', `name="${session.name}" id="${session.id}" url="${session.page.url()}"`);
-      if (session.isCDP) {
+      if (session.bridge) {
+        // bridge 会话：page.close() 即 task-close 收任务组（用户 tab 脱组保留由扩展侧语义保证）
+        await session.page.close().catch(() => {});
+      } else if (session.isCDP) {
         if (session.reusedExistingPage) {
           // Attached to an existing user tab: only hang up the CDP WebSocket.
           // Closing the page/context here could delete the user's workspace.
