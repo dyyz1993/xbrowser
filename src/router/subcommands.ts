@@ -13,6 +13,7 @@ import {
   handleReplay,
   handleRun,
   handleSession,
+  handleSiteMemory,
   handleTest,
   handleViewer,
   handleConsoleServe,
@@ -97,6 +98,9 @@ export async function dispatchSubcommand(request: SubcommandRequest): Promise<bo
       return true;
     case 'net':
       await handleNetCommand(cmdArgs, options, mode, sessionName);
+      return true;
+    case 'site-memory':
+      await handleSiteMemory(cmdArgs, options, mode);
       return true;
     case 'console-panel':
       await handleConsoleServe(cmdArgs, options, mode);

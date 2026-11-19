@@ -1,0 +1,21 @@
+{
+  "name": "site-memory",
+  "version": "0.1.0",
+  "description": "Read-only site-memory MCP server: query sites, flows, runs and step stats recorded by `xbrowser site-memory run`. Never dispatches input, never opens a browser.",
+  "author": {
+    "name": "dyyz1993"
+  },
+  "license": "MIT",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Site Memory",
+    "shortDescription": "Query verified browser workflow history",
+    "longDescription": "Expose the sanitized xbrowser site-memory ledger as read-only MCP tools. Workflows run only when explicitly invoked via `xbrowser site-memory run <workflow.json>` in a throwaway headless browser; this plugin only queries the recorded history (sites, flows, runs, per-step stats and verified hints) and never dispatches browser input.",
+    "developerName": "dyyz1993",
+    "category": "Productivity",
+    "defaultPrompt": [
+      "列出 site-memory 里最近的 workflow 运行和各步骤的失败分布。",
+      "查一下这个站点哪个流程最近验证通过，常用选择器候选是什么。"
+    ]
+  }
+}

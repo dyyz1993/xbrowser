@@ -817,3 +817,32 @@ git reset --hard origin/master
 - Reproducible: yes
 - Related Files: `.xcli/plugins/chrome-bridge/index.ts`
 - See Also: —
+
+## [ERR-20261119-SM1] Spawned CLI waits for stdin EOF
+
+**Logged**: 2026-11-19
+**Priority**: medium
+**Status**: resolved
+**Area**: tests
+
+### Summary
+
+A CLI test appeared to hang on browser startup, but the child had not yet started a browser: CLI initialization was waiting on its open, empty stdin pipe.
+
+### Suggested Fix
+
+End the child stdin immediately for ordinary CLI invocations; send the request frames then EOF for stdio MCP. Include captured stdout and stderr in unexpected failures.
+
+### Metadata
+
+- Reproducible: yes
+- Related Files: `bin/cli.ts`, `tests/e2e/site-memory.test.ts`
+- Pattern-Key: test.cli.child_stdin_eof
+- Recurrence-Count: 1
+- First-Seen: 2026-11-19
+- Last-Seen: 2026-11-19
+
+### Resolution
+
+- **Resolved**: 2026-11-19
+- **Notes**: Explicitly closed the input pipe; the built CLI passed headless workflow and MCP acceptance.

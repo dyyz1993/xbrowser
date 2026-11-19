@@ -1,0 +1,18 @@
+{
+  "name": "dev-xbrowser-site-memory-a1bebb7c",
+  "plugins": [
+    {
+      "name": "site-memory",
+      "source": "./site-memory",
+      "version": "0.1.0",
+      "description": "Read-only site-memory MCP server: query sites, flows, runs and step stats recorded by `xbrowser site-memory run`. Never dispatches input, never opens a browser.",
+      "displayName": "Site Memory",
+      "displayName_i18n": {
+        "zh-CN": "站点记忆"
+      },
+      "description_i18n": {
+        "zh-CN": "只读查询 xbrowser site-memory 记录的站点流程运行历史与步骤统计，不派发任何浏览器输入。"
+      }
+    }
+  ]
+}

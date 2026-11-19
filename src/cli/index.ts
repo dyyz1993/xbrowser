@@ -11,6 +11,7 @@ export {
 } from './record-routes.js';
 export { handleRun } from './run-routes.js';
 export { handleViewer } from './viewer-routes.js';
+export { handleSiteMemory } from '../site-memory/cli.js';
 export { handleNetCommand } from './net-routes.js';
 export { handleTest } from './test-routes.js';
 export { handleConsoleServe } from '../console/serve.js';

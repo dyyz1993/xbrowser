@@ -99,6 +99,9 @@ Commands:
   run <file>                        Execute commands from file
   viewer [--name <n>]               Generate viewer URL
   console-panel [--port <n>]       Readonly Console Facade overview
+  site-memory run <workflow.json> [--cold]  Run declared workflow in a fresh headless browser
+  site-memory report --output <path>        Write HTML run dashboard (never overwrites)
+  site-memory mcp                           Readonly stdio MCP over run history
   help                              Show this help
   --version                         Show version
 Plugin Commands:
