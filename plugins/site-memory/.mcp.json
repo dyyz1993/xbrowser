@@ -4,7 +4,7 @@
       "type": "stdio",
       "command": "node",
       "args": [
-        "/Users/xuyingzhou/Project/study-node-ts/xbrowser-site-memory/dist/cli.js",
+        "/Users/xuyingzhou/Project/study-node-ts/xbrowser/dist/cli.js",
         "site-memory",
         "mcp"
       ]

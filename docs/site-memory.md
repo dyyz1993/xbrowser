@@ -124,7 +124,7 @@ plugins/
 ### ZCode（已验证格式：plugin-creator 参考 + 本机 xbrowser-panel 先例）
 
 1. 打开 **Plugin Marketplace → Add → Add Plugin Marketplace**，粘贴本地
-   市场根目录：`/Users/xuyingzhou/Project/study-node-ts/xbrowser-site-memory/plugins`
+   市场根目录：`/Users/xuyingzhou/Project/study-node-ts/xbrowser/plugins`
    （市场名 `dev-xbrowser-site-memory-a1bebb7c`）。
 2. **Personal → dev-xbrowser-site-memory-a1bebb7c → Site Memory → Install**。
 3. 试用的对话提示词：
