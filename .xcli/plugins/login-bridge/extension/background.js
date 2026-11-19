@@ -8,7 +8,7 @@
  */
 
 const BRIDGE = 'http://127.0.0.1:9355';
-const WS_BRIDGE = 'ws://127.0.0.1:9346';
+const WS_BRIDGE = 'ws://[::1]:9346';
 // BEGIN inlined stealth-common.cjs
 /**
  * stealth-common.cjs — 桥任务 tab 的反检测纯逻辑（S164）
@@ -518,6 +518,12 @@ async function safeCreateTab(opts) {
 }
 
 async function getTaskTabId() {
+  // Capture the routing task name BEFORE the first await: onmessage overwrites
+  // currentTaskName on every incoming frame, so two clients interleaving
+  // commands would resolve client A's command onto client B's tab group once
+  // an await lets the other message's assignment slip in. Single-threaded JS
+  // guarantees no interleaving before the first await.
+  const taskName = currentTaskName || 'xbrowser';
   const groups = await chrome.tabGroups.query({});
   // 显式任务组（用户经 task-open 创建）：只复用，不改名
   const explicit = groups.filter((g) => typeof g.title === 'string' && g.title.startsWith('xb-task-'));
@@ -527,16 +533,16 @@ async function getTaskTabId() {
   }
   // 自动任务组（🤖 前缀）：复用并把组标题刷新为当前任务名
   const auto = groups.filter((g) => typeof g.title === 'string' && g.title.startsWith('🤖'));
-  const wantedAutoTitle = '🤖 ' + (currentTaskName || 'xbrowser');
+  const wantedAutoTitle = '🤖 ' + taskName;
   const sameTask = auto.find((g) => g.title === wantedAutoTitle);
   if (sameTask) {
     const g = sameTask;
-    const wanted = '🤖 ' + (currentTaskName || 'xbrowser');
+    const wanted = '🤖 ' + taskName;
     if (g.title !== wanted) { try { await chrome.tabGroups.update(g.id, { title: wanted }); } catch {} }
     const tabs = await chrome.tabs.query({ groupId: g.id });
     if (tabs.length > 0) { await touchTaskActivity(); return tabs[tabs.length - 1].id; }
   }
-  if (auto.length > 0 && !currentTaskName) {
+  if (auto.length > 0 && taskName === 'xbrowser') {
     const g = auto[auto.length - 1];
     const tabs = await chrome.tabs.query({ groupId: g.id });
     if (tabs.length > 0) { await touchTaskActivity(); return tabs[tabs.length - 1].id; }
@@ -548,7 +554,7 @@ async function getTaskTabId() {
     const gid = await chrome.tabs.group({ tabIds: tab.id });
     await chrome.tabGroups.update(gid, {
       title: wantedAutoTitle,
-      color: taskColorFor(currentTaskName || 'xbrowser'),
+      color: taskColorFor(taskName),
     });
   } catch { /* tabGroups API 不可用时裸后台 tab 亦可 */ }
   enableTaskStealth(tab.id).catch(() => {});
@@ -790,6 +796,25 @@ const executors = {
     if (tabId == null) return { ok: false, error: 'no tabId' };
     await chrome.tabs.update(tabId, { active: true });
     return { ok: true, tabId };
+  },
+  'tab-move': async ({ tabId, windowId }) => {
+    if (tabId == null) return { ok: false, error: 'no tabId' };
+    const tab = await chrome.tabs.get(tabId);
+    let targetWindowId = windowId;
+    if (targetWindowId == null) {
+      const focused = await chrome.windows.getLastFocused().catch(() => null);
+      if (focused?.id != null && focused.type === 'normal') targetWindowId = focused.id;
+    }
+    if (targetWindowId == null) {
+      const normal = await chrome.windows.getAll({ windowTypes: ['normal'] });
+      targetWindowId = normal.sort((a, b) => (b.width * b.height) - (a.width * a.height))[0]?.id;
+    }
+    if (targetWindowId == null) return { ok: false, error: 'no normal window', before: { windowId: tab.windowId } };
+    await chrome.tabs.move(tabId, { windowId: targetWindowId, index: -1 });
+    await chrome.tabs.update(tabId, { active: true });
+    await chrome.windows.update(targetWindowId, { focused: true });
+    const moved = await chrome.tabs.get(tabId);
+    return { ok: true, tabId, windowId: moved.windowId, beforeWindowId: tab.windowId };
   },
   // S209：显式接管——把用户当前活跃 tab 打入任务组（🤖 任务名），让"agent 在操作
   // 哪个 tab"对用户可见。用户 tab 只入组、不记"自建"：收尾（sweep/task-close）
@@ -1327,6 +1352,10 @@ const executors = {
 let ws = null;
 let backoff = 1000;
 let wsStartedAt = 0;
+// S213：服务端存活跟踪——half-open TCP（休眠唤醒/网络切换）时 readyState 停在 1
+// 但 socket 已死，onclose 永不触发，keepalive 只查 readyState 会永远跳过重连
+// （SW 死锁档的真根因）。服务端 ka 每 25s 一帧；>70s 无任何来帧即判定死连。
+let lastServerActivity = 0;
 
 function badge(text, color) {
   try { chrome.action.setBadgeText({ text }); if (color) chrome.action.setBadgeBackgroundColor({ color }); } catch {}
@@ -1343,6 +1372,7 @@ function connectWS() {
   ws.onclose = () => { ws = null; badge('off', '#8b949e'); scheduleReconnect(); };
   ws.onerror = () => { try { ws.close(); } catch {} };
   ws.onmessage = async (ev) => {
+    lastServerActivity = Date.now(); // 任何来帧（含 ka）都证明 socket 活着
     let msg;
     try { msg = JSON.parse(ev.data); } catch { return; }
     if (msg.ka) return; // S212：bridge 心跳帧——收到即已重置 SW 空闲计时，无需回复
@@ -1417,13 +1447,18 @@ connectWS();
 chrome.alarms.create('ws-keepalive', { periodInMinutes: 0.5 });
 chrome.alarms.create('task-idle-sweep', { periodInMinutes: 5 });
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'ws-keepalive') {
-    // S212 三态自愈：断开→重连；卡在 CONNECTING >15s（半开 TCP，onclose 永不触发，
-    // 旧代码 readyState 0 会永远跳过重连——SW 死透的根因之一）→ 强制 close 让
-    // onclose 接管退避重连
-    if (!ws || ws.readyState > 1) connectWS();
-    else if (ws.readyState === 0 && Date.now() - wsStartedAt > 15000) { try { ws.close(); } catch {} }
-  }
+    if (alarm.name === 'ws-keepalive') {
+      // S212 三态自愈：断开→重连；卡在 CONNECTING >15s（半开 TCP，onclose 永不触发，
+      // 旧代码 readyState 0 会永远跳过重连——SW 死透的根因之一）→ 强制 close 让
+      // onclose 接管退避重连
+      if (!ws || ws.readyState > 1) connectWS();
+      else if (ws.readyState === 0 && Date.now() - wsStartedAt > 15000) { try { ws.close(); } catch {} }
+      // S213：half-open 检测——readyState==1 但 >70s 无服务端任何来帧（ka 间隔 25s，
+      // 缺 2-3 帧即死连）→ 强制 close 触发重连。休眠唤醒/切换网络后的 SW 死锁即此态
+      else if (ws.readyState === 1 && lastServerActivity && Date.now() - lastServerActivity > 70000) {
+        badge('stale', '#d29922'); try { ws.close(); } catch {}
+      }
+    }
   if (alarm.name === 'task-idle-sweep') {
     sweepIdleTasks();
   }

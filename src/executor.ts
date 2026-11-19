@@ -18,6 +18,7 @@ import {
   setActivePage,
   type ManagedSession,
 } from './browser.js';
+import { findOrCreateBridgeSession } from './browser/bridge-session.js';
 import { getTipsManager } from './tips/index.js';
 import { resolveRefParams } from './utils/resolve-selector.js';
 import { loadHooks } from './hooks/loader.js';
@@ -83,7 +84,7 @@ export async function executeCommand(
   commandName: string,
   params: Record<string, unknown>,
   sessionName: string = 'default',
-  extraOpts?: { cdpEndpoint?: string; skipCleanup?: boolean; timeout?: number; _recoveryAttempted?: boolean }
+  extraOpts?: { cdpEndpoint?: string; skipCleanup?: boolean; timeout?: number; _recoveryAttempted?: boolean; bridge?: boolean }
 ): Promise<ExecutionResult> {
   const guardResult = await guardCheck(commandName);
   if (guardResult?.blocked) {
@@ -180,6 +181,7 @@ export async function executeCommand(
     const result = await forwardExec(
       commandName, params, sessionName, extraOpts?.cdpEndpoint,
       longRunning ? 20 * 60_000 : undefined,
+      extraOpts?.bridge,
     );
     if (result) return result;
     // forwardExec returned null/undefined (e.g. daemon unreachable) — fall through to local execution
@@ -187,6 +189,16 @@ export async function executeCommand(
 
   let session: ManagedSession | undefined;
 
+  // --session 统一路由：bridge 会话（--bridge 首用标记，或 meta kind=bridge 粘性）
+  // 走 chrome-bridge 通道（用户浏览器），不触碰本地浏览器启动/CDP 连接。
+  // 返回 null = 非 bridge 会话，走原浏览器路径。
+  const bridgeSession = await findOrCreateBridgeSession(sessionName, {
+    preferBridge: extraOpts?.bridge === true,
+    url: params.url as string | undefined,
+  });
+  if (bridgeSession) {
+    session = bridgeSession;
+  } else {
   // Try in-memory first, then disk restore
   const existing = await findOrRestoreSession(sessionName, extraOpts?.cdpEndpoint);
   if (existing) {
@@ -223,6 +235,7 @@ export async function executeCommand(
       cdpEndpoint: extraOpts?.cdpEndpoint,
     });
   }
+  } // ← bridge 路由的 else 收尾
 
   const ctx: BrowserCommandContext = {
     page: session?.page as BrowserCommandContext['page'],

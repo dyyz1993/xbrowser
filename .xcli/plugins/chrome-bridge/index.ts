@@ -320,7 +320,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.command('exec', {
-    description: '经通道在用户浏览器执行命令（navigate/evaluate/click/fill/tabs/screenshot/url/ping）',
+    description: '经通道在用户浏览器执行命令（navigate/evaluate/click/fill/tabs/screenshot/url/ping）。--session 与 --task 同义（--session 统一路由）',
     result: execResult,
     scope: 'project',
     parameters: z.object({
@@ -328,19 +328,22 @@ export default function (xcli: XCLIAPI): void {
       args: z.union([z.string(), z.record(z.string(), z.unknown())]).optional().describe('JSON 参数（字符串或已解析对象均可）'),
       client: z.string().optional().describe('目标浏览器：0/1/.../last（多浏览器连入时选择）'),
       task: z.string().optional().describe('任务名：显示在浏览器 tab 分组标题（🤖 <任务名>），空闲 10 分钟自动回收'),
+      session: z.string().optional().describe('--session 同义词：映射到任务名（与全局 --session 统一路由一致）'),
       tabId: z.number().optional().describe('显式指定目标 tab（attach 接管后使用；缺省走任务组 tab）'),
       timeout: z.number().optional(),
     }),
     examples: [
       { cmd: 'xbrowser chrome-bridge exec --cmd ping', description: '连通性测试' },
       { cmd: 'xbrowser chrome-bridge exec --cmd navigate --args \'{"url":"https://example.com"}\' --task "发草稿"', description: '导航（带任务名分组）' },
-      { cmd: 'xbrowser chrome-bridge exec --cmd evaluate --args \'{"expression":"document.title"}\'', description: '取标题' },
+      { cmd: 'xbrowser chrome-bridge exec --cmd evaluate --session mytask --args \'{"expression":"document.title"}\'', description: '取标题（--session 路由）' },
     ],
     handler: async (params) => {
+      // --session 同义词：显式 --task 优先
+      const taskName = params.task ?? params.session;
       // CLI 层 parsePluginParams 会把 --args 的 JSON 值解析成对象；这里归一化回字符串
       const argsRaw: unknown = params.args;
       let argsStr: string;
-      if (params.task != null || params.tabId != null) {
+      if (taskName != null || params.tabId != null) {
         // 注入 task（分组标题/回收记账）与 tabId（显式接管路由）
         let obj: Record<string, unknown> = {};
         if (typeof argsRaw === 'string') {
@@ -348,7 +351,7 @@ export default function (xcli: XCLIAPI): void {
         } else if (argsRaw && typeof argsRaw === 'object') {
           obj = argsRaw as Record<string, unknown>;
         }
-        if (params.task) obj.task = params.task;
+        if (taskName) obj.task = taskName;
         if (params.tabId != null) obj.tabId = params.tabId;
         argsStr = JSON.stringify(obj);
       } else {
@@ -595,7 +598,7 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.command('cdp', {
-    description: 'CDP 命令透传到用户浏览器（chrome.debugger sendCommand 转发）',
+    description: 'CDP 命令透传到用户浏览器（chrome.debugger sendCommand 转发）。--session 与 --task 同义',
     result: cdpResult,
     scope: 'project',
     parameters: z.object({
@@ -603,6 +606,7 @@ export default function (xcli: XCLIAPI): void {
       params: z.union([z.string(), z.record(z.string(), z.unknown())]).optional().describe('CDP 参数 JSON（字符串或已解析对象均可）'),
       tabId: z.number().optional(),
       task: z.string().optional().describe('任务名：显示在浏览器 tab 分组标题（🤖 <任务名>）'),
+      session: z.string().optional().describe('--session 同义词：映射到任务名'),
     }),
     examples: [
       { cmd: 'xbrowser chrome-bridge cdp --method Runtime.evaluate --params \'{"expression":"1+1"}\'', description: '执行 JS' },
@@ -621,7 +625,8 @@ export default function (xcli: XCLIAPI): void {
         params: cdpParams,
       };
       if (params.tabId != null) args.tabId = params.tabId;
-      if (params.task != null) args.task = params.task;
+      const cdpTask = params.task ?? params.session;
+      if (cdpTask != null) args.task = cdpTask;
       const body = { cmd: 'cdp', args };
       const r = await postBridge(body);
       if (!r) return fail('bridge 未启动或无扩展连接');
@@ -655,18 +660,20 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.command('open', {
-    description: '在用户浏览器打开 URL（navigate 快捷方式）',
+    description: '在用户浏览器打开 URL（navigate 快捷方式）。--session 与 --task 同义',
     result: openResult,
     scope: 'project',
     parameters: z.object({
       url: z.string(),
       task: z.string().optional().describe('任务名：显示在浏览器 tab 分组标题（🤖 <任务名>）'),
+      session: z.string().optional().describe('--session 同义词：映射到任务名'),
       tabId: z.number().optional().describe('显式指定目标 tab（attach 接管后使用）'),
     }),
     examples: [{ cmd: 'xbrowser chrome-bridge open https://example.com', description: '打开页面' }],
     handler: async (params) => {
       // S212：与 exec 同修——POST body 传参，免 URL 长度上限
-      const r = await postBridge({ cmd: 'navigate', args: { url: params.url, ...(params.task ? { task: params.task } : {}), ...(params.tabId != null ? { tabId: params.tabId } : {}) } });
+      const openTask = params.task ?? params.session;
+      const r = await postBridge({ cmd: 'navigate', args: { url: params.url, ...(openTask ? { task: openTask } : {}), ...(params.tabId != null ? { tabId: params.tabId } : {}) } });
       if (!r) return fail('bridge 未启动或无扩展连接');
       return r.ok === true ? ok({ url: params.url, result: r.data }) : fail(r.error || 'extension error');
     },

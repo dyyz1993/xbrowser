@@ -69,6 +69,32 @@ xbrowser --cdp 9222 "title"
 xbrowser --cdp auto "title"
 ```
 
+## Bridge Sessions (your own browser, unified --session)
+
+Commands normally run in xbrowser-managed browser sessions. With the
+chrome-bridge extension installed in your own Chrome, the **same `--session`
+flag** can route commands into your browser instead — reusing your logins,
+never restarting Chrome, no debug port:
+
+```bash
+# First use marks the session as bridge-backed (a 🤖 task group is created)
+xbrowser goto https://example.com --session work --bridge
+
+# Later commands stick to the bridge channel automatically — no flag needed
+xbrowser title --session work
+xbrowser eval "document.title" --session work
+
+# Lifecycle: list shows kind: bridge; close removes the task group
+xbrowser session list
+xbrowser session close --session work
+```
+
+Prerequisite: the extension connected once (`xbrowser chrome-bridge status`
+shows clients). Multiple sessions run in parallel and stay isolated — each
+maps to its own task group / tab. Event-based features (network capture,
+`waitForEvent`) are not available on this channel yet; polling-based waits,
+navigation, clicks, fills, typing and screenshots all work.
+
 ## Common Commands
 
 ### Navigation

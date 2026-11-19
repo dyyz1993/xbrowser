@@ -355,6 +355,8 @@ export function createRPCHandler(): RPCHandler & {
       name: s.name,
       url: s.page?.url() ?? null,
       createdAt: s.createdAt,
+      // --session 统一路由：bridge 通道会话标注 kind/taskName
+      ...(s.bridge ? { kind: 'bridge' as const, taskName: s.bridge.taskName } : {}),
     }));
   }
 
@@ -406,7 +408,10 @@ export function createRPCHandler(): RPCHandler & {
     } catch { /* ignore */ }
 
     try {
-      const result = await executeCommand(command, cmdParams, sessionName, { cdpEndpoint: endpoint });
+      const result = await executeCommand(command, cmdParams, sessionName, {
+        cdpEndpoint: endpoint,
+        bridge: params.bridge === true,
+      });
       registerSessionIfNew(sessionName);
       // Inject CDP command into active recorder if recording
       await injectCommandToRecorder(sessionName, command, cmdParams, urlBeforeCommand, preElement);
