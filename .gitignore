@@ -87,3 +87,4 @@ docs/plans/*
 /scripts/demo-*
 /scripts/export-report.mjs
 /scripts/gsc-bing-submit.mjs
+.learnings/
