@@ -1,0 +1,11 @@
+{
+  "name": "dev-xbrowser-site-memory",
+  "plugins": [
+    {
+      "name": "site-memory",
+      "source": "./site-memory",
+      "version": "0.1.0",
+      "description": "Read-only site workflow memory: query verified runs, step attempts and failure stats collected by xbrowser site-memory"
+    }
+  ]
+}

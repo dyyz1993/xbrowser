@@ -1,0 +1,18 @@
+{
+  "name": "site-memory",
+  "version": "0.1.0",
+  "description": "Read-only site-memory MCP server: query sites, flows, runs and step stats recorded by `xbrowser site-memory run`. Never dispatches input, never opens a browser.",
+  "author": {
+    "name": "dyyz1993"
+  },
+  "mcpServers": {
+    "site-memory": {
+      "command": "node",
+      "args": [
+        "/Users/xuyingzhou/Project/study-node-ts/xbrowser-site-memory/dist/cli.js",
+        "site-memory",
+        "mcp"
+      ]
+    }
+  }
+}

@@ -128,4 +128,5 @@ const SUBCOMMAND_HELP: Record<string, string> = {
   'console-panel': 'console-panel [--port <port>]',
   kill: 'kill [--all]',
   net: 'net [--cdp <endpoint>]',
+  'site-memory': 'site-memory run <workflow.json> [--cold] | report --output <path> | mcp',
 };
