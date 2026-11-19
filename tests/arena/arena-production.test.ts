@@ -1179,7 +1179,26 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
   it('env-E6 时区切换：date 填充 ISO 值不受时区影响 + 时区变异生效', async () => {
     // 攻击形态：录制（Asia/Shanghai）→ 回放（America/New_York）——
     // date input 的 value 是 ISO 日期（时区无关），填充应不受影响；
-    // getTimezoneOffset 从 -480（上海）变为 240（纽约 EDT）证明变异生效。
+    // getTimezoneOffset 从 -480（上海）变为纽约当前偏移证明变异生效。
+    // 季节性陷阱：纽约夏令时 EDT=240、标准时 EST=300（每年 3 月/11 月切换）。
+    // 断言随运行时刻动态计算期望值，禁止硬编码（曾硬编码 240 导致
+    // 每年 11 月~次年 3 月的 nightly 全红）。
+    const nyOffsetMinutes = (now = new Date()): number => {
+      const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York', hour12: false,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+      }).formatToParts(now).reduce<Record<string, string>>((acc, p) => {
+        if (p.type !== 'literal') acc[p.type] = p.value;
+        return acc;
+      }, {});
+      const wallClockAsUtc = Date.UTC(
+        Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+        Number(parts.hour) % 24, Number(parts.minute), Number(parts.second),
+      );
+      // getTimezoneOffset 语义：UTC - 本地（EDT→240，EST→300，上海→-480）
+      return Math.round((now.getTime() - wallClockAsUtc) / 60000);
+    };
     const pagePath = '/tmp/arena-prod-tz.html';
     fs.writeFileSync(pagePath, `<!DOCTYPE html><html><body>
       <form>
@@ -1215,7 +1234,7 @@ describe('生产竞技场：SessionReplayer 直连', { timeout: TIMEOUT }, () =>
     console.log(`[env-E6] tz ${tzBefore}→${tzAfter} offset=${offset} val=${val} failed=${result.failed}`);
 
     expect(tzAfter).toBe('America/New_York');  // 时区变异确实生效
-    expect(offset).toBe(240);                  // EDT = UTC-4
+    expect(offset).toBe(nyOffsetMinutes());    // 等于纽约当前真实偏移（EDT 240 / EST 300）
     expect(result.failed).toBe(0);             // 语义回放成功
     expect(val).toBe('2024-06-15');            // date 填充 ISO 值时区无关
     // 环境卫生：复位时区覆盖（emulation 跨导航持久，污染后续测试）
