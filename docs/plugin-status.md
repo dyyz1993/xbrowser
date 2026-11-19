@@ -1,14 +1,14 @@
 # 插件完成度看板
 
 > **自动生成，请勿手改** · 由 `lint-scripts/check-plugin-status.mjs` 生成
-> 生成时间：2026-10-26 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
+> 生成时间：2026-11-04 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
 
 ## 汇总
 
 | 指标 | 值 |
 |------|-----|
-| 插件总数 | 125 |
-| ✅ 已完成（有实现+有测试） | 125 |
+| 插件总数 | 126 |
+| ✅ 已完成（有实现+有测试） | 126 |
 | 🟡 有实现无测试 | 0 |
 | 🔴 scaffold 待实现 | 0 |
 | **当前债务** | **0** |
@@ -25,7 +25,7 @@
 | 插件 | 行数 | 命令数 | scope |
 |------|------|--------|-------|
 
-## ✅ 已完成（125）
+## ✅ 已完成（126）
 
 | 插件 | 命令数 | scope |
 |------|--------|-------|
@@ -75,7 +75,7 @@
 | facebook | 5 | `browser` |
 | flickr | 1 | `browser` |
 | freepik | 1 | `browser` |
-| gemini | 13 | `page`, `project` |
+| gemini | 14 | `browser`, `page`, `project` |
 | geo-analysis | 9 | `browser`, `global` |
 | gettyimages | 1 | `browser` |
 | github | 7 | `browser`, `project` |
@@ -96,6 +96,7 @@
 | jira | 2 | `project` |
 | juejin | 6 | `browser`, `page` |
 | kimi | 1 | `browser` |
+| liepin | 4 | `project` |
 | login-bridge | 5 | `page`, `project` |
 | marketplace | 3 | `cli` |
 | maven | 1 | `project` |
