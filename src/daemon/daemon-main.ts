@@ -161,7 +161,12 @@ async function main() {
   // chrome-bridge 通道自启（S107）：daemon 起来时自动拉起扩展控制通道
   // （独立进程 WS:9346/HTTP:9347，已在运行则跳过）。持久化补全——用户
   // 不需要手动跑 chrome-bridge serve，daemon 在通道就在。
+  // XBROWSER_BRIDGE_HTTP 指向自定义通道（测试/多实例隔离）时跳过自启——
+  // 通道由操作方自管，不在默认端口上产生副作用。
   try {
+    if (process.env.XBROWSER_BRIDGE_HTTP) {
+      log('chrome-bridge autostart skipped (XBROWSER_BRIDGE_HTTP set)');
+    } else {
     const bridgeUp = await fetch('http://127.0.0.1:9347/status').then(r => r.ok).catch(() => false);
     if (!bridgeUp) {
       const { spawn } = await import('child_process');
@@ -170,6 +175,7 @@ async function main() {
       const child = spawn(process.execPath, [serverPath, '9346'], { detached: true, stdio: 'ignore' });
       child.unref();
       log('chrome-bridge server auto-started (WS:9346/HTTP:9347)');
+    }
     }
   } catch { /* best-effort */ }
 

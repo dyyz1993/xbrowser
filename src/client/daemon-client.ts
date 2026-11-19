@@ -4,7 +4,8 @@ import { startDaemonProcess, stopDaemonProcess } from '../daemon/daemon.js';
 import { version as cliVersion } from '../version.js';
 import { request as httpRequest } from 'http';
 
-const DAEMON_PORT = 9224;
+// 与 daemon-main 的 XBROWSER_DAEMON_PORT 对齐（测试/多实例隔离用；缺省 9224）
+const DAEMON_PORT = parseInt(process.env.XBROWSER_DAEMON_PORT || '9224', 10);
 const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`;
 
 let _ensurePromise: Promise<void> | null = null;
@@ -175,9 +176,11 @@ export async function forwardExec(
   session: string = 'default',
   cdpEndpoint?: string,
   timeoutMs: number = 120000,
+  bridge?: boolean,
 ): Promise<ExecutionResult> {
   const rpcParams: Record<string, unknown> = { command, params, session };
   if (cdpEndpoint) rpcParams.cdpEndpoint = cdpEndpoint;
+  if (bridge) rpcParams.bridge = true;
   try {
     return await rpcCall<ExecutionResult>('exec', rpcParams, timeoutMs);
   } catch (e) {

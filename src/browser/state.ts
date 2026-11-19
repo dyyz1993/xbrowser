@@ -18,6 +18,8 @@ export interface ManagedSession {
   cdpEndpoint?: string;
   /** True when CDP attach reused an existing user tab; close must only disconnect. */
   reusedExistingPage?: boolean;
+  /** --session 统一路由：chrome-bridge 通道会话（page 是 BridgePage，close 即 task-close） */
+  bridge?: { taskName: string; tabId: number };
 }
 
 export interface SessionDiskMeta {
@@ -27,6 +29,12 @@ export interface SessionDiskMeta {
   createdAt: string;
   cdpEndpoint?: string;
   conversationUrl?: string;
+  /** 会话路由类别：托管浏览器（缺省）| chrome-bridge 通道 */
+  kind?: 'browser' | 'bridge';
+  /** bridge 会话对应的任务组名（缺省同会话名） */
+  taskName?: string;
+  /** bridge 会话锚定的 tab（task-open 返回） */
+  tabId?: number;
 }
 
 export interface BrowserLaunchOptions {

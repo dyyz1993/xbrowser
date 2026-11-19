@@ -95,7 +95,7 @@ export async function routeCommand(
     // apply to the FIRST non-flag argument (xbrowser "goto url" style). A
     // space-containing arg that comes AFTER a command word (fill "#kw" "a b c")
     // is a VALUE — re-splitting it truncated fill values to the first word.
-    const globalFlags = new Set(['--session', '--cdp', '--json', '--yaml', '--output', '--timeout', '--help', '-h', '--version', '--frame', '--target', '--tab']);
+    const globalFlags = new Set(['--session', '--cdp', '--json', '--yaml', '--output', '--timeout', '--help', '-h', '--version', '--frame', '--target', '--tab', '--bridge']);
     let chainArgIdx = -1;
     let seenCommandWord = false;
     for (let i = 0; i < argv.length; i++) {
@@ -139,7 +139,7 @@ export async function routeCommand(
   // absorbing the next positional arg as its value.
   const cleanArgv = argv.filter(a => a !== '--json' && a !== '--yaml');
 
-  const parsed = parseArgs(cleanArgv, { booleanFlags: ['json', 'yaml'] });
+  const parsed = parseArgs(cleanArgv, { booleanFlags: ['json', 'yaml', 'bridge'] });
   const { positional, options } = parsed;
   if (hasJsonFlag) options.json = true;
   if (hasYamlFlag) options.yaml = true;

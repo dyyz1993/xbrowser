@@ -11,6 +11,7 @@ These options apply to all commands:
 | `--json` | Output in JSON format |
 | `--yaml` | Output in YAML format |
 | `--session <name>` | Use specific session (default: `default`) |
+| `--bridge` | Route the session to your own browser via the chrome-bridge extension (first use; later calls stick automatically) |
 | `--cdp <endpoint>` | Connect to CDP endpoint |
 | `-e, --eval <cmd>` | Execute command (repeatable) |
 | `-h, --help` | Show help |
