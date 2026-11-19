@@ -21,7 +21,7 @@ npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 [`branding/mark.svg`](branding/mark.svg)，完整颜色、用法与衍生资产见
 [`docs/brand/xbrowser.md`](docs/brand/xbrowser.md)。修改项目 logo 前必须先读该契约。
 
-### 复发防错规则（来自 .learnings 蒸馏）
+### 复发防错规则（来自全局学习账本 ~/.agents/projects/xbrowser/ 蒸馏）
 
 - `apply_patch` 修改多文件或同一文件多处时，先读取当前内容并按目标拆成最小上下文块；任何一块上下文失配都停止重试，重新读取目标文件。
 - Commit subject 是类型前缀后的文本，最长 80 字符（不是整行 100 字符）；提交前用 CI 正则或等价脚本自检。
