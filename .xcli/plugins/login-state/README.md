@@ -35,6 +35,25 @@ xbrowser login-state export --domains weibo.com --dbPath ~/Library/Application\ 
 
 首次运行会弹 macOS 钥匙串授权框（读 "Chrome Safe Storage"），需点【允许】。
 
+## run：把登录态灌进无头会话跑起来（闭环）
+
+`export` 只落盘；`run` 是最后一步——取 state（现成文件或 `--domains` 现场刷新）→
+`browserContext.addCookies()` 注入当前无头会话 → 可选导航。**已验证姿势**（两步，
+`--session` 必须放链字符串**外面**当全局 flag）：
+
+```bash
+# 第 1 步：注入（首次会弹 Keychain；--state 可省略复用已导出的 state）
+xbrowser login-state run --domains github.com --session mysite
+
+# 第 2 步：同会话后续操作（登录态已生效）
+xbrowser --session mysite "goto https://github.com/settings/profile && text && screenshot"
+```
+
+> ⚠️ 已知限制：**单条链里混跑 `login-state run` + 内置命令**目前不可靠——链引擎里
+> 插件命令转发 daemon 会话、内置命令用本地会话，注入与读取落在两个浏览器
+> （#<chain-split-issue>）。在上面的两步姿势下闭环已实证（cookie 注入 → goto →
+> `document.cookie` 可见）。
+
 ## 安全模型
 
 - **最小权限**：只解密 `--domains` 匹配的行；`github.io` / `vercel.app` / `co.uk`

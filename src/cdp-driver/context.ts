@@ -135,13 +135,25 @@ export class XBContextImpl implements XBContext {
 
   // ── Cookies ─────────────────────────────────────────────────
 
+  /**
+   * Real CDP browserContextId (from Target.createBrowserContext), or undefined
+   * for the default context (contextId 'default' / '' is not a CDP id — passing
+   * it to Storage.* makes CDP reject the whole call).
+   */
+  private get storageContextId(): string | undefined {
+    return this.contextId && this.contextId !== 'default' ? this.contextId : undefined;
+  }
+
   async cookies(urls?: string | string[]): Promise<XBCookie[]> {
     const urlList = typeof urls === 'string' ? [urls] : urls;
-    const params = urlList ? { urls: urlList } : undefined;
+    const bcId = this.storageContextId;
+    const params = bcId
+      ? { ...(urlList ? { urls: urlList } : {}), browserContextId: bcId }
+      : urlList ? { urls: urlList } : undefined;
     // Chrome 149+ deprecated Network.getCookies. Try multiple approaches:
-    // 1. Storage.getCookies (Chrome 149+, may not exist yet)
-    // 2. Network.getCookies (Chrome <149)
-    // 3. document.cookie via evaluate (fallback, no httpOnly)
+    // 1) Storage.getCookies (Chrome 149+, may not exist yet)
+    // 2) Network.getCookies (Chrome <149)
+    // 3) document.cookie via evaluate (fallback, no httpOnly)
     try {
       const result = await this.conn.send<{ cookies: Array<{
         name: string; value: string; domain: string; path: string;
@@ -176,8 +188,12 @@ export class XBContextImpl implements XBContext {
       sameSite: c.sameSite,
     }));
     // Chrome 149+: Storage.setCookies; older: Network.setCookies
+    // 必须 带 browserContextId：XBContext 是 Target.createBrowserContext 的隔离
+    // context，缺省时 CDP 静默写进 default context——页面永远看不到（不报错）。
+    const bcId = this.storageContextId;
+    const params = bcId ? { cookies: cdpCookies, browserContextId: bcId } : { cookies: cdpCookies };
     try {
-      await this.conn.send('Storage.setCookies', { cookies: cdpCookies });
+      await this.conn.send('Storage.setCookies', params);
     } catch {
       await this.conn.send('Network.setCookies', { cookies: cdpCookies });
     }
@@ -185,8 +201,9 @@ export class XBContextImpl implements XBContext {
 
   async clearCookies(): Promise<void> {
     // Chrome 149+: Storage.clearCookies; older: Network.clearBrowserCookies
+    const bcId = this.storageContextId;
     try {
-      await this.conn.send('Storage.clearCookies');
+      await this.conn.send('Storage.clearCookies', bcId ? { browserContextId: bcId } : undefined);
     } catch {
       await this.conn.send('Network.clearBrowserCookies');
     }

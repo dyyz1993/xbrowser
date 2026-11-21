@@ -414,6 +414,15 @@ export function defaultStatePath(): string {
   return join(homedir(), '.xbrowser', 'login-state', 'state.json');
 }
 
+export function resolveStatePath(statePath?: string): string {
+  return resolve((statePath ?? defaultStatePath()).replace(/^~/, homedir()));
+}
+
+/** 读 state 文件里的 cookies（run 命令用）；文件缺失/损坏返回空数组由调用方引导。 */
+export function loadStateCookies(statePath: string): PlaywrightCookie[] {
+  return loadExistingState(statePath);
+}
+
 export async function exportLoginState(params: ExportParams): Promise<ExportResult> {
   const filters = params.domains.split(',').map(s => s.trim()).filter(Boolean).map(normalizeDomainFilter);
   if (filters.length === 0) throw new LoginStateError('缺少域名：--domains github.com[,linear.app]');

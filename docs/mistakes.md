@@ -72,3 +72,10 @@
 - **典型错误**: 职位详情不存在：http://a.example/1
 - **根因**: （待补——修复时填写）
 - **修复**: （待补——填 PR 号或修复说明）
+## 2026-11-21 · eval · SecurityError: Failed to read the 'cookie' property from 'Document': Access is d
+<!-- fingerprint:FATAL: unknown::SecurityError: Failed to read the 'cookie' property from 'Document': Access is denied for this document. at <anonymous>:<number>:<number> -->
+- **类别**: FATAL: unknown
+- **首次/最近**: 2026-11-21T04:48:12 → 2026-11-21T04:50:26（累计 3 次）
+- **典型错误**: SecurityError: Failed to read the 'cookie' property from 'Document': Access is denied for this document.
+- **根因**: 链引擎会话分裂——链内插件命令转发 daemon 会话执行，链内内置命令走本地会话；插件 handler 内 page.goto 后，后续 eval 落在另一会话被导航替换/未初始化的文档上（detached document 的 cookie 访问即抛 SecurityError）。
+- **修复**: driver 侧 Storage.* 补 browserContextId（cookie 静默丢写入修复）+ login-state run 采用两步姿势（注入与后续操作分两次调用、--session 作全局 flag 放链外）；链分裂本身另立 issue 跟踪。

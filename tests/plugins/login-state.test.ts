@@ -100,11 +100,11 @@ function getHandler(site: Site, name: string): (params: unknown) => Promise<unkn
 describe('login-state plugin registration', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('registers site with name login-state and single export command', () => {
+  it('registers site with name login-state and export+run commands', () => {
     const { site, xcli } = makeMock();
     plugin(xcli as never);
     expect(xcli.createSite).toHaveBeenCalledWith(expect.objectContaining({ name: 'login-state', requiresLogin: false }));
-    expect(site.command.mock.calls.map(c => c[0])).toEqual(['export']);
+    expect(site.command.mock.calls.map(c => c[0])).toEqual(['export', 'run']);
   });
 
   it('export command has full contract metadata incl result schema', () => {
@@ -113,6 +113,17 @@ describe('login-state plugin registration', () => {
     const cmd = site.command.mock.calls[0]![1] as Record<string, unknown>;
     expect(cmd.description).toBeTruthy();
     expect(cmd.scope).toBe('project');
+    expect(cmd.loginRequired).toBe('none');
+    expect(cmd.parameters).toBeTruthy();
+    expect(cmd.result).toBeTruthy();
+    expect(typeof cmd.handler).toBe('function');
+  });
+
+  it('run command has page scope and full contract metadata', () => {
+    const { site, xcli } = makeMock();
+    plugin(xcli as never);
+    const cmd = site.command.mock.calls[1]![1] as Record<string, unknown>;
+    expect(cmd.scope).toBe('page');
     expect(cmd.loginRequired).toBe('none');
     expect(cmd.parameters).toBeTruthy();
     expect(cmd.result).toBeTruthy();
@@ -366,5 +377,104 @@ describe('exportLoginState keychain-on-demand', () => {
     expect(h.execFile).not.toHaveBeenCalled();
     unlinkSync(out);
     unlinkSync(fakeDb);
+  });
+});
+
+// ─── run 命令：闭环注入无头会话 ───
+
+describe('run handler', () => {
+  const realPlatform = process.platform;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    h.rows = [];
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+  });
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: realPlatform });
+  });
+
+  function runHandler() {
+    const { site, xcli } = makeMock();
+    plugin(xcli as never);
+    const call = site.command.mock.calls.find((item: unknown[]) => item[0] === 'run');
+    if (!call) throw new Error('run not registered');
+    return (call[1] as { handler: (params: unknown, ctx?: unknown) => Promise<unknown> }).handler;
+  }
+
+  function mockPage() {
+    const addCookies = vi.fn(async (_cookies: unknown[]) => undefined);
+    const goto = vi.fn(async (_url: string) => undefined);
+    // 与 executor 真实结构对齐：browserContext 与 page 平级，addCookies 在 browserContext 上
+    const ctx = { page: { goto }, browserContext: { addCookies } };
+    return { ctx, addCookies, goto };
+  }
+
+  function writeState(dir: string, cookies: PlaywrightCookie[]): string {
+    const p = join(dir, 'state.json');
+    writeFileSync(p, JSON.stringify({ cookies, origins: [] }));
+    return p;
+  }
+
+  it('无 page 上下文 → fail', async () => {
+    const result = await runHandler()({ state: '/tmp/whatever.json' }, {});
+    expect(JSON.stringify(result)).toContain('需要浏览器会话');
+  });
+
+  it('state 文件不存在且未带 --domains → fail 引导', async () => {
+    const { ctx } = mockPage();
+    const result = await runHandler()({ state: '/tmp/xb-no-such-state.json' }, ctx);
+    expect(JSON.stringify(result)).toContain('没有 cookie');
+    expect(JSON.stringify(result)).toContain('export');
+  });
+
+  it('已有 state → addCookies 注入 + 可选导航', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'xb-ls-run-'));
+    const state = writeState(dir, [
+      { name: 'sid', value: 'v1', domain: '.example.com', path: '/', expires: -1, httpOnly: true, secure: true, sameSite: 'Lax' },
+      { name: 'uid', value: 'v2', domain: '.example.com', path: '/', expires: -1, httpOnly: false, secure: false, sameSite: 'Strict' },
+    ]);
+    const { ctx, addCookies, goto } = mockPage();
+    const result = (await runHandler()({ state, url: 'https://example.com/me' }, ctx)) as {
+      success: boolean; data: { injected: number; navigated: string | null; refreshed: boolean };
+    };
+    expect(result.success).toBe(true);
+    expect(result.data.injected).toBe(2);
+    expect(result.data.navigated).toBe('https://example.com/me');
+    expect(result.data.refreshed).toBe(false);
+    expect(addCookies).toHaveBeenCalledTimes(1);
+    const injected = addCookies.mock.calls[0]![0] as PlaywrightCookie[];
+    expect(injected).toHaveLength(2);
+    expect(injected[0]).toMatchObject({ name: 'sid', value: 'v1', domain: '.example.com', httpOnly: true });
+    expect(goto).toHaveBeenCalledWith('https://example.com/me');
+    unlinkSync(state);
+  });
+
+  it('带 --domains → 现场导出再注入（走 sqlite/keychain mock）', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'xb-ls-run2-'));
+    const fakeDb = join(dir, 'Cookies');
+    writeFileSync(fakeDb, 'x');
+    const state = join(dir, 'state.json');
+    h.rows = [row({ host_key: '.example.com', name: 'live', value: 'fresh' })];
+    const { ctx, addCookies } = mockPage();
+    const result = (await runHandler()(
+      { domains: 'example.com', dbPath: fakeDb, state },
+      ctx,
+    )) as { success: boolean; data: { injected: number; refreshed: boolean } };
+    expect(result.success).toBe(true);
+    expect(result.data.injected).toBe(1);
+    expect(result.data.refreshed).toBe(true);
+    const injected = addCookies.mock.calls[0]![0] as PlaywrightCookie[];
+    expect(injected[0]).toMatchObject({ name: 'live', value: 'fresh' });
+    unlinkSync(state);
+    unlinkSync(fakeDb);
+  });
+
+  it('state 存在但 0 cookie → fail', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'xb-ls-run3-'));
+    const state = writeState(dir, []);
+    const { ctx } = mockPage();
+    const result = await runHandler()({ state }, ctx);
+    expect(JSON.stringify(result)).toContain('没有 cookie');
+    unlinkSync(state);
   });
 });
