@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-login-state",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "index.ts",
   "type": "module",
   "dependencies": {
@@ -12,13 +12,14 @@
   "xbrowser": {
     "name": "login-state",
     "slug": "login-state",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "author": "dyyz1993",
     "description": "离线提取本机浏览器登录态：无锁快照 Cookies 库 + Keychain 解密 → Playwright storageState",
     "site": "https://127.0.0.1",
     "requiresLogin": false,
     "commands": [
-      "export"
+      "export",
+      "run"
     ]
   }
 }

@@ -98,7 +98,7 @@
 | kimi | 1 | `browser` |
 | liepin | 4 | `project` |
 | login-bridge | 5 | `page`, `project` |
-| login-state | 1 | `project` |
+| login-state | 2 | `page`, `project` |
 | marketplace | 3 | `cli` |
 | maven | 1 | `project` |
 | medium | 5 | `browser`, `page` |
