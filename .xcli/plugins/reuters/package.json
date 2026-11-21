@@ -17,6 +17,8 @@
     "description": "Reuters - 新闻资讯",
     "site": "https://www.reuters.com",
     "requiresLogin": false,
-    "commands": []
+    "commands": [
+      "search"
+    ]
   }
 }

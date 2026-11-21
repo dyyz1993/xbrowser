@@ -17,6 +17,9 @@
     "description": "IMDb - 电影电视剧信息",
     "site": "https://www.imdb.com",
     "requiresLogin": false,
-    "commands": []
+    "commands": [
+      "search",
+      "detail"
+    ]
   }
 }

@@ -17,6 +17,8 @@
     "description": "Kimi AI 助手",
     "site": "https://kimi.moonshot.cn",
     "requiresLogin": false,
-    "commands": []
+    "commands": [
+      "chat"
+    ]
   }
 }

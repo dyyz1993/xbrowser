@@ -1,5 +1,5 @@
 {
-  "name": "@xbrowser/stats",
+  "name": "xbrowser-plugin-stats",
   "version": "1.0.0",
   "description": "国家统计局 — 分省年度经济数据（GDP、社消零售、人口等）",
   "author": "dyyz1993",
@@ -18,7 +18,7 @@
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
   "xbrowser": {
-    "name": "@xbrowser/stats",
+    "name": "stats",
     "slug": "stats",
     "version": "1.0.0",
     "author": "dyyz1993",

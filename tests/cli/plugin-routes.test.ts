@@ -324,7 +324,12 @@ describe('plugin-routes', () => {
       });
       setupMockLoaderWithSites([createMockSiteWithSearch()]);
 
-      await handlePlugin(['search', 'test'], {}, 'json');
+      delete process.env.XBROWSER_MARKETPLACE_URL;
+      try {
+        await handlePlugin(['search', 'test'], { registry: 'http://127.0.0.1:1' }, 'json');
+      } finally {
+        delete process.env.XBROWSER_MARKETPLACE_URL;
+      }
 
       expect(mockOutputEnvelope).toHaveBeenCalled();
       const callArgs = mockOutputEnvelope.mock.calls[0][0] as Record<string, unknown>;
@@ -433,7 +438,13 @@ describe('plugin-routes', () => {
       const origWrite = process.stdout.write;
       process.stdout.write = ((chunk: unknown) => { captured.push(String(chunk)); return true; }) as typeof process.stdout.write;
 
-      await handlePlugin(['search', 'nonexistent'], {}, 'text');
+      // 死 registry 隔离真实 marketplace 网络——链路上任何线上模糊匹配都会让"空"场景不确定
+      delete process.env.XBROWSER_MARKETPLACE_URL;
+      try {
+        await handlePlugin(['search', 'nonexistent'], { registry: 'http://127.0.0.1:1' }, 'text');
+      } finally {
+        delete process.env.XBROWSER_MARKETPLACE_URL;
+      }
 
       process.stdout.write = origWrite;
       const output = captured.join('');
@@ -446,7 +457,12 @@ describe('plugin-routes', () => {
         { name: 'npm-plugin', description: 'From npm', version: '2.0.0', date: '2026-01-01' },
       ]);
 
-      await handlePlugin(['search', 'test'], {}, 'json');
+      delete process.env.XBROWSER_MARKETPLACE_URL;
+      try {
+        await handlePlugin(['search', 'test'], { registry: 'http://127.0.0.1:1' }, 'json');
+      } finally {
+        delete process.env.XBROWSER_MARKETPLACE_URL;
+      }
 
       expect(NPMSearcher.search).toHaveBeenCalled();
       expect(mockOutputEnvelope).toHaveBeenCalledWith(

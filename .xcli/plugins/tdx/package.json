@@ -17,6 +17,8 @@
     "description": "通达信 - 股票行情数据",
     "site": "https://www.tdx.com.cn",
     "requiresLogin": false,
-    "commands": []
+    "commands": [
+      "quote"
+    ]
   }
 }

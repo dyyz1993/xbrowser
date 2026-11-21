@@ -17,6 +17,8 @@
     "description": "Booking.com - 酒店预订",
     "site": "https://www.booking.com",
     "requiresLogin": false,
-    "commands": []
+    "commands": [
+      "search"
+    ]
   }
 }

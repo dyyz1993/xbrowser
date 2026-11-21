@@ -92,7 +92,7 @@
       "status"
     ],
     "description": "GEO 外链排名分析",
-  "name": "xbrowser-plugin-geo-analysis",
+    "name": "DeepSeek",
     "sites": [
       "multi-engine"
     ],

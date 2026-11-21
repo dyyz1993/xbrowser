@@ -17,6 +17,8 @@
     "description": "YouTube - 视频搜索、频道数据",
     "site": "https://www.youtube.com",
     "requiresLogin": false,
-    "commands": []
+    "commands": [
+      "search"
+    ]
   }
 }
