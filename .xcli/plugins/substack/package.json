@@ -17,6 +17,8 @@
     "description": "Substack - 新闻通讯平台",
     "site": "https://substack.com",
     "requiresLogin": false,
-    "commands": []
+    "commands": [
+      "search"
+    ]
   }
 }

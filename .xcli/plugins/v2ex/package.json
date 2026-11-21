@@ -17,6 +17,9 @@
     "description": "V2EX - 创意工作者社区",
     "site": "https://www.v2ex.com",
     "requiresLogin": false,
-    "commands": []
+    "commands": [
+      "hot",
+      "latest"
+    ]
   }
 }

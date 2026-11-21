@@ -19,7 +19,7 @@
   ],
   "license": "MIT",
   "main": "index.ts",
-  "name": "@xbrowser/baidu",
+  "name": "xbrowser-plugin-baidu",
   "peerDependencies": {
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
@@ -38,7 +38,7 @@
       "search-image"
     ],
     "description": "百度搜索 - 真实浏览器操作",
-    "name": "@xbrowser/baidu",
+    "name": "baidu",
     "requiresLogin": false,
     "site": "https://www.baidu.com",
     "sites": [

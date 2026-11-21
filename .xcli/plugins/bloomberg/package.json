@@ -17,6 +17,8 @@
     "description": "Bloomberg - 财经新闻、市场数据",
     "site": "https://www.bloomberg.com",
     "requiresLogin": false,
-    "commands": []
+    "commands": [
+      "search"
+    ]
   }
 }

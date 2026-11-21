@@ -17,6 +17,9 @@
     "description": "Pixiv - 插画社区",
     "site": "https://www.pixiv.net",
     "requiresLogin": false,
-    "commands": []
+    "commands": [
+      "search",
+      "trending"
+    ]
   }
 }

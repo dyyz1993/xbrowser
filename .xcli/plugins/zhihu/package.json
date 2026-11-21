@@ -23,7 +23,7 @@
   ],
   "license": "MIT",
   "main": "index.ts",
-  "name": "@xbrowser/zhihu",
+  "name": "xbrowser-plugin-zhihu",
   "peerDependencies": {
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
@@ -41,7 +41,7 @@
       "chat"
     ],
     "description": "知乎 - 知识问答、内容采集与 AI 知答 (DA 93)",
-    "name": "@xbrowser/zhihu",
+    "name": "zhihu",
     "requiresLogin": false,
     "site": "https://www.zhihu.com",
     "sites": [

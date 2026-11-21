@@ -17,6 +17,8 @@
     "description": "Spotify - 音乐搜索、专辑信息",
     "site": "https://open.spotify.com",
     "requiresLogin": false,
-    "commands": []
+    "commands": [
+      "search"
+    ]
   }
 }

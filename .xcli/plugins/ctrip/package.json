@@ -17,6 +17,8 @@
     "description": "携程 - 酒店、机票、旅游",
     "site": "https://www.ctrip.com",
     "requiresLogin": false,
-    "commands": []
+    "commands": [
+      "search"
+    ]
   }
 }
