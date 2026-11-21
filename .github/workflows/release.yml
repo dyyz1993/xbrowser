@@ -442,16 +442,26 @@ jobs:
       - name: Build release notes
         run: |
           VERSION=$(node -p "require('./package.json').version")
+          # CHANGELOG.md 当前版本段落置顶（lint:changelog 保证存在；缺失时回退证据-only）
+          awk -v hdr="## [${VERSION}]" 'index($0, hdr) == 1 { p = 1; print; next } /^## \[/ && p { exit } p { print }' CHANGELOG.md > changelog-section.md || true
+          if [ ! -s changelog-section.md ]; then
+            echo "::warning::CHANGELOG.md 缺少 [${VERSION}] 段落，Release 正文退化为流水线证据"
+            printf '# v%s\n\n（CHANGELOG.md 未找到对应段落，请补录）\n' "${VERSION}" > changelog-section.md
+          fi
           cat > release-notes.md <<EOF
-          # v${VERSION}
+          $(cat changelog-section.md)
 
-          流水线全绿证据（tag 驱动：verify → test → npm → marketplace）。
+          ---
+
+          ## 流水线证据
+
+          tag 驱动：verify → test → npm → marketplace。
 
           | 阶段 | 结果 |
           |---|---|
           | verify（tag=版本） | ✅ |
           | test（typecheck/lint/build/全量/e2e/冒烟） | ✅ |
-          | publish-npm | ✅（@xbrowser/cli@${VERSION}） |
+          | publish-npm | ✅（@xbrowser/cli@${VERSION}，OIDC provenance） |
           | publish-marketplace | ${{ needs.publish-marketplace.result }} |
 
           **附件说明**

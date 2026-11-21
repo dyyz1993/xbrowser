@@ -38,6 +38,7 @@ jobs:
       - run: npm run lint:plugin-contract
       # 与 husky pre-commit 同源的文档一致性检查（防 --no-verify 绕过）
       - run: npm run lint:docs
+      - run: npm run lint:changelog
 
   commit-lint:
     # 与 husky commit-msg 同源的提交信息格式检查（防 --no-verify 绕过：
