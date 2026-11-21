@@ -1,8 +1,15 @@
 {
   "name": "xbrowser-plugin-npm",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "main": "index.ts",
   "type": "module",
+  "keywords": [
+    "xbrowser",
+    "xbrowser-plugin",
+    "npm",
+    "registry",
+    "access-token"
+  ],
   "dependencies": {
     "zod": "^3.24.0"
   },
@@ -12,15 +19,28 @@
   "xbrowser": {
     "name": "npm",
     "slug": "npm",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "author": "dyyz1993",
-    "description": "npm registry search, package info, and download stats",
+    "description": "npm registry 查询（search/package/downloads）+ 访问令牌全生命周期管理（登录创建 Granular Token / 列出 / 撤销，chrome-bridge 通道）",
     "site": "https://www.npmjs.com",
-    "requiresLogin": false,
+    "requiresLogin": true,
+    "tags": [
+      "npm",
+      "registry",
+      "token",
+      "publish"
+    ],
+    "sites": [
+      "https://www.npmjs.com"
+    ],
     "commands": [
       "search",
       "package",
-      "downloads"
+      "downloads",
+      "create-token",
+      "list-tokens",
+      "delete-token"
     ]
-  }
+  },
+  "description": "npm registry query and token lifecycle management (search/package/downloads + create/list/delete granular tokens)"
 }
