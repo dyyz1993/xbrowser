@@ -282,6 +282,12 @@ jobs:
     # 跑到此 job 会暂停，GitHub 通知 + 上面的 Drel 推送提醒；手机/网页点
     # Approve and deploy 才继续，Reject 或 30 天超时则中止。
     environment: production
+    # npm Trusted Publishing（OIDC）：无 NPM_TOKEN、无 OTP。npm 侧已绑定
+    # 仓库 dyyz1993/xbrowser + workflow release.yml + environment production
+    # （三者必须与 OIDC 声明完全一致）。需要 node>=24（内置 npm>=11.5.1）。
+    permissions:
+      id-token: write
+      contents: read
     outputs:
       published: ${{ steps.published.outputs.exists == 'false' }}
       version: ${{ steps.published.outputs.version }}
@@ -289,7 +295,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          # Trusted Publishing（OIDC）要求 npm>=11.5.1 —— node 24 内置
+          node-version: 24
           cache: npm
           registry-url: https://registry.npmjs.org/
       - run: npm ci
@@ -320,8 +327,6 @@ jobs:
 
       - if: steps.published.outputs.exists == 'false'
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # ── 审批门专项验证：真实 production gate，但不 checkout/不发布 ────────
   approval-gate:
