@@ -1,5 +1,23 @@
 # Changelog
 
+格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；由 `npm run lint:changelog` 约束（版本条目齐全、格式、去重、降序）。
+
+## [1.35.0] - 2026-11-21
+
+### Added
+- **login-state 插件**：离线提取 Chrome 登录态（Cookies + Keychain 解密）导出 storageState；`login-state run` 注入无头会话。
+- **托管无头会话与并发运行**：`run jobs.json --parallel N` 按会话并行并同步汇总；命令链内 `handoff` 暂停等待人工接管后继续；`session save/restore` 登录态快照；`session errors` 错题本聚合。
+- **Viewer 浏览工作区**：标签页/地址栏/前进后退刷新（限本机回环 + 自启动会话）；人工接管等待状态与「继续任务」按钮；手机触控适配。
+- **npm 插件 token 生命周期**：`create-token` / `list-tokens` / `delete-token`（网页登录 + 邮件 OTP + granular token 表单自动化，含中文 schema 问卷）。
+- **OIDC Trusted Publishing**：`publish-npm` 迁移至 npm Trusted Publishing（`id-token: write`、node 24、移除 NPM_TOKEN 依赖），v1.35.0 起发布带签名 provenance。
+
+### Fixed
+- **CDP 页注册去重**：context 页表按 targetId 唯一化——同一 Chromium 标签此前最多产生 3 个包装对象。
+- **前进/后退历史**：`goBack`/`goForward` 改用 `Page.navigateToHistoryEntry`，不再以重新导航销毁前进历史。
+- **同文档导航**：`goto` 对 `#hash` 类导航按 loaderId 缺失即时完成，不再空等 15 秒超时。
+- **Viewer 裁剪/二维码**：裁剪视图画面在面板尺寸变化后保持不清屏；二维码验收改按显示尺寸判定。
+- **net-routes 测试 mock**：补 `SessionStore` 导出（会话重构引入的导入链断裂）。
+
 ## [1.34.0] - 2026-10-27
 
 ### Added
@@ -13,7 +31,6 @@
 - **Gemini media flow**：修复视频生成管线、SPA URL 跟踪、提交按钮合成点击被 CDP-Guard 拦截、拒绝检测选择器漏检，以及 history-list 任务组名泄漏。
 - **Chrome task windows**：任务 tab 显式挂载到真实用户窗口，并在激活后测量窗口尺寸，避免 CDP 输入静默丢弃。
 
-## [1.23.1] - 2026-09-10
 ## [1.23.1] - 2026-09-10
 
 ### Added
@@ -134,6 +151,10 @@
 - `plugin install` 后自动通知 daemon 重新扫描插件 (#58)
 
 ## [1.2.1] - 2026-06-23
+
+### Fixed
+- 与 [1.2.0] 同日发布（该条目内容见下）。
+
 ## [1.2.0] - 2026-06-23
 
 ### Fixed — 14 个 bug 修复（10 个 issue）
@@ -357,5 +378,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optimized plugin loading
 - Better command execution performance
 
-## [0.1.4] - Previous
+## [0.1.4] - 2026-05-30
+
+### Added
 - Initial CLI release
