@@ -268,9 +268,15 @@ describe('security guards', () => {
 // ─── 端到端（handler，mock sqlite + keychain）───
 
 describe('export handler end-to-end', () => {
+  const realPlatform = process.platform;
   beforeEach(() => {
     vi.clearAllMocks();
     h.rows = [];
+    // e2e 走到 readKeychainPassword，须 stub 成 darwin（CI 跑在 Linux，平台守卫会直接 fail）
+    Object.defineProperty(process, 'platform', { value: 'darwin' });
+  });
+  afterEach(() => {
+    Object.defineProperty(process, 'platform', { value: realPlatform });
   });
 
   function handler() {
