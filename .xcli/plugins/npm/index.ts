@@ -70,7 +70,6 @@ const USERNAME_INPUT = ['#username', 'input[name="username"]'];
 const PASSWORD_INPUT = ['#password', 'input[name="password"]', 'input[type="password"]'];
 const OTP_INPUT = ['#otp', 'input[name="otp"]', 'input[name="code"]', 'input[inputmode="numeric"]'];
 const TOKEN_NAME_INPUT = ['#tokenName', 'input[name="tokenName"]', 'input[name="name"]'];
-const EXPIRATION_SELECT = ['#expiration', 'select[name="expiration"]', 'select[name="expiresIn"]'];
 const SCOPE_INPUT = ['#packages', 'input[name="packages"]', 'input[name="scopes"]', 'input[placeholder*="scope" i]'];
 const SIGNIN_TEXTS = ['Sign in', 'Sign In', 'Log in', '登录'];
 const CREATE_TOKEN_TEXTS = ['Create Token', 'Create token', '生成令牌'];
@@ -313,22 +312,53 @@ async function loginWithEmail(
 }
 
 function expirationLabels(expiryDays: string, customExpiryDays?: number): string[] {
-  if (expiryDays === 'custom') return [`${customExpiryDays ?? 365} days`];
+  if (expiryDays === 'custom') return ['Custom', `${customExpiryDays ?? 365} days`];
   return [`${expiryDays} days`, `${expiryDays} Days`, expiryDays];
 }
 
 async function chooseExpiration(page: Page, expiryDays: string, customExpiryDays?: number): Promise<string | null> {
-  const sel = await firstVisibleSelector(page, EXPIRATION_SELECT);
-  if (!sel) return null;
-  for (const label of expirationLabels(expiryDays, customExpiryDays)) {
-    try {
-      await page.locator(sel).selectOption({ label });
-      return label;
-    } catch {
-      // 尝试下一个候选 label
+  const labels = expirationLabels(expiryDays, customExpiryDays);
+  // 真实 UI 是 react-select 自定义下拉（无原生 select，2026-11-21 实测）：
+  // 菜单选项以隐藏 li 预渲染，需先点「当前选中项」的可见容器展开菜单，再点目标 li
+  const current = await page.evaluate(() => {
+    const leaf = [...document.querySelectorAll('*')].find(
+      (e) => !e.children.length && /^\d+ days$/.test((e.textContent || '').trim()),
+    );
+    if (!leaf) return null;
+    let t: Element | null = leaf;
+    for (let k = 0; k < 8 && t; k++) {
+      if ('offsetParent' in t && t.offsetParent) {
+        const r = t.getBoundingClientRect();
+        return { x: r.x + Math.min(12, r.width / 2), y: r.y + r.height / 2, text: (t.textContent || '').trim() };
+      }
+      t = t.parentElement;
     }
+    return null;
+  });
+  if (!current) return null;
+  await trustedClick(page, current);
+  await nap(page, 600);
+  // 在展开的菜单里点目标选项（li 文本精确匹配；custom 先点 Custom... 再填天数）
+  const picked = await page.evaluate((texts: string[]) => {
+    const want = texts.map((t) => t.toLowerCase());
+    const lis = [...document.querySelectorAll('li')].filter(
+      (li) => li.getBoundingClientRect().height > 0 && want.some((w) => (li.textContent || '').trim().toLowerCase() === w),
+    );
+    if (!lis.length) return null;
+    const li = lis[0];
+    li.scrollIntoView({ block: 'center' });
+    const r = li.getBoundingClientRect();
+    return { x: r.x + Math.min(12, r.width / 2), y: r.y + r.height / 2, text: (li.textContent || '').trim() };
+  }, labels);
+  if (!picked) return null;
+  await trustedClick(page, picked);
+  await nap(page, 600);
+  if (expiryDays === 'custom') {
+    const input = await waitForAnySelector(page, ['input[type="number"]', 'input[name*="custom" i]', 'input[name*="days" i]'], 4500);
+    if (!input) return null;
+    await page.fill(input, String(customExpiryDays ?? 365));
   }
-  return null;
+  return picked.text;
 }
 
 async function choosePackagesScope(page: Page, scope: string): Promise<boolean> {
@@ -471,7 +501,7 @@ export default function (xcli: XCLIAPI): void {
       username: z.string().describe('npm 用户名（用于登录与 /settings/<username> 路径）'),
       password: z.string().describe('npm 密码（经 trusted fill 管线输入，不落盘）'),
       tokenName: z.string().optional().default('xbrowser-ci').describe('新令牌名称（默认 xbrowser-ci）'),
-      expiryDays: z.enum(['30', '90', 'custom']).optional().describe('有效期：30 天 / 90 天 / custom（需配合 --customExpiryDays）'),
+      expiryDays: z.enum(['7', '30', '60', '90', 'custom']).optional().describe('有效期：7 天 / 30 天（默认）/ 60 天 / 90 天 / custom（需配合 --customExpiryDays）'),
       customExpiryDays: z.number().int().positive().optional().describe('expiryDays=custom 时的自定义有效天数'),
       packagesScope: z.string().optional().describe('Packages 授权范围（@scope 名，不带 @ 会自动补；缺省为表单默认的只读全量包）'),
       otp: z.string().optional().describe('邮箱 OTP 验证码（用户兜底直传；不传则 waitForHuman 在 viewer 等人输入）'),
