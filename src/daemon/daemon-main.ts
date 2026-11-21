@@ -16,7 +16,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { startHttpServer } from '@dyyz1993/xcli-core';
 
 import { createRPCHandler } from './rpc-handlers.js';
-import { version } from '../version.js';
+import { version, buildId } from '../version.js';
 import { WSServer } from '../websocket-server.js';
 import { previewHTML, alignHTML } from './preview-templates.js';
 import { getPluginLoader } from '../utils/plugin-singleton.js';
@@ -37,8 +37,9 @@ function log(msg: string): void {
 async function main() {
   process.env.XBROWSER_DAEMON_WORKER = '1';
   const daemonPort = parseInt(process.env.XBROWSER_DAEMON_PORT || '9224', 10);
+  const startedAt = new Date().toISOString();
 
-  log(`Daemon main starting (pid=${process.pid})`);
+  log(`Daemon main starting (pid=${process.pid} version=${version} build=${buildId})`);
 
   // ── Create RPC handler and set up HTTP server ──
   const rpcHandler = createRPCHandler();
@@ -51,7 +52,7 @@ async function main() {
         pathname: '/health',
         handler: (_req: IncomingMessage, res: ServerResponse) => {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-	          res.end(JSON.stringify({ status: 'ok', pid: process.pid, version }));
+	          res.end(JSON.stringify({ status: 'ok', pid: process.pid, version, buildId, startedAt }));
         },
       },
     ],
