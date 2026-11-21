@@ -99,7 +99,7 @@ describe('session-routes', () => {
     await handleSession(['list'], {}, 'json');
     expect(mockForwardSessionList).toHaveBeenCalled();
     expect(mockOutputEnvelope).toHaveBeenCalledWith(
-      { success: true, data: { sessions: [{ id: '1', name: 'default', url: 'https://example.com' }] } },
+      expect.objectContaining({ success: true, data: expect.objectContaining({ sessions: [{ id: '1', name: 'default', url: 'https://example.com' }] }) }),
       { command: 'session list' },
       'json'
     );

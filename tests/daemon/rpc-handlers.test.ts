@@ -95,9 +95,12 @@ describe('createRPCHandler', () => {
 
   // ── Utility ──
   describe('ping', () => {
-    it('should return ok with pid', async () => {
+    it('should return ok with pid and build stamp', async () => {
       const result = await handler('ping', {});
-      expect(result).toEqual({ ok: true, pid: process.pid });
+      expect(result).toMatchObject({ ok: true, pid: process.pid });
+      expect(result).toHaveProperty('version');
+      expect(result).toHaveProperty('buildId');
+      expect(result).toHaveProperty('startedAt');
     });
   });
 

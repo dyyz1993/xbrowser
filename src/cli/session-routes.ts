@@ -4,7 +4,7 @@ import {
 } from '../session/session-client.js';
 import { handleSessionHelp } from '../builtins/index.js';
 import { outputEnvelope } from './output.js';
-import { forwardSessionClose, forwardSessionList } from '../client/daemon-client.js';
+import { forwardSessionClose, forwardSessionList, daemonPing } from '../client/daemon-client.js';
 import { stopDaemonProcess, killAllDaemonProcesses } from '../daemon/daemon.js';
 import { homedir } from 'os';
 import { join } from 'path';
@@ -53,9 +53,18 @@ export async function handleSession(
     }
     case 'list':
     case 'ls': {
+      // 顺带上报 daemon 构建信息（调试"旧 daemon 跑旧代码"用；daemon 不可达时省略）
+      let daemon: { version?: string; buildId?: string; startedAt?: string; pid?: number } | undefined;
+      try {
+        const ping = await daemonPing();
+        if (ping && (ping as { ok?: boolean }).ok && 'version' in ping) {
+          const info = ping as { version?: string; buildId?: string; startedAt?: string; pid?: number };
+          daemon = { version: info.version, buildId: info.buildId, startedAt: info.startedAt, pid: info.pid };
+        }
+      } catch { /* daemon 信息是增益，失败不阻断列表 */ }
       try {
         const sessions = await forwardSessionList();
-        outputEnvelope({ success: true, data: { sessions } }, { command: 'session list' }, mode);
+        outputEnvelope({ success: true, data: daemon ? { sessions, daemon } : { sessions } }, { command: 'session list' }, mode);
       } catch {
         const sessions = await listSessions();
         outputEnvelope({ success: true, data: { sessions } }, { command: 'session list' }, mode);
