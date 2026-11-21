@@ -1,4 +1,4 @@
-import { workspaceHeader, workspaceNotes, workspaceScript, workspaceStyle } from './preview-workspace.js';
+import { workspaceHeader, workspaceScript, workspaceStyle } from './preview-workspace.js';
 
 export function previewHTML(sessionId: string, _host: string): string {
   const safeTitle = sessionId.replace(/[&<>]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[char]!);
@@ -115,10 +115,7 @@ ${workspaceHeader}
 <div class="viewport" id="viewport">
   <canvas id="screen"></canvas>
   <div class="waiting" id="wait">Waiting for screencast...</div>
-  <div id="workspace-select-layer" class="workspace-select-layer" hidden></div>
-  <div id="workspace-selection" class="workspace-selection" hidden></div>
 </div>
-${workspaceNotes}
 </div>
 <div class="toolbar" id="toolbar">
   <button class="toolbar-btn" data-key="Tab">Tab</button>
@@ -889,7 +886,7 @@ function createPCKeyboard(){
   });
   document.addEventListener('keydown',function(e){
     if(deviceMode!=='desktop') return;
-    if(e.target instanceof Element && e.target.closest('.workspace-header,.workspace-notes,.bar')) return;
+    if(e.target instanceof Element && e.target.closest('.workspace-header,.bar')) return;
     if(e.isComposing||_pcComposing) return;
     var key=e.key;
     if(!key) return;
@@ -921,7 +918,7 @@ function removePCKeyboard(){}
 function pcFocusHiddenInput(){
   if(deviceMode==='desktop'&&pcHiddenInput&&document.activeElement!==pcHiddenInput){
     var tag=document.activeElement&&document.activeElement.tagName;
-    if(tag!=='INPUT'&&tag!=='TEXTAREA'&&!document.activeElement?.closest('.workspace-header,.workspace-notes,.bar')){
+    if(tag!=='INPUT'&&tag!=='TEXTAREA'&&!document.activeElement?.closest('.workspace-header,.bar')){
       pcHiddenInput.focus({preventScroll:true});
     }
   }
@@ -1213,8 +1210,7 @@ inputField.addEventListener('keydown',(e)=>{
 // --- Device Mode ---
 function detectMode(){
   if('ontouchstart' in window||navigator.maxTouchPoints>0){
-    var w=window.screen.width,h=window.screen.height;
-    var minDim=Math.min(w,h);
+    const minDim=Math.min(window.innerWidth,window.innerHeight);
     if(minDim>=768) return 'tablet';
     return 'mobile';
   }
@@ -1402,7 +1398,7 @@ window.__xb_getState=function(){
 deviceMode=detectMode();
 applyMode(deviceMode);
 ${workspaceScript}
-const workspace=createWorkspace({getUrl:()=>currentUrl,send:sendMsg,canvas,viewport:viewportEl,getRect:getImgContentRect,resize:resizeCanvas,session:sid});
+const workspace=createWorkspace({getUrl:()=>currentUrl,send:sendMsg});
 connectWS();
 })();
 </script></body></html>`;

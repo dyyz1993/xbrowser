@@ -37,8 +37,8 @@ import type { WaitForHumanResult } from '../../src/human-interaction.js';
 import WebSocket from 'ws';
 
 // ---------------------------------------------------------------------------
-// E2E: viewer browser workspace (toolbar tabs / Go-Back-Forward / annotations /
-// human handoff) — real headless Chromium + isolated loopback HTTP+WS server.
+// E2E: viewer browser workspace (toolbar tabs / Go-Back-Forward / human
+// handoff) — real headless Chromium + isolated loopback HTTP+WS server.
 //
 // Topology (mirrors production: the viewer always runs in the *user's* browser,
 // never inside the session's own context):
@@ -49,7 +49,6 @@ import WebSocket from 'ws';
 
 const outputDir = path.resolve('output/viewer-workspace-e2e');
 const sessionName = `viewer-workspace-e2e-${Date.now()}`;
-const storageKey = `xbrowser.viewer.notes.${sessionName}`;
 
 const ALPHA_HTML = `<!doctype html>
 <html><head><meta charset="utf-8"><title>Alpha Page</title>
@@ -77,10 +76,7 @@ const BETA_HTML = `<!doctype html>
 <style>body{font-family:system-ui;margin:40px;background:#f7f2e8}h1{color:#744210}</style></head>
 <body><h1>Beta</h1><p><a id="to-alpha" href="./alpha.html">back to alpha</a></p></body></html>`;
 
-type NoteRegion = { x: number; y: number; width: number; height: number };
-type StoredNote = { url: string; region: NoteRegion; text: string };
-
-describeE2E('E2E: viewer browser workspace toolbar, tabs and annotations', () => {
+describeE2E('E2E: viewer browser workspace toolbar, tabs and handoff', () => {
   let session: ManagedSession;
   let server: WSServer;
   let httpServer: Server;
@@ -249,27 +245,6 @@ describeE2E('E2E: viewer browser workspace toolbar, tabs and annotations', () =>
     });
   }
 
-  /**
-   * Samples the center pixel of the live canvas. Regression guard for the
-   * notes-drawer resize clearing the picture: the backing store must stay
-   * opaque (alpha 255) and non-black while annotating.
-   */
-  async function sampleCanvasCenter(viewer: Page): Promise<{ a: number; r: number; g: number; b: number }> {
-    return viewer.evaluate<{ a: number; r: number; g: number; b: number }>(() => {
-      const canvas = document.querySelector('#screen') as HTMLCanvasElement | null;
-      if (!canvas || !canvas.width || !canvas.height) return { a: -1, r: -1, g: -1, b: -1 };
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return { a: -2, r: -2, g: -2, b: -2 };
-      const d = ctx.getImageData(Math.floor(canvas.width / 2), Math.floor(canvas.height / 2), 1, 1).data;
-      return { a: d[3], r: d[0], g: d[1], b: d[2] };
-    });
-  }
-
-  function expectOpaqueFrame(sample: { a: number; r: number; g: number; b: number }): void {
-    expect(sample.a).toBe(255);
-    expect(sample.r + sample.g + sample.b).toBeGreaterThan(30);
-  }
-
   beforeAll(async () => {
     process.env.XBROWSER_AUTO_OPEN = 'false';
     fs.mkdirSync(outputDir, { recursive: true });
@@ -393,6 +368,13 @@ describeE2E('E2E: viewer browser workspace toolbar, tabs and annotations', () =>
     );
     fs.writeFileSync(path.join(outputDir, 'toolbar-initial.png'), await viewer.screenshot({ type: 'png' }));
 
+    // Address-submit must not leak the viewer's Enter key to the remote page:
+    // a hash-only navigation keeps the same document, so the fixture's key
+    // counters survive the submit and would catch a forwarded keydown/keyup.
+    await gotoViaAddress(viewer, `${baseUrl}/alpha.html#leak-check`);
+    await waitForAddress(viewer, '#leak-check');
+    expect(await remoteClickCounters()).toEqual({ clicks: 0, button: 0, keysDown: 0, keysUp: 0 });
+
     // Go: address bar → beta
     await gotoViaAddress(viewer, `${baseUrl}/beta.html`);
     await waitForActiveTab(viewer, 'Beta Page');
@@ -480,161 +462,6 @@ describeE2E('E2E: viewer browser workspace toolbar, tabs and annotations', () =>
     await assertNoWorkspaceError(viewer);
     await viewer.close();
   }, 60_000);
-
-  it('annotation drag persists a note and never clicks the actual page target', async () => {
-    const baseUrl = `http://127.0.0.1:${viewerPort}`;
-    const viewer = await openViewer();
-    await waitForStatusText(viewer, '已连接');
-    await waitForActiveTab(viewer, 'Beta Page');
-
-    // Park the session on the click-target fixture page.
-    await gotoViaAddress(viewer, `${baseUrl}/alpha.html`);
-    await waitForActiveTab(viewer, 'Alpha Page');
-    expect(await remoteClickCounters()).toEqual({ clicks: 0, button: 0, keysDown: 0, keysUp: 0 });
-
-    // Address-submit must not leak the viewer's Enter key to the remote page:
-    // a hash-only navigation keeps the same document, so the fixture's key
-    // counters survive the submit and would catch a forwarded keydown/keyup.
-    await gotoViaAddress(viewer, `${baseUrl}/alpha.html#leak-check`);
-    await waitForAddress(viewer, '#leak-check');
-    expect(await remoteClickCounters()).toEqual({ clicks: 0, button: 0, keysDown: 0, keysUp: 0 });
-
-    // Wait for a live frame before annotating (the select button refuses otherwise).
-    await viewer.waitForFunction(
-      () => (document.querySelector('#screen') as HTMLElement | null)?.style.display === 'block',
-      { timeout: 20_000 },
-    );
-
-    // Baseline: the live canvas is showing an opaque frame.
-    const beforeDrawer = await sampleCanvasCenter(viewer);
-    expectOpaqueFrame(beforeDrawer);
-
-    // Open the notes panel and arm the region selection layer.
-    await viewer.locator('#workspace-notes-toggle').click({ timeout: 5_000 });
-    await viewer.waitForFunction(
-      () => !(document.getElementById('workspace-notes') as HTMLElement | null)?.hidden,
-      { timeout: 5_000 },
-    );
-    // The drawer resize must NOT clear the live picture — the annotator still
-    // sees the target they are framing.
-    await viewer.waitForTimeout(400);
-    const afterDrawer = await sampleCanvasCenter(viewer);
-    expectOpaqueFrame(afterDrawer);
-    await viewer.locator('#workspace-select').click({ timeout: 5_000 });
-    await viewer.waitForFunction(
-      () => !document.getElementById('workspace-select-layer')?.hidden,
-      { timeout: 5_000 },
-    );
-    fs.writeFileSync(path.join(outputDir, 'annotation-canvas-live.png'), await viewer.screenshot({ type: 'png' }));
-
-    // Drag a region across the canvas, straight over the big blue button.
-    const rect = await viewer.evaluate<{ x: number; y: number; width: number; height: number }>(() => {
-      const box = document.querySelector('#screen')!.getBoundingClientRect();
-      return { x: box.x, y: box.y, width: box.width, height: box.height };
-    });
-    expect(rect.width).toBeGreaterThan(100);
-    const startX = rect.x + rect.width * 0.25;
-    const startY = rect.y + rect.height * 0.32;
-    const endX = rect.x + rect.width * 0.78;
-    const endY = rect.y + rect.height * 0.72;
-    await viewer.mouse.move(startX, startY);
-    await viewer.mouse.down();
-    await viewer.mouse.move(endX, endY, { steps: 12 });
-    await viewer.mouse.up();
-
-    // The drag opens the note form (it must NOT have reached the page below).
-    await viewer.waitForFunction(
-      () => !document.getElementById('workspace-note-form')?.hidden,
-      { timeout: 5_000 },
-    );
-    // Mid-annotation the live frame is still on screen — opaque, not cleared.
-    expectOpaqueFrame(await sampleCanvasCenter(viewer));
-    fs.writeFileSync(path.join(outputDir, 'annotation-form.png'), await viewer.screenshot({ type: 'png' }));
-
-    // The actual target page stayed untouched — the selection layer swallowed
-    // every pointer/click event that would otherwise be forwarded to it.
-    expect(await remoteClickCounters()).toEqual({ clicks: 0, button: 0, keysDown: 0, keysUp: 0 });
-
-    await viewer.locator('#workspace-note').fill('醒目的蓝色按钮需要换成品牌色', { timeout: 5_000 });
-    await viewer.locator('#workspace-note-form button[type="submit"]').click({ timeout: 5_000 });
-    await viewer.waitForFunction(
-      () => document.querySelectorAll('#workspace-note-list li').length === 1,
-      { timeout: 5_000 },
-    );
-
-    // Stored region is normalized against the canvas.
-    const stored = await viewer.evaluate<Array<StoredNote>>(
-      (key: string) => {
-        try {
-          return JSON.parse(localStorage.getItem(key) || '[]') as StoredNote[];
-        } catch {
-          return [];
-        }
-      },
-      storageKey,
-    );
-    expect(stored).toHaveLength(1);
-    expect(stored[0]!.text).toBe('醒目的蓝色按钮需要换成品牌色');
-    expect(stored[0]!.url).toContain('/alpha.html');
-    expect(stored[0]!.region.x).toBeCloseTo(0.25, 1);
-    expect(stored[0]!.region.y).toBeCloseTo(0.32, 1);
-    expect(stored[0]!.region.width).toBeCloseTo(0.53, 1);
-    expect(stored[0]!.region.height).toBeCloseTo(0.40, 1);
-    // And still nothing was clicked on the remote page.
-    expect(await remoteClickCounters()).toEqual({ clicks: 0, button: 0, keysDown: 0, keysUp: 0 });
-
-    // Control: without the annotation layer the very same canvas area DOES
-    // forward clicks to the page — proving the layer is what isolates it.
-    const center = { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-    await viewer.mouse.click(center.x, center.y);
-    const deadline = Date.now() + 8_000;
-    let after = await remoteClickCounters();
-    while (after.button === 0 && Date.now() < deadline) {
-      await new Promise(resolve => setTimeout(resolve, 200));
-      after = await remoteClickCounters();
-    }
-    expect(after.clicks).toBeGreaterThanOrEqual(1);
-    expect(after.button).toBeGreaterThanOrEqual(1);
-
-    // The note survives a full viewer reload (localStorage persistence).
-    await gotoViewer(viewer, `http://127.0.0.1:${viewerPort}/preview/${sessionName}`);
-    await viewer.waitForSelector('.workspace-tab', { state: 'visible', timeout: 15_000 });
-    // Notes render once the workspace learns the page URL; re-renders can
-    // transiently clear the list right after load, so poll both the DOM and
-    // the persisted storage until the note text shows up again.
-    const reloadDeadline = Date.now() + 20_000;
-    let listedNote = '';
-    let storedAfterReload: Array<StoredNote> = [];
-    for (;;) {
-      listedNote = await viewer.evaluate<string>(
-        () => document.querySelector('#workspace-note-list li')?.textContent || '',
-      );
-      storedAfterReload = await viewer.evaluate<Array<StoredNote>>(
-        (key: string) => {
-          try {
-            return JSON.parse(localStorage.getItem(key) || '[]') as StoredNote[];
-          } catch {
-            return [];
-          }
-        },
-        storageKey,
-      );
-      if (listedNote.includes('醒目的蓝色按钮需要换成品牌色')) break;
-      if (Date.now() > reloadDeadline) {
-        throw new Error(
-          `Note did not re-render after reload; DOM: ${JSON.stringify(listedNote)}, ` +
-          `storage: ${JSON.stringify(storedAfterReload)}`,
-        );
-      }
-      await new Promise(resolve => setTimeout(resolve, 250));
-    }
-    expect(listedNote).toContain('醒目的蓝色按钮需要换成品牌色');
-    expect(storedAfterReload.length).toBeGreaterThanOrEqual(1);
-    fs.writeFileSync(path.join(outputDir, 'annotation-persisted.png'), await viewer.screenshot({ type: 'png' }));
-
-    await assertNoWorkspaceError(viewer);
-    await viewer.close();
-  }, 90_000);
 
   it('late-joining viewer sees the waiting handoff state and resumes via 继续任务', async () => {
     // A real waitForHuman wait on the same session/page the toolbar manages.

@@ -57,7 +57,7 @@ export class NavigationService {
     }
 
     // Navigate
-    const result = await this.options.conn.send<{ errorText?: string; frameId?: string }>(
+    const result = await this.options.conn.send<{ errorText?: string; frameId?: string; loaderId?: string }>(
       'Page.navigate',
       { url, referrer: opts.referer },
       this.options.sessionId,
@@ -65,6 +65,19 @@ export class NavigationService {
 
     if (result.errorText) {
       throw new Error(`Navigation failed: ${result.errorText}`);
+    }
+
+    // Same-document navigation (e.g. a hash change): no new loader commits, so
+    // load-state events never fire — the existing document is already the
+    // result. Waiting for domcontentloaded here would always time out.
+    if (!result.loaderId) {
+      this.options.setUrl(url);
+      return {
+        status: () => 200,
+        ok: () => true,
+        url: () => url,
+        headers: () => ({}) as Record<string, string>,
+      };
     }
 
     // 'commit' = return immediately after navigation without waiting for load
