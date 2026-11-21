@@ -30,7 +30,36 @@ export async function executeChain(
   executeCommand?: (name: string, params: Record<string, unknown>, session: string, opts?: { cdpEndpoint?: string; skipCleanup?: boolean }) => Promise<{ success: boolean; data: unknown; message?: string; tips?: ChainStepResult['tips']; hookOutputs?: HookOutput[] }>
 ): Promise<ChainExecutionResult> {
   const pipelines = parseCommandChain(input, { fileMode: options?.fileMode });
-  const sessionName = options?.sessionName || 'default';
+
+  // #453：`--session X` 写在链内 = 用户意图是全局会话。此前被当作 per-command
+  // 参数静默吞掉，同链命令全部落到 default 会话。这里 quote-aware 地从步里剥出
+  // （splitCommand 的 token 保留引号，仅重建确有剥离的步），提升为链级会话名。
+  let sessionName = options?.sessionName || 'default';
+  for (const pipeline of pipelines) {
+    const cleaned: string[] = [];
+    for (const step of pipeline.pipeline) {
+      const tokens = splitCommand(step);
+      let stripped = false;
+      const kept: string[] = [];
+      for (let i = 0; i < tokens.length; i++) {
+        if (tokens[i] === '--session' && i + 1 < tokens.length) {
+          sessionName = tokens[i + 1];
+          stripped = true;
+          i++;
+          continue;
+        }
+        if (tokens[i].startsWith('--session=')) {
+          sessionName = tokens[i].slice('--session='.length);
+          stripped = true;
+          continue;
+        }
+        kept.push(tokens[i]);
+      }
+      cleaned.push(stripped ? kept.join(' ') : step);
+    }
+    pipeline.pipeline = cleaned;
+  }
+
   const results: ChainStepResult[] = [];
   const totalStart = Date.now();
 
@@ -180,6 +209,48 @@ async function executePluginChainStep(context: PluginChainContext): Promise<Chai
         if (!(key in pluginParams)) pluginParams[key] = value;
       }
     }
+  }
+
+  // #453 会话分裂修复：浏览器态（page/browser scope）插件命令与内置步同语义——
+  // 统一经 forwardPluginExec 转发 daemon 执行。此前插件步在 CLI 进程内跑本地
+  // 会话、内置步经 executor 的 forwardExec 落 daemon 会话，同一条链两个浏览器，
+  // 插件写入的会话状态（cookie/localStorage 注入类）对后续内置步不可见。
+  // daemon 侧（XBROWSER_DAEMON_WORKER=1）与 project scope 保持 in-process；
+  // 转发返回 null/undefined（daemon 不可达契约）时回退本地，与独立调用路径一致。
+  const needsBrowser = cmdEntry.scope === 'page' || cmdEntry.scope === 'browser';
+  if (needsBrowser && !process.env.XBROWSER_DAEMON_WORKER) {
+    const { forwardPluginExec } = await import('../client/daemon-client.js');
+    const userTimeout = typeof pluginParams.timeout === 'number' && pluginParams.timeout > 0
+      ? pluginParams.timeout * 1000 + 30000
+      : undefined;
+    const startFwd = Date.now();
+    const fwd = await forwardPluginExec(
+      `${cmdName}.${subCommand}`,
+      pluginParams,
+      sessionName,
+      undefined,
+      userTimeout,
+    ) as unknown as { success?: boolean; data?: unknown; message?: string; tips?: unknown } | null | undefined;
+    if (fwd != null) {
+      const fwdOk = fwd.success !== false;
+      results.push({
+        command: `${cmdName} ${subCommand}`,
+        raw: cmdStr,
+        success: fwdOk,
+        data: fwd.data ?? null,
+        message: fwd.message,
+        tips: Array.isArray(fwd.tips) ? fwd.tips as ChainStepResult['tips'] : undefined,
+        duration: Date.now() - startFwd,
+      });
+      if (type === 'and' && !fwdOk) {
+        return stoppedChain(false, results, totalStart, results.length, `Command '${cmdName} ${subCommand}' failed (&& chain): ${fwd.message ?? ''}`);
+      }
+      if (type === 'or' && fwdOk) {
+        return stoppedChain(true, results, totalStart, results.length, `Command '${cmdName} ${subCommand}' succeeded (|| chain)`);
+      }
+      return undefined;
+    }
+    // null → daemon 不可达：落到下方 in-process 路径（与 plugin-routing 独立调用一致）
   }
 
   const pluginCtx = {
