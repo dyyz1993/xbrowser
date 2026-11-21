@@ -1,7 +1,6 @@
 import type { Page } from './browser-shim.js';
 import { execFile } from 'child_process';
-import { WSServer } from './websocket-server.js';
-import { ScreencastCapturer } from './screencast.js';
+import type { WSServer } from './websocket-server.js';
 import { CaptchaDetector } from './captcha-detector.js';
 import { WebhookNotifier, type WebhookPayload } from './webhook.js';
 import { getCaptchaConfig } from './config.js';
@@ -25,29 +24,91 @@ export interface WaitForHumanResult {
 }
 
 /**
+ * Payload emitted by `WSServer` on inbound `{"type":"solved"}` messages.
+ *
+ * Shape (confirmed in websocket-server.ts):
+ * `emit('human-solved', { sessionId: string | null, clientId: string })`
+ * where `sessionId` is the solving client's bound session (`null` when the
+ * client never bound to a session).
+ */
+export interface HumanSolvedEvent {
+  sessionId: string | null;
+  clientId: string;
+}
+
+/** Session name used when none is provided. */
+export const DEFAULT_HUMAN_INTERACTION_SESSION = 'default';
+
+/**
+ * Per-WSServer registry of sessions with an in-flight `waitForHuman`.
+ *
+ * Prevents two concurrent waits from sharing a completion signal. Distinct
+ * sessions (or distinct WSServers) are independent slots.
+ */
+const activeWaitsByServer = new WeakMap<WSServer, Map<string, 'starting' | 'waiting'>>();
+
+function acquireWaitSlot(server: WSServer, sessionName: string): boolean {
+  let sessions = activeWaitsByServer.get(server);
+  if (!sessions) {
+    sessions = new Map();
+    activeWaitsByServer.set(server, sessions);
+  }
+  if (sessions.has(sessionName)) return false;
+  sessions.set(sessionName, 'starting');
+  return true;
+}
+
+function releaseWaitSlot(server: WSServer, sessionName: string): void {
+  activeWaitsByServer.get(server)?.delete(sessionName);
+}
+
+/**
+ * Whether a `waitForHuman` wait is currently in flight for a session on a
+ * WSServer. Used by viewer workspace state so late-connecting/reconnecting
+ * panels can show the "waiting for human" handoff state.
+ */
+export function isHumanWaitActive(server: WSServer, sessionName: string): boolean {
+  return activeWaitsByServer.get(server)?.get(sessionName) === 'waiting';
+}
+
+/**
  * Manages human-in-the-loop interactions for CAPTCHA solving and manual intervention.
  *
- * Streams the page via screencast, sends webhook notifications, and waits
- * for either auto-detection of CAPTCHA resolution, manual solving via
- * the preview UI, or timeout.
+ * Each instance is bound to one named session on the WebSocket server.
+ * Streams the session's live page via screencast (headless — the viewer
+ * mirrors the same page over WS, no native headed browser is launched),
+ * sends webhook notifications, and waits for either auto-detection of
+ * CAPTCHA resolution, a solve signal from a viewer bound to *this*
+ * session, or timeout. The WebSocket server streams the active page and
+ * this manager sends handoff notifications to the session's own viewers.
  */
 export class HumanInteractionManager {
   private wsServer: WSServer;
   private page: Page;
-  private capturer: ScreencastCapturer;
+  private sessionName: string;
   private webhook: WebhookNotifier;
   private autoOpen: boolean;
 
-  constructor(wsServer: WSServer, page: Page) {
+  constructor(wsServer: WSServer, page: Page, sessionName?: string) {
     this.wsServer = wsServer;
     this.page = page;
-    this.capturer = new ScreencastCapturer();
+    this.sessionName =
+      sessionName && sessionName.trim() ? sessionName.trim() : DEFAULT_HUMAN_INTERACTION_SESSION;
 
     const cfg = getCaptchaConfig();
     this.webhook = new WebhookNotifier(cfg.notifyUrl);
     this.autoOpen = cfg.autoOpen;
 
-    this.wsServer.registerSession('default', page);
+    this.wsServer.registerSession(this.sessionName, page);
+  }
+
+  /** The named session this manager interacts with. */
+  get session(): string {
+    return this.sessionName;
+  }
+
+  private buildPreviewUrl(): string {
+    return `http://localhost:${this.wsServer.getPort()}/preview/${encodeURIComponent(this.sessionName)}`;
   }
 
   private async sendWebhook(
@@ -58,7 +119,7 @@ export class HumanInteractionManager {
       event,
       timestamp: new Date().toISOString(),
       url: this.page.url(),
-      previewUrl: `http://localhost:${this.wsServer.getPort()}`,
+      previewUrl: this.buildPreviewUrl(),
       ...overrides,
     });
   }
@@ -90,11 +151,16 @@ export class HumanInteractionManager {
   /**
    * Wait for a human to solve a CAPTCHA or complete an interaction.
    *
-   * Starts screencast streaming, sends webhook and broadcast notifications,
-   * then polls for CAPTCHA resolution or waits for a manual solve signal.
+   * Sends session-scoped notifications and waits for CAPTCHA resolution
+   * or a manual solve signal from a viewer bound to this session.
+   *
+   * Only one wait may be in flight per session per WSServer. The wait
+   * slot, listener, and timers are cleaned
+   * up on every exit path (auto-detected / preview / timeout / error).
    *
    * @param options - Configuration for timeout, auto-detection, and reason text.
    * @returns Result indicating whether the CAPTCHA was solved and by what method.
+   * @throws If a wait is already in progress for this session.
    */
   async waitForHuman(options: WaitForHumanOptions = {}): Promise<WaitForHumanResult> {
     const {
@@ -104,110 +170,125 @@ export class HumanInteractionManager {
       detectInterval = 2000,
     } = options;
 
-    const captcha = await CaptchaDetector.detect(this.page);
-    const captchaInfo = captcha.detected ? captcha : undefined;
+    if (!acquireWaitSlot(this.wsServer, this.sessionName)) {
+      throw new Error(
+        `waitForHuman already in progress for session "${this.sessionName}" — only one human-interaction wait per session is allowed`
+      );
+    }
 
-    await this.capturer.startCapture(this.page, 'default', (frame) => {
-      this.wsServer.broadcast({
-        type: 'screenshot',
-        data: {
-          sessionId: frame.sessionId,
-          id: frame.id,
-          timestamp: frame.timestamp,
-          data: frame.data,
-          url: frame.url,
-          viewport: frame.viewport,
-        },
-      });
-    });
-
-    const previewUrl = `http://localhost:${this.wsServer.getPort()}`;
-
-    await this.sendWebhook('captcha-detected', {
-      reason: captchaInfo ? `${captchaInfo.type ?? 'unknown'} CAPTCHA detected` : reason,
-      timeout,
-      targetUrl: this.page.url(),
-    });
-
-    this.wsServer.broadcast({
-      type: 'captcha-detected',
-      sessionId: 'default',
-      url: this.page.url(),
-      reason: captchaInfo ? `${captchaInfo.type ?? 'unknown'} CAPTCHA detected` : reason,
-      timeout,
-    } as Extract<import('./websocket-server.js').WSMessage, { type: 'captcha-detected' }>);
-
-    this.tryAutoOpen(previewUrl);
-
-    console.log('');
-    console.log('\u26A0\uFE0F  \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550');
-    console.log(`\u26A0\uFE0F  ${captchaInfo ? (captchaInfo.type ?? 'UNKNOWN').toUpperCase() + ' CAPTCHA' : 'INTERACTION'} REQUIRED`);
-    console.log(`\u26A0\uFE0F  URL: ${this.page.url()}`);
-    console.log(`\u26A0\uFE0F  `);
-    console.log(`\u26A0\uFE0F  Solve via:`);
-    console.log(`\u26A0\uFE0F    \uD83D\uDCFA Preview: ${previewUrl}`);
-    console.log(`\u26A0\uFE0F    \uD83C\uDF10 Direct:  ${this.page.url()}`);
-    console.log(`\u26A0\uFE0F    \u23ED\uFE0F  Skip`);
-    console.log(`\u26A0\uFE0F    \u274C Abort`);
-    console.log(`\u26A0\uFE0F  `);
-    console.log(`\u26A0\uFE0F  \u23F3 Waiting... (${timeout}s timeout)`);
-    console.log('\u26A0\uFE0F  \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550');
-    console.log('');
-
-    return new Promise<WaitForHumanResult>((resolve) => {
-      let resolved = false;
-      let pollTimer: ReturnType<typeof setInterval> | null = null;
-      let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
-
-      const cleanup = () => {
-        if (pollTimer) clearInterval(pollTimer);
-        if (timeoutTimer) clearTimeout(timeoutTimer);
-        this.wsServer.removeListener('human-solved', onHumanSolved);
-        this.capturer.stopCapture();
-      };
-
-      if (autoDetect && captchaInfo) {
-        pollTimer = setInterval(async () => {
-          if (resolved) return;
-          try {
-            const solved = await CaptchaDetector.isSolved(this.page, captchaInfo.selector);
-            if (solved) {
-              resolved = true;
-              cleanup();
-              this.wsServer.broadcast({ type: 'resolved', sessionId: 'default' });
-              console.log('\u2705 CAPTCHA auto-detected as solved!');
-              this.sendWebhook('captcha-resolved', { reason: 'auto-detected' });
-              resolve({ solved: true, method: 'auto-detected' });
-            }
-          } catch {
-            // ignore detection errors
-          }
-        }, detectInterval);
+    let slotReleased = false;
+    const releaseSlot = (): void => {
+      if (!slotReleased) {
+        slotReleased = true;
+        releaseWaitSlot(this.wsServer, this.sessionName);
       }
+    };
 
-      const onHumanSolved = () => {
-        if (!resolved) {
-          resolved = true;
-          cleanup();
-          this.wsServer.broadcast({ type: 'resolved', sessionId: 'default' });
-          console.log('\u2705 CAPTCHA solved via preview!');
-          this.sendWebhook('captcha-resolved', { reason: 'preview' });
-          resolve({ solved: true, method: 'preview' });
+    try {
+      const captcha = await CaptchaDetector.detect(this.page);
+      const captchaInfo = captcha.detected ? captcha : undefined;
+
+      const previewUrl = this.buildPreviewUrl();
+      const waitReason = captchaInfo ? `${captchaInfo.type ?? 'unknown'} CAPTCHA detected` : reason;
+
+      console.log('');
+      console.log('\u26A0\uFE0F  \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550');
+      console.log(`\u26A0\uFE0F  ${captchaInfo ? (captchaInfo.type ?? 'UNKNOWN').toUpperCase() + ' CAPTCHA' : 'INTERACTION'} REQUIRED (session: ${this.sessionName})`);
+      console.log(`\u26A0\uFE0F  URL: ${this.page.url()}`);
+      console.log(`\u26A0\uFE0F  `);
+      console.log(`\u26A0\uFE0F  Solve via:`);
+      console.log(`\u26A0\uFE0F    \uD83D\uDCFA Preview: ${previewUrl}`);
+      console.log(`\u26A0\uFE0F    \uD83C\uDF10 Direct:  ${this.page.url()}`);
+      console.log(`\u26A0\uFE0F    \u23ED\uFE0F  Skip`);
+      console.log(`\u26A0\uFE0F    \u274C Abort`);
+      console.log(`\u26A0\uFE0F  `);
+      console.log(`\u26A0\uFE0F  \u23F3 Waiting... (${timeout}s timeout)`);
+      console.log('\u26A0\uFE0F  \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550');
+      console.log('');
+
+      return await new Promise<WaitForHumanResult>((resolve) => {
+        let resolved = false;
+        let pollTimer: ReturnType<typeof setInterval> | null = null;
+        let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+
+        const cleanup = () => {
+          if (pollTimer) clearInterval(pollTimer);
+          if (timeoutTimer) clearTimeout(timeoutTimer);
+          this.wsServer.removeListener('human-solved', onHumanSolved);
+          releaseSlot();
+        };
+
+        if (autoDetect && captchaInfo) {
+          pollTimer = setInterval(async () => {
+            if (resolved) return;
+            try {
+              const solved = await CaptchaDetector.isSolved(this.page, captchaInfo.selector);
+              if (solved && !resolved) {
+                resolved = true;
+                cleanup();
+                this.wsServer.broadcastToSession(this.sessionName, {
+                  type: 'resolved',
+                  sessionId: this.sessionName,
+                });
+                console.log('\u2705 CAPTCHA auto-detected as solved!');
+                this.sendWebhook('captcha-resolved', { reason: 'auto-detected' });
+                resolve({ solved: true, method: 'auto-detected' });
+              }
+            } catch {
+              // ignore detection errors
+            }
+          }, detectInterval);
         }
-      };
-      this.wsServer.on('human-solved', onHumanSolved);
 
-      if (timeout > 0) {
-        timeoutTimer = setTimeout(() => {
+        const onHumanSolved = (payload: HumanSolvedEvent) => {
+          // Session-scoped completion: only a viewer bound to this session
+          // may solve this wait. Signals from other sessions (or from
+          // unbound clients, sessionId === null) are ignored.
+          if (!payload || payload.sessionId !== this.sessionName) return;
           if (!resolved) {
             resolved = true;
             cleanup();
-            console.log('\u23F0 Timeout - skipping');
-            this.sendWebhook('captcha-resolved', { reason: 'timeout' });
-            resolve({ solved: false, method: 'timeout' });
+            this.wsServer.broadcastToSession(this.sessionName, {
+              type: 'resolved',
+              sessionId: this.sessionName,
+            });
+            console.log('\u2705 CAPTCHA solved via preview!');
+            this.sendWebhook('captcha-resolved', { reason: 'preview' });
+            resolve({ solved: true, method: 'preview' });
           }
-        }, timeout * 1000);
-      }
-    });
+        };
+        this.wsServer.on('human-solved', onHumanSolved);
+
+        if (timeout > 0) {
+          timeoutTimer = setTimeout(() => {
+            if (!resolved) {
+              resolved = true;
+              cleanup();
+              this.wsServer.broadcastToSession(this.sessionName, {
+                type: 'handoff-timeout',
+                sessionId: this.sessionName,
+              });
+              console.log('\u23F0 Timeout - skipping');
+              this.sendWebhook('captcha-resolved', { reason: 'timeout' });
+              resolve({ solved: false, method: 'timeout' });
+            }
+          }, timeout * 1000);
+        }
+
+        activeWaitsByServer.get(this.wsServer)?.set(this.sessionName, 'waiting');
+        this.wsServer.broadcastToSession(this.sessionName, {
+          type: 'captcha-detected',
+          sessionId: this.sessionName,
+          url: this.page.url(),
+          reason: waitReason,
+          timeout,
+        });
+        void this.sendWebhook('captcha-detected', { reason: waitReason, timeout, targetUrl: this.page.url() });
+        this.tryAutoOpen(previewUrl);
+      });
+    } catch (err) {
+      releaseSlot();
+      throw err;
+    }
   }
 }

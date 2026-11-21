@@ -15,6 +15,15 @@ export interface ExecutionResult {
   error?: { code: string; level: string };
 }
 
+export interface ChainOptions {
+  cdpEndpoint?: string;
+  sessionName?: string;
+  fileMode?: boolean;
+  frame?: string;
+  fixedSession?: boolean;
+  handoff?: () => Promise<boolean>;
+}
+
 export interface ChainStepResult {
   command: string;
   raw: string;

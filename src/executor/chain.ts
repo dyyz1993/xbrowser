@@ -1,6 +1,5 @@
 import {
   fail,
-  ok,
   TipCollector,
   normalizeTips,
   unquote,
@@ -22,11 +21,12 @@ import { loadHooks } from '../hooks/loader.js';
 import { parsePluginParams } from '../utils/plugin-params.js';
 import { errMsg } from '../utils/error.js';
 import { getPluginStorage, recordArchive, tipsToMessages } from './foundation.js';
+import type { ChainOptions } from './types.js';
 import type { ChainExecutionResult, ChainStepResult, HookOutput } from './types.js';
 
 export async function executeChain(
   input: string,
-  options?: { cdpEndpoint?: string; sessionName?: string; fileMode?: boolean; frame?: string },
+  options?: ChainOptions,
   executeCommand?: (name: string, params: Record<string, unknown>, session: string, opts?: { cdpEndpoint?: string; skipCleanup?: boolean }) => Promise<{ success: boolean; data: unknown; message?: string; tips?: ChainStepResult['tips']; hookOutputs?: HookOutput[] }>
 ): Promise<ChainExecutionResult> {
   const pipelines = parseCommandChain(input, { fileMode: options?.fileMode });
@@ -42,6 +42,9 @@ export async function executeChain(
       let stripped = false;
       const kept: string[] = [];
       for (let i = 0; i < tokens.length; i++) {
+        if (options?.fixedSession && (tokens[i] === '--session' || tokens[i].startsWith('--session='))) {
+          throw new Error('Set the session on the run, outside the command chain');
+        }
         if (tokens[i] === '--session' && i + 1 < tokens.length) {
           sessionName = tokens[i + 1];
           stripped = true;
@@ -88,6 +91,14 @@ export async function executeChain(
         if (parts.length === 0) continue;
         const cmdName = parts[0];
         const cmdArgs = parts.slice(1);
+        if (options?.handoff && cmdName === 'handoff' && cmdArgs.length === 0) {
+          const started = Date.now();
+          const solved = await options.handoff();
+          const message = solved ? 'Human handoff completed' : 'Human handoff timed out';
+          results.push({ command: cmdName, raw: cmdStr, success: solved, data: null, message, duration: Date.now() - started });
+          if (!solved || type === 'or') return stoppedChain(solved, results, totalStart, results.length, message);
+          continue;
+        }
 
         const loader = await getPluginLoader();
         const internalLoader = loader.getCore().loader;
@@ -320,12 +331,14 @@ async function executePluginChainStep(context: PluginChainContext): Promise<Chai
       }
       if (outputs.length > 0) hookOutputs = outputs;
     }
-    const data = raw?.data ?? raw;
+    const success = raw?.success !== false;
+    const data = raw?.data ?? (success ? raw : null);
+    const message = success ? undefined : (raw.message ?? 'Plugin command failed');
     recordArchive(session.id, sessionName, {
       step: results.length,
       command: `${cmdName} ${subCommand}`,
       params: pluginParams,
-      result: { success: true, data, tips: tipsToMessages(raw?.tips) },
+      result: { success, data, message, tips: tipsToMessages(raw?.tips) },
       toolCalls: [],
       duration,
       timestamp: start,
@@ -333,11 +346,15 @@ async function executePluginChainStep(context: PluginChainContext): Promise<Chai
     results.push({
       command: `${cmdName} ${subCommand}`,
       raw: cmdStr,
-      ...ok(data),
+      success,
+      data,
+      message,
+      tips: normalizeTips(raw?.tips),
       duration,
       ...(hookOutputs ? { hookOutputs } : {}),
     });
-    if (type === 'or') return stoppedChain(true, results, totalStart, results.length, `Command '${cmdName} ${subCommand}' succeeded (|| chain)`);
+    if (!success && type === 'and') return stoppedChain(false, results, totalStart, results.length, message!);
+    if (success && type === 'or') return stoppedChain(true, results, totalStart, results.length, `Command '${cmdName} ${subCommand}' succeeded (|| chain)`);
   } catch (error) {
     const duration = Date.now() - start;
     const message = errMsg(error);

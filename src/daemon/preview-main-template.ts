@@ -1,8 +1,12 @@
+import { workspaceHeader, workspaceScript, workspaceStyle } from './preview-workspace.js';
+
 export function previewHTML(sessionId: string, _host: string): string {
+  const safeTitle = sessionId.replace(/[&<>]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[char]!);
+  const sessionLiteral = JSON.stringify(sessionId).replace(/</g, '\\u003c');
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>xbrowser — ${sessionId}</title>
+<title>xbrowser — ${safeTitle}</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{height:100%;overflow:hidden;background:#1a1a2e;color:#eee;font-family:system-ui,-apple-system,sans-serif}
@@ -68,11 +72,14 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
 .view-tab span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .view-tab.active{background:#0f3460;color:#cde;font-weight:600}
 .view-tab:active{background:#1a5276}
+${workspaceStyle}
 </style></head><body>
+${workspaceHeader}
 <div class="bar">
   <span class="dot" id="status"></span>
   <span class="url" id="url">connecting...</span>
   <span class="conn" id="conn"></span>
+  <button type="button" class="mode-btn" id="handoff-done" title="继续暂停的任务" hidden>继续任务</button>
   <button class="mode-btn" id="mode-btn" title="Switch mode (Mobile/Tablet/PC)">📱</button>
   <div id="qualityBadge" class="quality-badge quality-static" style="font-size:10px;padding:2px 8px;border-radius:10px;background:#556;color:#eee;white-space:nowrap;flex-shrink:0">static</div>
   <button id="stats-btn" style="font-size:11px;padding:2px 8px;border-radius:10px;background:#0f3460;color:#8af;border:none;cursor:pointer;flex-shrink:0">📊</button>
@@ -104,9 +111,11 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
   <div>Uptime: <span id="stat-uptime" style="color:#8af">0s</span></div>
 </div>
 <div class="view-tabs" id="view-tabs"></div>
+<div class="workspace-body">
 <div class="viewport" id="viewport">
   <canvas id="screen"></canvas>
   <div class="waiting" id="wait">Waiting for screencast...</div>
+</div>
 </div>
 <div class="toolbar" id="toolbar">
   <button class="toolbar-btn" data-key="Tab">Tab</button>
@@ -157,7 +166,7 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
 <div class="cursor-label" id="cursor-label"></div>
 <script>
 (function(){
-const sid='${sessionId}';
+const sid=${sessionLiteral};
 const PROTO=location.protocol==='https:'?'wss:':'ws:';
 let ws=null;
 let connected=false;
@@ -181,7 +190,7 @@ let statEl=null;
 let lastHoverSent=0;
 
 const $=id=>document.getElementById(id);
-const canvas=$('screen'),ctx=canvas.getContext('2d');wait=$('wait'),dot=$('status'),urlEl=$('url'),connEl=$('conn');
+const canvas=$('screen'),ctx=canvas.getContext('2d'),wait=$('wait'),dot=$('status'),urlEl=$('url'),connEl=$('conn');
 const viewportEl=$('viewport'),cursorEl=$('cursor'),cursorLabelEl=$('cursor-label');
 const touchpadEl=$('touchpad'),toolbarEl=$('toolbar');
 const inputPanel=$('input-panel'),inputField=$('input-field'),inputLabel=$('input-label');
@@ -327,28 +336,20 @@ function resizeCanvas(){
   const box=viewportEl.getBoundingClientRect();
   const bw=box.width,bh=box.height;
   if(!bw||!bh||!remoteViewport.width||!remoteViewport.height) return;
-  const vpAspect=remoteViewport.width/remoteViewport.height;
-  // Fit the remote viewport inside the available box without cropping:
-  // pick the scale that keeps both dimensions within bounds.
-  const scaleByWidth=bw/remoteViewport.width;
-  const scaleByHeight=bh/remoteViewport.height;
-  const scale=Math.min(scaleByWidth,scaleByHeight);
-  const cw=remoteViewport.width*scale;
-  const ch=remoteViewport.height*scale;
-  if(canvas.width!==Math.round(cw)||canvas.height!==Math.round(ch)){
-    canvas.width=Math.round(cw);
-    canvas.height=Math.round(ch);
-  }
-  canvas.style.width=cw+'px';
-  canvas.style.height=ch+'px';
+  // Keep the last frame in the backing canvas when the notes panel or
+  // window changes the available display size.
+  const scale=Math.min(bw/remoteViewport.width,bh/remoteViewport.height);
+  canvas.style.width=(remoteViewport.width*scale)+'px';
+  canvas.style.height=(remoteViewport.height*scale)+'px';
 }
 window.addEventListener('resize',resizeCanvas);
 resizeCanvas();
 
 function drawFrame(bitmap){
-   const cw=canvas.width,ch=canvas.height;
-   if(!cw||!ch) return;
-   ctx.drawImage(bitmap,0,0,cw,ch);
+   const cw=bitmap.width,ch=bitmap.height;
+   if(canvas.width!==cw) canvas.width=cw;
+   if(canvas.height!==ch) canvas.height=ch;
+   ctx.drawImage(bitmap,0,0);
     if(activeViewId==='main'&&!viewSwitching){
      if(!fullPageSnapshot) fullPageSnapshot=document.createElement('canvas');
      if(fullPageSnapshot.width!==cw||fullPageSnapshot.height!==ch){
@@ -365,6 +366,7 @@ function connectWS(){
     connected=true;
     dot.className='dot ok';
     connEl.textContent='WS';
+    workspace.open();
     if(deviceMode==='desktop') createPCKeyboard();
     checkFocus();
     // Apply crop from URL params (?crop=x,y,w,h or ?selector=.cls)
@@ -377,6 +379,7 @@ function connectWS(){
     try{
       if(typeof e.data==='string'){
         var _m=JSON.parse(e.data);
+        if(workspace.message(_m)) return;
         if(_m.type==='views_update'){
           updateViewTabs(_m.views);
           return;
@@ -429,6 +432,7 @@ function connectWS(){
             currentUrl=header.data.url;
             urlEl.textContent=currentUrl;
           }
+          workspace.frame();
           if(header.data.streamState) updateQualityBadge(header.data.streamState,header.data.fps);
         }
         return;
@@ -452,6 +456,7 @@ function connectWS(){
           currentUrl=m.data.url;
           urlEl.textContent=currentUrl;
         }
+        workspace.frame();
       }else if(m.type==='error'&&m.data.code==='SESSION_NOT_FOUND'){
         dot.className='dot';
         connEl.textContent='ERR';
@@ -464,7 +469,10 @@ function connectWS(){
         },3000);
       }else if(m.type==='status'){
         connEl.textContent=m.data.status==='connected'?'OK':'...';
-        if(m.data.message) urlEl.textContent=m.data.message;
+        if(m.data.message){
+          urlEl.textContent=m.data.message;
+          if(m.data.status==='connected'&&m.data.sessionId===sid) workspace.bound();
+        }
         if(m.data.viewport){
           if(viewSwitching){
             remoteViewport=m.data.viewport;
@@ -481,6 +489,7 @@ function connectWS(){
       }else if(m.type==='navigation'){
         currentUrl=m.url||'';
         urlEl.textContent=currentUrl;
+        workspace.frame();
       }else if(m.type==='input_focused'){
         if(suppressFocus) return;
         currentFocusedSelector=m.selector||'';
@@ -538,6 +547,7 @@ function connectWS(){
     dot.className='dot';
     connEl.textContent='';
     urlEl.textContent='disconnected';
+    workspace.close();
     wait.style.display='block';
     canvas.style.display='none';
       if(originalViewport){remoteViewport=originalViewport;originalViewport=null;viewportLocked=false;}
@@ -666,6 +676,8 @@ function sendMsg(obj){
     statBytesSent+=data.length;
   }
 }
+
+$('handoff-done').addEventListener('click',()=>sendMsg({type:'solved'}));
 
 function parseFocusHash(){
   var h=location.hash;
@@ -845,6 +857,7 @@ var _pcKBInit=false;
 var _pcComposing=false;
 var pcHiddenInput=null;
 var pcLastInputValue='';
+const pcForwardedKeys=new Set();
 function createPCKeyboard(){
   if(_pcKBInit) return;
   _pcKBInit=true;
@@ -873,6 +886,7 @@ function createPCKeyboard(){
   });
   document.addEventListener('keydown',function(e){
     if(deviceMode!=='desktop') return;
+    if(e.target instanceof Element && e.target.closest('.workspace-header,.bar')) return;
     if(e.isComposing||_pcComposing) return;
     var key=e.key;
     if(!key) return;
@@ -885,6 +899,7 @@ function createPCKeyboard(){
     if(!isControlKey&&(tag==='INPUT'||tag==='TEXTAREA')) return;
 
     e.preventDefault();
+    pcForwardedKeys.add(e.code||key);
     sendMsg({type:'input_keyboard',action:'down',key:key});
     if(key.length===1){
       sendMsg({type:'input_insert_text',text:key});
@@ -892,15 +907,8 @@ function createPCKeyboard(){
     sendUserActivity();
   });
   document.addEventListener('keyup',function(e){
-    if(deviceMode!=='desktop') return;
-    if(e.isComposing||_pcComposing) return;
-    var key=e.key;
-    if(!key) return;
-
-    var isControlKey=key.length>1;
-    var tag=e.target&&e.target.tagName;
-    if(!isControlKey&&(tag==='INPUT'||tag==='TEXTAREA')) return;
-
+    const key=e.key;
+    if(!key||!pcForwardedKeys.delete(e.code||key)) return;
     e.preventDefault();
     sendMsg({type:'input_keyboard',action:'up',key:key});
     sendUserActivity();
@@ -910,7 +918,7 @@ function removePCKeyboard(){}
 function pcFocusHiddenInput(){
   if(deviceMode==='desktop'&&pcHiddenInput&&document.activeElement!==pcHiddenInput){
     var tag=document.activeElement&&document.activeElement.tagName;
-    if(tag!=='INPUT'&&tag!=='TEXTAREA'){
+    if(tag!=='INPUT'&&tag!=='TEXTAREA'&&!document.activeElement?.closest('.workspace-header,.bar')){
       pcHiddenInput.focus({preventScroll:true});
     }
   }
@@ -1202,8 +1210,7 @@ inputField.addEventListener('keydown',(e)=>{
 // --- Device Mode ---
 function detectMode(){
   if('ontouchstart' in window||navigator.maxTouchPoints>0){
-    var w=window.screen.width,h=window.screen.height;
-    var minDim=Math.min(w,h);
+    const minDim=Math.min(window.innerWidth,window.innerHeight);
     if(minDim>=768) return 'tablet';
     return 'mobile';
   }
@@ -1390,6 +1397,8 @@ window.__xb_getState=function(){
 // --- Init ---
 deviceMode=detectMode();
 applyMode(deviceMode);
+${workspaceScript}
+const workspace=createWorkspace({getUrl:()=>currentUrl,send:sendMsg});
 connectWS();
 })();
 </script></body></html>`;

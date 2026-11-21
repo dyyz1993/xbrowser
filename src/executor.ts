@@ -35,6 +35,7 @@ import {
   tipsToMessages,
 } from './executor/foundation.js';
 import { executeChain as executeChainImpl } from './executor/chain.js';
+import type { ChainOptions } from './executor/types.js';
 import type {
   ChainExecutionResult,
   ChainStepResult,
@@ -493,7 +494,7 @@ export async function executeCommand(
 
 export async function executeChain(
   input: string,
-  options?: { cdpEndpoint?: string; sessionName?: string; fileMode?: boolean; frame?: string }
+  options?: ChainOptions
 ): Promise<ChainExecutionResult> {
   return executeChainImpl(input, options, executeCommand);
 }

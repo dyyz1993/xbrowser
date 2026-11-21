@@ -32,6 +32,32 @@ export async function handleSession(
   const sub = args[0];
 
   switch (sub) {
+    case 'handoff': {
+      const { handleViewer } = await import('./viewer-routes.js');
+      await handleViewer([], { ...options, session: args[1] ?? options.session }, mode, _cdpEndpoint);
+      break;
+    }
+    case 'save':
+    case 'restore': {
+      const name = args[1] || (options.session as string) || process.env.XBROWSER_SESSION || 'default';
+      try {
+        const { forwardSessionState } = await import('../client/daemon-client.js');
+        const data = await forwardSessionState(sub, name);
+        outputEnvelope({ success: true, data }, { command: `session ${sub}` }, mode);
+      } catch (error) {
+        outputEnvelope({ success: false, data: null, message: error instanceof Error ? error.message : String(error) }, { command: `session ${sub}` }, mode);
+        process.exitCode = 1;
+      }
+      break;
+    }
+    case 'errors': {
+      const { listMistakes } = await import('../lib/mistake-ledger.js');
+      const errors = listMistakes().map(({ category, occurrences, constrained }) => ({
+        category, command: occurrences.at(-1)?.command, count: occurrences.length, constrained,
+      }));
+      outputEnvelope({ success: true, data: { errors } }, { command: 'session errors' }, mode);
+      break;
+    }
     case 'close': {
       if (options.all) {
         // Close all sessions (like kill-all but without stopping daemon)

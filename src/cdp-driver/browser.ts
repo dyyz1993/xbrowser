@@ -17,7 +17,6 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { CDPConnection } from './connection.js';
 import { XBContextImpl } from './context.js';
-import { XBPageImpl } from './page.js';
 import { errMsg } from '../utils/error.js';
 import type { XBBrowser, XBContext, XBContextOptions } from './types.js';
 import type { ChildProcess } from 'node:child_process';
@@ -379,15 +378,9 @@ export class XBBrowserImpl implements XBBrowser {
       const context = new XBContextImpl(this.conn, ctxId, this, {});
 
       for (const p of pages) {
-        try {
-          const sessionId = await this._attachToTarget(p.targetId);
-          const page = new XBPageImpl(this.conn, sessionId, p.targetId, context, this);
-          await page._init();
-          context._addDiscoveredPage(page);
-        } catch {
-          // Attach can fail (e.g. target already attached to another client).
-          // Skip it; we still register the context for future newPage() calls.
-        }
+        // 注册表去重：显式 attach 的回显事件 / auto-attach 补附着会并发建
+        // wrapper，_attachExistingPage 内部同步预约保证同一 target 只有一个
+        await context._attachExistingPage(p.targetId).catch(() => null);
       }
 
       this._contexts.set(ctxId, { contextId: ctxId, context });

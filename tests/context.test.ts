@@ -89,9 +89,9 @@ describe('context', () => {
       await expect(ctx.waitForHuman!()).rejects.toThrow('waitForHuman requires an active page');
     });
 
-    it('should call HumanInteractionManager with wsServer and page', async () => {
+    it('should call HumanInteractionManager with wsServer, page, and named session', async () => {
       const mockPage = {};
-      const ctx = makeCtx({ page: mockPage });
+      const ctx = makeCtx({ page: mockPage, sessionId: 'my-sess' });
       const mockServer = {};
       const mockGetOrCreate = vi.fn().mockResolvedValue(mockServer);
       const mockWaitForHuman = vi.fn().mockResolvedValue({ solved: true, method: 'auto-detected' });
@@ -101,9 +101,22 @@ describe('context', () => {
       const result = await ctx.waitForHuman!({ reason: 'captcha' });
 
       expect(mockGetOrCreate).toHaveBeenCalledWith(ctx.browserContext);
-      expect(mockHumanInteractionManager).toHaveBeenCalledWith(mockServer, mockPage);
+      expect(mockHumanInteractionManager).toHaveBeenCalledWith(mockServer, mockPage, 'my-sess');
       expect(mockWaitForHuman).toHaveBeenCalledWith({ reason: 'captcha' });
       expect(result).toEqual({ solved: true, method: 'auto-detected' });
+    });
+
+    it('should pass undefined sessionId so the manager falls back to the default session', async () => {
+      const mockPage = {};
+      const ctx = makeCtx({ page: mockPage });
+      const mockGetOrCreate = vi.fn().mockResolvedValue({});
+      const mockWaitForHuman = vi.fn().mockResolvedValue({ solved: true, method: 'manual' });
+      mockHumanInteractionManager.mockImplementation(() => ({ waitForHuman: mockWaitForHuman }));
+
+      attachWaitForHuman(ctx as any, mockGetOrCreate);
+      await ctx.waitForHuman!();
+
+      expect(mockHumanInteractionManager).toHaveBeenCalledWith({}, mockPage, undefined);
     });
   });
 

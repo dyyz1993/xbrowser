@@ -19,7 +19,6 @@ export class NavigationService {
     evaluate<T>(script: string): Promise<T>;
     isClosed(): boolean;
     setUrl(url: string): void;
-    currentUrl(): string;
   }) {}
 
   async goto(
@@ -58,7 +57,7 @@ export class NavigationService {
     }
 
     // Navigate
-    const result = await this.options.conn.send<{ errorText?: string; frameId?: string }>(
+    const result = await this.options.conn.send<{ errorText?: string; frameId?: string; loaderId?: string }>(
       'Page.navigate',
       { url, referrer: opts.referer },
       this.options.sessionId,
@@ -66,6 +65,19 @@ export class NavigationService {
 
     if (result.errorText) {
       throw new Error(`Navigation failed: ${result.errorText}`);
+    }
+
+    // Same-document navigation (e.g. a hash change): no new loader commits, so
+    // load-state events never fire — the existing document is already the
+    // result. Waiting for domcontentloaded here would always time out.
+    if (!result.loaderId) {
+      this.options.setUrl(url);
+      return {
+        status: () => 200,
+        ok: () => true,
+        url: () => url,
+        headers: () => ({}) as Record<string, string>,
+      };
     }
 
     // 'commit' = return immediately after navigation without waiting for load
@@ -97,54 +109,49 @@ export class NavigationService {
   }
 
   async goBack(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
-    // Use CDP Page.getNavigationHistory to find the previous entry,
-    // then navigate directly via Page.navigate (reliable context refresh).
-    try {
-      const navHistory = await this.options.conn.send<{
-        entries: Array<{ url: string }>;
-        currentIndex: number;
-      }>('Page.getNavigationHistory', undefined, this.options.sessionId);
-
-      if (navHistory.currentIndex > 0) {
-        const prevUrl = navHistory.entries[navHistory.currentIndex - 1]?.url;
-        if (prevUrl && prevUrl !== 'about:blank') {
-          await this.options.conn.send('Page.navigate', { url: prevUrl }, this.options.sessionId);
-          await this.options.waitForLoadState(opts.waitUntil ?? 'domcontentloaded', opts.timeout ?? 10000).catch(() => {});
-          this.options.setUrl(prevUrl);
-          return;
-        }
-      }
-    } catch {
-      // Page.getNavigationHistory not available — fall through
-    }
-    // Fallback: history.back() with long wait
-    await this.options.evaluate('() => history.back()');
-    await this.options.waitForTimeout(3000);
-    this.options.setUrl(await this.options.evaluate<string>('location.href').catch(() => this.options.currentUrl()));
+    await this.traverseHistory(-1, opts);
   }
 
   async goForward(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {
-    try {
-      const navHistory = await this.options.conn.send<{
-        entries: Array<{ url: string }>;
-        currentIndex: number;
-      }>('Page.getNavigationHistory', undefined, this.options.sessionId);
+    await this.traverseHistory(1, opts);
+  }
 
-      if (navHistory.currentIndex < navHistory.entries.length - 1) {
-        const nextUrl = navHistory.entries[navHistory.currentIndex + 1]?.url;
-        if (nextUrl && nextUrl !== 'about:blank') {
-          await this.options.conn.send('Page.navigate', { url: nextUrl }, this.options.sessionId);
-          await this.options.waitForLoadState(opts.waitUntil ?? 'domcontentloaded', opts.timeout ?? 10000).catch(() => {});
-          this.options.setUrl(nextUrl);
+  private async traverseHistory(
+    offset: -1 | 1,
+    { timeout = 10_000, waitUntil = 'domcontentloaded' }: { timeout?: number; waitUntil?: WaitUntilState },
+  ): Promise<void> {
+    if (this.options.isClosed()) throw new Error('Page is closed');
+    const { conn, sessionId } = this.options;
+    const getHistory = () => conn.send<{ entries: Array<{ id: number; url: string }>; currentIndex: number }>(
+      'Page.getNavigationHistory', undefined, sessionId,
+    );
+    const history = await getHistory();
+    const entry = history.entries[history.currentIndex + offset];
+    if (!entry) return;
+
+    // Navigating to the URL would add a new entry and discard forward history.
+    await conn.send('Page.navigateToHistoryEntry', { entryId: entry.id }, sessionId);
+    const deadline = Date.now() + timeout;
+    do {
+      const updated = await getHistory();
+      if (updated.entries[updated.currentIndex]?.id === entry.id) {
+        // Same-document and cached history entries can commit without a fresh load event.
+        const document = await this.options.evaluate<{ url: string; ready: string }>(
+          '({ url: location.href, ready: document.readyState })',
+        ).catch(() => null);
+        if (document?.url === updated.entries[updated.currentIndex].url && (
+          waitUntil === 'commit' || (waitUntil === 'load' ? document.ready === 'complete' : document.ready !== 'loading')
+        )) {
+          this.options.setUrl(document.url);
+          if (waitUntil === 'networkidle') {
+            await this.options.waitForLoadState(waitUntil, Math.max(0, deadline - Date.now()));
+          }
           return;
         }
       }
-    } catch {
-      // Page.getNavigationHistory not available — fall through
-    }
-    await this.options.evaluate('() => history.forward()');
-    await this.options.waitForTimeout(3000);
-    this.options.setUrl(await this.options.evaluate<string>('location.href').catch(() => this.options.currentUrl()));
+      await this.options.waitForTimeout(50);
+    } while (Date.now() < deadline);
+    throw new Error(`History navigation timed out after ${timeout}ms`);
   }
 
   async reload(opts: { timeout?: number; waitUntil?: WaitUntilState } = {}): Promise<void> {

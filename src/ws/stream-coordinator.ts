@@ -13,6 +13,24 @@ interface CropEntry {
 }
 
 /**
+ * Per-session last-frame cache. Multiple sessions can stream concurrently,
+ * so the cached frame, its viewport, and the crop applied at replay time must
+ * all be keyed by sessionId — a global "last frame" would let one session's
+ * viewer receive another session's pixels via `replayLastFrame`.
+ */
+interface SessionFrameCacheEntry {
+  /** Raw (pre-crop) source frame, base64 — written on every captured frame. */
+  uncroppedData: string | null;
+  uncroppedViewport: { width: number; height: number } | null;
+  /** Last frame handed to processAndBroadcast for this session. */
+  data: string | null;
+  viewport: { width: number; height: number } | null;
+  /** Monotonic update sequence — identifies the most recently touched entry
+   * for the legacy no-sessionId `getLastFrameViewport()` fallback. */
+  seq: number;
+}
+
+/**
  * Coordinates screencast capture, frame processing, and stream-state
  * management for all active sessions.
  *
@@ -22,14 +40,12 @@ interface CropEntry {
  * the WSServer).
  */
 export class StreamCoordinator {
-  private lastFrameData: string | null = null;
-  private lastFrameViewport: { width: number; height: number } | null = null;
-  private lastUncroppedFrameData: string | null = null;
-  private lastUncroppedFrameViewport: { width: number; height: number } | null = null;
   private readonly stateManager = new StreamStateManager();
   private readonly frameRateController = new FrameRateController();
   private readonly frameProcessor = new FrameProcessor();
   private readonly sessionCrops = new Map<string, CropEntry>();
+  private readonly sessionFrames = new Map<string, SessionFrameCacheEntry>();
+  private frameCacheSeq = 0;
 
   constructor(private readonly sink: BroadcastSink) {
     this.stateManager.setStateChangeCallback((newState: StreamState) => {
@@ -41,8 +57,17 @@ export class StreamCoordinator {
   // Public accessors
   // -----------------------------------------------------------------------
 
-  getLastFrameViewport(): { width: number; height: number } | null {
-    return this.lastFrameViewport;
+  /**
+   * Cached viewport for a session's last frame. When `sessionId` is omitted
+   * (legacy callers), falls back to the most recently updated session's
+   * viewport so old call sites keep behaving like the former global cache.
+   */
+  getLastFrameViewport(sessionId?: string): { width: number; height: number } | null {
+    const entry = sessionId !== undefined
+      ? this.sessionFrames.get(sessionId)
+      : this.latestFrameCache();
+    if (!entry) return null;
+    return entry.uncroppedViewport ?? entry.viewport ?? null;
   }
 
   getCrop(sessionId: string): CropEntry | undefined {
@@ -67,12 +92,27 @@ export class StreamCoordinator {
     this.frameRateController.reset();
   }
 
-  /** Clear cached last-frame data. */
-  clearLastFrame(): void {
-    this.lastFrameData = null;
-    this.lastFrameViewport = null;
-    this.lastUncroppedFrameData = null;
-    this.lastUncroppedFrameViewport = null;
+  /**
+   * Clear cached last-frame data. With `sessionId`, only that session's cache
+   * is dropped (other concurrent sessions keep theirs). Without it (legacy
+   * callers), every session's cache is cleared — same as the old global clear.
+   */
+  clearLastFrame(sessionId?: string): void {
+    if (sessionId === undefined) {
+      this.sessionFrames.clear();
+      return;
+    }
+    this.sessionFrames.delete(sessionId);
+  }
+
+  /**
+   * Full teardown of per-session stream state (last-frame cache + crop).
+   * Must be called when a session unregisters so a later session reusing the
+   * same id can never replay the previous occupant's stale frame.
+   */
+  releaseSession(sessionId: string): void {
+    this.sessionFrames.delete(sessionId);
+    this.sessionCrops.delete(sessionId);
   }
 
   // -----------------------------------------------------------------------
@@ -92,8 +132,10 @@ export class StreamCoordinator {
       resetStaticSnapshotTimer();
       (async () => {
         const data = frame.data.toString('base64');
-        this.lastUncroppedFrameData = data;
-        this.lastUncroppedFrameViewport = frame.viewport;
+        const cache = this.getOrCreateFrameCache(sessionId);
+        cache.uncroppedData = data;
+        cache.uncroppedViewport = frame.viewport;
+        this.touchFrameCache(cache);
 
         this.stateManager.onFrameReceived();
         const config = this.stateManager.getConfig();
@@ -132,8 +174,10 @@ export class StreamCoordinator {
 
     const screenshot = await page.screenshot({ type: 'jpeg', quality: 100 });
     const data = screenshot.toString('base64');
-    this.lastUncroppedFrameData = data;
-    this.lastUncroppedFrameViewport = viewport;
+    const cache = this.getOrCreateFrameCache(sessionId);
+    cache.uncroppedData = data;
+    cache.uncroppedViewport = viewport;
+    this.touchFrameCache(cache);
 
     await this.processAndBroadcast(
       data,
@@ -147,15 +191,19 @@ export class StreamCoordinator {
   }
 
   /**
-   * Process and broadcast the current last frame for a session (used for
-   * replay and crop changes).
+   * Process and broadcast the cached last frame for a session (used for
+   * replay and crop changes). Strictly per-session: a session with no cached
+   * frame of its own replays nothing — it must never fall back to another
+   * session's frame.
    */
   async replayLastFrame(sessionId: string): Promise<void> {
+    const entry = this.sessionFrames.get(sessionId);
+    if (!entry) return;
     // Always replay the uncropped source. Keeping this cache separate from
     // processed frames makes that invariant explicit and prevents a future
     // capture optimization from accidentally replaying a crop as a crop.
-    const data = this.lastUncroppedFrameData ?? this.lastFrameData;
-    const viewport = this.lastUncroppedFrameViewport ?? this.lastFrameViewport;
+    const data = entry.uncroppedData ?? entry.data;
+    const viewport = entry.uncroppedViewport ?? entry.viewport;
     if (!data || !viewport) return;
     await this.processAndBroadcast(
       data,
@@ -177,7 +225,7 @@ export class StreamCoordinator {
   // -----------------------------------------------------------------------
 
   private async handleStateChange(_newState: StreamState): Promise<void> {
-    if (!this.lastFrameData || !this.lastFrameViewport) return;
+    if (this.sessionFrames.size === 0) return;
     // State-change frames are broadcast to all sessions that have clients.
     // The actual iteration is delegated to the sink via a helper, but we
     // need per-session crop info, so we iterate here.
@@ -253,8 +301,36 @@ export class StreamCoordinator {
     const headerLen = Buffer.alloc(4);
     headerLen.writeUInt32BE(header.length, 0);
     const payload = Buffer.concat([headerLen, header, processedBuffer]);
-    this.lastFrameData = frameData;
-    this.lastFrameViewport = frameViewport;
+    const cache = this.getOrCreateFrameCache(sessionId);
+    cache.data = frameData;
+    cache.viewport = frameViewport;
+    this.touchFrameCache(cache);
     this.sink.broadcastBinaryToSession(sessionId, payload);
+  }
+
+  // -----------------------------------------------------------------------
+  // Per-session frame-cache helpers
+  // -----------------------------------------------------------------------
+
+  private getOrCreateFrameCache(sessionId: string): SessionFrameCacheEntry {
+    let entry = this.sessionFrames.get(sessionId);
+    if (!entry) {
+      entry = { uncroppedData: null, uncroppedViewport: null, data: null, viewport: null, seq: 0 };
+      this.sessionFrames.set(sessionId, entry);
+    }
+    return entry;
+  }
+
+  private touchFrameCache(entry: SessionFrameCacheEntry): void {
+    entry.seq = ++this.frameCacheSeq;
+  }
+
+  /** Most recently updated entry — only used by the legacy no-arg fallback. */
+  private latestFrameCache(): SessionFrameCacheEntry | undefined {
+    let latest: SessionFrameCacheEntry | undefined;
+    for (const entry of this.sessionFrames.values()) {
+      if (!latest || entry.seq > latest.seq) latest = entry;
+    }
+    return latest;
   }
 }

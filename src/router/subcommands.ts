@@ -68,8 +68,18 @@ export async function dispatchSubcommand(request: SubcommandRequest): Promise<bo
       await handleFilter(cmdArgs, mode, options);
       return true;
     case 'run':
-      if (!cmdArgs[0]) outputError('Usage: xbrowser run <file>');
-      await handleRun(cmdArgs[0], { cdpEndpoint, sessionName });
+      if (!cmdArgs[0]) {
+        outputError('Usage: xbrowser run <file>');
+      } else if (options.headless === true || options.parallel !== undefined || cmdArgs[0].endsWith('.json')) {
+        if (cdpEndpoint || options.bridge) {
+          outputError('Managed runs use a self-launched headless browser');
+        } else {
+          const { handleManagedRunFile } = await import('../cli/run-routes.js');
+          await handleManagedRunFile(cmdArgs[0], { sessionName, parallel: options.parallel, mode });
+        }
+      } else {
+        await handleRun(cmdArgs[0], { cdpEndpoint, sessionName });
+      }
       return true;
     case 'serve':
       await handleServe(cmdArgs, options, mode);

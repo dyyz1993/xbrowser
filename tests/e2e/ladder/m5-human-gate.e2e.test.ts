@@ -44,11 +44,12 @@ const CHALLENGE_HTML = `<!doctype html><html><body>
 </body></html>`;
 const CHALLENGE_URL = 'data:text/html;charset=utf-8,' + encodeURIComponent(CHALLENGE_HTML);
 
-/** WSServer 测试替身：HumanInteractionManager 只用 registerSession/getPort/broadcast + EventEmitter */
+/** WSServer 测试替身：HumanInteractionManager 只用 registerSession/getPort/broadcastToSession + EventEmitter */
 class StubWSServer extends EventEmitter {
   registerSession(): void { /* no-op */ }
   getPort(): number { return 9224; }
   broadcast(): void { /* no-op */ }
+  broadcastToSession(): void { /* no-op — 会话级广播在替身里不需要真实分发 */ }
 }
 
 describeE2E('M5 human-gate drill (escalation ladder)', () => {
@@ -96,7 +97,7 @@ describeE2E('M5 human-gate drill (escalation ladder)', () => {
       // 等挑战页就绪（data URL 导航极快，一轮轮询足够）
       await page.waitForSelector('.captcha-container', { timeout: 10_000 });
 
-      const manager = new HumanInteractionManager(new StubWSServer() as unknown as WSServer, page);
+      const manager = new HumanInteractionManager(new StubWSServer() as unknown as WSServer, page, 'm5-drill');
 
       // "人工"：4 秒后 CDP 真点击挑战按钮（模拟人工在 viewer/direct 页处理）
       const humanTimer = setTimeout(() => {
@@ -132,10 +133,11 @@ describeE2E('M5 human-gate drill (escalation ladder)', () => {
       // Drel 三字段格式
       expect(typeof detected?.title).toBe('string');
       expect(typeof detected?.body).toBe('string');
-      // lanify：viewer url 不应残留 localhost（手机可达的局域网地址）
+      // lanify：viewer url 不应残留 localhost（手机可达的局域网地址）；
+      // 且为会话级 viewer URL（/preview/<session>，与 buildViewerUrl 同构）
       const viewerUrl = String(detected?.url ?? '');
       expect(viewerUrl).not.toContain('localhost');
-      expect(viewerUrl).toMatch(/^http:\/\/\d{1,3}(\.\d{1,3}){3}:9224$/);
+      expect(viewerUrl).toMatch(/^http:\/\/\d{1,3}(\.\d{1,3}){3}:9224\/preview\/m5-drill$/);
     },
   );
 });

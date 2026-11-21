@@ -70,12 +70,15 @@ export async function attemptRecovery(
       // Register the session so the viewer can connect
       previewWS.registerSession(sessionName, page);
 
-      // Use the existing screencast + wait-for-human flow.
-      // This broadcasts frames to the viewer and waits for:
-      //   - User to click "Done" in the viewer (sends "human-solved" via WS)
+      // Use the existing screencast + wait-for-human flow, bound to the
+      // named session (the manager re-registers the same name/page —
+      // idempotent). This broadcasts frames to the session's viewers and
+      // waits for:
+      //   - User to click "Done" in the viewer (sends "human-solved" via WS
+      //     for this session only)
       //   - Agent to send "manual-solve" via WS
       //   - Timeout
-      const manager = new HumanInteractionManager(previewWS, page);
+      const manager = new HumanInteractionManager(previewWS, page, sessionName);
       const result = await manager.waitForHuman({
         reason: `Command "${commandName}" failed: ${errorMessage}. Fix the issue and confirm via viewer.`,
         timeout: cfg.timeout,

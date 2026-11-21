@@ -85,6 +85,19 @@ vi.mock('@dyyz1993/xcli-core', () => ({
   outputFormatter: vi.fn(),
   isCommandResult: vi.fn(),
   helpGenerator: vi.fn(() => ({ generate: vi.fn() })),
+  // src/browser/state.ts instantiates this at import time — the router's
+  // import chain reaches it, so the mock must provide a constructible store.
+  SessionStore: class {
+    private readonly map = new Map<string, { id: string; name: string }>();
+    find(name: string) { for (const s of this.map.values()) if (s.name === name) return s; return undefined; }
+    get(id: string) { return this.map.get(id); }
+    add(s: { id: string; name: string }) { this.map.set(s.id, s); return s; }
+    set(s: { id: string; name: string }) { this.map.set(s.id, s); }
+    remove(name: string) { for (const [id, s] of this.map) if (s.name === name) { this.map.delete(id); return s; } return undefined; }
+    removeById(id: string) { const s = this.map.get(id); this.map.delete(id); return s; }
+    list() { return [...this.map.values()]; }
+    clear() { this.map.clear(); }
+  },
 }));
 
 vi.mock('../../src/executor.js', () => ({

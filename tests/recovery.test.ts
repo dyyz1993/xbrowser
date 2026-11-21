@@ -195,6 +195,9 @@ describe('recovery — attemptRecovery', () => {
 
     expect(result).toEqual({ recovered: true });
     expect(mockWs.registerSession).toHaveBeenCalledWith('sess', { url: 'http://x' });
+    // Manager must be bound to the named session so the wait, broadcasts,
+    // and viewer URL are session-scoped (not the 'default' session).
+    expect(HumanInteractionManager).toHaveBeenCalledWith(mockWs, { url: 'http://x' }, 'sess');
     expect(mockMgr.waitForHuman).toHaveBeenCalledWith(expect.objectContaining({ autoDetect: false }));
   });
 

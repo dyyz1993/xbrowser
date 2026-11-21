@@ -126,10 +126,10 @@ describe('WSServer view tabs', () => {
   describe('A. select_view message handling', () => {
     beforeEach(() => {
       bindClient(server, clientId, sessionId);
-      // Avoid triggering processAndBroadcast in the handler
+      // Avoid triggering processAndBroadcast in the handler: with no cached
+      // frame for this session, replayLastFrame is a no-op.
       const sc = getSC(server);
-      (sc as unknown as Record<string, unknown>).lastFrameData = null;
-      (sc as unknown as Record<string, unknown>).lastFrameViewport = null;
+      sc.clearLastFrame();
     });
 
     it('should clear sessionCrops when select_view with rect:null is received', async () => {
@@ -182,7 +182,21 @@ describe('WSServer view tabs', () => {
         selector: 'view',
         box: { x: 1, y: 2, width: 3, height: 4 },
       });
-      (sc as unknown as Record<string, unknown>).lastFrameViewport = { width: 1920, height: 1080 };
+      (sc as unknown as {
+        sessionFrames: Map<string, {
+          uncroppedData: string | null;
+          uncroppedViewport: { width: number; height: number } | null;
+          data: string | null;
+          viewport: { width: number; height: number } | null;
+          seq: number;
+        }>;
+      }).sessionFrames.set(sessionId, {
+        uncroppedData: null,
+        uncroppedViewport: { width: 1920, height: 1080 },
+        data: null,
+        viewport: null,
+        seq: 1,
+      });
 
       await server['handleInboundMessage'](clientId, { type: 'select_view', rect: null });
 

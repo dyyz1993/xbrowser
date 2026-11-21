@@ -17,7 +17,23 @@ export class XBContextImpl implements XBContext {
   private _emitter = new EventEmitter();
   private _browser: XBBrowserImpl;
   readonly contextId: string;
-  private _pages: XBPageImpl[] = [];
+  /**
+   * 单一规范注册表（dup 回归修复）：targetId → wrapper。
+   *
+   * 同一 target 的 wrapper 有三条并发创建路径——newPage() 显式创建、
+   * setAutoAttach 对新建 target 的自动附着事件、Target.attachToTarget 的
+   * attachedToTarget 回显事件（CDP 规范：显式 attach 也会发该事件）。旧实现
+   * 用数组在 `await page._init()` 之后去重，事件在 _init 期间到达时全部穿透
+   * ——headless E2E 实测同一 target 出 3 个 wrapper，且随事件顺序抖动。
+   *
+   * 现在所有路径先**同步预约**（`_reserveTarget` + 同步 set 进
+   * `_pendingRegistrations`），再异步初始化；后到者直接 join 同一个注册
+   * Promise 拿同一个 wrapper，事件顺序无关。注册 Promise 覆盖到 init
+   * scripts 应用完成——join 者拿到的必然是完整初始化的 wrapper。
+   */
+  private _pages = new Map<string, XBPageImpl>();
+  /** in-flight 注册（targetId → 注册 Promise），完成后移除并落入 _pages */
+  private _pendingRegistrations = new Map<string, Promise<XBPageImpl>>();
   private closed = false;
   private options: XBContextOptions;
   private targetAttachedHandler: ((params: unknown) => void) | null = null;
@@ -54,39 +70,41 @@ export class XBContextImpl implements XBContext {
     // Create a new page target
     const { targetId } = await this._browser._createTarget(this.contextId);
 
-    // Attach to get a session
-    const sessionId = await this._browser._attachToTarget(targetId);
+    // auto-attach 可能在 _createTarget 往返期间已预约注册（事件先于响应到达
+    // 是合法顺序）；显式 attach 的回显事件也可能先于其响应到达。两处 await
+    // 后都重新查预约。
+    let pending = this._reserveTarget(targetId);
+    let explicitSessionId: string | undefined;
 
-    // Create page implementation
-    const page = new XBPageImpl(this.conn, sessionId, targetId, this, this._browser);
-    await page._init();
-
-    this._pages.push(page);
-
-    // Forward page events (request, response, etc.) to context listeners
-    this.forwardPageEvents(page);
-
-    // Apply context options
-    if (this.options.viewport) {
-      await page.setViewportSize(this.options.viewport).catch(() => {});
-    }
-    if (this.options.userAgent) {
-      await page._setUserAgent(this.options.userAgent);
-    }
-    if (this.options.extraHTTPHeaders) {
-      await page._setExtraHTTPHeaders(this.options.extraHTTPHeaders);
+    if (!pending) {
+      // Attach to get a session
+      const sessionId = await this._browser._attachToTarget(targetId);
+      pending = this._reserveTarget(targetId);
+      if (!pending) {
+        const registration = this._registerTarget(targetId, sessionId);
+        this._pendingRegistrations.set(targetId, registration);
+        pending = registration;
+        explicitSessionId = undefined; // session 由我们自己的注册持有
+      } else {
+        explicitSessionId = sessionId;
+      }
     }
 
-    // Apply stored init scripts
-    for (const script of this._initScripts) {
-      await page.addInitScript(script);
+    const page = await pending;
+    // 抢先注册若用的正是我们显式 attach 的 session（回显事件先于响应到达时
+    // handler 会拿它注册），session 仍在用——只有确认不用时才回收，否则会把
+    // 活页面的 session 杀掉（goto 全线挂起）。
+    if (explicitSessionId && page.sessionId !== explicitSessionId) {
+      this._browser._detachFromTarget(explicitSessionId).catch(() => {});
     }
-
+    // context options 属 newPage 语义（viewport/UA/headers），无论 wrapper 由
+    // 哪条路径创建都不能漏——join 路径也照常应用（幂等）。
+    await this._applyNewPageOptions(page);
     return page;
   }
 
   pages(): XBPage[] {
-    return [...this._pages];
+    return [...this._pages.values()];
   }
 
   browser(): XBBrowser {
@@ -98,10 +116,11 @@ export class XBContextImpl implements XBContext {
     this.closed = true;
 
     // Close all pages
-    for (const page of this._pages) {
+    for (const page of this._pages.values()) {
       await page.close().catch(() => {});
     }
-    this._pages = [];
+    this._pages.clear();
+    this._pendingRegistrations.clear();
 
     // Dispose the browser context
     if (this.targetAttachedHandler) {
@@ -128,7 +147,7 @@ export class XBContextImpl implements XBContext {
 
   async addInitScript(script: string): Promise<void> {
     this._initScripts.push(script);
-    for (const page of this._pages) {
+    for (const page of this._pages.values()) {
       await page.addInitScript(script);
     }
   }
@@ -218,19 +237,96 @@ export class XBContextImpl implements XBContext {
   }
 
   /**
-   * Register a page that was attached to an existing target (discovered via
-   * Target.getTargets). Used by XBBrowserImpl.discoverContexts() to wire up
-   * pages from the user's existing browser session into the context wrapper
-   * so they appear in `context.pages()` and can be reused by plugins.
+   * Attach an existing target (discovered via Target.getTargets / HTTP
+   * /json/list) and register exactly one wrapper for it. Used by
+   * XBBrowserImpl.discoverContexts() to wire up pages from the user's
+   * existing browser session so they appear in `context.pages()`.
+   *
+   * 显式 attach 同样会触发 attachedToTarget 回显事件（auto-attach 也会对
+   * 既有 target 补附着）——全部经注册表预约去重。attach 失败（如 target
+   * 已被其他客户端占用）返回 null：context 仍注册，后续 newPage() 可用。
    */
-  _addDiscoveredPage(page: XBPageImpl): void {
-    const exists = this._pages.some((p) => p._targetId === page._targetId);
-    if (exists) return;
-    this._pages.push(page);
-    this.forwardPageEvents(page);
+  async _attachExistingPage(targetId: string): Promise<XBPageImpl | null> {
+    let pending = this._reserveTarget(targetId);
+    let explicitSessionId: string | undefined;
+
+    if (!pending) {
+      let sessionId: string;
+      try {
+        sessionId = await this._browser._attachToTarget(targetId);
+      } catch {
+        return null;
+      }
+      pending = this._reserveTarget(targetId);
+      if (!pending) {
+        const registration = this._registerTarget(targetId, sessionId);
+        this._pendingRegistrations.set(targetId, registration);
+        pending = registration;
+      } else {
+        // 回显事件先于响应到达时，抢注用的正是我们的 session——不能盲目回收
+        explicitSessionId = sessionId;
+      }
+    }
+
+    try {
+      const page = await pending;
+      if (explicitSessionId && page.sessionId !== explicitSessionId) {
+        this._browser._detachFromTarget(explicitSessionId).catch(() => {});
+      }
+      return page;
+    } catch {
+      return null;
+    }
   }
 
   // ── Private ─────────────────────────────────────────────────
+
+  /**
+   * 同步查询/预约 target：已注册返回其 resolved Promise；in-flight 返回
+   * 注册 Promise（join 同一 wrapper）；否则返回 null，调用方须同步发起
+   * 注册并 set 进 `_pendingRegistrations`（在任意 await 之前）。
+   */
+  private _reserveTarget(targetId: string): Promise<XBPageImpl> | null {
+    const registered = this._pages.get(targetId);
+    if (registered) return Promise.resolve(registered);
+    return this._pendingRegistrations.get(targetId) ?? null;
+  }
+
+  /**
+   * 执行注册：创建 wrapper → _init → 应用 init scripts → 入注册表。
+   * Promise 覆盖到 init scripts 应用完成；成功/失败都从 in-flight 表移除
+   * （失败向上抛给所有 join 者，后续可重新预约重试）。
+   */
+  private async _registerTarget(targetId: string, sessionId: string): Promise<XBPageImpl> {
+    try {
+      const page = new XBPageImpl(this.conn, sessionId, targetId, this, this._browser);
+      await page._init();
+      for (const script of this._initScripts) {
+        await page.addInitScript(script).catch(() => {});
+      }
+      this._pages.set(targetId, page);
+      page.on('close', () => {
+        if (this._pages.get(targetId) === page) this._pages.delete(targetId);
+      });
+      this.forwardPageEvents(page);
+      return page;
+    } finally {
+      this._pendingRegistrations.delete(targetId);
+    }
+  }
+
+  /** newPage 的上下文选项（viewport/UA/headers）——自建与 join 路径共用 */
+  private async _applyNewPageOptions(page: XBPageImpl): Promise<void> {
+    if (this.options.viewport) {
+      await page.setViewportSize(this.options.viewport).catch(() => {});
+    }
+    if (this.options.userAgent) {
+      await page._setUserAgent(this.options.userAgent);
+    }
+    if (this.options.extraHTTPHeaders) {
+      await page._setExtraHTTPHeaders(this.options.extraHTTPHeaders);
+    }
+  }
 
   /** Forward page-level events (request, response, etc.) to context listeners */
   private forwardPageEvents(page: XBPageImpl): void {
@@ -257,38 +353,33 @@ export class XBContextImpl implements XBContext {
         sessionId: string;
       };
 
-      // Only handle targets in our context (or all if using default context)
-      if (this.contextId !== 'default' && params.targetInfo.browserContextId !== this.contextId) return;
       if (params.targetInfo.type !== 'page') return;
 
-      // Skip if already created via newPage()
-      const exists = this._pages.some(
-        (p) => p._targetId === params.targetInfo.targetId,
-      );
-      if (exists) return;
+      // Context 归属过滤：具名 context 精确匹配 browserContextId；default
+      // context 只收无 browserContextId 的 target（default 浏览器上下文的
+      // tab 不带该字段）。旧实现对 default 放行一切——attach 流程里
+      // default wrapper 会把具名 context 的 target 也抢建一份。
+      const bcId = params.targetInfo.browserContextId;
+      if (this.contextId === 'default') {
+        if (bcId) return;
+      } else if (bcId !== this.contextId) {
+        return;
+      }
 
-      // Auto-created page (e.g. window.open)
-      const page = new XBPageImpl(
-        this.conn,
-        params.sessionId,
-        params.targetInfo.targetId,
-        this,
-        this._browser,
-      );
-
-      // Resume the target (it was paused by waitForDebuggerOnStart)
+      // Resume the target if paused by waitForDebuggerOnStart——无论本
+      // context 是否建 wrapper，这个 session 都必须放行
       this.conn.send('Runtime.runIfWaitingForDebugger', undefined, params.sessionId).catch(() => {});
 
-      page._init().then(async () => {
-        // Apply stored init scripts to auto-created pages
-        for (const script of this._initScripts) {
-          await page.addInitScript(script).catch(() => {});
-        }
-        this._pages.push(page);
-        // Forward page events (request, response, etc.) to context listeners
-        this.forwardPageEvents(page);
-        this._emitter.emit('page', page);
-      });
+      // 注册表已（或正在）注册该 target：无需再造 wrapper
+      if (this._reserveTarget(params.targetInfo.targetId)) return;
+
+      // Auto-created page (e.g. window.open)
+      const registration = this._registerTarget(params.targetInfo.targetId, params.sessionId);
+      this._pendingRegistrations.set(params.targetInfo.targetId, registration);
+      registration.then(
+        (page) => { this._emitter.emit('page', page); },
+        () => { /* 注册失败已从 in-flight 表移除，可重试 */ },
+      );
     };
 
     this.conn.on('Target.attachedToTarget', this.targetAttachedHandler);
