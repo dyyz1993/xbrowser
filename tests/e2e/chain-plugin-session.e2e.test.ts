@@ -48,7 +48,8 @@ const maybeIt = hasChrome && hasDist ? it : it.skip;
 
 beforeAll(async () => {
   if (!hasChrome || !hasDist) return;
-  await killAllDaemonProcesses();
+  // xcli-core killAllDaemon 对不存在的 ~/.xbrowser 裸 scandir（ENOENT），全新环境必须自保
+  await killAllDaemonProcesses().catch(() => {});
 
   server = createServer((_req, res) => {
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
@@ -70,7 +71,7 @@ beforeAll(async () => {
 afterAll(async () => {
   server?.close();
   if (statePath && existsSync(statePath)) unlinkSync(statePath);
-  if (hasChrome && hasDist) await killAllDaemonProcesses();
+  if (hasChrome && hasDist) await killAllDaemonProcesses().catch(() => {});
 });
 
 describe('#453 链会话分裂端到端', () => {
