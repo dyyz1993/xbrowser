@@ -63,6 +63,7 @@ function createMockWsServer() {
     pauseScreencast: vi.fn().mockResolvedValue(undefined),
     resumeScreencast: vi.fn().mockResolvedValue(undefined),
     broadcast: vi.fn(),
+    broadcastToSession: vi.fn(),
     on: vi.fn(),
     off: vi.fn(),
     emit: vi.fn(),

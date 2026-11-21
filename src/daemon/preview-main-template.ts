@@ -73,6 +73,7 @@ body{display:flex;flex-direction:column;touch-action:manipulation}
   <span class="dot" id="status"></span>
   <span class="url" id="url">connecting...</span>
   <span class="conn" id="conn"></span>
+  <button class="mode-btn" id="handoff-done" title="Resume a paused task">继续任务</button>
   <button class="mode-btn" id="mode-btn" title="Switch mode (Mobile/Tablet/PC)">📱</button>
   <div id="qualityBadge" class="quality-badge quality-static" style="font-size:10px;padding:2px 8px;border-radius:10px;background:#556;color:#eee;white-space:nowrap;flex-shrink:0">static</div>
   <button id="stats-btn" style="font-size:11px;padding:2px 8px;border-radius:10px;background:#0f3460;color:#8af;border:none;cursor:pointer;flex-shrink:0">📊</button>
@@ -666,6 +667,8 @@ function sendMsg(obj){
     statBytesSent+=data.length;
   }
 }
+
+$('handoff-done').addEventListener('click',()=>sendMsg({type:'solved'}));
 
 function parseFocusHash(){
   var h=location.hash;

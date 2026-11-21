@@ -227,6 +227,14 @@ export async function forwardChain(
   }
 }
 
+export async function forwardManagedRun(chain: string, session: string, fileMode = false): Promise<import('../executor.js').ChainExecutionResult> {
+  return rpcCall('session:run', { chain, session, fileMode }, 20 * 60_000);
+}
+
+export async function forwardSessionState(action: 'save' | 'restore', session: string): Promise<unknown> {
+  return rpcCall(`session:${action}`, { session }, 120_000);
+}
+
 /**
  * Wrap raw transport errors (ECONNREFUSED / timeout) with an actionable hint
  * instead of surfacing bare `connect ECONNREFUSED 127.0.0.1:9222` (#441).

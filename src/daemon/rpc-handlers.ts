@@ -42,6 +42,9 @@ import type { PlaybackResult } from '../recorder/player.js';
 import { resolveCDPEndpoint } from '../utils/cdp.js';
 import { getPluginStorage } from '../executor.js';
 import { attachDetectAntiBot } from '../context.js';
+import { HumanInteractionManager } from '../human-interaction.js';
+import { sanitizeSessionName, saveLoginSessionByName, restoreLoginSessionByName } from '../browser/session-persistence.js';
+import { readSessionDiskMeta } from '../browser/state.js';
 import { checkPluginLoginRequired } from '../plugin/login-guard.js';
 import { TipCollector } from '@dyyz1993/xcli-core';
 import { getPluginLoader as getPluginLoaderSingleton } from '../utils/plugin-singleton.js';
@@ -54,6 +57,7 @@ export function createRPCHandler(): RPCHandler & {
   handleReconnect: (sessionId: string) => Promise<void>;
 } {
   let previewWS: WSServer | null = null;
+  const managedRuns = new Set<string>();
   const INTERACTION_COMMANDS = new Set([
     'click', 'fill', 'type', 'press', 'select', 'check', 'hover', 'dblclick', 'scroll',
   ]);
@@ -71,6 +75,11 @@ export function createRPCHandler(): RPCHandler & {
           return handleSessionClose(params);
         case 'session:list':
           return handleSessionList();
+        case 'session:run':
+          return handleManagedRun(params);
+        case 'session:save':
+        case 'session:restore':
+          return handleSessionState(method, params);
 
         // ── Command execution ──
         case 'exec':
@@ -347,6 +356,7 @@ export function createRPCHandler(): RPCHandler & {
 
   async function handleSessionClose(params: Record<string, unknown>) {
     const name = params.name as string;
+    if (managedRuns.has(name)) throw new Error(`Session "${name}" is busy`);
     if (previewWS) previewWS.unregisterSession(name);
     await closeSessionByName(name);
     removeSession(name);
@@ -423,6 +433,65 @@ export function createRPCHandler(): RPCHandler & {
     } finally {
       if (needsPause) await previewWS!.resumeScreencast(sessionName).catch(() => { });
     }
+  }
+
+  function requireSessionName(value: unknown): string {
+    if (typeof value !== 'string') throw new Error('A session name is required');
+    return sanitizeSessionName(value);
+  }
+
+  async function withManagedSession<T>(name: string, action: () => Promise<T>): Promise<T> {
+    if (managedRuns.has(name)) throw new Error(`Session "${name}" is busy`);
+    managedRuns.add(name);
+    try { return await action(); }
+    finally { managedRuns.delete(name); }
+  }
+
+  async function getManagedSession(name: string, restore = false) {
+    const existing = findSession(name);
+    const metadata = readSessionDiskMeta(name);
+    if (existing?.isCDP || existing?.bridge || metadata?.kind === 'bridge' || metadata?.cdpEndpoint) {
+      throw new Error(`Session "${name}" is assigned to an external browser`);
+    }
+    if (existing && restore) throw new Error(`Close session "${name}" before restoring its login state`);
+    const session = existing ?? await createSession(name, undefined, { headless: true });
+    registerSessionIfNew(name);
+    return session;
+  }
+
+  async function handleManagedRun(params: Record<string, unknown>) {
+    const name = requireSessionName(params.session);
+    const input = params.chain;
+    if (typeof input !== 'string' || !input.trim()) throw new Error('A command chain is required');
+    return withManagedSession(name, async () => {
+      const session = await getManagedSession(name);
+      return executeChain(input, {
+        sessionName: name,
+        fileMode: params.fileMode === true,
+        fixedSession: true,
+        handoff: async () => {
+          if (!previewWS) throw new Error('Viewer is unavailable');
+          const activeSession = findSession(name) ?? session;
+          const manager = new HumanInteractionManager(previewWS, activeSession.page, name);
+          const result = await manager.waitForHuman({ autoDetect: false, reason: 'Manual handoff' });
+          return result.solved;
+        },
+      });
+    });
+  }
+
+  async function handleSessionState(method: string, params: Record<string, unknown>) {
+    const name = requireSessionName(params.session);
+    return withManagedSession(name, async () => {
+      if (method === 'session:save') return saveLoginSessionByName(name);
+      await getManagedSession(name, true);
+      try { return await restoreLoginSessionByName(name, name); }
+      catch (error) {
+        previewWS?.unregisterSession(name);
+        await closeSessionByName(name);
+        throw error;
+      }
+    });
   }
 
   async function handleChain(params: Record<string, unknown>) {

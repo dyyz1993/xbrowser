@@ -66,7 +66,10 @@ const wsServerCache = new WeakMap<BrowserContext, WSServer>();
  * Attach a `waitForHuman` function to the browser command context.
  *
  * Lazily imports the human interaction manager and binds it to the
- * context's page via the provided WebSocket server factory.
+ * context's page via the provided WebSocket server factory. The wait is
+ * scoped to the context's named session (`ctx.sessionId`, falling back
+ * to `'default'`), so completion signals, broadcasts, and the viewer
+ * URL are isolated per session.
  *
  * @param ctx - The browser command context to augment.
  * @param getOrCreateWSServer - Factory that returns a WSServer for the given BrowserContext.
@@ -82,7 +85,7 @@ export function attachWaitForHuman(
 
     const { HumanInteractionManager } = await import('./human-interaction.js');
     const wsServer = await getOrCreateWSServer(ctx.browserContext);
-    const manager = new HumanInteractionManager(wsServer, ctx.page);
+    const manager = new HumanInteractionManager(wsServer, ctx.page, ctx.sessionId);
     return manager.waitForHuman(options);
   };
 }

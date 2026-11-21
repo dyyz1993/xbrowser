@@ -96,7 +96,8 @@ Commands:
   create <name> --template <type>   Create plugin
   serve [--port <p>] [--host <h>] [--token <t>] [--cors-origins <csv>] Start HTTP server (loopback by default)
   remote <url> [command] [--token <t>] Execute on remote server
-  run <file>                        Execute commands from file
+  run <file> [--headless]           Execute commands from a text file
+  run <jobs.json> [--parallel N]    Run named headless jobs concurrently
   viewer [--name <n>]               Generate viewer URL
   console-panel [--port <n>]       Readonly Console Facade overview
   site-memory run <workflow.json> [--cold]  Run declared workflow in a fresh headless browser

@@ -117,7 +117,7 @@ const SUBCOMMAND_HELP: Record<string, string> = {
   daemon: 'daemon status [--port <port>]',
   replay: 'replay <file> [--slow-mo <ms>] [--stop-on-error]',
   create: 'create <name> [--template static|dynamic|login|api]',
-  run: 'run <file>',
+  run: 'run <file> [--headless] | run <jobs.json> [--parallel N]',
   serve: 'serve [--port <port>] [--host <host>] [--token <token>] [--cors-origins <csv>]',
   remote: 'remote <url> [command] [--token <token>]',
   convert: 'convert <file> [--to js|py|sh]',

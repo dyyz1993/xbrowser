@@ -139,7 +139,7 @@ export async function routeCommand(
   // absorbing the next positional arg as its value.
   const cleanArgv = argv.filter(a => a !== '--json' && a !== '--yaml');
 
-  const parsed = parseArgs(cleanArgv, { booleanFlags: ['json', 'yaml', 'bridge'] });
+  const parsed = parseArgs(cleanArgv, { booleanFlags: ['json', 'yaml', 'bridge', 'headless'] });
   const { positional, options } = parsed;
   if (hasJsonFlag) options.json = true;
   if (hasYamlFlag) options.yaml = true;
