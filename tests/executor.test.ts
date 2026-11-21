@@ -44,11 +44,14 @@ const mockGetSite = vi.fn((_cmd: string): unknown => null);
 // Mock daemon modules so tests don't wait for real daemon timeouts
 const mockIsDaemonRunning = vi.fn().mockResolvedValue(false);
 const mockStartDaemon = vi.fn().mockRejectedValue(new Error('no daemon in test'));
+const mockForwardExec = vi.fn();
+const mockForwardPluginExec = vi.fn();
 
 vi.mock('../src/client/daemon-client.js', () => ({
   isDaemonRunning: mockIsDaemonRunning,
-  forwardExec: vi.fn(),
+  forwardExec: mockForwardExec,
   forwardChain: vi.fn(),
+  forwardPluginExec: mockForwardPluginExec,
 }));
 
 vi.mock('../src/daemon/daemon.js', () => ({
@@ -589,7 +592,7 @@ describe('Plugin positional args (executeChain integration)', () => {
   let capturedParams: Record<string, unknown> | null = null;
 
   function makeMockSite(
-    commands: Record<string, { schema: z.ZodObject<Record<string, z.ZodTypeAny>>; handler?: (params: Record<string, unknown>) => Promise<unknown>; requiresLogin?: boolean }>,
+    commands: Record<string, { schema: z.ZodObject<Record<string, z.ZodTypeAny>>; handler?: (params: Record<string, unknown>) => Promise<unknown>; requiresLogin?: boolean; scope?: string }>,
     options: { name?: string; requiresLogin?: boolean; isLoggedIn?: () => boolean | Promise<boolean> } = {},
   ) {
     return {
@@ -603,6 +606,7 @@ describe('Plugin positional args (executeChain integration)', () => {
           name,
           parameters: entry.schema,
           requiresLogin: entry.requiresLogin,
+          scope: entry.scope,
           handler: entry.handler ?? (async (params: Record<string, unknown>) => {
             capturedParams = params;
             return { success: true, data: params };
@@ -822,5 +826,129 @@ describe('snapshot hint on navigation', () => {
     expect(r3.tips?.some((t: { message: string }) => t.message.includes('snapshot'))).toBe(false);
     const r4 = await executeCommand('refresh', {});
     expect(r4.tips?.some((t: { message: string }) => t.message.includes('snapshot'))).toBe(false);
+  });
+});
+
+describe('#453 chain plugin session split', () => {
+  let capturedParams: Record<string, unknown> | null = null;
+
+  function makeSplitSite(scope?: string) {
+    return {
+      name: 'doubao',
+      config: { requiresLogin: false },
+      isLoggedIn: undefined,
+      getCommand: vi.fn((name: string) => {
+        if (name !== 'run') return null;
+        return {
+          name,
+          parameters: z.object({}),
+          requiresLogin: false,
+          scope,
+          handler: async (params: Record<string, unknown>) => {
+            capturedParams = params;
+            return { success: true, data: params };
+          },
+        };
+      }),
+      getAllCommands: vi.fn(() => []),
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    capturedParams = null;
+    mockGetSite.mockReturnValue(null);
+    mockForwardPluginExec.mockReset();
+    mockForwardExec.mockReset();
+    // forwardExec 默认 null → 内置步走本地（与既有测试一致）
+    mockForwardExec.mockResolvedValue(null);
+  });
+
+  it('page-scope 插件步转发 daemon，in-process handler 不被调', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+    mockForwardPluginExec.mockResolvedValue({ success: true, data: { injected: 1 } });
+    mockGetSite.mockImplementation((cmd: string) => cmd === 'doubao' ? makeSplitSite('page') : null);
+
+    const { executeChain } = await import('../src/executor.js');
+    const result = await executeChain('doubao run && title');
+    expect(mockForwardPluginExec).toHaveBeenCalledWith('doubao.run', expect.anything(), 'default', undefined, undefined);
+    expect(capturedParams).toBeNull();
+    expect(result.steps[0]).toMatchObject({ command: 'doubao run', success: true });
+  });
+
+  it('转发失败中断 && 链并携带 daemon 侧 message', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+    mockForwardPluginExec.mockResolvedValue({ success: false, data: null, message: '需要浏览器会话' });
+    mockGetSite.mockImplementation((cmd: string) => cmd === 'doubao' ? makeSplitSite('page') : null);
+
+    const { executeChain } = await import('../src/executor.js');
+    const result = await executeChain('doubao run && title');
+    expect(result.success).toBe(false);
+    expect(result.stoppedReason).toContain('需要浏览器会话');
+  });
+
+  it('daemon 不可达（null 契约）→ 回退 in-process', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+    mockForwardPluginExec.mockResolvedValue(null);
+    mockGetSite.mockImplementation((cmd: string) => cmd === 'doubao' ? makeSplitSite('page') : null);
+
+    const { executeChain } = await import('../src/executor.js');
+    await executeChain('doubao run');
+    expect(mockForwardPluginExec).toHaveBeenCalled();
+    expect(capturedParams).toEqual({});
+  });
+
+  it('XBROWSER_DAEMON_WORKER 下不转发（daemon 自身执行链）', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+    process.env.XBROWSER_DAEMON_WORKER = '1';
+    try {
+      mockGetSite.mockImplementation((cmd: string) => cmd === 'doubao' ? makeSplitSite('page') : null);
+      const { executeChain } = await import('../src/executor.js');
+      await executeChain('doubao run');
+      expect(mockForwardPluginExec).not.toHaveBeenCalled();
+      expect(capturedParams).toEqual({});
+    } finally {
+      delete process.env.XBROWSER_DAEMON_WORKER;
+    }
+  });
+
+  it('project scope 插件不转发', async () => {
+    const { resetForTesting, createSession } = await import('../src/browser.js');
+    resetForTesting();
+    await createSession('default', undefined, {});
+    mockGetSite.mockImplementation((cmd: string) => cmd === 'doubao' ? makeSplitSite('project') : null);
+
+    const { executeChain } = await import('../src/executor.js');
+    await executeChain('doubao run');
+    expect(mockForwardPluginExec).not.toHaveBeenCalled();
+    expect(capturedParams).toEqual({});
+  });
+
+  it('链内 --session 提升为链级会话（内置步不再吞掉）', async () => {
+    const { resetForTesting } = await import('../src/browser.js');
+    resetForTesting();
+    const { executeChain } = await import('../src/executor.js');
+    await executeChain('title --session foo');
+    // forwardExec 收到提升后的会话名，且 params 里不再有 session
+    expect(mockForwardExec).toHaveBeenCalledWith('title', expect.not.objectContaining({ session: expect.anything() }), 'foo', undefined, undefined, undefined);
+  });
+
+  it('链内 --session=值 形式同样提升，带引号参数保真', async () => {
+    const { resetForTesting } = await import('../src/browser.js');
+    resetForTesting();
+    const { executeChain } = await import('../src/executor.js');
+    await executeChain('fill "#a" "v w" --session=bar && title');
+    const fillCall = mockForwardExec.mock.calls.find((c: unknown[]) => c[0] === 'fill');
+    expect(fillCall).toBeDefined();
+    expect(fillCall![2]).toBe('bar');
+    expect(fillCall![1]).toMatchObject({ selector: '#a', value: 'v w' });
   });
 });
