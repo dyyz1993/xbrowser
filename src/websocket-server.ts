@@ -5,6 +5,15 @@ import { StreamCoordinator } from './ws/stream-coordinator.js';
 import { SessionManager, type WSClient, type WSLike } from './ws/session-manager.js';
 import { MessageDispatcher } from './ws/message-handler.js';
 import type { MessageContext } from './ws/message-handler.js';
+import {
+  WorkspaceController,
+  checkWorkspaceTrust,
+  type WorkspaceInboundMessage,
+  type WorkspaceSessionResolver,
+  type WorkspaceHandoffProbe,
+  type WorkspaceStateMessage,
+  type WorkspaceErrorMessage,
+} from './ws/workspace-controller.js';
 
 /**
  * Configuration for the WebSocket server.
@@ -23,6 +32,7 @@ export type WSMessage =
   | { type: 'status'; data: StatusMessage }
   | { type: 'captcha-detected'; sessionId: string; url: string; reason: string; timeout: number }
   | { type: 'resolved'; sessionId: string }
+  | { type: 'handoff-timeout'; sessionId: string }
   | { type: 'navigation'; url: string; title: string }
   | { type: 'input_focused'; selector: string; value: string; tag: string; placeholder?: string }
   | { type: 'input_blur'; selector: string }
@@ -33,6 +43,8 @@ export type WSMessage =
   | { type: 'views_update'; views: ViewInfo[] }
   | { type: 'health_pong'; ts: number }
   | { type: 'snapshot_result'; data: { data: string; format: string } | null; error?: string }
+  | WorkspaceStateMessage
+  | WorkspaceErrorMessage
   | { type: 'error'; data: { code: string; message: string; availableSessions?: string[] } };
 
 export interface ViewInfo {
@@ -72,7 +84,8 @@ export type WSInboundMessage =
   | { type: 'focus_element'; selector: string }
   | { type: 'focus_clear' }
   | { type: 'input_blur' }
-  | { type: 'select_view'; rect: { x: number; y: number; width: number; height: number } | null };
+  | { type: 'select_view'; rect: { x: number; y: number; width: number; height: number } | null }
+  | WorkspaceInboundMessage;
 
 /**
  * A screencast frame message with binary image data.
@@ -115,6 +128,20 @@ export interface StatusMessage {
 // ---------------------------------------------------------------------------
 
 /**
+ * Extracts trust-relevant transport metadata from the HTTP upgrade request.
+ * Proxy headers (x-forwarded-for) are deliberately NOT read — this server
+ * runs behind no trusted proxy, so only the socket peer and Origin count.
+ */
+function extractPeerInfo(req: unknown): { remoteAddress?: string; origin?: string } | undefined {
+  const r = req as { socket?: { remoteAddress?: string }; headers?: { origin?: string } } | undefined;
+  if (!r) return undefined;
+  const remoteAddress = typeof r.socket?.remoteAddress === 'string' ? r.socket.remoteAddress : undefined;
+  const origin = typeof r.headers?.origin === 'string' ? r.headers.origin : undefined;
+  if (remoteAddress === undefined && origin === undefined) return undefined;
+  return { ...(remoteAddress !== undefined ? { remoteAddress } : {}), ...(origin !== undefined ? { origin } : {}) };
+}
+
+/**
  * WebSocket server for streaming browser screenshots and handling remote input.
  *
  * Two modes:
@@ -129,6 +156,13 @@ export interface StatusMessage {
  * - **SessionManager**: client/session lifecycle, capturer start/stop, element monitors
  * - **StreamCoordinator**: frame processing, stream state, crop management
  * - **MessageDispatcher**: inbound message routing to typed handlers
+ *
+ * **Network binding note (pre-existing limitation)**: the standalone server
+ * binds `0.0.0.0` by default and the daemon attaches to the xcli-core HTTP
+ * server, which calls `listen(port)` without a host — i.e. all interfaces,
+ * not loopback-only. Workspace controls add no new listener (they ride this
+ * same WS endpoint), so they do not extend remote reachability; hardening
+ * the bind to 127.0.0.1 would be a separate, behavior-changing fix.
  */
 export class WSServer extends EventEmitter {
   private port: number;
@@ -140,6 +174,7 @@ export class WSServer extends EventEmitter {
   private readonly streamCoordinator: StreamCoordinator;
   private readonly sessionManager: SessionManager;
   private readonly messageDispatcher: MessageDispatcher;
+  private readonly workspaceController: WorkspaceController;
 
   constructor(config: WSServerConfig = {}) {
     super();
@@ -151,8 +186,26 @@ export class WSServer extends EventEmitter {
     this.sessionManager = new SessionManager();
     this.sessionManager.setStreamCoordinator(this.streamCoordinator);
     this.messageDispatcher = new MessageDispatcher(this.streamCoordinator, this.sessionManager);
+    this.workspaceController = new WorkspaceController(this.sessionManager);
 
     this.setupSessionManagerEvents();
+  }
+
+  /**
+   * Injects the session ownership lookup used by workspace controls
+   * (navigate / history / tab). The daemon maps WS sessionIds to
+   * ManagedSessions; without a resolver the workspace is read-only.
+   */
+  setWorkspaceSessionResolver(resolver: WorkspaceSessionResolver): void {
+    this.workspaceController.setResolver(resolver);
+  }
+
+  /**
+   * Injects the waitForHuman handoff probe so workspace state can flag
+   * `handoffWaiting` for late-connecting/reconnecting viewers.
+   */
+  setWorkspaceHandoffProbe(probe: WorkspaceHandoffProbe): void {
+    this.workspaceController.setHandoffProbe(probe);
   }
 
   // -----------------------------------------------------------------------
@@ -185,9 +238,16 @@ export class WSServer extends EventEmitter {
     // viewers so the URL bar follows the newly active tab immediately
     // (frames alone only update it after the next capture).
     this.sessionManager.on('page-switched', (sessionId: string, page: Page) => {
-      // Never replay a cached frame from the previous tab.
-      this.streamCoordinator.clearLastFrame();
+      // Never replay a cached frame from the previous tab. Scoped to this
+      // session only — clearing globally would blank concurrent sessions.
+      this.streamCoordinator.clearLastFrame(sessionId);
       this.broadcastToSession(sessionId, { type: 'navigation', url: page.url(), title: '' });
+      // Keep browser panels in sync when the active tab changes out-of-band.
+      // Sent to TRUSTED clients only — tab metadata must not reach legacy
+      // LAN clients bound to the same session.
+      this.workspaceController
+        .pushState(sessionId, (sid, message) => this.sendWorkspaceToSessionClients(sid, message))
+        .catch(() => { /* best-effort push */ });
     });
   }
 
@@ -237,8 +297,9 @@ export class WSServer extends EventEmitter {
 
     // Replay last frame for newly connected client — even if screencast is
     // still starting up, the cached frame from the previous connection gives
-    // the viewer something to render immediately.
-    if (this.streamCoordinator.getLastFrameViewport()) {
+    // the viewer something to render immediately. Scoped to this session's
+    // own cache so a viewer never receives another session's frame.
+    if (this.streamCoordinator.getLastFrameViewport(sessionId)) {
       this.streamCoordinator.replayLastFrame(sessionId).catch(() => {});
     }
   }
@@ -275,7 +336,7 @@ export class WSServer extends EventEmitter {
     if (sc?.page) {
       (async () => {
         try {
-          const vp = this.streamCoordinator.getLastFrameViewport()
+          const vp = this.streamCoordinator.getLastFrameViewport(sessionId)
             || sc.page.viewportSize()
             || await sc.page.evaluate<{ width: number; height: number }>(() => ({ width: window.innerWidth, height: window.innerHeight }));
           this.sendToClient(clientId, {
@@ -371,10 +432,11 @@ export class WSServer extends EventEmitter {
   // -----------------------------------------------------------------------
 
   private setupConnectionHandler(wsServer: InstanceType<typeof import('ws').WebSocketServer>): void {
-    wsServer.on('connection', (ws: unknown, _req?: unknown, sessionIdFromUrl?: string) => {
+    wsServer.on('connection', (ws: unknown, req?: unknown, sessionIdFromUrl?: string) => {
       const wsLike = ws as WSLike;
       const clientId = crypto.randomUUID();
-      const client: WSClient = { id: clientId, ws: wsLike };
+      const peer = extractPeerInfo(req);
+      const client: WSClient = { id: clientId, ws: wsLike, ...(peer ? { peer } : {}) };
 
       this.sessionManager.addClient(client);
 
@@ -436,7 +498,7 @@ export class WSServer extends EventEmitter {
       if (initPage) {
         (async () => {
           try {
-            const vp = this.streamCoordinator.getLastFrameViewport()
+            const vp = this.streamCoordinator.getLastFrameViewport(initSessionId)
               || initPage.viewportSize()
               || await initPage.evaluate<{ width: number; height: number }>(() => ({ width: window.innerWidth, height: window.innerHeight }));
             this.sendToClient(clientId, {
@@ -505,6 +567,33 @@ export class WSServer extends EventEmitter {
       return;
     }
 
+    // Browser workspace controls (Codex-style panel): request state,
+    // navigate, history, tabs. Delegated to WorkspaceController which
+    // enforces bound-session ownership and self-launched-only mutations.
+    // Gated by a loopback/Viewer-origin trust check — legacy preview input
+    // (click/fill/…) keeps its existing behavior.
+    if (
+      msg.type === 'workspace_request' ||
+      msg.type === 'workspace_navigate' ||
+      msg.type === 'workspace_history' ||
+      msg.type === 'workspace_tab'
+    ) {
+      const trust = checkWorkspaceTrust(this.sessionManager.getClient(clientId)?.peer, this.port);
+      if (!trust.ok) {
+        this.sendToClient(clientId, { type: 'workspace_error', message: trust.reason });
+        return;
+      }
+      await this.workspaceController.dispatch({
+        clientId,
+        sessionId,
+        message: msg,
+        sendToClient: (id, message) => this.sendToClient(id, message),
+        sendToTrustedSessionClients: (sid, message) => this.sendWorkspaceToSessionClients(sid, message),
+        broadcastToSession: (sid, message) => this.broadcastToSession(sid, message),
+      });
+      return;
+    }
+
     const ctx: MessageContext = {
       clientId,
       sessionId,
@@ -550,6 +639,22 @@ export class WSServer extends EventEmitter {
     const clients = this.sessionManager.getSessionClients(sessionId);
     if (!clients) return;
     for (const clientId of clients) {
+      this.sendToClient(clientId, message);
+    }
+  }
+
+  /**
+   * Sends a workspace message ONLY to the session's trusted clients
+   * (loopback peer / loopback Viewer origin, per checkWorkspaceTrust).
+   * `workspace_state` carries tab titles/URLs of managed sessions and must
+   * never be broadcast to legacy LAN clients bound to the same session.
+   */
+  private sendWorkspaceToSessionClients(sessionId: string, message: WSMessage): void {
+    const clients = this.sessionManager.getSessionClients(sessionId);
+    if (!clients) return;
+    for (const clientId of clients) {
+      const peer = this.sessionManager.getClient(clientId)?.peer;
+      if (!checkWorkspaceTrust(peer, this.port).ok) continue;
       this.sendToClient(clientId, message);
     }
   }

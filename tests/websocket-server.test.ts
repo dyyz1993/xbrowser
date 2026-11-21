@@ -269,9 +269,23 @@ describe('WSServer', () => {
         selector: '#my-element',
         box: { x: 100, y: 200, width: 300, height: 150 },
       });
-      // Simulate having a last frame viewport
-      (sc as unknown as Record<string, unknown>).lastFrameViewport = { width: 1920, height: 1080 };
-      (sc as unknown as Record<string, unknown>).lastFrameData = null;
+      // Simulate having a cached last frame viewport for this session
+      // (per-session cache map inside StreamCoordinator).
+      (sc as unknown as {
+        sessionFrames: Map<string, {
+          uncroppedData: string | null;
+          uncroppedViewport: { width: number; height: number } | null;
+          data: string | null;
+          viewport: { width: number; height: number } | null;
+          seq: number;
+        }>;
+      }).sessionFrames.set(sessionId, {
+        uncroppedData: null,
+        uncroppedViewport: { width: 1920, height: 1080 },
+        data: null,
+        viewport: null,
+        seq: 1,
+      });
 
       const sendSpy = vi.fn();
       const sm = getSM(server);

@@ -253,7 +253,7 @@ class FocusClearHandler implements IMessageHandler {
   async handle(ctx: MessageContext): Promise<void> {
     if (!ctx.sessionId) return;
     this.sc.deleteCrop(ctx.sessionId);
-    const vp = this.sc.getLastFrameViewport();
+    const vp = this.sc.getLastFrameViewport(ctx.sessionId);
     if (vp) {
       ctx.broadcastToSession(ctx.sessionId, { type: 'status', data: { status: 'connected', viewport: vp } });
     }
@@ -269,7 +269,7 @@ class SelectViewHandler implements IMessageHandler {
     if (!ctx.sessionId) return;
     if (!msg.rect) {
       this.sc.deleteCrop(ctx.sessionId);
-      const vp = this.sc.getLastFrameViewport();
+      const vp = this.sc.getLastFrameViewport(ctx.sessionId);
       if (vp) {
         ctx.broadcastToSession(ctx.sessionId, { type: 'status', data: { status: 'connected', viewport: vp } });
       }

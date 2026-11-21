@@ -20,6 +20,12 @@ export interface WSClient {
   sessionId?: string;
   requestedSessionId?: string;
   ws: WSLike;
+  /**
+   * Transport metadata captured from the HTTP upgrade request (peer address,
+   * Origin header). Used by workspace-control trust checks; absent for
+   * programmatic clients.
+   */
+  peer?: { remoteAddress?: string; origin?: string };
 }
 
 export { type WSLike };
@@ -201,6 +207,11 @@ export class SessionManager extends EventEmitter {
   }
 
   unregisterSession(sessionId: string): void {
+    // Defensive: drop the per-session stream cache (last frame + crop) even if
+    // the screencast entry is already gone, so a later session reusing this id
+    // can never replay the previous occupant's stale frame.
+    this.streamCoordinator?.releaseSession(sessionId);
+
     const sc = this.screencasts.get(sessionId);
     if (!sc) return;
 

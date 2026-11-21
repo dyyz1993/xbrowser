@@ -7,26 +7,6 @@ const mockPage = {
   textContent: vi.fn().mockResolvedValue(''),
 };
 
-// Track capturer instances so tests can drive the frame callback and
-// assert stopCapture cleanup.
-const capturerInstances: Array<{
-  startCapture: ReturnType<typeof vi.fn>;
-  stopCapture: ReturnType<typeof vi.fn>;
-  isActive: ReturnType<typeof vi.fn>;
-}> = [];
-
-vi.mock('../src/screencast.js', () => ({
-  ScreencastCapturer: vi.fn().mockImplementation(() => {
-    const inst = {
-      startCapture: vi.fn(),
-      stopCapture: vi.fn().mockResolvedValue(undefined),
-      isActive: vi.fn().mockReturnValue(false),
-    };
-    capturerInstances.push(inst);
-    return inst;
-  }),
-}));
-
 // Track webhook notifier instances to assert payload previewUrl.
 const webhookInstances: Array<{ notify: ReturnType<typeof vi.fn> }> = [];
 
@@ -58,7 +38,7 @@ vi.mock('child_process', () => ({
   execSync: vi.fn(),
 }));
 
-import { HumanInteractionManager } from '../src/human-interaction.js';
+import { HumanInteractionManager, isHumanWaitActive } from '../src/human-interaction.js';
 import { CaptchaDetector } from '../src/captcha-detector.js';
 import type { WSServer } from '../src/websocket-server.js';
 import { EventEmitter } from 'events';
@@ -83,7 +63,6 @@ describe('HumanInteractionManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    capturerInstances.length = 0;
     webhookInstances.length = 0;
     vi.useFakeTimers();
     wsServer = createMockWSServer();
@@ -275,50 +254,17 @@ describe('HumanInteractionManager', () => {
       expect(wsServer.broadcast).not.toHaveBeenCalled();
     });
 
-    it('should scope screencast frames to the session viewers', async () => {
+    it('exposes readiness only while the session can accept a resume signal', async () => {
       const named = new HumanInteractionManager(wsServer, mockPage as never, 'my-sess');
-      vi.mocked(CaptchaDetector.detect).mockResolvedValueOnce({
-        detected: false,
-        confidence: 'low',
-      });
-
       const promise = named.waitForHuman({ timeout: 5, autoDetect: false });
+      expect(isHumanWaitActive(wsServer, 'my-sess')).toBe(false);
       await vi.advanceTimersByTimeAsync(0);
+      expect(isHumanWaitActive(wsServer, 'my-sess')).toBe(true);
+      expect(isHumanWaitActive(wsServer, 'default')).toBe(false);
 
-      // Drive the capturer frame callback registered by waitForHuman.
-      const capturer = capturerInstances[capturerInstances.length - 1];
-      expect(capturer.startCapture).toHaveBeenCalledWith(
-        mockPage,
-        'my-sess',
-        expect.any(Function)
-      );
-      const onFrame = capturer.startCapture.mock.calls[0][2] as (frame: {
-        sessionId: string;
-        id: string;
-        timestamp: number;
-        data: Buffer;
-        url: string;
-        viewport: { width: number; height: number };
-      }) => void;
-      onFrame({
-        sessionId: 'my-sess',
-        id: 'f1',
-        timestamp: 1,
-        data: Buffer.from('img'),
-        url: 'https://example.com',
-        viewport: { width: 800, height: 600 },
-      });
-
-      expect(wsServer.broadcastToSession).toHaveBeenCalledWith(
-        'my-sess',
-        expect.objectContaining({
-          type: 'screenshot',
-          data: expect.objectContaining({ sessionId: 'my-sess' }),
-        })
-      );
-
-      await vi.advanceTimersByTimeAsync(6000);
-      await promise;
+      wsServer.emit('human-solved', { sessionId: 'my-sess', clientId: 'c1' });
+      await expect(promise).resolves.toMatchObject({ solved: true });
+      expect(isHumanWaitActive(wsServer, 'my-sess')).toBe(false);
     });
 
     it('should use default options when none provided', async () => {
@@ -435,8 +381,8 @@ describe('HumanInteractionManager', () => {
     });
   });
 
-  describe('listener and capturer cleanup', () => {
-    it('should remove the human-solved listener and stop capture on preview solve', async () => {
+  describe('handoff cleanup', () => {
+    it('should remove the human-solved listener on preview solve', async () => {
       vi.mocked(CaptchaDetector.detect).mockResolvedValueOnce({
         detected: false,
         confidence: 'low',
@@ -450,11 +396,9 @@ describe('HumanInteractionManager', () => {
       await promise;
 
       expect(wsServer.listenerCount('human-solved')).toBe(0);
-      const capturer = capturerInstances[capturerInstances.length - 1];
-      expect(capturer.stopCapture).toHaveBeenCalled();
     });
 
-    it('should remove the human-solved listener and stop capture on timeout', async () => {
+    it('should notify the viewer and remove the human-solved listener on timeout', async () => {
       vi.mocked(CaptchaDetector.detect).mockResolvedValueOnce({
         detected: false,
         confidence: 'low',
@@ -465,18 +409,20 @@ describe('HumanInteractionManager', () => {
       await promise;
 
       expect(wsServer.listenerCount('human-solved')).toBe(0);
-      const capturer = capturerInstances[capturerInstances.length - 1];
-      expect(capturer.stopCapture).toHaveBeenCalled();
+      expect(isHumanWaitActive(wsServer, 'default')).toBe(false);
+      expect(wsServer.broadcastToSession).toHaveBeenCalledWith('default', {
+        type: 'handoff-timeout',
+        sessionId: 'default',
+      });
     });
 
-    it('should release the wait slot and stop capture when setup fails mid-way', async () => {
+    it('should release the wait slot if detection fails', async () => {
       vi.mocked(CaptchaDetector.detect).mockRejectedValueOnce(new Error('detect boom'));
 
       await expect(manager.waitForHuman({ timeout: 5, autoDetect: false }))
         .rejects.toThrow('detect boom');
 
-      const capturer = capturerInstances[capturerInstances.length - 1];
-      expect(capturer.stopCapture).toHaveBeenCalled();
+      expect(wsServer.listenerCount('human-solved')).toBe(0);
 
       // Slot released — a retry must be admitted.
       vi.mocked(CaptchaDetector.detect).mockResolvedValueOnce({ detected: false, confidence: 'low' });

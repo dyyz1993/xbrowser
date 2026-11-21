@@ -134,7 +134,6 @@ export class XBPageImpl implements XBPage {
       stealthConfig: this._contextImpl.stealthConfig,
       isClosed: () => this._closed,
       setUrl: (url) => { this._url = url; },
-      currentUrl: () => this.url(),
       waitForLoadState: (state, timeout) => this.waitForLoadState(state, timeout),
       waitForTimeout: (ms) => this.waitForTimeout(ms),
       evaluate: <T>(script: string) => this.evaluate(script) as Promise<T>,

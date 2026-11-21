@@ -20,6 +20,8 @@ import { version, buildId } from '../version.js';
 import { WSServer } from '../websocket-server.js';
 import { previewHTML, alignHTML } from './preview-templates.js';
 import { getPluginLoader } from '../utils/plugin-singleton.js';
+import { findSession, setActivePage } from '../browser.js';
+import { isHumanWaitActive } from '../human-interaction.js';
 
 const CONFIG_DIR = join(homedir(), '.xbrowser');
 const LOG_FILE = join(CONFIG_DIR, 'daemon.log');
@@ -101,6 +103,27 @@ async function main() {
 
   // Connect WS to RPC handler so recording events can be forwarded
   rpcHandler.setPreviewWS(previewWS);
+
+  // ── Workspace controls (viewer browser panel) ──
+  // Resolve WS sessionIds to ManagedSessions with ownership: self-launched
+  // sessions get full navigate/history/tab control; externally-owned ones
+  // (CDP attach / chrome-bridge) are read-only single-page previews — the
+  // user's other tabs are never enumerated or touched.
+  previewWS.setWorkspaceSessionResolver((sessionId) => {
+    const session = findSession(sessionId);
+    if (!session) return undefined;
+    if (session.isCDP || session.bridge) {
+      return { page: session.page, context: null, managed: false };
+    }
+    return {
+      page: session.page,
+      context: session.context,
+      managed: true,
+      setActivePage: (page) => setActivePage(session, page),
+    };
+  });
+  // Expose in-flight waitForHuman handoffs to (re)connecting viewers.
+  previewWS.setWorkspaceHandoffProbe((sessionId) => isHumanWaitActive(previewWS, sessionId));
 
   previewWS.on('screencast-started', (sid: string) => log(`Preview screencast started: ${sid}`));
   previewWS.on('screencast-stopped', (sid: string) => log(`Preview screencast stopped: ${sid}`));

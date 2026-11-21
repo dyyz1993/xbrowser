@@ -128,9 +128,23 @@ async function waitForViewerCanvasQr(
   const deadline = Date.now() + timeoutMs;
   let lastError = '';
   while (Date.now() < deadline) {
+    // Gate on the DISPLAY-sized rendering, not the backing store: the
+    // compositor CSS-stretches the (possibly small) backing canvas, and a
+    // degraded crop frame can decode at native resolution yet become
+    // unscannable after the stretch. The screenshot assertion checks the
+    // stretched pixels, so the wait must too.
     const dataUrl = await page.evaluate<string>(() => {
       const canvas = document.querySelector('#screen') as HTMLCanvasElement | null;
-      return canvas?.toDataURL('image/png') ?? '';
+      if (!canvas) return '';
+      const rect = canvas.getBoundingClientRect();
+      const out = document.createElement('canvas');
+      out.width = Math.max(1, Math.round(rect.width));
+      out.height = Math.max(1, Math.round(rect.height));
+      const ctx = out.getContext('2d');
+      if (!ctx) return '';
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(canvas, 0, 0, out.width, out.height);
+      return out.toDataURL('image/png');
     });
     if (dataUrl.startsWith('data:image/png;base64,')) {
       const image = Buffer.from(dataUrl.slice('data:image/png;base64,'.length), 'base64');
@@ -174,6 +188,34 @@ async function decodeCanvasRegionFromScreenshot(
     .toBuffer();
   fs.writeFileSync(path.join(outputDir, name), region);
   return decodeQrFromImage(region);
+}
+
+/**
+ * The live crop stream legitimately contains transient degraded frames right
+ * after a view switch (adaptive-quality `screen_moving` re-encodes and blank
+ * transition crops). waitForViewerCanvasQr gates on display-sized pixels, but
+ * a worse frame can still replace the canvas before the screenshot lands.
+ * Retry with fresh screenshots so steady-state display scannability — the real
+ * contract — is what gets asserted.
+ */
+async function decodeScannableCanvasRegionFromScreenshot(
+  page: Page,
+  outputDir: string,
+  name: string,
+  timeoutMs = 8_000,
+): Promise<{ data: string; width: number; height: number }> {
+  const deadline = Date.now() + timeoutMs;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    const screenshot = await page.screenshot({ type: 'png' });
+    try {
+      return await decodeCanvasRegionFromScreenshot(page, screenshot, outputDir, name);
+    } catch (err) {
+      lastError = err;
+      await page.waitForTimeout(300);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 async function waitForMessage<T>(
@@ -272,6 +314,14 @@ describeE2E('E2E: viewer image and QR regions', () => {
 
   beforeAll(async () => {
     fs.mkdirSync(outputDir, { recursive: true });
+    // Purge stream frames from previous runs: captureStreamFrames restarts
+    // its sequence at 001 each run, so stale higher-numbered frames would
+    // win the latestCrop reverse sort and silently validate old pixels.
+    for (const stale of fs.readdirSync(outputDir)) {
+      if (/^stream-frame-\d+\.jpeg$/.test(stale) || stale === 'stream-frames.json') {
+        fs.rmSync(path.join(outputDir, stale));
+      }
+    }
     fs.writeFileSync(path.join(outputDir, 'fixture.html'), await buildFixture());
     await writeQrPng(path.join(outputDir, 'qr.png'), QR_TEXT);
     await writeQrPng(path.join(outputDir, 'product.png'), QR_PRODUCT_TEXT);
@@ -358,9 +408,8 @@ describeE2E('E2E: viewer image and QR regions', () => {
     await waitForViewerCanvasQr(viewer.page, QR_TEXT, outputDir, 'viewer-canvas-live.png');
     const liveRegion = await viewer.page.screenshot({ type: 'png' });
     fs.writeFileSync(path.join(outputDir, 'viewer-ui-live-region.png'), liveRegion);
-    const screenshotQr = await decodeCanvasRegionFromScreenshot(
+    const screenshotQr = await decodeScannableCanvasRegionFromScreenshot(
       viewer.page,
-      liveRegion,
       outputDir,
       'viewer-ui-live-region-canvas.png',
     );
@@ -422,9 +471,8 @@ describeE2E('E2E: viewer image and QR regions', () => {
     });
     fs.writeFileSync(path.join(outputDir, 'viewer-canvas-state.json'), JSON.stringify(viewerCanvasState, null, 2));
     fs.writeFileSync(path.join(outputDir, 'viewer-ui-after.png'), after);
-    const afterScreenshotQr = await decodeCanvasRegionFromScreenshot(
+    const afterScreenshotQr = await decodeScannableCanvasRegionFromScreenshot(
       viewer.page,
-      after,
       outputDir,
       'viewer-ui-after-canvas.png',
     );

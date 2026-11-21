@@ -1,7 +1,6 @@
 import type { Page } from './browser-shim.js';
 import { execFile } from 'child_process';
-import { WSServer } from './websocket-server.js';
-import { ScreencastCapturer } from './screencast.js';
+import type { WSServer } from './websocket-server.js';
 import { CaptchaDetector } from './captcha-detector.js';
 import { WebhookNotifier, type WebhookPayload } from './webhook.js';
 import { getCaptchaConfig } from './config.js';
@@ -43,27 +42,33 @@ export const DEFAULT_HUMAN_INTERACTION_SESSION = 'default';
 /**
  * Per-WSServer registry of sessions with an in-flight `waitForHuman`.
  *
- * Prevents two concurrent waits racing the same session: duplicate
- * screencast capturers on one page, stacked `human-solved` listeners
- * where the first broadcast resolves both waits, and clobbered
- * completion broadcasts. Distinct sessions (or distinct WSServers)
- * are independent slots.
+ * Prevents two concurrent waits from sharing a completion signal. Distinct
+ * sessions (or distinct WSServers) are independent slots.
  */
-const activeWaitsByServer = new WeakMap<WSServer, Set<string>>();
+const activeWaitsByServer = new WeakMap<WSServer, Map<string, 'starting' | 'waiting'>>();
 
 function acquireWaitSlot(server: WSServer, sessionName: string): boolean {
   let sessions = activeWaitsByServer.get(server);
   if (!sessions) {
-    sessions = new Set<string>();
+    sessions = new Map();
     activeWaitsByServer.set(server, sessions);
   }
   if (sessions.has(sessionName)) return false;
-  sessions.add(sessionName);
+  sessions.set(sessionName, 'starting');
   return true;
 }
 
 function releaseWaitSlot(server: WSServer, sessionName: string): void {
   activeWaitsByServer.get(server)?.delete(sessionName);
+}
+
+/**
+ * Whether a `waitForHuman` wait is currently in flight for a session on a
+ * WSServer. Used by viewer workspace state so late-connecting/reconnecting
+ * panels can show the "waiting for human" handoff state.
+ */
+export function isHumanWaitActive(server: WSServer, sessionName: string): boolean {
+  return activeWaitsByServer.get(server)?.get(sessionName) === 'waiting';
 }
 
 /**
@@ -74,14 +79,13 @@ function releaseWaitSlot(server: WSServer, sessionName: string): void {
  * mirrors the same page over WS, no native headed browser is launched),
  * sends webhook notifications, and waits for either auto-detection of
  * CAPTCHA resolution, a solve signal from a viewer bound to *this*
- * session, or timeout. All broadcasts (frames, `captcha-detected`,
- * `resolved`) are scoped to the session's own viewers.
+ * session, or timeout. The WebSocket server streams the active page and
+ * this manager sends handoff notifications to the session's own viewers.
  */
 export class HumanInteractionManager {
   private wsServer: WSServer;
   private page: Page;
   private sessionName: string;
-  private capturer: ScreencastCapturer;
   private webhook: WebhookNotifier;
   private autoOpen: boolean;
 
@@ -90,7 +94,6 @@ export class HumanInteractionManager {
     this.page = page;
     this.sessionName =
       sessionName && sessionName.trim() ? sessionName.trim() : DEFAULT_HUMAN_INTERACTION_SESSION;
-    this.capturer = new ScreencastCapturer();
 
     const cfg = getCaptchaConfig();
     this.webhook = new WebhookNotifier(cfg.notifyUrl);
@@ -148,14 +151,11 @@ export class HumanInteractionManager {
   /**
    * Wait for a human to solve a CAPTCHA or complete an interaction.
    *
-   * Starts screencast streaming for this session, sends webhook and
-   * session-scoped broadcast notifications, then polls for CAPTCHA
-   * resolution or waits for a manual solve signal from a viewer bound
-   * to this session.
+   * Sends session-scoped notifications and waits for CAPTCHA resolution
+   * or a manual solve signal from a viewer bound to this session.
    *
-   * Only one wait may be in flight per session per WSServer; a second
-   * concurrent call for the same session rejects immediately. The wait
-   * slot, `human-solved` listener, and screencast capturer are cleaned
+   * Only one wait may be in flight per session per WSServer. The wait
+   * slot, listener, and timers are cleaned
    * up on every exit path (auto-detected / preview / timeout / error).
    *
    * @param options - Configuration for timeout, auto-detection, and reason text.
@@ -188,37 +188,8 @@ export class HumanInteractionManager {
       const captcha = await CaptchaDetector.detect(this.page);
       const captchaInfo = captcha.detected ? captcha : undefined;
 
-      await this.capturer.startCapture(this.page, this.sessionName, (frame) => {
-        this.wsServer.broadcastToSession(this.sessionName, {
-          type: 'screenshot',
-          data: {
-            sessionId: frame.sessionId,
-            id: frame.id,
-            timestamp: frame.timestamp,
-            data: frame.data,
-            url: frame.url,
-            viewport: frame.viewport,
-          },
-        });
-      });
-
       const previewUrl = this.buildPreviewUrl();
-
-      await this.sendWebhook('captcha-detected', {
-        reason: captchaInfo ? `${captchaInfo.type ?? 'unknown'} CAPTCHA detected` : reason,
-        timeout,
-        targetUrl: this.page.url(),
-      });
-
-      this.wsServer.broadcastToSession(this.sessionName, {
-        type: 'captcha-detected',
-        sessionId: this.sessionName,
-        url: this.page.url(),
-        reason: captchaInfo ? `${captchaInfo.type ?? 'unknown'} CAPTCHA detected` : reason,
-        timeout,
-      } as Extract<import('./websocket-server.js').WSMessage, { type: 'captcha-detected' }>);
-
-      this.tryAutoOpen(previewUrl);
+      const waitReason = captchaInfo ? `${captchaInfo.type ?? 'unknown'} CAPTCHA detected` : reason;
 
       console.log('');
       console.log('\u26A0\uFE0F  \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550');
@@ -244,7 +215,6 @@ export class HumanInteractionManager {
           if (pollTimer) clearInterval(pollTimer);
           if (timeoutTimer) clearTimeout(timeoutTimer);
           this.wsServer.removeListener('human-solved', onHumanSolved);
-          this.capturer.stopCapture().catch(() => {});
           releaseSlot();
         };
 
@@ -294,18 +264,30 @@ export class HumanInteractionManager {
             if (!resolved) {
               resolved = true;
               cleanup();
+              this.wsServer.broadcastToSession(this.sessionName, {
+                type: 'handoff-timeout',
+                sessionId: this.sessionName,
+              });
               console.log('\u23F0 Timeout - skipping');
               this.sendWebhook('captcha-resolved', { reason: 'timeout' });
               resolve({ solved: false, method: 'timeout' });
             }
           }, timeout * 1000);
         }
+
+        activeWaitsByServer.get(this.wsServer)?.set(this.sessionName, 'waiting');
+        this.wsServer.broadcastToSession(this.sessionName, {
+          type: 'captcha-detected',
+          sessionId: this.sessionName,
+          url: this.page.url(),
+          reason: waitReason,
+          timeout,
+        });
+        void this.sendWebhook('captcha-detected', { reason: waitReason, timeout, targetUrl: this.page.url() });
+        this.tryAutoOpen(previewUrl);
       });
     } catch (err) {
-      // Setup failed mid-way (detection, screencast, webhook) — release the
-      // wait slot and stop any capture that managed to start before rethrow.
       releaseSlot();
-      this.capturer.stopCapture().catch(() => {});
       throw err;
     }
   }
