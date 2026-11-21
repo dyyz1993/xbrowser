@@ -21,6 +21,10 @@ import {
   saveSessionDiskMeta,
 } from '../browser.js';
 import { executeCommand, executeChain } from '../executor.js';
+import { version as daemonVersion, buildId as daemonBuildId } from '../version.js';
+
+/** daemon 进程启动时刻（模块加载即 daemon 生命周期起点，供 ping/诊断上报） */
+const daemonStartedAt = new Date().toISOString();
 import { queryJS } from '../cdp-driver/selector-utils.js';
 import { networkStore, commandLogStore } from './network-store.js';
 import { scoreEntries } from './network-scorer.js';
@@ -84,7 +88,7 @@ export function createRPCHandler(): RPCHandler & {
 
         // ── Utility ──
         case 'ping':
-          return { ok: true, pid: process.pid };
+          return { ok: true, pid: process.pid, version: daemonVersion, buildId: daemonBuildId, startedAt: daemonStartedAt };
         case 'plugins:reload':
           return handlePluginsReload();
 

@@ -1,7 +1,7 @@
 import type { ExecutionResult } from '../executor.js';
 import { errMsg } from '../utils/error.js';
 import { startDaemonProcess, stopDaemonProcess } from '../daemon/daemon.js';
-import { version as cliVersion } from '../version.js';
+import { version as cliVersion, buildId as cliBuildId } from '../version.js';
 import { request as httpRequest } from 'http';
 
 // 与 daemon-main 的 XBROWSER_DAEMON_PORT 对齐（测试/多实例隔离用；缺省 9224）
@@ -16,14 +16,23 @@ async function ensureDaemonRunning(): Promise<void> {
     _ensurePromise = null;
   }
 
+  // 多 worktree/多实例共用 9224 时 buildId 永远不同会互踢 daemon，
+  // 显式豁免开关（version 级比较仍生效）
+  const skipBuildCheck = process.env.XBROWSER_DAEMON_SKIP_BUILD_CHECK === '1';
+
   for (let attempt = 0; attempt < 3; attempt++) {
     const healthOk = await fetch(`${DAEMON_BASE}/health`, { signal: AbortSignal.timeout(2000) })
       .then(r => r.ok ? r.json() : null)
-      .then((d: { status?: string; version?: string } | null) => {
+      .then((d: { status?: string; version?: string; buildId?: string } | null) => {
         if (d?.status === 'ok') {
           // Version mismatch — force restart
           if (d.version && d.version !== cliVersion) {
-            return { needsRestart: true };
+            return { needsRestart: true, reason: `version daemon=${d.version} cli=${cliVersion}` };
+          }
+          // Build mismatch — 同版本但 dist 已重建（旧 daemon 跑旧代码的调试黑洞）。
+          // 'dev'（src 直跑/测试）不参与比较。
+          if (!skipBuildCheck && d.buildId && d.buildId !== 'dev' && cliBuildId !== 'dev' && d.buildId !== cliBuildId) {
+            return { needsRestart: true, reason: `build daemon=${d.buildId} cli=${cliBuildId}` };
           }
           return { needsRestart: false };
         }
@@ -32,7 +41,7 @@ async function ensureDaemonRunning(): Promise<void> {
       .catch(() => null);
     if (healthOk?.needsRestart === false) return; // Same version, daemon is fine
     if (healthOk?.needsRestart === true) {
-      console.error(`⚠️ Daemon version mismatch. Restarting...`);
+      console.error(`⚠️ Daemon ${healthOk.reason} mismatch. Restarting...`);
       await stopDaemonProcess().catch(() => {});
       break; // Fall through to start logic below
     }
