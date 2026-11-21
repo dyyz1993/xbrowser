@@ -103,7 +103,7 @@
 | maven | 1 | `project` |
 | medium | 5 | `browser`, `page` |
 | mureka | 6 | `browser` |
-| npm | 3 | `project` |
+| npm | 6 | `page`, `project` |
 | nuget | 1 | `project` |
 | oschina | 3 | `browser`, `page` |
 | p500px | 1 | `browser` |
