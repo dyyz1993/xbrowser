@@ -107,7 +107,7 @@ No entry in this document is legal advice or a guarantee of global uniqueness.
 | Documentation site | `https://docs.xbrowser.dev` | approved deployment derivative | Documentation identity uses the approved mark. |
 | Support page | GitHub repository README | existing | Use canonical assets for future logo placements. |
 | Screenshot set | not produced | pending | Capture only from shipped product UI. |
-| Social assets | `branding/mark-512.png`, `branding/social-preview-1280x640.png` | approved derivative / share card proposed | The share card is rendered with xbrowser from `branding/social-preview.html`; uploading it to the repository's social preview setting is still pending. |
+| Social assets | `branding/mark-512.png`, `branding/social-preview-1280x640.png` | approved derivative | The share card is rendered with xbrowser from `branding/social-preview.html`. Uploaded as the repository's GitHub social preview on 2026-11-23; read back from the public page's `og:image` and confirmed byte-identical to the PNG (SHA-256 `75fcecea…`). |
 
 ## Usage Rules
 
