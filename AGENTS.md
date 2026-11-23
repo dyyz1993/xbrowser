@@ -24,7 +24,7 @@ npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 ### 复发防错规则（来自全局学习账本 ~/.agents/projects/xbrowser/ 蒸馏）
 
 - `apply_patch` 修改多文件或同一文件多处时，先读取当前内容并按目标拆成最小上下文块；任何一块上下文失配都停止重试，重新读取目标文件。
-- Commit subject 是类型前缀后的文本，最长 80 字符（不是整行 100 字符）；提交前用 CI 正则或等价脚本自检。
+- Commit subject 是类型前缀后的文本，最长 80 字符（不是整行 100 字符）；提交前用 CI 正则或等价脚本自检。**长度按字节算**：本地 commit-msg 钩子与 master 上的 CI 检查都用 `wc -c` 计首行，超过 100 字节即失败（中文每字 3 字节）。squash 合并后的首行 = PR 标题（PR 只有一个非合并提交时取该提交的首行）+ GitHub 追加的 ` (#N)` 这 7 字节，所以 PR 标题和提交首行都要连同这 7 字节控制在 100 字节以内，否则本地钩子放行、master 的 CI 变红。自检：`printf '%s' "docs: 标题 (#000)" | wc -c`。
 - 「可信点击后无反应」先依次验证 unhandledrejection、实际网络请求、`elementFromPoint` 命中目标，再考虑反自动化；滚动列表必须重新 `scrollIntoView` 并取最新 rect。
 
 ## 1. 项目原则
