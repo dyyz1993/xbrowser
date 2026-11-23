@@ -91,6 +91,8 @@ The Aurora mark combines a compact browser chrome line with an X of four product
 | `mark-192.png`, `mark-512.png` | Raster app icons |
 | `logo-light.svg` | Wordmark on light backgrounds |
 | `logo-dark.svg` | Wordmark on dark backgrounds |
+| `social-preview.html` | Source of the GitHub social preview card; re-render it with xbrowser (commands are in the comment at the top of the file) |
+| `social-preview-1280x640.png` | GitHub social preview (repository Settings → Social preview), 1280 × 640, under 1 MB |
 | `concepts/prompt-window.svg` | Draft direction B: browser plus CLI prompt |
 | `concepts/route-x.svg` | Draft direction C: crossed automation paths |
 | `concepts/mono-x.svg` | Draft direction D: minimal name mark |
