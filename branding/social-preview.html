@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>xbrowser — GitHub social preview (1280×640)</title>
+<!--
+  GitHub Social Preview card for github.com/dyyz1993/xbrowser — 1280x640, under 1 MB.
+  Source of branding/social-preview-1280x640.png. The copy (slogan, supporting line,
+  terminal transcript) follows docs/brand/xbrowser.md; do not reword it here without
+  updating that contract.
+
+  Re-render with xbrowser itself, from the repo root:
+    xbrowser goto "file://$PWD/branding/social-preview.html" --session social-card
+    xbrowser set-viewport --width 1280 --height 640 --session social-card
+    xbrowser screenshot --output branding/social-preview-1280x640.png --session social-card
+    xbrowser session close --session social-card
+
+  Fonts: Inter when installed, otherwise the -apple-system / Arial fallbacks.
+-->
+<style>
+  html, body { margin: 0; width: 1280px; height: 640px; overflow: hidden; }
+
+  :root {
+    --text: #F8FAFC;
+    --text-2: #C7D2FE;
+    --cyan: #67E8F9;
+    --violet: #C4B5FD;
+    --blue: #93C5FD;
+    /* logo-dark.svg keeps ~21% empty canvas to the right of its wordmark,
+       so the <img> box is nudged right to center the *visible* mark. */
+    --logo-shift: 34px;
+  }
+
+  body {
+    position: relative;
+    background:
+      radial-gradient(560px 380px at 100% 0%, rgba(196, 181, 253, 0.13), rgba(196, 181, 253, 0) 70%),
+      radial-gradient(560px 380px at 0% 100%, rgba(103, 232, 249, 0.13), rgba(103, 232, 249, 0) 70%),
+      linear-gradient(135deg, #172554 0%, #4338CA 100%);
+    color: var(--text);
+    font-family: Inter, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Very subtle dot texture, faded out across the top so the logo and
+     its clear space sit on a clean field. */
+  .dots {
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(rgba(199, 210, 254, 0.16) 1px, rgba(199, 210, 254, 0) 1.5px);
+    background-size: 24px 24px;
+    -webkit-mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 1) 64%);
+    mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0) 40%, rgba(0, 0, 0, 1) 64%);
+  }
+
+  .card {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 640px;
+    padding-top: 56px;
+    box-sizing: border-box;
+  }
+
+  .logo {
+    display: block;
+    position: relative;
+    left: var(--logo-shift);
+    height: 72px;
+    width: auto;
+  }
+
+  /* 40px keeps the brand clear space (12.5% of the logo width) below the logo. */
+  h1 {
+    margin: 40px 0 0;
+    font-size: 64px;
+    line-height: 1.02;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    text-align: center;
+    color: var(--text);
+  }
+
+  .sub {
+    margin: 8px 0 0;
+    font-size: 28px;
+    line-height: 1.35;
+    font-weight: 400;
+    text-align: center;
+    color: var(--text-2);
+  }
+
+  .stage {
+    position: relative;
+    margin-top: 14px;
+  }
+
+  .terminal {
+    box-sizing: border-box;
+    width: 840px;
+    background: #0B1120;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 14px;
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.04),
+      0 24px 48px rgba(3, 7, 18, 0.45);
+    overflow: hidden;
+  }
+
+  .bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    padding: 0 16px;
+    box-sizing: border-box;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  .bar i {
+    display: block;
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+  }
+
+  .bar i:nth-child(1) { background: #FF5F57; }
+  .bar i:nth-child(2) { background: #FEBC2E; }
+  .bar i:nth-child(3) { background: #28C840; }
+
+  .term-body {
+    margin: 0;
+    padding: 9px 22px 10px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 18px;
+    line-height: 1.32;
+    white-space: pre;
+    color: var(--text);
+  }
+
+  .p   { color: var(--cyan); }
+  .ok  { color: var(--blue); }
+  .dim { color: var(--text-2); }
+  .k   { color: var(--violet); }
+
+  /* Sits in the bottom-right corner, bottom-aligned with the terminal. */
+  .caption {
+    position: absolute;
+    right: -156px;
+    bottom: 2px;
+    font-size: 18px;
+    line-height: 1.25;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    color: var(--text-2);
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+  <div class="dots"></div>
+  <div class="card">
+    <img class="logo" src="./logo-dark.svg" alt="xbrowser" width="840" height="192">
+    <h1>Browser automation,<br>composable.</h1>
+    <p class="sub">A command-line browser automation tool<br>for developers and AI agent workflows.</p>
+    <div class="stage">
+      <div class="terminal">
+        <div class="bar"><i></i><i></i><i></i></div>
+        <pre class="term-body"><span class="p">$</span> xbrowser "goto https://example.com &amp;&amp; title &amp;&amp; screenshot"
+<span class="ok">[OK]</span> <span class="dim">goto https://example.com</span>
+<span class="ok">[OK]</span> <span class="dim">title</span>
+       <span class="k">title:</span> Example Domain
+<span class="ok">[OK]</span> <span class="dim">screenshot</span>
+       <span class="k">output:</span> …/xbrowser/screenshots/screenshot-….png</pre>
+      </div>
+      <div class="caption">xbrowser.dev</div>
+    </div>
+  </div>
+</body>
+</html>

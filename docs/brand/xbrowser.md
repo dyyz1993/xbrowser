@@ -87,7 +87,7 @@ Aurora Ecosystem X combines a compact dotted-to-solid browser chrome line with f
 | Marketplace web identity | `xbrowser-marketplace/public` | Deployed site favicon, icon, manifest, theme color, and OG artwork | approved deployment derivative |
 | Documentation web identity | `xbrowser-docs/public/logo.svg` | Deployed docs favicon | approved deployment derivative |
 | Color exploration | `output/branding/ecosystem-x-colorways.png` | Review reference | draft, do not publish |
-| Social share image | not yet produced | Promotion | pending |
+| Social share image | `branding/social-preview-1280x640.png` (source: `branding/social-preview.html`) | GitHub social preview and link-share card, 1280 × 640 | approved derivative |
 
 ## Domain and Store Screening
 
@@ -107,7 +107,7 @@ No entry in this document is legal advice or a guarantee of global uniqueness.
 | Documentation site | `https://docs.xbrowser.dev` | approved deployment derivative | Documentation identity uses the approved mark. |
 | Support page | GitHub repository README | existing | Use canonical assets for future logo placements. |
 | Screenshot set | not produced | pending | Capture only from shipped product UI. |
-| Social assets | `branding/mark-512.png` | approved derivative | A share card remains pending. |
+| Social assets | `branding/mark-512.png`, `branding/social-preview-1280x640.png` | approved derivative | The share card is rendered with xbrowser from `branding/social-preview.html`. Uploaded as the repository's GitHub social preview on 2026-11-23; read back from the public page's `og:image` and confirmed byte-identical to the PNG (SHA-256 `75fcecea…`). |
 
 ## Usage Rules
 
