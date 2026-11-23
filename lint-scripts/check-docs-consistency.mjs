@@ -8,8 +8,9 @@
  *      `evaluateFn`, `getSessionStorage`/`setSessionStorage`/`clearSessionStorage`,
  *      `waitForTimeout`)
  *   2. No old project name (`agent-browser`) in docs or src/
- *   3. AGENTS.md plugin count (69) and command count (49) match reality
- *   4. docs/commands.md Scope table does not contain `daemon`
+ *   3. AGENTS.md plugin count and command count match reality
+ *   4. README.md plugin count and command count match reality
+ *   5. docs/commands.md Scope table does not contain `daemon`
  *
  * Usage: node lint-scripts/check-docs-consistency.mjs
  */
@@ -85,6 +86,26 @@ function checkDocsForForbiddenPatterns() {
   return errors;
 }
 
+// ── Count what actually exists (shared by the number checks) ────────────────
+function countPlugins() {
+  return readdirSync(resolve(ROOT, '.xcli/plugins'), { withFileTypes: true })
+    // 排除非插件目录：shared/testsuite 是公共资产；node_modules 是插件安装的副产物
+    // （git 不跟踪，有它的机器会被误计一个插件，导致本地与 CI 计数不一致）
+    .filter(d => d.isDirectory() && d.name !== 'shared' && d.name !== 'testsuite' && d.name !== 'node_modules')
+    .length;
+}
+
+function countCommands() {
+  const commandFiles = readdirSync(resolve(ROOT, 'src/commands'))
+    .filter(f => f.endsWith('.ts') && f !== 'index.ts' && f !== 'command-registry.ts' && f !== 'definitions.ts');
+  let total = 0;
+  for (const f of commandFiles) {
+    const content = readFileSync(resolve(ROOT, 'src/commands', f), 'utf-8');
+    total += (content.match(/registerCommand\(\{/g) || []).length;
+  }
+  return total;
+}
+
 // ── Check AGENTS.md numbers ─────────────────────────────────────────────────
 function checkAgentsNumbers() {
   const errors = [];
@@ -96,11 +117,7 @@ function checkAgentsNumbers() {
   // Check plugin count: 69
   const pluginMatch = content.match(/\*\*插件主目录\*\*（(\d+)\s*个/);
   if (pluginMatch) {
-    const actualPlugins = readdirSync(resolve(ROOT, '.xcli/plugins'), { withFileTypes: true })
-      // 排除非插件目录：shared/testsuite 是公共资产；node_modules 是插件安装的副产物
-      // （git 不跟踪，有它的机器会被误计一个插件，导致本地与 CI 计数不一致）
-      .filter(d => d.isDirectory() && d.name !== 'shared' && d.name !== 'testsuite' && d.name !== 'node_modules')
-      .length;
+    const actualPlugins = countPlugins();
     if (Number(pluginMatch[1]) !== actualPlugins) {
       errors.push(`❌ AGENTS.md: plugin count is ${pluginMatch[1]}, actual is ${actualPlugins}`);
     }
@@ -109,15 +126,42 @@ function checkAgentsNumbers() {
   // Check command count: 49
   const cmdMatch = content.match(/(\d+)\s*个内置命令/);
   if (cmdMatch) {
-    const commandFiles = readdirSync(resolve(ROOT, 'src/commands'))
-      .filter(f => f.endsWith('.ts') && f !== 'index.ts' && f !== 'command-registry.ts' && f !== 'definitions.ts');
-    let actualCommands = 0;
-    for (const f of commandFiles) {
-      const content = readFileSync(resolve(ROOT, 'src/commands', f), 'utf-8');
-      actualCommands += (content.match(/registerCommand\(\{/g) || []).length;
-    }
+    const actualCommands = countCommands();
     if (Number(cmdMatch[1]) !== actualCommands) {
       errors.push(`❌ AGENTS.md: command count is ${cmdMatch[1]}, actual is ${actualCommands}`);
+    }
+  }
+
+  return errors;
+}
+
+// ── Check README.md numbers ─────────────────────────────────────────────────
+// README 对外展示的命令数 / 插件数必须与仓库实际一致（曾同时漂出 57 / 51 / 132 三种口径）。
+// 每条规则只在正则命中时校验：文案改写后不再命中则静默跳过，不会误伤。
+function checkReadmeNumbers() {
+  const errors = [];
+  const readmePath = resolve(ROOT, 'README.md');
+  if (!existsSync(readmePath)) return errors;
+
+  const content = readFileSync(readmePath, 'utf-8');
+  const actualPlugins = countPlugins();
+  const actualCommands = countCommands();
+
+  const checks = [
+    [/— (\d+) built-in commands/g, 'command count (Features)', actualCommands],
+    [/— (\d+) 个内置命令/g, 'command count (特性)', actualCommands],
+    [/# (\d+) 个浏览器命令定义/g, 'command count (项目结构)', actualCommands],
+    [/\*\*(\d+) site plugins\*\*/g, 'plugin count (Features)', actualPlugins],
+    [/\*\*(\d+) 个站点插件\*\*/g, 'plugin count (特性)', actualPlugins],
+    [/站点插件（(\d+) 个）/g, 'plugin count (项目结构)', actualPlugins],
+    [/\| \*\*Plugin Ecosystem\*\* \| (\d+) plugins/g, 'plugin count (对比表)', actualPlugins],
+  ];
+
+  for (const [pattern, label, actual] of checks) {
+    for (const match of content.matchAll(pattern)) {
+      if (Number(match[1]) !== actual) {
+        errors.push(`❌ README.md: ${label} is ${match[1]}, actual is ${actual}`);
+      }
     }
   }
 
@@ -159,6 +203,9 @@ function main() {
   const numberErrors = checkAgentsNumbers();
   allErrors = allErrors.concat(numberErrors);
 
+  const readmeNumberErrors = checkReadmeNumbers();
+  allErrors = allErrors.concat(readmeNumberErrors);
+
   const scopeErrors = checkScopeTable();
   allErrors = allErrors.concat(scopeErrors);
 
@@ -171,6 +218,7 @@ function main() {
 
   console.log('✅ No removed commands, fictional commands, or old project names found in docs.');
   console.log('✅ AGENTS.md numbers match reality.');
+  console.log('✅ README.md numbers match reality.');
   console.log('✅ Scope table is clean.\n');
 }
 
