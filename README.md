@@ -1,33 +1,74 @@
 # xbrowser
 
-> **Browser automation CLI** for web scraping, headless browsing, SEO analysis, and AI agent workflows. 57 commands, 132 plugins. A command-line alternative to Playwright, Puppeteer, and Selenium — **no code required**.
+> **Scraping a page, filling in a form, or grabbing a screenshot shouldn't take a Playwright project — environment setup, a script, and selectors to maintain.**
+> **xbrowser turns each one into a single command line.** No code to write: run it in your terminal, chain steps together, or let your AI agent call it.
+>
+> **抓取一个页面、填写一张表单、截一张图，不该为此搭一个 Playwright 工程——配环境、写脚本，还要长期维护选择器。**
+> **xbrowser 把每一件事都变成一行命令。** 不用写代码：终端里直接跑，多步用命令链串起来，也可以让 AI Agent 直接调用。
 
 [![CI Status](https://github.com/dyyz1993/xbrowser/workflows/CI/badge.svg)](https://github.com/dyyz1993/xbrowser/actions)
 [![codecov](https://codecov.io/gh/dyyz1993/xbrowser/branch/master/graph/badge.svg)](https://codecov.io/gh/dyyz1993/xbrowser)
 [![npm version](https://img.shields.io/npm/v/@xbrowser/cli.svg)](https://www.npmjs.com/package/@xbrowser/cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+## Features
+
+- **One command instead of a script** — 59 built-in commands (`scrape`, `click`, `fill`, `search`, `screenshot`, …), each a one-liner
+- **Command chains** — string steps together with `&&`, `->`, `,`, `+`, `||`, or pipe and heredoc a whole workflow
+- **Record & replay** — record a flow once to YAML, replay it in CI or export it as a standalone Playwright script; stale selectors re-resolve themselves ([self-healing replay](docs/recording.md))
+- **126 site plugins** — publish, search, and collect on real sites (Dev.to, Juejin, CSDN, GitHub, …), one plugin per site: `xbrowser plugin install <name>`, or scaffold your own with `xbrowser create my-plugin`
+- **Built for AI agents** — built-in MCP server (`xbrowser mcp`), `--json` output, token-friendly page snapshots
+- **Use the browser you already have** — attach to a running Chrome over CDP and keep your logins; multi-session, daemon mode, and a [stealth layer](docs/stealth.md)
+
 ## 特性
 
-- **57 浏览器命令** — 导航、交互、查询、存储、截图，覆盖常见自动化场景
-- **命令链** — 用 `&&`、`,`、`+`、`->`、`;` 串联多个命令，一行搞定复杂流程
-- **管道 & Heredoc** — 支持 stdin 管道和 heredoc 批量执行
-- **录制 / 回放** — 录制浏览器操作为 YAML，随时回放，可转换为 JS/Python/Bash 脚本
-- **插件系统** — 基于 `@dyyz1993/xcli-core`，用 TypeScript 编写站点插件。快速开始：`xbrowser create my-plugin --template static`
-- **CDP 连接** — 连接已运行的 Chrome/Chromium，无需重新启动浏览器
-- **会话管理** — 多会话并行，独立上下文
-- **Daemon 模式** — 后台常驻，快速响应
-- **Stealth 伪装层** — UA-CH 档案驱动垫片 + 可配置 stealthConfig（详见 [docs/stealth.md](docs/stealth.md)）
+- **一条命令替代一个脚本** — 59 个内置命令（`scrape`、`click`、`fill`、`search`、`screenshot` 等），每个都是一行
+- **命令链** — 用 `&&`、`->`、`,`、`+`、`||` 串联多步，整条流程也可以走管道和 Heredoc
+- **录制 / 回放** — 录一次存成 YAML，CI 里随时回放，也可导出成独立的 Playwright 脚本；选择器失效会自动重新定位（[自愈回放](docs/recording.md)）
+- **126 个站点插件** — 在真实站点上发布、搜索、采集（Dev.to、掘金、CSDN、GitHub 等），一个站点一个插件：`xbrowser plugin install <name>` 安装，或用 `xbrowser create my-plugin` 脚手架写自己的
+- **为 AI Agent 而生** — 内置 MCP Server（`xbrowser mcp`）、`--json` 输出、对 token 友好的页面快照
+- **复用你已有的浏览器** — 通过 CDP 连接正在运行的 Chrome、保留登录态；多会话并行、Daemon 常驻、[Stealth 伪装层](docs/stealth.md)
+
+## Quick start
+
+```bash
+# Install — needs Node.js >= 18 and a local Chrome or Chromium (auto-detected on macOS/Linux)
+npm install -g @xbrowser/cli
+
+# Three steps, one line, zero scripts
+xbrowser "goto https://example.com && title && screenshot"
+```
+
+```text
+[OK] goto https://example.com
+     url: https://example.com
+     status: 200
+[OK] title
+     title: Example Domain
+[OK] screenshot
+     output: …/xbrowser/screenshots/screenshot-….png
+```
+
+Want your AI agent to drive the browser instead?
+
+```bash
+claude mcp add xbrowser -- xbrowser mcp
+```
+
+Full guide: [快速开始](#快速开始) · More recipes: [Use Cases](#use-cases)
 
 ## Use Cases
 
 **Web Scraping & Data Extraction**
 ```bash
 # Scrape any page to Markdown — no Playwright scripts needed
-xbrowser scrape https://news.ycombinator.com --mode smart --output markdown
+xbrowser scrape https://news.ycombinator.com --format markdown
+
+# Or pull the tables out as structured data
+xbrowser scrape https://news.ycombinator.com --mode smart
 
 # Crawl an entire site
-xbrowser crawl https://example.com --max-depth 3 --output json
+xbrowser crawl https://example.com --maxDepth 3 --format markdown
 ```
 
 **Search Engine Automation**
@@ -36,24 +77,26 @@ xbrowser crawl https://example.com --max-depth 3 --output json
 xbrowser search "best headless browser CLI" --engine google --limit 10 --json
 
 # Time-filtered search
-xbrowser search "playwright alternative 2025" --engine bing --time-filter month
+xbrowser search "playwright alternative 2025" --engine bing --recency month
 ```
 
 **Browser Automation for AI Agents**
 ```bash
 # Record browser actions, replay in CI/CD
-xbrowser record --output workflow.yaml
+xbrowser record start --url https://example.com --name my-flow
+# …click through the flow in the browser, then:
+xbrowser record stop --output workflow.yaml
 xbrowser replay workflow.yaml
 
 # Chain commands for complex workflows
-xbrowser "goto https://example.com && wait .content && text --selector .content"
+xbrowser "goto https://news.ycombinator.com && wait .titleline && text --selector '.titleline > a'"
 ```
 
 **SEO & Backlink Automation**
 ```bash
 # Publish articles to SEO platforms via site plugins
-xbrowser devto publish --file article.md
-xbrowser juejin publish --file article.md
+xbrowser devto publish --title "My article" --file article.md
+xbrowser juejin publish --title "My article" --file article.md
 # (Each platform has its own plugin — run `xbrowser plugin list` to see available)
 ```
 
@@ -68,8 +111,8 @@ xbrowser content draft --case self-healing-replay --lang zh
 # Render an OG cover image with the browser itself — zero imaging libraries
 xbrowser "set-viewport 1200 630 && content cover --title 'Self-Healing Replay' --output cover.png"
 
-# Publish through any of the 18 platform plugins
-xbrowser devto publish --file output/content/self-healing-replay-en.md --tags "typescript,automation"
+# Publish through a platform plugin
+xbrowser devto publish --title "Self-Healing Replay" --file output/content/self-healing-replay-en.md --tags "typescript,automation"
 ```
 The full write → cover → publish loop that promotes xbrowser is itself built on xbrowser commands.
 
@@ -86,7 +129,7 @@ npm install -g @xbrowser/cli
 ### 最低要求
 
 - Node.js >= 18
-- Chromium 浏览器（默认路径 `/Applications/Chromium.app/Contents/MacOS/Chromium`，可通过环境变量 `XBROWSER_CHROMIUM_PATH` 自定义）
+- Chromium 或 Google Chrome（自动探测 macOS / Linux 常见路径，优先 `/Applications/Chromium.app/Contents/MacOS/Chromium`；其它路径用环境变量 `XBROWSER_CHROMIUM_PATH` 指定）
 
 ### 第一次使用
 
@@ -96,12 +139,12 @@ xbrowser goto https://example.com
 
 # 获取页面标题
 xbrowser title
-# 输出: Example Domain
+# 输出: title: Example Domain
 
 # 获取页面文本
 xbrowser text
 
-# 截图（保存到当前目录）
+# 截图（默认存到系统临时目录 …/xbrowser/screenshots，用 --output 指定路径）
 xbrowser screenshot
 
 # 关闭会话
@@ -171,8 +214,8 @@ xbrowser -e "goto https://example.com" -e "title"
 ### CDP 连接（连接已运行的浏览器）
 
 ```bash
-# 通过 WebSocket URL 连接
-xbrowser --cdp ws://localhost:9222 "goto https://example.com , title"
+# 通过 WebSocket URL 连接（<id> 取自 http://localhost:9222/json/version）
+xbrowser --cdp ws://localhost:9222/devtools/browser/<id> "goto https://example.com , title"
 
 # 通过端口号连接
 xbrowser --cdp 9222 "goto https://example.com , title"
@@ -303,7 +346,6 @@ xbrowser --cdp auto "goto https://example.com , title"
 |------|------|------|
 | `eval <expression>` | 执行 JS 表达式 | `xbrowser eval "document.title"` |
 | `eval "1 + 2"` | 计算表达式 | `xbrowser eval "1 + 2"` |
-| `eval "(a, b) => a + b" --args 1 2` | 执行带参数的函数 | `xbrowser eval "(a, b) => a + b" --args 1 2` |
 
 ### 存储
 
@@ -357,12 +399,10 @@ xbrowser --cdp auto "goto https://example.com , title"
 
 | 命令 | 说明 | 示例 |
 |------|------|------|
-| `convert <rec.yaml> <output>` | 转换录制为脚本 | `xbrowser convert recording.yaml out.js` |
-| `convert <rec.yaml> <output.py>` | 生成 Python 脚本 | `xbrowser convert recording.yaml replay.py` |
-| `convert <rec.yaml> <output.sh>` | 生成 Bash 脚本 | `xbrowser convert recording.yaml replay.sh` |
+| `convert <rec.yaml> <output.py>` | 转换为 Python + Playwright 脚本 | `xbrowser convert recording.yaml replay.py` |
 | `extract <rec.yaml>` | 提取 LLM 摘要 | `xbrowser extract recording.yaml` |
 | `filter <in.yaml> <out.yaml>` | 过滤录制事件 | `xbrowser filter raw.yaml clean.yaml` |
-| `filter <in.yaml> <out.yaml> --exclude scroll,navigate` | 排除事件类型 | `xbrowser filter raw.yaml clean.yaml --exclude scroll,navigate` |
+| `filter <in.yaml> <out.yaml> --exclude scroll,navigation` | 排除事件类型 | `xbrowser filter raw.yaml clean.yaml --exclude scroll,navigation` |
 
 ### 插件管理
 
@@ -439,8 +479,8 @@ xbrowser create my-plugin --template static --force
 
 **注意**：
 - 命令链中如果包含特殊字符（如 `#`、`>`），需要用引号包裹整个命令链或对单个参数加引号。
-- `->` 和 `+` 分隔符要求两边有空格（`goto url -> title` ✅，`goto url->title` ❌）。
-- `,` 和 `;` 不要求空格。
+- `,`、`+`、`->`、`&&`、`||` 两边都要有空格（`goto url -> title` ✅，`goto url->title` ❌）；`;` 只要求后面有空格（`goto url; title` ✅，`goto url;title` ❌）。
+- 只在分隔符前面留空格（如 `title ,url`）不会被识别成命令链：整串按单条命令执行，后面的命令被静默忽略。
 
 ```bash
 # 正确 — 整体引号
@@ -565,22 +605,22 @@ export default function (xcli: XCLIAPI): void {
 }
 ```
 
-### 内置插件
+### 常用插件
 
-xbrowser 自带以下插件：
+插件不随 npm 包分发，按需安装：`xbrowser plugin install <name>`（npm 优先，未命中时回退 xbrowser.dev 市场）。几个例子：
 
 | 插件 | 命令 | 说明 |
 |------|------|------|
 | **baidu** | `search`, `hotsearch`, `suggest`, `news` | 百度搜索、热搜、建议词、新闻 |
-| **douyin** | `ai-summary`, `user-info`, `video-info` | 抖音视频信息提取 |
-| **github** | `update-profile`, `add-social-link`, `create-gist`, `get-profile` | GitHub 个人资料管理 |
-| **web-automation** | `extract`, `paginate`, `fill-and-submit`, `screenshot` | 通用 Web 自动化工具 |
+| **douyin** | `videos`, `profile`, `detail`, `comments`, `search`, `download`, `ai-subtitle` | 抖音数据采集：作品、资料、评论、下载、AI 字幕 |
+| **github** | `update-profile`, `add-social-link`, `create-gist`, `get-profile`, `create-repo`, `edit-readme` | GitHub 个人资料与仓库管理 |
 | **content** | `cases`, `draft`, `cover` | 内容营销：内置推广 case 渲染成文 + 浏览器自渲染封面 |
 
 使用插件命令：
 
 ```bash
-# 百度搜索
+# 安装并使用百度搜索插件
+xbrowser plugin install baidu
 xbrowser goto https://www.baidu.com
 xbrowser baidu search --query "AI 编程"
 
@@ -609,32 +649,44 @@ xbrowser record start --url https://example.com
 xbrowser record stop --output recordings/my-session.yaml
 ```
 
-录制文件格式（YAML）：
+录制文件格式（YAML）——由 `xbrowser record stop` 生成，下面是删减后的真实样例：
 
 ```yaml
-id: "abc-123"
-name: "my-session"
-startUrl: "https://example.com"
-startTime: "2025-01-01T00:00:00.000Z"
-duration: 15000
-events:
-  - type: click
-    selector: "#button"
-    tagName: "button"
-    timestamp: 1000
-    pageState:
-      url: "https://example.com"
-      title: "Example"
-  - type: input
-    selector: "#search"
-    data:
-      value: "hello world"
-    timestamp: 3000
-  - type: scroll
-    data:
-      x: 0
-      y: 500
-    timestamp: 5000
+startUrl: https://example.com
+sessionName: my-session
+startedAt: "2026-11-23T14:36:13.891Z"
+actions:
+  - id: 1
+    type: navigation
+    timestamp: 1795444573943
+    url: https://example.com
+    pageTitle: Example Domain
+  - id: 2
+    type: cdp-fill # 经 CLI 下发的 fill；页面里的手动操作记为 input / click
+    timestamp: 1795444586890
+    url: https://example.com
+    element:
+      tag: input
+      selector: "#name"
+      strategy: id
+      confidence: high
+    value: Alice
+    snapshots:
+      png: .tmp/snapshots/step-002-after.png
+      aria: "input: | button: Submit"
+  - id: 3
+    type: click
+    timestamp: 1795444589184
+    url: https://example.com
+    element:
+      tag: button
+      selector: "#submit"
+      strategy: id
+      confidence: high
+    x: 224.4
+    y: 119.4
+network: [] # 每个请求一条：method / url / status / resourceType
+contextChanges: [] # 导航、弹窗等上下文变化
 ```
 
 ### 回放
@@ -649,22 +701,12 @@ xbrowser replay recordings/my-session.yaml --slow-mo 100
 
 ### 转换为脚本
 
-录制文件可转换为独立的 JS/Python/Bash 脚本：
+录制文件可转换为独立的 Python + Playwright 脚本：
 
 ```bash
-# 生成 Node.js + Playwright 脚本
-xbrowser convert recordings/my-session.yaml replay.js
-node replay.js
-
-# 生成 Python + Playwright 脚本
 xbrowser convert recordings/my-session.yaml replay.py
-python3 replay.py
-
-# 生成 Bash + curl 脚本（基于 CDP）
-xbrowser convert recordings/my-session.yaml replay.sh
-bash replay.sh
+python3 replay.py # 需要 pip install playwright && playwright install chromium
 ```
-
 ### 提取摘要
 
 ```bash
@@ -696,11 +738,11 @@ Key operations:
 ### 过滤事件
 
 ```bash
-# 排除滚动和导航事件
-xbrowser filter raw.yaml clean.yaml --exclude scroll,navigate,page_load
+# 排除滚动事件
+xbrowser filter raw.yaml clean.yaml --exclude scroll
 
-# 排除悬停事件
-xbrowser filter raw.yaml clean.yaml --exclude hover_enter,hover_leave
+# 排除滚动和导航事件
+xbrowser filter raw.yaml clean.yaml --exclude scroll,navigation
 ```
 
 ## 配置
@@ -712,7 +754,7 @@ xbrowser filter raw.yaml clean.yaml --exclude hover_enter,hover_leave
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `XBROWSER_CHROMIUM_PATH` | Chromium 可执行文件路径 | `/Applications/Chromium.app/Contents/MacOS/Chromium` |
-| `XBROWSER_DAEMON_PORT` | Daemon 端口 | `9222` |
+| `XBROWSER_DAEMON_PORT` | Daemon 端口 | `9224` |
 | `XBROWSER_CDP` | 默认 CDP 连接地址（可被 `--cdp` 覆盖） | — |
 | `XBROWSER_SESSION` | 默认会话名称（可被 `--session` 覆盖） | `default` |
 
@@ -876,7 +918,7 @@ npm run validate
 | 依赖 | 用途 |
 |------|------|
 | **@dyyz1993/xcli-core** | CLI 框架核心（命令注册、Scope、输出格式化、插件加载） |
-| **playwright** | 浏览器自动化引擎（含 CDP 连接） |
+| **ws** | CDP WebSocket 连接（浏览器驱动是自研的 `src/cdp-driver/`，不依赖 Playwright） |
 | **zod** | 参数校验 Schema |
 | **yaml** | 录制文件读写 |
 
@@ -885,7 +927,7 @@ npm run validate
 ```
 xbrowser/
 ├── src/
-│   ├── commands/        # 51 个浏览器命令定义
+│   ├── commands/        # 59 个浏览器命令定义
 │   ├── builtins/        # CLI 内置命令（config, plugin, session, create）
 │   ├── recorder/        # 录制引擎（录制器 + 回放器）
 │   ├── session/         # 会话管理
@@ -896,12 +938,13 @@ xbrowser/
 │   ├── executor.ts      # 命令执行器
 │   ├── chain-parser.ts  # 命令链解析器
 │   ├── browser.ts       # 浏览器管理（启动、CDP 连接）
+│   ├── cdp-driver/      # 自研 CDP 驱动（连接、输入、定位器，不依赖 Playwright）
 │   ├── context.ts       # 命令上下文（BrowserCommandContext）
 │   ├── scope.ts         # Scope 定义
 │   └── config.ts        # 配置管理
 ├── bin/
 │   └── cli.ts           # CLI 入口
-├── .xcli/plugins/       # 内置插件（baidu, douyin, github, web-automation）
+├── .xcli/plugins/       # 站点插件（126 个）
 ├── tests/               # 测试
 └── docs/                # 文档
 ```
@@ -914,12 +957,12 @@ xbrowser/
 | **Setup** | `npm i -g` — 0 config | Install + browser download | Install + browser download | Install + WebDriver + drivers |
 | **Web Scraping** | Built-in (`scrape`, `crawl`, `map`) | Write custom scripts | Write custom scripts | Write custom scripts |
 | **Search** | Built-in multi-engine (`search`) | No | No | No |
-| **Plugin Ecosystem** | 132 plugins | Limited | Limited | No |
+| **Plugin Ecosystem** | 126 plugins | Limited | Limited | No |
 | **No Code Required** | ✅ CLI commands | ❌ Must write JS/TS | ❌ Must write JS/TS | ❌ Must write code |
 | **Headless Mode** | ✅ Default | ✅ | ✅ | ✅ |
 | **Record/Replay** | ✅ Built-in (`record`/`replay`) | ✅ Codegen | ❌ | ❌ |
 | **Anti-Detection** | ✅ CDP firewall | ❌ | ❌ | ❌ |
-| **AI Agent Integration** | ✅ Built-in plugins | Manual integration | Manual integration | Manual integration |
+| **AI Agent Integration** | ✅ Built-in MCP server + plugins | Manual integration | Manual integration | Manual integration |
 
 **When to use xbrowser:**
 - You want to **automate browsers from the command line** without writing code
@@ -938,7 +981,7 @@ xbrowser/
 |------|------|------|
 | **@dyyz1993/xcli-core** | 通用 CLI 框架 | xbrowser 依赖的核心框架 |
 | **@dyyz1993/xpage (mpage)** | 浏览器自动化引擎 | 独立项目，xbrowser **不依赖** mpage |
-| **xbrowser** | 浏览器自动化 CLI | 自包含，直接使用 Playwright |
+| **xbrowser** | 浏览器自动化 CLI | 自包含，自带 CDP 驱动（不依赖 Playwright） |
 
 ## 🔑 Keywords
 
