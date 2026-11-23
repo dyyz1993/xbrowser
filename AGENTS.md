@@ -1557,6 +1557,8 @@ git branch -D feat/x
 
 合并 worktree 改动时先 `git status` 看清 staged/unstaged 差异，分别决定。
 
+**新 worktree 里提交前必须先装钩子**：`.husky/_` 由 `npm install`（`prepare: husky`）生成、不进 git，新建的 worktree 里没有它——git 找不到钩子会**静默跳过** pre-commit / commit-msg / pre-push，提交等于绕过了本地门禁（用软链 `node_modules` 代替安装时同样如此）。在 worktree 里执行一次 `npm install` 或 `npx husky`，并用 `ls .husky/_/pre-commit` 确认存在后再提交。
+
 ---
 
 ## 18. 速查表（最高频 8 条命令）
