@@ -29,7 +29,8 @@ vi.mock('@dyyz1993/xcli-core', () => ({
   registerCommandDefinition: vi.fn(),
   outputFormatter: vi.fn(),
   isCommandResult: vi.fn(),
-  helpGenerator: vi.fn(() => ({ generate: vi.fn() })),
+  // xcli-core 导出的是实例（helpGenerator.generate(...)），不是工厂
+  helpGenerator: { generate: vi.fn() },
 }));
 
 vi.mock('../src/client/daemon-client.js', () => ({
@@ -1038,6 +1039,279 @@ describe('router', () => {
     const b64 = Buffer.from('JSON.stringify({a: 1, b: 2})', 'utf8').toString('base64url');
     expect(executeChain).toHaveBeenCalledWith(`eval --script-b64 ${b64}`, { cdpEndpoint: undefined, sessionName: 'default' });
     expect(handleBrowserCommand).not.toHaveBeenCalled();
+  });
+
+  // ── 回归（2026-11-23）：引号命令链 + 其它 flag，`;` 链被拆没 ──
+  // 攻击复现：`xbrowser "goto A; goto B" --session s` 进 argv 拆分块后，`;` 被
+  // flatMap(part => part.split(';')) 删光——重写后的 argv 不含链运算符，只有第一个
+  // goto 静默执行（输出还是单命令格式）。
+  // 防守：首个非 flag 参数 isChainInput() 为真时原样交给链执行器，与单 argv 形态同语义。
+  describe('quoted chain string combined with other flags', () => {
+    const STEP_A = 'goto https://example.com/';
+    const STEP_B = 'goto https://example.com/?a=1';
+    // 与 src/executor.ts isChainInput 的正则一致——文件顶部默认 mock 缺 `;\s` / `||\s`，
+    // 识别不了 "goto A; goto B"。
+    const isChainLikeProduction = (input: string): boolean =>
+      /\s&&\s|\|\|\s|\s;\s|;\s|\s,\s|\s\+\s|\s->\s/.test(input);
+
+    /** 链执行器收到的输入，经生产链解析器拆成步骤（断言"跑了几步"，不依赖 mock 返回值） */
+    async function chainStepsSeen(): Promise<string[][]> {
+      const { executeChain } = await import('../src/executor.js');
+      const { parseCommandChain } = await import('../src/chain-parser.js');
+      return vi.mocked(executeChain).mock.calls.flatMap(([input]) =>
+        parseCommandChain(input).map((pipeline) => pipeline.pipeline));
+    }
+
+    beforeEach(async () => {
+      const { executeChain, isChainInput } = await import('../src/executor.js');
+      vi.mocked(isChainInput).mockImplementation(isChainLikeProduction);
+      vi.mocked(executeChain).mockResolvedValue({ success: true, steps: [], totalDuration: 0 });
+    });
+
+    it.each([
+      ['; glued to the previous step', `${STEP_A}; ${STEP_B}`],
+      ['; with a space on each side', `${STEP_A} ; ${STEP_B}`],
+    ])('executes both steps of a quoted chain (%s) when --session is given', async (_spacing, chain) => {
+      const { handleBrowserCommand } = await import('../src/cli/index.js');
+
+      await routeCommand([chain, '--session', 's']);
+
+      expect(await chainStepsSeen()).toEqual([[STEP_A], [STEP_B]]);
+      expect(handleBrowserCommand).not.toHaveBeenCalled();
+    });
+
+    it('routes a quoted "&&" chain with --session through the chain executor', async () => {
+      const { executeChain } = await import('../src/executor.js');
+      const { handleBrowserCommand } = await import('../src/cli/index.js');
+
+      await routeCommand([`${STEP_A} && title`, '--session', 's']);
+
+      expect(await chainStepsSeen()).toEqual([[STEP_A, 'title']]);
+      expect(executeChain).toHaveBeenCalledWith(`${STEP_A} && title`, {
+        cdpEndpoint: undefined,
+        sessionName: 's',
+        frame: undefined,
+      });
+      expect(handleBrowserCommand).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['--json before the chain', ['--json', `${STEP_A}; ${STEP_B}`], 'json'],
+      ['--json before --session', ['--json', '--session', 's', `${STEP_A}; ${STEP_B}`], 'json'],
+      ['--json after the chain', [`${STEP_A}; ${STEP_B}`, '--json'], 'json'],
+      ['--json after --session', ['--session', 's', '--json', `${STEP_A}; ${STEP_B}`], 'json'],
+      ['--yaml after --session', ['--session', 's', '--yaml', `${STEP_A}; ${STEP_B}`], 'yaml'],
+    ])('routes a quoted ";" chain to the chain executor with %s', async (_label, argv, outputMode) => {
+      const { outputEnvelope } = await import('../src/cli/output.js');
+      const { printChainResult } = await import('../src/cli/chain-output.js');
+      const { handleBrowserCommand } = await import('../src/cli/index.js');
+
+      await routeCommand(argv);
+
+      expect(await chainStepsSeen()).toEqual([[STEP_A], [STEP_B]]);
+      expect(outputEnvelope).toHaveBeenCalledWith(
+        expect.objectContaining({ success: true }),
+        expect.objectContaining({ command: 'chain' }),
+        outputMode,
+      );
+      expect(printChainResult).not.toHaveBeenCalled();
+      expect(handleBrowserCommand).not.toHaveBeenCalled();
+    });
+
+    it('passes --cdp / --session / --frame given around the chain to the chain executor', async () => {
+      const { executeChain } = await import('../src/executor.js');
+      const chain = `${STEP_A}; ${STEP_B}`;
+
+      await routeCommand(['--cdp', '9222', chain, '--session', 's', '--frame', 'captcha.gtimg.com']);
+
+      expect(await chainStepsSeen()).toEqual([[STEP_A], [STEP_B]]);
+      expect(executeChain).toHaveBeenCalledWith(chain, {
+        cdpEndpoint: '9222',
+        sessionName: 's',
+        frame: 'captcha.gtimg.com',
+      });
+    });
+
+    // ── 不得回归（2026-08-15 real-sites smoke 防线等）──
+    it('keeps a space-containing VALUE after the command word intact', async () => {
+      const { handleBrowserCommand } = await import('../src/cli/index.js');
+
+      await routeCommand(['fill', '#kw', 'a b c', '--session', 's']);
+
+      expect(handleBrowserCommand).toHaveBeenCalledWith(
+        'fill',
+        ['#kw', 'a b c'],
+        expect.any(Object),
+        's',
+        'text',
+        undefined
+      );
+    });
+
+    it('still expands a single quoted command given with --session', async () => {
+      const { executeChain } = await import('../src/executor.js');
+      const { handleBrowserCommand } = await import('../src/cli/index.js');
+
+      await routeCommand(["click '#btn'", '--session', 's']);
+
+      expect(executeChain).not.toHaveBeenCalled();
+      expect(handleBrowserCommand).toHaveBeenCalledWith(
+        'click',
+        ["'#btn'"],
+        expect.any(Object),
+        's',
+        'text',
+        undefined
+      );
+    });
+
+    // 布尔 flag（--json/--help/…）不带值：紧跟其后的引号命令不是 flag 值。
+    it('still expands a single quoted command that follows a boolean flag', async () => {
+      const { executeChain } = await import('../src/executor.js');
+      const { handleBrowserCommand } = await import('../src/cli/index.js');
+
+      await routeCommand(['--session', 's', '--json', 'goto https://example.com']);
+
+      expect(executeChain).not.toHaveBeenCalled();
+      expect(handleBrowserCommand).toHaveBeenCalledWith(
+        'goto',
+        ['https://example.com'],
+        expect.objectContaining({ json: true, session: 's' }),
+        's',
+        'json',
+        undefined
+      );
+    });
+
+    it('keeps plugin steps and their in-chain flags intact when routing with --session', async () => {
+      const { executeChain } = await import('../src/executor.js');
+      const { handleBrowserCommand } = await import('../src/cli/index.js');
+      const chain = "set-viewport 1200 630 && content cover --title 'Self-Healing Replay' --output cover.png";
+
+      await routeCommand([chain, '--session', 's']);
+
+      expect(await chainStepsSeen()).toEqual([
+        ['set-viewport 1200 630', "content cover --title 'Self-Healing Replay' --output cover.png"],
+      ]);
+      expect(executeChain).toHaveBeenCalledWith(chain, { cdpEndpoint: undefined, sessionName: 's', frame: undefined });
+      expect(handleBrowserCommand).not.toHaveBeenCalled();
+    });
+
+    it('leaves a separator with a space on the left only on the single-command path, like the single-argv form', async () => {
+      const { executeChain } = await import('../src/executor.js');
+      const { handleBrowserCommand } = await import('../src/cli/index.js');
+      const notAChain = `${STEP_A} ;${STEP_B}`;
+
+      await routeCommand([notAChain]); // 单 argv 形态
+      await routeCommand([notAChain, '--session', 's']); // 带 flag 形态必须给出相同结果
+
+      expect(executeChain).not.toHaveBeenCalled();
+      expect(vi.mocked(handleBrowserCommand).mock.calls[1].slice(0, 2))
+        .toEqual(vi.mocked(handleBrowserCommand).mock.calls[0].slice(0, 2));
+    });
+  });
+
+  // ── 回归（2026-11-23）：`xbrowser eval --help` 把 help 当脚本执行 ──
+  // 攻击复现：eval 脚本形态在 help 检查之前拦截，`--help` 被拼进脚本发给页面
+  // （ReferenceError: help is not defined，还会写 session 归档 / 错题本）。
+  // 防守：eval 之后的参数里有独立的 `--help` / `-h` token 时按普通命令走 help 路径。
+  describe('eval help request', () => {
+    const HELP_TEXT = '<generated help>';
+
+    async function expectNothingExecuted(): Promise<void> {
+      const { executeChain } = await import('../src/executor.js');
+      const { forwardExec } = await import('../src/client/daemon-client.js');
+      const { handleBrowserCommand } = await import('../src/cli/index.js');
+      expect(executeChain).not.toHaveBeenCalled();
+      expect(forwardExec).not.toHaveBeenCalled();
+      expect(handleBrowserCommand).not.toHaveBeenCalled();
+    }
+
+    /** 跑一条命令并返回它写到 console.log 的内容 */
+    async function routeCapturingLog(argv: string[]): Promise<string[]> {
+      const logs: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: unknown[]) => { logs.push(args.join(' ')); };
+      try {
+        await routeCommand(argv);
+      } finally {
+        console.log = origLog;
+      }
+      return logs;
+    }
+
+    beforeEach(async () => {
+      const { helpGenerator } = await import('@dyyz1993/xcli-core');
+      vi.mocked(helpGenerator.generate).mockReturnValue(HELP_TEXT);
+    });
+
+    it.each([
+      [['eval', '--help']],
+      [['eval', '-h']],
+      [['eval', '--help', '--session', 's']],
+      [['eval', '-h', '--session', 's']],
+      [['--session', 's', 'eval', '--help']],
+      [['eval', '--help', '--frame', 'captcha.gtimg.com']],
+    ])('prints eval help and executes nothing for %j', async (argv) => {
+      const { helpGenerator } = await import('@dyyz1993/xcli-core');
+
+      const logs = await routeCapturingLog(argv);
+
+      await expectNothingExecuted();
+      expect(helpGenerator.generate).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'eval' }),
+        expect.anything(),
+      );
+      expect(logs).toEqual([HELP_TEXT]);
+    });
+
+    it('prints eval help as JSON with --json', async () => {
+      const { outputResult } = await import('../src/cli/output.js');
+
+      await routeCommand(['eval', '--json', '--help']);
+
+      await expectNothingExecuted();
+      expect(outputResult).toHaveBeenCalledWith(expect.objectContaining({ command: 'eval' }), 'json');
+    });
+
+    it('keeps command help for other commands on the same help path', async () => {
+      const { helpGenerator } = await import('@dyyz1993/xcli-core');
+
+      const logs = await routeCapturingLog(['goto', '--help']);
+
+      expect(helpGenerator.generate).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'goto' }),
+        expect.anything(),
+      );
+      expect(logs).toEqual([HELP_TEXT]);
+      await expectNothingExecuted();
+    });
+
+    it.each([
+      ['help'],
+      ['typeof window.help'],
+      ['document.querySelector("#help").textContent'],
+    ])('still routes eval %j to script mode', async (script) => {
+      const { forwardExec } = await import('../src/client/daemon-client.js');
+      const { helpGenerator } = await import('@dyyz1993/xcli-core');
+
+      await routeCommand(['eval', script]);
+
+      const b64 = Buffer.from(script, 'utf8').toString('base64url');
+      expect(forwardExec).toHaveBeenCalledWith('eval', { 'script-b64': b64 }, 'default', undefined);
+      expect(helpGenerator.generate).not.toHaveBeenCalled();
+    });
+
+    it('keeps -e flag mode untouched', async () => {
+      const { executeChain } = await import('../src/executor.js');
+      const { helpGenerator } = await import('@dyyz1993/xcli-core');
+
+      await routeCommand(['-e', 'document.title']);
+
+      const b64 = Buffer.from('document.title', 'utf8').toString('base64url');
+      expect(executeChain).toHaveBeenCalledWith(`eval --script-b64 ${b64}`, { cdpEndpoint: undefined, sessionName: 'default' });
+      expect(helpGenerator.generate).not.toHaveBeenCalled();
+    });
   });
 });
 

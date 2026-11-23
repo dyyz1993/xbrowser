@@ -56,8 +56,15 @@ export async function routeCommand(
     // parsing — see handleEvalScript. Runs after the -e branch so
     // `xbrowser -e` still wins when both forms are mixed.
     const evalStart = findEvalStart(argv);
-    if (evalStart >= 0 && argv.length > evalStart + 1) {
-      await handleEvalScript(argv.slice(evalStart + 1), argv);
+    const evalParts = evalStart >= 0 ? argv.slice(evalStart + 1) : [];
+    // `eval --help` / `eval -h` asks for the eval command's help, not for a
+    // script literally named "--help" (it was evaluated as JS → ReferenceError,
+    // plus archive/ledger side effects). Exact tokens only: a script that
+    // merely contains the word "help" still runs as a script. Help is then
+    // handled by the regular `options.help` branch below.
+    const evalHelpRequested = evalParts.includes('--help') || evalParts.includes('-h');
+    if (evalStart >= 0 && evalParts.length > 0 && !evalHelpRequested) {
+      await handleEvalScript(evalParts, argv);
       return;
     }
 
@@ -96,11 +103,14 @@ export async function routeCommand(
     // space-containing arg that comes AFTER a command word (fill "#kw" "a b c")
     // is a VALUE — re-splitting it truncated fill values to the first word.
     const globalFlags = new Set(['--session', '--cdp', '--json', '--yaml', '--output', '--timeout', '--help', '-h', '--version', '--frame', '--target', '--tab', '--bridge']);
+    // Only these take a value: the token right after a boolean flag (--json,
+    // --help, …) is the next argument (e.g. the quoted chain), not a flag value.
+    const globalValueFlags = new Set(['--session', '--cdp', '--output', '--timeout', '--frame', '--target', '--tab']);
     let chainArgIdx = -1;
     let seenCommandWord = false;
     for (let i = 0; i < argv.length; i++) {
       if (globalFlags.has(argv[i])) continue; // skip flag
-      if (globalFlags.has(argv[i]) || (i > 0 && globalFlags.has(argv[i-1]) && !argv[i].startsWith('-'))) continue; // skip flag value
+      if (globalFlags.has(argv[i]) || (i > 0 && globalValueFlags.has(argv[i-1]) && !argv[i].startsWith('-'))) continue; // skip flag value
       if (!seenCommandWord) {
         if (argv[i].includes(' ') && /^[a-zA-Z]/.test(argv[i])) {
           chainArgIdx = i;
@@ -112,6 +122,16 @@ export async function routeCommand(
 
 	    if (chainArgIdx >= 0) {
 	      const chainArg = argv[chainArgIdx];
+	      // A quoted CHAIN ("goto A; goto B") must reach the chain executor
+	      // verbatim even when other flags are on the command line. Tokenizing
+	      // below deletes every `;` (and splits quoted args), so the rewritten
+	      // argv no longer contained a chain operator and only the first
+	      // command ran, silently (2026-11-23).
+	      if (isChainInput(chainArg)) {
+	        // argvIn, not the --json/--yaml-stripped argv: the output mode flag must survive
+	        await handleChainInput(chainArg, argvIn);
+	        return;
+	      }
 	      const spaceIdx = chainArg.indexOf(' ');
 	      const possibleCmd = chainArg.substring(0, spaceIdx);
 	      if (/^[a-zA-Z][\w-]*$/.test(possibleCmd)) {
