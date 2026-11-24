@@ -393,6 +393,57 @@ describe('record-routes', () => {
       exitSpy.mockRestore();
     });
 
+    it('should print a Run hint matching the output type', async () => {
+      mockFsReadFileSync.mockReturnValue('events:\n  - type: click');
+      mockYamlParse.mockReturnValue({ startUrl: 'https://example.com', events: [{ type: 'click', selector: '#btn' }] });
+      const logSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+      await handleConvert(['rec.yaml', 'out.sh'], 'text');
+      await handleConvert(['rec.yaml', 'out.py'], 'text');
+      await handleConvert(['rec.yaml', 'out.js'], 'text');
+
+      const out = logSpy.mock.calls.map((c) => c.map(String).join(' ')).join('\n');
+      expect(out).toContain('Run: bash out.sh');
+      expect(out).toContain('Run: python out.py');
+      expect(out).toContain('Run: node out.js');
+      expect(out).not.toContain('Run: ./');
+      logSpy.mockRestore();
+    });
+
+    it('should convert a current-format recording into a CLI replay script', async () => {
+      // New recorder format: actions carry the selector under action.element and the value at the top level
+      mockFsReadFileSync.mockReturnValue('{"actions":[]}');
+      mockYamlParse.mockReturnValue({
+        startUrl: 'https://example.com/',
+        sessionName: 'demo',
+        actions: [
+          { type: 'navigation', timestamp: 1, url: 'https://example.com/' },
+          { type: 'cdp-fill', timestamp: 2, element: { tag: 'input', selector: '#name', text: '' }, value: 'Alice' },
+          { type: 'cdp-click', timestamp: 3, element: { tag: 'button', selector: '#submit', text: '' } },
+          { type: 'click', timestamp: 4, element: { tag: 'button', selector: '#submit', text: '' }, x: 1, y: 2 },
+          { type: 'submit', timestamp: 5 },
+          { type: 'scroll', timestamp: 6, value: 'down:600' },
+          { type: 'navigation', timestamp: 7, url: 'https://example.com/results' },
+        ],
+      });
+      const logSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+
+      await handleConvert(['rec.json', 'out.sh'], 'text');
+
+      const written = mockFsWriteFileSync.mock.calls[0]?.[1] as string;
+      expect(written.split('\n').filter((line) => line.startsWith('xb '))).toEqual([
+        "xb goto 'https://example.com/'",
+        "xb fill '#name' 'Alice'",
+        "xb click '#submit'",
+        'xb scroll down --distance 600',
+        "xb goto 'https://example.com/results'",
+        'xb session close',
+      ]);
+      const out = logSpy.mock.calls.map((c) => c.map(String).join(' ')).join('\n');
+      expect(out).toContain('Events: 7, Start URL: https://example.com/');
+      logSpy.mockRestore();
+    });
+
     it('should convert recording to JS script', async () => {
       mockFsReadFileSync.mockReturnValue('events:\n  - type: click');
       mockYamlParse.mockReturnValue({ startUrl: 'https://example.com', events: [{ type: 'click' }] });
@@ -411,9 +462,9 @@ describe('record-routes', () => {
       logSpy.mockRestore();
     });
 
-    it('should map new-format actions (element.selector) to flat events before converting', async () => {
-      // New recorder format: selector lives under action.element.selector, not top-level.
-      // Without the mapping, converters see selector=undefined and fall back to 'body'.
+    it('should replay new-format actions (element.selector, top-level value) as real steps', async () => {
+      // New recorder format: selector lives under action.element.selector, the value at the top level.
+      // The generators read that shape themselves — an unmapped selector would fall back to 'body'.
       mockFsReadFileSync.mockReturnValue('{"actions":[]}');
       mockYamlParse.mockReturnValue({
         startUrl: 'https://example.com',
