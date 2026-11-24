@@ -868,4 +868,67 @@ describe('SessionRecorder', () => {
       expect(data.discoveredFilters).toHaveLength(0);
     });
   });
+  describe('ambient actions in the default (clean) stream', () => {
+    let pending: Array<Record<string, unknown>>;
+
+    /** What the browser-side ACTION_SIGNAL_SCRIPT pushes for a pointer event on #box. */
+    const signal = (type: string): Record<string, unknown> => ({
+      type,
+      ts: Date.now(),
+      url: 'https://example.com',
+      title: '',
+      element: { tag: 'div', selector: '#box', text: 'box', strategy: 'id', confidence: 'high' },
+      x: 10,
+      y: 20,
+    });
+
+    const flushSignals = async (): Promise<void> => {
+      const draining = (recorder as unknown as { flushPendingActions(page: unknown): Promise<void> }).flushPendingActions(mockPage);
+      await vi.advanceTimersByTimeAsync(300);
+      await draining;
+    };
+
+    const recorded = async (): Promise<Array<[string, string | undefined]>> => {
+      const { data } = await recorder.stop();
+      return data.actions.map((a) => [a.type, a.element?.selector]);
+    };
+
+    beforeEach(async () => {
+      vi.useFakeTimers();
+      pending = [];
+      mockPage.evaluate = vi.fn(async (script: unknown): Promise<unknown> =>
+        typeof script === 'string' && script.includes('__xb_pending_actions') ? pending.splice(0) : []);
+      await startRecording('https://example.com');
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('records a right click, so a replay can open the menu it opened', async () => {
+      // 右键曾被当作环境噪音丢掉：默认录制里没有这一步，回放时菜单永远打不开
+      pending.push(signal('contextmenu'));
+      await flushSignals();
+
+      expect(await recorded()).toEqual([['contextmenu', '#box']]);
+    });
+
+    it('keeps a dblclick that lands in the same millisecond as its second click', async () => {
+      // 一次双击的第二个 click 与 dblclick 常在同一毫秒到达：它们是两个不同的信号
+      pending.push(signal('click'), signal('click'), signal('dblclick'));
+      // Each click spends 300ms in its click-context capture: advance for both.
+      const draining = (recorder as unknown as { flushPendingActions(page: unknown): Promise<void> }).flushPendingActions(mockPage);
+      await vi.advanceTimersByTimeAsync(900);
+      await draining;
+
+      expect((await recorded()).map(([type]) => type)).toEqual(['click', 'click', 'dblclick']);
+    });
+
+    it('still drops focus and visibility signals as noise', async () => {
+      pending.push(signal('focus'), signal('visibility'));
+      await flushSignals();
+
+      expect(await recorded()).toEqual([]);
+    });
+  });
 });

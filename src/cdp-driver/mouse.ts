@@ -66,15 +66,19 @@ export class XBMouseImpl implements XBMouse {
     } else {
       await this.move(tx, ty);
     }
-    await this.down({ button, clickCount: opts.clickCount ?? 1 });
-    await sleep(stealth ? sRand(...CFG.pressDuration) : (opts.delay ?? 0));
-    const rx = stealth ? this._x + sRand(...CFG.releaseDrift) * (Math.random() < .5 ? -1 : 1) : this._x;
-    const ry = stealth ? this._y + sRand(...CFG.releaseDrift) * (Math.random() < .5 ? -1 : 1) : this._y;
-    this._x = rx; this._y = ry;
-    await this.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: rx, y: ry, button, buttons: this._buttons, clickCount: opts.clickCount ?? 1 });
-    for (let i = 1; i < (opts.clickCount ?? 1); i++) {
-      if (opts.delay) await sleep(opts.delay);
-      await this.down({ button }); await this.up({ button });
+    // 浏览器按「按下/抬起」的 clickCount 序列合成事件：两段 1 → 2 才得到
+    // click、click、dblclick。所以多击就是若干段按压，段号依次递增——以前
+    // clickCount:2 只发一对（没有 dblclick），外面再叠一次点击凑数。
+    const clickCount = Math.max(1, opts.clickCount ?? 1);
+    for (let n = 1; n <= clickCount; n++) {
+      await this.down({ button, clickCount: n });
+      await sleep(stealth ? sRand(...CFG.pressDuration) : (opts.delay ?? 0));
+      if (stealth) {
+        this._x += sRand(...CFG.releaseDrift) * (Math.random() < .5 ? -1 : 1);
+        this._y += sRand(...CFG.releaseDrift) * (Math.random() < .5 ? -1 : 1);
+      }
+      await this.release(button, n);
+      if (n < clickCount) await sleep(opts.delay ?? sRand(...CFG.doubleClickGap));
     }
   }
 
@@ -101,18 +105,28 @@ export class XBMouseImpl implements XBMouse {
   }
 
   async up(opts: { button?: 'left' | 'right' | 'middle'; clickCount?: number } = {}): Promise<void> {
-    const button = opts.button ?? 'left';
+    await this.release(opts.button ?? 'left', opts.clickCount ?? 1);
+  }
+
+  /**
+   * Release `button` and forget it. The bit is cleared BEFORE the event goes out:
+   * Chrome derives pointerup from the button-state change, so a release that still
+   * claims the button is down delivers mouseup and click but no pointerup. Measured
+   * 2026-11-24: pointer-driven sliders never finished a `mouse drag`, the recorder
+   * logged the drag as a click, and a button left in the mask made every later
+   * press of another button lose its pointerdown.
+   */
+  private async release(button: 'left' | 'right' | 'middle', clickCount: number): Promise<void> {
+    this._buttons &= ~buttonBit(button);
     this._button = 'none';
     await this.send('Input.dispatchMouseEvent', {
       type: 'mouseReleased',
       x: this._x,
       y: this._y,
       button,
-      // release 先带位发送再清位（Puppeteer 同序——DOM mouseup 的 buttons 反映释放后状态）
       buttons: this._buttons,
-      clickCount: opts.clickCount ?? 1,
+      clickCount,
     });
-    this._buttons &= ~buttonBit(button);
   }
 
   async move(x: number, y: number, opts: { steps?: number; stealth?: boolean } = {}): Promise<void> {
@@ -153,11 +167,7 @@ export class XBMouseImpl implements XBMouse {
    */
   async drag(x: number, y: number, opts: { steps?: number } = {}): Promise<void> {
     const stealth = process.env.XBROWSER_STEALTH !== 'off';
-    await this.send('Input.dispatchMouseEvent', {
-      type: 'mousePressed', x: this._x, y: this._y, button: 'left', buttons: 1, clickCount: 1,
-    });
-    this._button = 'left';
-    this._buttons |= 1;
+    await this.down({ button: 'left' });
     // 按住移动：HTML5 拖拽启动需要移动超过阈值（约 4-8px）且逐帧移动
     const steps = opts.steps ?? Math.max(10, Math.min(24, Math.round(Math.hypot(x - this._x, y - this._y) / 20)));
     const fx = this._x, fy = this._y;
@@ -172,11 +182,7 @@ export class XBMouseImpl implements XBMouse {
     }
     this._x = x; this._y = y;
     await sleep(sRand(60, 140)); // drop 前的悬停放手节奏
-    await this.send('Input.dispatchMouseEvent', {
-      type: 'mouseReleased', x, y, button: 'left', buttons: this._buttons, clickCount: 1,
-    });
-    this._button = 'none';
-    this._buttons &= ~1;
+    await this.release('left', 1);
   }
 
   async wheelAt(x: number, y: number, deltaX: number, deltaY: number): Promise<void> {

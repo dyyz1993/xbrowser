@@ -68,8 +68,10 @@ export class SessionRecorder {
   private streamMode: 'clean' | 'raw' = 'clean';
   private snapshotThrottle = new Map<string, number>();
 
+  // contextmenu 不在此列：右键打开菜单是一次有目标的交互，和点击同级——当作噪音
+  // 丢掉后，默认（clean）录制里根本没有这一步，回放时菜单永远打不开。
   private static readonly AMBIENT_TYPES = new Set([
-    'hover', 'focus', 'scroll', 'visibility', 'resize', 'clipboard', 'touch', 'contextmenu',
+    'hover', 'focus', 'scroll', 'visibility', 'resize', 'clipboard', 'touch',
   ]);
 
   constructor(context: BrowserContext, page: Page, sessionName: string) {
@@ -783,7 +785,10 @@ export class SessionRecorder {
     } catch { /* page may have closed */ }
 
     for (const raw of pending) {
-      if (raw.ts <= this.lastActionTs) continue;
+      // The page hands each signal over exactly once, so an equal timestamp is
+      // never a repeat: the second click of a double click and its dblclick land
+      // in the same millisecond, and `<=` threw the dblclick away.
+      if (raw.ts < this.lastActionTs) continue;
 
       // ── Proactive sensing actions: handle separately, not as user actions ──
       if (raw.type === 'discovered_filters') {

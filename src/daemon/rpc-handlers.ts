@@ -52,6 +52,44 @@ import { getPluginLoader as getPluginLoaderSingleton } from '../utils/plugin-sin
 const activeRecorders = new Map<string, SessionRecorder>();
 const replayResumeResolvers = new Map<string, () => void>();
 
+/**
+ * The recorder action a CLI command injects (action type, raw selector, value).
+ * Shared by the pre-execution dedup reservation and the post-execution
+ * injection, so both derive the very same dedup key.
+ *
+ * A right click is described as the page's own `contextmenu` signal: it is the
+ * same interaction, the dedup key matches, and a recording of a CLI-driven
+ * right click holds one right click instead of a `contextmenu` plus a
+ * button-less `cdp-click` that would replay as a left click.
+ */
+export function describeCliCommandForRecording(command: string, params: Record<string, unknown>): { type: string; selector?: string; value?: string } | undefined {
+  const COMMAND_ACTION_MAP: Record<string, string> = {
+    goto: 'goto',
+    fill: 'cdp-fill',
+    click: 'cdp-click',
+    type: 'input',
+    select: 'change',
+    scroll: 'scroll',
+  };
+  const type = command === 'click' && params.button === 'right' ? 'contextmenu' : COMMAND_ACTION_MAP[command];
+  if (!type) return undefined;
+
+  const selector = (params.selector as string) || (params.css as string);
+  // type 命令的参数名是 text；contenteditable 场景 CDP 键盘输入不触发 input
+  // 事件（信号侧无值），命令注入是唯一值来源，必须捕获（rec-duel d10）
+  let value: string | undefined = (params.value as string) || (params.expression as string);
+  if (value === undefined || value === '') {
+    value = params.text as string | undefined;
+  }
+  // scroll 命令：把方向+距离编码进 value，回放端解码执行
+  if (command === 'scroll') {
+    const dir = (params.direction as string) || 'down';
+    const dist = (params.distance as number) ?? 300;
+    value = `${dir}:${dist}`;
+  }
+  return { type, selector, value };
+}
+
 export function createRPCHandler(): RPCHandler & {
   setPreviewWS: (ws: WSServer) => void;
   handleReconnect: (sessionId: string) => Promise<void>;
@@ -674,38 +712,6 @@ export function createRPCHandler(): RPCHandler & {
     return { session: sessionName, commands: commandLogStore.list(sessionName, { limit }) };
   }
 
-  /**
-   * The recorder action a CLI command injects (action type, raw selector, value).
-   * Shared by the pre-execution dedup reservation and the post-execution
-   * injection, so both derive the very same dedup key.
-   */
-  function describeCommandAction(command: string, params: Record<string, unknown>): { type: string; selector?: string; value?: string } | undefined {
-    const COMMAND_ACTION_MAP: Record<string, string> = {
-      goto: 'goto',
-      fill: 'cdp-fill',
-      click: 'cdp-click',
-      type: 'input',
-      select: 'change',
-      scroll: 'scroll',
-    };
-    const type = COMMAND_ACTION_MAP[command];
-    if (!type) return undefined;
-
-    const selector = (params.selector as string) || (params.css as string);
-    // type 命令的参数名是 text；contenteditable 场景 CDP 键盘输入不触发 input
-    // 事件（信号侧无值），命令注入是唯一值来源，必须捕获（rec-duel d10）
-    let value: string | undefined = (params.value as string) || (params.expression as string);
-    if (value === undefined || value === '') {
-      value = params.text as string | undefined;
-    }
-    // scroll 命令：把方向+距离编码进 value，回放端解码执行
-    if (command === 'scroll') {
-      const dir = (params.direction as string) || 'down';
-      const dist = (params.distance as number) ?? 300;
-      value = `${dir}:${dist}`;
-    }
-    return { type, selector, value };
-  }
 
   /**
    * Reserve the recorder's dedup entry BEFORE `command` executes, so the
@@ -715,7 +721,7 @@ export function createRPCHandler(): RPCHandler & {
    */
   function reserveCommandAction(sessionName: string, command: string, params: Record<string, unknown>, preElement?: Record<string, unknown>): () => void {
     const recorder = activeRecorders.get(sessionName);
-    const action = describeCommandAction(command, params);
+    const action = describeCliCommandForRecording(command, params);
     // Selector-less actions (goto, scroll) never share a dedup key with a signal.
     if (!recorder || !action?.selector) return () => {};
     return recorder.reserveCommandAction({
@@ -731,7 +737,7 @@ export function createRPCHandler(): RPCHandler & {
     const recorder = activeRecorders.get(sessionName);
     if (!recorder) return;
 
-    const action = describeCommandAction(command, params);
+    const action = describeCliCommandForRecording(command, params);
     if (!action) return;
     const { type: actionType, selector, value } = action;
 
