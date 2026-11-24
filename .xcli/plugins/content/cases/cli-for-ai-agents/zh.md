@@ -36,7 +36,7 @@ EOF
 
 底层上 xbrowser 直接说 CDP 协议（无需下载 driver 二进制），并在上面叠了 agent 最不擅长从零造的几层：
 
-- **130+ 站点插件。** `xbrowser devto publish --file post.md`、`xbrowser juejin draft --title ... --content ...`——每个站点的完整流程（登录检测、编辑器怪癖、上传处理）被打包、测试、版本化。agent 不需要逆向一个 CMS，它调用一个动词。
+- **125+ 站点插件。** `xbrowser devto publish --file post.md`、`xbrowser juejin draft --title ... --content ...`——每个站点的完整流程（登录检测、编辑器怪癖、上传处理）被打包、测试、版本化。agent 不需要逆向一个 CMS，它调用一个动词。
 - **复用人的浏览器。** `xbrowser --cdp 9222 ...` 直连已经在跑的 Chrome。所有登录态、过了 2FA 的账号、cookie 墙全部白拿——agent 浏览最难的部分，靠"不解决"解决了。
 - **人类接管是一等 API。** 遇到验证码或短信登录，`ctx.waitForHuman()` 挂起流程并打开实时 viewer（`xbrowser viewer`），人来解决，脚本自动续跑。Agent 和人类共享同一个控制面。
 - **录制 → 自愈回放。** 人或 agent 录制一次流程；回放引擎在站点改版后确定性恢复——链路里没有 LLM。（原理足够单独写一篇。）
