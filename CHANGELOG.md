@@ -2,6 +2,11 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；由 `npm run lint:changelog` 约束（版本条目齐全、格式、去重、降序）。
 
+## [1.36.1] - 2026-11-24
+
+### Fixed
+- **login-state 插件 marketplace 上架**：补顶层 `package.json` description（缺失导致 1.36.0 发布流水线的插件上架失败），版本 1.1.0 → 1.1.1（#476）。
+
 ## [1.36.0] - 2026-11-24
 
 ### Added
