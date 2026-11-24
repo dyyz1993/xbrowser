@@ -25,6 +25,7 @@
  */
 
 import type { PageLike } from '../page-types.js';
+import { bridgeHttpPort } from '../bridge-endpoint.js';
 import {
   type BridgeTransport,
   type ElementPoint,
@@ -357,7 +358,7 @@ export async function resolveChannel(opts: {
   bridgePort?: number;
   preferBridge?: boolean;
 }): Promise<ChannelResolution> {
-  const port = opts.bridgePort ?? 9347;
+  const port = opts.bridgePort ?? bridgeHttpPort();
   const preferBridge = opts.preferBridge !== false;
 
   if (preferBridge && (await isBridgeAvailable(port))) {

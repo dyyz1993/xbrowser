@@ -11,6 +11,7 @@ import {
 import { getDaemonProcessStatus } from '../daemon/daemon.js';
 import { PluginInstaller } from '../plugin/installer.js';
 import { getPluginLoader } from '../utils/plugin-singleton.js';
+import { bridgeHttpBase } from '../browser/bridge-session.js';
 import type {
   ConsoleEnvironment,
   ConsoleOverview,
@@ -19,7 +20,6 @@ import type {
 } from './types.js';
 
 const DAEMON_PREVIEW_URL = 'http://127.0.0.1:9224';
-const CHROME_BRIDGE_STATUS_URL = 'http://127.0.0.1:9347/status';
 const LOGIN_BRIDGE_STATUS_URL = 'http://127.0.0.1:9355/cookies';
 const CHROME_BRIDGE_META_PATH = join(homedir(), '.xbrowser', 'chrome-bridge-ext.json');
 
@@ -53,7 +53,7 @@ async function buildEnvironments(): Promise<ConsoleEnvironment[]> {
     evidence: { ...daemonStatus, ping: daemonPingResult },
   }];
 
-  const bridgeStatus = asRecord(await fetchJson(CHROME_BRIDGE_STATUS_URL));
+  const bridgeStatus = asRecord(await fetchJson(`${bridgeHttpBase()}/status`));
   const bridgeRunning = bridgeStatus.running === true;
   const bridgeClients = Array.isArray(bridgeStatus.clients) ? bridgeStatus.clients.length : 0;
   let bridgeExtId: string | null = null;

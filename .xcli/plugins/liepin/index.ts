@@ -3,8 +3,8 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import { bridgeHttpBase } from '../shared/bridge-endpoint.js';
 
-const BRIDGE_HTTP = 'http://127.0.0.1:9347';
 const TASK = 'liepin';
 const RESUME_CENTER = 'https://c.liepin.com/resume/edit';
 const APPLY_RECORD = 'https://c.liepin.com/job/record/apply';
@@ -17,7 +17,7 @@ interface BridgeResp {
 }
 
 async function bridgeCall(cmd: string, args?: Record<string, unknown>): Promise<BridgeResp | null> {
-  return fetch(`${BRIDGE_HTTP}/exec`, {
+  return fetch(`${bridgeHttpBase()}/exec`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cmd, args, task: TASK }),
@@ -25,7 +25,7 @@ async function bridgeCall(cmd: string, args?: Record<string, unknown>): Promise<
 }
 
 async function bridgeReady(): Promise<boolean> {
-  const r = await fetch(`${BRIDGE_HTTP}/status`).then(r => r.json()).catch(() => null) as { clients?: unknown[] } | null;
+  const r = await fetch(`${bridgeHttpBase()}/status`).then(r => r.json()).catch(() => null) as { clients?: unknown[] } | null;
   return Boolean(r && Array.isArray(r.clients) && r.clients.length > 0);
 }
 
