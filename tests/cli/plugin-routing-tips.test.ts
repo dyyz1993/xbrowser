@@ -52,6 +52,12 @@ vi.mock('../../src/utils/plugin-singleton.js', () => ({
   getPluginLoader: mockGetPluginLoader,
 }));
 
+// 路由按「命令名是否已注册」决定 token 里的分隔符是值还是链（见下方链重组用例）
+vi.mock('../../src/commands/command-registry.js', () => {
+  const registered = new Set(['fill', 'type', 'goto', 'title', 'url', 'mouse', 'eval']);
+  return { getCommand: (name: string) => (registered.has(name) ? { name } : undefined) };
+});
+
 vi.mock('../../src/plugin/login-guard.js', () => ({
   checkPluginLoginRequired: mockCheckPluginLoginRequired,
 }));
@@ -342,5 +348,170 @@ describe('plugin-routing global flag scan (#466 sibling)', () => {
     }));
 
     expect(mockExecuteChain).toHaveBeenCalledWith('someplugin cmd1 && cmd2', { cdpEndpoint: undefined, sessionName: 's' });
+  });
+});
+
+// ── 链重组 ──
+// 路由把 argv 重新拼成链字符串再交给链解析器。shell 已经切好词：只有自成一个
+// token 的操作符（`goto a '&&' title`）才是链结构，藏在 token 里的 ` + ` / ` ; `
+// 是值。所以拼回链字符串时，带空白或操作符的 token 要重新加引号，链解析器才
+// 不会把它拆成多条命令（`fill '#q' 'x ; title'` 曾被拆成 `fill #q x` + `title`，
+// 退出码 0 而值被截断）。
+describe('plugin-routing chain reassembly', () => {
+  const productionIsChainInput = (input: string): boolean =>
+    /\s&&\s|\|\|\s|\s;\s|;\s|\s,\s|\s\+\s|\s->\s/.test(input);
+  let logSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupLoaderWithSites([]);
+    mockIsChainInput.mockImplementation(productionIsChainInput);
+    mockExecuteChain.mockResolvedValue({ success: true, totalDuration: 0, steps: [] });
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    logSpy.mockRestore();
+  });
+
+  describe('values that contain chain separators', () => {
+    it.each(['x ; title', 'a + b', 'a -> b', 'p , q'])(
+      'leaves "%s" inside a value token alone for a registered command',
+      async (value) => {
+        const handled = await handlePluginOrChainRoute(buildRequest({
+          command: 'fill',
+          cmdArgs: ['#q', value],
+          argv: ['fill', '#q', value],
+        }));
+
+        expect(handled).toBe(false);
+        expect(mockExecuteChain).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each(['a + b', 'p ; q', 'a -> b', 'it\'s here'])(
+      're-quotes "%s" so a token-operator chain keeps it whole',
+      async (value) => {
+        const handled = await handlePluginOrChainRoute(buildRequest({
+          command: 'fill',
+          cmdArgs: ['#q', value, '&&', 'title'],
+          argv: ['fill', '#q', value, '&&', 'title'],
+        }));
+
+        expect(handled).toBe(true);
+        expect(mockExecuteChain).toHaveBeenCalledWith(
+          `fill #q "${value}" && title`,
+          { cdpEndpoint: undefined, sessionName: 'default' },
+        );
+      },
+    );
+
+    it('leaves a plain token and the operator token itself unquoted', async () => {
+      await handlePluginOrChainRoute(buildRequest({
+        command: 'goto',
+        cmdArgs: ['https://a.example', '&&', 'title'],
+        argv: ['goto', 'https://a.example', '&&', 'title'],
+      }));
+
+      expect(mockExecuteChain).toHaveBeenCalledWith(
+        'goto https://a.example && title',
+        { cdpEndpoint: undefined, sessionName: 'default' },
+      );
+    });
+
+    it('treats every token after -- as a literal, operator spellings included', async () => {
+      const handled = await handlePluginOrChainRoute(buildRequest({
+        command: 'fill',
+        cmdArgs: ['#q', '&&'],
+        argv: ['fill', '#q', '--', '&&'],
+      }));
+
+      expect(handled).toBe(false);
+      expect(mockExecuteChain).not.toHaveBeenCalled();
+    });
+
+    it('keeps the legacy whole-string check for an unregistered command name', async () => {
+      await handlePluginOrChainRoute(buildRequest({
+        command: 'someplugin',
+        cmdArgs: ['cmd1 && cmd2'],
+        argv: ['someplugin', 'cmd1 && cmd2'],
+      }));
+
+      expect(mockExecuteChain).toHaveBeenCalledWith(
+        'someplugin cmd1 && cmd2',
+        { cdpEndpoint: undefined, sessionName: 'default' },
+      );
+    });
+
+    it('falls back to the plain rejoin for a value no quote can wrap', async () => {
+      // 同时含单双引号且引号外有空白：链解析器没有转义，包不住（已知局限，
+      // 形态极偏；只出现在「独立操作符 + 这种值」的混合写法里）
+      const value = 'it\'s "a b"';
+
+      await handlePluginOrChainRoute(buildRequest({
+        command: 'fill',
+        cmdArgs: ['#q', value, '&&', 'title'],
+        argv: ['fill', '#q', value, '&&', 'title'],
+      }));
+
+      expect(mockExecuteChain).toHaveBeenCalledWith(
+        `fill #q ${value} && title`,
+        { cdpEndpoint: undefined, sessionName: 'default' },
+      );
+    });
+  });
+
+  describe('a quoted command string followed by token operators', () => {
+    it('splices the original string and quotes the tokens around it', async () => {
+      const handled = await handlePluginOrChainRoute(buildRequest({
+        command: 'fill',
+        cmdArgs: ['#q', 'x ; y', '&&', 'fill', '#q', 'p + q'],
+        // router 重写后的 argv：命令串已拆成裸 token，链区 = [0, 2]
+        argv: ['fill', '#q', 'x ; y', '&&', 'fill', '#q', 'p + q'],
+        chainTokenStart: 0,
+        chainTokenEnd: 2,
+        chainRaw: "fill '#q' 'x ; y'",
+      }));
+
+      expect(handled).toBe(true);
+      expect(mockExecuteChain).toHaveBeenCalledWith(
+        `fill '#q' 'x ; y' && fill #q "p + q"`,
+        { cdpEndpoint: undefined, sessionName: 'default' },
+      );
+    });
+
+    it('decides on the bare tokens, so a quoted separator in the string is not a chain', async () => {
+      // 这种串在 router 更早的 isChainInput(chainArg) 就已按链处理，正常到不了
+      // 这里；万一到了，也不能因为原始串里的 ` ; ` 再拆一次
+      const handled = await handlePluginOrChainRoute(buildRequest({
+        command: 'fill',
+        cmdArgs: ['#q', 'a b'],
+        argv: ['fill', '#q', 'a b'],
+        chainTokenStart: 0,
+        chainTokenEnd: 2,
+        chainRaw: "fill '#q' 'a b'",
+      }));
+
+      expect(handled).toBe(false);
+      expect(mockExecuteChain).not.toHaveBeenCalled();
+    });
+
+    it('strips global flags outside the chain region', async () => {
+      const handled = await handlePluginOrChainRoute(buildRequest({
+        command: 'echo',
+        cmdArgs: [],
+        argv: ['--session', 's', '--json', 'echo', 'a', '&&', 'title'],
+        chainTokenStart: 3,
+        chainTokenEnd: 4,
+        chainRaw: 'echo a',
+        sessionName: 's',
+      }));
+
+      expect(handled).toBe(true);
+      expect(mockExecuteChain).toHaveBeenCalledWith(
+        'echo a && title',
+        { cdpEndpoint: undefined, sessionName: 's' },
+      );
+    });
   });
 });
