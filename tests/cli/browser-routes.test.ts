@@ -457,4 +457,190 @@ describe('browser-routes', () => {
       );
     });
   });
+
+  // ── 布尔旗标：parseArgs 对 `--flag` / `--flag true|false` 经 parseValue 产出真布尔，
+  // 手工 params 里的 `=== 'true'` 字符串比较恒 false —— crawl --verbose 等旗标静默失效。
+  // CSV 数组旗标（--include-paths）同理必须两种拼写（kebab/camelCase）都进 params。
+  describe('boolean flags & csv arrays (hand-built params)', () => {
+    // 补齐按命令的 zod schema 进行，需要真实命令定义
+    beforeAll(async () => {
+      await import('../../src/commands/index.js');
+    });
+
+    it('accepts bare --verbose as boolean true for crawl', async () => {
+      await handleBrowserCommand('crawl', ['https://example.com'], { verbose: true }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'crawl',
+        expect.objectContaining({ url: 'https://example.com', verbose: true }),
+        'sess'
+      );
+    });
+
+    it('accepts --allow-subdomains true (parseValue yields boolean) for crawl', async () => {
+      await handleBrowserCommand('crawl', ['https://example.com'], { 'allow-subdomains': true }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'crawl',
+        expect.objectContaining({ allowSubdomains: true }),
+        'sess'
+      );
+    });
+
+    it('accepts --allow-external-links true for crawl', async () => {
+      await handleBrowserCommand('crawl', ['https://example.com'], { 'allow-external-links': true }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'crawl',
+        expect.objectContaining({ allowExternalLinks: true }),
+        'sess'
+      );
+    });
+
+    it('keeps absent crawl booleans false', async () => {
+      await handleBrowserCommand('crawl', ['https://example.com'], {}, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'crawl',
+        expect.objectContaining({
+          allowSubdomains: false,
+          allowExternalLinks: false,
+          verbose: false,
+          onlyMainContent: true,
+        }),
+        'sess'
+      );
+    });
+
+    it('still accepts the legacy string/empty-string spellings for crawl booleans', async () => {
+      await handleBrowserCommand('crawl', ['https://example.com'], { verbose: 'true' }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenLastCalledWith(
+        'crawl',
+        expect.objectContaining({ verbose: true }),
+        'sess'
+      );
+      await handleBrowserCommand('crawl', ['https://example.com'], { verbose: '' }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenLastCalledWith(
+        'crawl',
+        expect.objectContaining({ verbose: true }),
+        'sess'
+      );
+      await handleBrowserCommand('crawl', ['https://example.com'], { verbose: false }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenLastCalledWith(
+        'crawl',
+        expect.objectContaining({ verbose: false }),
+        'sess'
+      );
+      await handleBrowserCommand('crawl', ['https://example.com'], { 'allow-subdomains': 'true' }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenLastCalledWith(
+        'crawl',
+        expect.objectContaining({ allowSubdomains: true }),
+        'sess'
+      );
+    });
+
+    it('respects --only-main-content false for scrape (boolean false must win)', async () => {
+      await handleBrowserCommand('scrape', ['https://example.com'], { 'only-main-content': false }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'scrape',
+        expect.objectContaining({ onlyMainContent: false }),
+        'sess'
+      );
+    });
+
+    it('defaults onlyMainContent to true when absent for scrape', async () => {
+      await handleBrowserCommand('scrape', ['https://example.com'], {}, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'scrape',
+        expect.objectContaining({ onlyMainContent: true }),
+        'sess'
+      );
+    });
+
+    it('respects --only-main-content false for crawl', async () => {
+      await handleBrowserCommand('crawl', ['https://example.com'], { 'only-main-content': false }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'crawl',
+        expect.objectContaining({ onlyMainContent: false }),
+        'sess'
+      );
+    });
+
+    it('splits --include-paths into an includePaths array (kebab spelling)', async () => {
+      await handleBrowserCommand('crawl', ['https://example.com'], { 'include-paths': 'a,b' }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'crawl',
+        expect.objectContaining({ includePaths: ['a', 'b'] }),
+        'sess'
+      );
+    });
+
+    it('splits --includePaths into an includePaths array (camelCase spelling)', async () => {
+      await handleBrowserCommand('crawl', ['https://example.com'], { includePaths: 'a,b' }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'crawl',
+        expect.objectContaining({ includePaths: ['a', 'b'] }),
+        'sess'
+      );
+    });
+
+    it('splits --exclude-paths / --excludePaths into arrays in both spellings', async () => {
+      await handleBrowserCommand('crawl', ['https://example.com'], { 'exclude-paths': 'x,y' }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'crawl',
+        expect.objectContaining({ excludePaths: ['x', 'y'] }),
+        'sess'
+      );
+      await handleBrowserCommand('crawl', ['https://example.com'], { excludePaths: 'x,y' }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenLastCalledWith(
+        'crawl',
+        expect.objectContaining({ excludePaths: ['x', 'y'] }),
+        'sess'
+      );
+    });
+
+    it('keeps includePaths absent when the flag is not given', async () => {
+      await handleBrowserCommand('crawl', ['https://example.com'], {}, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'crawl',
+        expect.objectContaining({ includePaths: undefined, excludePaths: undefined }),
+        'sess'
+      );
+    });
+  });
+
+  describe('negative literal values', () => {
+    it('fill keeps a value that starts with a minus', async () => {
+      await handleBrowserCommand('fill', ['#q', '-5'], {}, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenLastCalledWith('fill', { selector: '#q', value: '-5' }, 'sess');
+    });
+
+    it('type keeps a value that starts with a minus', async () => {
+      await handleBrowserCommand('type', ['#q', '-3.5'], {}, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenLastCalledWith(
+        'type',
+        expect.objectContaining({ selector: '#q', text: '-3.5' }),
+        'sess'
+      );
+    });
+
+    it('keeps a dash-leading value the router marked as literal (after --)', async () => {
+      await handleBrowserCommand('fill', ['#q', '- item'], {}, 'sess', 'text', undefined, true);
+      expect(mockExecuteCommand).toHaveBeenLastCalledWith('fill', { selector: '#q', value: '- item' }, 'sess');
+    });
+
+    it('keeps a literal value that spells a flag', async () => {
+      await handleBrowserCommand('type', ['#q', '--verbose'], {}, 'sess', 'text', undefined, true);
+      expect(mockExecuteCommand).toHaveBeenLastCalledWith(
+        'type',
+        expect.objectContaining({ selector: '#q', text: '--verbose' }),
+        'sess'
+      );
+    });
+
+    it('still treats a dash token that is not a number as a flag', async () => {
+      // `-x` 不是负数字面量：被当旗标丢弃后值缺失，走 usage 错误
+      await expect(
+        handleBrowserCommand('fill', ['#q', '-x'], {}, 'sess', 'text')
+      ).rejects.toThrow('EXIT');
+      expect(mockExecuteCommand).not.toHaveBeenCalledWith('fill', expect.anything(), 'sess');
+      expect(mockOutputError).toHaveBeenCalledWith(expect.stringContaining('Usage: xbrowser fill'));
+    });
+  });
 });

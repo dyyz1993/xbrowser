@@ -11,6 +11,8 @@ import {
 import { parsePluginParams } from '../utils/plugin-params.js';
 import { asZodSchema } from '../utils/zod-internal.js';
 import { executeChain, getPluginStorage, isChainInput } from '../executor.js';
+import { CHAIN_OPERATOR_TOKENS, quoteChainToken } from '../chain-parser.js';
+import { getCommand } from '../commands/command-registry.js';
 import { getPluginLoader } from '../utils/plugin-singleton.js';
 import { checkPluginLoginRequired } from '../plugin/login-guard.js';
 import {
@@ -35,6 +37,8 @@ export interface PluginRouteRequest {
   sessionName: string;
   chainTokenStart: number;
   chainTokenEnd: number;
+  /** 链区重写前的原始带引号命令串（router 拆 token 前的那一段）；无链区时缺省 */
+  chainRaw?: string;
 }
 
 export const KNOWN_GLOBAL_OPTIONS = new Set([
@@ -52,7 +56,7 @@ export const GLOBAL_VALUE_FLAGS: ReadonlySet<string> = new Set([
 ]);
 
 export async function handlePluginOrChainRoute(request: PluginRouteRequest): Promise<boolean> {
-  const { command, cmdArgs, argv, options, mode, cdpEndpoint, sessionName, chainTokenStart, chainTokenEnd } = request;
+  const { command, cmdArgs, argv, options, mode, cdpEndpoint, sessionName, chainTokenStart, chainTokenEnd, chainRaw } = request;
         // Check plugin site BEFORE chain parsing to avoid --content with +/, being misinterpreted
         const loader = await getPluginLoader();
         const internalLoader = loader.getCore().loader;
@@ -73,13 +77,26 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
           // Build chain input from non-global-flag args only
           const globalFlagSet = new Set(['--session', '--cdp', '--json', '--yaml', '--help', '-h', '--version', '--output', '-o']);
           const cleanParts: string[] = [];
+          // 链区在 cleanParts 中的位置（regionLast 为排他端点）：链区 token 已被
+          // router unquote，重组时要用原始串（chainRaw）替换，见下方 fullInput。
+          let regionFirst = -1;
+          let regionLast = -1;
+          // `--` 之后的 token 是字面量位置参数：丢掉 `--` 本身，值逐个强制加引号，
+          // 免得恰好拼成操作符或旗标（`fill '#q' -- '&&'`）
+          let literal = false;
           for (let i = 0; i < argv.length; i++) {
             // Tokens split out of the quoted chain string are chain content:
             // in-chain per-command flags (e.g. `screenshot --output P`) must
             // survive reassembly; only global flags OUTSIDE the chain region
             // are stripped (2026-09-12-8 fix).
             if (chainTokenStart >= 0 && i >= chainTokenStart && i <= chainTokenEnd) {
+              if (regionFirst < 0) regionFirst = cleanParts.length;
               cleanParts.push(argv[i]);
+              regionLast = cleanParts.length;
+              continue;
+            }
+            if (argv[i] === '--') {
+              literal = true;
               continue;
             }
             if (globalFlagSet.has(argv[i])) continue;
@@ -87,10 +104,35 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
             // Only those: `--json plugin "a && b"` used to lose the plugin name.
             if (i > 0 && GLOBAL_VALUE_FLAGS.has(argv[i-1]) && !argv[i].startsWith('-')) continue;
             if (argv[i].startsWith('--session=') || argv[i].startsWith('--cdp=')) continue;
-            cleanParts.push(argv[i]);
+            cleanParts.push(literal ? quoteChainToken(argv[i], true) : argv[i]);
           }
-          const fullInput = cleanParts.join(' ');
-          if (isChainInput(fullInput)) {
+          // 链操作符只有自成一个 argv token 时才是操作符（`goto a '&&' title`、
+          // `goto a -> title`）：shell 已经切好词，藏在单个 token 里的 ` + ` / ` ; `
+          // 是值的一部分。所以这一路的链字符串里，带空白或操作符的 token 重新加
+          // 引号，链解析器才不会把它拆开（`fill '#q' 'a + b' '&&' title`）；操作符
+          // token 本身是链结构，原样保留。
+          const hasOperatorToken = cleanParts.some((part) => CHAIN_OPERATOR_TOKENS.has(part));
+          const spliced = chainRaw !== undefined && regionFirst >= 0;
+          // 另一路沿用旧行为：对「裸 token 拼接结果」跑正则。只保留给两种情形——
+          // 有链区（判定与改动前一致），或命令名未注册（`someplugin cmd1 && cmd2`，
+          // 没有参数定义可依）。已注册命令 token 内的分隔符是值，落回内置命令路径。
+          const legacyChainLike = (spliced || getCommand(command) === undefined)
+            && isChainInput(cleanParts.join(' '));
+          if (hasOperatorToken || legacyChainLike) {
+            // 旧行为那一路连执行串也保持原样：裸 token 拼回去，交给链解析器拆。
+            // 有独立操作符时，链区用 router 传来的原始串逐字放回（引号不丢）。
+            const quoteStructure = (parts: string[]): string => parts
+              .map((part) => (CHAIN_OPERATOR_TOKENS.has(part) ? part : quoteChainToken(part)))
+              .join(' ');
+            const fullInput = !hasOperatorToken
+              ? cleanParts.join(' ')
+              : spliced
+                ? [
+                    quoteStructure(cleanParts.slice(0, regionFirst)),
+                    chainRaw,
+                    quoteStructure(cleanParts.slice(regionLast)),
+                  ].filter(part => part.length > 0).join(' ')
+                : quoteStructure(cleanParts);
             const chainResult = await executeChain(fullInput, { cdpEndpoint, sessionName });
             // Output as JSON if --json flag was set globally
             if (mode === 'json' || mode === 'yaml') {

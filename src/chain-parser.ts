@@ -166,6 +166,60 @@ export function splitOutsideQuotes(input: string, separator: string): string[] {
   return parts;
 }
 
+/**
+ * Chain operators that make a chain only when the shell handed them over as a
+ * token of their own (`xbrowser goto a '&&' title`, `goto a -> title`).
+ */
+export const CHAIN_OPERATOR_TOKENS: ReadonlySet<string> = new Set(['&&', '||', ';', ',', '+', '->']);
+
+/**
+ * Re-quote one shell-tokenized argv word for reassembly into a chain string.
+ *
+ * The chain parser is quote-aware but has no escapes, so a word is wrapped in
+ * the quote character it does not contain. Inside the wrapper the parser only
+ * reads the characters it sees outside quotes, so those must be plain. A word
+ * holding both quote types can be impossible to wrap; it is then returned as
+ * is (the caller falls back to the plain rejoin).
+ *
+ * @param word - The argv token, quotes already removed by the shell.
+ * @param force - Quote even a plain-looking word (a literal that happens to
+ *   spell an operator or a flag, e.g. a value after `--`).
+ * @returns The quoted word, or the word itself when nothing needs quoting.
+ */
+export function quoteChainToken(word: string, force = false): string {
+  // `,` and `+` split a chain when a space sits on either side, so a word that
+  // starts or ends with one picks up the join space as its partner.
+  if (!force && !/[\s'"(),;|&]/.test(word) && !/^[+,]|[+,]$/.test(word)) return word;
+  // Prefer the quote the word does not hold: nothing inside ever toggles.
+  const absent = (['"', "'"] as const).find((quote) => !word.includes(quote));
+  const candidates: Array<'"' | "'"> = absent
+    ? [absent, absent === '"' ? "'" : '"']
+    : ['"', "'"];
+  for (const quote of candidates) {
+    if (isOpaqueWhenQuoted(word, quote)) return `${quote}${word}${quote}`;
+  }
+  return word;
+}
+
+/**
+ * Whether the chain parsers see nothing but ordinary characters once `word`
+ * is wrapped in `quote`. Mirrors their quote toggling: a quote char flips the
+ * state, so the word must hold an even number of them. A `,` or `+` seen
+ * outside quotes is harmless here: its neighbours are word or quote
+ * characters, never the space the parser needs beside it.
+ */
+function isOpaqueWhenQuoted(word: string, quote: '"' | "'"): boolean {
+  let inside = true;
+  for (const ch of word) {
+    if (ch === quote) {
+      inside = !inside;
+    } else if (!inside && /[\s();|&]/.test(ch)) {
+      return false;
+    }
+  }
+  return inside;
+}
+
 // Register xbrowser command positional parameter definitions
 // so parseCommandArgs can map positional args to named params.
 registerCommandDefinition('goto', ['url']);

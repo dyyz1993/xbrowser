@@ -1205,17 +1205,19 @@ describe('router', () => {
       expect(handleBrowserCommand).not.toHaveBeenCalled();
     });
 
-    it('leaves a separator with a space on the left only on the single-command path, like the single-argv form', async () => {
+    it('runs a semicolon with a space on its left only as a chain, in both forms', async () => {
+      // `A ;B`：isChainInput 的正则只认「两侧空白」或「`;` 后空白」，漏掉这一种，
+      // 两种形态曾都静默只跑第一条。`;` 之后那段以已注册命令开头就按链处理。
       const { executeChain } = await import('../src/executor.js');
       const { handleBrowserCommand } = await import('../src/cli/index.js');
-      const notAChain = `${STEP_A} ;${STEP_B}`;
+      const chain = `${STEP_A} ;${STEP_B}`;
 
-      await routeCommand([notAChain]); // 单 argv 形态
-      await routeCommand([notAChain, '--session', 's']); // 带 flag 形态必须给出相同结果
+      await routeCommand([chain]); // 单 argv 形态
+      await routeCommand([chain, '--session', 's']); // 带 flag 形态必须给出相同结果
 
-      expect(executeChain).not.toHaveBeenCalled();
-      expect(vi.mocked(handleBrowserCommand).mock.calls[1].slice(0, 2))
-        .toEqual(vi.mocked(handleBrowserCommand).mock.calls[0].slice(0, 2));
+      expect(handleBrowserCommand).not.toHaveBeenCalled();
+      expect(vi.mocked(executeChain).mock.calls.map((call) => call[0]))
+        .toEqual([`${STEP_A} ; ${STEP_B}`, `${STEP_A} ; ${STEP_B}`]);
     });
   });
 
@@ -1501,14 +1503,31 @@ describe('router', () => {
       );
     });
 
-    it('still splits an unquoted semicolon glued to the previous token', async () => {
+    it('runs a semicolon glued to the previous token as a chain when a command follows it', async () => {
+      // 曾在分词处切开、把 title 并成 goto 的多余参数后静默丢掉
       const { handleBrowserCommand } = await import('../src/cli/index.js');
+      const { executeChain } = await import('../src/executor.js');
 
       await routeCommand(['goto https://example.com;title']);
 
+      expect(executeChain).toHaveBeenCalledWith(
+        'goto https://example.com ; title',
+        expect.objectContaining({ sessionName: 'default' }),
+      );
+      expect(handleBrowserCommand).not.toHaveBeenCalled();
+    });
+
+    it('keeps a semicolon that belongs to the value when no command follows it', async () => {
+      // URL 里的 `;`：后半段不是命令，不拆（曾在分词时被截成 https://example.com/a）
+      const { handleBrowserCommand } = await import('../src/cli/index.js');
+      const { executeChain } = await import('../src/executor.js');
+
+      await routeCommand(['goto https://example.com/a;jsessionid=1']);
+
+      expect(executeChain).not.toHaveBeenCalled();
       expect(handleBrowserCommand).toHaveBeenCalledWith(
         'goto',
-        ['https://example.com', 'title'],
+        ['https://example.com/a;jsessionid=1'],
         expect.any(Object),
         'default',
         'text',

@@ -134,6 +134,37 @@ describe('crawl pure functions', () => {
     it('should block invalid URLs', () => {
       expect(isUrlAllowed('not-a-url', startUrl, 1, baseOptions, [])).toBe(false);
     });
+
+    // 子域名开关只在「同基域名、不同主机名」时起作用；跨基域名归 allowExternalLinks 管
+    describe('subdomain and external-link switches', () => {
+      const options = (overrides: Partial<{ allowSubdomains: boolean; allowExternalLinks: boolean }> = {}) => ({
+        limit: 10,
+        maxDepth: 3,
+        allowSubdomains: false,
+        allowExternalLinks: false,
+        allowBackwardCrawling: true,
+        enableSpa: false,
+        format: 'markdown' as const,
+        onlyMainContent: true,
+        concurrency: 1,
+        retries: 0,
+        verbose: false,
+        ...overrides,
+      });
+
+      it('blocks a subdomain until allowSubdomains is set', () => {
+        expect(isUrlAllowed('https://docs.example.com/page', startUrl, 1, options(), [])).toBe(false);
+        expect(isUrlAllowed('https://docs.example.com/page', startUrl, 1, options({ allowSubdomains: true }), [])).toBe(true);
+      });
+
+      it('does not let allowSubdomains cross into another base domain', () => {
+        expect(isUrlAllowed('https://other.com/page', startUrl, 1, options({ allowSubdomains: true }), [])).toBe(false);
+      });
+
+      it('lets allowExternalLinks cross into another base domain', () => {
+        expect(isUrlAllowed('https://other.com/page', startUrl, 1, options({ allowExternalLinks: true }), [])).toBe(true);
+      });
+    });
   });
 
   describe('createPageBudget', () => {
