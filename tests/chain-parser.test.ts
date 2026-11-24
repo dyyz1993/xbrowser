@@ -3,6 +3,7 @@ import {
   parseCommandChain,
   splitCommand,
   parseCommandArgs,
+  splitOutsideQuotes,
 } from '../src/chain-parser.js';
 import { normalizeSelector } from '../src/utils/selector.js';
 
@@ -214,6 +215,29 @@ describe('splitCommand', () => {
       'https://example.com',
       '--waitUntil',
       'networkidle',
+    ]);
+  });
+});
+
+// router 拆"首个引号参数"时用：`"goto url;title"` 仍要在无空格的 `;` 处切开，
+// 但引号里的 `;` 是值内容（`fill #kw 'x;y'` 曾被拆成 `'x` / `y'`）。
+describe('splitOutsideQuotes', () => {
+  it('splits on an unquoted separator', () => {
+    expect(splitOutsideQuotes('url;title', ';')).toEqual(['url', 'title']);
+  });
+
+  it('leaves a quoted separator alone', () => {
+    expect(splitOutsideQuotes("#kw 'x;y'", ';')).toEqual(["#kw 'x;y'"]);
+  });
+
+  it('handles a quoted separator next to an unquoted one', () => {
+    expect(splitOutsideQuotes("a 'b;c' d;e", ';')).toEqual(["a 'b;c' d", 'e']);
+  });
+
+  it('keeps the quotes on the pieces so they can still be tokenized by splitCommand', () => {
+    expect(splitOutsideQuotes("#kw 'a b';title", ';').map(splitCommand)).toEqual([
+      ['#kw', "'a b'"],
+      ['title'],
     ]);
   });
 });

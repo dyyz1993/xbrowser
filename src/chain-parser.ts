@@ -136,6 +136,36 @@ function isSpaceAround(input: string, pos: number, tokenLen: number): boolean {
   return before && after;
 }
 
+/**
+ * Split a string on every `separator` that sits outside single/double quotes.
+ *
+ * Tracks quotes the same way {@link parseCommandChain} does. The quotes stay on
+ * the pieces, so they can still be tokenized with {@link splitCommand}.
+ *
+ * @param input - The raw string to cut.
+ * @param separator - A single character to split on (e.g. `;`).
+ * @returns The pieces between the unquoted separators (possibly empty / untrimmed).
+ */
+export function splitOutsideQuotes(input: string, separator: string): string[] {
+  const parts: string[] = [];
+  let inQuote: "'" | '"' | null = null;
+  let current = '';
+  for (const char of input) {
+    if (!inQuote && (char === "'" || char === '"')) {
+      inQuote = char;
+    } else if (inQuote && char === inQuote) {
+      inQuote = null;
+    } else if (!inQuote && char === separator) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current);
+  return parts;
+}
+
 // Register xbrowser command positional parameter definitions
 // so parseCommandArgs can map positional args to named params.
 registerCommandDefinition('goto', ['url']);

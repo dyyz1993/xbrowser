@@ -14,6 +14,8 @@ export interface ZodSchemaInternal {
     errorMap?: unknown;
     description?: string;
     values?: unknown;
+    // ZodEffects (`.refine()` / `.transform()`) wraps the object it validates
+    schema?: unknown;
   };
   shape?: Record<string, unknown>;
   description?: string;

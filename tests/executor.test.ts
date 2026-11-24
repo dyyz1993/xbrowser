@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod/v4';
 
 const hoisted = vi.hoisted(() => {
@@ -950,5 +950,118 @@ describe('#453 chain plugin session split', () => {
     expect(fillCall).toBeDefined();
     expect(fillCall![2]).toBe('bar');
     expect(fillCall![1]).toMatchObject({ selector: '#a', value: 'v w' });
+  });
+});
+
+// ── 内置命令的 kebab-case 旗标：`--max-depth` → schema 键 `maxDepth` ──
+// 曾静默失效：zod 把未知键剥掉，既不报错也不生效。链路径（parseCommandArgs）直接产出
+// kebab 键，所以改名必须发生在 executeCommand 校验之前，转发给 daemon 的才是改名后的参数。
+describe('kebab-case parameter names (built-in commands)', () => {
+  /** 单条命令的 forwardExec 调用参数 */
+  function forwarded(): unknown[] {
+    const call = mockForwardExec.mock.calls.find((c: unknown[]) => c[2] === 's');
+    expect(call).toBeDefined();
+    return call!;
+  }
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    mockGetSite.mockReturnValue(null);
+    mockForwardExec.mockReset();
+    // 非 null → executeCommand 在转发处返回：断言"转发给 daemon 的就是改名后的参数"
+    mockForwardExec.mockResolvedValue({ success: true, data: { ok: true }, duration: 0 });
+    const browserModule = await import('../src/browser.js');
+    browserModule.resetForTesting();
+  });
+
+  afterEach(() => {
+    // 恢复 #453 块留下的契约（null → 本地执行），不影响其它用例
+    mockForwardExec.mockReset();
+    mockForwardExec.mockResolvedValue(null);
+  });
+
+  it('renames a kebab-case flag to the schema key before validation and forwards the renamed params', async () => {
+    const { executeCommand } = await import('../src/executor.js');
+
+    const result = await executeCommand('goto', { url: 'https://example.com', 'wait-until': 'networkidle' }, 's');
+
+    expect(result.success).toBe(true);
+    expect(forwarded()).toEqual([
+      'goto',
+      { url: 'https://example.com', waitUntil: 'networkidle' },
+      's',
+      undefined,
+      undefined,
+      undefined,
+    ]);
+  });
+
+  it('keeps a falsy renamed value (crawl --max-depth 0)', async () => {
+    const { executeCommand } = await import('../src/executor.js');
+
+    await executeCommand('crawl', { url: 'https://example.com', 'max-depth': 0 }, 's');
+
+    const [command, params] = forwarded();
+    expect(command).toBe('crawl');
+    expect(params).toMatchObject({ url: 'https://example.com', maxDepth: 0 });
+    expect(params).not.toHaveProperty('max-depth');
+  });
+
+  it('applies inside a chain, where parseCommandArgs emits the kebab key (screenshot --full-page)', async () => {
+    const { executeChain } = await import('../src/executor.js');
+
+    const result = await executeChain('screenshot --full-page --session s');
+
+    expect(result.success).toBe(true);
+    expect(mockForwardExec).toHaveBeenCalledWith(
+      'screenshot',
+      { fullPage: true },
+      's',
+      undefined,
+      undefined,
+      undefined,
+    );
+  });
+
+  it('hands the renamed params to the handler when executed in-process (daemon worker)', async () => {
+    const browserModule = await import('../src/browser.js');
+    await browserModule.createSession('default', undefined, {});
+    const { getCommand } = await import('../src/commands/command-registry.js');
+    const handler = vi.spyOn(getCommand('goto')!, 'handler');
+    process.env.XBROWSER_DAEMON_WORKER = '1';
+    try {
+      const { executeCommand } = await import('../src/executor.js');
+
+      const result = await executeCommand('goto', { url: 'https://example.com', 'wait-until': 'domcontentloaded' });
+
+      expect(mockForwardExec).not.toHaveBeenCalled();
+      expect(result.success).toBe(true);
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({ url: 'https://example.com', waitUntil: 'domcontentloaded' }),
+        expect.anything(),
+      );
+    } finally {
+      handler.mockRestore();
+      delete process.env.XBROWSER_DAEMON_WORKER;
+    }
+  });
+
+  it.each([
+    ['eval: the schema itself spells the key kebab-case', 'eval', { 'script-b64': 'eA==' }, { 'script-b64': 'eA==' }],
+    ['mouse: delta-x / delta-y are schema keys too', 'mouse', { action: 'wheel', x: 1, y: 2, 'delta-x': 5, 'delta-y': 6 }, { action: 'wheel', x: 1, y: 2, 'delta-x': 5, 'delta-y': 6 }],
+  ])('keeps kebab-case keys that the schema defines (%s)', async (_label, command, params, expected) => {
+    const { executeCommand } = await import('../src/executor.js');
+
+    await executeCommand(command, params, 's');
+
+    expect(forwarded().slice(0, 2)).toEqual([command, expected]);
+  });
+
+  it('drops a kebab-case key that has no camelCase counterpart in the schema', async () => {
+    const { executeCommand } = await import('../src/executor.js');
+
+    await executeCommand('goto', { url: 'https://example.com', 'not-a-param': 1 }, 's');
+
+    expect(forwarded().slice(0, 2)).toEqual(['goto', { url: 'https://example.com' }]);
   });
 });

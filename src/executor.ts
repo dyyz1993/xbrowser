@@ -21,6 +21,7 @@ import {
 import { findOrCreateBridgeSession } from './browser/bridge-session.js';
 import { getTipsManager } from './tips/index.js';
 import { resolveRefParams } from './utils/resolve-selector.js';
+import { normalizeKebabParams } from './utils/kebab-params.js';
 import { loadHooks } from './hooks/loader.js';
 import { classifyFailure } from './fail-codes.js';
 import { recordMistake } from './lib/mistake-ledger.js';
@@ -162,6 +163,9 @@ export async function executeCommand(
   }
 
   if (command.parameters) {
+    // kebab-case 旗标 → schema 键（`--max-depth` → maxDepth）：不先改名，zod 会把未知键
+    // 当作多余项静默剥掉——不报错也不生效。改名后的 params 才是转发 daemon / 交给 handler 的那份。
+    params = normalizeKebabParams(command.parameters, params);
     const result = command.parameters.safeParse(params);
     if (!result.success) {
       return errorResult(
