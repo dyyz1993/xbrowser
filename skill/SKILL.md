@@ -189,7 +189,7 @@ curl -s -m 3 http://localhost:9221/json/version   # 用户日常浏览器（开�
 | cookie 已迁移到 CDP 实例 | 连实例（与用户浏览器解耦，可并发） |
 | 纯公开页面 | 随意，headless 兜底 |
 
-注意：CDP trusted 输入要求目标 tab **visible**（`document.visibilityState`），tab 被遮挡时点击/键入被静默丢弃——操作前先查。bridge 通道同理，后台 tab 的可信输入会被静默丢弃，`insertText` 前先 `bringToFront`。
+注意：trusted 输入（点击、原始按键）要求目标页面**可见**——tab 在后台、窗口最小化或被完全遮挡时会被 Chrome 静默丢弃（`mousemove`、`insertText`、页面脚本不受影响）。判据是页面里 `window.outerWidth > 0`；`document.visibilityState` 在开了反检测的浏览器里会被伪装成 `visible`，不可靠。操作前先查：bridge 通道用 `xbrowser chrome-bridge input-health`。页面不可见时先把 tab 带到前台（`exec --cmd tab-activate` / `bringToFront`），或用 `win-open` 开独立小窗；bridge 扩展 ≥1.5.5 起这类输入直接报 `[bridge-input]` 错误，不再静默无效。
 
 ### Environment Variables
 

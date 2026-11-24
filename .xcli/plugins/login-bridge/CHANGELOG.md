@@ -1,3 +1,21 @@
+## [1.5.5] - 2026-11-24
+
+### Fixed
+- **页面不可见时输入静默丢失**：tab 在后台、或窗口最小化 / 被完全遮挡时（页面
+  `window.outerWidth` 读作 0），Chrome 丢弃鼠标点击与原始按键事件，而
+  `Page.bringToFront`/`elementFromPoint`/JS `.click()` 全"正常"——「点了没反应」「打了字
+  没进去」的真因。发这类事件的执行器（trustedClick / trustedDrag / trusted-type /
+  trusted-enter / type，以及 cdp 透传里的 `Input.dispatchKeyEvent` 与
+  mousePressed/mouseReleased）先按页面里量到的 `outerWidth` 过输入健康门，不健康立即报
+  可行动错误（tab 在后台先 `tab-activate`；窗口被遮挡用 `tab-move` 或 `win-open`）。
+  mousemove、insertText 与页面脚本类执行器（click / fill / warmup）不受影响。新增
+  `input-health` 诊断执行器
+- **task-open 分组降级**：win-open 的 popup 窗口成为 lastFocused 后，safeCreateTab 把新
+  tab 建进 popup，tabs.group 抛 "Grouping is not supported" 导致整个 task-open 失败——
+  先搬 normal 窗口重试一次，仍不行裸 tab 继续，绝不整体失败（返回 `groupingDegraded`）
+- **task-open zombie tab**：复用任务组 tab 前先 `chrome.tabs.get` 探活（已关/discarded
+  视为死），死条目出组并剔出 taskTabs 注册表后开新 tab，不再 `reused:true` 交回死 tab
+
 ## [1.5.4] - 2026-11-19
 
 ### Fixed

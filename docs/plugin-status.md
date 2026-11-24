@@ -1,7 +1,7 @@
 # 插件完成度看板
 
 > **自动生成，请勿手改** · 由 `lint-scripts/check-plugin-status.mjs` 生成
-> 生成时间：2026-11-21 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
+> 生成时间：2026-11-24 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
 
 ## 汇总
 
@@ -50,7 +50,7 @@
 | booking | 1 | `browser` |
 | boss | 9 | `page` |
 | chatgpt | 5 | `browser`, `page` |
-| chrome-bridge | 10 | `project` |
+| chrome-bridge | 11 | `project` |
 | claude | 5 | `browser`, `page` |
 | cmf-seats | 3 | `any`, `page` |
 | cnblogs | 3 | `browser`, `page` |

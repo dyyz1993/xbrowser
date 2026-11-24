@@ -517,6 +517,109 @@ async function safeCreateTab(opts) {
   }
 }
 
+// ── 输入健康门（2026-11-24 有头 Chromium 实测；ERR-20261025-001 ① 的判据）──
+// 坐标点击（Input.dispatchMouseEvent mousePressed/mouseReleased）与原始按键事件
+// （Input.dispatchKeyEvent）只在页面可见时送达。页面不可见——tab 在后台、窗口最小化
+// 或被完全遮挡——时 window.outerWidth/outerHeight 读作 0：mouseMoved、
+// Input.insertText、页面脚本照常，点击与按键则被 Chrome 静默丢弃。此时
+// Page.bringToFront、elementFromPoint、JS .click() 全部"正常"，表现为「点了没反应」
+// 「打了字没进去」。实测每个样本都符合：outerWidth=0 ⇔ 丢失；tab 是否为活动页只是
+// 必要条件（活动页在窗口被遮挡时同样丢失），窗口尺寸、是否抢到焦点都不是判据。
+// 所以判据取页面里量到的 outerWidth；量不到（无宿主权限的页面）才退回 tab.active。
+// 发这类事件的执行器先过门：不健康立即报可行动错误，绝不假成功。
+async function pageOuterSize(tabId) {
+  try {
+    const [{ result } = {}] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => [window.outerWidth, window.outerHeight],
+    });
+    return Array.isArray(result) ? { outerWidth: result[0], outerHeight: result[1] } : null;
+  } catch { return null; }
+}
+
+async function inputHealth(tabId) {
+  const health = {
+    ok: false, tabId, tabActive: null, discarded: null, outerWidth: null, outerHeight: null,
+    windowId: null, windowType: null, windowState: null, reason: '',
+  };
+  let tab;
+  try { tab = await chrome.tabs.get(tabId); } catch { return { ...health, reason: `tab ${tabId} 不存在（已关闭）` }; }
+  try {
+    const win = await chrome.windows.get(tab.windowId);
+    health.windowId = win.id ?? null;
+    health.windowType = win.type ?? null;
+    health.windowState = win.state ?? null;
+  } catch { /* 窗口信息只作诊断，取不到不影响判定 */ }
+  health.tabActive = Boolean(tab.active);
+  health.discarded = Boolean(tab.discarded);
+  const size = await pageOuterSize(tabId);
+  if (size) Object.assign(health, size);
+  const hidden = size ? (size.outerWidth === 0 || size.outerHeight === 0) : !tab.active;
+  if (hidden) {
+    return {
+      ...health,
+      reason: size
+        ? '页面不可见（outerWidth=0：tab 在后台，或窗口最小化 / 被完全遮挡）'
+        : 'tab 在后台（不是所在窗口的活动页）',
+    };
+  }
+  return { ...health, ok: true };
+}
+
+function inputHealthError(health) {
+  return `[bridge-input] ${health.reason}: Chrome drops mouse clicks and key events on this tab`
+    + `（tab 在后台先激活：chrome-bridge exec --cmd tab-activate --tab-id ${health.tabId}；`
+    + '窗口被遮挡用 tab-move 提到前面，或用 win-open 开独立小窗；'
+    + 'mousemove / insertText / 页面脚本不受影响）';
+}
+
+async function ensureInputTarget(tabId) {
+  const health = await inputHealth(tabId);
+  if (health.ok) return health;
+  throw new Error(inputHealthError(health));
+}
+
+/** cdp 透传里页面不可见时会被丢掉的那类事件（其余 Input.* 照常送达） */
+function isDroppedWhenHidden(method, params) {
+  if (method === 'Input.dispatchKeyEvent') return true;
+  return method === 'Input.dispatchMouseEvent' && /^(mousePressed|mouseReleased)$/.test(String(params?.type));
+}
+
+// 2026-11-24 zombie-tab 修复：复用任务组 tab 前探活——tabs.get 抛错（tab 已关闭）
+// 或 discarded=true（内存回收冻结，输入/求值静默失效）都视为死条目。
+async function probeTaskTab(tabId) {
+  try {
+    const t = await chrome.tabs.get(tabId);
+    if (t && t.discarded) return { ok: false };
+    return { ok: true, tab: t };
+  } catch { return { ok: false }; }
+}
+
+// 死条目清账：tab 本体尽力移除（可能已被 Chrome 回收），并从 taskTabs 注册表剔除
+async function dropDeadTaskTab(tabId) {
+  stealthTabs.delete(tabId);
+  await chrome.tabs.remove(tabId).catch(() => {});
+  try {
+    const { taskTabs = [] } = await chrome.storage.local.get('taskTabs');
+    if (taskTabs.includes(tabId)) {
+      await chrome.storage.local.set({ taskTabs: taskTabs.filter((id) => id !== tabId) });
+    }
+  } catch {}
+}
+
+// Grouping is not supported 兜底：popup/app 窗口不支持 tabs.group（win-open 的
+// popup 成为 lastFocused 后 safeCreateTab 会把新 tab 建进去）。把 tab 搬进最大的
+// normal 窗口再分组；没有 normal 窗口就保持裸 tab（不阻塞 task-open）。
+async function moveTabToNormalWindow(tabId) {
+  try {
+    const normal = (await chrome.windows.getAll({ windowTypes: ['normal'] }))
+      .sort((a, b) => ((b.width ?? 0) * (b.height ?? 0)) - ((a.width ?? 0) * (a.height ?? 0)));
+    if (normal.length === 0) return false;
+    await chrome.tabs.move(tabId, { windowId: normal[0].id, index: -1 });
+    return true;
+  } catch { return false; }
+}
+
 async function getTaskTabId() {
   // Capture the routing task name BEFORE the first await: onmessage overwrites
   // currentTaskName on every incoming frame, so two clients interleaving
@@ -631,6 +734,8 @@ const executors = {
   // ── S121: CDP 透传（核心：命令转发器，扩展零逻辑） ──
   cdp: async ({ tabId, method, params }) => {
     const target = tabId ?? await getTaskTabId();
+    // 页面不可见时会丢点击与按键事件（其余 Input.* 照常送达），这两类先过输入健康门
+    if (isDroppedWhenHidden(String(method), params)) await ensureInputTarget(target);
     return await ensurePersistentStealth(target).then(() =>
       runDebugger(target, 'cdp', 12000, (resolve) => {
         const dbg = { tabId: target };
@@ -656,7 +761,13 @@ const executors = {
     const existing = (await chrome.tabGroups.query({})).find((g) => g.title === 'xb-task-' + taskName);
     if (existing) {
       const tabs = await chrome.tabs.query({ groupId: existing.id });
-      if (tabs.length > 0) return { tabId: tabs[tabs.length - 1].id, groupId: existing.id, reused: true };
+      // 2026-11-24 zombie-tab 修复：注册表/组里的死 tab（已关/discarded）不能复用——
+      // 探活失败即清账（出组 + 剔出 taskTabs 注册表），全部死掉就走新建路径。
+      for (let i = tabs.length - 1; i >= 0; i--) {
+        const probe = await probeTaskTab(tabs[i].id);
+        if (probe.ok) return { tabId: tabs[i].id, groupId: existing.id, reused: true };
+        await dropDeadTaskTab(tabs[i].id);
+      }
     }
     // S213: about:blank 先行——先创建空白页完成 attach+注入，再导航到目标 URL。
     // 否则 tab 创建即加载，attach 常输给页面内联脚本（beforeunload 劫持注册先于压制落地）。
@@ -664,17 +775,30 @@ const executors = {
     // 必须走 safeCreateTab：显式挂到用户窗口，否则 tab 落在无窗口上下文（outerWidth=0），
     // CDP 坐标点击会静默失效 —— 见 safeCreateTab 注释。
     const tab = await safeCreateTab({ url: startUrl, active: false }); // 后台创建，不抢焦点
-    const group = await chrome.tabs.group({ tabIds: [tab.id] });
-    await chrome.tabGroups.update(group, {
-      title: 'xb-task-' + taskName,
-      color: taskColorFor(taskName),
-    });
+    // 2026-11-24 分组降级：win-open 的 popup 窗口成为 lastFocused 后，safeCreateTab
+    // 会把新 tab 建进 popup——tabs.group 对非 normal 窗口抛 "Grouping is not supported"。
+    // 先搬 normal 窗口重试一次；仍不行就裸 tab 继续，绝不 task-open 整体失败。
+    let group = null;
+    try {
+      group = await chrome.tabs.group({ tabIds: [tab.id] });
+    } catch (e) {
+      if (!/grouping is not supported/i.test(String(e))) throw e;
+      if (await moveTabToNormalWindow(tab.id)) {
+        try { group = await chrome.tabs.group({ tabIds: [tab.id] }); } catch { group = null; }
+      }
+    }
+    if (group != null) {
+      await chrome.tabGroups.update(group, {
+        title: 'xb-task-' + taskName,
+        color: taskColorFor(taskName),
+      });
+    }
     // S164: 任务 tab 预置可见性一致性层（失败降级为普通任务 tab，不阻塞）
     const stealth = await enableTaskStealth(tab.id).catch((e) => ({ ok: false, error: String(e) }));
     if (url && url !== startUrl) {
       await chrome.tabs.update(tab.id, { url }).catch(() => {});
     }
-    return { tabId: tab.id, groupId: group, stealth: stealth.ok };
+    return { tabId: tab.id, groupId: group, groupingDegraded: group == null ? true : undefined, stealth: stealth.ok };
   }),
   'task-close': ({ name }) => enqueueLifecycle(async () => {
     const groups = await chrome.tabGroups.query({});
@@ -858,6 +982,13 @@ const executors = {
       status: t.status, windowId: t.windowId, url: (t.url || '').slice(0, 60),
     }));
   },
+  // 诊断：目标 tab 能否收到点击/按键（只探测不抛错——ok:false + reason）。
+  // 输入类执行器的健康门（ensureInputTarget）与 CLI `chrome-bridge input-health`
+  // 都走这里；缺省 tabId 时探测当前任务组 tab。
+  'input-health': async ({ tabId }) => {
+    const target = tabId != null ? tabId : await getTaskTabId();
+    return await inputHealth(target);
+  },
   // S170: 热更新直达通道——WS 消息在 SW 内执行，chrome.runtime.reload 可靠
   // （popup.html 页面载体的 chrome.runtime 绑定时好时坏，此执行器取代该路径）
   'ext-reload': async () => { setTimeout(() => chrome.runtime.reload(), 50); return { ok: true, reloading: true }; },
@@ -939,6 +1070,7 @@ const executors = {
   // 可靠的 trusted 鼠标点击+键盘输入+发送序列（chat-reply 等需要 isTrusted=true 的场景）
   'trusted-type': async ({ text, tabId }) => {
     const target = tabId ?? await getTaskTabId();
+    await ensureInputTarget(target);
     return await ensurePersistentStealth(target).then((persistent) =>
       runDebugger(target, 'trusted-type', 12000, (resolve) => {
         const dbg = { tabId: target };
@@ -962,6 +1094,7 @@ const executors = {
 
   'trusted-enter': async ({ tabId }) => {
     const target = tabId ?? await getTaskTabId();
+    await ensureInputTarget(target);
     return await ensurePersistentStealth(target).then((persistent) =>
       runDebugger(target, 'trusted-enter', 12000, (resolve) => {
         const dbg = { tabId: target };
@@ -1071,6 +1204,7 @@ const executors = {
   type: async ({ selector, text, tabId, clear = true }) => {
     const target = tabId ?? await getTaskTabId();
     if (target == null || typeof text !== 'string') return { ok: false, error: 'need tabId & text' };
+    await ensureInputTarget(target);
     // 1. 定位元素中心并 trustedClick 聚焦
     const pos = await chrome.scripting.executeScript({
       target: { tabId: target },
@@ -1201,6 +1335,7 @@ const executors = {
   // 页面 el.click() 是合成事件，ProseMirror 等框架不认；可信点击等价鼠标。
   trustedDrag: async ({ sx, sy, ex, ey, steps, tabId }) => {
     const target = tabId ?? await getTaskTabId();
+    await ensureInputTarget(target);
     return await ensurePersistentStealth(target).then((persistent) =>
       runDebugger(target, 'trusted-drag', 30000, (resolve) => {
         const dbg = { tabId: target };
@@ -1231,6 +1366,7 @@ const executors = {
 
   trustedClick: async ({ x, y, tabId }) => {
     const target = tabId ?? await getTaskTabId();
+    await ensureInputTarget(target);
     return await ensurePersistentStealth(target).then((persistent) =>
       runDebugger(target, 'trusted-click', 12000, (resolve) => {
         const dbg = { tabId: target };
