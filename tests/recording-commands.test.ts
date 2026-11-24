@@ -59,11 +59,19 @@ describe('generatePythonScript', () => {
 });
 
 describe('generateBashScript', () => {
-  it('generates a valid Bash script', () => {
+  it('generates a Bash script that replays through the xbrowser CLI', () => {
     const script = generateBashScript(sampleRecording);
     expect(script).toContain('#!/bin/bash');
-    expect(script).toContain('CDP_URL=');
-    expect(script).toContain("document.querySelector('#btn').click()");
+    expect(script).toContain('xb() { xbrowser --session "$SESSION" "$@"; }');
+    expect(script.split('\n').filter((line) => line.startsWith('xb '))).toEqual([
+      "xb goto 'https://example.com'",
+      "xb click '#btn'",
+      "xb fill '#search' 'hello'",
+      "xb press '#search' 'Enter'",
+      "xb click '#link'",
+      "xb eval 'window.scrollTo(0, 500)'",
+      'xb session close',
+    ]);
   });
 });
 

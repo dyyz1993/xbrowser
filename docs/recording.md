@@ -406,7 +406,16 @@ xbrowser replay recording.yaml --slow-mo 500 --stop-on-error
 
 ## Conversion
 
-Convert recordings to executable scripts.
+Convert recordings to executable scripts. All three outputs replay the same
+steps: the recording is first reduced to what has to happen — navigations,
+fills, clicks, key presses, scrolls, hovers — so an interaction that the
+recorder logged more than once (the CLI command and the page's own signal, the
+focus clicks of a `fill`, the page load caused by a click, the scroll signal
+that precedes a CLI `scroll`) becomes a single step.
+
+Each script needs its runtime installed next to it. The JS and Python scripts
+download Playwright's Chromium unless `XBROWSER_CHROMIUM_PATH` points at an
+installed Chrome/Chromium.
 
 ### Convert to JavaScript
 
@@ -414,22 +423,31 @@ Convert recordings to executable scripts.
 xbrowser convert <recording> <output.js>
 ```
 
-**Output:**
+**Output** (Playwright, Node.js 20 or newer; comments and settle waits omitted):
 ```javascript
-const { chromium } = require('playwright');
+#!/usr/bin/env node
+// Auto-generated replay script from xbrowser
 
-(async () => {
-  const browser = await chromium.launch({ headless: false });
-  const page = await browser.newPage();
+const START_URL = 'https://example.com';
 
-  await page.goto('https://example.com');
-  await page.click('#button');
+async function main() {
+  const { chromium } = await import('playwright');
+  const browser = await chromium.launch({ headless: true, ...(process.env.XBROWSER_CHROMIUM_PATH ? { executablePath: process.env.XBROWSER_CHROMIUM_PATH } : {}) });
+  const context = await browser.newContext();
+  const page = await context.newPage();
+
+  await page.goto(START_URL, { waitUntil: 'domcontentloaded' });
+
   await page.fill('#search', 'playwright');
-  await page.press('#search', 'Enter');
-  await page.evaluate(() => window.scrollTo(0, 500));
+  await page.click('#button');
+  await page.keyboard.press('Enter');
+  await page.evaluate(() => window.scrollBy(0, 500));
 
+  console.log('Replay completed!');
   await browser.close();
-})();
+}
+
+main().catch((e) => { console.error(e); process.exit(1); });
 ```
 
 ### Convert to Python
@@ -438,38 +456,76 @@ const { chromium } = require('playwright');
 xbrowser convert <recording> <output.py>
 ```
 
-**Output:**
+**Output** (Playwright async API; comments and settle waits omitted):
 ```python
-from playwright.sync_api import sync_playwright
+#!/usr/bin/env python3
+# Auto-generated replay script from xbrowser
 
-with sync_playwright() as p:
-    browser = p.chromium.launch(headless=False)
-    page = browser.new_page()
+import asyncio
+import os
 
-    page.goto('https://example.com')
-    page.click('#button')
-    page.fill('#search', 'playwright')
-    page.press('#search', 'Enter')
-    page.evaluate('() => window.scrollTo(0, 500)')
+from playwright.async_api import async_playwright
 
-    browser.close()
+START_URL = "https://example.com"
+
+
+async def main():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            executable_path=os.environ.get("XBROWSER_CHROMIUM_PATH") or None,
+        )
+        context = await browser.new_context()
+        page = await context.new_page()
+
+        await page.goto(START_URL)
+
+        await page.fill('#search', 'playwright')
+        await page.click('#button')
+        await page.keyboard.press('Enter')
+        await page.evaluate("() => window.scrollBy(0, 500)")
+
+        print("Replay completed!")
+        await browser.close()
+
+
+asyncio.run(main())
 ```
 
 ### Convert to Bash
+
+The Bash script replays through the xbrowser CLI in one session. The session is
+closed on every exit, including a failed step or Ctrl-C.
 
 ```bash
 xbrowser convert <recording> <output.sh>
 ```
 
-**Output:**
+**Output** (abridged — the real file's `trap` closes the session on every exit):
 ```bash
 #!/bin/bash
-xbrowser goto https://example.com
-xbrowser click "#button"
-xbrowser fill "#search" "playwright"
-xbrowser press "#search" Enter
-xbrowser eval "window.scrollTo(0, 500)"
+# Auto-generated replay script from xbrowser — requires the xbrowser CLI
+
+SESSION="replay-my-session"
+xb() { xbrowser --session "$SESSION" "$@"; }
+
+set -e
+trap '…close the session…' EXIT
+
+xb goto 'https://example.com'
+
+xb fill '#search' 'playwright'
+xb click '#button'
+xb press '#search' 'Enter'
+xb scroll down --distance 500
+
+echo "Replay completed!"
+xb session close
 ```
+
+Not every recorded step can be expressed in the CLI. Those are left out with a
+`# NOTE:` comment: clearing a field (the CLI takes the value as a positional
+argument), and key combinations such as `Ctrl+a`.
 
 ## Analysis
 
