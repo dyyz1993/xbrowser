@@ -15,6 +15,7 @@
  */
 
 import { createHttpBridge, isBridgeAvailable, sleep } from './bridge.js';
+import { bridgeHttpPort } from '../bridge-endpoint.js';
 
 export interface LoginProbe {
   loggedIn: boolean;
@@ -49,7 +50,7 @@ export async function probeLoginViaBridge(
   homeUrl: string,
   options: { port?: number; taskName?: string } = {},
 ): Promise<LoginProbe | null> {
-  const port = options.port ?? 9347;
+  const port = options.port ?? bridgeHttpPort();
   if (!(await isBridgeAvailable(port))) return null;
 
   const bridge = createHttpBridge(port);

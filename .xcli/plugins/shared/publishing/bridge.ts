@@ -6,7 +6,7 @@
  * 「可信点击」与「页面内求值」封装。
  */
 
-const BRIDGE_PORT = 9347;
+import { bridgeHttpPort } from '../bridge-endpoint.js';
 
 export interface BridgeResponse {
   ok: boolean;
@@ -20,7 +20,7 @@ export interface BridgeTransport {
 }
 
 /** 判断 bridge 是否可用（扩展已连接） */
-export async function isBridgeAvailable(port = BRIDGE_PORT): Promise<boolean> {
+export async function isBridgeAvailable(port = bridgeHttpPort()): Promise<boolean> {
   try {
     // 用 ping 而不是 tabs：tabs 要枚举全部标签页 + 计算分组，tab 多时
     // 会超过超时被误判成「bridge 不可用」，进而把发布误判成未登录。
@@ -37,7 +37,7 @@ export async function isBridgeAvailable(port = BRIDGE_PORT): Promise<boolean> {
 }
 
 /** 创建 HTTP bridge 传输 */
-export function createHttpBridge(port = BRIDGE_PORT): BridgeTransport {
+export function createHttpBridge(port = bridgeHttpPort()): BridgeTransport {
   const base = `http://127.0.0.1:${port}/exec`;
   return {
     async call(cmd, args) {

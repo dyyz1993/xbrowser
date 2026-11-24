@@ -12,6 +12,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import type { CommandContext } from '@dyyz1993/xcli-core';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { bridgeHttpPort } from '../shared/bridge-endpoint.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -21,7 +22,7 @@ export interface BridgeTransport {
   call(cmd: string, args: Record<string, unknown>): Promise<unknown>;
 }
 
-export function createHttpBridge(port = 9347): BridgeTransport {
+export function createHttpBridge(port = bridgeHttpPort()): BridgeTransport {
   return {
     async call(cmd, args) {
       const r = await fetch(`http://127.0.0.1:${port}/exec`, {

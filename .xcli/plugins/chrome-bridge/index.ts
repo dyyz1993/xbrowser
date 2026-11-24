@@ -10,13 +10,12 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import { bridgeHttpBase, bridgeHttpPort } from '../shared/bridge-endpoint.js';
 
-// 与驱动层（src/browser/bridge-session.ts）共用同一个隔离开关：XBROWSER_BRIDGE_HTTP 指向
-// 自定义通道（测试 / 多实例）时，插件命令也必须跟着走。此前插件把它忽略、端口写死，
-// 隔离环境里一旦跑 `xbrowser chrome-bridge …` 就直接打到现网 bridge（2026-11-24 隔离
-// 验收误触发现网扩展 reload）。WS 端口 = HTTP 端口 - 1，与 server.mjs 的约定一致。
-const BRIDGE_HTTP = process.env.XBROWSER_BRIDGE_HTTP || 'http://127.0.0.1:9347';
-const BRIDGE_PORT = Number(new URL(BRIDGE_HTTP).port) - 1;
+// 端点来自所有 bridge 相关代码共用的 bridge-endpoint（XBROWSER_BRIDGE_HTTP 开关）。
+// WS 端口 = HTTP 端口 - 1，与 server.mjs 的约定一致。
+const BRIDGE_HTTP = bridgeHttpBase();
+const BRIDGE_PORT = bridgeHttpPort() - 1;
 
 async function fetchBridgeStatus(): Promise<unknown> {
   return fetch(`${BRIDGE_HTTP}/status`).then(r => r.json()).catch(() => null);

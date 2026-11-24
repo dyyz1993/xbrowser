@@ -1,12 +1,12 @@
 import { z } from 'zod/v4';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import { bridgeHttpBase } from '../shared/bridge-endpoint.js';
 
-const BRIDGE_HTTP = 'http://127.0.0.1:9347';
 
 type BridgeResponse = { ok: boolean; data?: unknown; error?: string };
 
 async function bridgeExec(cmd: string, args: Record<string, unknown> = {}): Promise<BridgeResponse> {
-  return fetch(`${BRIDGE_HTTP}/exec`, {
+  return fetch(`${bridgeHttpBase()}/exec`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ cmd, args }),
