@@ -69,6 +69,68 @@ const humanActions: UserAction[] = [
   action({ type: 'scroll', timestamp: T0 + 5000, element: on('#list'), value: 'up:300' }),
 ];
 
+// ─── Fixtures for the mouse/file action kinds ──────────────────────
+// Shapes as the recorder writes them: dblclick/contextmenu carry the target
+// element plus the click coordinates (injection-scripts.ts dblclick/contextmenu
+// listeners); a drag carries from/to coordinates — pointer drags keep the
+// pressed element, HTML5 drag-and-drop keeps source/target descriptors; a file
+// selection lands as a `filechooser` action with the files inlined as data URLs.
+
+const dblclickAction = (selector: string, timestamp: number): UserAction =>
+  action({ type: 'dblclick', timestamp, element: on(selector), x: 100, y: 200 });
+
+const contextmenuAction = (selector: string, timestamp: number): UserAction =>
+  action({ type: 'contextmenu', timestamp, element: on(selector), x: 50, y: 80 });
+
+const pointerDragAction = (timestamp: number): UserAction =>
+  action({
+    type: 'drag',
+    timestamp,
+    x: 200,
+    y: 300,
+    element: on('#slider'),
+    drag: { fromX: 100, fromY: 100, toX: 200, toY: 300 },
+  });
+
+const dndDragAction = (timestamp: number): UserAction =>
+  action({
+    type: 'drag',
+    timestamp,
+    x: 300,
+    y: 400,
+    drag: {
+      fromX: 100,
+      fromY: 100,
+      toX: 300,
+      toY: 400,
+      source: { tag: 'div', selector: '#draggable', text: 'Drag Me' },
+      target: { tag: 'div', selector: '#dropzone', text: 'Drop here' },
+    },
+  });
+
+const filechooserAction = (timestamp: number): UserAction =>
+  action({
+    type: 'filechooser',
+    timestamp,
+    element: on('#upload'),
+    value: 'a.png',
+    files: {
+      names: ['a.png'],
+      count: 1,
+      isMultiple: false,
+      fileData: [{ name: 'a.png', type: 'image/png', size: 4, dataUrl: 'data:image/png;base64,iVBOR' }],
+    },
+  });
+
+/** A human-driven flow covering the mouse/file action kinds. */
+const mouseFileActions: UserAction[] = [
+  navigation(START_URL, T0),
+  dblclickAction('#item', T0 + 1000),
+  contextmenuAction('#menu', T0 + 2000),
+  pointerDragAction(T0 + 3000),
+  filechooserAction(T0 + 4000),
+];
+
 const legacyRecording: Recording = {
   ...baseRecording,
   events: [
@@ -373,10 +435,10 @@ describe('convert', () => {
     });
 
     it('skips action types with no replay meaning instead of crashing', () => {
+      // dblclick/contextmenu/drag/filechooser now replay — they have their own tests below.
       const noise = [
-        'popup_appear', 'cdp-eval', 'filechooser', 'drag', 'dblclick', 'contextmenu', 'resize',
-        'clipboard', 'touch', 'focus', 'visibility', 'drop', 'change', 'submit', 'discovered_filters',
-        'something-new',
+        'popup_appear', 'cdp-eval', 'resize', 'clipboard', 'touch', 'focus', 'visibility',
+        'drop', 'change', 'submit', 'discovered_filters', 'something-new',
       ];
       const steps = normalizeToReplaySteps(modernRecording([
         ...noise.map((type, i) => action({ type: type as UserAction['type'], timestamp: T0 + i })),
@@ -390,6 +452,231 @@ describe('convert', () => {
     it('prefers the events list when a file carries both formats', () => {
       const recording = { ...modernRecording(modernActions), events: [{ type: 'click', selector: '#legacy' }] };
       expect(normalizeToReplaySteps(recording)).toEqual([{ kind: 'click', selector: '#legacy' }]);
+    });
+
+    // ─── dblclick ───
+
+    it('replays a double click and drops its two precursor clicks', () => {
+      // A real double-click reaches the recorder as click, click, dblclick.
+      const steps = normalizeToReplaySteps(modernRecording([
+        navigation(START_URL, T0),
+        clickAction('#item', T0 + 1000),
+        clickAction('#item', T0 + 1400),
+        dblclickAction('#item', T0 + 1500),
+      ]));
+      expect(steps).toEqual([{ kind: 'dblclick', selector: '#item' }]);
+    });
+
+    it('keeps a single click on the target made before the double-click interval', () => {
+      // The first click is a step of its own; only the two inside the interval are precursors.
+      const steps = normalizeToReplaySteps(modernRecording([
+        clickAction('#item', T0),
+        clickAction('#item', T0 + 3000),
+        clickAction('#item', T0 + 3300),
+        dblclickAction('#item', T0 + 3400),
+      ]));
+      expect(steps).toEqual([
+        { kind: 'click', selector: '#item' },
+        { kind: 'dblclick', selector: '#item' },
+      ]);
+    });
+
+    it('drops no more than the two clicks a double-click produces', () => {
+      const steps = normalizeToReplaySteps(modernRecording([
+        clickAction('#item', T0 + 100),
+        clickAction('#item', T0 + 300),
+        clickAction('#item', T0 + 330),
+        dblclickAction('#item', T0 + 340),
+      ]));
+      expect(steps).toEqual([
+        { kind: 'click', selector: '#item' },
+        { kind: 'dblclick', selector: '#item' },
+      ]);
+    });
+
+    it('falls back to the count of two when the recording has no timestamps', () => {
+      const undated = (a: UserAction): UserAction => ({ ...a, timestamp: undefined as unknown as number });
+      const steps = normalizeToReplaySteps(modernRecording([
+        undated(clickAction('#item', T0)),
+        undated(clickAction('#item', T0 + 100)),
+        undated(clickAction('#item', T0 + 200)),
+        undated(dblclickAction('#item', T0 + 300)),
+      ]));
+      expect(steps).toEqual([
+        { kind: 'click', selector: '#item' },
+        { kind: 'dblclick', selector: '#item' },
+      ]);
+    });
+
+    it('keeps a click that is not a precursor of the double click', () => {
+      const steps = normalizeToReplaySteps(modernRecording([
+        clickAction('#item', T0),
+        clickAction('#other', T0 + 500),
+        dblclickAction('#item', T0 + 1500),
+      ]));
+      expect(steps).toEqual([
+        { kind: 'click', selector: '#item' },
+        { kind: 'click', selector: '#other' },
+        { kind: 'dblclick', selector: '#item' },
+      ]);
+    });
+
+    it('skips a double click without a usable target', () => {
+      expect(normalizeToReplaySteps(modernRecording([
+        action({ type: 'dblclick', timestamp: T0, element: on('body'), x: 10, y: 10 }),
+        action({ type: 'dblclick', timestamp: T0 + 10, x: 10, y: 10 }),
+      ]))).toEqual([]);
+    });
+
+    // ─── contextmenu (right click) ───
+
+    it('replays a contextmenu as a right-button click', () => {
+      const steps = normalizeToReplaySteps(modernRecording([
+        navigation(START_URL, T0),
+        contextmenuAction('#menu', T0 + 1000),
+      ]));
+      expect(steps).toEqual([{ kind: 'click', selector: '#menu', button: 'right' }]);
+    });
+
+    // Recordings made before the recorder described a right-click command as a
+    // contextmenu (2026-11-24) hold both the page signal and a button-less
+    // cdp-click for that one right click.
+    it('does not count the command echo of a right click as a second click', () => {
+      const steps = normalizeToReplaySteps(modernRecording([
+        contextmenuAction('#menu', T0 + 1000),
+        clickAction('#menu', T0 + 1300, true),
+      ]));
+      expect(steps).toEqual([{ kind: 'click', selector: '#menu', button: 'right' }]);
+    });
+
+    it('keeps a left click that follows a right click later', () => {
+      const steps = normalizeToReplaySteps(modernRecording([
+        contextmenuAction('#menu', T0 + 1000),
+        clickAction('#menu', T0 + 9000),
+      ]));
+      expect(steps).toEqual([
+        { kind: 'click', selector: '#menu', button: 'right' },
+        { kind: 'click', selector: '#menu' },
+      ]);
+    });
+
+    it('skips a contextmenu without a usable target', () => {
+      expect(normalizeToReplaySteps(modernRecording([
+        action({ type: 'contextmenu', timestamp: T0, x: 10, y: 10 }),
+      ]))).toEqual([]);
+    });
+
+    // ─── drag ───
+
+    it('replays a pointer drag from its recorded coordinates', () => {
+      const steps = normalizeToReplaySteps(modernRecording([
+        navigation(START_URL, T0),
+        pointerDragAction(T0 + 1000),
+      ]));
+      expect(steps).toEqual([{ kind: 'drag', fromX: 100, fromY: 100, toX: 200, toY: 300 }]);
+    });
+
+    it('replays an HTML5 drag-and-drop from its recorded coordinates', () => {
+      const steps = normalizeToReplaySteps(modernRecording([
+        navigation(START_URL, T0),
+        dndDragAction(T0 + 1000),
+      ]));
+      expect(steps).toEqual([{ kind: 'drag', fromX: 100, fromY: 100, toX: 300, toY: 400 }]);
+    });
+
+    // The shapes below come from a real recording (2026-11-24): releasing a
+    // pointer drag logs a click on the dragged element at the drop position, in
+    // the same millisecond as the drag itself.
+    it('drops the click a pointer drag produces at the drop position', () => {
+      const steps = normalizeToReplaySteps(modernRecording([
+        pointerDragAction(T0 + 1000),
+        clickAction('#slider', T0 + 1000),
+      ]));
+      expect(steps).toEqual([{ kind: 'drag', fromX: 100, fromY: 100, toX: 200, toY: 300 }]);
+    });
+
+    it('keeps a click on the dragged element that is made later', () => {
+      const steps = normalizeToReplaySteps(modernRecording([
+        pointerDragAction(T0 + 1000),
+        clickAction('#slider', T0 + 6000),
+      ]));
+      expect(steps).toEqual([
+        { kind: 'drag', fromX: 100, fromY: 100, toX: 200, toY: 300 },
+        { kind: 'click', selector: '#slider' },
+      ]);
+    });
+
+    it('notes a drag whose coordinates were not captured', () => {
+      const steps = normalizeToReplaySteps(modernRecording([
+        action({ type: 'drag', timestamp: T0, element: on('#slider') }),
+      ]));
+      expect(steps).toEqual([
+        { kind: 'note', message: "skipped drag on '#slider' — the recording captured no from/to coordinates" },
+      ]);
+    });
+
+    // ─── filechooser (file selection) ───
+
+    it('replays a file selection from its embedded contents and drops the fakepath fill echo', () => {
+      // Picking a file also fires an `input` signal carrying `C:\fakepath\<name>`.
+      const steps = normalizeToReplaySteps(modernRecording([
+        navigation(START_URL, T0),
+        action({ type: 'input', timestamp: T0 + 1000, element: on('#upload'), value: 'C:\\fakepath\\a.png' }),
+        filechooserAction(T0 + 1100),
+      ]));
+      expect(steps).toEqual([
+        {
+          kind: 'set-files',
+          selector: '#upload',
+          files: [{ name: 'a.png', mimeType: 'image/png', base64: 'iVBOR' }],
+        },
+      ]);
+    });
+
+    it('notes a file selection whose contents were not captured', () => {
+      const steps = normalizeToReplaySteps(modernRecording([
+        action({
+          type: 'filechooser',
+          timestamp: T0,
+          element: on('#upload'),
+          files: { names: ['b.png'], count: 1, isMultiple: false },
+        }),
+      ]));
+      expect(steps).toEqual([
+        { kind: 'note', message: "skipped file selection on '#upload' — the recording captured no file contents" },
+      ]);
+    });
+
+    it('keeps only the files whose contents were captured', () => {
+      const steps = normalizeToReplaySteps(modernRecording([
+        action({
+          type: 'filechooser',
+          timestamp: T0,
+          element: on('#upload'),
+          files: {
+            names: ['a.png', 'b.png'],
+            count: 2,
+            isMultiple: true,
+            fileData: [
+              { name: 'a.png', type: 'image/png', size: 4, dataUrl: 'data:image/png;base64,iVBOR' },
+              { name: 'b.png', type: 'image/png', size: 9, dataUrl: null },
+            ],
+          },
+        }),
+      ]));
+      expect(steps).toEqual([
+        {
+          kind: 'set-files',
+          selector: '#upload',
+          files: [{ name: 'a.png', mimeType: 'image/png', base64: 'iVBOR' }],
+        },
+      ]);
+    });
+
+    it('skips a file selection without a usable target', () => {
+      expect(normalizeToReplaySteps(modernRecording([
+        action({ type: 'filechooser', timestamp: T0, files: { names: ['a.png'], count: 1, isMultiple: false } }),
+      ]))).toEqual([]);
     });
   });
 
@@ -540,6 +827,29 @@ describe('convert', () => {
         "await page.locator('#list').evaluate((el, delta) => { el.scrollLeft += delta.x; el.scrollTop += delta.y; }, { x: 0, y: -300 });",
       ]);
     });
+
+    it('replays double clicks, right clicks, drags and file selections', () => {
+      const script = generateJSScript(modernRecording(mouseFileActions));
+      expect(replayLines(script, '  ')).toEqual([
+        "await page.goto(START_URL, { waitUntil: 'domcontentloaded' });",
+        "await page.dblclick('#item');",
+        "await page.click('#menu', { button: 'right' });",
+        'await page.mouse.move(100, 100);',
+        'await page.mouse.down();',
+        'await page.mouse.move(200, 300, { steps: 5 });',
+        'await page.mouse.up();',
+        "await page.setInputFiles('#upload', [",
+      ]);
+      expect(script).toContain('// Set files on #upload: a.png');
+      expect(script).toContain("{ name: 'a.png', mimeType: 'image/png', buffer: Buffer.from('iVBOR', 'base64') },");
+    });
+
+    it('flags steps it cannot replay instead of dropping them', () => {
+      const script = generateJSScript(modernRecording([
+        action({ type: 'drag', timestamp: T0, element: on('#slider') }),
+      ]));
+      expect(script).toContain("// NOTE: skipped drag on '#slider' — the recording captured no from/to coordinates");
+    });
   });
 
   describe('generatePythonScript', () => {
@@ -626,8 +936,36 @@ describe('convert', () => {
         "await page.keyboard.press('Enter')",
         "await page.keyboard.press('Enter')",
         "await page.keyboard.press('Control+a')",
-        "await page.locator('#list').evaluate(\"el => { el.scrollLeft += 0; el.scrollTop += -300; }\")",
+        'await page.locator(\'#list\').evaluate("el => { el.scrollLeft += 0; el.scrollTop += -300; }")',
       ]);
+    });
+
+    it('replays double clicks, right clicks, drags and file selections', () => {
+      const script = generatePythonScript(modernRecording(mouseFileActions));
+      expect(replayLines(script, '        ')).toEqual([
+        'await page.goto(START_URL)',
+        "await page.dblclick('#item')",
+        "await page.click('#menu', button='right')",
+        'await page.mouse.move(100, 100)',
+        'await page.mouse.down()',
+        'await page.mouse.move(200, 300, steps=5)',
+        'await page.mouse.up()',
+        "await page.set_input_files('#upload', [",
+      ]);
+      expect(script).toContain('# Set files on #upload: a.png');
+      expect(script).toContain('{ "name": "a.png", "mimeType": "image/png", "buffer": base64.b64decode("iVBOR") },');
+    });
+
+    it('imports base64 only when the recording selects files', () => {
+      expect(generatePythonScript(modernRecording(mouseFileActions))).toContain('import base64');
+      expect(generatePythonScript(baseRecording)).not.toContain('import base64');
+    });
+
+    it('flags steps it cannot replay instead of dropping them', () => {
+      const script = generatePythonScript(modernRecording([
+        action({ type: 'drag', timestamp: T0, element: on('#slider') }),
+      ]));
+      expect(script).toContain('# NOTE: skipped drag on \'#slider\' — the recording captured no from/to coordinates');
     });
   });
 
@@ -737,6 +1075,32 @@ describe('convert', () => {
     it('names the session after the start URL when the recording has no session name', () => {
       const script = generateBashScript({ startUrl: 'https://example.com/Search Results?q=a b', actions: [] });
       expect(script).toContain('SESSION="replay-example.com-search-results-q-a-b"');
+    });
+
+    it('replays double clicks, right clicks and drags through the xbrowser CLI', () => {
+      const script = generateBashScript(modernRecording([
+        dblclickAction('#item', T0),
+        contextmenuAction('#menu', T0 + 1000),
+        pointerDragAction(T0 + 2000),
+      ]));
+      expect(bashCommands(script)).toEqual([
+        "xb goto 'https://example.com/'",
+        "xb dblclick '#item'",
+        "xb click '#menu' --button right",
+        'xb mouse move --x 100 --y 100',
+        'xb mouse drag --x 200 --y 300 --steps 5',
+        'xb session close',
+      ]);
+    });
+
+    it('leaves a NOTE where the CLI cannot set files, and where the recording lacks data', () => {
+      const script = generateBashScript(modernRecording([
+        filechooserAction(T0),
+        action({ type: 'drag', timestamp: T0 + 1000, element: on('#slider') }),
+      ]));
+      expect(script).toContain("# NOTE: skipped setting files on '#upload' (a.png) — the xbrowser CLI has no file-upload command");
+      expect(script).toContain("# NOTE: skipped drag on '#slider' — the recording captured no from/to coordinates");
+      expect(bashCommands(script)).toEqual(["xb goto 'https://example.com/'", 'xb session close']);
     });
   });
 

@@ -7,6 +7,13 @@ export type ScrollDirection = 'up' | 'down' | 'left' | 'right';
 
 type RelativeScrollStep = { kind: 'scroll'; mode: 'relative'; direction: ScrollDirection; distance: number; selector?: string };
 
+/** One file of a `filechooser` action, decoded from its recorded data URL. */
+interface RecordedFile {
+  name: string;
+  mimeType: string;
+  base64: string;
+}
+
 /**
  * One replayable step. The generators below never look at a recording
  * directly — `normalizeToReplaySteps` reduces either recording format to
@@ -15,11 +22,17 @@ type RelativeScrollStep = { kind: 'scroll'; mode: 'relative'; direction: ScrollD
 export type ReplayStep =
   | { kind: 'goto'; url: string }
   | { kind: 'fill'; selector: string; value: string }
-  | { kind: 'click'; selector: string }
+  /** `button` is only set for right clicks — a recorded `contextmenu` action. */
+  | { kind: 'click'; selector: string; button?: 'right' }
+  | { kind: 'dblclick'; selector: string }
   | { kind: 'press'; key: string; selector?: string }
+  | { kind: 'drag'; fromX: number; fromY: number; toX: number; toY: number }
+  | { kind: 'set-files'; selector: string; files: RecordedFile[] }
   | { kind: 'scroll'; mode: 'absolute'; x: number; y: number }
   | RelativeScrollStep
-  | { kind: 'hover'; selector: string };
+  | { kind: 'hover'; selector: string }
+  /** A recorded interaction that no target can replay — kept visible as a NOTE comment. */
+  | { kind: 'note'; message: string };
 
 /** One interaction can be logged twice: as the injected CLI command (`cdp-click` / `cdp-fill`) and as the page's real-event signal (`click` / `input`). Entries further apart than this are separate interactions. */
 const TWIN_WINDOW_MS = 5000;
@@ -37,6 +50,8 @@ const UNTARGETED_SELECTORS = new Set(['html', 'body']);
  * page's own scroll signal. Entries this close together are one interaction.
  */
 const ECHO_WINDOW_MS = 3000;
+/** Clicks this close before a dblclick are that dblclick's own precursors, not separate steps. */
+const DOUBLE_CLICK_WINDOW_MS = 1000;
 
 /** Bookkeeping for a kept step: when it happened and how many steps existed right after it. */
 interface KeptTrack {
@@ -73,6 +88,18 @@ function asNumber(value: unknown): number {
 /** URL identity for navigations — a trailing slash is not significant. */
 function sameUrl(a: string, b: string): boolean {
   return a.replace(/\/+$/, '') === b.replace(/\/+$/, '');
+}
+
+/**
+ * Files a `filechooser` action can hand to a script: the recorded data URLs
+ * decoded to name + mime + base64 body. The built-in replay restores the
+ * same payloads (SessionReplayer.resolveFiles) from the same fields.
+ */
+function recordedFiles(action: UserAction): RecordedFile[] {
+  return (action.files?.fileData ?? []).flatMap((file) => {
+    const match = /^data:[^;]+;base64,(.+)$/.exec(file.dataUrl ?? '');
+    return match ? [{ name: file.name, mimeType: file.type || 'application/octet-stream', base64: match[1] }] : [];
+  });
 }
 
 /**
@@ -155,6 +182,14 @@ function stepsFromActions(actions: UserAction[], startUrl: string): ReplayStep[]
   let firstNavigation = true;
   let lastNavigation: (KeptTrack & { url: string }) | null = null;
   let lastClick = new Map<string, KeptInteraction>();
+  // Click steps with the timestamp and step index they were pushed at, so that a
+  // later dblclick can tell its two precursors from earlier single clicks.
+  const clickTrail: Array<{ selector: string; timestamp: number | undefined; stepIndex: number }> = [];
+  // The most recent drag step and right-click step per selector, with the step
+  // index they sit at, so a click logged right next to one can be recognised
+  // as its side effect or its echo.
+  let lastDrag: { selector: string; timestamp: number | undefined; stepIndex: number } | undefined;
+  let lastContextMenu: { selector: string; timestamp: number | undefined } | undefined;
   let lastFill = new Map<string, KeptInteraction>();
   // A key press without its own target goes to the focused element, which is the field filled last.
   let lastFilledSelector: string | undefined;
@@ -252,8 +287,95 @@ function stepsFromActions(actions: UserAction[], startUrl: string): ReplayStep[]
         const fromCommand = action.type === 'cdp-click';
         const twin = lastClick.get(selector);
         if (twin && twin.fromCommand !== fromCommand && isEcho(timestamp, twin)) break;
+        // Releasing a pointer drag fires a click on the dragged element at the
+        // drop position. It is part of the drag, which is already a step.
+        if (
+          lastDrag && lastDrag.stepIndex === steps.length - 1 && lastDrag.selector === selector
+          && withinEchoWindow(timestamp, lastDrag.timestamp)
+        ) break;
+        // Recordings made before the recorder described a right-click command as
+        // a contextmenu hold both the page's signal and a button-less cdp-click
+        // for it. The command is the echo; the right click is already a step.
+        if (fromCommand && lastContextMenu?.selector === selector && withinEchoWindow(timestamp, lastContextMenu.timestamp)) break;
         steps.push({ kind: 'click', selector });
+        clickTrail.push({ selector, timestamp, stepIndex: steps.length - 1 });
         lastClick.set(selector, { timestamp, stepCount: steps.length, fromCommand });
+        break;
+      }
+
+      case 'dblclick': {
+        flushFill();
+        if (!selector || UNTARGETED_SELECTORS.has(selector)) break;
+        // A double-click reaches the recorder as click, click, dblclick. Those
+        // two clicks are its precursors — replaying all three would press the
+        // button four times — so the last clicks on the target are dropped. Only
+        // the ones made inside the double-click interval count: a single click on
+        // the same element a moment earlier is a real step and stays.
+        let precursors = 0;
+        while (precursors < 2 && steps.length > 0 && clickTrail.length > 0) {
+          const last = steps[steps.length - 1];
+          const trail = clickTrail[clickTrail.length - 1];
+          const clickAt = trail.timestamp;
+          // Without timestamps there is nothing to time against: fall back to the count.
+          const insideDoubleClick = typeof timestamp !== 'number' || typeof clickAt !== 'number'
+            || timestamp - clickAt <= DOUBLE_CLICK_WINDOW_MS;
+          if (
+            trail.stepIndex !== steps.length - 1
+            || last.kind !== 'click' || last.selector !== selector || last.button !== undefined
+            || !insideDoubleClick
+          ) break;
+          steps.pop();
+          clickTrail.pop();
+          precursors += 1;
+        }
+        lastClick.delete(selector);
+        steps.push({ kind: 'dblclick', selector });
+        break;
+      }
+
+      case 'contextmenu': {
+        flushFill();
+        if (!selector || UNTARGETED_SELECTORS.has(selector)) break;
+        steps.push({ kind: 'click', selector, button: 'right' });
+        lastContextMenu = { selector, timestamp };
+        break;
+      }
+
+      case 'drag': {
+        flushFill();
+        if (!action.drag) {
+          // A real drag whose from/to coordinates were not captured cannot be
+          // reconstructed — flag it instead of silently losing the interaction.
+          steps.push({ kind: 'note', message: `skipped drag${selector ? ` on '${selector}'` : ''} — the recording captured no from/to coordinates` });
+          break;
+        }
+        steps.push({
+          kind: 'drag',
+          fromX: asNumber(action.drag.fromX),
+          fromY: asNumber(action.drag.fromY),
+          toX: asNumber(action.drag.toX),
+          toY: asNumber(action.drag.toY),
+        });
+        if (selector && !UNTARGETED_SELECTORS.has(selector)) lastDrag = { selector, timestamp, stepIndex: steps.length - 1 };
+        break;
+      }
+
+      case 'filechooser': {
+        flushFill();
+        if (!selector) break;
+        const files = recordedFiles(action);
+        if (files.length === 0) {
+          steps.push({ kind: 'note', message: `skipped file selection on '${selector}' — the recording captured no file contents` });
+          break;
+        }
+        // Picking a file also fires an `input` signal carrying the browser's
+        // fake path value (`C:\fakepath\<name>`); the upload below replaces it.
+        while (steps.length > 0) {
+          const last = steps[steps.length - 1];
+          if (last.kind !== 'fill' || last.selector !== selector) break;
+          steps.pop();
+        }
+        steps.push({ kind: 'set-files', selector, files });
         break;
       }
 
@@ -295,7 +417,7 @@ function stepsFromActions(actions: UserAction[], startUrl: string): ReplayStep[]
         if (selector) steps.push({ kind: 'hover', selector });
         break;
 
-      // submit, popup_appear, cdp-eval, filechooser, drag, … are observations
+      // submit, popup_appear, cdp-eval, drop, resize, … are observations
       // or side effects of the steps above — there is nothing to replay.
       default:
         break;
@@ -411,10 +533,47 @@ async function main() {
 
       case 'click':
         script += `
-  // Click: ${commentText(step.selector)}
-  await page.click('${escapeString(step.selector)}');
+  // ${step.button === 'right' ? 'Right click' : 'Click'}: ${commentText(step.selector)}
+  await page.click('${escapeString(step.selector)}'${step.button ? `, { button: '${step.button}' }` : ''});
   await page.waitForTimeout(100);
 `;
+        break;
+
+      case 'dblclick':
+        script += `
+  // Double click: ${commentText(step.selector)}
+  await page.dblclick('${escapeString(step.selector)}');
+  await page.waitForTimeout(100);
+`;
+        break;
+
+      case 'drag':
+        script += `
+  // Drag from (${step.fromX}, ${step.fromY}) to (${step.toX}, ${step.toY})
+  await page.mouse.move(${step.fromX}, ${step.fromY});
+  await page.mouse.down();
+  await page.mouse.move(${step.toX}, ${step.toY}, { steps: 5 });
+  await page.mouse.up();
+  await page.waitForTimeout(100);
+`;
+        break;
+
+      case 'set-files': {
+        const entries = step.files
+          .map((file) => `{ name: '${escapeString(file.name)}', mimeType: '${escapeString(file.mimeType)}', buffer: Buffer.from('${file.base64}', 'base64') }`)
+          .join(',\n    ');
+        script += `
+  // Set files on ${commentText(step.selector)}: ${commentText(step.files.map((file) => file.name).join(', '))}
+  await page.setInputFiles('${escapeString(step.selector)}', [
+    ${entries},
+  ]);
+  await page.waitForTimeout(100);
+`;
+        break;
+      }
+
+      case 'note':
+        script += `\n  // NOTE: ${commentText(step.message)}\n`;
         break;
 
       case 'press':
@@ -477,6 +636,8 @@ function scrollComment(step: Extract<ReplayStep, { kind: 'scroll' }>): string {
 export function generatePythonScript(recording: Recording): string {
   const steps = normalizeToReplaySteps(recording);
   const startUrl = asString(recording.startUrl);
+  // File steps decode their embedded payload — every other step works without it.
+  const needsBase64 = steps.some((step) => step.kind === 'set-files');
 
   let script = `#!/usr/bin/env python3
 # Auto-generated replay script from xbrowser
@@ -488,7 +649,7 @@ export function generatePythonScript(recording: Recording): string {
 # or set XBROWSER_CHROMIUM_PATH to reuse an installed Chrome/Chromium.
 
 import asyncio
-import os
+${needsBase64 ? 'import base64\n' : ''}import os
 
 from playwright.async_api import async_playwright
 
@@ -529,10 +690,47 @@ async def main():
 
       case 'click':
         script += `
-        # Click: ${commentText(step.selector)}
-        await page.click('${escapeString(step.selector)}')
+        # ${step.button === 'right' ? 'Right click' : 'Click'}: ${commentText(step.selector)}
+        await page.click('${escapeString(step.selector)}'${step.button ? `, button='${step.button}'` : ''})
         await asyncio.sleep(0.1)
 `;
+        break;
+
+      case 'dblclick':
+        script += `
+        # Double click: ${commentText(step.selector)}
+        await page.dblclick('${escapeString(step.selector)}')
+        await asyncio.sleep(0.1)
+`;
+        break;
+
+      case 'drag':
+        script += `
+        # Drag from (${step.fromX}, ${step.fromY}) to (${step.toX}, ${step.toY})
+        await page.mouse.move(${step.fromX}, ${step.fromY})
+        await page.mouse.down()
+        await page.mouse.move(${step.toX}, ${step.toY}, steps=5)
+        await page.mouse.up()
+        await asyncio.sleep(0.1)
+`;
+        break;
+
+      case 'set-files': {
+        const entries = step.files
+          .map((file) => `{ "name": "${escapeString(file.name)}", "mimeType": "${escapeString(file.mimeType)}", "buffer": base64.b64decode("${file.base64}") }`)
+          .join(',\n            ');
+        script += `
+        # Set files on ${commentText(step.selector)}: ${commentText(step.files.map((file) => file.name).join(', '))}
+        await page.set_input_files('${escapeString(step.selector)}', [
+            ${entries},
+        ])
+        await asyncio.sleep(0.1)
+`;
+        break;
+      }
+
+      case 'note':
+        script += `\n        # NOTE: ${commentText(step.message)}\n`;
         break;
 
       case 'press':
@@ -632,7 +830,26 @@ trap 'close_session' EXIT
         break;
 
       case 'click':
-        script += `\n# Click: ${commentText(step.selector)}\nxb click ${shQuote(step.selector)}\n`;
+        script += `\n# ${step.button === 'right' ? 'Right click' : 'Click'}: ${commentText(step.selector)}\nxb click ${shQuote(step.selector)}${step.button ? ` --button ${step.button}` : ''}\n`;
+        break;
+
+      case 'dblclick':
+        script += `\n# Double click: ${commentText(step.selector)}\nxb dblclick ${shQuote(step.selector)}\n`;
+        break;
+
+      case 'drag':
+        // `mouse drag` pulls from the CURRENT pointer position, so the recorded
+        // start point is restored with a move first (as in the OOPIF slider docs).
+        script += `\n# Drag from (${step.fromX}, ${step.fromY}) to (${step.toX}, ${step.toY})\nxb mouse move --x ${step.fromX} --y ${step.fromY}\nxb mouse drag --x ${step.toX} --y ${step.toY} --steps 5\n`;
+        break;
+
+      case 'set-files':
+        // No CLI command feeds a file input — the files exist only inside the recording.
+        script += `\n# NOTE: skipped setting files on ${shQuote(step.selector)} (${commentText(step.files.map((file) => file.name).join(', '))}) — the xbrowser CLI has no file-upload command\n`;
+        break;
+
+      case 'note':
+        script += `\n# NOTE: ${commentText(step.message)}\n`;
         break;
 
       case 'press':
