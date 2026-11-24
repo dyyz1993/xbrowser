@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.1.1] - 2026-11-24
+
+### Fixed
+- 顶层 `package.json` 补 `description`（此前缺失，marketplace 上架校验要求非空——1.36.0 发布流水线中 login-state 上架因此失败）。
+
 ## [1.1.0] - 2026-11-21
 
 ### Added
