@@ -4,7 +4,7 @@ import { ok } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
 import { randomPause } from '../shared/humanize.js';
 import { registerOschinaPublishing } from './publishing.js';
-import { checkLoggedIn } from '../shared/publishing/login-probe.js';
+import { LOGIN_URL_PATTERNS, checkLoggedIn } from '../shared/publishing/login-probe.js';
 
 /**
  * 开源中国（OSChina）插件。
@@ -27,6 +27,39 @@ function resolvePage(ctx: CommandContext): { page: Page; tips: string[] } {
   return { page, tips };
 }
 
+/**
+ * 本地 page 的登录探测（ERR-20261022-003 修正）。
+ *
+ * 旧判定（body 长度 > 50 且不含「登录注册」）在登出时也判真：my.oschina.net
+ * 登出页正文够长、且不含这个精确串，命令被放进编辑器步骤后才以
+ * 「标题输入框未找到」失败。改为只认确定信号：
+ *
+ * - 未登录：受保护页（如 /u/<uid>/blog/ai-write）302 到 /home/login
+ *   （事件实录；与 LOGIN_URL_PATTERNS.oschina 同源）；
+ * - 已登录：my.oschina.net 302 到个人空间 /u/<id>/
+ *   （shared/publishing/sites/oschina.ts 实战记录：readyState 在重定向
+ *   落地前就可能是 complete，必须轮询）。
+ *
+ * 没有已登录标记就不判真——宁可拦下给登录提示，也不要让登录页被误报成
+ * 缺选择器（编辑器入口的重定向兜底另见 oscPublisher.open()）。
+ */
+async function probeLocalLoginMarker(page: Page): Promise<boolean> {
+  try {
+    await page
+      .goto('https://my.oschina.net', { waitUntil: 'domcontentloaded', timeout: 15000 })
+      .catch(() => undefined);
+    for (let i = 0; i < 12; i++) {
+      const url = page.url();
+      if (LOGIN_URL_PATTERNS.oschina.some((p) => p.test(url))) return false;
+      if (/my\.oschina\.net\/u\/\d+/.test(url)) return true;
+      await randomPause(400, 600);
+    }
+    return false; // 轮询期内没有已登录标记——不判真
+  } catch {
+    return false;
+  }
+}
+
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
     name: 'oschina',
@@ -38,13 +71,8 @@ export default function (xcli: XCLIAPI): void {
       const ctxAny = ctx as unknown as Record<string, unknown>;
       const page = ctxAny.page as Page | undefined;
       return checkLoggedIn('oschina', 'https://my.oschina.net', async () => {
-        if (!page) return true;
-        const url = page.url();
-        if (url.includes('/login')) return false;
-        const body = await page.evaluate(
-          () => document.body?.textContent?.trim().slice(0, 300) || '',
-        ) as string;
-        return body.length > 50 && !body.includes('登录注册');
+        if (!page) return true; // 连 page 都没有时放行（与 checkLoggedIn 的 assume 哲学一致，错误会在命令层更准确地暴露）
+        return probeLocalLoginMarker(page);
       });
     },
   });

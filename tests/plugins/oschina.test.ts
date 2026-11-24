@@ -3,7 +3,7 @@ import plugin from '../../.xcli/plugins/oschina/index.ts';
 import { __setHumanizeSleeperForTests } from '../../.xcli/plugins/shared/humanize.js';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
-const mockXCLI = { createSite: vi.fn(() => mockSite) };
+const mockXCLI = { createSite: vi.fn((_config: Record<string, unknown>) => mockSite) };
 
 /**
  * 测试隔离：真实机器上 chrome-bridge 可能在线，会让通道解析走 bridge 分支，
@@ -108,6 +108,11 @@ function ctxFor(page: ReturnType<typeof createPage>['page']) {
   };
 }
 
+/** createSite 收到的站点配置（取 isLogin 钩子用） */
+function siteConfig(): { isLogin: (ctx: unknown) => Promise<boolean> } {
+  return mockXCLI.createSite.mock.calls[0][0] as { isLogin: (ctx: unknown) => Promise<boolean> };
+}
+
 describe('oschina plugin', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -188,6 +193,51 @@ describe('oschina plugin', () => {
       title: 'Hello',
       published: true,
       url: 'https://my.oschina.net/u/1/blog/19781123',
+    });
+  });
+
+  // ── ERR-20261022-003：登出误判（isLogin 放行 → 编辑器步骤以「标题输入框
+  //    未找到」失败）。修复：isLogin 只认确定信号；编辑器入口 302 到
+  //    /home/login 时直接返回 LOGIN_REQUIRED。──
+  describe('isLogin (ERR-20261022-003)', () => {
+    it('returns false when the entry redirect lands on /home/login (logged out)', async () => {
+      const harness = createPage({ url: 'https://my.oschina.net/home/login' });
+      await expect(siteConfig().isLogin({ page: harness.page })).resolves.toBe(false);
+    });
+
+    it('returns false when redirected to www.oschina.net/home/login', async () => {
+      const harness = createPage({ url: 'https://www.oschina.net/home/login' });
+      await expect(siteConfig().isLogin({ page: harness.page })).resolves.toBe(false);
+    });
+
+    it('returns true with the logged-in marker (personal space /u/<id> redirect)', async () => {
+      const harness = createPage({ url: 'https://my.oschina.net/u/1998814/' });
+      await expect(siteConfig().isLogin({ page: harness.page })).resolves.toBe(true);
+    });
+
+    it('returns false without the logged-in marker (stuck on entry URL)', async () => {
+      const harness = createPage({ url: 'https://my.oschina.net/' });
+      await expect(siteConfig().isLogin({ page: harness.page })).resolves.toBe(false);
+    });
+
+    it('returns true when no page is available (assume-through, matching checkLoggedIn)', async () => {
+      await expect(siteConfig().isLogin({})).resolves.toBe(true);
+    });
+  });
+
+  describe('draft with logged-out redirect (ERR-20261022-003)', () => {
+    it('returns the LOGIN_REQUIRED result and never looks for the title input', async () => {
+      const harness = createPage({ url: 'https://my.oschina.net/home/login' });
+      const result = await handlerOf('draft')(
+        { title: 'Title', content: 'W'.repeat(200) },
+        ctxFor(harness.page),
+      );
+      expect(result.success).toBe(false);
+      expect(String(result.message)).toContain('LOGIN_REQUIRED');
+      expect(String(result.message)).toContain('/home/login');
+      // 没有去找标题输入框（那正是事故里的误导性报错）
+      const exprs = harness.page.evaluate.mock.calls.map((c) => String(c[0])).join('\n');
+      expect(exprs).not.toContain('标题');
     });
   });
 });

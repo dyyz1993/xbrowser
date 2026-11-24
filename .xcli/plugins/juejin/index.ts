@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page } from '../types.js';
+import type { Page, Locator } from '../types.js';
 
 import { randomPause, humanClick, humanBrowse, humanFill } from '../shared/humanize.js';
 
@@ -61,6 +61,238 @@ async function uploadImageToJuejin(page: Page, imagePath: string): Promise<strin
 
   if (!cdnUrl) throw new Error('Image upload returned empty URL');
   return cdnUrl;
+}
+
+// ── 幂等输入与草稿观测（ERR-20261022-002）─────────────────────────────
+//
+// 事故实录：draft 超时后被重试（executor recovery / 外部重跑），标题被第二
+// 轮输入叠成两股交错的流、CodeMirror 正文 0 字——草稿其实已创建
+// （editor/drafts/7699014849130004531），但命令只报了超时。
+//
+// 代码层根因：
+// 1) humanType 的 pressSequentially 与 keyboard.insertText 都是「追加」语义，
+//    输入前从不读当前值（shared/humanize.ts humanType / 本文件 publish 正文）；
+// 2) draft 的 CodeMirror setValue 返回值被丢弃——正文 0 字也照样报成功；
+// 3) 失败时不上报已观察到的草稿 URL/ID，调用方只能盲目重跑。
+//
+// 修复原则：每个输入步骤先读当前值——一致则跳过、不一致则清空后输入一次
+// （绝不追加）；写入后回读校验；失败时把观察到的草稿报告出来。
+
+/** 标题输入框候选（读取与定位共用同一列表，保证读到的就是要写的那个） */
+const TITLE_INPUT_SELECTOR =
+  'input[placeholder*="输入文章标题"], input[class*="title-input"], input[name*="title"], input[placeholder*="标题"], input[data-testid*="title"]';
+
+/** 正文编辑器候选（与 publish 原定位列表一致） */
+const EDITOR_SELECTOR =
+  'div[contenteditable="true"][class*="editor"], textarea[class*="editor"], div[class*="CodeMirror"], textarea[placeholder*="请输入"], div[contenteditable="true"][class*="CodeMirror"], div[contenteditable="true"][data-placeholder], textarea[id*="editor"]';
+
+/** 标签输入框候选 */
+const TAGS_INPUT_SELECTOR =
+  'input[placeholder*="标签"], input[placeholder*="tag"], input[class*="tag-input"], input[placeholder*="添加标签"]';
+
+/** 从 URL 提取掘金草稿（编辑器自动保存后 URL 从 /editor/drafts/new 落到 /editor/drafts/<id>） */
+function draftFromUrl(url: string): { id: string; url: string } | null {
+  const m = url.match(/juejin\.cn\/editor\/drafts\/(\d+)/);
+  return m ? { id: m[1], url } : null;
+}
+
+/** 读 input 当前值（纯读取，不发任何事件）；读不到返回 null */
+async function readInputValue(page: Page, selector: string): Promise<string | null> {
+  try {
+    const raw = await page.evaluate<unknown>(
+      `(function(){ var el = document.querySelector(${JSON.stringify(selector)}); return el && typeof el.value === 'string' ? el.value : null; })()`,
+    );
+    return typeof raw === 'string' ? raw : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 幂等填输入框（标题/标签共用）：
+ * - 当前值与目标一致 → 跳过（重试不重复输入）；
+ * - 不一致 → trusted fill('') 清空（selectAll 替换语义）后 humanFill 输入一次；
+ * - 写入后回读校验，读到矛盾值（两股输入流叠加的征兆）立即报错。
+ */
+async function fillInputIdempotent(page: Page, input: Locator, selector: string, text: string): Promise<void> {
+  if (!text) return;
+  const before = await readInputValue(page, selector);
+  if (before === text) return; // 上一次尝试已写好——跳过
+  if (before) {
+    // 残留旧值：清空后只输入一次，绝不追加
+    await input.fill('');
+  }
+  await humanFill(page, input, text);
+  const after = await readInputValue(page, selector);
+  if (after !== null && after !== text) {
+    throw new Error(
+      `掘金输入校验失败：期望 "${text.slice(0, 30)}"，实际 "${after.slice(0, 60)}"（疑似两股输入流叠加）`,
+    );
+  }
+}
+
+type EditorMode = 'codemirror' | 'field' | 'none' | 'unreadable';
+
+interface EditorRead {
+  mode: EditorMode;
+  text: string | null;
+}
+
+/** 读正文编辑器当前内容（CodeMirror.getValue / contenteditable textContent / textarea value） */
+async function readEditorState(page: Page): Promise<EditorRead> {
+  const expr = `(function(){
+    var cm = document.querySelector('.CodeMirror');
+    if (cm && cm.CodeMirror && typeof cm.CodeMirror.getValue === 'function') {
+      return JSON.stringify({ mode: 'codemirror', text: cm.CodeMirror.getValue() || '' });
+    }
+    var ed = document.querySelector('div[contenteditable="true"], textarea[id*="editor"], textarea[placeholder*="请输入"], textarea[class*="editor"]');
+    if (ed) {
+      var t = typeof ed.value === 'string' ? ed.value : (ed.textContent || '');
+      return JSON.stringify({ mode: 'field', text: t || '' });
+    }
+    return JSON.stringify({ mode: 'none', text: null });
+  })()`;
+  let raw: unknown;
+  try {
+    raw = await page.evaluate<unknown>(expr);
+  } catch {
+    return { mode: 'unreadable', text: null };
+  }
+  if (typeof raw !== 'string' || raw === '') return { mode: 'unreadable', text: null };
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return { mode: 'unreadable', text: null };
+    const obj = parsed as Record<string, unknown>;
+    if (obj.mode === 'codemirror' || obj.mode === 'field') {
+      return { mode: obj.mode, text: typeof obj.text === 'string' ? obj.text : null };
+    }
+    if (obj.mode === 'none') return { mode: 'none', text: null };
+  } catch {
+    // 非 JSON——按读态失败处理
+  }
+  return { mode: 'unreadable', text: null };
+}
+
+/** 正文长度校验：空/腰斩=写入异常，>1.5 倍=疑似双份（与 CSDN #417 同款护栏） */
+function verifyBodyLength(got: number, expected: number): void {
+  if (got === 0 || got < expected * 0.5) {
+    throw new Error(`掘金正文写入异常（${got} 字符，预期 ${expected}）`);
+  }
+  if (got > expected * 1.5) {
+    throw new Error(`掘金正文疑似重复写入（${got} 字符 > 预期 ${expected} 的 1.5 倍）——已中止`);
+  }
+}
+
+function parseBodyWriteResult(raw: unknown): { mode: string; len: number } | null {
+  if (typeof raw !== 'string' || raw === '') return null;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return null;
+    const obj = parsed as Record<string, unknown>;
+    if (typeof obj.mode === 'string' && typeof obj.len === 'number') {
+      return { mode: obj.mode, len: obj.len };
+    }
+  } catch {
+    // 非 JSON
+  }
+  return null;
+}
+
+/**
+ * 幂等写正文（draft / publish 共用）：
+ * - 当前内容与目标一致 → 跳过（重试绝不追加）；
+ * - CodeMirror → setValue 整体替换 + 页面内回读长度校验；
+ * - 其他编辑器 → 聚焦 + execCommand('selectAll')（与 CDP driver fill 同一
+ *   编辑管线，非事件伪造）+ insertText 单份，回读校验防双份；
+ * - 找不到编辑器 → 明确失败（0 字草稿事故后不再静默成功）。
+ */
+async function writeBodyIdempotent(page: Page, editorLocator: Locator | null, content: string): Promise<void> {
+  const state = await readEditorState(page);
+  if ((state.mode === 'codemirror' || state.mode === 'field') && state.text === content) {
+    return; // 上一次尝试已写入——跳过
+  }
+  if (state.mode === 'codemirror' || state.mode === 'unreadable') {
+    const raw = await page.evaluate<unknown>(
+      `(function(){
+        var md = ${JSON.stringify(content)};
+        var cm = document.querySelector('.CodeMirror');
+        if (!(cm && cm.CodeMirror)) return JSON.stringify({ mode: 'none', len: 0 });
+        cm.CodeMirror.setValue(md);
+        var got = cm.CodeMirror.getValue() || '';
+        return JSON.stringify({ mode: 'codemirror', len: got.length });
+      })()`,
+    );
+    const res = parseBodyWriteResult(raw);
+    if (!res || res.mode === 'none') {
+      throw new Error('掘金正文编辑器未找到（CodeMirror / contenteditable / textarea）——正文未写入');
+    }
+    verifyBodyLength(res.len, content.length);
+    return;
+  }
+  if (state.mode === 'field') {
+    if (editorLocator) {
+      await editorLocator.click().catch(() => undefined);
+    } else {
+      await page.evaluate<unknown>(
+        `(function(){
+          var el = document.querySelector('div[contenteditable="true"], textarea[id*="editor"], textarea[placeholder*="请输入"], textarea[class*="editor"]');
+          if (el && document.activeElement !== el) el.focus();
+          return 'focused';
+        })()`,
+      );
+    }
+    if (state.text) {
+      // 全选已有内容，后续 insertText 写在选区上 = 替换而非追加
+      await page.evaluate<unknown>(
+        `(function(){
+          var el = document.querySelector('div[contenteditable="true"], textarea[id*="editor"], textarea[placeholder*="请输入"], textarea[class*="editor"]');
+          if (!el) return 'none';
+          if (document.activeElement !== el) el.focus();
+          var cur = typeof el.value === 'string' ? el.value : (el.textContent || '');
+          if (cur !== '') document.execCommand('selectAll');
+          return 'selected';
+        })()`,
+      );
+    }
+    await page.keyboard.insertText(content);
+    const after = await readEditorState(page);
+    if ((after.mode === 'field' || after.mode === 'codemirror') && after.text !== null) {
+      verifyBodyLength(after.text.length, content.length);
+    }
+    return;
+  }
+  throw new Error('掘金正文编辑器未找到（CodeMirror / contenteditable / textarea）——正文未写入');
+}
+
+/**
+ * 轮询观察草稿 URL（自动保存后从 /editor/drafts/new 落到 /editor/drafts/<id>，
+ * ERR-20261022-002 实录）。保存确认没有可靠的选择器证据（知识库/录制均无），
+ * 这里只做观测上报，不做失败判据。
+ */
+async function observeDraft(page: Page, rounds = 12): Promise<{ id: string; url: string } | null> {
+  for (let i = 0; i < rounds; i++) {
+    try {
+      const hit = draftFromUrl(page.url());
+      if (hit) return hit;
+    } catch {
+      return null;
+    }
+    await randomPause(400, 600);
+  }
+  return null;
+}
+
+/** 失败时上报观察到的草稿（URL/ID），调用方不要盲目重跑 */
+function observedDraftTip(page: Page): string[] {
+  try {
+    const hit = draftFromUrl(page.url());
+    if (!hit) return [];
+    return [
+      `⚠️ 命令失败，但已观察到草稿：${hit.url}（ID ${hit.id}）。请先人工确认该草稿，勿盲目重跑——重跑会重复输入`,
+    ];
+  } catch {
+    return [];
+  }
 }
 
 export default function (xcli: XCLIAPI): void {
@@ -188,31 +420,27 @@ export default function (xcli: XCLIAPI): void {
         await randomPause(2800, 5200);
         await humanBrowse(page, 3000);
 
-        const titleInput = page.locator(
-          'input[placeholder*="输入文章标题"], input[class*="title-input"], input[name*="title"], input[placeholder*="标题"], input[data-testid*="title"]'
-        ).first();
+        const titleInput = page.locator(TITLE_INPUT_SELECTOR).first();
         if (await titleInput.isVisible().catch(() => false)) {
-          await humanFill(page, titleInput, params.title);
+          // 幂等输入（ERR-20261022-002）：重试时读当前值决定跳过/清空重写，绝不追加
+          await fillInputIdempotent(page, titleInput, TITLE_INPUT_SELECTOR, params.title);
         }
 
         await randomPause(350, 650);
 
-        const editor = page.locator(
-          'div[contenteditable="true"][class*="editor"], textarea[class*="editor"], div[class*="CodeMirror"], textarea[placeholder*="请输入"], div[contenteditable="true"][class*="CodeMirror"], div[contenteditable="true"][data-placeholder], textarea[id*="editor"]'
-        ).first();
+        const editor = page.locator(EDITOR_SELECTOR).first();
         if (await editor.isVisible().catch(() => false)) {
-          await editor.click();
-          await page.keyboard.insertText(content);
+          // 幂等写入：insertText 是追加语义——先读当前内容，已就位跳过；
+          // CodeMirror 走 setValue 整体替换，其余全选后单份插入
+          await writeBodyIdempotent(page, editor, content);
         }
 
         if (params.tags) {
-          const tagsInput = page.locator(
-            'input[placeholder*="标签"], input[placeholder*="tag"], input[class*="tag-input"], input[placeholder*="添加标签"]'
-          ).first();
+          const tagsInput = page.locator(TAGS_INPUT_SELECTOR).first();
           if (await tagsInput.isVisible().catch(() => false)) {
             const tags = params.tags.split(',');
             for (const tag of tags) {
-              await humanFill(page, tagsInput, tag.trim());
+              await fillInputIdempotent(page, tagsInput, TAGS_INPUT_SELECTOR, tag.trim());
               await randomPause(350, 650);
               const tagOption = page.locator(
                 '[class*="tag-item"], [class*="tag-suggestion"], [role="option"], [class*="tag-wrap"]'
@@ -278,7 +506,8 @@ export default function (xcli: XCLIAPI): void {
             url: finalUrl,
           }, [...cdpTips, `文章 "${params.title}" 已在掘金发布`]);
       } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
+        // ERR-20261022-002：失败前草稿可能已创建——上报观察到的草稿，调用方不要盲目重跑
+        return fail(error instanceof Error ? error.message : '未知错误', [...cdpTips, ...observedDraftTip(page)]);
       }
     },
   });
@@ -397,37 +626,36 @@ export default function (xcli: XCLIAPI): void {
           }
         }
 
-        // Set title
-        const titleInput = page.locator(
-          'input[placeholder*="输入文章标题"], input[class*="title-input"], input[name*="title"], input[placeholder*="标题"]'
-        ).first();
+        // Set title（幂等——ERR-20261022-002：重试绝不叠加输入）
+        const titleInput = page.locator(TITLE_INPUT_SELECTOR).first();
         if (await titleInput.isVisible().catch(() => false)) {
-          await humanFill(page, titleInput, params.title);
+          await fillInputIdempotent(page, titleInput, TITLE_INPUT_SELECTOR, params.title);
         }
 
         await randomPause(350, 650);
 
-        // Set content via CodeMirror
-        await page.evaluate((md: string) => {
-          const cm = document.querySelector('.CodeMirror') as unknown as { CodeMirror?: { setValue(v: string): void } };
-          if (cm?.CodeMirror) {
-            cm.CodeMirror.setValue(md);
-            return 'OK';
-          }
-          return 'NO_CM';
-        }, content as unknown as string);
+        // Set content（幂等 + 回读校验：0 字草稿不再静默成功）
+        await writeBodyIdempotent(page, null, content);
 
-        // Wait for auto-save
-        await randomPause(2000, 3500);
+        // 保存观测：自动保存后 URL 落到 /editor/drafts/<id>。无可靠的保存确认
+        // 选择器证据（知识库/录制均无），这里只观测上报，不做失败判据。
+        const draft = await observeDraft(page);
 
         return ok({
           title: params.title,
           saved: true,
           url: page.url(),
+          ...(draft ? { draftId: draft.id, draftUrl: draft.url } : {}),
           uploadedImages: uploadedImages.length > 0 ? uploadedImages : undefined,
-        }, [...cdpTips, `草稿 "${params.title}" 已保存`, uploadedImages.length > 0 ? `已上传 ${uploadedImages.length} 张图片到掘金 CDN` : ''].filter(Boolean));
+        }, [
+          ...cdpTips,
+          `草稿 "${params.title}" 已保存`,
+          ...(draft ? [`草稿地址：${draft.url}`] : ['未观测到草稿 URL（编辑器可能仍在 /editor/drafts/new，请人工确认）']),
+          ...(uploadedImages.length > 0 ? [`已上传 ${uploadedImages.length} 张图片到掘金 CDN`] : []),
+        ]);
       } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
+        // ERR-20261022-002：失败前草稿可能已创建——上报观察到的草稿，调用方不要盲目重跑
+        return fail(error instanceof Error ? error.message : '未知错误', [...cdpTips, ...observedDraftTip(page)]);
       }
     },
   });

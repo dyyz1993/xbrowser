@@ -32,12 +32,37 @@ export const OSC_EDITOR_URL = 'https://my.oschina.net';
 /** OSChina 博客分类候选（账号已有分类） */
 export const OSC_CATEGORIES = ['工作日志', '日常记录', '转贴的文章'] as const;
 
+/**
+ * 未登录兜底（ERR-20261022-003）：my.oschina.net 的受保护页（如
+ * /u/<uid>/blog/ai-write）在登出时会 302 到 /home/login（与
+ * login-probe.ts 的 LOGIN_URL_PATTERNS.oschina 同源）。在找任何编辑器
+ * 元素之前先判掉——登录页绝不能被误报成「标题输入框未找到」。
+ *
+ * 抛 LOGIN_REQUIRED 前缀错误（与 bilibili 插件同款），router 侧会据此
+ * 注入 viewer 登录提示。
+ */
+async function assertNotLoginRedirect(adapter: PageAdapter): Promise<void> {
+  let href = '';
+  try {
+    href = await adapter.evaluate<string>('location.href');
+  } catch {
+    return; // 读不到 URL 时不拦截（无证据不判登出）
+  }
+  if (typeof href === 'string' && /\/home\/login/i.test(href)) {
+    throw new Error(
+      `LOGIN_REQUIRED: OSChina 未登录——编辑器入口被重定向到登录页（${href}）。请先执行 xbrowser oschina login 完成登录后重试`,
+    );
+  }
+}
+
 export const oscPublisher: SitePublisher = {
   site: 'oschina',
 
   async open(adapter: PageAdapter, options: { uid?: string } = {}): Promise<void> {
     // task-open 是异步导航——返回时目标页可能还在加载，先等 ready
     await adapter.waitReady();
+    // 登出时入口可能直接 302 到 /home/login（ERR-20261022-003）
+    await assertNotLoginRedirect(adapter);
 
     // 已知 uid 时直接进编辑器——my.oschina.net 的 302 到个人空间在
     // 复用 tab 时不可靠（实测 pathname 停在 '/'），绕开它。
@@ -51,6 +76,8 @@ export const oscPublisher: SitePublisher = {
           return 'nav';
         })()`);
         await adapter.waitReady();
+        // ai-write 是受保护页：登出时 302 到 /home/login（ERR-20261022-003 实录）
+        await assertNotLoginRedirect(adapter);
       }
     }
 
@@ -87,6 +114,8 @@ export const oscPublisher: SitePublisher = {
         return 'nav';
       })()`);
       await adapter.waitReady();
+      // 同上：uid 探测路径的导航也可能被 302 到登录页
+      await assertNotLoginRedirect(adapter);
     }
 
     // 先快速探测一次：编辑器不存在时立刻失败，不等 20s 超时

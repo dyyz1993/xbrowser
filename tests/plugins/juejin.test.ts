@@ -19,28 +19,135 @@ function getHandler(name: string): Function {
   return call![1].handler;
 }
 
-function createMockPage() {
-  return {
-    goto: vi.fn(),
-    waitForTimeout: vi.fn(),
-    waitForLoadState: vi.fn(),
-    evaluate: vi.fn(() => Promise.resolve({ x: 640, y: 360 })),
-    locator: vi.fn(() => ({
+function createMockPage(options: Partial<{
+  url: string;
+  titleValue: string;
+  titleVisible: boolean;
+  titleReadOverride: string | null;
+  editorMode: 'codemirror' | 'field' | 'none';
+  editorVisible: boolean;
+  bodyValue: string;
+  writeResultLen: number | null;
+  failBodyWrite: boolean;
+}> = {}) {
+  // 有状态 mock（oschina.test.ts 同款思路）：标题/正文是可读写的存储，
+  // pressSequentially/insertText 按真实驱动的「追加」语义写入——
+  // 这样「重试叠加输入」在测试里可直接观测（ERR-20261022-002）。
+  const s = {
+    url: 'https://juejin.cn/editor/drafts/new',
+    titleValue: '',
+    titleVisible: false,
+    titleReadOverride: null as string | null,
+    editorMode: 'codemirror' as 'codemirror' | 'field' | 'none',
+    editorVisible: true,
+    bodyValue: '',
+    writeResultLen: null as number | null,
+    failBodyWrite: false,
+    ...options,
+  };
+  const titlePresses: string[] = [];
+  const bodyInserts: string[] = [];
+  const page = {
+    state: s,
+    titlePresses,
+    bodyInserts,
+    goto: vi.fn(async () => undefined),
+    waitForTimeout: vi.fn(async () => undefined),
+    waitForLoadState: vi.fn(async () => undefined),
+    evaluate: vi.fn((expr: unknown, _arg?: unknown): Promise<unknown> => {
+      if (typeof expr === 'function') {
+        // humanize 鼠标起点等 function 形式：默认返回视口中心
+        return Promise.resolve({ x: 640, y: 360 });
+      }
+      const e = String(expr);
+      // 标题当前值读取（fillInputIdempotent 的 readInputValue）
+      if (e.includes('typeof el.value') && e.includes('输入文章标题')) {
+        return Promise.resolve(s.titleReadOverride ?? s.titleValue);
+      }
+      // 标签当前值读取
+      if (e.includes('typeof el.value') && e.includes('tag-input')) {
+        return Promise.resolve('');
+      }
+      // 全选已有正文（selectAll 后 insertText 写在选区上 = 替换）——
+      // 必须先于「正文状态读取」判断：两段表达式都含 contenteditable
+      if (e.includes("execCommand('selectAll')")) {
+        if (s.editorMode === 'field' && s.bodyValue !== '') {
+          (s as { fieldSelected?: boolean }).fieldSelected = true;
+        }
+        return Promise.resolve('selected');
+      }
+      // 正文写入（CodeMirror.setValue 整体替换 + 回读长度）
+      if (e.includes('CodeMirror.setValue')) {
+        if (s.failBodyWrite) return Promise.reject(new Error('正文写入超时'));
+        if (s.editorMode !== 'codemirror') {
+          return Promise.resolve(JSON.stringify({ mode: 'none', len: 0 }));
+        }
+        const m = e.match(/var md = ("(?:[^"\\]|\\.)*");/);
+        const md = m ? (JSON.parse(m[1]) as string) : '';
+        s.bodyValue = md;
+        return Promise.resolve(
+          JSON.stringify({ mode: 'codemirror', len: s.writeResultLen ?? md.length }),
+        );
+      }
+      // 正文当前状态读取（readEditorState）
+      if (e.includes('CodeMirror.getValue') || e.includes('contenteditable')) {
+        if (s.editorMode === 'codemirror') {
+          return Promise.resolve(JSON.stringify({ mode: 'codemirror', text: s.bodyValue }));
+        }
+        if (s.editorMode === 'field') {
+          return Promise.resolve(JSON.stringify({ mode: 'field', text: s.bodyValue }));
+        }
+        return Promise.resolve(JSON.stringify({ mode: 'none', text: null }));
+      }
+      return Promise.resolve(undefined);
+    }),
+    locator: vi.fn((sel: string) => ({
       first: vi.fn(() => ({
-        isVisible: vi.fn(() => Promise.resolve(false)),
-        click: vi.fn(() => Promise.resolve()),
-        fill: vi.fn(() => Promise.resolve()),
+        isVisible: vi.fn((): Promise<boolean> => {
+          if (sel.includes('输入文章标题') || sel.includes('title')) return Promise.resolve(s.titleVisible);
+          if (sel.includes('CodeMirror') || sel.includes('editor')) return Promise.resolve(s.editorVisible);
+          return Promise.resolve(false);
+        }),
+        click: vi.fn(async () => undefined),
+        fill: vi.fn(async (v: string) => {
+          // trusted fill('')：清空（selectAll + 替换语义）
+          if (v === '' && (sel.includes('输入文章标题') || sel.includes('title'))) {
+            s.titleValue = '';
+          }
+        }),
+        focus: vi.fn(async () => undefined),
+        pressSequentially: vi.fn(async (ch: string) => {
+          // 真实驱动语义：pressSequentially 在光标处追加
+          titlePresses.push(ch);
+          s.titleValue += ch;
+        }),
+        evaluate: vi.fn(async () => undefined),
+        boundingBox: vi.fn(async () => null),
       })),
+      filter: vi.fn(() => ({ count: vi.fn(async () => 0) })),
     })),
     fill: vi.fn(),
     click: vi.fn(),
-    url: vi.fn(() => 'https://juejin.cn/'),
-    keyboard: { insertText: vi.fn(), press: vi.fn() },
+    url: vi.fn(() => s.url),
+    keyboard: {
+      insertText: vi.fn(async (t: string) => {
+        bodyInserts.push(t);
+        const st = s as unknown as { fieldSelected?: boolean };
+        if (st.fieldSelected) {
+          s.bodyValue = t; // 选区上插入 = 替换
+          st.fieldSelected = false;
+        } else {
+          s.bodyValue += t; // 光标处插入 = 追加（缺陷语义）
+        }
+      }),
+      press: vi.fn(async () => undefined),
+    },
     mouse: { wheel: vi.fn(() => Promise.resolve()), move: vi.fn(() => Promise.resolve()) },
     close: vi.fn(),
     $: vi.fn(),
     viewportSize: vi.fn(() => ({ width: 1280, height: 720 })),
   };
+  return page;
 }
 
 function createMockCtx(page?: ReturnType<typeof createMockPage>) {
@@ -146,12 +253,13 @@ describe('juejin plugin', () => {
     it('should return success tip when logged in', async () => {
       const handler = getHandler('login');
       const page = createMockPage();
-      page.locator = vi.fn(() => ({
+      page.locator = vi.fn((_sel: string) => ({
         first: vi.fn(() => ({
           isVisible: vi.fn(() => Promise.resolve(true)),
           click: vi.fn(() => Promise.resolve()),
           fill: vi.fn(() => Promise.resolve()),
         })),
+        filter: vi.fn(() => ({ count: vi.fn(async () => 0) })),
       }));
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx);
@@ -274,6 +382,138 @@ describe('juejin plugin', () => {
       if (result.success) {
         expect(tipsMessages(result.tips).some((t: string) => t.includes('Draft Title') && t.includes('草稿'))).toBe(true);
       }
+    }, 15000);
+  });
+
+  // ── ERR-20261022-002：draft/publish 重试不幂等（标题两股流叠加、正文 0 字、
+  //    超时不上报已建草稿）──
+  describe('draft/publish retry idempotency (ERR-20261022-002)', () => {
+    it('draft: title typed at most once across retries and never appended', async () => {
+      const handler = getHandler('draft');
+      const page = createMockPage({ titleVisible: true });
+      const ctx = createMockCtx(page);
+      const params = { title: '跨域穿透验证', content: '# 正文' };
+      await handler(params, ctx);   // 第一次尝试
+      await handler(params, ctx);   // 盲目重跑（超时后的典型动作）
+      expect(page.state.titleValue).toBe('跨域穿透验证');          // 没有叠成两份
+      expect(page.titlePresses.length).toBe('跨域穿透验证'.length); // 只输入过一次
+    }, 15000);
+
+    it('draft: residual differing title is cleared and typed once (never appended)', async () => {
+      const handler = getHandler('draft');
+      const page = createMockPage({ titleVisible: true, titleValue: '旧的残留标题' });
+      const result = await handler({ title: '新标题', content: '# 内容' }, createMockCtx(page));
+      expect(result.success).toBe(true);
+      expect(page.state.titleValue).toBe('新标题');
+      expect(page.state.titleValue).not.toBe('旧的残留标题新标题');
+    }, 15000);
+
+    it('draft: body never doubles on retry (CodeMirror setValue replaces, second run skips)', async () => {
+      const handler = getHandler('draft');
+      const page = createMockPage({ titleVisible: true });
+      const ctx = createMockCtx(page);
+      const params = { title: 'T', content: '# 只写一次' };
+      await handler(params, ctx);
+      await handler(params, ctx);
+      expect(page.state.bodyValue).toBe('# 只写一次');
+      const setValueCalls = page.evaluate.mock.calls
+        .map((c: unknown[]) => String(c[0]))
+        .filter((e: string) => e.includes('CodeMirror.setValue'));
+      expect(setValueCalls.length).toBe(1); // 第二次读到内容已就位 → 跳过
+    }, 15000);
+
+    it('draft: 0-char body write is a hard failure, not a silent success', async () => {
+      const handler = getHandler('draft');
+      const page = createMockPage({ editorMode: 'none' });
+      const result = await handler({ title: 'T', content: '# 内容' }, createMockCtx(page));
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('正文编辑器未找到');
+    }, 15000);
+
+    it('draft: body read-back beyond 1.5x expected is rejected as duplicate write', async () => {
+      const handler = getHandler('draft');
+      const page = createMockPage({ writeResultLen: 999 });
+      const result = await handler({ title: 'T', content: '# 内容' }, createMockCtx(page));
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('重复写入');
+    }, 15000);
+
+    it('draft: contradictory title read-back (interleaved streams) is detected', async () => {
+      const handler = getHandler('draft');
+      const page = createMockPage({ titleVisible: true, titleReadOverride: '另一股流写入的值' });
+      const result = await handler({ title: '正确标题', content: '# 内容' }, createMockCtx(page));
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('输入校验失败');
+    }, 15000);
+
+    it('draft: reports the observed draft (URL/ID) when a later step fails', async () => {
+      const handler = getHandler('draft');
+      const page = createMockPage({
+        titleVisible: true,
+        url: 'https://juejin.cn/editor/drafts/7699014849130004531',
+        failBodyWrite: true,
+      });
+      const result = await handler({ title: 'T', content: '# 内容' }, createMockCtx(page));
+      expect(result.success).toBe(false);
+      const tips = tipsMessages(result.tips).join('\n');
+      expect(tips).toContain('7699014849130004531');
+      expect(tips).toContain('https://juejin.cn/editor/drafts/7699014849130004531');
+      expect(tips).toContain('勿盲目重跑');
+    }, 15000);
+
+    it('draft: success returns observed draftId/draftUrl when the URL lands on the draft', async () => {
+      const handler = getHandler('draft');
+      const page = createMockPage({
+        titleVisible: true,
+        url: 'https://juejin.cn/editor/drafts/7699014849130004531',
+      });
+      const result = await handler({ title: 'T', content: '# 内容' }, createMockCtx(page));
+      expect(result.success).toBe(true);
+      expect(result.data.draftId).toBe('7699014849130004531');
+      expect(result.data.draftUrl).toBe('https://juejin.cn/editor/drafts/7699014849130004531');
+    }, 15000);
+
+    it('draft: when the save confirmation never arrives, saved stays true and no draftId is claimed', async () => {
+      const handler = getHandler('draft');
+      const page = createMockPage({ titleVisible: true });
+      const result = await handler({ title: 'T', content: '# 内容' }, createMockCtx(page));
+      expect(result.success).toBe(true);
+      expect(result.data.saved).toBe(true);
+      expect(result.data.draftId).toBeUndefined();
+      expect(tipsMessages(result.tips).some((t: string) => t.includes('未观测到草稿 URL'))).toBe(true);
+    }, 15000);
+
+    it('publish: later-step failure reports the observed draft instead of a bare error', async () => {
+      const handler = getHandler('publish');
+      const page = createMockPage({
+        titleVisible: true,
+        url: 'https://juejin.cn/editor/drafts/7699014849130004531',
+      });
+      const ctx = createMockCtx(page);
+      ctx.waitForHuman = vi.fn(() => Promise.reject(new Error('viewer 超时')));
+      const result = await handler({ title: 'T', content: 'C' }, ctx);
+      expect(result.success).toBe(false);
+      expect(tipsMessages(result.tips).join('\n')).toContain('7699014849130004531');
+    }, 15000);
+
+    it('publish: field editor body is inserted once across retries (insertText never appends)', async () => {
+      const handler = getHandler('publish');
+      const page = createMockPage({ titleVisible: true, editorMode: 'field' });
+      const ctx = createMockCtx(page);
+      const params = { title: 'T', content: 'C'.repeat(120) };
+      await handler(params, ctx);
+      await handler(params, ctx);
+      expect(page.state.bodyValue).toBe('C'.repeat(120));
+      expect(page.keyboard.insertText).toHaveBeenCalledTimes(1);
+    }, 15000);
+
+    it('publish: residual field body is select-all replaced, not appended', async () => {
+      const handler = getHandler('publish');
+      const page = createMockPage({ titleVisible: true, editorMode: 'field', bodyValue: '旧的正文' });
+      const result = await handler({ title: 'T', content: '# 新内容' }, createMockCtx(page));
+      expect(result.success).toBe(true);
+      expect(page.state.bodyValue).toBe('# 新内容');
+      expect(page.state.bodyValue).not.toBe('旧的正文# 新内容');
     }, 15000);
   });
 
