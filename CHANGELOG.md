@@ -2,6 +2,23 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；由 `npm run lint:changelog` 约束（版本条目齐全、格式、去重、降序）。
 
+## [1.36.0] - 2026-11-24
+
+### Added
+- **README 首屏与品牌**：首页开头改为「一句话问题陈述 + Features/特性 + Quick start」；统一命令/插件计数口径并接入 `lint:docs` 校验；新增 GitHub Social Preview 分享图（`branding/social-preview-1280x640.png` + 可重渲源文件）；修正 20 余处照抄会失败的示例（#465）。
+- **convert：Bash 回放脚本**：经 xbrowser CLI 在单一会话内回放，任何一步失败即停止并通过 trap 关闭会话（#472）。
+
+### Fixed
+- **CLI 路由**：命令行带 `--session` / `--json` 等参数时 `;` 命令链只执行第一条；`eval --help` / `-e --help` 不再把帮助文本当脚本执行（#466、#473）。
+- **CLI 参数**：kebab-case 旗标（如 `crawl --max-depth`）此前被静默丢弃，现按 schema 键映射生效；单条引号命令不再残留引号（`"click '#btn'"` 的选择器曾是 `#'#btn'`）；`eval` 帮助隐藏内部参数 `--script-b64`；`filter` 用法提示补上输出文件（#473）。
+- **crawl**：`--limit` 此前会被超出「并发数 − 1」个页面（`--limit 10` 实抓 12），改为 worker 开始抓取即占名额（#468）。
+- **daemon**：构建指纹不同的 CLI 不再无条件重启 daemon——daemon 持有会话时拒绝并给出出路（`XBROWSER_DAEMON_PORT` / `XBROWSER_DAEMON_SKIP_BUILD_CHECK`），`/health` 新增 `activeSessions`，旧 daemon 经 `session:list` RPC 回退查询（#470）。
+- **convert**：按当前录制格式（`actions` / `cdp-fill` / `cdp-click` / `navigation`）生成脚本——此前填表与中间跳转全部丢失；JS 产物改用真实存在的 Playwright 导入（此前 import 不存在的 `launch`，运行即报错）；真实录制里一个动作的多条记录归一为一步（#472）。
+- **录制器**：失败的命令不再作为动作入档；一次 CLI 点击不再同时记为 `cdp-click` 与 `click`（去重登记提前到命令执行前）（#474）。
+- **npm 包描述**：还原 `@xbrowser/cli` 顶层 description（#463 误覆盖为 npm 插件的描述）（#465）。
+- **content 插件**：内置推广 case 的命令/插件计数更新为 59 命令 / 125+ 插件（#469）。
+- **AGENTS**：提交标题长度按字节计（含 GitHub 追加的 ` (#N)`）；新 worktree 先装 husky 钩子；worktree 内跑 `dist/` 须带独立 daemon 端口（#467、#471）。
+
 ## [1.35.0] - 2026-11-21
 
 ### Added
