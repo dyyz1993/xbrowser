@@ -172,6 +172,10 @@ xbrowser "mouse --action move --x -10 --y -20"
 xbrowser fill -- '#input' '- item one'
 xbrowser type -- '#input' '--verbose is a value'
 
+# Everything after `--` is literal, global options included, so write them before it
+xbrowser fill '#q' -- '- item' --session my-sess   # runs in the default session: not what you meant
+xbrowser --session my-sess fill '#q' -- '- item'   # right
+
 # A separator inside a quoted value stays part of the value
 xbrowser fill '#input' 'a + b ; c'
 xbrowser fill '#input' 'a + b' '&&' title
