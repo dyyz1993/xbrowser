@@ -1,37 +1,44 @@
       // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包/副作用依赖，删除已实证破坏测试
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { asZodSchema } from '../src/utils/zod-internal.js';
 
-vi.mock('@dyyz1993/xcli-core', () => ({
-  parseArgs: (argv: string[]) => {
-    const positional: string[] = [];
-    const options: Record<string, unknown> = {};
-    for (let i = 0; i < argv.length; i++) {
-      if (argv[i].startsWith('--')) {
-        const key = argv[i].slice(2);
-        if (i + 1 < argv.length && !argv[i + 1].startsWith('-')) {
-          options[key] = argv[++i];
+vi.mock('@dyyz1993/xcli-core', async (importOriginal) => {
+  // splitCommand / unquote 用真实实现：router 的引号分词必须与链执行器同源
+  const actual = await importOriginal<typeof import('@dyyz1993/xcli-core')>();
+  return {
+    parseArgs: (argv: string[]) => {
+      const positional: string[] = [];
+      const options: Record<string, unknown> = {};
+      for (let i = 0; i < argv.length; i++) {
+        if (argv[i].startsWith('--')) {
+          const key = argv[i].slice(2);
+          if (i + 1 < argv.length && !argv[i + 1].startsWith('-')) {
+            options[key] = argv[++i];
+          } else {
+            options[key] = true;
+          }
+        } else if (argv[i].startsWith('-') && argv[i].length === 2) {
+          const key = argv[i][1];
+          if (i + 1 < argv.length && !argv[i + 1].startsWith('-')) {
+            options[key] = argv[++i];
+          } else {
+            options[key] = true;
+          }
         } else {
-          options[key] = true;
+          positional.push(argv[i]);
         }
-      } else if (argv[i].startsWith('-') && argv[i].length === 2) {
-        const key = argv[i][1];
-        if (i + 1 < argv.length && !argv[i + 1].startsWith('-')) {
-          options[key] = argv[++i];
-        } else {
-          options[key] = true;
-        }
-      } else {
-        positional.push(argv[i]);
       }
-    }
-    return { positional, options };
-  },
-  registerCommandDefinition: vi.fn(),
-  outputFormatter: vi.fn(),
-  isCommandResult: vi.fn(),
-  // xcli-core 导出的是实例（helpGenerator.generate(...)），不是工厂
-  helpGenerator: { generate: vi.fn() },
-}));
+      return { positional, options };
+    },
+    registerCommandDefinition: vi.fn(),
+    outputFormatter: vi.fn(),
+    isCommandResult: vi.fn(),
+    splitCommand: actual.splitCommand,
+    unquote: actual.unquote,
+    // xcli-core 导出的是实例（helpGenerator.generate(...)），不是工厂
+    helpGenerator: { generate: vi.fn() },
+  };
+});
 
 vi.mock('../src/client/daemon-client.js', () => ({
   forwardExec: vi.fn().mockResolvedValue(null),
@@ -1155,9 +1162,10 @@ describe('router', () => {
       await routeCommand(["click '#btn'", '--session', 's']);
 
       expect(executeChain).not.toHaveBeenCalled();
+      // 选择器不带引号：remainder 按链执行器同款 quote-aware 分词（曾原样留下 `'#btn'`）
       expect(handleBrowserCommand).toHaveBeenCalledWith(
         'click',
-        ["'#btn'"],
+        ['#btn'],
         expect.any(Object),
         's',
         'text',
@@ -1311,6 +1319,262 @@ describe('router', () => {
       const b64 = Buffer.from('document.title', 'utf8').toString('base64url');
       expect(executeChain).toHaveBeenCalledWith(`eval --script-b64 ${b64}`, { cdpEndpoint: undefined, sessionName: 'default' });
       expect(helpGenerator.generate).not.toHaveBeenCalled();
+    });
+
+    // ── 内部参数不得进 help：`xbrowser eval --help` 曾列出 `--script-b64 (Internal: …)` ──
+    // 它是 router 给 `eval <js…>` 用的内部通道，description 明写 "do not pass directly"。
+    // 防守：help 从去掉 `Internal:` 参数的 schema 生成；其它命令的 help 原样。
+    type GeneratedCommand = Parameters<typeof import('@dyyz1993/xcli-core').helpGenerator.generate>[0];
+
+    /** 最近一次交给 help generator 的命令对象 */
+    async function generatedCommand(): Promise<GeneratedCommand> {
+      const { helpGenerator } = await import('@dyyz1993/xcli-core');
+      const calls = vi.mocked(helpGenerator.generate).mock.calls;
+      return calls[calls.length - 1][0];
+    }
+
+    function paramNames(cmd: GeneratedCommand): string[] {
+      return Object.keys(asZodSchema(cmd.parameters).shape ?? {});
+    }
+
+    it('omits eval --script-b64 from the text help and keeps the public parameters', async () => {
+      const { helpGenerator: realHelpGenerator } = await vi.importActual<typeof import('@dyyz1993/xcli-core')>('@dyyz1993/xcli-core');
+
+      await routeCommand(['eval', '--help']);
+
+      const cmd = await generatedCommand();
+      expect(paramNames(cmd)).toEqual(['expression', 'frame']);
+      // 用真实 generator 渲染交给它的 schema（mock 只能证明传入了什么）
+      const text = realHelpGenerator.generate(cmd, { color: false, emoji: false });
+      expect(text).toContain('--expression');
+      expect(text).toContain('--frame');
+      expect(text).not.toContain('script-b64');
+      expect(text).not.toContain('Internal:');
+      await expectNothingExecuted();
+    });
+
+    it('omits eval --script-b64 from the JSON help too', async () => {
+      const { outputResult } = await import('../src/cli/output.js');
+
+      await routeCommand(['eval', '--json', '--help']);
+
+      const payload = vi.mocked(outputResult).mock.calls[0][0] as { parameters: Array<{ name: string }> };
+      expect(payload.parameters.map((p) => p.name)).toEqual(['expression', 'frame']);
+      await expectNothingExecuted();
+    });
+
+    it('leaves the help of a command without Internal parameters unchanged', async () => {
+      const { helpGenerator } = await import('@dyyz1993/xcli-core');
+      const { getCommand } = await import('../src/commands/command-registry.js');
+
+      await routeCommand(['goto', '--help']);
+
+      // 原对象透传：没有要隐藏的参数时不复制、不改 schema
+      expect(helpGenerator.generate).toHaveBeenCalledWith(getCommand('goto'), expect.anything());
+      expect(paramNames(await generatedCommand())).toEqual(['url', 'waitUntil', 'timeout', 'referrer']);
+      await expectNothingExecuted();
+    });
+  });
+
+  // ── 回归：`xbrowser -e --help` 把 `--help` 当脚本执行 ──
+  // 攻击复现：-e 值的首词不是已知命令就按 JS 处理，`--help` 被 base64 包成 eval 发给页面
+  // （ReferenceError: help is not defined，还会写 session 归档 / 错题本）。
+  // 防守：-e/--eval 的值恰为 `--help` / `-h` 时打印主帮助，什么都不执行。
+  describe('-e --help', () => {
+    it.each([
+      [['-e', '--help']],
+      [['-e', '-h']],
+      [['--eval', '--help']],
+      [['--eval', '-h']],
+      [['--session', 's', '-e', '-h']],
+      [['-e', 'document.title', '-e', '--help']],
+    ])('prints the main help and executes nothing for %j', async (argv) => {
+      const { showMainHelp } = await import('../src/cli/help.js');
+      const { executeChain } = await import('../src/executor.js');
+      const { forwardExec } = await import('../src/client/daemon-client.js');
+      const { printChainResult } = await import('../src/cli/chain-output.js');
+      const { handleBrowserCommand } = await import('../src/cli/index.js');
+
+      await routeCommand(argv);
+
+      expect(showMainHelp).toHaveBeenCalledTimes(1);
+      expect(executeChain).not.toHaveBeenCalled();
+      expect(forwardExec).not.toHaveBeenCalled();
+      expect(printChainResult).not.toHaveBeenCalled();
+      expect(handleBrowserCommand).not.toHaveBeenCalled();
+    });
+
+    it('still evaluates a script that merely contains the word help', async () => {
+      const { showMainHelp } = await import('../src/cli/help.js');
+      const { executeChain } = await import('../src/executor.js');
+
+      await routeCommand(['-e', 'typeof window.help']);
+
+      const b64 = Buffer.from('typeof window.help', 'utf8').toString('base64url');
+      expect(executeChain).toHaveBeenCalledWith(`eval --script-b64 ${b64}`, { cdpEndpoint: undefined, sessionName: 'default' });
+      expect(showMainHelp).not.toHaveBeenCalled();
+    });
+  });
+
+  // ── 引号泄漏：带其它 flag 的单条引号命令 ──
+  // 攻击复现：`xbrowser "click '#btn'" --session s` 进 argv 拆分块后，remainder 只按空白
+  // 切分、再按 `;` 切分（不看引号）：引号原样留在值里（选择器成了 `#'#btn'`），
+  // `fill #kw 'x;y'` 的值还被引号里的 `;` 拆成两半。
+  // 防守：remainder 用链执行器同款的 quote-aware 分词（splitCommand），值保留空格、去掉引号。
+  describe('quoted single command combined with other flags', () => {
+    // 与 src/executor.ts isChainInput 的正则一致（文件顶部默认 mock 缺 `;\s` / `||\s`）
+    const isChainLikeProduction = (input: string): boolean =>
+      /\s&&\s|\|\|\s|\s;\s|;\s|\s,\s|\s\+\s|\s->\s/.test(input);
+
+    beforeEach(async () => {
+      const { isChainInput } = await import('../src/executor.js');
+      vi.mocked(isChainInput).mockImplementation(isChainLikeProduction);
+    });
+
+    it.each([
+      ['--session after the command', ["click '#btn'", '--session', 's']],
+      ['--session before the command', ['--session', 's', "click '#btn'"]],
+      ['a boolean flag before the command', ['--session', 's', '--json', "click '#btn'"]],
+      ['nothing else (single-argv form)', ["click '#btn'"]],
+    ])('strips the quotes of a quoted argument (%s)', async (_label, argv) => {
+      const { handleBrowserCommand } = await import('../src/cli/index.js');
+
+      await routeCommand(argv);
+
+      expect(handleBrowserCommand).toHaveBeenCalledWith(
+        'click',
+        ['#btn'],
+        expect.any(Object),
+        expect.any(String),
+        expect.any(String),
+        undefined
+      );
+    });
+
+    it('keeps a semicolon inside a quoted value (content, not a separator)', async () => {
+      const { handleBrowserCommand } = await import('../src/cli/index.js');
+      const { executeChain } = await import('../src/executor.js');
+
+      await routeCommand(["fill #kw 'x;y'", '--session', 's']);
+
+      expect(executeChain).not.toHaveBeenCalled();
+      expect(handleBrowserCommand).toHaveBeenCalledWith(
+        'fill',
+        ['#kw', 'x;y'],
+        expect.any(Object),
+        's',
+        'text',
+        undefined
+      );
+    });
+
+    it.each([
+      ["fill #kw 'a b'"],
+      ['fill #kw "a b"'],
+    ])('keeps the spaces inside a quoted value (%s)', async (quoted) => {
+      const { handleBrowserCommand } = await import('../src/cli/index.js');
+
+      await routeCommand([quoted, '--session', 's']);
+
+      expect(handleBrowserCommand).toHaveBeenCalledWith(
+        'fill',
+        ['#kw', 'a b'],
+        expect.any(Object),
+        's',
+        'text',
+        undefined
+      );
+    });
+
+    it('unquotes a quoted eval script', async () => {
+      const { handleBrowserCommand } = await import('../src/cli/index.js');
+
+      await routeCommand(["eval 'document.title'", '--session', 's']);
+
+      expect(handleBrowserCommand).toHaveBeenCalledWith(
+        'eval',
+        ['document.title'],
+        expect.any(Object),
+        's',
+        'text',
+        undefined
+      );
+    });
+
+    it('still splits an unquoted semicolon glued to the previous token', async () => {
+      const { handleBrowserCommand } = await import('../src/cli/index.js');
+
+      await routeCommand(['goto https://example.com;title']);
+
+      expect(handleBrowserCommand).toHaveBeenCalledWith(
+        'goto',
+        ['https://example.com', 'title'],
+        expect.any(Object),
+        'default',
+        'text',
+        undefined
+      );
+    });
+  });
+
+  // ── 回归：布尔 flag 后面的插件名被当成 flag 值剥掉 ──
+  // 攻击复现：plugin-routing 的 flag 扫描把任意全局 flag 的下一个 token 当作它的值，
+  // `xbrowser --session s --json plugin "a && b"` 里 `--json` 后面的 `plugin` 被剥掉，
+  // 重组出的链成了 `a && b`（插件名丢失，报 Unknown command: a）。
+  // 防守：带值的全局 flag 只有一份定义，router.ts 与 plugin-routing.ts 共用。
+  describe('global flag scan before a plugin chain', () => {
+    const isChainLikeProduction = (input: string): boolean =>
+      /\s&&\s|\|\|\s|\s;\s|;\s|\s,\s|\s\+\s|\s->\s/.test(input);
+
+    beforeEach(async () => {
+      const { isChainInput } = await import('../src/executor.js');
+      vi.mocked(isChainInput).mockImplementation(isChainLikeProduction);
+    });
+
+    it.each([
+      ['--json', ['--session', 's', '--json', 'someplugin', 'cmd1 && cmd2']],
+      ['--yaml', ['--session', 's', '--yaml', 'someplugin', 'cmd1 && cmd2']],
+    ])('keeps the plugin name that follows the boolean flag %s', async (_flag, argv) => {
+      const { executeChain } = await import('../src/executor.js');
+
+      await routeCommand(argv);
+
+      expect(executeChain).toHaveBeenCalledWith('someplugin cmd1 && cmd2', {
+        cdpEndpoint: undefined,
+        sessionName: 's',
+      });
+    });
+
+    it.each([
+      ['a value flag', ['--session', 's', '-o', 'out.json', 'someplugin', 'cmd1 && cmd2']],
+      ['the --json that router.ts strips itself', ['--json', '--session', 's', 'someplugin', 'cmd1 && cmd2']],
+    ])('still keeps the plugin name after %s', async (_label, argv) => {
+      const { executeChain } = await import('../src/executor.js');
+
+      await routeCommand(argv);
+
+      expect(executeChain).toHaveBeenCalledWith('someplugin cmd1 && cmd2', {
+        cdpEndpoint: undefined,
+        sessionName: 's',
+      });
+    });
+  });
+
+  // ── 子命令 usage 表：filter 实际吃两个位置参数（第二个是输出文件）──
+  describe('subcommand usage table', () => {
+    it('lists both files of filter in its usage line', async () => {
+      const logs: string[] = [];
+      const origLog = console.log;
+      console.log = (...args: unknown[]) => { logs.push(args.join(' ')); };
+      try {
+        await routeCommand(['filter', '--help']);
+      } finally {
+        console.log = origLog;
+      }
+
+      expect(logs.join('\n')).toContain(
+        'Usage: xbrowser filter <in.yaml> <out.yaml> [--include <type>] [--exclude <type>]'
+      );
     });
   });
 });

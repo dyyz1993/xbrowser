@@ -15,4 +15,12 @@ describe('parsePluginParams', () => {
 
     expect(params.limit).toBe(25);
   });
+
+  // 插件参数在解析阶段就统一改成 camelCase（executor/chain.ts、router/plugin-routing.ts
+  // 两个校验点拿到的键已经是 schema 键），内置命令的改名规则不需要再套一层。
+  it('renames kebab-case flags to their camelCase schema key', () => {
+    const params = parsePluginParams(['--max-depth', '0'], z.object({ maxDepth: z.number() }));
+
+    expect(params).toEqual({ maxDepth: 0 });
+  });
 });

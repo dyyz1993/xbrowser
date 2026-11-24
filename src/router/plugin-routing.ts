@@ -42,6 +42,15 @@ export const KNOWN_GLOBAL_OPTIONS = new Set([
   'help', 'h', 'target', 'port', 'token', 'timeout', 'headless', 'tab',
 ]);
 
+/**
+ * Global flags that take a value — the one definition, shared with router.ts.
+ * Every other global flag is boolean (--json, --help, …): the token right after
+ * it is the next argument (e.g. the plugin name), never a flag value.
+ */
+export const GLOBAL_VALUE_FLAGS: ReadonlySet<string> = new Set([
+  '--session', '--cdp', '--output', '-o', '--timeout', '--frame', '--target', '--tab',
+]);
+
 export async function handlePluginOrChainRoute(request: PluginRouteRequest): Promise<boolean> {
   const { command, cmdArgs, argv, options, mode, cdpEndpoint, sessionName, chainTokenStart, chainTokenEnd } = request;
         // Check plugin site BEFORE chain parsing to avoid --content with +/, being misinterpreted
@@ -74,8 +83,9 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
               continue;
             }
             if (globalFlagSet.has(argv[i])) continue;
-            // Skip the value of --session/--cdp/--output
-            if (i > 0 && globalFlagSet.has(argv[i-1]) && !argv[i].startsWith('-')) continue;
+            // Skip the value of the value-taking flags (--session/--cdp/--output …).
+            // Only those: `--json plugin "a && b"` used to lose the plugin name.
+            if (i > 0 && GLOBAL_VALUE_FLAGS.has(argv[i-1]) && !argv[i].startsWith('-')) continue;
             if (argv[i].startsWith('--session=') || argv[i].startsWith('--cdp=')) continue;
             cleanParts.push(argv[i]);
           }

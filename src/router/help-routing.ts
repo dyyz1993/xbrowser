@@ -69,6 +69,7 @@ export async function handleCommandHelp(command: string, positional: string[], m
 }
 
 function showBuiltinHelp(builtinCmd: HelpCommand, mode: string): void {
+  builtinCmd = hideInternalParams(builtinCmd);
   if (mode === 'json') {
     const paramsList: Array<{ name: string; type: string; required: boolean; description: string }> = [];
     const schema = asZodSchema(builtinCmd.parameters);
@@ -110,6 +111,31 @@ function showBuiltinHelp(builtinCmd: HelpCommand, mode: string): void {
   console.log(helpGenerator.generate(builtinCmd as unknown as Parameters<typeof helpGenerator.generate>[0], { color: true, emoji: false }));
 }
 
+/**
+ * Drop the parameters described as `Internal:` from a built-in command's help.
+ *
+ * They are CLI plumbing, not part of the public interface (eval's `--script-b64`
+ * is set by the router for `eval <js…>`). helpGenerator has no per-parameter
+ * hide option, so the help is generated from a schema that omits the keys.
+ * The command is returned unchanged when it has nothing to hide.
+ */
+function hideInternalParams(builtinCmd: HelpCommand): HelpCommand {
+  const schema = builtinCmd.parameters as { omit?: (mask: Record<string, true>) => unknown } | undefined;
+  if (!schema || typeof schema.omit !== 'function') return builtinCmd;
+  const internal = asZodSchema(builtinCmd.parameters);
+  const shapeOrFn = internal.shape ?? internal._def?.shape;
+  const shape = typeof shapeOrFn === 'function' ? shapeOrFn() : shapeOrFn;
+  if (!shape) return builtinCmd;
+  const mask: Record<string, true> = {};
+  for (const [key, field] of Object.entries(shape)) {
+    const fieldSchema = asZodSchema(field);
+    const description = (fieldSchema.description as string) || (fieldSchema._def?.description as string) || '';
+    if (description.startsWith('Internal:')) mask[key] = true;
+  }
+  if (Object.keys(mask).length === 0) return builtinCmd;
+  return { ...builtinCmd, parameters: schema.omit(mask) };
+}
+
 const SUBCOMMAND_HELP: Record<string, string> = {
   session: 'session open|close|kill|list [--session <name>] [--cdp <endpoint>]',
   plugin: 'plugin install|uninstall|list|reload|schema|search|info <name>',
@@ -122,7 +148,7 @@ const SUBCOMMAND_HELP: Record<string, string> = {
   remote: 'remote <url> [command] [--token <token>]',
   convert: 'convert <file> [--to js|py|sh]',
   extract: 'extract <file> [--format json|yaml]',
-  filter: 'filter <file> [--include <type>] [--exclude <type>]',
+  filter: 'filter <in.yaml> <out.yaml> [--include <type>] [--exclude <type>]',
   test: 'test <name> [--cdp <endpoint>]',
   viewer: 'viewer [--session <name>]',
   'console-panel': 'console-panel [--port <port>]',
