@@ -120,7 +120,14 @@ export async function executeChain(
           continue;
         }
 
-        const { params } = parseCommandArgs(cmdName, cmdArgs, unquote);
+        // 负数位置参数/旗标值统一包一层引号：parseCommandArgs 把一位的 `-5` 当短旗标
+        // （还把下一个参数吞成旗标值），`--x -10` 这种则被当成无值旗标；带引号后
+        // 走位置参数/旗标值通道，unquote 还原成 `-5`。
+        const { params } = parseCommandArgs(
+          cmdName,
+          cmdArgs.map((arg) => (/^-\d+(?:\.\d+)?$/.test(arg) ? `'${arg}'` : arg)),
+          unquote,
+        );
         // 全局 --frame：链内每个内置子命令继承（executor 剥离后挂 ctx，
         // 命令级 --frame 参数优先于该默认值）
         if (options?.frame && params._frame === undefined && params.frame === undefined) {

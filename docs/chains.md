@@ -54,12 +54,16 @@ Flush current pipeline, start new pipeline.
 
 ```bash
 xbrowser "goto https://example.com ; goto https://other.com"
+
+# No space is needed around `;` when a command follows it
+xbrowser "goto https://example.com;title"
 ```
 
 **Behavior:**
 - Commands before `;` execute in one pipeline
 - Commands after `;` execute in a new pipeline
 - Useful for grouping related commands
+- `;` separates only when the text after it starts with a built-in command; inside a value such as `https://example.com/a;b=1` it is an ordinary character
 
 ### || (OR Separator)
 
@@ -159,6 +163,18 @@ xbrowser "goto https://example.com --waitUntil networkidle && screenshot --full-
 
 # Multiple flags
 xbrowser "goto https://example.com && screenshot --full-page --type jpeg --quality 90"
+
+# Negative numbers need no special syntax
+xbrowser mouse move -10 -20
+xbrowser "mouse --action move --x -10 --y -20"
+
+# A value that starts with `-`: put `--` in front of the positionals
+xbrowser fill -- '#input' '- item one'
+xbrowser type -- '#input' '--verbose is a value'
+
+# A separator inside a quoted value stays part of the value
+xbrowser fill '#input' 'a + b ; c'
+xbrowser fill '#input' 'a + b' '&&' title
 ```
 
 ## Output Control

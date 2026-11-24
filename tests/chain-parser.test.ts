@@ -1,9 +1,11 @@
 import { describe, it, expect } from 'vitest';
+import { unquote } from '@dyyz1993/xcli-core';
 import {
   parseCommandChain,
   splitCommand,
   parseCommandArgs,
   splitOutsideQuotes,
+  quoteChainToken,
 } from '../src/chain-parser.js';
 import { normalizeSelector } from '../src/utils/selector.js';
 
@@ -240,6 +242,65 @@ describe('splitOutsideQuotes', () => {
       ['title'],
     ]);
   });
+});
+
+// 路由把 shell 切好词的 argv 重新拼成链字符串时用：值里的空白/操作符必须被
+// 引号包住，链解析器才不会把它拆成多条命令（`fill '#q' 'a + b' '&&' title`）。
+describe('quoteChainToken', () => {
+  /** 把词放进一条链，返回第一步里位置参数经 unquote 还原的结果 */
+  const positionalsThroughChain = (word: string): string[] => {
+    const chain = parseCommandChain(`fill #q ${quoteChainToken(word)} && title`);
+    expect(chain).toHaveLength(1);
+    expect(chain[0].pipeline).toHaveLength(2);
+    expect(chain[0].pipeline[1]).toBe('title');
+    return splitCommand(chain[0].pipeline[0]).slice(1).map(unquote);
+  };
+
+  it('leaves a plain word alone', () => {
+    expect(quoteChainToken('#q')).toBe('#q');
+    expect(quoteChainToken('a+b')).toBe('a+b');
+    expect(quoteChainToken('https://a.example/x')).toBe('https://a.example/x');
+  });
+
+  it('wraps a word that holds whitespace', () => {
+    expect(quoteChainToken('a + b')).toBe('"a + b"');
+  });
+
+  it('wraps a word with a semicolon, which splits a chain with no space around it', () => {
+    expect(quoteChainToken('https://a.example/x;y')).toBe('"https://a.example/x;y"');
+  });
+
+  it('picks the quote character the word does not contain', () => {
+    expect(quoteChainToken("it's here")).toBe('"it\'s here"');
+    expect(quoteChainToken('say "hi"')).toBe('\'say "hi"\'');
+  });
+
+  it('quotes a word that starts or ends with a comma or plus', () => {
+    // 链解析器只要求一侧有空白，拼接用的空格会成为它的另一半
+    expect(quoteChainToken('a+')).toBe('"a+"');
+    expect(quoteChainToken(',x')).toBe('",x"');
+  });
+
+  it('quotes on request, even a plain-looking word', () => {
+    expect(quoteChainToken('&&', true)).toBe('"&&"');
+    expect(quoteChainToken('title', true)).toBe('"title"');
+  });
+
+  it('gives up on a word that no quote can wrap', () => {
+    // 同时含单双引号，且引号外有空白：链解析器没有转义，包不住
+    expect(quoteChainToken('it\'s "a b"')).toBe('it\'s "a b"');
+  });
+
+  it('wraps a word with both quote types when the text outside quotes stays plain', () => {
+    expect(quoteChainToken('a"b"c\'d\'e')).toBe('"a"b"c\'d\'e"');
+  });
+
+  it.each(['#q', 'a + b', "it's here", 'say "hi"', 'p ; q', 'a+', 'https://a.example/x;y', 'a"b"c\'d\'e'])(
+    'round-trips %j through the chain parser as one argument',
+    (word) => {
+      expect(positionalsThroughChain(word)).toEqual(['#q', word]);
+    },
+  );
 });
 
 describe('parseCommandArgs', () => {

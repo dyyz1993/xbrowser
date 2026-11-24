@@ -47,7 +47,34 @@ function autoCompleteParams(
   }
 }
 
-function parseSelectorFlags(args: string[], options: Record<string, unknown>): ParsedSelectorArgs {
+/**
+ * parseArgs 产出真布尔：`--flag` 与 `--flag true|false` 都经 parseValue 变成
+ * boolean，`=== 'true'` 这类字符串比较恒 false —— 旗标静默失效。这里统一
+ * 接受全部形态（boolean / 'true' / 'false' / ''），absent 时返回 fallback。
+ */
+function asBool(value: unknown, fallback: boolean): boolean {
+  if (value === undefined || value === null) return fallback;
+  if (value === true || value === 'true' || value === '') return true;
+  if (value === false || value === 'false') return false;
+  return fallback;
+}
+
+/**
+ * CSV 数组旗标（`--include-paths a,b`）：parseArgs 把 `a,b` 留成字符串、
+ * `[a,b]` 才解析成数组——统一归一成 string[]，kebab / camelCase 两种拼写
+ * 都能进 params（camelCase 拼写曾以 string 透传，被 zod 数组校验拒绝）。
+ */
+function csvList(value: unknown): string[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  const raw = Array.isArray(value) ? value.join(',') : String(value);
+  return raw.length > 0 ? raw.split(',') : undefined;
+}
+
+function parseSelectorFlags(
+  args: string[],
+  options: Record<string, unknown>,
+  literal = false,
+): ParsedSelectorArgs {
   // CLI 解析器可能把 -s/-v 当布尔 flag（true）而非取值，严格只收字符串，
   // 非字符串时回退到位置参数（remaining），保证 `fill -s #kw -v v` 仍可用
   const rawSelector = options.s ?? options.selector;
@@ -55,7 +82,11 @@ function parseSelectorFlags(args: string[], options: Record<string, unknown>): P
   const selector = typeof rawSelector === "string" ? normalizeSelector(rawSelector) : undefined;
   const value = typeof rawValue === "string" ? rawValue : undefined;
 
-  const remaining = args.filter((a) => !a.startsWith('-'));
+  // 负数字面量是值而不是旗标（`fill '#q' '-5'`）。`--` 之后的 token 全是字面量
+  // 位置参数，以 - 开头也不筛（`fill -- '#q' '- item'`）。
+  const remaining = literal
+    ? args
+    : args.filter((a) => !a.startsWith('-') || /^-\d+(?:\.\d+)?$/.test(a));
 
   return {
     selector,
@@ -90,7 +121,8 @@ export async function handleBrowserCommand(
   options: Record<string, unknown>,
   sessionName: string,
   mode: string,
-  cdpEndpoint?: string
+  cdpEndpoint?: string,
+  literal = false,
 ): Promise<void> {
   // Normalize camelCase command names from README to kebab-case
   command = CAMEL_TO_KEBAB[command] || command;
@@ -138,7 +170,7 @@ export async function handleBrowserCommand(
   let params: Record<string, unknown> = {};
 
   if (SELECTOR_COMMANDS.has(command)) {
-    const parsed = parseSelectorFlags(args, options);
+    const parsed = parseSelectorFlags(args, options, literal);
     const sel = parsed.selector
       || (parsed.remaining[0] ? normalizeSelector(parsed.remaining[0]) : undefined);
 
@@ -429,7 +461,7 @@ export async function handleBrowserCommand(
             selector: (options.selector || options.s) as string | undefined,
             timeout: options.timeout ? Number(options.timeout) : undefined,
             format: options.format as string | undefined,
-            onlyMainContent: options['only-main-content'] !== 'false',
+            onlyMainContent: asBool(options['only-main-content'], true),
             mode: options.mode as string | undefined,
           };
           break;
@@ -452,15 +484,15 @@ export async function handleBrowserCommand(
             url: args[0],
             limit: options.limit ? Number(options.limit) : undefined,
             maxDepth: options['max-depth'] ? Number(options['max-depth']) : undefined,
-            includePaths: options['include-paths'] ? String(options['include-paths']).split(',') : undefined,
-            excludePaths: options['exclude-paths'] ? String(options['exclude-paths']).split(',') : undefined,
-            allowSubdomains: options['allow-subdomains'] === 'true',
-            allowExternalLinks: options['allow-external-links'] === 'true',
+            includePaths: csvList(options['include-paths'] ?? options.includePaths),
+            excludePaths: csvList(options['exclude-paths'] ?? options.excludePaths),
+            allowSubdomains: asBool(options['allow-subdomains'], false),
+            allowExternalLinks: asBool(options['allow-external-links'], false),
             format: options.format as string | undefined,
-            onlyMainContent: options['only-main-content'] !== 'false',
+            onlyMainContent: asBool(options['only-main-content'], true),
             concurrency: options.concurrency ? Number(options.concurrency) : undefined,
             retries: options.retries ? Number(options.retries) : undefined,
-            verbose: options.verbose === 'true' || options.verbose === '',
+            verbose: asBool(options.verbose, false),
           };
           break;
         case 'search':

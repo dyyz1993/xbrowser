@@ -479,8 +479,9 @@ xbrowser create my-plugin --template static --force
 
 **注意**：
 - 命令链中如果包含特殊字符（如 `#`、`>`），需要用引号包裹整个命令链或对单个参数加引号。
-- `,`、`+`、`->`、`&&`、`||` 两边都要有空格（`goto url -> title` ✅，`goto url->title` ❌）；`;` 只要求后面有空格（`goto url; title` ✅，`goto url;title` ❌）。
+- `,`、`+`、`->`、`&&`、`||` 两边都要有空格（`goto url -> title` ✅，`goto url->title` ❌）；`;` 前后的空格可有可无（`goto url; title` ✅，`goto url;title` ✅），`;` 后面跟的不是命令时它只是普通字符（`goto https://example.com/a;b=1` 整串是一个 URL）。
 - 只在分隔符前面留空格（如 `title ,url`）不会被识别成命令链：整串按单条命令执行，后面的命令被静默忽略。
+- 值以 `-` 开头时，用 `--` 把它和选项隔开（负数不需要）：`xbrowser fill -- '#q' '- item'`。
 
 ```bash
 # 正确 — 整体引号
