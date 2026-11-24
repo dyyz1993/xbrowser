@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.4.0] - 2026-11-24
+
+### Added
+- `image` / `image-cutout` / `image-vary` / `video` / `music` 新增 `--preflight-only`：只做本地预检（提示词、附件存在/可读/可解码/像素尺寸），不打开页面、不上传、不提交、不消耗额度（xbrowser #485）。
+### Fixed
+- `image --ref`：参考图文件不存在、「参考图」按钮找不到或文件注入失败时直接失败，不再不带参考图提交（此前会白白消耗额度）。
+
 ## [3.3.1] - 2026-06-30
 
 ### Fixed

@@ -20,7 +20,7 @@
     "@dyyz1993/xcli-core": ">=1.0.0"
   },
   "type": "module",
-  "version": "4.0.0",
+  "version": "4.0.1",
   "xbrowser": {
     "author": "dyyz1993",
     "commands": [
@@ -42,6 +42,6 @@
       "juejin",
       "developer"
     ],
-    "version": "4.0.0"
+    "version": "4.0.1"
   }
 }
