@@ -295,3 +295,52 @@ describe('plugin-routing tips rendering (#439)', () => {
     expect(output).not.toContain('[object Object]');
   });
 });
+
+// ── 链重组前的全局 flag 扫描：布尔 flag 不带值 ──
+// 曾把任意全局 flag 的下一个 token 当作它的值：`--json someplugin "a && b"` 里的插件名
+// 被剥掉，链重组成了 `a && b`。带值 flag 的定义与 router.ts 共用同一份。
+describe('plugin-routing global flag scan (#466 sibling)', () => {
+  let logSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setupLoaderWithSites([]);
+    mockIsChainInput.mockImplementation((input: string) => /\s&&\s/.test(input));
+    mockExecuteChain.mockResolvedValue({ success: true, totalDuration: 0, steps: [] });
+    logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    logSpy.mockRestore();
+  });
+
+  it.each([
+    ['--json before the plugin name', ['--session', 's', '--json', 'someplugin', 'cmd1 && cmd2']],
+    ['--yaml before the plugin name', ['--session', 's', '--yaml', 'someplugin', 'cmd1 && cmd2']],
+    ['-h before the plugin name', ['--session', 's', '-h', 'someplugin', 'cmd1 && cmd2']],
+  ])('keeps the plugin name that follows the boolean flag (%s)', async (_label, argv) => {
+    const handled = await handlePluginOrChainRoute(buildRequest({
+      command: 'someplugin',
+      cmdArgs: ['cmd1 && cmd2'],
+      argv,
+      sessionName: 's',
+    }));
+
+    expect(handled).toBe(true);
+    expect(mockExecuteChain).toHaveBeenCalledWith('someplugin cmd1 && cmd2', { cdpEndpoint: undefined, sessionName: 's' });
+  });
+
+  it.each([
+    ['a value flag', ['--session', 's', '--output', 'out.json', 'someplugin', 'cmd1 && cmd2']],
+    ['a short value flag', ['--session', 's', '-o', 'out.json', 'someplugin', 'cmd1 && cmd2']],
+  ])('still skips the value of %s', async (_label, argv) => {
+    await handlePluginOrChainRoute(buildRequest({
+      command: 'someplugin',
+      cmdArgs: ['cmd1 && cmd2'],
+      argv,
+      sessionName: 's',
+    }));
+
+    expect(mockExecuteChain).toHaveBeenCalledWith('someplugin cmd1 && cmd2', { cdpEndpoint: undefined, sessionName: 's' });
+  });
+});

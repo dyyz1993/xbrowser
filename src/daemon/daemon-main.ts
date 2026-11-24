@@ -16,6 +16,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 import { startHttpServer } from '@dyyz1993/xcli-core';
 
 import { createRPCHandler } from './rpc-handlers.js';
+import { buildHealthPayload } from './health.js';
 import { version, buildId } from '../version.js';
 import { WSServer } from '../websocket-server.js';
 import { previewHTML, alignHTML } from './preview-templates.js';
@@ -54,7 +55,7 @@ async function main() {
         pathname: '/health',
         handler: (_req: IncomingMessage, res: ServerResponse) => {
           res.writeHead(200, { 'Content-Type': 'application/json' });
-	          res.end(JSON.stringify({ status: 'ok', pid: process.pid, version, buildId, startedAt }));
+	          res.end(JSON.stringify(buildHealthPayload({ version, buildId }, startedAt, process.pid)));
         },
       },
     ],

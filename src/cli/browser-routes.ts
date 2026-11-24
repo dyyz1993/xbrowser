@@ -2,6 +2,7 @@ import { executeCommand } from '../executor.js';
 import { outputEnvelope, outputResult, outputError } from './output.js';
 import { normalizeSelector } from '../utils/selector.js';
 import { asZodSchema } from '../utils/zod-internal.js';
+import { normalizeKebabParams } from '../utils/kebab-params.js';
 import { getCommand } from '../commands/command-registry.js';
 import { helpGenerator } from '@dyyz1993/xcli-core';
 
@@ -30,6 +31,9 @@ function autoCompleteParams(
       (schema?._def as Record<string, unknown> | undefined)?.shape) as
       Record<string, unknown> | undefined;
     if (!shape) return params;
+    // kebab-case 旗标（`--max-depth`）按 schema 键（maxDepth）读取：parseArgs 保留连字符写法，
+    // 而下面的补齐与各 case 的手工取值都只认 camelCase 键，旗标会静默失效
+    options = normalizeKebabParams(cmd.parameters, options);
     for (const key of Object.keys(shape)) {
       if (params[key] !== undefined) continue;
       const v = options[key];

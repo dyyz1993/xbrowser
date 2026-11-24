@@ -4,7 +4,7 @@
 
 2026 年之前诞生的每个 CLI 工具都在问自己同一个问题：AI Agent 怎么发现我？生态给出的收敛答案是 Model Context Protocol——MCP。如果 Claude Desktop、Cursor 或任何 MCP 客户端能列出你的能力并调用它，你在 Agent 世界里就存在；反之就不存在。
 
-xbrowser 是一个浏览器自动化 CLI（57 命令、130+ 站点插件、自愈回放）。这周我们上线了 `xbrowser mcp`——一个 stdio MCP server，暴露 7 个浏览器工具。这篇是建造日志：设计决策、首轮冒烟抓到的两个真 bug、以及为什么协议层选择手写。
+xbrowser 是一个浏览器自动化 CLI（59 命令、125+ 站点插件、自愈回放）。这周我们上线了 `xbrowser mcp`——一个 stdio MCP server，暴露 7 个浏览器工具。这篇是建造日志：设计决策、首轮冒烟抓到的两个真 bug、以及为什么协议层选择手写。
 
 ## 为什么手写 JSON-RPC 层？
 

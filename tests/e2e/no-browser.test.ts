@@ -122,7 +122,8 @@ describe('E2E: Convert recording to scripts', () => {
 
   it('should generate a valid JavaScript replay script', () => {
     const script = generateJSScript(recording);
-    expect(script).toContain("import { launch } from '@xbrowser/cli'");
+    expect(script).toContain("const { chromium } = await import('playwright');");
+    expect(script).not.toContain('@xbrowser/cli');
     expect(script).toContain("const START_URL = 'https://example.com'");
     expect(script).toContain("page.click('#btn')");
     expect(script).toContain("page.fill('#input', 'hello')");
@@ -150,7 +151,8 @@ describe('E2E: Convert recording to scripts', () => {
   it('should generate a valid Bash replay script', () => {
     const script = generateBashScript(recording);
     expect(script).toContain('#!/bin/bash');
-    expect(script).toContain('CDP_URL');
+    expect(script).toContain('xb() { xbrowser --session "$SESSION" "$@"; }');
+    expect(script).not.toContain('curl');
     expect(script).toContain('example.com');
   });
 

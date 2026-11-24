@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 
 const { mockOutputEnvelope, mockOutputResult, mockOutputError, mockExecuteCommand, mockNormalizeSelector } = vi.hoisted(
   () => ({
@@ -405,6 +405,56 @@ describe('browser-routes', () => {
     it('should pass through unknown commands', async () => {
       await handleBrowserCommand('custom-cmd', [], { foo: 'bar' }, 'sess', 'text');
       expect(mockExecuteCommand).toHaveBeenCalledWith('custom-cmd', { foo: 'bar' }, 'sess');
+    });
+  });
+
+  // ── kebab-case 旗标：parseArgs 保留 `--max-depth` 这种写法，手工构造的 params 却只读
+  // camelCase 键（options.maxDepth）→ 旗标静默失效。schema 键的 kebab 写法必须同样生效。
+  describe('kebab-case flags', () => {
+    // 补齐按命令的 zod schema 进行，需要真实命令定义（本文件其余用例不依赖注册表，保持空表）
+    beforeAll(async () => {
+      await import('../../src/commands/index.js');
+    });
+
+    it('passes --wait-until as waitUntil for goto', async () => {
+      await handleBrowserCommand('goto', ['https://example.com'], { 'wait-until': 'networkidle' }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'goto',
+        { url: 'https://example.com', waitUntil: 'networkidle' },
+        'sess'
+      );
+    });
+
+    it('passes --click-count as clickCount for click', async () => {
+      await handleBrowserCommand('click', ['btn'], { 'click-count': 2 }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith('click', { selector: 'btn', clickCount: 2 }, 'sess');
+    });
+
+    it('keeps --max-depth 0 for crawl (falsy value must not be dropped)', async () => {
+      await handleBrowserCommand('crawl', ['https://example.com'], { 'max-depth': 0 }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'crawl',
+        expect.objectContaining({ url: 'https://example.com', maxDepth: 0 }),
+        'sess'
+      );
+    });
+
+    it('still accepts the camelCase spelling of the same flag', async () => {
+      await handleBrowserCommand('goto', ['https://example.com'], { waitUntil: 'networkidle' }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'goto',
+        { url: 'https://example.com', waitUntil: 'networkidle' },
+        'sess'
+      );
+    });
+
+    it('does not invent a key for a kebab-case flag that is not in the schema', async () => {
+      await handleBrowserCommand('goto', ['https://example.com'], { 'no-such-flag': 1 }, 'sess', 'text');
+      expect(mockExecuteCommand).toHaveBeenCalledWith(
+        'goto',
+        { url: 'https://example.com', waitUntil: undefined },
+        'sess'
+      );
     });
   });
 });

@@ -436,28 +436,8 @@ export async function handleConvert(args: string[], _mode: string): Promise<void
     process.exit(1);
   }
 
-  // Normalize: new recorder uses "actions" field (selector under .element.selector),
-  // old format uses "events" (selector at top level). Map actions → events so the
-  // converters see the flat shape they expect.
-  const rawActions = (recording as Record<string, unknown>).actions;
-  if (Array.isArray(rawActions) && !Array.isArray((recording as Record<string, unknown>).events)) {
-    (recording as Record<string, unknown>).events = rawActions.map((a) => {
-      const action = a as Record<string, unknown>;
-      const element = (action.element as Record<string, unknown> | undefined) ?? {};
-      return {
-        type: action.type,
-        selector: (element.selector as string | undefined) ?? action.selector,
-        data: {
-          ...(action.data as Record<string, unknown> | undefined),
-          value: (action.value as string | undefined) ?? (action.data as Record<string, unknown> | undefined)?.value,
-          key: (action.key as string | undefined) ?? (action.data as Record<string, unknown> | undefined)?.key,
-          x: action.scrollX ?? (action.data as Record<string, unknown> | undefined)?.x,
-          y: action.scrollY ?? (action.data as Record<string, unknown> | undefined)?.y,
-        },
-      };
-    });
-  }
-
+  // The generators read both formats themselves: the current one (`actions`,
+  // selector under .element) and the legacy one (`events`, selector at the top level).
   const ext = path.extname(outputPath).toLowerCase();
   const recordingTyped = recording as unknown as Recording;
   let script: string;
@@ -473,10 +453,11 @@ export async function handleConvert(args: string[], _mode: string): Promise<void
   fs.writeFileSync(outputPath, script);
   fs.chmodSync(outputPath, 0o755);
 
-  const eventCount = (recordingTyped.events || []).length;
+  const eventCount = [recordingTyped.events, recordingTyped.actions].find(Array.isArray)?.length ?? 0;
+  const runner = ext === '.py' ? 'python' : ext === '.sh' ? 'bash' : 'node';
   process.stdout.write(`Converted ${filePath} -> ${outputPath}\n`);
   process.stdout.write(`  Events: ${eventCount}, Start URL: ${recordingTyped.startUrl}\n`);
-  process.stdout.write(`  Run: ${ext === '.py' ? 'python' : ext === '.sh' ? './' : 'node'} ${outputPath}\n`);
+  process.stdout.write(`  Run: ${runner} ${outputPath}\n`);
 }
 
 export async function handleExtract(args: string[], _mode: string): Promise<void> {

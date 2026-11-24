@@ -3,6 +3,7 @@ import { forwardExec } from '../client/daemon-client.js';
 import { getCommandNames } from '../commands/command-registry.js';
 import { printChainResult } from '../cli/chain-output.js';
 import { outputEnvelope } from '../cli/output.js';
+import { showMainHelp } from '../cli/help.js';
 
 export function parseEvalFlags(argv: string[]): string[] {
   const commands: string[] = [];
@@ -61,6 +62,13 @@ export async function handleStdinMode(stdinCommands: string[], argv?: string[]):
 export async function handleEvalMode(argv: string[]): Promise<void> {
   const evalCommands = parseEvalFlags(argv);
   if (evalCommands.length === 0) return;
+  // `-e --help` asks for the CLI help; it is not a script literally named
+  // "--help" (it was base64-wrapped and evaluated on the page). Exact values
+  // only: a script that merely contains the word "help" still runs as a script.
+  if (evalCommands.includes('--help') || evalCommands.includes('-h')) {
+    showMainHelp();
+    return;
+  }
   const knownCommands = new Set(getCommandNames());
   const chainParts = evalCommands.map((value) => {
     const firstWord = value.trim().split(/\s+/)[0] || '';

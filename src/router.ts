@@ -1,5 +1,6 @@
-import { parseArgs } from '@dyyz1993/xcli-core';
+import { parseArgs, splitCommand, unquote } from '@dyyz1993/xcli-core';
 import { isChainInput } from './executor.js';
+import { splitOutsideQuotes } from './chain-parser.js';
 import { version } from './version.js';
 
 import { handleBrowserCommand } from './cli/index.js';
@@ -15,7 +16,7 @@ import {
 } from './router/input-modes.js';
 import { handleCommandHelp } from './router/help-routing.js';
 import { dispatchSubcommand } from './router/subcommands.js';
-import { handlePluginOrChainRoute } from './router/plugin-routing.js';
+import { GLOBAL_VALUE_FLAGS, handlePluginOrChainRoute } from './router/plugin-routing.js';
 
 /**
  * Route CLI arguments to the appropriate handler.
@@ -102,15 +103,14 @@ export async function routeCommand(
     // apply to the FIRST non-flag argument (xbrowser "goto url" style). A
     // space-containing arg that comes AFTER a command word (fill "#kw" "a b c")
     // is a VALUE — re-splitting it truncated fill values to the first word.
-    const globalFlags = new Set(['--session', '--cdp', '--json', '--yaml', '--output', '--timeout', '--help', '-h', '--version', '--frame', '--target', '--tab', '--bridge']);
-    // Only these take a value: the token right after a boolean flag (--json,
+    const globalFlags = new Set([...GLOBAL_VALUE_FLAGS, '--json', '--yaml', '--help', '-h', '--version', '--bridge']);
+    // Only GLOBAL_VALUE_FLAGS take a value: the token right after a boolean flag (--json,
     // --help, …) is the next argument (e.g. the quoted chain), not a flag value.
-    const globalValueFlags = new Set(['--session', '--cdp', '--output', '--timeout', '--frame', '--target', '--tab']);
     let chainArgIdx = -1;
     let seenCommandWord = false;
     for (let i = 0; i < argv.length; i++) {
       if (globalFlags.has(argv[i])) continue; // skip flag
-      if (globalFlags.has(argv[i]) || (i > 0 && globalValueFlags.has(argv[i-1]) && !argv[i].startsWith('-'))) continue; // skip flag value
+      if (globalFlags.has(argv[i]) || (i > 0 && GLOBAL_VALUE_FLAGS.has(argv[i-1]) && !argv[i].startsWith('-'))) continue; // skip flag value
       if (!seenCommandWord) {
         if (argv[i].includes(' ') && /^[a-zA-Z]/.test(argv[i])) {
           chainArgIdx = i;
@@ -136,10 +136,14 @@ export async function routeCommand(
 	      const possibleCmd = chainArg.substring(0, spaceIdx);
 	      if (/^[a-zA-Z][\w-]*$/.test(possibleCmd)) {
 	        const remainder = chainArg.substring(spaceIdx + 1);
-	        let remainderParts = remainder.split(/\s+/).filter(Boolean);
+	        // Quote-aware, like the chain parser: a quoted value keeps its spaces and
+	        // loses its quotes (`click '#btn'` → #btn). splitCommand keeps the quotes on
+	        // its tokens, so they are stripped here.
 	        // Also split on ; (chain separator) for cases like "goto url;title"
-	        // where there's no space before the semicolon.
-	        remainderParts = remainderParts.flatMap(part => part.split(';').filter(Boolean));
+	        // where there's no space before the semicolon — but never inside quotes.
+	        const remainderParts = splitOutsideQuotes(remainder, ';')
+	          .flatMap(part => splitCommand(part))
+	          .map(unquote);
 	        // Replace the chain arg with split parts, keep everything else
 	        chainTokenStart = chainArgIdx;
 	        chainTokenEnd = chainArgIdx + remainderParts.length; // possibleCmd + remainder tokens
