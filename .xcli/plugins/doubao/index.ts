@@ -13,6 +13,7 @@ import { pasteImagesFromClipboard, setImagesOnFileInput } from '../shared/clipbo
 import { extractAllHDImages } from '../shared/image-lightbox.js';
 import { clickButtonByText } from '../shared/file-upload.js';
 import { checkRefusal } from '../shared/refusal-detect.js';
+import { runMediaPreflight, mediaPreflightReportSchema, type MediaPreflightAttachmentInput } from '../shared/media-preflight.js';
 import path from 'path';
 import fs from 'fs';
 import type { PluginPage, PluginElementHandle, PluginRoute } from '../types.js';
@@ -155,6 +156,28 @@ async function inspectConversationVideo(page: Page, prompt: string): Promise<Con
   }, prompt) as unknown as ConversationVideoState;
 }
 
+/** doubao video 附件清单：--path/--paths/--firstFrame/--lastFrame 合并 + 绝对路径去重。 */
+function buildVideoAttachmentList(params: {
+  path?: string;
+  paths?: string;
+  firstFrame?: string;
+  lastFrame?: string;
+}): Array<{ path: string; semantic: string }> {
+  const attachments = [
+    ...(params.path ? [{ path: params.path, semantic: '附件' }] : []),
+    ...(params.paths ? parsePathsCsv(params.paths).map((p) => ({ path: p, semantic: '附件' })) : []),
+    ...(params.firstFrame ? [{ path: params.firstFrame, semantic: '首帧' }] : []),
+    ...(params.lastFrame ? [{ path: params.lastFrame, semantic: '尾帧' }] : []),
+  ];
+  const seen = new Set<string>();
+  return attachments.filter((item) => {
+    const absPath = path.resolve(item.path);
+    if (seen.has(absPath)) return false;
+    seen.add(absPath);
+    return true;
+  });
+}
+
 function toDoubaoDownloadResult(input: { taskId: string; mediaUrl: string | null; localPath?: string | null; size?: number; error?: string }) {
   return mediaDownloadResultSchema.parse({
     ok: Boolean(input.localPath),
@@ -164,6 +187,45 @@ function toDoubaoDownloadResult(input: { taskId: string; mediaUrl: string | null
     sizeBytes: input.size,
     error: input.error ?? null,
   });
+}
+
+/**
+ * --preflight-only 公共出口：跑完本地检查后返回统一契约的结构化报告。
+ * 不打开豆包页面、不上传附件、不提交任务（不消耗生成额度）。
+ */
+function preflightDoubaoTask(input: {
+  command: string;
+  kind: 'video' | 'audio' | 'image';
+  mode: string;
+  prompt?: string;
+  promptLabel?: string;
+  promptRequired?: boolean;
+  attachments?: MediaPreflightAttachmentInput[];
+  notes?: string[];
+}): ReturnType<typeof ok> | ReturnType<typeof fail> {
+  const { report, problems } = runMediaPreflight({
+    provider: 'doubao',
+    command: input.command,
+    mode: input.mode,
+    prompt: input.prompt,
+    promptLabel: input.promptLabel,
+    promptRequired: input.promptRequired,
+    attachments: input.attachments,
+    notes: input.notes,
+  });
+  if (problems.length > 0) {
+    return fail('preflight 未通过', problems);
+  }
+  return ok({
+    ...toDoubaoTaskResult({
+      taskId: `doubao-preflight-${input.command}-${Date.now()}`,
+      kind: input.kind,
+      status: 'completed',
+    }),
+    providerStatus: 'preflight-only',
+    prompt: input.prompt,
+    preflight: report,
+  }, ['preflight 通过：未打开浏览器、未上传附件、未提交任务，未消耗生成额度']);
 }
 
 /** Extract audio URL from audio/download elements on the current page. */
@@ -801,15 +863,34 @@ export default function (xcli: XCLIAPI): void {
       ratio: z.enum(['3:4', '16:9', '1:1']).optional().describe('图片比例 3:4 / 16:9 / 1:1'),
       style: z.string().optional().describe('风格（如：写实、动漫、水彩）'),
       ref: z.string().optional().describe('参考图片路径'),
+      preflightOnly: z.boolean().optional().describe('只跑本地预检（参数/参考图校验），不打开浏览器、不提交任务、不消耗额度'),
     }),
     examples: [
       { cmd: 'xbrowser doubao image --prompt "夕阳下的沙滩"', description: '基础文生图' },
       { cmd: 'xbrowser doubao image --prompt "赛博朋克城市" --model Seedance --ratio 16:9', description: '指定模型和比例' },
       { cmd: 'xbrowser doubao image --prompt "油画风格的花园" --style 水彩 --ref /path/to/ref.jpg', description: '指定风格+参考图' },
+      { cmd: 'xbrowser doubao image --prompt "油画风格的花园" --ref /path/to/ref.jpg --preflight-only', description: '仅预检参考图与参数，不提交任务' },
     ],
-    result: mediaTaskResultSchema,
+    result: mediaTaskResultSchema.extend({ preflight: mediaPreflightReportSchema.optional() }),
     handler: async (params, ctx) => {
       try {
+        // 参考图缺失先失败：带 --ref 提交却拿不到参考图，会生成一张
+        // 与用户意图无关的图并白白消耗额度（ERR-20261108-001 fail-closed）。
+        const refAbsPath = params.ref ? path.resolve(params.ref) : null;
+        if (refAbsPath && !fs.existsSync(refAbsPath)) {
+          return fail(`参考图文件不存在: ${params.ref}`, [`缺少参考图: ${refAbsPath}`]);
+        }
+
+        if (params.preflightOnly) {
+          return preflightDoubaoTask({
+            command: 'image',
+            kind: 'image',
+            mode: ['image', params.model, params.ratio, params.style].filter(Boolean).join(':'),
+            prompt: params.prompt,
+            attachments: refAbsPath ? [{ path: refAbsPath, semantic: '参考图', expected: 'image' as const }] : [],
+          });
+        }
+
         const page = ctx.page;
         if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
@@ -847,54 +928,58 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(2000);
         await page.waitForSelector('[role="textbox"], [contenteditable="true"], textarea', { timeout: 15000 }).catch(() => {});
 
-        if (params.ref) {
-          const absPath = path.resolve(params.ref);
-          if (fs.existsSync(absPath)) {
-            // 参考图流程 — 不点 file input（会触发系统文件框），改用 setInputFiles + DataTransfer：
-            //   1. 真实 mouse.click "参考图"按钮 → 弹窗出现，React 挂载 file input
-            //   2. 短暂等待 React 挂载完成
-            //   3. setInputFiles('input[type="file"]', file) → DataTransfer 注入 + 派发 change/input 事件
-            //      → React 的 onChange 监听器处理文件上传 → 系统文件框不出现
-            //   4. 等缩略图出现
-            const refBtnClicked = await clickButtonByText(page, '参考图');
-            if (!refBtnClicked) {
-              tips.push(`⚠ 找不到"参考图"按钮`);
-            } else {
-              // 等弹窗 + React 挂载
-              await page.waitForSelector('input[type="file"]', { timeout: 5000 }).catch(() => {});
-              await page.waitForTimeout(1500);
-              // 通过 DataTransfer 注入文件（不触发系统文件框）
-              const fileBuffer = fs.readFileSync(absPath);
-              const fileName = path.basename(absPath);
-              const mimeType = absPath.endsWith('.png') ? 'image/png'
-                : absPath.endsWith('.jpg') || absPath.endsWith('.jpeg') ? 'image/jpeg'
-                : absPath.endsWith('.webp') ? 'image/webp' : 'application/octet-stream';
-              try {
-                await page.setInputFiles('input[type="file"]', {
-                  name: fileName,
-                  mimeType,
-                  buffer: fileBuffer,
-                });
-                tips.push(`[setInputFiles] ✓ ${fileName} (${(fileBuffer.length / 1024).toFixed(1)} KB)`);
-                // 等 doubao 上传完成（缩略图出现）
-                await page.waitForTimeout(2500);
-                // 验证上传是否成功（页面里出现"图片"或"附件"文字）
-                const hasThumb = await page.evaluate(() => {
-                  return [...document.querySelectorAll('img, [class*=thumb], [class*=preview]')].some(el => {
-                    if (el.tagName === 'IMG') return (el as HTMLImageElement).src.includes('blob:') || (el as HTMLImageElement).src.startsWith('http');
-                    return el.textContent?.includes('图片') || el.textContent?.includes('附件');
-                  });
-                });
-                if (!hasThumb) {
-                  tips.push(`⚠ 未检测到缩略图，可能上传失败（请在 viewer 中确认）`);
-                }
-              } catch (e) {
-                tips.push(`[setInputFiles] ✗ ${(e as Error).message}`);
-                tips.push(`📌 请在 viewer 中手动上传参考图`);
-              }
+        if (refAbsPath) {
+          // 参考图流程 — 不点 file input（会触发系统文件框），改用 setInputFiles + DataTransfer：
+          //   1. 真实 mouse.click "参考图"按钮 → 弹窗出现，React 挂载 file input
+          //   2. 短暂等待 React 挂载完成
+          //   3. setInputFiles('input[type="file"]', file) → DataTransfer 注入 + 派发 change/input 事件
+          //      → React 的 onChange 监听器处理文件上传 → 系统文件框不出现
+          //   4. 等缩略图出现
+          const refBtnClicked = await clickButtonByText(page, '参考图');
+          if (!refBtnClicked) {
+            return fail('附件上传失败', [
+              '找不到"参考图"按钮，参考图未上传',
+              '未提交生成任务（fail-closed，避免不带参考图消耗额度）',
+              ...remoteTips,
+            ]);
+          }
+          // 等弹窗 + React 挂载
+          await page.waitForSelector('input[type="file"]', { timeout: 5000 }).catch(() => {});
+          await page.waitForTimeout(1500);
+          // 通过 DataTransfer 注入文件（不触发系统文件框）
+          const fileBuffer = fs.readFileSync(refAbsPath);
+          const fileName = path.basename(refAbsPath);
+          const mimeType = refAbsPath.endsWith('.png') ? 'image/png'
+            : refAbsPath.endsWith('.jpg') || refAbsPath.endsWith('.jpeg') ? 'image/jpeg'
+            : refAbsPath.endsWith('.webp') ? 'image/webp' : 'application/octet-stream';
+          try {
+            await page.setInputFiles('input[type="file"]', {
+              name: fileName,
+              mimeType,
+              buffer: fileBuffer,
+            });
+            tips.push(`[setInputFiles] ✓ ${fileName} (${(fileBuffer.length / 1024).toFixed(1)} KB)`);
+            // 等 doubao 上传完成（缩略图出现）
+            await page.waitForTimeout(2500);
+            // 验证上传是否成功（页面里出现"图片"或"附件"文字）
+            const hasThumb = await page.evaluate(() => {
+              return [...document.querySelectorAll('img, [class*=thumb], [class*=preview]')].some(el => {
+                if (el.tagName === 'IMG') return (el as HTMLImageElement).src.includes('blob:') || (el as HTMLImageElement).src.startsWith('http');
+                return el.textContent?.includes('图片') || el.textContent?.includes('附件');
+              });
+            });
+            if (!hasThumb) {
+              tips.push(`⚠ 未检测到缩略图，可能上传失败（请在 viewer 中确认）`);
             }
-          } else {
-            tips.push(`⚠ 参考图文件不存在: ${params.ref}`);
+          } catch (e) {
+            // 注入抛错 = 参考图确定不在页面上；继续提交只会消耗一次不带
+            // 参考的生成额度，因此 fail-closed（ERR-20261108-001）。
+            return fail('附件上传失败', [
+              `参考图注入失败: ${(e as Error).message}`,
+              '未提交生成任务（fail-closed，避免不带参考图消耗额度）',
+              '📌 请在 viewer 中手动上传参考图后重试',
+              ...remoteTips,
+            ]);
           }
         }
 
@@ -1241,13 +1326,24 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({
       image: z.string().describe('待抠图图片路径'),
+      preflightOnly: z.boolean().optional().describe('只跑本地预检（图片校验），不打开浏览器、不提交任务、不消耗额度'),
     }),
     examples: [
       { cmd: 'xbrowser doubao image-cutout --image /path/to/img.jpg', description: 'AI 抠图' },
+      { cmd: 'xbrowser doubao image-cutout --image /path/to/img.jpg --preflight-only', description: '仅预检图片与参数' },
     ],
-    result: mediaTaskResultSchema,
+    result: mediaTaskResultSchema.extend({ preflight: mediaPreflightReportSchema.optional() }),
     handler: async (params, ctx) => {
       try {
+        if (params.preflightOnly) {
+          return preflightDoubaoTask({
+            command: 'image-cutout',
+            kind: 'image',
+            mode: 'image:cutout',
+            promptRequired: false,
+            attachments: [{ path: params.image, semantic: '抠图源图', expected: 'image' as const }],
+          });
+        }
         const page = ctx.page;
         if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
@@ -1314,14 +1410,26 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({
       image: z.string().describe('参考图片路径'),
       prompt: z.string().optional().describe('变体描述提示词'),
+      preflightOnly: z.boolean().optional().describe('只跑本地预检（参考图校验），不打开浏览器、不提交任务、不消耗额度'),
     }),
     examples: [
       { cmd: 'xbrowser doubao image-vary --image /path/to/img.jpg', description: '图片衍生' },
       { cmd: 'xbrowser doubao image-vary --image /path/to/img.jpg --prompt "更亮色调"', description: '带提示词的衍生' },
+      { cmd: 'xbrowser doubao image-vary --image /path/to/img.jpg --preflight-only', description: '仅预检参考图与参数' },
     ],
-    result: mediaTaskResultSchema,
+    result: mediaTaskResultSchema.extend({ preflight: mediaPreflightReportSchema.optional() }),
     handler: async (params, ctx) => {
       try {
+        if (params.preflightOnly) {
+          return preflightDoubaoTask({
+            command: 'image-vary',
+            kind: 'image',
+            mode: 'image:vary',
+            prompt: params.prompt,
+            promptRequired: false,
+            attachments: [{ path: params.image, semantic: '参考图', expected: 'image' as const }],
+          });
+        }
         const page = ctx.page;
         if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
@@ -1447,6 +1555,7 @@ export default function (xcli: XCLIAPI): void {
       type: z.enum(['image', 'file']).optional().describe('附件类型（保留兼容字段；当前上传流程自动按文件注入）'),
       firstFrame: z.string().optional().describe('首帧图片路径'),
       lastFrame: z.string().optional().describe('尾帧图片路径'),
+      preflightOnly: z.boolean().optional().describe('只跑本地预检（参数/附件校验），不打开浏览器、不提交任务、不消耗额度'),
     }),
     examples: [
       { cmd: 'xbrowser doubao video --prompt "一只猫在草地上奔跑"', description: '提交视频生成' },
@@ -1455,29 +1564,35 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser doubao video --prompt "对比参考图生成视频" --paths /abs/a.jpg,/abs/b.jpg', description: '多张图片附件' },
       { cmd: 'xbrowser doubao video --prompt "让画面动起来" --lastFrame /abs/end.jpg', description: '尾帧附件' },
       { cmd: 'xbrowser doubao video --prompt "从日出过渡到日落" --firstFrame /abs/start.jpg --lastFrame /abs/end.jpg', description: '首尾帧附件' },
+      { cmd: 'xbrowser doubao video --prompt "从日出过渡到日落" --firstFrame /abs/start.jpg --preflight-only', description: '仅预检附件与参数，不提交任务' },
     ],
-    result: mediaTaskResultSchema,
+    result: mediaTaskResultSchema.extend({ preflight: mediaPreflightReportSchema.optional() }),
     handler: async (params, ctx) => {
       try {
+        const attachmentList = buildVideoAttachmentList(params);
+
+        if (params.preflightOnly) {
+          if (params.path && params.paths) {
+            return fail('参数错误', ['--path 与 --paths 不能同时使用']);
+          }
+          return preflightDoubaoTask({
+            command: 'video',
+            kind: 'video',
+            mode: params.model ? `video:${params.model}` : 'video',
+            prompt: params.prompt,
+            attachments: attachmentList.map((item) => ({
+              path: item.path,
+              semantic: item.semantic,
+              expected: 'image' as const,
+            })),
+          });
+        }
+
         const page = ctx.page;
         if (!page) throw new Error("需要浏览器页面");
         await ensurePage(page, ctx);
         await page.waitForTimeout(2000);
         const tips = buildTips(ctx);
-
-        const attachments = [
-          ...(params.path ? [{ path: params.path, semantic: '附件' }] : []),
-          ...(params.paths ? parsePathsCsv(params.paths).map((p) => ({ path: p, semantic: '附件' })) : []),
-          ...(params.firstFrame ? [{ path: params.firstFrame, semantic: '首帧' }] : []),
-          ...(params.lastFrame ? [{ path: params.lastFrame, semantic: '尾帧' }] : []),
-        ];
-        const seen = new Set<string>();
-        const attachmentList = attachments.filter((item) => {
-          const absPath = path.resolve(item.path);
-          if (seen.has(absPath)) return false;
-          seen.add(absPath);
-          return true;
-        });
 
         if (params.path && params.paths) {
           return fail('参数错误', ['--path 与 --paths 不能同时使用']);
@@ -1824,6 +1939,7 @@ export default function (xcli: XCLIAPI): void {
         .describe('同步等待秒数（如 --timeout 60），不传则异步提交'),
       taskId: z.string().optional().describe('媒体任务 ID，用于统一溯源'),
       debug: z.boolean().optional().describe('开启 debug 模式，自动记录 API 请求结构到 ~/.xbrowser/debug/'),
+      preflightOnly: z.boolean().optional().describe('只跑本地预检（参数校验），不打开浏览器、不提交任务、不消耗额度'),
     }),
         examples: [
           { cmd: 'xbrowser doubao music --description "写一首快乐的歌曲，关于春天的美好" --timeout 60', description: 'AI 写歌词模式（默认）' },
@@ -1831,8 +1947,10 @@ export default function (xcli: XCLIAPI): void {
           { cmd: 'xbrowser doubao music --lyric "hello world" --style 流行 --mood 快乐 --voice 女声 --duration 120 --timeout 120', description: '完整参数：自定义歌词+风格+情绪+音色+时长（歌词可短可长，最长200字）' },
           { cmd: 'xbrowser doubao music --description "励志歌曲" --voice 男声 --timeout 60', description: 'AI 写歌词模式，指定音色' },
           { cmd: 'xbrowser doubao music --lyric "测试歌词" --debug --timeout 90', description: '开启 debug 模式，记录 API 请求到 ~/.xbrowser/debug/' },
+          { cmd: 'xbrowser doubao music --description "励志歌曲" --preflight-only', description: '仅预检参数，不提交任务' },
         ],
     result: mediaTaskResultSchema.extend({
+      preflight: mediaPreflightReportSchema.optional(),
       conversationUrl: z.string().optional(),
       description: z.string().optional(),
       style: z.string().optional(),
@@ -1844,6 +1962,20 @@ export default function (xcli: XCLIAPI): void {
     }),
     handler: async (params, ctx) => {
       try {
+        if (params.preflightOnly) {
+          const notes: string[] = [];
+          if (params.lyric && params.lyric.length > 200) {
+            notes.push(`歌词 ${params.lyric.length} 字超过 200 字上限，实际提交时会被截断到 200 字`);
+          }
+          return preflightDoubaoTask({
+            command: 'music',
+            kind: 'audio',
+            mode: ['audio', params.style, params.mood, params.voice].filter(Boolean).join(':'),
+            prompt: params.description || params.lyric,
+            promptLabel: '--description 或 --lyric',
+            notes,
+          });
+        }
         const page = ctx.page;
         if (!page) throw new Error("需要浏览器页面");
         const tips = buildTips(ctx);

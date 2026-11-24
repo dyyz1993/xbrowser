@@ -9,6 +9,7 @@ import {
   mediaDownloadResultSchema,
   type MediaTaskResult,
 } from '../shared/media-contract.js';
+import { runMediaPreflight, mediaPreflightReportSchema } from '../shared/media-preflight.js';
 
 const DOWNLOAD_DIR = path.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads');
 
@@ -54,6 +55,7 @@ export const musicResultSchema = z.object({
     localPath: z.string().nullable(),
     error: z.string().nullable(),
   }),
+  preflight: mediaPreflightReportSchema.optional(),
 });
 
 export type MusicResult = z.infer<typeof musicResultSchema>;
@@ -260,6 +262,39 @@ interface MusicParams {
   timeout: number;
   wait: boolean;
   taskId: string;
+  preflightOnly?: boolean;
+}
+
+/**
+ * --preflight-only：只校验提示词等本地参数并返回结构化报告；
+ * 不开任务 tab、不切模式、不提交任务（不消耗额度）。
+ */
+function preflightMusic(params: MusicParams): ReturnType<typeof ok> | ReturnType<typeof fail> {
+  const taskId = params.taskId || `preflight-music-${Date.now()}`;
+  const { report, problems } = runMediaPreflight({
+    provider: 'gemini',
+    command: 'music',
+    mode: 'audio',
+    prompt: params.prompt,
+  });
+  if (problems.length > 0) {
+    return fail('preflight 未通过', problems);
+  }
+  const task = createMediaTask({
+    taskId,
+    site: 'gemini',
+    kind: 'audio',
+    status: 'completed',
+    providerStatus: 'preflight-only',
+    sessionName: taskId,
+    sessionUrl: 'not-opened',
+  });
+  return success({
+    ...task,
+    prompt: params.prompt,
+    download: toMediaDownloadResult({ taskId, localPath: null }),
+    preflight: report,
+  } as unknown as MusicResult, ['preflight 通过：未打开浏览器、未提交任务']);
 }
 
 function success(result: MusicResult, tips: string[]): ReturnType<typeof ok> {
@@ -338,6 +373,7 @@ async function waitAndDownload(
 export async function musicCommandHandler(
   params: MusicParams,
 ): Promise<ReturnType<typeof ok> | ReturnType<typeof fail>> {
+  if (params.preflightOnly) return preflightMusic(params);
   const taskId = params.taskId || `music-${Date.now()}`;
   const tips = [`任务分组: xb-task-${taskId}`];
   const open = await runtime.bridgeExec('task-open', {
@@ -395,11 +431,13 @@ export function registerMusicCommands(site: CommandRegistrar): void {
       prompt: z.string().describe('音乐描述或完整歌词'),
       timeout: z.number().min(15).max(900).default(300).describe('等待生成秒数'),
       wait: z.boolean().default(true).describe('false 表示只提交，稍后用 music-status 下载'),
+      preflightOnly: z.boolean().optional().describe('只跑本地预检（参数校验），不打开浏览器、不提交任务、不消耗额度'),
     }),
     result: musicResultSchema,
     examples: [
       { cmd: 'xbrowser gemini music --prompt "大海主题中文歌，温柔女声"', description: '生成并下载音乐' },
       { cmd: 'xbrowser gemini music --prompt "大海" --wait false', description: '异步提交' },
+      { cmd: 'xbrowser gemini music --prompt "大海主题中文歌" --preflight-only', description: '仅预检参数，不提交任务' },
     ],
     handler: async (params: MusicParams) => musicCommandHandler(params),
   });
