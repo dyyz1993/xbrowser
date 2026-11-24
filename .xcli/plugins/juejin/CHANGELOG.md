@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [4.0.2] - 2026-11-25
+
+### Fixed
+- `draft` / `publish` 在页面收不到按键时（tab 在后台、窗口最小化或被遮挡）不再直接失败：标题改走 fill 通道写入（原生 setter + input 事件，后台页也生效），写后照常回读校验。页面可见时仍是逐键输入。
+
 ## [4.0.1] - 2026-11-24
 
 ### Fixed

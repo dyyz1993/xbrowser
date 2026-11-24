@@ -108,10 +108,15 @@ async function readInputValue(page: Page, selector: string): Promise<string | nu
   }
 }
 
+/** 页面收不到原始按键时 bridge 报的错：tab 在后台、窗口最小化或被完全遮挡 */
+const DROPPED_INPUT = /\[bridge-input\]/;
+
 /**
  * 幂等填输入框（标题/标签共用）：
  * - 当前值与目标一致 → 跳过（重试不重复输入）；
- * - 不一致 → trusted fill('') 清空（selectAll 替换语义）后 humanFill 输入一次；
+ * - 不一致 → fill('') 清空（整体替换语义）后 humanFill 输入一次；
+ * - 页面收不到原始按键（bridge 报 [bridge-input]）→ 改走 fill 通道：原生 setter
+ *   + input 事件，纯页面脚本，后台页也生效，不需要把 tab 带到前台；
  * - 写入后回读校验，读到矛盾值（两股输入流叠加的征兆）立即报错。
  */
 async function fillInputIdempotent(page: Page, input: Locator, selector: string, text: string): Promise<void> {
@@ -122,7 +127,13 @@ async function fillInputIdempotent(page: Page, input: Locator, selector: string,
     // 残留旧值：清空后只输入一次，绝不追加
     await input.fill('');
   }
-  await humanFill(page, input, text);
+  try {
+    await humanFill(page, input, text);
+  } catch (err) {
+    if (!(err instanceof Error) || !DROPPED_INPUT.test(err.message)) throw err;
+    // fill 是替换语义：逐键输入中途被挡（已落了一半）也会整体写成目标值
+    await input.fill(text);
+  }
   const after = await readInputValue(page, selector);
   if (after !== null && after !== text) {
     throw new Error(
