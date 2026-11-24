@@ -20,6 +20,37 @@ export function stripHashAnchorQuery(url: string): string {
   }
 }
 
+export interface PageBudget {
+  /** Reserve a slot for a page a worker is about to crawl; false once the limit is reached. */
+  tryAcquire(): boolean;
+  /** True when every slot allowed by the limit has been reserved. */
+  isExhausted(): boolean;
+}
+
+/**
+ * Admission control for the crawl workers. A page counts against the limit as
+ * soon as a worker STARTS it, not when it finishes: with several workers in
+ * flight, gating on finished results let up to `concurrency - 1` extra pages
+ * through (limit 10, concurrency 3 → 12 pages).
+ *
+ * @param limit - Maximum number of pages to crawl.
+ * @param used - Pages already accounted for (the seed page).
+ * @returns A budget object shared by all workers.
+ */
+export function createPageBudget(limit: number, used: number): PageBudget {
+  let reserved = used;
+  return {
+    tryAcquire(): boolean {
+      if (reserved >= limit) return false;
+      reserved++;
+      return true;
+    },
+    isExhausted(): boolean {
+      return reserved >= limit;
+    },
+  };
+}
+
 async function extractLinks(page: Page, origin: string): Promise<string[]> {
   return page.evaluate((evalOrigin: string) => {
     return Array.from(document.querySelectorAll('a[href]'))
@@ -385,6 +416,8 @@ export const crawlCommand = registerCommand({
 
         const pagePool: Page[] = [];
         const poolSize = Math.min(options.concurrency, options.limit);
+        // The seed page is already in `results`, so it uses the first slot.
+        const budget = createPageBudget(options.limit, results.length);
 
         for (let i = 0; i < poolSize; i++) {
           const ctx = await browser.newContext();
@@ -405,7 +438,7 @@ export const crawlCommand = registerCommand({
         };
 
         const crawlWorker = async (page: Page): Promise<void> => {
-          while (results.length < options.limit) {
+          while (budget.tryAcquire()) {
             const item = dequeueNext();
             if (!item) break;
 
@@ -426,7 +459,8 @@ export const crawlCommand = registerCommand({
 
               results.push({ url: page.url(), title: pageTitle, content: pageContent });
 
-              if (results.length >= options.limit) break;
+              // No further page will be crawled, so its links are not needed.
+              if (budget.isExhausted()) break;
 
               const links = await extractLinks(page, startUrl.origin);
               for (const link of links) {
