@@ -36,7 +36,7 @@ Why this matters for agents specifically:
 
 Under the hood xbrowser speaks CDP directly (no driver binary to download), and layers on the parts agents are worst at doing from scratch:
 
-- **130+ site plugins.** `xbrowser devto publish --file post.md`, `xbrowser juejin draft --title ... --content ...` — per-site flows (login detection, editor quirks, upload handlers) are packaged, tested, and versioned. An agent doesn't reverse-engineer a CMS; it calls a verb.
+- **125+ site plugins.** `xbrowser devto publish --file post.md`, `xbrowser juejin draft --title ... --content ...` — per-site flows (login detection, editor quirks, upload handlers) are packaged, tested, and versioned. An agent doesn't reverse-engineer a CMS; it calls a verb.
 - **Reuse the human's browser.** `xbrowser --cdp 9222 ...` attaches to an already-running Chrome. All the logged-in sessions, 2FA'd accounts, and cookie walls come for free — the hardest part of agent browsing, solved by *not* solving it.
 - **Human handoff is a first-class API.** When a CAPTCHA or SMS login appears, `ctx.waitForHuman()` pauses the flow and opens a live viewer (`xbrowser viewer`) where a person solves it, then the script resumes. Agents and humans share one control surface.
 - **Record → replay with self-healing.** An agent (or a human) records a flow once; the replay engine recovers from site changes deterministically — no LLM in the loop. ([How that works](#) is its own post.)

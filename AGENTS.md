@@ -1559,6 +1559,8 @@ git branch -D feat/x
 
 **新 worktree 里提交前必须先装钩子**：`.husky/_` 由 `npm install`（`prepare: husky`）生成、不进 git，新建的 worktree 里没有它——git 找不到钩子会**静默跳过** pre-commit / commit-msg / pre-push，提交等于绕过了本地门禁（用软链 `node_modules` 代替安装时同样如此）。在 worktree 里执行一次 `npm install` 或 `npx husky`，并用 `ls .husky/_/pre-commit` 确认存在后再提交。
 
+**在 worktree 里运行 `dist/cli.js` 必须带独立的 daemon 端口**：`XBROWSER_DAEMON_PORT=<未占用的端口> node dist/cli.js …`。缺省端口 9224 上跑的是主检出的 daemon，构建指纹不同的 CLI 连上去会触发「Daemon build mismatch」：daemon 上有会话时报错拒绝执行，没有会话时则被重启成这个 CLI 的构建——两边交替使用就会互相重启。用 `lsof -nP -iTCP:<端口> -sTCP:LISTEN` 取 PID，按 PID 结束自己起的 daemon，不要按进程名清理。
+
 ---
 
 ## 18. 速查表（最高频 8 条命令）
