@@ -26,6 +26,7 @@ npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 - `apply_patch` 修改多文件或同一文件多处时，先读取当前内容并按目标拆成最小上下文块；任何一块上下文失配都停止重试，重新读取目标文件。
 - Commit subject 是类型前缀后的文本，最长 80 字符（不是整行 100 字符）；提交前用 CI 正则或等价脚本自检。**长度按字节算**：本地 commit-msg 钩子与 master 上的 CI 检查都用 `wc -c` 计首行，超过 100 字节即失败（中文每字 3 字节）。squash 合并后的首行 = PR 标题（PR 只有一个非合并提交时取该提交的首行）+ GitHub 追加的 ` (#N)` 这 7 字节，所以 PR 标题和提交首行都要连同这 7 字节控制在 100 字节以内，否则本地钩子放行、master 的 CI 变红。自检：`printf '%s' "docs: 标题 (#000)" | wc -c`。
 - 「可信点击后无反应」先依次验证 unhandledrejection、实际网络请求、`elementFromPoint` 命中目标，再考虑反自动化；滚动列表必须重新 `scrollIntoView` 并取最新 rect。
+- **`XBROWSER_BRIDGE_HTTP` 是 bridge 的唯一隔离开关**——驱动、daemon、插件命令、发布层、控制台面板全部跟随，不设就是现网 9347。隔离测试必须显式设置它，并且**先证明路由再跑有副作用的命令**：拿只读的 `xbrowser chrome-bridge status --json` 指向一个无人监听的端口，必须报「bridge 未启动」；CLI 的工作目录要是加载了目标插件副本的那个仓库（cwd 在别处会加载到全局副本）。跑完比对现网 `/status` 的连接时间戳未变。只靠事后断言拦不住事故：2026-11-24 插件端口写死，「隔离」验收打进现网，把用户浏览器里的扩展 reload 了三次。
 
 ## 1. 项目原则
 
@@ -1427,6 +1428,10 @@ locator.fill 已内置双层防线（受控探测跳过粘贴快通道 + 快通�
 
 - ❌ 绝不能 `browser.close()` — 会杀掉用户整个浏览器
 - ✅ 插件 handler 执行完自动断开
+
+### 页面不可见时点击与按键被丢弃（bridge 输入门）
+
+tab 在后台、窗口最小化或被完全遮挡时页面不可见（页面里 `window.outerWidth` 读作 0），Chrome 丢弃 `mousePressed`/`mouseReleased` 与原始按键事件；`mouseMoved`、`Input.insertText`、页面脚本照常送达。此时 `Page.bringToFront`、`elementFromPoint`、JS `.click()` 全部"正常"，表现为「点了没反应」「打了字没进去」。判据是页面里量到的 `outerWidth`——tab 是否为活动页只是必要条件，窗口尺寸与焦点都不是判据，`document.visibilityState` 在反检测层下恒为 `visible`、不可用。查询用 `xbrowser chrome-bridge input-health`；bridge 扩展 ≥1.5.5 起这类输入直接报 `[bridge-input]` 错误。要输入就把 tab 带到前台（`exec --cmd tab-activate` / `tab-move`），或用 `win-open` 开独立小窗。
 
 ### 选择器稳定性
 

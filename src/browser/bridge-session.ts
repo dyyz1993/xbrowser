@@ -42,7 +42,13 @@ import { registerSession } from './lifecycle.js';
 
 const DEFAULT_BRIDGE_HTTP = 'http://127.0.0.1:9347';
 
-function bridgeHttpBase(): string {
+/**
+ * HTTP base of the chrome-bridge channel for this process. `XBROWSER_BRIDGE_HTTP`
+ * is the one isolation switch for everything that talks to a bridge: the driver,
+ * the daemon, the console panel and (through `.xcli/plugins/shared/bridge-endpoint.ts`)
+ * the plugins.
+ */
+export function bridgeHttpBase(): string {
   return process.env.XBROWSER_BRIDGE_HTTP || DEFAULT_BRIDGE_HTTP;
 }
 

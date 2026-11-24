@@ -150,6 +150,24 @@ describe('publishing/channel', () => {
       expect(goto).toHaveBeenCalledWith('https://x.com', expect.objectContaining({ waitUntil: 'domcontentloaded' }));
     });
 
+    it('probes the bridge that XBROWSER_BRIDGE_HTTP names, not a hard-coded port', async () => {
+      // 以前端口写死：隔离环境里的发布命令会直接打进现网 bridge（2026-11-24）
+      vi.stubEnv('XBROWSER_BRIDGE_HTTP', 'http://127.0.0.1:1');
+      const probed: string[] = [];
+      globalThis.fetch = vi.fn(async (url: unknown) => {
+        probed.push(String(url));
+        throw new Error('ECONNREFUSED');
+      }) as never;
+      const page = { goto: vi.fn(async () => {}), evaluate: vi.fn(), url: vi.fn(() => 'u') };
+      try {
+        const res = await resolveChannel({ page: page as never, taskName: 'pub-x', localUrl: 'https://x.com' });
+        expect(res.channel).toBe('local');
+        expect(probed).toEqual(['http://127.0.0.1:1/exec']);
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    });
+
     it('bridge 可用时走 bridge 通道并打开任务分组 tab', async () => {
       globalThis.fetch = vi.fn(async (_url: unknown, init: unknown) => {
         const body = JSON.parse((init as { body: string }).body) as { cmd: string };

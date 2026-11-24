@@ -21,6 +21,7 @@
  */
 
 import { createHttpBridge, isBridgeAvailable, openTaskTab, closeTaskTab, sleep } from './bridge.js';
+import { bridgeHttpPort } from '../bridge-endpoint.js';
 
 export interface BridgeBootstrap {
   /** 是否成功引导 */
@@ -42,7 +43,7 @@ export interface BridgeBootstrap {
 export async function bootstrapInUserChrome(
   taskName: string,
   url: string,
-  port = 9347,
+  port = bridgeHttpPort(),
 ): Promise<BridgeBootstrap> {
   if (!(await isBridgeAvailable(port))) {
     return { ok: false, reason: 'chrome-bridge 扩展未连接' };
@@ -57,7 +58,7 @@ export async function bootstrapInUserChrome(
 }
 
 /** 清理引导句柄 */
-export async function releaseBootstrap(boot: BridgeBootstrap, port = 9347): Promise<void> {
+export async function releaseBootstrap(boot: BridgeBootstrap, port = bridgeHttpPort()): Promise<void> {
   if (!boot.ok || !boot.taskName) return;
   const bridge = createHttpBridge(port);
   await closeTaskTab(bridge, boot.taskName);

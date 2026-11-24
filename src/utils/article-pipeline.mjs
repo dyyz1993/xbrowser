@@ -15,7 +15,8 @@ import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
 
-const BR = 'http://127.0.0.1:9347';
+// 与驱动层同一个隔离开关：XBROWSER_BRIDGE_HTTP 指向自定义通道（测试 / 多实例）
+const BR = process.env.XBROWSER_BRIDGE_HTTP || 'http://127.0.0.1:9347';
 let _editorTabId = null; // S159: assemble 的编辑器 tab
 const articlePath = process.argv[2];
 
