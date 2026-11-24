@@ -12,6 +12,8 @@ import {
   mediaTaskResultSchema,
   type MediaTaskResult,
 } from '../shared/media-contract.js';
+import { runMediaPreflight, mediaPreflightReportSchema } from '../shared/media-preflight.js';
+import { buildMediaTask } from '../shared/media-plugin-template.js';
 import { checkRefusal } from '../shared/refusal-detect.js';
 
 const DOWNLOAD_DIR = path.join(process.env.HOME || '/tmp', '.xbrowser', 'downloads');
@@ -47,6 +49,7 @@ type GenerateParams = {
   paths?: string;
   firstFrame?: string;
   lastFrame?: string;
+  preflightOnly?: boolean;
 };
 
 function parsePathsCsv(value: string): string[] {
@@ -345,12 +348,64 @@ const generateResult = mediaTaskResultSchema.extend({
   prompt: z.string(),
   attachments: z.array(z.object({ semantic: z.string(), path: z.string() })).optional(),
   download: mediaDownloadResultSchema,
+  preflight: mediaPreflightReportSchema.optional(),
 });
+
+/**
+ * --preflight-only：只跑本地检查（提示词 + 附件文件可解码、尺寸可读），
+ * 返回结构化报告；不打开任务 tab、不碰浏览器、不提交任务。
+ */
+function preflightGenerate(
+  media: 'image' | 'video',
+  params: GenerateParams,
+): ReturnType<typeof ok> | ReturnType<typeof fail> {
+  const attachments = buildAttachmentList(params);
+  if (params.path && params.paths) {
+    return fail('参数错误', ['--path 与 --paths 不能同时使用']);
+  }
+  const { report, problems } = runMediaPreflight({
+    provider: 'gemini',
+    command: `generate-${media}`,
+    mode: media === 'image' && params.ratio ? `image:${params.ratio}` : media,
+    prompt: params.prompt,
+    attachments: attachments.map((item) => ({
+      path: item.path,
+      semantic: item.semantic,
+      expected: 'image' as const,
+    })),
+  });
+  if (problems.length > 0) {
+    return fail('preflight 未通过', problems);
+  }
+  const taskId = `preflight-${media}-${Date.now()}`;
+  return ok({
+    ...buildMediaTask({
+      taskId,
+      site: 'gemini',
+      kind: media,
+      status: 'completed',
+      providerStatus: 'preflight-only',
+      sessionName: taskId,
+      sessionUrl: null,
+    }),
+    prompt: params.prompt,
+    attachments: attachments.map((item) => ({ semantic: item.semantic, path: path.resolve(item.path) })),
+    download: mediaDownloadResultSchema.parse({
+      ok: false,
+      taskId,
+      mediaUrl: null,
+      localPath: null,
+      error: 'preflight-only：未提交任务',
+    }),
+    preflight: report,
+  }, ['preflight 通过：未打开浏览器、未上传附件、未提交任务']);
+}
 
 async function generate(
   media: 'image' | 'video',
   params: GenerateParams,
 ): Promise<ReturnType<typeof ok> | ReturnType<typeof fail>> {
+  if (params.preflightOnly) return preflightGenerate(media, params);
   const taskId = `${media}-${Date.now()}`;
   const tips: string[] = [];
 
@@ -488,9 +543,13 @@ export function registerGenerateCommands(site: CommandRegistrar): void {
       paths: z.string().optional().describe('多附件路径（CSV）'),
       firstFrame: z.string().optional().describe('首帧图片路径（作为通用附件并在提示词标注顺序；非站点专用首尾帧接口）'),
       lastFrame: z.string().optional().describe('尾帧图片路径（作为通用附件并在提示词标注顺序；非站点专用首尾帧接口）'),
+      preflightOnly: z.boolean().optional().describe('只跑本地预检（参数/附件校验），不打开浏览器、不提交任务、不消耗额度'),
     }),
     result: generateResult,
-    examples: [{ cmd: 'xbrowser gemini generate-image --prompt "赛博朋克城市夜景" --ratio 16:9', description: '生成图片' }],
+    examples: [
+      { cmd: 'xbrowser gemini generate-image --prompt "赛博朋克城市夜景" --ratio 16:9', description: '生成图片' },
+      { cmd: 'xbrowser gemini generate-image --prompt "参考logo" --path /abs/logo.png --preflight-only', description: '仅预检附件与参数' },
+    ],
     handler: async (params: GenerateParams) => generate('image', params),
   };
 
@@ -504,11 +563,13 @@ export function registerGenerateCommands(site: CommandRegistrar): void {
       paths: z.string().optional().describe('多附件路径（CSV；建议绝对路径）'),
       firstFrame: z.string().optional().describe('首帧图片路径（作为通用附件并在提示词标注顺序；非站点专用首尾帧接口）'),
       lastFrame: z.string().optional().describe('尾帧图片路径（作为通用附件并在提示词标注顺序；非站点专用首尾帧接口）'),
+      preflightOnly: z.boolean().optional().describe('只跑本地预检（参数/附件校验），不打开浏览器、不提交任务、不消耗额度'),
     }),
     result: generateResult,
     examples: [
       { cmd: 'xbrowser gemini generate-video --prompt "日落海浪" --timeout 420', description: '生成视频' },
       { cmd: 'xbrowser gemini generate-video --prompt "从首帧平滑运镜到尾帧" --firstFrame /abs/start.png --lastFrame /abs/end.png', description: '上传两张图片作为通用附件并标注语义顺序' },
+      { cmd: 'xbrowser gemini generate-video --prompt "品牌宣传片" --firstFrame /abs/start.png --preflight-only', description: '仅预检附件与参数，不提交任务' },
     ],
     handler: async (params: GenerateParams) => generate('video', params),
   };

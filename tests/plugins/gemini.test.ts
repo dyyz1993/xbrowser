@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import plugin from '../../.xcli/plugins/gemini/index.ts';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { parseUsageText, usageCommandHandler } from '../../.xcli/plugins/gemini/usage.ts';
 import { musicCommandHandler, musicStatusHandler, setMusicDownloader, setMusicRuntime } from '../../.xcli/plugins/gemini/music.ts';
 import { setGenerateRuntime, uploadAttachments } from '../../.xcli/plugins/gemini/generate.ts';
 import { buildVideoDownloadSetupExpression, downloadVideo, setHistoryRuntime } from '../../.xcli/plugins/gemini/history.ts';
+import { wholePng } from './_image-helper.js';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -655,6 +659,47 @@ describe('gemini plugin', () => {
       expect(result.success).toBe(false);
       expect(result.message).toContain('等待音乐超时');
     });
+
+    describe('--preflight-only', () => {
+      it('returns a preflight report without opening chrome-bridge', async () => {
+        const bridgeExec = vi.fn(() => Promise.resolve({ ok: true }));
+        setMusicRuntime({
+          bridgeExec,
+          cdp: vi.fn(() => Promise.resolve(undefined)) as never,
+          ev: vi.fn(() => Promise.resolve('null')) as never,
+          sleep: vi.fn(() => Promise.resolve()),
+        } as never);
+        const result = await musicCommandHandler({
+          prompt: '大海主题中文歌', timeout: 1, wait: true, taskId: 'pf-music', preflightOnly: true,
+        }) as unknown as Record<string, unknown>;
+        expect(result.success).toBe(true);
+        const data = result.data as Record<string, unknown>;
+        expect(data.status).toBe('completed');
+        expect(data.providerStatus).toBe('preflight-only');
+        const preflight = data.preflight as Record<string, unknown>;
+        expect(preflight.ok).toBe(true);
+        expect(preflight.command).toBe('music');
+        expect(preflight.mode).toBe('audio');
+        expect(bridgeExec).not.toHaveBeenCalled();
+      });
+
+      it('fails preflight when the prompt is empty', async () => {
+        const bridgeExec = vi.fn(() => Promise.resolve({ ok: true }));
+        setMusicRuntime({
+          bridgeExec,
+          cdp: vi.fn(() => Promise.resolve(undefined)) as never,
+          ev: vi.fn(() => Promise.resolve('null')) as never,
+          sleep: vi.fn(() => Promise.resolve()),
+        } as never);
+        const result = await musicCommandHandler({
+          prompt: '', timeout: 1, wait: true, taskId: 'pf-empty', preflightOnly: true,
+        }) as unknown as Record<string, unknown>;
+        expect(result.success).toBe(false);
+        expect(result.message).toBe('preflight 未通过');
+        expect(tipMessages(result)).toContain('缺少提示词（--prompt 为空）');
+        expect(bridgeExec).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe('generate command', () => {
@@ -738,6 +783,119 @@ describe('gemini plugin', () => {
       ]);
       expect(pasteImage).toHaveBeenCalledTimes(2);
       expect(uploaded).toBe(2);
+    });
+
+    describe('--preflight-only', () => {
+      /** A whole PNG carrying width/height (signature + IHDR + IEND). */
+      function pngHeader(width: number, height: number): Buffer {
+        return wholePng(width, height);
+      }
+
+      function writeTempFile(name: string, bytes: Buffer): string {
+        const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gemini-preflight-'));
+        const file = path.join(dir, name);
+        fs.writeFileSync(file, bytes);
+        return file;
+      }
+
+      /** Spies that fail the test if the browser flow is entered at all. */
+      function armRuntimeSpies(): { bridgeExec: ReturnType<typeof vi.fn>; cdp: ReturnType<typeof vi.fn>; ev: ReturnType<typeof vi.fn> } {
+        const bridgeExec = vi.fn(() => Promise.resolve({ ok: true }));
+        const cdp = vi.fn(() => Promise.resolve(undefined));
+        const ev = vi.fn(() => Promise.resolve(undefined));
+        setGenerateRuntime({ bridgeExec, cdp, ev, sleep: vi.fn(() => Promise.resolve()) } as never);
+        return { bridgeExec, cdp, ev };
+      }
+
+      it('generate-video returns a preflight report and never touches the bridge', async () => {
+        const spies = armRuntimeSpies();
+        const first = writeTempFile('first.png', pngHeader(1024, 768));
+        const handler = getHandler('generate-video');
+        const result = await handler({
+          prompt: '品牌宣传片', timeout: 30, firstFrame: first, preflightOnly: true,
+        }) as Record<string, unknown>;
+        expect(result.success).toBe(true);
+        const data = result.data as Record<string, unknown>;
+        expect(data.status).toBe('completed');
+        expect(data.providerStatus).toBe('preflight-only');
+        const preflight = data.preflight as Record<string, unknown>;
+        expect(preflight.ok).toBe(true);
+        expect(preflight.provider).toBe('gemini');
+        expect(preflight.command).toBe('generate-video');
+        expect(preflight.mode).toBe('video');
+        expect((preflight.attachments as Array<Record<string, unknown>>)[0]).toMatchObject({
+          width: 1024, height: 768, kind: 'image', semantic: '首帧',
+        });
+        expect(spies.bridgeExec).not.toHaveBeenCalled();
+        expect(spies.cdp).not.toHaveBeenCalled();
+        expect(spies.ev).not.toHaveBeenCalled();
+      });
+
+      it('generate-image reports the reference image dimensions and ratio mode', async () => {
+        const spies = armRuntimeSpies();
+        const ref = writeTempFile('logo.png', pngHeader(512, 512));
+        const handler = getHandler('generate-image');
+        const result = await handler({
+          prompt: '赛博朋克城市夜景', timeout: 30, ratio: '16:9', path: ref, preflightOnly: true,
+        }) as Record<string, unknown>;
+        expect(result.success).toBe(true);
+        const data = result.data as Record<string, unknown>;
+        const preflight = data.preflight as Record<string, unknown>;
+        expect(preflight.ok).toBe(true);
+        expect(preflight.command).toBe('generate-image');
+        expect(preflight.mode).toBe('image:16:9');
+        expect((preflight.attachments as Array<Record<string, unknown>>)[0]).toMatchObject({
+          width: 512, height: 512,
+        });
+        expect(spies.bridgeExec).not.toHaveBeenCalled();
+        expect(spies.ev).not.toHaveBeenCalled();
+      });
+
+      it('generate-video fails preflight with a specific reason for a missing file', async () => {
+        const spies = armRuntimeSpies();
+        const handler = getHandler('generate-video');
+        const result = await handler({
+          prompt: 'p', timeout: 30, firstFrame: '/not/exists/ref.png', preflightOnly: true,
+        }) as Record<string, unknown>;
+        expect(result.success).toBe(false);
+        expect(result.message).toBe('preflight 未通过');
+        expect(tipMessages(result)).toContain('附件文件不存在或无法访问: 首帧: /not/exists/ref.png');
+        expect(spies.bridgeExec).not.toHaveBeenCalled();
+      });
+
+      it('generate-image fails preflight for a non-image attachment', async () => {
+        const spies = armRuntimeSpies();
+        const textFile = writeTempFile('notes.txt', Buffer.from('plain text', 'utf8'));
+        const handler = getHandler('generate-image');
+        const result = await handler({
+          prompt: 'p', timeout: 30, path: textFile, preflightOnly: true,
+        }) as Record<string, unknown>;
+        expect(result.success).toBe(false);
+        expect(tipMessages(result)).toContain(`不是图片文件（扩展名 .txt，支持 png/jpg/jpeg/webp/gif）: 附件: ${textFile}`);
+        expect(spies.bridgeExec).not.toHaveBeenCalled();
+      });
+
+      it('generate-video fails preflight for a truncated image header', async () => {
+        const spies = armRuntimeSpies();
+        const truncated = writeTempFile('cut.png', pngHeader(800, 600).subarray(0, 18));
+        const handler = getHandler('generate-video');
+        const result = await handler({
+          prompt: 'p', timeout: 30, path: truncated, preflightOnly: true,
+        }) as Record<string, unknown>;
+        expect(result.success).toBe(false);
+        expect(tipMessages(result)).toContain(`图片文件已截断或损坏，无法读取完整 png 尺寸信息: 附件: ${truncated}`);
+        expect(spies.bridgeExec).not.toHaveBeenCalled();
+      });
+
+      it('generate-video preflight rejects conflicting --path and --paths', async () => {
+        const spies = armRuntimeSpies();
+        const handler = getHandler('generate-video');
+        const result = await handler({
+          prompt: 'p', timeout: 30, path: '/a.png', paths: '/b.png', preflightOnly: true,
+        }) as Record<string, unknown>;
+        expect(result).toMatchObject({ success: false, message: '参数错误' });
+        expect(spies.bridgeExec).not.toHaveBeenCalled();
+      });
     });
   });
 
