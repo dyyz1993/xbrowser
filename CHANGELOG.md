@@ -2,6 +2,27 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；由 `npm run lint:changelog` 约束（版本条目齐全、格式、去重、降序）。
 
+## [1.37.0] - 2026-11-24
+
+### Added
+- **convert：四类交互步骤**：双击、右键、拖拽（指针 / HTML5 拖放）与文件选择现在都转成可回放步骤（JS / Python / Bash）；录制数据不足以回放的步骤保留为 `NOTE` 注释而不是消失（#483）。
+- **媒体生成 `--preflight-only`**：gemini `generate-image` / `generate-video` / `music` 与 doubao `image` / `image-cutout` / `image-vary` / `video` / `music` 支持只做本地预检（提示词、附件存在 / 可读 / 可解码 / 像素尺寸），不打开页面、不上传、不提交、不消耗额度（#485）。
+- **chrome-bridge `input-health`**：诊断目标 tab 能否收到点击 / 按键（#480）。
+- **`--` 分隔符**：`xbrowser fill -- '#q' '- item'`——`--` 之后一律是位置参数，以 `-` 开头的值不再无解；全局选项（如 `--session`）要写在 `--` 之前（#479、#487）。
+
+### Fixed
+- **CLI 参数值**：值里含链分隔符时被误拆成多条命令（`fill '#q' 'x ; title'` 退出码 0 却只填了 `x`）；`"goto url;title"` 与 `"goto url ;title"` 静默丢掉后半条；带 `;` 的 URL 在引号命令串里被截断；负数坐标（`mouse move -10 -20` 报用法错误、`mouse --x -10` 静默变成 1）；crawl / scrape 的布尔参数（`--verbose`、`--allow-external-links true`、`--only-main-content false`）全部不生效（#479）。
+- **鼠标驱动**：松开事件带着按键位，页面收不到 `pointerup`（指针滑块收不了尾、拖拽被录成点击）；一次右键之后所有左键按下丢失 `pointerdown`；`dblclick` 实际按了四下（#482）。
+- **录制器**：默认模式丢弃右键；同一毫秒到达的 `dblclick` 信号被当作重复丢掉；CLI 的右键命令在录制里留下一条无按键信息的 `cdp-click`（#482）。
+- **chrome-bridge 输入门**：页面不可见（后台 tab / 窗口被遮挡，页面 `outerWidth=0`）时点击与按键被 Chrome 丢弃却没有任何报错——现在直接返回 `[bridge-input]` 错误与补救命令；复用任务 tab 前先探活；分组不支持时降级而不是整体失败（#480）。
+- **chrome-bridge 隔离开关**：`XBROWSER_BRIDGE_HTTP` 此前只对驱动层和 daemon 生效，插件命令、发布层、控制台面板等 13 处写死 9347——现在全部跟随同一个开关（#481、#484）。
+- **验收命令**：`chrome-bridge acceptance` 的点击探针失败时吞掉原因、页面不可见时照样点击、版本匹配时空等到超时（#481）。
+- **发版流水线**：审批门拒绝签发票据时不再吞掉 HTTP 状态码与原因（#478）。
+- **doubao `image --ref`**：参考图文件缺失、按钮找不到或注入失败时不再提交任务（#485）。
+- **juejin `draft` / `publish`**：重试时标题与正文被叠加输入；正文未写入却报成功；失败时不报告已创建的草稿（#486）。
+- **oschina 登录判定**：未登录时被放行到编辑器步骤才报「标题输入框未找到」（#486）。
+- **AGENTS**：新增「`XBROWSER_BRIDGE_HTTP` 是 bridge 的唯一隔离开关，跑有副作用的 bridge 命令前先证明路由」与「页面不可见时点击 / 按键被丢弃」两节（#484）。
+
 ## [1.36.1] - 2026-11-24
 
 ### Fixed

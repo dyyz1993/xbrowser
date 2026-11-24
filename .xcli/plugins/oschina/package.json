@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-oschina",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "开源中国 oschina - 开源/技术资讯社区发布 (DA 75+)",
   "main": "index.ts",
   "type": "module",
@@ -21,7 +21,7 @@
   "xbrowser": {
     "name": "oschina",
     "slug": "oschina",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "author": "dyyz1993",
     "description": "开源中国 oschina - 开源/技术资讯社区发布",
     "site": "https://www.oschina.net",

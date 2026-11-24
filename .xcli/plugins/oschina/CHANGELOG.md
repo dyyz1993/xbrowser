@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-11-24
+
+### Fixed
+- 未登录判定：`isLogin` 只认确定信号（`my.oschina.net` 跳转到 `/u/<id>/`），并在进入编辑器前拦截到 `/home/login` 的重定向——未登录时返回 `LOGIN_REQUIRED`，不再报「标题输入框未找到」（xbrowser #486）。
+
 ## [1.1.0] - 2026-10-23
 
 ### Added
