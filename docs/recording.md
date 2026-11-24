@@ -408,10 +408,14 @@ xbrowser replay recording.yaml --slow-mo 500 --stop-on-error
 
 Convert recordings to executable scripts. All three outputs replay the same
 steps: the recording is first reduced to what has to happen — navigations,
-fills, clicks, key presses, scrolls, hovers — so an interaction that the
-recorder logged more than once (the CLI command and the page's own signal, the
-focus clicks of a `fill`, the page load caused by a click, the scroll signal
-that precedes a CLI `scroll`) becomes a single step.
+fills, clicks (left or right), double clicks, key presses, scrolls, hovers,
+drags and file selections — so an interaction that the recorder logged more
+than once (the CLI command and the page's own signal, the focus clicks of a
+`fill`, the two precursor clicks of a double click, the page load caused by a
+click, the scroll signal that precedes a CLI `scroll`) becomes a single step.
+File selections replay from the file contents the recorder inlined as data
+URLs; a step whose data the recording lacks (for example a drag without
+from/to coordinates) is kept as a `NOTE:` comment instead of being dropped.
 
 Each script needs its runtime installed next to it. The JS and Python scripts
 download Playwright's Chromium unless `XBROWSER_CHROMIUM_PATH` points at an
@@ -525,7 +529,9 @@ xb session close
 
 Not every recorded step can be expressed in the CLI. Those are left out with a
 `# NOTE:` comment: clearing a field (the CLI takes the value as a positional
-argument), and key combinations such as `Ctrl+a`.
+argument), key combinations such as `Ctrl+a`, and file selections (the CLI has
+no file-upload command — convert to JS or Python, whose scripts restore the
+recorded files through Playwright's `setInputFiles`).
 
 ## Analysis
 
