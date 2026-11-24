@@ -29,6 +29,8 @@ function createMockPage(options: Partial<{
   bodyValue: string;
   writeResultLen: number | null;
   failBodyWrite: boolean;
+  keystrokesDropped: boolean;
+  pressError: string | null;
 }> = {}) {
   // 有状态 mock（oschina.test.ts 同款思路）：标题/正文是可读写的存储，
   // pressSequentially/insertText 按真实驱动的「追加」语义写入——
@@ -43,6 +45,8 @@ function createMockPage(options: Partial<{
     bodyValue: '',
     writeResultLen: null as number | null,
     failBodyWrite: false,
+    keystrokesDropped: false,
+    pressError: null as string | null,
     ...options,
   };
   const titlePresses: string[] = [];
@@ -110,13 +114,20 @@ function createMockPage(options: Partial<{
         }),
         click: vi.fn(async () => undefined),
         fill: vi.fn(async (v: string) => {
-          // trusted fill('')：清空（selectAll + 替换语义）
-          if (v === '' && (sel.includes('输入文章标题') || sel.includes('title'))) {
-            s.titleValue = '';
+          // fill 是替换语义：'' 清空（selectAll + 替换），有值则整体写入
+          if (sel.includes('输入文章标题') || sel.includes('title')) {
+            s.titleValue = v;
           }
         }),
         focus: vi.fn(async () => undefined),
         pressSequentially: vi.fn(async (ch: string) => {
+          if (s.keystrokesDropped) {
+            // bridge 输入门（扩展 ≥1.5.5）：页面不可见时第一个按键就报错，一个字都不落地
+            return Promise.reject(new Error(
+              '[bridge-session] cdp Input.dispatchKeyEvent 失败: [bridge-input] 页面不可见（outerWidth=0：tab 在后台，或窗口最小化 / 被完全遮挡）: Chrome drops mouse clicks and key events on this tab',
+            ));
+          }
+          if (s.pressError) return Promise.reject(new Error(s.pressError));
           // 真实驱动语义：pressSequentially 在光标处追加
           titlePresses.push(ch);
           s.titleValue += ch;
@@ -444,6 +455,23 @@ describe('juejin plugin', () => {
       const result = await handler({ title: '正确标题', content: '# 内容' }, createMockCtx(page));
       expect(result.success).toBe(false);
       expect(result.message).toContain('输入校验失败');
+    }, 15000);
+
+    it('draft: when keystrokes cannot reach the page, the title is written through fill instead', async () => {
+      const handler = getHandler('draft');
+      const page = createMockPage({ titleVisible: true, keystrokesDropped: true });
+      const result = await handler({ title: '后台草稿', content: '# 内容' }, createMockCtx(page));
+      expect(result.success).toBe(true);
+      expect(page.state.titleValue).toBe('后台草稿');
+      expect(page.titlePresses).toEqual([]); // 没有一个按键被当作已送达
+    }, 15000);
+
+    it('draft: another typing error is not masked by the fill fallback', async () => {
+      const handler = getHandler('draft');
+      const page = createMockPage({ titleVisible: true, pressError: 'element is not visible' });
+      const result = await handler({ title: 'T', content: '# 内容' }, createMockCtx(page));
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('element is not visible');
     }, 15000);
 
     it('draft: reports the observed draft (URL/ID) when a later step fails', async () => {
