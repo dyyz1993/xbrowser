@@ -97,6 +97,10 @@ export class SessionRecorder {
       if (entry && entry.origin === 'signal' && Date.now() < entry.expires) {
         return; // Skip duplicate — action signal already captured it
       }
+      // Re-arm the entry reserved by reserveCommandAction() right away: a slow
+      // command can outlive the reservation, and an echo flushed during the
+      // captures below must still find a 'command' entry.
+      this.dedupMap.set(dedupFromAction, { expires: Date.now() + 4000, origin: 'command' });
     }
 
     this.actionCounter++;
@@ -157,6 +161,30 @@ export class SessionRecorder {
     } else if (action.type === 'goto' && action.value && action.value !== 'about:blank') {
       this.lastKnownUrl = action.value;
     }
+  }
+
+  /**
+   * Reserve the dedup entry for a command BEFORE it executes. Both sides used
+   * to write their entry only after their awaited captures (element screenshot,
+   * auto-snapshot, click context): a fast click's signal was flushed while the
+   * command was still in flight, found no 'command' entry and recorded itself,
+   * and the command then found no 'signal' entry and recorded again.
+   * Returns an undo for commands that end up recording nothing (failed or
+   * thrown) — a reservation left behind would swallow a later real action on
+   * the same element. A live 'signal' entry is kept: the real action was
+   * already recorded and must still suppress the duplicate command action.
+   */
+  reserveCommandAction(action: { type: string; selector?: string; value?: string }): () => void {
+    const key = this.dedupKey(action.type, action.selector, undefined, action.value);
+    const entry = this.dedupMap.get(key);
+    if (entry && entry.origin === 'signal' && Date.now() < entry.expires) return () => {};
+    // Same 4s window as the entries written after the captures: a stealth echo
+    // lands ~2-3s into the command (rec-duel d02/d03).
+    const reservation = { expires: Date.now() + 4000, origin: 'command' as const };
+    this.dedupMap.set(key, reservation);
+    return () => {
+      if (this.dedupMap.get(key) === reservation) this.dedupMap.delete(key);
+    };
   }
 
   /** Generate dedup key for an action (normalized type + selector/tag + value). */
@@ -889,8 +917,14 @@ export class SessionRecorder {
       // Set dedupMap entry for reverse dedup (action signal → CDP command dedup)
 	      const dedupKey = this.dedupKey(raw.type, raw.element?.selector, raw.element?.tag, raw.value);
 	      if (dedupKey) {
-	        this.dedupMap.set(dedupKey, { expires: Date.now() + 4000, origin: 'signal' }); // 4s: stealth click delays event ~3s
-	        this.dedupActionCount++;
+	        // A command may have reserved this key while the captures above were in
+	        // flight: it already swallowed that command's echo, so the command action
+	        // must not be skipped as a duplicate of this signal — keep its entry.
+	        const current = this.dedupMap.get(dedupKey);
+	        if (!current || current.origin !== 'command' || Date.now() >= current.expires) {
+	          this.dedupMap.set(dedupKey, { expires: Date.now() + 4000, origin: 'signal' }); // 4s: stealth click delays event ~3s
+	          this.dedupActionCount++;
+	        }
 	      }
 
 	      // Verify: collect success signals for key action types

@@ -193,6 +193,181 @@ describe('SessionRecorder', () => {
     });
   });
 
+  // ── Command dedup reservation ──
+  // The daemon reserves the command's dedup entry BEFORE executing it
+  // (reserveCommandAction). Both sides used to write their entry only after
+  // their awaited captures, so a fast click's signal was flushed while the
+  // command was still in flight and recorded itself next to the cdp-click.
+  // Time is fake: advance() moves the clock, flushSignals() drains the queue.
+  describe('reserveCommandAction', () => {
+    let pending: Array<Record<string, unknown>>; // window.__xb_pending_actions
+
+    /** What the browser-side ACTION_SIGNAL_SCRIPT pushes for a click. */
+    const clickSignal = (selector: string): Record<string, unknown> => ({
+      type: 'click',
+      ts: Date.now(),
+      url: 'https://example.com',
+      title: '',
+      element: { tag: 'button', selector, text: 'Click', strategy: 'id', confidence: 'high' },
+      x: 10,
+      y: 20,
+    });
+    /** Advance the wall clock (recorder timers that fall due run too). */
+    const advance = async (ms: number): Promise<void> => {
+      await vi.advanceTimersByTimeAsync(ms);
+    };
+    /** Let queued promise callbacks run (no timer fires). */
+    const tick = () => advance(0);
+    /** Drain the browser-side signal queue exactly like the recorder's poll does. */
+    const drainSignals = (): Promise<void> =>
+      (recorder as unknown as { flushPendingActions(page: unknown): Promise<void> }).flushPendingActions(mockPage);
+    /** Drain the queue and let what was drained finish recording — a click that
+     * is NOT deduped spends 300ms in its click-context capture. */
+    const flushSignals = async (): Promise<void> => {
+      const draining = drainSignals();
+      await advance(300);
+      await draining;
+    };
+    const recordedTypes = async (): Promise<string[]> => {
+      const { data } = await recorder.stop();
+      return data.actions.map(a => a.type).sort();
+    };
+
+    beforeEach(async () => {
+      vi.useFakeTimers();
+      pending = [];
+      mockPage.evaluate = vi.fn(async (script: unknown): Promise<unknown> =>
+        typeof script === 'string' && script.includes('__xb_pending_actions') ? pending.splice(0) : []);
+      await startRecording('https://example.com');
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('skips the real-event echo flushed while the command is in flight, so the command records exactly one action', async () => {
+      recorder.reserveCommandAction({ type: 'cdp-click', selector: '#btn' });
+
+      pending.push(clickSignal('#btn'));
+      await flushSignals();
+      expect(recorder.getLiveData().actions).toHaveLength(0);
+
+      await recorder.recordCommandAction({ type: 'cdp-click', selector: '#btn' });
+
+      expect(await recordedTypes()).toEqual(['cdp-click']);
+    });
+
+    it('lets a later real action through once the reservation is undone (failed command)', async () => {
+      recorder.reserveCommandAction({ type: 'cdp-click', selector: '#btn' })();
+
+      pending.push(clickSignal('#btn'));
+      await flushSignals();
+
+      expect(await recordedTypes()).toEqual(['click']);
+    });
+
+    it('only undoes its own reservation, not the window a recorded command left behind', async () => {
+      const undo = recorder.reserveCommandAction({ type: 'cdp-click', selector: '#btn' });
+      await recorder.recordCommandAction({ type: 'cdp-click', selector: '#btn' });
+      undo();
+
+      await advance(100); // a later event: past the recorder's timestamp guard, inside the 4s window
+      pending.push(clickSignal('#btn'));
+      await flushSignals();
+
+      expect(await recordedTypes()).toEqual(['cdp-click']);
+    });
+
+    it('keeps a live signal entry, so a command that follows a real action is still deduped (reverse dedup)', async () => {
+      pending.push(clickSignal('#btn'));
+      await flushSignals();
+
+      await advance(100);
+      recorder.reserveCommandAction({ type: 'cdp-click', selector: '#btn' });
+      await recorder.recordCommandAction({ type: 'cdp-click', selector: '#btn' });
+
+      expect(await recordedTypes()).toEqual(['click']);
+    });
+
+    it('does not let a signal still being captured swallow the command action', async () => {
+      pending.push(clickSignal('#btn'));
+      const capturing = drainSignals();
+      await tick(); // real click: passes the dedup check, then parks in its click-context capture
+      // A command on the same element starts while that capture is in flight
+      recorder.reserveCommandAction({ type: 'cdp-click', selector: '#btn' });
+      await advance(300); // capture done — the signal would now claim the dedup entry
+      await capturing;
+      await recorder.recordCommandAction({ type: 'cdp-click', selector: '#btn' });
+
+      expect(await recordedTypes()).toEqual(['cdp-click', 'click']);
+    });
+
+    it('still swallows a stealth echo ~2.5s after the command, and lets a real action through once the 4s window is over', async () => {
+      recorder.reserveCommandAction({ type: 'cdp-click', selector: '#btn' });
+      // Stealth click: the real event lands ~2-3s after the command started (rec-duel d02/d03)
+      await advance(2500);
+      pending.push(clickSignal('#btn'));
+      await flushSignals();
+
+      await recorder.recordCommandAction({ type: 'cdp-click', selector: '#btn' });
+      await advance(2500); // still inside the 4s window
+      pending.push(clickSignal('#btn'));
+      await flushSignals();
+      await advance(2500); // window over
+      pending.push(clickSignal('#btn'));
+      await flushSignals();
+
+      expect(await recordedTypes()).toEqual(['cdp-click', 'click']);
+    });
+
+    it('never dedups two real clicks on the same element against each other (rec-duel d05)', async () => {
+      pending.push(clickSignal('#btn'));
+      await flushSignals();
+      await advance(1000);
+      pending.push(clickSignal('#btn'));
+      await flushSignals();
+
+      expect(await recordedTypes()).toEqual(['click', 'click']);
+    });
+
+    it('still records identical consecutive commands (commands are ground truth)', async () => {
+      recorder.reserveCommandAction({ type: 'cdp-click', selector: '#btn' });
+      await recorder.recordCommandAction({ type: 'cdp-click', selector: '#btn' });
+      recorder.reserveCommandAction({ type: 'cdp-click', selector: '#btn' });
+      await recorder.recordCommandAction({ type: 'cdp-click', selector: '#btn' });
+
+      expect(await recordedTypes()).toEqual(['cdp-click', 'cdp-click']);
+    });
+
+    it('re-arms an expired reservation while the command action is still being captured (slow command)', async () => {
+      recorder.reserveCommandAction({ type: 'cdp-click', selector: '#btn' });
+      await advance(4500); // the command outlived its 4s reservation
+
+      // Hold the command action's element screenshot, so it sits in its captures
+      const locator = (mockPage.locator as unknown as (selector: string) => { screenshot: () => Promise<Buffer> })('#btn');
+      let releaseScreenshot!: () => void;
+      let first = true;
+      locator.screenshot = () => {
+        if (!first) return Promise.resolve(Buffer.from('png'));
+        first = false;
+        return new Promise<Buffer>((resolve) => {
+          releaseScreenshot = () => resolve(Buffer.from('slow'));
+        });
+      };
+      const recording = recorder.recordCommandAction({ type: 'cdp-click', selector: '#btn' });
+      await tick();
+
+      // The command's echo is flushed meanwhile
+      pending.push(clickSignal('#btn'));
+      await flushSignals();
+
+      releaseScreenshot();
+      await recording;
+
+      expect(await recordedTypes()).toEqual(['cdp-click']);
+    });
+  });
+
   describe('lastKnownUrl tracking', () => {
     it('should fallback to lastKnownUrl when action url is about:blank', async () => {
       await startRecording('https://example.com');

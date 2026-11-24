@@ -421,16 +421,29 @@ export function createRPCHandler(): RPCHandler & {
       }
     } catch { /* ignore */ }
 
+    // Reserve the recorder's dedup entry BEFORE the command runs: a fast click's
+    // real-event signal is flushed while the command is still in flight, and
+    // both sides only wrote their entry after their awaited captures — so the
+    // signal found no 'command' entry and recorded itself next to the cdp-click.
+    const releaseReservation = reserveCommandAction(sessionName, command, cmdParams, preElement);
+    let recorded = false;
     try {
       const result = await executeCommand(command, cmdParams, sessionName, {
         cdpEndpoint: endpoint,
         bridge: params.bridge === true,
       });
       registerSessionIfNew(sessionName);
-      // Inject CDP command into active recorder if recording
-      await injectCommandToRecorder(sessionName, command, cmdParams, urlBeforeCommand, preElement);
+      // Inject CDP command into active recorder if recording — only for a command
+      // that succeeded: a failed one must not be replayed as if it had happened.
+      if (result.success) {
+        await injectCommandToRecorder(sessionName, command, cmdParams, urlBeforeCommand, preElement);
+        recorded = true;
+      }
       return result;
     } finally {
+      // Nothing recorded for the command: drop its reservation, otherwise it
+      // would swallow a later real action on the same element.
+      if (!recorded) releaseReservation();
       if (needsPause) await previewWS!.resumeScreencast(sessionName).catch(() => { });
     }
   }
@@ -661,11 +674,12 @@ export function createRPCHandler(): RPCHandler & {
     return { session: sessionName, commands: commandLogStore.list(sessionName, { limit }) };
   }
 
-  /** Inject CDP command execution into active recorder as a synthetic action */
-  async function injectCommandToRecorder(sessionName: string, command: string, params: Record<string, unknown>, urlBeforeCommand?: string, preElement?: Record<string, unknown>): Promise<void> {
-    const recorder = activeRecorders.get(sessionName);
-    if (!recorder) return;
-
+  /**
+   * The recorder action a CLI command injects (action type, raw selector, value).
+   * Shared by the pre-execution dedup reservation and the post-execution
+   * injection, so both derive the very same dedup key.
+   */
+  function describeCommandAction(command: string, params: Record<string, unknown>): { type: string; selector?: string; value?: string } | undefined {
     const COMMAND_ACTION_MAP: Record<string, string> = {
       goto: 'goto',
       fill: 'cdp-fill',
@@ -674,8 +688,8 @@ export function createRPCHandler(): RPCHandler & {
       select: 'change',
       scroll: 'scroll',
     };
-    const actionType = COMMAND_ACTION_MAP[command];
-    if (!actionType) return;
+    const type = COMMAND_ACTION_MAP[command];
+    if (!type) return undefined;
 
     const selector = (params.selector as string) || (params.css as string);
     // type 命令的参数名是 text；contenteditable 场景 CDP 键盘输入不触发 input
@@ -690,6 +704,36 @@ export function createRPCHandler(): RPCHandler & {
       const dist = (params.distance as number) ?? 300;
       value = `${dir}:${dist}`;
     }
+    return { type, selector, value };
+  }
+
+  /**
+   * Reserve the recorder's dedup entry BEFORE `command` executes, so the
+   * real-event signal flushed while the command is in flight already sees a
+   * 'command' entry. Returns an undo for commands that end up recording
+   * nothing (failed / thrown).
+   */
+  function reserveCommandAction(sessionName: string, command: string, params: Record<string, unknown>, preElement?: Record<string, unknown>): () => void {
+    const recorder = activeRecorders.get(sessionName);
+    const action = describeCommandAction(command, params);
+    // Selector-less actions (goto, scroll) never share a dedup key with a signal.
+    if (!recorder || !action?.selector) return () => {};
+    return recorder.reserveCommandAction({
+      type: action.type,
+      // Same converged selector as injectCommandToRecorder (rec-duel d04/d06).
+      selector: (preElement?.selector as string | undefined) || action.selector,
+      value: action.value,
+    });
+  }
+
+  /** Inject CDP command execution into active recorder as a synthetic action */
+  async function injectCommandToRecorder(sessionName: string, command: string, params: Record<string, unknown>, urlBeforeCommand?: string, preElement?: Record<string, unknown>): Promise<void> {
+    const recorder = activeRecorders.get(sessionName);
+    if (!recorder) return;
+
+    const action = describeCommandAction(command, params);
+    if (!action) return;
+    const { type: actionType, selector, value } = action;
 
     // Capture currentUrl: for goto use params.url (target), for others use page URL before command
     let currentUrl = (params.url as string | undefined) || urlBeforeCommand;
