@@ -11,8 +11,16 @@ import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 
-const BRIDGE_PORT = 9346;
-const BRIDGE_HTTP = 'http://127.0.0.1:9347';
+// 与驱动层（src/browser/bridge-session.ts）共用同一个隔离开关：XBROWSER_BRIDGE_HTTP 指向
+// 自定义通道（测试 / 多实例）时，插件命令也必须跟着走。此前插件把它忽略、端口写死，
+// 隔离环境里一旦跑 `xbrowser chrome-bridge …` 就直接打到现网 bridge（2026-11-24 隔离
+// 验收误触发现网扩展 reload）。WS 端口 = HTTP 端口 - 1，与 server.mjs 的约定一致。
+const BRIDGE_HTTP = process.env.XBROWSER_BRIDGE_HTTP || 'http://127.0.0.1:9347';
+const BRIDGE_PORT = Number(new URL(BRIDGE_HTTP).port) - 1;
+
+async function fetchBridgeStatus(): Promise<unknown> {
+  return fetch(`${BRIDGE_HTTP}/status`).then(r => r.json()).catch(() => null);
+}
 
 const serveResult = z.object({
   running: z.boolean(),
@@ -99,6 +107,8 @@ const acceptanceResult = z.object({
     passed: z.boolean().optional(),
     tabId: z.number().optional(),
     url: z.string().optional(),
+    error: z.string().optional(),
+    health: healthResult.optional(),
   }),
   cleanup: z.object({ closed: z.number(), ungrouped: z.number() }),
   computerUseRequired: z.boolean(),
@@ -137,7 +147,7 @@ export default function (xcli: XCLIAPI): void {
     parameters: z.object({ port: z.number().optional() }),
     examples: [{ cmd: 'xbrowser chrome-bridge serve', description: '启动控制通道服务' }],
     handler: async (params) => {
-      const port = params.port ?? 9346;
+      const port = params.port ?? BRIDGE_PORT;
       const httpStat = await fetch(`http://127.0.0.1:${port + 1}/status`).then(r => r.ok).catch(() => false);
       if (httpStat) return ok({ running: true, port }, ['bridge 已在运行']);
       // 独立常驻子进程（命令进程退出后服务存活）
@@ -152,7 +162,7 @@ export default function (xcli: XCLIAPI): void {
       await new Promise(r => setTimeout(r, 800));
       const ok2 = await fetch(`http://127.0.0.1:${port + 1}/status`).then(r => r.ok).catch(() => false);
       return ok2
-        ? { ok: true, data: { running: true, port, http: port + 1 }, tips: ['bridge 已启动（WS :9346 / HTTP :9347）'] }
+        ? { ok: true, data: { running: true, port, http: port + 1 }, tips: [`bridge 已启动（WS :${port} / HTTP :${port + 1}）`] }
         : { ok: false, error: 'server 启动失败', tips: ['查端口占用'] };
     },
   });
@@ -163,7 +173,7 @@ export default function (xcli: XCLIAPI): void {
     result: statusResult,
     parameters: z.object({}),
     handler: async () => {
-      const r = await fetch('http://127.0.0.1:9347/status').then(r => r.json()).catch(() => null);
+      const r = await fetchBridgeStatus();
       if (!r) return fail('bridge 未启动：先跑 xbrowser chrome-bridge serve');
       return ok(r);
     },
@@ -182,7 +192,7 @@ export default function (xcli: XCLIAPI): void {
       { cmd: 'xbrowser chrome-bridge revive --extId gbcnimkcelaacnapfjdejomoclgepnph', description: '手动指定扩展 ID' },
     ],
     handler: async (params) => {
-      const st = await fetch('http://127.0.0.1:9347/status').then(r => r.json()).catch(() => null) as { clients?: unknown[] } | null;
+      const st = await fetchBridgeStatus() as { clients?: unknown[] } | null;
       if (!st) return fail('bridge 未启动：先跑 xbrowser chrome-bridge serve');
       if (st.clients && st.clients.length > 0) {
         return ok({ revived: true, alreadyConnected: true, clients: st.clients.length }, ['扩展已连接，无需唤醒']);
@@ -220,7 +230,7 @@ export default function (xcli: XCLIAPI): void {
       const deadline = Date.now() + (params.timeout ?? 20) * 1000;
       while (Date.now() < deadline) {
         await new Promise(r => setTimeout(r, 1500));
-        const s = await fetch('http://127.0.0.1:9347/status').then(r => r.json()).catch(() => null) as { clients?: unknown[] } | null;
+        const s = await fetchBridgeStatus() as { clients?: unknown[] } | null;
         if (s?.clients && s.clients.length > 0) {
           return ok({ revived: true, clients: s.clients.length, extId }, [`扩展 SW 已唤醒重连（${s.clients.length} 个连接）`]);
         }
@@ -235,9 +245,7 @@ export default function (xcli: XCLIAPI): void {
     clients?: Array<{ connectedAt?: number | string; lastSeen?: number | string }>;
     ext?: { extId?: string; v?: string; at?: number } | null;
   } | null> {
-    return fetch('http://127.0.0.1:9347/status')
-      .then((r) => r.json())
-      .catch(() => null);
+    return (await fetchBridgeStatus()) as Awaited<ReturnType<typeof getBridgeStatus>>;
   }
 
   async function execBridgeCommand(cmd: string, args: Record<string, unknown> = {}): Promise<{
@@ -408,7 +416,10 @@ export default function (xcli: XCLIAPI): void {
         version?: string;
         error?: string;
         diagnostics?: { window: unknown; tabs: unknown };
-        trustedClick?: { skipped: boolean; passed?: boolean; tabId?: number; url?: string };
+        trustedClick?: {
+          skipped: boolean; passed?: boolean; tabId?: number; url?: string;
+          error?: string; health?: Record<string, unknown>;
+        };
       }) => {
         if (probeTaskName) {
           const closed = await execBridgeCommand('task-close', { name: probeTaskName });
@@ -485,8 +496,9 @@ export default function (xcli: XCLIAPI): void {
           reconnected = true;
           extensionId = status.ext?.extId ?? extensionId;
           version = status.ext?.v ?? version;
-          if (expectedVersion && version !== expectedVersion) break;
-          if (!expectedVersion) break;
+          // 重连即出循环；版本是否匹配由下面的检查给出结论。以前只有「不匹配」或
+          // 「没给期望版本」才 break，版本匹配时反而空等到超时（默认白等 20 秒）。
+          break;
         }
       }
       if (!reconnected) {
@@ -561,6 +573,8 @@ export default function (xcli: XCLIAPI): void {
       const tabId = (opened.data as { tabId: number }).tabId;
 
       let clicked = false;
+      let probeError: string | undefined;
+      let health: Record<string, unknown> | undefined;
       try {
         // task-open uses about:blank first, then navigates. Wait for the probe DOM.
         const probeDeadline = Date.now() + 5000;
@@ -584,17 +598,36 @@ export default function (xcli: XCLIAPI): void {
         const y = Math.round((probeRect.y ?? 0) + (probeRect.h ?? 0) / 2);
         const activate = await execBridgeCommand('cdp', { method: 'Page.bringToFront', params: {}, tabId });
         if (!activate.ok) throw new Error(activate.error ?? 'Page.bringToFront failed');
-        await new Promise((r) => setTimeout(r, 300));
+        // bringToFront 只切活动页；浏览器窗口被完全遮挡或在别的桌面上时页面仍不可见
+        // （页面 outerWidth=0），点击必被 Chrome 丢弃。等页面露出来（最多 2s），一直
+        // 不露出来就不点，直接把原因报出来。
+        const visibleDeadline = Date.now() + 2000;
+        for (;;) {
+          const probe = await execBridgeCommand('input-health', { tabId });
+          health = probe.ok ? (probe.data as Record<string, unknown>) : undefined;
+          if (health?.ok === true) break;
+          if (Date.now() >= visibleDeadline) {
+            throw new Error(
+              `探针页面不可见，点击不会送达（${String(health?.reason ?? probe.error ?? 'unknown')}）：`
+              + '把浏览器窗口露出来（或从最小化 / 被遮挡状态恢复）后重跑',
+            );
+          }
+          await new Promise((r) => setTimeout(r, 200));
+        }
         const clickResult = await execBridgeCommand('trustedClick', { x, y, tabId });
-        const click = clickResult.data as { ok?: boolean; clicked?: string } | undefined;
+        const click = clickResult.data as { ok?: boolean; clicked?: string; error?: string } | undefined;
         if (clickResult.ok !== true || click?.ok !== true) {
-          throw new Error(clickResult.error ?? click?.clicked ?? 'trustedClick failed');
+          throw new Error(clickResult.error ?? click?.error ?? click?.clicked ?? 'trustedClick failed');
         }
         await new Promise((r) => setTimeout(r, 100));
         const read = await execBridgeCommand('evaluate', { expression: 'document.body.dataset.probeResult', tabId });
         const value = (read.data as { value?: string } | undefined)?.value ?? '';
         clicked = value === 'trusted-click-passed';
-      } catch { /* final clicked=false is sufficient */ }
+        if (!clicked) throw new Error(`点击已派发但探针未记录到 trusted click（probeResult=${value || '(空)'}）`);
+      } catch (error) {
+        // 保留真实原因：以前一律吞成一句笼统的话，窗口被遮挡这种环境问题无从判断
+        probeError = error instanceof Error ? error.message : String(error);
+      }
 
       return finish({
         ok: clicked,
@@ -604,8 +637,8 @@ export default function (xcli: XCLIAPI): void {
         extensionId,
         version,
         diagnostics,
-        trustedClick: { skipped: false, passed: clicked, tabId, url: probeUrl },
-        error: clicked ? undefined : '真实鼠标探针未产生 trusted click 结果',
+        trustedClick: { skipped: false, passed: clicked, tabId, url: probeUrl, error: probeError, health },
+        error: clicked ? undefined : (probeError ?? '真实鼠标探针未产生 trusted click 结果'),
       });
     },
   });
