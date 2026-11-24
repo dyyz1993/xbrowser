@@ -54,20 +54,28 @@ jobs:
       - name: Mint ticket and renotify Drel
         env:
           GATE_URL: https://approve.xbrowser.dev
-          GATE_SECRET: ${{ secrets.DREL_RELEASE_GATE_SECRET }}
           DREL_URL: ${{ secrets.DREL_PUSH_URL }}
-          REPO: ${{ github.repository }}
           RUN_ID: ${{ inputs.notify_run_id }}
           REQUEST_ID: xbrowser-${{ inputs.notify_run_id }}-renotify-${{ github.run_id }}
         run: |
           set -euo pipefail
-          RESPONSE=$(curl -fsS -X POST "$GATE_URL/ticket" \
-            -H "Authorization: Bearer $GATE_SECRET" \
+          # 与 publish-npm 同一协议：GitHub OIDC 换票据（gate 的 CI 票据只接受 OIDC；共享密钥已停用）
+          OIDC_TOKEN=$(curl -fsS \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${GATE_URL}" | jq -er '.value')
+          RESPONSE=$(curl -sS -X POST "$GATE_URL/v1/ci/tickets" \
+            -H "Authorization: Bearer $OIDC_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "$(jq -nc --arg repo "$REPO" --arg environment production \
-              --argjson runId "$RUN_ID" --arg requestId "$REQUEST_ID" \
-              '{repo:$repo,environment:$environment,runId:$runId,requestId:$requestId}')")
+            -w '\n%{http_code}' \
+            -d "$(jq -nc --arg environment production --arg requestId "$REQUEST_ID" \
+              '{environment:$environment,requestId:$requestId}')")
+          REHTTP_CODE=$(tail -n1 <<<"$RESPONSE"); RESPONSE=$(sed '$d' <<<"$RESPONSE")
+          if [ "$REHTTP_CODE" != "200" ]; then
+            echo "::error::gate 拒绝签发票据 HTTP $REHTTP_CODE：$RESPONSE"
+            exit 1
+          fi
           TICKET=$(jq -er '.ticket' <<<"$RESPONSE")
+          SUBMIT_URL=$(jq -er '.submitUrl' <<<"$RESPONSE")
           DREL_ORIGIN=$(printf '%s' "$DREL_URL" | sed -E 's#^(https://[^/]+).*#\1#')
           DREL_DEVICE_KEY=$(printf '%s' "$DREL_URL" | sed -E 's#^https://[^/]+/([^/?#]+).*#\1#')
           curl -fsS -m 15 -X POST "$DREL_ORIGIN/push" \
@@ -79,7 +87,7 @@ jobs:
               --arg icon "https://raw.githubusercontent.com/dyyz1993/xbrowser/master/branding/mark-192.png" \
               --arg url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/$RUN_ID" \
               --arg requestId "$REQUEST_ID" \
-              --arg submitURL "$GATE_URL/api/review" \
+              --arg submitURL "$SUBMIT_URL" \
               --arg ticket "$TICKET" \
               '{schema:"webbridgekit.message.v1",type:"approval",deviceKey:$deviceKey,
                 id:$requestId,requestId:$requestId,revision:1,state:"pending",
@@ -227,11 +235,20 @@ jobs:
           OIDC_TOKEN=$(curl -fsS \
             -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
             "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${GATE_URL}" | jq -er '.value')
-          RESPONSE=$(curl -fsS -X POST "$GATE_URL/v1/ci/tickets" \
+          # -f 会吞掉 gate 的 JSON 错误体（403 的 reason 全在里面），改用 -sS + 状态码判断
+          HTTP_BODY=$(curl -sS -X POST "$GATE_URL/v1/ci/tickets" \
             -H "Authorization: Bearer $OIDC_TOKEN" \
             -H "Content-Type: application/json" \
+            -w '\n%{http_code}' \
             -d "$(jq -nc --arg environment production --arg requestId "$REQUEST_ID" \
               '{environment:$environment,requestId:$requestId}')")
+          HTTP_CODE=$(tail -n1 <<<"$HTTP_BODY")
+          RESPONSE=$(sed '$d' <<<"$HTTP_BODY")
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::gate 拒绝签发票据 HTTP $HTTP_CODE：$RESPONSE"
+            echo "  常见 reason：workflow_ref_not_allowed（项目的 allowedWorkflowRefs 不含当前 ref，需 gate 管理员更新）/ sha_mismatch / run_attempt_mismatch / project_suspended"
+            exit 1
+          fi
           echo "ticket=$(jq -er '.ticket' <<<"$RESPONSE")" >> "$GITHUB_OUTPUT"
           echo "submit_url=$(jq -er '.submitUrl' <<<"$RESPONSE")" >> "$GITHUB_OUTPUT"
 
