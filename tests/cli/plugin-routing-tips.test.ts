@@ -237,6 +237,9 @@ describe('plugin-routing tips rendering (#439)', () => {
       duration: 5,
     });
 
+    // 信封在本文件里是 mock；这里换成真实现，断言的是真正写出的内容
+    const actual = await vi.importActual<typeof import('../../src/cli/output.js')>('../../src/cli/output.js');
+    mockOutputEnvelope.mockImplementationOnce(actual.outputEnvelope);
     const handled = await handlePluginOrChainRoute(buildRequest({ mode: 'json' }));
 
     expect(handled).toBe(true);
@@ -245,6 +248,68 @@ describe('plugin-routing tips rendering (#439)', () => {
     expect(output).toContain('tip-from-tip-object');
     expect(output).toContain('tip-from-plain-string');
     expect(output).not.toContain('[object Object]');
+  });
+
+  // 以前转发成功的结果在 --json / --yaml 下直接打印 data，失败时却打印信封
+  it('wraps a daemon-forwarded success in the same envelope as a local run (json)', async () => {
+    setupLoaderWithSites([createMockSite()]);
+    mockForwardPluginExec.mockResolvedValue({ success: true, data: { echo: 'done' }, tips: [], duration: 5 });
+
+    const handled = await handlePluginOrChainRoute(buildRequest({ mode: 'json' }));
+
+    expect(handled).toBe(true);
+    expect(mockOutputEnvelope).toHaveBeenCalledWith(
+      { success: true, data: { echo: 'done' }, message: undefined, tips: [], duration: 5 },
+      { command: 'mysite mycmd' },
+      'json',
+    );
+    expect(joinedConsoleOutput(logSpy)).not.toContain('echo');
+  });
+
+  it('reports the round-trip time when the daemon result carries no duration', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    try {
+      setupLoaderWithSites([createMockSite()]);
+      mockForwardPluginExec.mockImplementation(async () => {
+        vi.setSystemTime(1_000_007);
+        return { success: true, data: { echo: 'done' }, tips: [] } as never;
+      });
+
+      await handlePluginOrChainRoute(buildRequest({ mode: 'json' }));
+
+      expect(mockOutputEnvelope).toHaveBeenCalledWith(
+        expect.objectContaining({ success: true, duration: 7 }),
+        { command: 'mysite mycmd' },
+        'json',
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('wraps a daemon-forwarded success in the envelope for yaml too', async () => {
+    setupLoaderWithSites([createMockSite()]);
+    mockForwardPluginExec.mockResolvedValue({ success: true, data: { echo: 'done' }, tips: [], duration: 5 });
+
+    await handlePluginOrChainRoute(buildRequest({ mode: 'yaml' }));
+
+    expect(mockOutputEnvelope).toHaveBeenCalledWith(
+      expect.objectContaining({ success: true, data: { echo: 'done' } }),
+      { command: 'mysite mycmd' },
+      'yaml',
+    );
+    expect(joinedConsoleOutput(logSpy)).not.toContain('echo');
+  });
+
+  it('keeps text output as the bare data for a daemon-forwarded success', async () => {
+    setupLoaderWithSites([createMockSite()]);
+    mockForwardPluginExec.mockResolvedValue({ success: true, data: { echo: 'done' }, tips: [], duration: 5 });
+
+    await handlePluginOrChainRoute(buildRequest({ mode: 'text' }));
+
+    expect(mockOutputEnvelope).not.toHaveBeenCalled();
+    expect(joinedConsoleOutput(logSpy)).toContain('done');
   });
 
   it('renders Tip objects as .message for daemon-forwarded results in text mode', async () => {

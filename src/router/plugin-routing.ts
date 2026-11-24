@@ -289,6 +289,8 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
           if (needsBrowser && !process.env.XBROWSER_DAEMON_WORKER) {
             const { forwardPluginExec } = await import('../client/daemon-client.js');
             const userTimeout = typeof params.timeout === 'number' && params.timeout > 0 ? params.timeout * 1000 + 30000 : undefined;
+            // daemon 原样返回插件的结果，不带耗时；用这次转发的往返时间兜底
+            const forwardStart = Date.now();
             const result = await forwardPluginExec(`${command}.${subCommand}`, params, sessionName, cdpEndpoint, userTimeout);
             const resultData = result && typeof result === 'object' && 'data' in result ? (result.data as Record<string, unknown> | undefined) : undefined;
             if (result && result.success === false && resultData?.code === 'LOGIN_REQUIRED') {
@@ -297,22 +299,26 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
               return true;
             }
             if (result && result.success !== false) {
-              if (isCommandResult(result)) {
-                if (mode === 'json' || mode === 'yaml') {
-                  console.log(outputFormatter.format(result.data, { mode: mode as 'json' | 'yaml', color: false, emoji: false }));
-                  if (result.tips?.length) {
-                    for (const tip of result.tips) {
-                      const text = typeof tip === 'string' ? tip : (tip as { message?: string }).message;
-                      if (text) console.error(`\u{1F4A1} ${text}`);
-                    }
-                  }
-                } else {
-                  console.log(outputFormatter.format(result.data, { mode: 'text', color: true, emoji: true }));
-                  if (result.tips?.length) {
-                    for (const tip of result.tips) {
-                      const text = typeof tip === 'string' ? tip : (tip as { message?: string }).message;
-                      if (text) console.log(`  \u{1F4A1} ${text}`);
-                    }
+              // 与本地执行路径同一个信封：以前这里在 --json / --yaml 下直接打印 data，
+              // 失败时却打印信封，同一个命令成功和失败的输出形状不一样。
+              if (mode === 'json' || mode === 'yaml') {
+                outputEnvelope(
+                  {
+                    success: true,
+                    data: result.data,
+                    message: result.message,
+                    tips: result.tips,
+                    duration: result.duration || Date.now() - forwardStart,
+                  },
+                  { command: `${command} ${subCommand}` },
+                  mode,
+                );
+              } else {
+                console.log(outputFormatter.format(result.data, { mode: 'text', color: true, emoji: true }));
+                if (result.tips?.length) {
+                  for (const tip of result.tips) {
+                    const text = typeof tip === 'string' ? tip : (tip as { message?: string }).message;
+                    if (text) console.log(`  \u{1F4A1} ${text}`);
                   }
                 }
               }
