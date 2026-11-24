@@ -5,6 +5,7 @@ import { XBrowserPluginLoader } from '../plugin/loader.js';
 import { PluginInstaller } from '../plugin/installer.js';
 import { NPMSearcher } from '../plugin/npm-search.js';
 import { startDaemonProcess, stopDaemonProcess, getDaemonProcessStatus } from '../daemon/daemon.js';
+import { currentDaemonPort } from '../daemon/registry.js';
 import { outputEnvelope, outputError } from './output.js';
 import { NPM_REGISTRY_URL, resolveNpmPackageWithFallback } from '../config.js';
 import { getMarketplaceUrl } from '../config.js';
@@ -660,7 +661,7 @@ export function handleDaemon(
   const sub = args[0];
   switch (sub) {
     case 'start': {
-      const port = options.port ? Number(options.port) : 9224;
+      const port = options.port ? Number(options.port) : currentDaemonPort();
       startDaemonProcess(port)
         .then((config) =>
           outputEnvelope({ success: true, data: { pid: config.pid, port: config.port } }, { command: 'daemon start' }, mode)

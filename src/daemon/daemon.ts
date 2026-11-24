@@ -1,10 +1,10 @@
 import { spawn } from 'child_process';
 import { join, dirname } from 'path';
-import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 import { writeFileSync, unlinkSync, mkdirSync } from 'fs';
 import { stopDaemon as xcliStopDaemon, isDaemonRunning, getDaemonStatus, killAllDaemon } from '@dyyz1993/xcli-core';
 import type { DaemonConfig } from '@dyyz1993/xcli-core';
+import { currentDaemonPort, daemonConfigDir } from './registry.js';
 
 export interface DaemonInfo {
   pid: number;
@@ -13,20 +13,19 @@ export interface DaemonInfo {
   cdpEndpoint?: string;
 }
 
-const CONFIG_DIR = join(homedir(), '.xbrowser');
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WORKER_PATH = join(__dirname, 'daemon-main.js');
 
 /**
  * DaemonConfig compatible with xcli-core 0.9.0 API.
  * Used by isDaemonRunning(), getDaemonStatus(), stopDaemon(), killAllDaemon().
+ * Points at the registry of the daemon on `port`, so these only ever see that daemon.
  */
-export function getDaemonConfig(): DaemonConfig {
+export function getDaemonConfig(port: number = currentDaemonPort()): DaemonConfig {
   return {
-    configDir: CONFIG_DIR,
+    configDir: daemonConfigDir(port),
     workerEntryPath: WORKER_PATH,
-    basePort: 9224,
+    basePort: port,
   };
 }
 
@@ -40,22 +39,24 @@ export function getDaemonConfig(): DaemonConfig {
  * --import tsx, which requires tsx to be installed. xbrowser's
  * daemon-main.js is compiled JS and loads without tsx.
  */
-export async function startDaemonProcess(port: number = 9224): Promise<DaemonInfo> {
+export async function startDaemonProcess(port: number = currentDaemonPort()): Promise<DaemonInfo> {
   // Quick check using xcli-core 0.9.0 isDaemonRunning()
-  const config = getDaemonConfig();
+  const config = getDaemonConfig(port);
   if (isDaemonRunning(config)) {
     const status = getDaemonStatus(config);
     if (status.port === port && status.pid) {
       return { pid: status.pid, port: status.port, startedAt: new Date().toISOString() };
     }
-    // Port mismatch — stop existing and restart
+    // The registry of this port holds a record of another port: replace it.
+    // A daemon on another port has its own registry and is not touched.
     await xcliStopDaemon(config);
   }
 
   // ── File lock to prevent concurrent daemon startup races (#30) ──
-  const lockFile = join(CONFIG_DIR, 'daemon.lock');
+  const registryDir = config.configDir;
+  const lockFile = join(registryDir, 'daemon.lock');
   try {
-    mkdirSync(CONFIG_DIR, { recursive: true });
+    mkdirSync(registryDir, { recursive: true });
     // O_EXCL ensures only one process can create the file
     writeFileSync(lockFile, String(process.pid), { flag: 'wx' });
   } catch {
@@ -125,29 +126,30 @@ export async function startDaemonProcess(port: number = 9224): Promise<DaemonInf
 
 /**
  * Stop the daemon process using xcli-core's stopDaemon().
+ * Only the daemon on `port` (XBROWSER_DAEMON_PORT by default) is stopped.
  */
-export async function stopDaemonProcess(): Promise<void> {
-  await xcliStopDaemon(getDaemonConfig());
+export async function stopDaemonProcess(port: number = currentDaemonPort()): Promise<void> {
+  await xcliStopDaemon(getDaemonConfig(port));
 }
 
 /**
  * Kill ALL daemon processes using xcli-core 0.9.0 killAllDaemon().
  * Useful for clean shutdown or troubleshooting.
  */
-export async function killAllDaemonProcesses(): Promise<void> {
-  await killAllDaemon(getDaemonConfig());
+export async function killAllDaemonProcesses(port: number = currentDaemonPort()): Promise<void> {
+  await killAllDaemon(getDaemonConfig(port));
 }
 
 /**
  * Get daemon process status using xcli-core's isDaemonRunning() + getDaemonStatus().
  */
-export function getDaemonProcessStatus(): {
+export function getDaemonProcessStatus(port: number = currentDaemonPort()): {
   running: boolean;
   pid: number;
   port: number;
   info: DaemonInfo | null;
 } {
-  const config = getDaemonConfig();
+  const config = getDaemonConfig(port);
   const running = isDaemonRunning(config);
   if (!running) {
     return { running: false, pid: 0, port: 0, info: null };
