@@ -329,4 +329,43 @@ describe('createRPCHandler exec → recorder', () => {
       expect((await recordedActions()).map(a => a.type)).toEqual(['click']);
     });
   });
+
+  describe('a right click command', () => {
+    const menuSignal = { type: 'contextmenu', element: describeElement('button', '#submit', 'Submit'), x: 10, y: 20 };
+    const rightClick = (selector = '#submit') => ({ command: 'click', params: { selector, button: 'right' }, session: SESSION });
+
+    it('records one contextmenu, not a button-less click, when the page signal was missed', async () => {
+      harness.describe('#submit', menuSignal.element);
+
+      expect(await handler('exec', rightClick())).toMatchObject({ success: true });
+
+      expect(await recordedActions()).toEqual([
+        expect.objectContaining({ type: 'contextmenu', element: expect.objectContaining({ selector: '#submit' }) }),
+      ]);
+    });
+
+    it('records it once when the page signal lands while the command is in flight', async () => {
+      harness.describe('#submit', menuSignal.element);
+      const exec = execInFlight('click', { selector: '#submit', button: 'right' });
+      await exec.dispatched();
+
+      harness.pushSignal(menuSignal);
+      await poll();
+      exec.finish(SUCCESS);
+      await exec.promise;
+      await capture();
+
+      expect((await recordedActions()).map(a => a.type)).toEqual(['contextmenu']);
+    });
+
+    it('records it once when the page signal was recorded first', async () => {
+      harness.describe('#submit', menuSignal.element);
+      harness.pushSignal(menuSignal);
+      await poll();
+
+      expect(await handler('exec', rightClick())).toMatchObject({ success: true });
+
+      expect((await recordedActions()).map(a => a.type)).toEqual(['contextmenu']);
+    });
+  });
 });

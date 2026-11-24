@@ -679,11 +679,9 @@ export class XBPageImpl implements XBPage {
   }
 
   async dblclick(selector: string, opts: XBClickOptions = {}): Promise<void> {
-    // 双击必须两段式（detail 1 → detail 2）浏览器才会合成 dblclick 事件；
-    // 单对 clickCount:2 派发只产生 click(detail=2)，页面 ondblclick 不触发
-    const locator = this.locator(selector);
-    await locator.click({ ...opts, clickCount: 1 });
-    await locator.click({ ...opts, clickCount: 2 });
+    // 一次落点轨迹、两段按压（clickCount 1 → 2）：浏览器据此合成 click、click、dblclick。
+    // 以前拆成两次 locator.click，而 clickCount:2 自己又多按一段——一次双击实际按了四下。
+    await this.locator(selector).click({ ...opts, clickCount: 2 });
   }
 
   async fill(selector: string, value: string, opts: XBFillOptions = {}): Promise<void> {

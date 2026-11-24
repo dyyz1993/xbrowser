@@ -72,6 +72,8 @@ export interface StealthConfig {
   pressDuration: [number, number];
   /** Release coordinate drift [min, max] px */
   releaseDrift: [number, number];
+  /** Gap between the two presses of a double click [min, max] ms (under the system threshold) */
+  doubleClickGap: [number, number];
   /** Landing offset for small elements [min, max] px */
   landingOffsetSmall: [number, number];
   /** Landing offset for large elements [min, max] px */
@@ -122,6 +124,7 @@ export const DEFAULT_STEALTH_CONFIG: StealthConfig = {
   aimPause: [80, 280],
   pressDuration: [60, 140],
   releaseDrift: [0.8, 2.5],
+  doubleClickGap: [70, 160],
   landingOffsetSmall: [0.3, 2.5],
   landingOffsetLarge: [1.5, 7],
   smallElementThreshold: 30,

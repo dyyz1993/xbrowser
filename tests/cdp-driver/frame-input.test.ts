@@ -61,8 +61,10 @@ describe('OOPIF frame input (buttons bitmask)', () => {
     expect(dragMoves.length).toBe(3);
     for (const m of dragMoves) expect(m.params.buttons).toBe(1);
 
+    // 松开那一帧不再声明按键按着：Chrome 靠按键状态的变化生成 pointerup，
+    // 带着位松开会让滑块收不到 pointerup（拖拽期间的 move 才必须带位）
     const release = sends.find((s) => s.params.type === 'mouseReleased');
-    expect(release?.params.buttons).toBe(1);
+    expect(release?.params.buttons).toBe(0);
   });
 
   it('up 之后 move 恢复 buttons:0（位掩码正确清位）', async () => {
