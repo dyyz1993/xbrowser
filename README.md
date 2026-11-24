@@ -701,12 +701,26 @@ xbrowser replay recordings/my-session.yaml --slow-mo 100
 
 ### 转换为脚本
 
-录制文件可转换为独立的 Python + Playwright 脚本：
+录制文件可转换为三种独立运行的脚本，回放的步骤相同：
 
 ```bash
+# Python + Playwright
 xbrowser convert recordings/my-session.yaml replay.py
-python3 replay.py # 需要 pip install playwright && playwright install chromium
+python3 replay.py   # 需要 pip install playwright && playwright install chromium
+
+# Node.js + Playwright
+xbrowser convert recordings/my-session.yaml replay.js
+node replay.js      # 需要 npm install playwright && npx playwright install chromium
+
+# Bash：通过 xbrowser CLI 在同一个会话里回放，任何一步失败都会停止并关闭会话
+xbrowser convert recordings/my-session.yaml replay.sh
+bash replay.sh
 ```
+
+JS / Python 脚本设置 `XBROWSER_CHROMIUM_PATH` 可以直接复用已安装的 Chrome / Chromium，不必再下载 Playwright 自带的浏览器。
+
+转换时会把录制归一化成真正的操作步骤：同一个动作在录制里留下的多条记录（命令与页面信号各记一次、`fill` 的聚焦点击、由点击引起的跳转、滚动信号的命令回显）都只算一步。
+
 ### 提取摘要
 
 ```bash

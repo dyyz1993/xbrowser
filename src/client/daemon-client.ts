@@ -10,6 +10,87 @@ const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`;
 
 let _ensurePromise: Promise<void> | null = null;
 
+export interface DaemonHealth {
+  status?: string;
+  version?: string;
+  buildId?: string;
+  /** Sessions the daemon is holding; absent on daemons that predate the field. */
+  activeSessions?: number;
+}
+
+export interface DaemonCheck {
+  /** `use`: the daemon matches this CLI. `restart`: replace it. `refuse`: leave it alone. */
+  action: 'use' | 'restart' | 'refuse';
+  reason: string;
+}
+
+/**
+ * Decide what to do with a running daemon, given its /health payload.
+ *
+ * A restart closes every session the daemon holds. After a version change that
+ * is unavoidable, but when only the build id differs (a CLI run from another
+ * checkout, or a rebuilt dist) and the daemon is holding sessions, the CLI
+ * refuses and names the way out instead of silently closing them.
+ *
+ * @param health - Parsed /health body of the running daemon.
+ * @param cli - Version and build id of this CLI.
+ * @param skipBuildCheck - `XBROWSER_DAEMON_SKIP_BUILD_CHECK=1`.
+ * @param sessionsKnown - Session count learned another way (the `session:list`
+ *   RPC), for daemons whose /health predates `activeSessions`.
+ * @returns The decision and a human-readable reason.
+ */
+export function checkDaemonHealth(
+  health: DaemonHealth,
+  cli: { version: string; buildId: string },
+  skipBuildCheck: boolean,
+  sessionsKnown?: number | null,
+): DaemonCheck {
+  // Version mismatch — force restart
+  if (health.version && health.version !== cli.version) {
+    return { action: 'restart', reason: `version daemon=${health.version} cli=${cli.version}` };
+  }
+  // Build mismatch — 同版本但 dist 已重建（旧 daemon 跑旧代码的调试黑洞）。
+  // 'dev'（src 直跑/测试）不参与比较。
+  if (skipBuildCheck || !health.buildId || health.buildId === 'dev' || cli.buildId === 'dev' || health.buildId === cli.buildId) {
+    return { action: 'use', reason: '' };
+  }
+  const reason = `build daemon=${health.buildId} cli=${cli.buildId}`;
+  const sessions = typeof health.activeSessions === 'number' ? health.activeSessions : sessionsKnown;
+  if (typeof sessions === 'number' && sessions > 0) {
+    return {
+      action: 'refuse',
+      reason:
+        `Refusing to restart the daemon: this CLI comes from a different build (${reason}), ` +
+        `but the daemon is holding ${sessions} active session(s) that a restart would close. ` +
+        'Run this build on its own daemon with XBROWSER_DAEMON_PORT=<port>, ' +
+        'or set XBROWSER_DAEMON_SKIP_BUILD_CHECK=1 to use the running daemon as is.',
+    };
+  }
+  return { action: 'restart', reason };
+}
+
+/**
+ * Ask the daemon how many sessions it is holding, for daemons whose /health
+ * predates the `activeSessions` field.
+ *
+ * @returns The session count, or `null` when the daemon cannot be asked.
+ */
+async function countDaemonSessions(): Promise<number | null> {
+  try {
+    const res = await fetch(`${DAEMON_BASE}/rpc`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method: 'session:list', params: {} }),
+      signal: AbortSignal.timeout(2000),
+    });
+    if (!res.ok) return null;
+    const data: unknown = await res.json();
+    return Array.isArray(data) ? data.length : null;
+  } catch {
+    return null;
+  }
+}
+
 async function ensureDaemonRunning(): Promise<void> {
   if (_ensurePromise) {
     try { await _ensurePromise; } catch { /* will retry */ }
@@ -21,31 +102,34 @@ async function ensureDaemonRunning(): Promise<void> {
   const skipBuildCheck = process.env.XBROWSER_DAEMON_SKIP_BUILD_CHECK === '1';
 
   for (let attempt = 0; attempt < 3; attempt++) {
-    const healthOk = await fetch(`${DAEMON_BASE}/health`, { signal: AbortSignal.timeout(2000) })
+    const probe = await fetch(`${DAEMON_BASE}/health`, { signal: AbortSignal.timeout(2000) })
       .then(r => r.ok ? r.json() : null)
-      .then((d: { status?: string; version?: string; buildId?: string } | null) => {
-        if (d?.status === 'ok') {
-          // Version mismatch — force restart
-          if (d.version && d.version !== cliVersion) {
-            return { needsRestart: true, reason: `version daemon=${d.version} cli=${cliVersion}` };
-          }
-          // Build mismatch — 同版本但 dist 已重建（旧 daemon 跑旧代码的调试黑洞）。
-          // 'dev'（src 直跑/测试）不参与比较。
-          if (!skipBuildCheck && d.buildId && d.buildId !== 'dev' && cliBuildId !== 'dev' && d.buildId !== cliBuildId) {
-            return { needsRestart: true, reason: `build daemon=${d.buildId} cli=${cliBuildId}` };
-          }
-          return { needsRestart: false };
-        }
-        return null;
+      .then((d: DaemonHealth | null) => {
+        if (d?.status !== 'ok') return null;
+        const cli = { version: cliVersion, buildId: cliBuildId };
+        return { health: d, check: checkDaemonHealth(d, cli, skipBuildCheck) };
       })
       .catch(() => null);
-    if (healthOk?.needsRestart === false) return; // Same version, daemon is fine
-    if (healthOk?.needsRestart === true) {
-      console.error(`⚠️ Daemon ${healthOk.reason} mismatch. Restarting...`);
+    if (!probe) {
+      if (attempt < 2) await new Promise(r => setTimeout(r, 500));
+      continue;
+    }
+    let { check } = probe;
+    // An older daemon does not say how busy it is in /health: ask it before
+    // deciding that a build mismatch is safe to restart.
+    if (check.action === 'restart' && check.reason.startsWith('build') && typeof probe.health.activeSessions !== 'number') {
+      const sessions = await countDaemonSessions();
+      if (sessions !== null) {
+        check = checkDaemonHealth(probe.health, { version: cliVersion, buildId: cliBuildId }, skipBuildCheck, sessions);
+      }
+    }
+    if (check.action === 'use') return; // Same version, daemon is fine
+    if (check.action === 'refuse') throw new Error(check.reason);
+    if (check.action === 'restart') {
+      console.error(`⚠️ Daemon ${check.reason} mismatch. Restarting...`);
       await stopDaemonProcess().catch(() => {});
       break; // Fall through to start logic below
     }
-    if (attempt < 2) await new Promise(r => setTimeout(r, 500));
   }
 
   console.error('🔄 Starting daemon...');
