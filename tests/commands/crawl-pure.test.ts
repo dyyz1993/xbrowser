@@ -5,6 +5,7 @@ import {
   isBlockedByRobots,
   isPageError,
   isUrlAllowed,
+  createPageBudget,
   type DisallowRule,
 } from '../../src/commands/crawl.js';
 
@@ -132,6 +133,37 @@ describe('crawl pure functions', () => {
 
     it('should block invalid URLs', () => {
       expect(isUrlAllowed('not-a-url', startUrl, 1, baseOptions, [])).toBe(false);
+    });
+  });
+
+  describe('createPageBudget', () => {
+    it('should never admit more pages than the limit when workers start concurrently', async () => {
+      // The seed page already counts against the limit.
+      const budget = createPageBudget(3, 1);
+      let admitted = 0;
+      await Promise.all(
+        Array.from({ length: 5 }, async () => {
+          // Each worker asks for its next page while the others are still in flight.
+          while (budget.tryAcquire()) {
+            admitted++;
+            await new Promise((r) => setTimeout(r, 1));
+          }
+        }),
+      );
+      expect(admitted).toBe(2);
+    });
+
+    it('should count a page as soon as a worker starts it, not when it finishes', () => {
+      const budget = createPageBudget(2, 0);
+      expect(budget.tryAcquire()).toBe(true);
+      expect(budget.isExhausted()).toBe(false);
+      expect(budget.tryAcquire()).toBe(true);
+      expect(budget.isExhausted()).toBe(true);
+      expect(budget.tryAcquire()).toBe(false);
+    });
+
+    it('should admit nothing when the limit is already reached', () => {
+      expect(createPageBudget(1, 1).tryAcquire()).toBe(false);
     });
   });
 });
