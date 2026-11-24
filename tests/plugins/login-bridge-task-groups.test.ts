@@ -50,6 +50,7 @@ type ChromeLike = {
     onRemoved: { addListener: ReturnType<typeof vi.fn>; removeListener: ReturnType<typeof vi.fn> };
     onUpdated: { addListener: ReturnType<typeof vi.fn>; removeListener: ReturnType<typeof vi.fn> };
     onReplaced: { addListener: ReturnType<typeof vi.fn> };
+    get: (tabId: number) => Promise<Tab>;
     create: (options: { url: string; active: boolean }) => Promise<Tab>;
     update: (tabId: number, changeInfo: { url?: string }) => Promise<unknown>;
     group: (options: { tabIds: number | number[] }) => Promise<number>;
@@ -134,6 +135,11 @@ function createChrome() {
       onRemoved: { addListener: vi.fn(), removeListener: vi.fn() },
       onUpdated: { addListener: vi.fn(), removeListener: vi.fn() },
       onReplaced: { addListener: vi.fn() },
+      get: async (tabId) => {
+        const tab = tabs.find((item) => item.id === tabId);
+        if (!tab) throw new Error(`No tab with id: ${tabId}`);
+        return tab;
+      },
       update: vi.fn(async () => ({})),
       create: async (options) => {
         createdCount += 1;

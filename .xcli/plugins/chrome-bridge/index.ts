@@ -62,6 +62,19 @@ const openResult = z.object({
 
 const taskResult = z.json();
 
+const healthResult = z.object({
+  ok: z.boolean(),
+  tabId: z.number().nullable().optional(),
+  tabActive: z.boolean().nullable().optional(),
+  discarded: z.boolean().nullable().optional(),
+  windowId: z.number().nullable().optional(),
+  windowType: z.string().nullable().optional(),
+  windowState: z.string().nullable().optional(),
+  windowWidth: z.number().nullable().optional(),
+  windowHeight: z.number().nullable().optional(),
+  reason: z.string().optional(),
+});
+
 const acceptanceParams = z.object({
   extensionId: z.string().optional().describe('目标扩展 ID（缺省使用 bridge 记住的 ID）'),
   expectedVersion: z.string().optional().describe('期望扩展版本（缺省读取仓库 manifest）'),
@@ -594,6 +607,32 @@ export default function (xcli: XCLIAPI): void {
         trustedClick: { skipped: false, passed: clicked, tabId, url: probeUrl },
         error: clicked ? undefined : '真实鼠标探针未产生 trusted click 结果',
       });
+    },
+  });
+
+  site.command('input-health', {
+    description: '诊断目标 tab 能否收到点击/按键：后台 tab（不是所在窗口的活动页，页面 outerWidth=0）上 Chrome 静默丢弃鼠标点击与按键事件（「点了没反应」根因），mousemove/insertText/页面脚本不受影响。不健康时先激活 tab（exec --cmd tab-activate）或用 win-open 开独立小窗',
+    result: healthResult,
+    scope: 'project',
+    loginRequired: 'none',
+    parameters: z.object({
+      tabId: z.number().optional().describe('目标 tab（缺省走任务组 tab）'),
+      task: z.string().optional().describe('任务名（缺省 tabId 时的任务组路由）'),
+      session: z.string().optional().describe('--session 同义词：映射到任务名'),
+    }),
+    examples: [
+      { cmd: 'xbrowser chrome-bridge input-health', description: '探测任务 tab 能否收到点击/按键' },
+      { cmd: 'xbrowser chrome-bridge input-health --tab-id 885225922', description: '探测指定 tab' },
+    ],
+    handler: async (params) => {
+      const taskName = params.task ?? params.session;
+      const r = await postBridge({ cmd: 'input-health', args: {
+        ...(params.tabId != null ? { tabId: params.tabId } : {}),
+        ...(taskName != null ? { task: taskName } : {}),
+      } });
+      if (!r) return fail('bridge 未启动或无扩展连接');
+      if (r.ok !== true) return fail(r.error || 'extension error');
+      return ok(r.data);
     },
   });
 
