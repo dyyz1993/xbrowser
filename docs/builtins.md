@@ -370,7 +370,7 @@ Configuration is stored at: `~/.xbrowser/config.json`
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `XBROWSER_CHROMIUM_PATH` | Chromium executable path | Auto-detected |
-| `XBROWSER_DAEMON_PORT` | Daemon port | 9222 |
+| `XBROWSER_DAEMON_PORT` | Daemon port | 9224 |
 | `XBROWSER_LOG_LEVEL` | Log level | info |
 | `XBROWSER_SESSION` | Default session name (overridden by `--session` flag) | — |
 | `XBROWSER_CDP` | Default CDP endpoint (overridden by `--cdp` flag) | — |

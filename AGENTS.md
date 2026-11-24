@@ -1566,6 +1566,8 @@ git branch -D feat/x
 
 **在 worktree 里运行 `dist/cli.js` 必须带独立的 daemon 端口**：`XBROWSER_DAEMON_PORT=<未占用的端口> node dist/cli.js …`。缺省端口 9224 上跑的是主检出的 daemon，构建指纹不同的 CLI 连上去会触发「Daemon build mismatch」：daemon 上有会话时报错拒绝执行，没有会话时则被重启成这个 CLI 的构建——两边交替使用就会互相重启。用 `lsof -nP -iTCP:<端口> -sTCP:LISTEN` 取 PID，按 PID 结束自己起的 daemon，不要按进程名清理。
 
+**端口也是 daemon 登记的单位**：`daemon.json` 只记一个 daemon，所以每个端口各记一份——缺省端口仍在 `~/.xbrowser/daemon.json`，其他端口在 `~/.xbrowser/daemons/<端口>/daemon.json`。查状态、启动、停止、构建不一致重启都只看当前端口（`XBROWSER_DAEMON_PORT`，缺省 9224）这一份，不会碰到别的端口上的 daemon。
+
 ---
 
 ## 18. 速查表（最高频 8 条命令）

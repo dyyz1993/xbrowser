@@ -17,6 +17,7 @@ import { startHttpServer } from '@dyyz1993/xcli-core';
 
 import { createRPCHandler } from './rpc-handlers.js';
 import { buildHealthPayload } from './health.js';
+import { DEFAULT_DAEMON_PORT, daemonConfigDir } from './registry.js';
 import { version, buildId } from '../version.js';
 import { WSServer } from '../websocket-server.js';
 import { previewHTML, alignHTML } from './preview-templates.js';
@@ -39,7 +40,8 @@ function log(msg: string): void {
 
 async function main() {
   process.env.XBROWSER_DAEMON_WORKER = '1';
-  const daemonPort = parseInt(process.env.XBROWSER_DAEMON_PORT || '9224', 10);
+  const daemonPort = parseInt(process.env.XBROWSER_DAEMON_PORT || String(DEFAULT_DAEMON_PORT), 10);
+  const registryDir = daemonConfigDir(daemonPort);
   const startedAt = new Date().toISOString();
 
   log(`Daemon main starting (pid=${process.pid} version=${version} build=${buildId})`);
@@ -65,8 +67,8 @@ async function main() {
   server.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EADDRINUSE') {
       log(`Port ${daemonPort} already in use — another daemon instance likely won the startup race. Exiting gracefully.`);
-      // Clean up daemon.json so the parent process can detect the existing daemon
-      try { unlinkSync(join(CONFIG_DIR, 'daemon.json')); } catch { /* ignore */ }
+      // Clean up this port's daemon.json so the parent process can detect the existing daemon
+      try { unlinkSync(join(registryDir, 'daemon.json')); } catch { /* ignore */ }
       process.exit(0);
     }
     log(`Server error: ${err.message}`);
@@ -140,8 +142,9 @@ async function main() {
   });
 
   // ── Write daemon.json for startDaemon() health polling ──
- mkdirSync(CONFIG_DIR, { recursive: true });
- writeFileSync(join(CONFIG_DIR, 'daemon.json'), JSON.stringify({
+  // In this port's own registry directory (see daemonConfigDir).
+  mkdirSync(registryDir, { recursive: true });
+  writeFileSync(join(registryDir, 'daemon.json'), JSON.stringify({
    port: daemonPort,
    pid: process.pid,
    startedAt: Date.now(),
