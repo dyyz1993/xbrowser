@@ -149,8 +149,10 @@ describe('插图位置（封面在引言后、其余在二级标题后）', () =
   });
 
   it('must fail when pasted length exceeds 1.5x of markdown (double-paste guard)', async () => {
+    const calls: string[] = [];
     const bridgeStub = {
       call: async (cmd: string, args: Record<string, unknown>) => {
+        calls.push(cmd);
         if (cmd === 'evaluate') {
           const expr = String(args.expression || '');
           if (expr.includes('ClipboardEvent')) {
@@ -177,5 +179,6 @@ describe('插图位置（封面在引言后、其余在二级标题后）', () =
     ) as { success: boolean; message?: string };
     expect(res.success).toBe(false);
     expect(String(res.message)).toContain('重复粘贴');
+    expect(calls).toContain('task-close');
   });
 });

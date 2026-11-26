@@ -398,7 +398,14 @@ export default function (xcli: XCLIAPI): void {
     await page.waitForTimeout(300);
     const hasMode = await page.evaluate(() => {
       const text = document.body?.textContent || '';
-      return /Seedance|视频生成|自动\s*·\s*10s/.test(text);
+      // 底部快捷菜单也含「视频生成」，不能拿它证明输入框已切到视频模式；
+      // 只认输入框 placeholder 或「Seedance 2.0 Fast + 自动 · 10s」组合。
+      const placeholders = Array.from(
+        document.querySelectorAll('textarea, input, [contenteditable="true"]'),
+      ).map((el) => `${el.getAttribute('placeholder') || ''} ${el.getAttribute('data-placeholder') || ''}`)
+        .join('\n');
+      return /描述你想要的视频/.test(placeholders)
+        || (/Seedance\s*2\.0\s*Fast/i.test(text) && /自动\s*·\s*10s/.test(text));
     });
     if (hasMode) return;
     const clicked = await safeClickByText(page, '视频生成');
@@ -406,7 +413,12 @@ export default function (xcli: XCLIAPI): void {
     await page.waitForTimeout(1000);
     const confirmed = await page.evaluate(() => {
       const text = document.body?.textContent || '';
-      return /Seedance|自动\s*·\s*10s/.test(text);
+      const placeholders = Array.from(
+        document.querySelectorAll('textarea, input, [contenteditable="true"]'),
+      ).map((el) => `${el.getAttribute('placeholder') || ''} ${el.getAttribute('data-placeholder') || ''}`)
+        .join('\n');
+      return /描述你想要的视频/.test(placeholders)
+        || (/Seedance\s*2\.0\s*Fast/i.test(text) && /自动\s*·\s*10s/.test(text));
     });
     if (!confirmed) throw new Error('视频生成模式验证失败');
   }
