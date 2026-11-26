@@ -554,6 +554,25 @@ describe('gemini plugin', () => {
         .toBe(10_000);
     });
 
+    it('closes the task group when switching to music mode fails', async () => {
+      const taskClose = vi.fn((_command?: string) => Promise.resolve({ ok: true }));
+      setMusicRuntime({
+        bridgeExec: vi.fn((command: string) => command === 'task-open'
+          ? Promise.resolve({ ok: true, data: { tabId: 42 } })
+          : taskClose(command)) as never,
+        cdp: vi.fn(() => Promise.resolve(undefined)) as never,
+        ev: vi.fn(() => Promise.resolve(null)) as never,
+        sleep: vi.fn(() => Promise.resolve()),
+      });
+
+      const result = await musicCommandHandler({
+        prompt: 'sea', timeout: 1, wait: true, taskId: 'music-fail',
+      }) as unknown as Record<string, unknown>;
+
+      expect(result.success).toBe(false);
+      expect(taskClose).toHaveBeenCalledWith('task-close');
+    });
+
     it('keeps concurrent task state isolated by task id', async () => {
       const calls: Array<{ command: string; payload?: unknown }> = [];
       setMusicRuntime({

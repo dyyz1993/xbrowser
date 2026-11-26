@@ -209,6 +209,7 @@ async function genCover(prompt) {
     }
   }
   console.log('   TIMEOUT（跳过封面）');
+  if (doubaoTabId) await closeTask('article-cover');
   return false;
 }
 

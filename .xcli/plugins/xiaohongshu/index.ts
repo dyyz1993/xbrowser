@@ -188,19 +188,23 @@ type WaitForHumanFn = (opts?: { reason?: string; timeout?: number }) => Promise<
 async function scrollAndCollect(
   page: Page, maxPages: number, getItemCount: () => number,
   opts: { delay?: number; staleThreshold?: number; waitForHuman?: WaitForHumanFn } = {},
-) {
+): Promise<{ blocked: boolean }> {
   const { delay = 2500, staleThreshold = 3, waitForHuman } = opts;
   let lastCount = getItemCount(), staleCount = 0;
+  let waitedForHuman = false;
   for (let i = 0; i < maxPages; i++) {
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(delay + Math.random() * 1000);
     const cur = getItemCount();
     if (cur === 0 && lastCount === 0 && i >= 1 && waitForHuman) {
+      waitedForHuman = true;
       await waitForHuman({ reason: '小红书可能需要验证，请在浏览器中完成滑块验证', timeout: 120 });
     }
     if (cur === lastCount) staleCount++; else { staleCount = 0; lastCount = cur; }
     if (staleCount >= staleThreshold) break;
   }
+  // 等过人工协助后仍然是 0 条：大概率被登录/验证码拦住，不能返回假成功
+  return { blocked: waitedForHuman && getItemCount() === 0 };
 }
 
 async function waitForInterceptor<T>(getter: () => T | null, maxMs = 10000): Promise<T | null> {
@@ -344,8 +348,11 @@ export default function (xcli: XCLIAPI): void {
             if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
           }
 
-          await scrollAndCollect(page, params.maxPages || 5, () => interceptor.items().length, { waitForHuman });
+          const collect = await scrollAndCollect(page, params.maxPages || 5, () => interceptor.items().length, { waitForHuman });
           const notes = interceptor.items().map(parseNote);
+          if (collect.blocked) {
+            return fail('未采集到笔记，可能被登录/验证码拦截；请先在浏览器中完成验证后重试', tips);
+          }
           tips.push(`采集到 ${notes.length} 条笔记`);
           return ok({ total: notes.length, notes }, tips);
         } finally { interceptor.dispose(); }
@@ -453,8 +460,11 @@ export default function (xcli: XCLIAPI): void {
             if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
           }
 
-          await scrollAndCollect(page, params.maxPages || 3, () => interceptor.items().length, { waitForHuman });
+          const collect = await scrollAndCollect(page, params.maxPages || 3, () => interceptor.items().length, { waitForHuman });
           const notes = interceptor.items().map(parseNoteBrief);
+          if (collect.blocked) {
+            return fail('未搜索到笔记，可能被登录/验证码拦截；请先在浏览器中完成验证后重试', tips);
+          }
           tips.push(`搜索到 ${notes.length} 条笔记`);
           return ok({ keyword: params.keyword, total: notes.length, notes }, tips);
         } finally { interceptor.dispose(); }
@@ -494,12 +504,15 @@ export default function (xcli: XCLIAPI): void {
             if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
           }
 
-          await scrollAndCollect(page, params.maxPages || 8, () => interceptor.items().length, {
+          const collect = await scrollAndCollect(page, params.maxPages || 8, () => interceptor.items().length, {
             delay: 3000,
             staleThreshold: 4,
             waitForHuman,
           });
           const comments = interceptor.items().map(parseComment);
+          if (collect.blocked) {
+            return fail('未采集到评论，可能被登录/验证码拦截；请先在浏览器中完成验证后重试', tips);
+          }
           tips.push(`采集到 ${comments.length} 条评论`);
           return ok({ total: comments.length, comments }, tips);
         } finally { interceptor.dispose(); }
@@ -538,8 +551,11 @@ export default function (xcli: XCLIAPI): void {
             if (ssr.dataKeys?.length) tips.push(`SSR 数据 keys: ${ssr.dataKeys.join(', ')}`);
           }
 
-          await scrollAndCollect(page, params.maxPages || 3, () => interceptor.items().length, { waitForHuman });
+          const collect = await scrollAndCollect(page, params.maxPages || 3, () => interceptor.items().length, { waitForHuman });
           const notes = interceptor.items().map(parseNoteBrief);
+          if (collect.blocked) {
+            return fail('未获取到推荐笔记，可能被登录/验证码拦截；请先在浏览器中完成验证后重试', tips);
+          }
           tips.push(`获取到 ${notes.length} 条推荐笔记`);
           return ok({ total: notes.length, notes }, tips);
         } finally { interceptor.dispose(); }

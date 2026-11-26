@@ -233,7 +233,13 @@ export function registerDraftCommand(deps: DraftDeps): void {
       // MD 编辑器 tab
       const opened = (await deps.bridge.call('task-open', { name: 'pub-csdn-md', url: MD_EDITOR_URL })) as { tabId?: number };
       const tabId = opened?.tabId;
-      if (!tabId) return fail('MD 编辑器 tab 打开失败');
+      const closeEditor = async () => {
+        await deps.bridge.call('task-close', { name: 'pub-csdn-md' }).catch(() => undefined);
+      };
+      if (!tabId) {
+        await closeEditor();
+        return fail('MD 编辑器 tab 打开失败');
+      }
       await new Promise((res) => setTimeout(res, 6000));
       // 正文 PRE paste——原子三步防双份（ERR-20261024-001）：
       // ① Selection 全选 + execCommand delete 清空现有内容（tab 复用时残留旧稿）
@@ -255,8 +261,12 @@ export function registerDraftCommand(deps: DraftDeps): void {
         tabId,
       })) as { value?: number };
       const chars = Number(paste?.value ?? 0);
-      if (chars < 1000) return fail(`正文写入异常（${chars} 字符）`);
+      if (chars < 1000) {
+        await closeEditor();
+        return fail(`正文写入异常（${chars} 字符）`);
+      }
       if (chars > expectedChars * 1.5) {
+        await closeEditor();
         return fail(`正文疑似重复粘贴（${chars} 字符 > 预期 ${expectedChars} 的 1.5 倍）——已中止，请重试`);
       }
       // 标题

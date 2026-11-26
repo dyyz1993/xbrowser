@@ -401,6 +401,9 @@ export async function musicCommandHandler(
     }
     return await waitAndDownload(tabId, { ...params, taskId }, tips);
   } catch (caught) {
+    // openMusicMode / sendPrompt 阶段失败时 waitAndDownload 的 finally 还没接手；
+    // 不在这里收组就会留下 xb-task-<taskId>（Harvey 审计的泄漏项）。
+    await runtime.bridgeExec('task-close', { name: taskId }).catch(() => undefined);
     return fail(caught instanceof Error ? caught.message : '音乐生成失败', tips);
   }
 }

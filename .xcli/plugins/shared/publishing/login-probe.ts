@@ -41,9 +41,19 @@ export const LOGIN_URL_PATTERNS = {
 export type LoginSite = keyof typeof LOGIN_URL_PATTERNS;
 
 /**
+ * 有些站点登出后 URL 仍停在公开首页（不是登录页），只靠 URL 会把登出误判成已登录。
+ * 这里声明「登出时一定会出现的 DOM 标记」；命中就直接判未登录。
+ */
+const LOGGED_OUT_SELECTORS: Partial<Record<LoginSite, string>> = {
+  // 实测（2026-11-26，登出状态）：my.oschina.net 首页顶栏渲染
+  // <a href="https://www.oschina.net/home/login?...">登录</a>
+  oschina: 'a[href*="/home/login"]',
+};
+
+/**
  * 在 bridge 通道里探测登录态。
  *
- * 做法：开一个站点首页 tab，看最终 URL 是否落在登录页特征里。
+ * 做法：开一个站点首页 tab，先看登出 DOM 标记，再看最终 URL 是否落在登录页特征里。
  */
 export async function probeLoginViaBridge(
   site: LoginSite,
@@ -86,6 +96,23 @@ export async function probeLoginViaBridge(
     if (!href || href === 'about:blank') {
       // 导航还没完成——不能判成未登录（假阴性会误伤正常用户）
       return { loggedIn: true, via: 'bridge' };
+    }
+
+    const loggedOutSelector = LOGGED_OUT_SELECTORS[site];
+    if (loggedOutSelector) {
+      // SPA 可能还没渲染完顶栏：轮询 2 秒；命中登录入口就确定是登出状态。
+      for (let i = 0; i < 4; i++) {
+        try {
+          const r = (await bridge.call('evaluate', {
+            expression: `!!document.querySelector(${JSON.stringify(loggedOutSelector)})`,
+            tabId,
+          })) as { value?: boolean };
+          if (r?.value === true) return { loggedIn: false, via: 'bridge' };
+        } catch {
+          // evaluate 失败就退回 URL 判定
+        }
+        await sleep(500);
+      }
     }
 
     const patterns = LOGIN_URL_PATTERNS[site];
