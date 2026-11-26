@@ -1,11 +1,12 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
 
-import { randomPause } from '../shared/humanize.js';
 import { registerCnblogsPublishing } from './publishing.js';
 import { checkLoggedIn } from '../shared/publishing/login-probe.js';
+import { loginWithHandoff } from '../shared/login-handoff.js';
+import { resolvePage } from '../shared/resolve-page.js';
 
 /**
  * 博客园插件。
@@ -17,16 +18,6 @@ import { checkLoggedIn } from '../shared/publishing/login-probe.js';
  *
  * 本文件保留：站点注册、登录检测。
  */
-
-function resolvePage(ctx: CommandContext): { page: Page; tips: string[] } {
-  const page = ctx.page;
-  if (!page) throw new Error('需要浏览器页面');
-  const tips: string[] = [];
-  if (!ctx.cdpEndpoint) {
-    tips.push('建议使用 --cdp 9221 连接 Chrome 浏览器以获取登录态');
-  }
-  return { page, tips };
-}
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -61,17 +52,23 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (_params, ctx) => {
       const { page } = resolvePage(ctx);
-      await page.goto('https://account.cnblogs.com/signin', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000,
+
+      const { url, alreadyLoggedIn } = await loginWithHandoff({
+        page,
+        ctx,
+        checkUrl: 'https://i.cnblogs.com/posts',
+        loginUrl: 'https://account.cnblogs.com/signin',
+        reason: '完成博客园登录（用户名密码/扫码）后，重新执行 xbrowser cnblogs login',
+        timeout: 300,
+        settleMs: 2000,
+        check: async (p) => !(await p.url()).includes('signin'),
       });
-      await randomPause(1200, 2400);
-      await ctx.waitForHuman?.({ reason: '完成博客园登录（用户名密码/扫码）', timeout: 300 });
-      await page
-        .goto('https://i.cnblogs.com/posts', { waitUntil: 'domcontentloaded', timeout: 15000 })
-        .catch(() => {});
-      const loggedIn = !(await page.url()).includes('signin');
-      return ok({ loggedIn, url: page.url() }, [loggedIn ? '博客园登录成功' : '仍未登录，请检查']);
+
+      await ctx.storage.set('cnblogs_login', { loggedIn: true, at: Date.now() });
+
+      return ok({ loggedIn: true, url }, [
+        alreadyLoggedIn ? '博客园已是登录状态' : '博客园登录成功',
+      ]);
     },
   });
 

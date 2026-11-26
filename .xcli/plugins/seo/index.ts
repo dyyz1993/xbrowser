@@ -4,6 +4,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
 import { backlinkPlatforms, categories, type BacklinkPlatform } from './backlinks-data.js';
 import { fetchVerificationCode, setupEmailConfig } from './email-helper.js';
+import { loginWithHandoff } from '../shared/login-handoff.js';
 
 function proxyFetch(url: string, init?: RequestInit): Promise<Response> {
   const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || '';
@@ -595,35 +596,31 @@ export default function (xcli: XCLIAPI): void {
           ]);
       }
 
+      const storageKey = `seo_login_${match.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
       try {
-        await page.goto(match.entryUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await page.waitForTimeout(2000);
-
-        await ctx.waitForHuman?.({ reason: `完成 ${match.name} 登录`, timeout: 300000 });
-
-        await page.goto(match.url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await page.waitForTimeout(2000);
-
-        const storageKey = `seo_login_${match.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-        // waitForHuman 在插件路径上不会真的等待（LRN-20261126-001）：必须按页面标记判定，
-        // 否则用户还没登录也会被写成 loggedIn:true，后续命令拿着假登录态直接提交。
-        const stillNeedsLogin = await needsLogin(page);
-        if (stillNeedsLogin) {
-          await ctx.storage.delete(storageKey).catch(() => {});
-          return fail(`${match.name} 登录未完成`, [
-            `页面仍显示登录入口：${page.url()}`,
-            '请在浏览器中完成登录后重新执行 seo login；此命令不会等待人工操作',
-          ]);
-        }
+        // fail-closed 语义下必须「先检查、再交还」：已登录直接成功；未登录才打开登录入口并交还
+        // 控制权（ctx.waitForHuman 抛 NEEDS_HUMAN，命令到此结束）。用户登录后重跑本命令即可收敛。
+        const { alreadyLoggedIn } = await loginWithHandoff({
+          page,
+          ctx,
+          checkUrl: match.url,
+          loginUrl: match.entryUrl,
+          reason: `完成 ${match.name} 登录后，重新执行 xbrowser seo login --platform ${match.name.toLowerCase()}`,
+          timeout: 300,
+          settleMs: 2000,
+          check: async (p) => !(await needsLogin(p)),
+        });
 
         await ctx.storage.set(storageKey, { loggedIn: true, at: Date.now() });
 
         return ok({ platform: match.name, loggedIn: true }, [
-            `✅ ${match.name} 登录完成`,
-            `登录状态已保存，后续 submit-backlink 将自动检测`,
-            `有效期 14 天，过期后建议重新登录`,
-          ]);
+          alreadyLoggedIn ? `${match.name} 已是登录状态` : `${match.name} 登录完成`,
+          `登录状态已保存，后续 submit-backlink 将自动检测`,
+          `有效期 14 天，过期后建议重新登录`,
+        ]);
       } catch (e) {
+        // 人工交还（NEEDS_HUMAN）不是「登录失败」：原样抛出，运行时会转成结构化结果
+        if (e && typeof e === 'object' && (e as { code?: unknown }).code === 'NEEDS_HUMAN') throw e;
         return fail(`${match.name} 登录失败`, [`登录流程失败: ${(e as Error).message}`]);
       }
     },

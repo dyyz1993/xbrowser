@@ -1,6 +1,7 @@
 import { firstTip } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/medium/index.ts';
+import { HumanWaitRequiredError } from '../../src/plugin/human-wait.js';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -91,54 +92,7 @@ describe('medium plugin', () => {
   });
 
   describe('login command', () => {
-    it('should throw when no page in context', async () => {
-      const handler = getHandler('login');
-      await expect(handler({}, { storage: { set: vi.fn() } })).rejects.toThrow('需要浏览器页面上下文');
-    });
-
-    it('should navigate to medium signin page', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      expect(page.goto).toHaveBeenCalledWith(
-        'https://medium.com/m/signin',
-        expect.objectContaining({ waitUntil: 'domcontentloaded' })
-      );
-    });
-
-    it('should call waitForHuman', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalledWith(
-        expect.objectContaining({ reason: expect.stringContaining('Medium') })
-      );
-    });
-
-    it('should save login state to storage', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      expect(ctx.storage.set).toHaveBeenCalledWith(
-        'medium_login',
-        expect.objectContaining({ loggedIn: false })
-      );
-    });
-
-    it('should return not-logged-in tip when avatar not visible', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      const result = await handler({}, ctx);
-      expect(result.data.loggedIn).toBe(false);
-      expect(firstTip(result.tips)).toContain('登录可能未完成');
-    });
-
-    it('should return success tip when logged in', async () => {
-      const handler = getHandler('login');
+    function loggedInPage() {
       const page = createMockPage();
       page.locator = vi.fn(() => ({
         first: vi.fn(() => ({
@@ -147,19 +101,57 @@ describe('medium plugin', () => {
           fill: vi.fn(() => Promise.resolve()),
         })),
       }));
-      const ctx = createMockCtx(page);
-      const result = await handler({}, ctx);
-      expect(result.data.loggedIn).toBe(true);
-      expect(firstTip(result.tips)).toContain('Medium 登录成功');
+      return page;
+    }
+
+    it('should throw when no page in context', async () => {
+      const handler = getHandler('login');
+      await expect(handler({}, { storage: { set: vi.fn() } })).rejects.toThrow('需要浏览器页面上下文');
     });
 
-    it('should navigate to medium home after login attempt', async () => {
+    it('resolves without handoff when already logged in', async () => {
+      const handler = getHandler('login');
+      const page = loggedInPage();
+      const ctx = createMockCtx(page);
+      const result = await handler({}, ctx);
+      expect(result.data).toEqual({ loggedIn: true, url: 'https://medium.com/' });
+      expect(firstTip(result.tips)).toContain('已是登录状态');
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
+      expect(page.goto).toHaveBeenCalledTimes(1);
+      expect(page.goto).toHaveBeenCalledWith(
+        'https://medium.com/',
+        expect.objectContaining({ waitUntil: 'domcontentloaded' })
+      );
+      expect(ctx.storage.set).toHaveBeenCalledWith(
+        'medium_login',
+        expect.objectContaining({ loggedIn: true })
+      );
+    });
+
+    it('opens the login page and fails closed when logged out', async () => {
       const handler = getHandler('login');
       const page = createMockPage();
       const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      const gotoCalls = page.goto.mock.calls.map((c: unknown[]) => c[0]);
-      expect(gotoCalls).toContain('https://medium.com/');
+      ctx.waitForHuman = vi.fn(() =>
+        Promise.reject(new HumanWaitRequiredError('需要人工协助', '完成 Medium 登录'))
+      );
+      await expect(handler({}, ctx)).rejects.toBeInstanceOf(HumanWaitRequiredError);
+      expect(page.goto.mock.calls.map((call: unknown[]) => call[0])).toEqual([
+        'https://medium.com/',
+        'https://medium.com/m/signin',
+      ]);
+      expect(ctx.waitForHuman).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: expect.stringContaining('Medium') })
+      );
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+    });
+
+    it('refuses to store state when a returned handoff still has no session', async () => {
+      const handler = getHandler('login');
+      const page = createMockPage();
+      const ctx = createMockCtx(page);
+      await expect(handler({}, ctx)).rejects.toThrow('仍未检测到登录态');
+      expect(ctx.storage.set).not.toHaveBeenCalled();
     });
   });
 

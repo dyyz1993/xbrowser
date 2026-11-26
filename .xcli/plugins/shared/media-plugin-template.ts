@@ -7,6 +7,8 @@ import {
   mediaTaskResultSchema,
   type MediaTaskResult,
 } from './media-contract.js';
+import type { CommandContext } from '@dyyz1993/xcli-core';
+import { requirePage as pageContextRequirePage } from './page-context.js';
 
 /**
  * Canonical header/import block for a media generation adapter.
@@ -108,9 +110,8 @@ export function buildMediaDownload(input: {
 }
 
 export function requirePage(ctx: unknown): Page {
-  const page = (ctx as Record<string, unknown>).page as Page | undefined;
-  if (!page) throw new Error('需要浏览器页面');
-  return page;
+  // 与 shared/page-context 的 requirePage 同一份逻辑，只是保留本模块的报错文案
+  return pageContextRequirePage(ctx as CommandContext, '需要浏览器页面');
 }
 
 export function mediaCommandConfigExample() {

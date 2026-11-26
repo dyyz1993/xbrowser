@@ -270,8 +270,10 @@ async function loginWithEmail(
     if (!ctx.waitForHuman) {
       return { loggedIn: false, via: 'credentials', message: '未找到登录表单且 waitForHuman 不可用（疑似验证码拦截）' };
     }
-    const human = await ctx.waitForHuman({ reason: 'npm 登录表单未出现（可能有人机验证），请在 viewer 中完成登录', timeout: 300 });
-    if (human.solved && (await checkLoggedIn(page))) return { loggedIn: true, via: 'otp-human' };
+    // fail-closed：运行时在这里抛 NEEDS_HUMAN，命令结束；用户处理完验证码后重跑
+    await ctx.waitForHuman({ reason: 'npm 登录表单未出现（可能有人机验证），请在 viewer 中完成登录后重新执行本命令', timeout: 300 });
+    // 只有 waitForHuman 真的返回（将来接入真等待 / 单测 mock）才会到这里：按页面复核，不凭返回值判成功
+    if (await checkLoggedIn(page)) return { loggedIn: true, via: 'otp-human' };
     return { loggedIn: false, via: 'credentials', message: '人工未完成登录（表单缺失，疑似验证码拦截）' };
   }
 
@@ -295,12 +297,14 @@ async function loginWithEmail(
     if (!ctx.waitForHuman) {
       return { loggedIn: false, via: 'credentials', message: '需要邮箱 OTP 但未提供 --otp 且 waitForHuman 不可用' };
     }
-    const human = await ctx.waitForHuman({
-      reason: 'npm 已向账号邮箱发送一次性验证码（OTP），请在 viewer 中输入',
+    // fail-closed：运行时在这里抛 NEEDS_HUMAN，命令结束
+    await ctx.waitForHuman({
+      reason: 'npm 已向账号邮箱发送一次性验证码（OTP）：请在 viewer 中输入后重新执行本命令',
       timeout: 600,
     });
-    if (!human.solved) return { loggedIn: false, via: 'credentials', message: '等待 OTP 超时或人工未完成' };
-    return { loggedIn: true, via: 'otp-human' };
+    // 同上：只有真的等到了才复核登录态
+    if (await checkLoggedIn(page)) return { loggedIn: true, via: 'otp-human' };
+    return { loggedIn: false, via: 'credentials', message: '等待 OTP 后仍未检测到登录态' };
   }
 
   // 无 OTP 环节：等待跳转离开 /login 并出现登录态
@@ -504,7 +508,7 @@ export default function (xcli: XCLIAPI): void {
       expiryDays: z.enum(['7', '30', '60', '90', 'custom']).optional().describe('有效期：7 天 / 30 天（默认）/ 60 天 / 90 天 / custom（需配合 --customExpiryDays）'),
       customExpiryDays: z.number().int().positive().optional().describe('expiryDays=custom 时的自定义有效天数'),
       packagesScope: z.string().optional().describe('Packages 授权范围（@scope 名，不带 @ 会自动补；缺省为表单默认的只读全量包）'),
-      otp: z.string().optional().describe('邮箱 OTP 验证码（用户兜底直传；不传则 waitForHuman 在 viewer 等人输入）'),
+      otp: z.string().optional().describe('邮箱 OTP 验证码（用户兜底直传；不传则命令以 NEEDS_HUMAN 结束，请在 viewer 输入验证码后带 --otp 重跑）'),
     }),
     result: z.object({
       token: z.string().describe('令牌值（npm_ 前缀，仅展示一次，请立即妥善保存）'),
@@ -575,8 +579,9 @@ export default function (xcli: XCLIAPI): void {
         if (!token) await nap(page, 1500);
       }
       if (!token && ctx.waitForHuman) {
-        const human = await ctx.waitForHuman({ reason: '令牌值未能自动提取，请在 viewer 确认页面已显示新令牌', timeout: 120 });
-        if (human.solved) token = await readTokenValue(page).catch(() => null);
+        // fail-closed：运行时抛 NEEDS_HUMAN；令牌仅展示一次，重跑前先到 tokens 页确认是否已创建
+        await ctx.waitForHuman({ reason: '令牌值未能自动提取：请在 viewer 中确认页面是否已显示新令牌，确认后重新执行本命令', timeout: 120 });
+        token = await readTokenValue(page).catch(() => null);
       }
       if (!token) {
         return fail('未能提取令牌值（页面未展示或结构变化）——令牌可能已创建，请到 tokens 页撤销后重试', []);
@@ -701,9 +706,15 @@ export default function (xcli: XCLIAPI): void {
     const page = ctx.page;
     if (!page) return;
     await page.goto(LOGIN_PAGE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    // 先检查再交还（fail-closed）：已登录直接记状态，用户登录后重跑才能收敛
+    if (await checkLoggedIn(page).catch(() => false)) {
+      await ctx.storage.set('npm_login', { loggedIn: true, at: Date.now() });
+      return;
+    }
     await ctx.waitForHuman?.({ reason: '请在 viewer 中完成 npm 登录（含邮箱 OTP/2FA）', timeout: 600 });
     const loggedIn = await checkLoggedIn(page).catch(() => false);
-    await ctx.storage.set('npm_login', { loggedIn, at: Date.now() });
+    // 只有 waitForHuman 真的返回才会到这里；没登录就不写登录态
+    if (loggedIn) await ctx.storage.set('npm_login', { loggedIn: true, at: Date.now() });
   });
 
   site.logout(async (ctx) => {

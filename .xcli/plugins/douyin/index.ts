@@ -258,7 +258,7 @@ const CAPTCHA_DETECTORS = [
 async function checkCaptcha(
   page: Page,
   tips: string[],
-  waitForHuman?: (opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>,
+  waitForHuman?: (opts?: { reason?: string; timeout?: number }) => Promise<unknown>,
 ): Promise<boolean> {
   try {
     for (const detector of CAPTCHA_DETECTORS) {
@@ -273,18 +273,18 @@ async function checkCaptcha(
       tips.push(`🔗 Viewer 地址: ${viewerUrl}`);
 
       if (waitForHuman) {
-        tips.push('请在 Viewer 中完成验证...');
+        tips.push('本命令到此结束（NEEDS_HUMAN）：请在 Viewer 中完成验证后重新执行');
+        // fail-closed：运行时在这里抛 HumanWaitRequiredError，由 catch 原样抛出、命令结束
         await waitForHuman({
-          reason: `检测到${detector.name}，请在 Viewer 中完成验证`,
+          reason: `检测到${detector.name}，请在 Viewer 中完成验证后重新执行本命令`,
           timeout: 120,
         });
+        // 只有 waitForHuman 真的返回（将来接入真等待 / 单测 mock）才会到这里：按页面复核
         await new Promise<void>(r => setTimeout(r, 2000));
         const stillThere = await page.$(detector.selector);
-        if (stillThere && await stillThere.isVisible().catch(() => false)) {
-          return true;
-        }
-        tips.push('验证码已解决');
-        return false;
+        const remains = Boolean(stillThere && await stillThere.isVisible().catch(() => false));
+        if (!remains) tips.push('验证码已解决');
+        return remains;
       }
 
       return true;
@@ -543,7 +543,7 @@ export default function (xcli: XCLIAPI): void {
             timeout: 30000,
           });
           const _waitForHuman = ctx.waitForHuman as
-            | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
+            | ((opts?: { reason?: string; timeout?: number }) => Promise<unknown>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(sessionPage, tips, _waitForHuman);
           if (_hasCaptcha) {
@@ -705,7 +705,7 @@ export default function (xcli: XCLIAPI): void {
             timeout: 30000,
           });
           const _waitForHuman = ctx.waitForHuman as
-            | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
+            | ((opts?: { reason?: string; timeout?: number }) => Promise<unknown>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
           if (_hasCaptcha) {
@@ -809,7 +809,7 @@ export default function (xcli: XCLIAPI): void {
             timeout: 30000,
           });
           const _waitForHuman = ctx.waitForHuman as
-            | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
+            | ((opts?: { reason?: string; timeout?: number }) => Promise<unknown>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
           if (_hasCaptcha) {
@@ -879,7 +879,7 @@ export default function (xcli: XCLIAPI): void {
             timeout: 30000,
           });
           const _waitForHuman = ctx.waitForHuman as
-            | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
+            | ((opts?: { reason?: string; timeout?: number }) => Promise<unknown>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
           if (_hasCaptcha) {
@@ -1008,7 +1008,7 @@ export default function (xcli: XCLIAPI): void {
         try {
           await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
           const _waitForHuman = ctx.waitForHuman as
-            | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
+            | ((opts?: { reason?: string; timeout?: number }) => Promise<unknown>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
           if (_hasCaptcha) {
@@ -1216,7 +1216,7 @@ export default function (xcli: XCLIAPI): void {
             timeout: 30000,
           });
           const _waitForHuman = ctx.waitForHuman as
-            | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
+            | ((opts?: { reason?: string; timeout?: number }) => Promise<unknown>)
             | undefined;
           const _hasCaptcha = await checkCaptcha(page, tips, _waitForHuman);
           if (_hasCaptcha) {
@@ -1306,7 +1306,7 @@ export default function (xcli: XCLIAPI): void {
       if (!page) throw new Error('需要浏览器页面');
       const tips = buildCtxTips(ctx);
       const waitForHuman = ctx.waitForHuman as
-        | ((opts?: { reason?: string; timeout?: number }) => Promise<{ solved: boolean }>)
+        | ((opts?: { reason?: string; timeout?: number }) => Promise<unknown>)
         | undefined;
 
       const FLANE_SELECTORS = [

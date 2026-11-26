@@ -244,8 +244,10 @@ Notes:
   `xbrowser chrome-bridge task --action status --name work --status "…" [--state …]` for phases / hand-off.
 - Trusted input (clicks, raw key events) needs a visible page; `fill` works in background tabs.
   Check with `xbrowser chrome-bridge input-health`.
-- `ctx.waitForHuman` inside plugin commands does **not** wait today: it returns at once, prints a warning on stderr and
-  marks the tab group red (`需要协助`). Plan for it — tell the user what to do and re-run.
+- `ctx.waitForHuman` inside plugin commands does **not** wait — it fails closed (2026-11-27): it throws
+  `HumanWaitRequiredError` (`code: NEEDS_HUMAN`), the command ends at once with
+  `{ success: false, data: { code: "NEEDS_HUMAN", reason, taskName } }`, and the tab group turns red (`需要协助`).
+  Never wrap it in `try/catch` and continue. Tell the user what to do, wait for them, then re-run the command.
 
 ## Login State into a Headless Session
 

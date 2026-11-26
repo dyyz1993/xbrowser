@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok } from '@dyyz1993/xcli-core';
+import { loginWithHandoff } from '../shared/login-handoff.js';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -35,34 +36,25 @@ export default function (xcli: XCLIAPI): void {
       const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
-      await page.goto('https://hashnode.com/signin', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000,
-      });
-      await page.waitForTimeout(2000);
-
-      await ctx.waitForHuman?.({
-        reason: 'Complete Hashnode login (GitHub / Google / Email)',
+      const { url, alreadyLoggedIn } = await loginWithHandoff({
+        page,
+        ctx,
+        checkUrl: 'https://hashnode.com/',
+        loginUrl: 'https://hashnode.com/signin',
+        reason: '完成 Hashnode 登录（GitHub / Google / 邮箱）后，重新执行 xbrowser hashnode login',
         timeout: 300,
+        check: async (p) => p
+          .locator(
+            'a[href*="/dashboard"], [data-testid="user-avatar"], button[aria-label*="profile"], .user-avatar'
+          )
+          .first()
+          .isVisible()
+          .catch(() => false),
       });
 
-      await page.goto('https://hashnode.com/', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000,
-      });
-      await page.waitForTimeout(2000);
+      await ctx.storage.set('hashnode_login', { loggedIn: true, at: Date.now() });
 
-      const loggedIn = await page
-        .locator(
-          'a[href*="/dashboard"], [data-testid="user-avatar"], button[aria-label*="profile"], .user-avatar'
-        )
-        .first()
-        .isVisible()
-        .catch(() => false);
-
-      await ctx.storage.set('hashnode_login', { loggedIn, at: Date.now() });
-
-      return ok({ loggedIn, url: page.url() }, [loggedIn ? 'Hashnode 登录成功' : '登录可能未完成，请检查页面']);
+      return ok({ loggedIn: true, url }, [alreadyLoggedIn ? 'Hashnode 已是登录状态' : 'Hashnode 登录成功']);
     },
   });
 

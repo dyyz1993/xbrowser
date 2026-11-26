@@ -3,15 +3,14 @@ import { normalizeTips, tip, type Tip } from '@dyyz1993/xcli-core';
 /**
  * 插件执行路径上的 ctx.waitForHuman（daemon 的 handlePluginExec 与本地 plugin-routing 共用）。
  *
- * 这里不等待。真正的等待（HumanInteractionManager：viewer 接管、验证码自动识别）至今只接在
- * 命令失败恢复和 managed-run 手动交接上；插件执行路径自 2026-05 起就是立即返回的桩。
- * 把真正的等待接进来会让命令阻塞数分钟，属于交互语义变更，需单独决策；在那之前这里至少做到：
- *  - 不谎报超时：没等就没有 timedOut，结果里写明原因；
- *  - chrome-bridge 会话：把任务组标题标成「需要协助：原因」（红色、粘性），用户在浏览器里一眼看到；
- *  - 命令返回时由调用方 finishHumanWait 收尾：标题改成 完成 / 失败，「需要协助」才解除。
+ * 这里不等待，而是 fail-closed（2026-11-27 起，用户决策）：`requestHumanWait` 把 chrome-bridge
+ * 任务组标成「需要协助：原因」（红色、粘性）后抛 `HumanWaitRequiredError`，命令立即以
+ * `{ code: 'NEEDS_HUMAN', reason, … }` 结束——绝不带着未登录态 / 未过验证码继续往下执行。
+ *
+ * 真正的等待（HumanInteractionManager：viewer 接管、验证码自动识别）至今只接在命令失败恢复和
+ * managed-run 手动交接上；把它接进插件路径会让命令阻塞数分钟，属于交互语义变更，需单独决策。
+ * 接入之后 `requestHumanWait` 才可能返回，调用方再用 `finishHumanWait` 收尾。
  */
-export type HumanWaitResult = { solved: false; timedOut: false; method: 'not-awaited' | 'marked' };
-
 export interface HumanWaitTarget {
   /** chrome-bridge 会话（任务组在用户浏览器里）；缺省 = 托管会话，浏览器里没有可见的分组 */
   bridge?: { taskName: string; tabId: number };
@@ -108,7 +107,7 @@ export async function finishHumanWait(
   message?: string,
 ): Promise<void> {
   const status = ok
-    ? '已完成（未经人工确认）'
+    ? '已完成'
     : `失败：${String(message || '').trim().slice(0, 60) || '命令出错'}`;
   await postTaskStatus(target ?? {}, status, ok ? 'done' : 'failed');
 }

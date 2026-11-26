@@ -1,10 +1,11 @@
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { z } from 'zod/v4';
 import path from 'path';
 import fs from 'fs';
 import type { PluginPage, PluginElementHandle } from '../types.js';
 import { checkRefusal } from '../shared/refusal-detect.js';
+import { sessionTips } from '../shared/page-context.js';
 
 type Page = import('../types').Page;
 type Response = import('../types').Response;
@@ -13,16 +14,6 @@ const QWEN_URL = 'https://www.qianwen.com';
 
 const CDN_HOST = 'workspace-zb-cdn.qianwen.com';
 const WANX_HOST = 'wanx.alicdn.com';
-
-function buildTips(ctx: CommandContext): string[] {
-  const tips: string[] = [];
-  const ctxAny = ctx as unknown as Record<string, unknown>;
-  const options = ctxAny.options as Record<string, unknown> | undefined;
-  const cdp = ctxAny.cdpEndpoint || options?.cdp;
-  if (!cdp) tips.push('建议使用 --cdp 9221 连接到已登录的浏览器');
-  tips.push(`Session: ${ctxAny.sessionId || 'default'}`);
-  return tips;
-}
 
 async function safeClickText(page: Page, text: string): Promise<boolean> {
   const handle = await (page as unknown as PluginPage).evaluateHandle((t: string) => {
@@ -322,7 +313,7 @@ export default function (xcli: XCLIAPI): void {
       try {
         const page = ctx.page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildTips(ctx);
+        const tips = sessionTips(ctx);
         const waitSeconds = typeof params.wait === 'number' ? params.wait : 0;
 
         await ensurePage(page);
@@ -468,7 +459,7 @@ export default function (xcli: XCLIAPI): void {
       try {
         const page = ctx.page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildTips(ctx);
+        const tips = sessionTips(ctx);
 
         await ensurePage(page);
         await page.waitForTimeout(2000);
@@ -628,7 +619,7 @@ export default function (xcli: XCLIAPI): void {
       try {
         const page = ctx.page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildTips(ctx);
+        const tips = sessionTips(ctx);
 
         const currentUrl = page.url();
         let authParams: string;
@@ -699,7 +690,7 @@ export default function (xcli: XCLIAPI): void {
       try {
         const page = ctx.page;
         if (!page) throw new Error('需要浏览器页面');
-        const tips = buildTips(ctx);
+        const tips = sessionTips(ctx);
 
         await ensurePage(page);
         await page.waitForTimeout(2000);

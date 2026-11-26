@@ -1,6 +1,64 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI } from '@dyyz1993/xcli-core';
+import type { CommandContext, XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok } from '@dyyz1993/xcli-core';
+import { loginWithHandoff } from '../shared/login-handoff.js';
+
+type PublishParams = { title: string; content: string; keepAlive: boolean };
+type PublishResult = { title: string; url: string };
+type PublishHandlerResult = ReturnType<typeof ok<PublishResult>>;
+
+const publishHandler = async (
+  params: PublishParams,
+  ctx: CommandContext
+): Promise<PublishHandlerResult> => {
+  const page = ctx.page;
+  if (!page) throw new Error('需要浏览器页面上下文');
+
+  await page.goto('https://www.quora.com/content', {
+    waitUntil: 'domcontentloaded',
+    timeout: 20000,
+  });
+  await page.waitForLoadState('domcontentloaded');
+  await page.waitForTimeout(3000);
+
+  const titleInput = page.locator(
+    'input[name*="title"], input[placeholder*="title"], input[placeholder*="Title"], input[class*="title"]'
+  ).first();
+  if (await titleInput.isVisible().catch(() => false)) {
+    await titleInput.fill(params.title);
+  }
+
+  const editor = page.locator(
+    'div[contenteditable="true"][class*="editor"], div[contenteditable="true"][role="textbox"], div[class*="quill"]'
+  ).first();
+  if (await editor.isVisible().catch(() => false)) {
+    await editor.click();
+    await page.keyboard.insertText(params.content);
+  }
+
+  const publishBtn = page.locator(
+    'button:has-text("Publish"), button:has-text("Post"), button:has-text("发布"), button[type="submit"]'
+  ).first();
+  if (await publishBtn.isVisible().catch(() => false)) {
+    await publishBtn.click();
+    await page.waitForTimeout(3000);
+  }
+
+  const finalUrl = page.url();
+
+  if (!params.keepAlive) {
+    try {
+      await page.close();
+    } catch {
+      // page.close() failure is non-fatal
+    }
+  }
+
+  return ok({
+    title: params.title,
+    url: finalUrl,
+  }, [`文章 "${params.title}" 已在 Quora 发布`]);
+};
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -35,34 +93,25 @@ export default function (xcli: XCLIAPI): void {
       const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
-      await page.goto('https://www.quora.com/login', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000,
-      });
-      await page.waitForTimeout(2000);
-
-      await ctx.waitForHuman?.({
-        reason: 'Complete Quora login (Google OAuth or email)',
+      const { url, alreadyLoggedIn } = await loginWithHandoff({
+        page,
+        ctx,
+        checkUrl: 'https://www.quora.com/',
+        loginUrl: 'https://www.quora.com/login',
+        reason: '完成 Quora 登录（Google OAuth 或邮箱）后，重新执行 xbrowser quora login',
         timeout: 300,
+        check: async (p) => p
+          .locator(
+            'a[href*="/logout"], button[aria-label*="Profile"], [class*="avatar"], [data-testid="user-menu"], img[class*="profile"]'
+          )
+          .first()
+          .isVisible()
+          .catch(() => false),
       });
 
-      await page.goto('https://www.quora.com/', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000,
-      });
-      await page.waitForTimeout(2000);
+      await ctx.storage.set('quora_login', { loggedIn: true, at: Date.now() });
 
-      const loggedIn = await page
-        .locator(
-          'a[href*="/logout"], button[aria-label*="Profile"], [class*="avatar"], [data-testid="user-menu"], img[class*="profile"]'
-        )
-        .first()
-        .isVisible()
-        .catch(() => false);
-
-      await ctx.storage.set('quora_login', { loggedIn, at: Date.now() });
-
-      return ok({ loggedIn, url: page.url() }, [loggedIn ? 'Quora 登录成功' : '登录可能未完成，请检查页面']);
+      return ok({ loggedIn: true, url }, [alreadyLoggedIn ? 'Quora 已是登录状态' : 'Quora 登录成功']);
     },
   });
 
@@ -139,75 +188,34 @@ export default function (xcli: XCLIAPI): void {
     },
   });
 
-  site.command('publish-article', {
+  const publishParameters = z.object({
+    title: z.string().describe('文章标题'),
+    content: z.string().describe('文章内容（含外链）'),
+    keepAlive: z.boolean().optional().default(false).describe('发布后保留 session（默认关闭）'),
+  });
+  const publishResult = z.object({ title: z.string(), url: z.string() }).passthrough();
+  const publishCommandConfig = {
     description: '创建 Quora 文章（Space 帖子）',
-    loginRequired: 'required',
-    scope: 'page',
-    parameters: z.object({
-      title: z.string().describe('文章标题'),
-      content: z.string().describe('文章内容（含外链）'),
-      keepAlive: z.boolean().optional().default(false).describe('发布后保留 session（默认关闭）'),
-    }),
+    loginRequired: 'required' as const,
+    scope: 'page' as const,
+    parameters: publishParameters,
     examples: [
       {
-        cmd: 'xbrowser quora publish-article --title "My Guide" --content "Check out https://example.com"',
+        cmd: 'xbrowser quora publish --title "My Guide" --content "Check out https://example.com"',
         description: '发布文章（自动关闭 session）',
       },
       {
-        cmd: 'xbrowser quora publish-article --title "My Guide" --content "Hello" --keep-alive',
+        cmd: 'xbrowser quora publish --title "My Guide" --content "Hello" --keep-alive',
         description: '发布文章并保留 session（调试用）',
       },
     ],
-    result: z.object({ title: z.string(), url: z.string() }).passthrough(),
-    handler: async (params, ctx) => {
-      const page = ctx.page;
-      if (!page) throw new Error('需要浏览器页面上下文');
-
-      await page.goto('https://www.quora.com/content', {
-        waitUntil: 'domcontentloaded',
-        timeout: 20000,
-      });
-      await page.waitForLoadState('domcontentloaded');
-      await page.waitForTimeout(3000);
-
-      const titleInput = page.locator(
-        'input[name*="title"], input[placeholder*="title"], input[placeholder*="Title"], input[class*="title"]'
-      ).first();
-      if (await titleInput.isVisible().catch(() => false)) {
-        await titleInput.fill(params.title);
-      }
-
-      const editor = page.locator(
-        'div[contenteditable="true"][class*="editor"], div[contenteditable="true"][role="textbox"], div[class*="quill"]'
-      ).first();
-      if (await editor.isVisible().catch(() => false)) {
-        await editor.click();
-        await page.keyboard.insertText(params.content);
-      }
-
-      const publishBtn = page.locator(
-        'button:has-text("Publish"), button:has-text("Post"), button:has-text("发布"), button[type="submit"]'
-      ).first();
-      if (await publishBtn.isVisible().catch(() => false)) {
-        await publishBtn.click();
-        await page.waitForTimeout(3000);
-      }
-
-      const finalUrl = page.url();
-
-      if (!params.keepAlive) {
-        try {
-          await page.close();
-        } catch {
-          // page.close() failure is non-fatal
-        }
-      }
-
-      return ok({
-          title: params.title,
-          url: finalUrl,
-        }, [`文章 "${params.title}" 已在 Quora 发布`]);
-    },
+    result: publishResult,
+    handler: publishHandler,
+  };
+  site.command('publish', publishCommandConfig);
+  site.command('publish-article', {
+    ...publishCommandConfig,
+    description: '（已弃用别名，请用 publish）创建 Quora 文章（Space 帖子）',
   });
 
   site.command('update-profile', {

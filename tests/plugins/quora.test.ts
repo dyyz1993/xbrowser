@@ -1,6 +1,7 @@
 import { firstTip } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/quora/index.ts';
+import { HumanWaitRequiredError } from '../../src/plugin/human-wait.js';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -36,7 +37,7 @@ function makeCtx(overrides: Record<string, unknown> = {}) {
   };
 }
 
-const COMMANDS = ['login', 'answer', 'publish-article', 'update-profile'];
+const COMMANDS = ['login', 'answer', 'publish', 'publish-article', 'update-profile'];
 
 describe('quora plugin', () => {
   beforeEach(() => {
@@ -50,13 +51,24 @@ describe('quora plugin', () => {
     );
   });
 
-  it('should register 4 commands', () => {
-    expect(mockSite.command).toHaveBeenCalledTimes(4);
+  it('should register 5 commands', () => {
+    expect(mockSite.command).toHaveBeenCalledTimes(5);
   });
 
   it('should register expected command names', () => {
     const names = mockSite.command.mock.calls.map((c: unknown[]) => c[0] as string);
     expect(names).toEqual(COMMANDS);
+  });
+
+  it('registers publish as canonical and publish-article as deprecated alias', () => {
+    const calls = mockSite.command.mock.calls.filter((call: unknown[]) =>
+      ['publish', 'publish-article'].includes(call[0] as string)
+    );
+    expect(calls.map((call: unknown[]) => call[0])).toEqual(['publish', 'publish-article']);
+    expect(calls[1][1]).toMatchObject({
+      description: expect.stringMatching(/^（已弃用别名，请用 publish）/),
+      handler: calls[0][1].handler,
+    });
   });
 
   it('each command should have description, scope, parameters, and handler', () => {
@@ -71,65 +83,63 @@ describe('quora plugin', () => {
   });
 
   describe('login command', () => {
-    it('should throw when no page in ctx', async () => {
-      const handler = getHandler('login');
-      await expect(handler({}, { storage: { set: vi.fn() } })).rejects.toThrow('需要浏览器页面上下文');
-    });
-
-    it('should navigate to quora login page', async () => {
-      const handler = getHandler('login');
-      const ctx = makeCtx();
-      await handler({}, ctx);
-      expect(ctx.page.goto).toHaveBeenCalledWith(
-        'https://www.quora.com/login',
-        expect.objectContaining({ waitUntil: 'domcontentloaded' })
-      );
-    });
-
-    it('should call waitForHuman', async () => {
-      const handler = getHandler('login');
-      const ctx = makeCtx();
-      await handler({}, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalledWith(
-        expect.objectContaining({ reason: expect.stringContaining('Quora login') })
-      );
-    });
-
-    it('should save login state to storage', async () => {
-      const handler = getHandler('login');
-      const ctx = makeCtx();
-      await handler({}, ctx);
-      expect(ctx.storage.set).toHaveBeenCalledWith('quora_login', expect.objectContaining({ loggedIn: false }));
-    });
-
-    it('should return loggedIn false when no profile element visible', async () => {
-      const handler = getHandler('login');
-      const ctx = makeCtx();
-      const result = await handler({}, ctx);
-      expect(result.data.loggedIn).toBe(false);
-    });
-
-    it('should return loggedIn true when profile element visible', async () => {
-      const handler = getHandler('login');
+    function loggedInCtx() {
       const ctx = makeCtx();
       ctx.page.locator = vi.fn(() => ({
         first: vi.fn(() => ({
           isVisible: vi.fn(() => Promise.resolve(true)),
           click: vi.fn(),
+          fill: vi.fn(),
         })),
       }));
-      const result = await handler({}, ctx);
-      expect(result.data.loggedIn).toBe(true);
-      expect(firstTip(result.tips)).toContain('登录成功');
+      return ctx;
+    }
+
+    it('should throw when no page in ctx', async () => {
+      const handler = getHandler('login');
+      await expect(handler({}, { storage: { set: vi.fn() } })).rejects.toThrow('需要浏览器页面上下文');
     });
 
-    it('should navigate to home after login', async () => {
+    it('resolves without handoff when already logged in', async () => {
+      const handler = getHandler('login');
+      const ctx = loggedInCtx();
+      const result = await handler({}, ctx);
+      expect(result.data).toEqual({ loggedIn: true, url: 'https://www.quora.com/' });
+      expect(firstTip(result.tips)).toContain('已是登录状态');
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
+      expect(ctx.page.goto).toHaveBeenCalledTimes(1);
+      expect(ctx.page.goto).toHaveBeenCalledWith(
+        'https://www.quora.com/',
+        expect.objectContaining({ waitUntil: 'domcontentloaded' })
+      );
+      expect(ctx.storage.set).toHaveBeenCalledWith(
+        'quora_login',
+        expect.objectContaining({ loggedIn: true })
+      );
+    });
+
+    it('opens the login page and fails closed when logged out', async () => {
       const handler = getHandler('login');
       const ctx = makeCtx();
-      await handler({}, ctx);
-      const gotoCalls = ctx.page.goto.mock.calls;
-      expect(gotoCalls.length).toBeGreaterThanOrEqual(2);
-      expect(gotoCalls[1][0]).toBe('https://www.quora.com/');
+      ctx.waitForHuman = vi.fn(() =>
+        Promise.reject(new HumanWaitRequiredError('需要人工协助', '完成 Quora 登录'))
+      );
+      await expect(handler({}, ctx)).rejects.toBeInstanceOf(HumanWaitRequiredError);
+      expect(ctx.page.goto.mock.calls.map((call: unknown[]) => call[0])).toEqual([
+        'https://www.quora.com/',
+        'https://www.quora.com/login',
+      ]);
+      expect(ctx.waitForHuman).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: expect.stringContaining('Quora') })
+      );
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+    });
+
+    it('refuses to store state when a returned handoff still has no session', async () => {
+      const handler = getHandler('login');
+      const ctx = makeCtx();
+      await expect(handler({}, ctx)).rejects.toThrow('仍未检测到登录态');
+      expect(ctx.storage.set).not.toHaveBeenCalled();
     });
   });
 

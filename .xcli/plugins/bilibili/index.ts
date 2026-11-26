@@ -2,6 +2,7 @@ import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import { searchImageResultSchema, baseSearchParams, buildResult, buildFail } from '../shared/image-search.js';
+import { sessionTips } from '../shared/page-context.js';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -28,12 +29,8 @@ export default function (xcli: XCLIAPI): void {
 
   // ─── 工具函数 ──────────────────────────────────
 
-  function buildTips(ctx: Record<string, unknown>): string[] {
-    const tips: string[] = [];
-    if (!ctx.cdpEndpoint) tips.push('建议使用 --cdp 9221 连接 Chrome 浏览器以获取登录态');
-    tips.push(`Session: ${ctx.sessionId || 'default'}`);
-    return tips;
-  }
+  const buildTips = (ctx: Record<string, unknown>): string[] =>
+    sessionTips(ctx, '建议使用 --cdp 9221 连接 Chrome 浏览器以获取登录态');
 
   // ─── 1. search (搜索视频) ──────────────────────
 

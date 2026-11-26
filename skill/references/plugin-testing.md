@@ -233,7 +233,11 @@ function createMockContext(pageOverrides: Record<string, unknown> = {}) {
 - **`viewportSize`**: Required for plugins that check page dimensions — return `{ width: 1280, height: 720 }`
 - **`evaluate`**: Controls what DOM queries return — `null` means "not found"
 - **`evaluateHandle`**: For `safeClickSelector` — return `null` for "element not found"
-- **`waitForHuman`**: For login/captcha flows — return `{ solved: true }` by default
+- **`waitForHuman`**: In production it never resolves — it rejects with `HumanWaitRequiredError`
+  (`code: 'NEEDS_HUMAN'`) and the command ends (fail-closed). In unit tests the mock decides:
+  `mockResolvedValue({ solved: true })` lets you exercise the code *after* the call;
+  `mockRejectedValue(new HumanWaitRequiredError('需要人工协助', '完成登录'))` exercises the
+  fail-closed path — assert the handler rethrows it (or returns `fail`), never swallows it.
 
 ---
 

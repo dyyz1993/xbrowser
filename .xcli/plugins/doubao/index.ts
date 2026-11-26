@@ -8,6 +8,7 @@ import {
   mediaTaskResultSchema,
   type MediaTaskResult,
 } from '../shared/media-contract.js';
+import { buildMediaDownload } from '../shared/media-plugin-template.js';
 import { buildTips, uploadFileViaDataTransfer, handleChatAttachments, parsePathsCsv } from '../shared/ai-chat-base.js';
 import { pasteImagesFromClipboard, setImagesOnFileInput } from '../shared/clipboard-upload.js';
 import { extractAllHDImages } from '../shared/image-lightbox.js';
@@ -179,14 +180,20 @@ function buildVideoAttachmentList(params: {
   });
 }
 
-function toDoubaoDownloadResult(input: { taskId: string; mediaUrl: string | null; localPath?: string | null; size?: number; error?: string }) {
-  return mediaDownloadResultSchema.parse({
-    ok: Boolean(input.localPath),
+function toDoubaoDownloadResult(input: {
+  taskId: string;
+  mediaUrl: string | null;
+  localPath?: string | null;
+  size?: number;
+  error?: string;
+}) {
+  // 统一下载结果契约只有一份（shared/media-plugin-template.ts）；这里只是把站点侧的 size 映射成 sizeBytes
+  return buildMediaDownload({
     taskId: input.taskId,
     mediaUrl: input.mediaUrl,
     localPath: input.localPath,
     sizeBytes: input.size,
-    error: input.error ?? null,
+    error: input.error,
   });
 }
 
@@ -2626,8 +2633,8 @@ export default function (xcli: XCLIAPI): void {
       message: '必须提供 --path 或 --paths 至少一个',
     }),
     examples: [
-      { cmd: 'xbrowser doubao upload --path ~/document.pdf', description: '上传单个文件' },
-      { cmd: 'xbrowser doubao upload --paths "~/a.jpg,~/b.pdf,~/c.docx"', description: '批量上传多文件' },
+      { cmd: 'xbrowser doubao upload --path /abs/document.pdf', description: '上传单个文件' },
+      { cmd: 'xbrowser doubao upload --paths "/abs/a.jpg,/abs/b.pdf,/abs/c.docx"', description: '批量上传多文件' },
     ],
     result: z.object({ files: z.array(z.string()), uploaded: z.number() }).passthrough(),
     handler: async (params, ctx) => {
@@ -3014,9 +3021,9 @@ export default function (xcli: XCLIAPI): void {
       message: '必须提供 --path 或 --paths 至少一个',
     }),
     examples: [
-      { cmd: 'xbrowser doubao attach --type image --path ~/photo.jpg', description: '上传单张图片' },
-      { cmd: 'xbrowser doubao attach --type file --path ~/document.pdf', description: '上传单个文件' },
-      { cmd: 'xbrowser doubao attach --type image --paths "~/a.jpg,~/b.png,~/c.webp"', description: '批量上传多张图片' },
+      { cmd: 'xbrowser doubao attach --type image --path /abs/photo.jpg', description: '上传单张图片' },
+      { cmd: 'xbrowser doubao attach --type file --path /abs/document.pdf', description: '上传单个文件' },
+      { cmd: 'xbrowser doubao attach --type image --paths "/abs/a.jpg,/abs/b.png,/abs/c.webp"', description: '批量上传多张图片' },
     ],
     result: z.object({ type: z.string(), files: z.array(z.string()), uploaded: z.number() }).passthrough(),
     handler: async (params, ctx) => {

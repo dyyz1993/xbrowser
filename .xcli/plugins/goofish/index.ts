@@ -319,7 +319,7 @@ export default function (xcli: XCLIAPI): void {
     if (!page) return;
     // 引导用户在 viewer 中扫码登录
     const waitForHuman = (ctx as unknown as Record<string, unknown>).waitForHuman as
-      | ((opts: { reason: string; timeout?: number }) => Promise<{ solved: boolean }>)
+      | ((opts: { reason: string; timeout?: number }) => Promise<unknown>)
       | undefined;
     if (waitForHuman) {
       await waitForHuman({ reason: '请在 viewer 中扫码或手动登录闲鱼', timeout: 120 });

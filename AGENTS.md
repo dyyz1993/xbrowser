@@ -34,6 +34,7 @@ npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 ## 1. 项目原则
 
 - **第一原则：所有自动化脚本 → 插件**。任何 `*.ts`/`*.mjs`/`*.cjs` 调研脚本、爬虫、数据采集、发布工具，都应放在 `.xcli/plugins/<name>/` 下，作为站点插件或扩展命令插件存在，**不要**散落在仓库根目录或 `scripts/` 中。
+  - 执行方式（2026-11-27 起）：`scripts/` 在 git 里只保留 `release/` 与白名单工具（`arena-round.sh` / `check-editors.ts` / `check-logins.ts` / `inline-stealth.mjs` / `mcp-smoke.mjs`），其余路径被 `.gitignore` 整体忽略；`lint:architecture`（pre-commit + CI）拒绝新增的已跟踪 `scripts/` 文件、`src/` 下的 `.mjs/.cjs/.js` 脚本，以及「已跟踪却被 .gitignore 忽略」的文件。一次性脚本留在本地即可，要长期用就做成插件命令。
 - **skill / 知识 / 模板** 全部放 `.opencode/skills/<name>/`，与全局 skills 解耦。
 - **临时编辑脚本、debug 脚本、recordings、capture 产物** 全部放 `output/` 或 `.xcli/storage/`，**不要**进 git。
 - **禁止把数据/报告/HTML 输出** 提交进 git（ctrip-report.html、stats-*.png、douyin_works_sample.json 等）。
@@ -176,20 +177,38 @@ viewer 启动后会在终端打印 WebSocket URL（如 `ws://localhost:9224`）�
 
 ### 6.2 插件中主动让出
 
+插件命令遇到验证码 / 登录 / 需要人工确认时，调用 `ctx.waitForHuman` **交还控制权并立即停止**
+（fail-closed，2026-11-27 起）：
+
 ```typescript
 handler: async (params, ctx) => {
-  // 等待人类操作（验证码 / 登录 / 拖滑块）
-  const result = await ctx.waitForHuman({
-    reason: '请在 viewer 中完成滑块验证',
-    timeout: 120,  // 秒，0 表示无限等待
-  });
-  if (!result.solved) {
-    throw new Error('人类未在超时内完成操作');
-  }
-  // 继续后续逻辑
-  ...
+  // 这一行会抛 HumanWaitRequiredError（code: NEEDS_HUMAN）——后面的代码不会执行
+  await ctx.waitForHuman({ reason: '请在 viewer 中完成滑块验证', timeout: 120 });
+  // 只有将来接入「真等待」后，这里才会继续
 }
 ```
+
+运行时把它转成结构化结果返回给调用方：
+
+```json
+{
+  "success": false,
+  "data": {
+    "code": "NEEDS_HUMAN",
+    "reason": "请在 viewer 中完成滑块验证",
+    "taskName": "pub-csdn",
+    "viewerUrl": "http://localhost:9224/preview/default"
+  },
+  "message": "需要人工协助，但此命令不会等待：请在 viewer 中完成滑块验证"
+}
+```
+
+写插件时的规矩：
+
+- **不要**写 `const r = await ctx.waitForHuman(...); if (!r.solved) ...`——它不返回，而是抛错；也不要用 `try/catch` 把它吞掉后继续执行（运行时会把「吞错后报成功」强制改回 `NEEDS_HUMAN`，但别依赖这层兜底）。
+- 需要人工介入之后才能做的步骤（点发布、发送、提交）必须写在 `waitForHuman` **之后**，fail-closed 才拦得住。
+- `reason` 写清楚「用户要做什么、在哪做」；托管会话的结果自动带 `viewerUrl`，chrome-bridge 会话带 `taskName`（任务组标红「需要协助：<原因>」）。
+- `timeout` 目前只是「打算等多久」的声明，不会让命令阻塞。
 
 ### 6.3 配置
 
@@ -221,7 +240,7 @@ XBROWSER_PREVIEW_PORT=9224
 
 ---
 
-> ⚠️ **插件命令里的 `ctx.waitForHuman` 目前不等待**（自 2026-05 起是立即返回的桩，真正的等待只接在命令失败恢复和 managed-run 手动交接上）。它现在做三件事：立即返回 `{ solved: false, timedOut: false }`、在 stderr 打一行「需要人工协助，但此命令不会等待」、把 chrome-bridge 任务组标红成「需要协助：<原因>」。所以 `<site> login` 会在几秒内返回「登录可能未完成」——把「需要用户做什么」讲清楚后重跑，不要以为它等了 300 秒。把真正的等待接进来（viewer 接管 / 登录态轮询）会让命令阻塞数分钟，属于交互语义变更，动手前先和用户确认。
+> ⚠️ **插件命令里的 `ctx.waitForHuman` 不等待，而是 fail-closed**（2026-11-27 起）。它会抛 `HumanWaitRequiredError`，命令立即以 `NEEDS_HUMAN` 结束，chrome-bridge 任务组标红成「需要协助：<原因>」。所以 `<site> login` 会在几秒内返回「需要人工协助」——把「需要用户做什么」讲清楚、等用户处理完再重跑，不要以为它等了 300 秒，也不要把它包进 `catch` 里继续往下走。真正的等待（viewer 接管 / 登录态轮询）会让命令阻塞数分钟，属于交互语义变更，动手前先和用户确认。
 
 ## 7. 登录处理
 
@@ -257,14 +276,16 @@ await page.context().addCookies([{
 
 ### 7.3 在 viewer 里手动登录
 
-如果登录流程太复杂（短信验证、扫码、二次认证），用 `ctx.waitForHuman()`：
+如果登录流程太复杂（短信验证、扫码、二次认证），用 `ctx.waitForHuman()` 交还控制权。
+它是 fail-closed 的（见 §6.2）：调用即抛 `NEEDS_HUMAN`，命令结束，用户登录后重跑同一条命令：
 
 ```typescript
 handler: async (params, ctx) => {
-  // 引导用户去 viewer 完成登录
-  const result = await ctx.waitForHuman({ reason: '请在 viewer 中扫码登录' });
-  if (!result.solved) throw new Error('登录超时');
-  // 继续业务逻辑
+  if (await needLogin(page)) {
+    // 抛 HumanWaitRequiredError → 命令以 NEEDS_HUMAN 结束，不会带着未登录态往下跑
+    await ctx.waitForHuman({ reason: '请在 viewer 中扫码登录，完成后重新执行本命令', timeout: 300 });
+  }
+  // 用户登录后重跑命令，才会走到这里
 }
 ```
 
@@ -277,6 +298,34 @@ chrome --remote-debugging-port=9222
 # Agent 复用
 xbrowser --cdp 9222 chatgpt list
 ```
+
+### 7.5 `<site> login` 命令的统一写法（先检查、再交还）
+
+`ctx.waitForHuman` 是 fail-closed 的（§6.2），所以登录命令不能写成「打开登录页 → waitForHuman → 回首页判断」：
+那样命令永远停在交还这一步，用户登录后重跑又会先打开登录页、再次交还。统一用 `shared/login-handoff.ts`：
+
+```typescript
+import { loginWithHandoff } from '../shared/login-handoff.js';
+
+// handler 内
+const { url, alreadyLoggedIn } = await loginWithHandoff({
+  page,
+  ctx,
+  checkUrl: 'https://example.com/',            // 先到这里判断
+  loginUrl: 'https://example.com/login',       // 未登录才打开
+  reason: '完成 Example 登录后，重新执行 xbrowser example login',
+  timeout: 300,
+  check: async (p) => p.locator('a[href="/logout"]').first().isVisible().catch(() => false),
+  // beforeHandoff: async (p) => { … },        // 可选：交还前预填账号
+});
+await ctx.storage.set('example_login', { loggedIn: true, at: Date.now() });
+return ok({ loggedIn: true, url }, [alreadyLoggedIn ? 'Example 已是登录状态' : 'Example 登录成功']);
+```
+
+- 未登录时 `loginWithHandoff` 不会返回：`ctx.waitForHuman` 抛 `NEEDS_HUMAN`，命令结束；用户登录后重跑，在 `checkUrl` 命中即成功。
+- 登录态只在检测通过后才写（`loggedIn: true`），不要写 `loggedIn: false`，也不要用 URL 里「不含 /login」这种负向条件冒充已登录（ERR-20261125-002）。
+- 判定条件优先用「确定信号」（退出按钮 / 用户菜单 / 个人空间 URL）；只有负向信号时（例如登出首页仍渲染「登录」入口），用「出现该信号 = 未登录」的 negative-only 判定。
+- 单测固定三种：已登录直接成功（不交还、不开登录页）；未登录 → 打开登录页后以 `NEEDS_HUMAN` 拒绝，且不写登录态；交还后复核仍未登录 → 不写登录态。
 
 ---
 
@@ -304,6 +353,7 @@ xbrowser 自动识别 reCAPTCHA v2/v3、hCaptcha、Cloudflare Turnstile、Generi
 // 让框架重新检测一次当前页面
 const detected = await ctx.detectCaptcha?.();
 if (detected) {
+  // fail-closed：抛 NEEDS_HUMAN，命令到此结束；用户处理完验证码后重跑
   await ctx.waitForHuman({ reason: `检测到 ${detected.type}` });
 }
 ```
@@ -323,7 +373,7 @@ if (detected) {
 | skill 调试输出 | `output/skills/<skill>/` | 例 `output/skills/cdp-test/` |
 | 一次性脚本（开发期） | `output/.scripts/` | **不入 git** |
 
-> **重要**：不要在仓库根目录或 `scripts/` 创建临时文件——那里是历史包袱区域。
+> **重要**：不要在仓库根目录或 `scripts/` 创建临时文件。一次性脚本放 `output/.scripts/`（不入 git）；`scripts/` 只允许 `release/` 与白名单工具（见 §1），新增的已跟踪文件会被 `lint:architecture` 拒绝。
 
 ---
 
@@ -363,6 +413,16 @@ if (detected) {
 - 插件本身就是站点维度的隔离，`promo-devto publish` 等效于 `devto publish`，`promo-` 是冗余
 - 一个站点可以注册多个命令（publish / list / search / stats），不局限于单一功能
 - 与现有 125 个插件的命名风格一致
+
+**两类例外（不是违规，但要按下面的规矩写）**：
+
+- **能力类 / 聚合类插件**：`ai-search`、`image`、`geo-analysis`、`seo`、`backlink-auto` 这类插件的能力本身就是「跨多个站点做同一件事」
+  （多引擎搜索、多平台外链），用 `--engine` / `--platform` 选目标是对的，不要为每个引擎再拆一个插件。约束：
+  ① 站点差异只能写在**配置数据**里（选择器、URL、开关），不要在框架代码里写 `if (key === 'kimi')` 这种站点分支；
+  ② 同一套引擎逻辑只能有一份——内置 `ai-search` 命令（`src/commands/ai-search-engines.ts`）是事实源，插件层因不能 import `src/` 而保留的同构副本必须与它逐步对齐并在注释里互相指向；
+  ③ 名字不要带功能前后缀（`backlink-auto` 是历史名，新插件别这样起）。
+- **单命令工具类插件**（`assert`、`diff`、`testsuite`、`summarize`）：命令名仍要是动词短语，避免 `xbrowser diff diff` 这种叠词；
+  已经如此发布的保留兼容，新增命令按动词命名。
 
 #### 10.0.2 结构要求
 
@@ -408,7 +468,7 @@ if (detected) {
 ✅ xbrowser devto publish          # publish 是动作
 ✅ xbrowser devto draft            # draft 是动作
 ✅ xbrowser juejin fetch-articles  # fetch-articles 是动作
-✅ xbrowser github list-issues     # list-issues 是动作
+✅ xbrowser github create-gist     # create-gist 是动作
 
 ❌ xbrowser devto publish-article  # 重复，publish 就够了
 ❌ xbrowser devto devto-publish    # 加了站点前缀，冗余
@@ -684,7 +744,10 @@ describe('<name> plugin', () => {
   describe('login command', () => {
     it('should throw when no page', async () => { /* handler({}, ctx_sem_page) → reject */ });
     it('should navigate to login page', async () => { /* 检查 page.goto */ });
-    it('should call waitForHuman', async () => { /* 检查 ctx.waitForHuman */ });
+    it('fails closed with NEEDS_HUMAN when login needs a human', async () => {
+      /* ctx.waitForHuman 用 vi.fn().mockRejectedValue(new HumanWaitRequiredError(...))，
+         断言 handler 把错误抛出 / 返回带 code: "NEEDS_HUMAN" 的 fail，而不是继续执行 */
+    });
     it('should save login state to storage', async () => { /* 检查 ctx.storage.set */ });
   });
 

@@ -218,7 +218,12 @@ export default function (xcli: XCLIAPI): void {
     const page = (ctx as Record<string, unknown>).page as Page;
     if (!page) return;
     await page.goto('https://example.com/login');
-    // Use ctx.waitForHuman() for complex login flows
+    const loggedIn = await page.evaluate(() => !document.querySelector('input[type="password"]'));
+    if (!loggedIn) {
+      // fail-closed: throws HumanWaitRequiredError (NEEDS_HUMAN); the command ends here.
+      // The user logs in, then re-runs the command — never store loggedIn:true before it is true.
+      await ctx.waitForHuman({ reason: 'Complete login, then re-run this command', timeout: 300 });
+    }
     await ctx.storage.set('auth_token', { loggedIn: true, at: Date.now() });
   });
 

@@ -1,10 +1,12 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
 import { randomPause } from '../shared/humanize.js';
 import { registerOschinaPublishing } from './publishing.js';
 import { LOGIN_URL_PATTERNS, checkLoggedIn } from '../shared/publishing/login-probe.js';
+import { resolvePage } from '../shared/resolve-page.js';
+import { loginWithHandoff } from '../shared/login-handoff.js';
 
 /**
  * 开源中国（OSChina）插件。
@@ -16,16 +18,6 @@ import { LOGIN_URL_PATTERNS, checkLoggedIn } from '../shared/publishing/login-pr
  *
  * 本文件保留：站点注册、登录。
  */
-
-function resolvePage(ctx: CommandContext): { page: Page; tips: string[] } {
-  const page = ctx.page;
-  if (!page) throw new Error('需要浏览器页面');
-  const tips: string[] = [];
-  if (!ctx.cdpEndpoint) {
-    tips.push('建议使用 --cdp 9221 连接 Chrome 浏览器以获取登录态');
-  }
-  return { page, tips };
-}
 
 /**
  * 本地 page 的登录探测（ERR-20261022-003 修正）。
@@ -85,18 +77,24 @@ export default function (xcli: XCLIAPI): void {
     examples: [{ cmd: 'xbrowser oschina login', description: '登录 oschina' }],
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (_params, ctx) => {
-      const { page } = resolvePage(ctx);
-      await page.goto('https://www.oschina.net/home/login', {
-        waitUntil: 'domcontentloaded',
-        timeout: 20000,
+      const { page, tips } = resolvePage(ctx);
+      // fail-closed 语义下必须「先检查、再交还」：已登录直接成功；未登录才打开登录页并交还
+      // 控制权（ctx.waitForHuman 抛 NEEDS_HUMAN，命令到此结束）。用户登录后重跑本命令即可收敛。
+      const { url, alreadyLoggedIn } = await loginWithHandoff({
+        page,
+        ctx,
+        checkUrl: 'https://my.oschina.net',
+        loginUrl: 'https://www.oschina.net/home/login',
+        reason: '完成 开源中国 登录（手机号验证码/Gitee OAuth）后，重新执行 xbrowser oschina login',
+        timeout: 300,
+        settleMs: 2000,
+        // 登出时 my.oschina.net 停在公开首页（URL 不含 /login），所以除了 URL 还要看顶栏的
+        // 「登录」入口（ERR-20261125-002）；只做 negative 判定，不要求出现 /u/<id> 才算已登录
+        check: async (p) =>
+          !p.url().includes('/login')
+          && !(await p.locator('a[href*="/home/login"]').first().isVisible().catch(() => false)),
       });
-      await randomPause(1200, 2400);
-      await ctx.waitForHuman?.({ reason: '完成 开源中国 登录（手机号验证码/Gitee OAuth）', timeout: 300 });
-      await page
-        .goto('https://my.oschina.net', { waitUntil: 'domcontentloaded', timeout: 15000 })
-        .catch(() => {});
-      const loggedIn = !(await page.url()).includes('/login');
-      return ok({ loggedIn, url: page.url() }, [loggedIn ? '开源中国登录成功' : '仍未登录']);
+      return ok({ loggedIn: true, url }, [alreadyLoggedIn ? '开源中国已是登录状态' : '开源中国登录成功', ...tips]);
     },
   });
 

@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok } from '@dyyz1993/xcli-core';
+import { loginWithHandoff } from '../shared/login-handoff.js';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -39,43 +40,34 @@ export default function (xcli: XCLIAPI): void {
       const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
-      await page.goto('https://wordpress.com/log-in', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000,
-      });
-      await page.waitForTimeout(2000);
-
-      if (params.email) {
-        const emailInput = page.locator(
-          'input[name="username"], input[type="email"], input[id="usernameOrEmail"]'
-        ).first();
-        if (await emailInput.isVisible().catch(() => false)) {
-          await emailInput.fill(params.email);
-          await page.keyboard.press('Enter');
-          await page.waitForTimeout(2000);
-        }
-      }
-
-      await ctx.waitForHuman?.({
-        reason: 'Complete WordPress.com login',
+      const { url, alreadyLoggedIn } = await loginWithHandoff({
+        page,
+        ctx,
+        checkUrl: 'https://wordpress.com/',
+        loginUrl: 'https://wordpress.com/log-in',
+        reason: '完成 WordPress.com 登录后，重新执行 xbrowser wordpress login',
         timeout: 300,
+        beforeHandoff: async (loginPage) => {
+          if (!params.email) return;
+          const emailInput = loginPage.locator(
+            'input[name="username"], input[type="email"], input[id="usernameOrEmail"]'
+          ).first();
+          if (await emailInput.isVisible().catch(() => false)) {
+            await emailInput.fill(params.email);
+            await loginPage.keyboard.press('Enter');
+            await loginPage.waitForTimeout(2000);
+          }
+        },
+        check: async (p) => p
+          .locator('.masterbar__item-me, a[href*="/me"], [data-testid="sidebar-me"]')
+          .first()
+          .isVisible()
+          .catch(() => false),
       });
 
-      await page.goto('https://wordpress.com/', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000,
-      });
-      await page.waitForTimeout(2000);
+      await ctx.storage.set('wordpress_login', { loggedIn: true, at: Date.now() });
 
-      const loggedIn = await page
-        .locator('.masterbar__item-me, a[href*="/me"], [data-testid="sidebar-me"]')
-        .first()
-        .isVisible()
-        .catch(() => false);
-
-      await ctx.storage.set('wordpress_login', { loggedIn, at: Date.now() });
-
-      return ok({ loggedIn, url: page.url() }, [loggedIn ? 'WordPress.com 登录成功' : '登录可能未完成，请检查页面']);
+      return ok({ loggedIn: true, url }, [alreadyLoggedIn ? 'WordPress.com 已是登录状态' : 'WordPress.com 登录成功']);
     },
   });
 

@@ -1,6 +1,7 @@
 import { firstTip } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/wordpress/index.ts';
+import { HumanWaitRequiredError } from '../../src/plugin/human-wait.js';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -75,66 +76,63 @@ describe('wordpress plugin', () => {
   });
 
   describe('login command', () => {
-    it('should throw when no page in ctx', async () => {
-      const handler = getHandler('login');
-      await expect(handler({}, { storage: { set: vi.fn() } })).rejects.toThrow('需要浏览器页面上下文');
-    });
-
-    it('should navigate to wordpress login page', async () => {
-      const handler = getHandler('login');
-      const ctx = makeCtx();
-      await handler({}, ctx);
-      expect(ctx.page.goto).toHaveBeenCalledWith(
-        'https://wordpress.com/log-in',
-        expect.objectContaining({ waitUntil: 'domcontentloaded' })
-      );
-    });
-
-    it('should call waitForHuman', async () => {
-      const handler = getHandler('login');
-      const ctx = makeCtx();
-      await handler({}, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalledWith(
-        expect.objectContaining({ reason: expect.stringContaining('WordPress') })
-      );
-    });
-
-    it('should save login state to storage', async () => {
-      const handler = getHandler('login');
-      const ctx = makeCtx();
-      await handler({}, ctx);
-      expect(ctx.storage.set).toHaveBeenCalledWith('wordpress_login', expect.objectContaining({ loggedIn: false }));
-    });
-
-    it('should return loggedIn false when no me element visible', async () => {
-      const handler = getHandler('login');
-      const ctx = makeCtx();
-      const result = await handler({}, ctx);
-      expect(result.data.loggedIn).toBe(false);
-      expect(firstTip(result.tips)).toContain('登录可能未完成');
-    });
-
-    it('should return loggedIn true when me element visible', async () => {
-      const handler = getHandler('login');
+    function loggedInPage() {
       const ctx = makeCtx();
       ctx.page.locator = vi.fn(() => ({
         first: vi.fn(() => ({
           isVisible: vi.fn(() => Promise.resolve(true)),
           click: vi.fn(),
+          fill: vi.fn(),
         })),
       }));
-      const result = await handler({}, ctx);
-      expect(result.data.loggedIn).toBe(true);
-      expect(firstTip(result.tips)).toContain('登录成功');
+      return ctx;
+    }
+
+    it('should throw when no page in ctx', async () => {
+      const handler = getHandler('login');
+      await expect(handler({}, { storage: { set: vi.fn() } })).rejects.toThrow('需要浏览器页面上下文');
     });
 
-    it('should navigate to home after login', async () => {
+    it('resolves without handoff when already logged in', async () => {
+      const handler = getHandler('login');
+      const ctx = loggedInPage();
+      const result = await handler({}, ctx);
+      expect(result.data).toEqual({ loggedIn: true, url: 'https://wordpress.com/' });
+      expect(firstTip(result.tips)).toContain('已是登录状态');
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
+      expect(ctx.page.goto).toHaveBeenCalledTimes(1);
+      expect(ctx.page.goto).toHaveBeenCalledWith(
+        'https://wordpress.com/',
+        expect.objectContaining({ waitUntil: 'domcontentloaded' })
+      );
+      expect(ctx.storage.set).toHaveBeenCalledWith(
+        'wordpress_login',
+        expect.objectContaining({ loggedIn: true })
+      );
+    });
+
+    it('opens the login page and fails closed when logged out', async () => {
       const handler = getHandler('login');
       const ctx = makeCtx();
-      await handler({}, ctx);
-      const gotoCalls = ctx.page.goto.mock.calls;
-      expect(gotoCalls.length).toBeGreaterThanOrEqual(2);
-      expect(gotoCalls[1][0]).toBe('https://wordpress.com/');
+      ctx.waitForHuman = vi.fn(() =>
+        Promise.reject(new HumanWaitRequiredError('需要人工协助', '完成 WordPress.com 登录'))
+      );
+      await expect(handler({}, ctx)).rejects.toBeInstanceOf(HumanWaitRequiredError);
+      expect(ctx.page.goto.mock.calls.map((call: unknown[]) => call[0])).toEqual([
+        'https://wordpress.com/',
+        'https://wordpress.com/log-in',
+      ]);
+      expect(ctx.waitForHuman).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: expect.stringContaining('WordPress') })
+      );
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+    });
+
+    it('refuses to store state when a returned handoff still has no session', async () => {
+      const handler = getHandler('login');
+      const ctx = makeCtx();
+      await expect(handler({}, ctx)).rejects.toThrow('仍未检测到登录态');
+      expect(ctx.storage.set).not.toHaveBeenCalled();
     });
   });
 

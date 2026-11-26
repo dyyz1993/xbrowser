@@ -116,6 +116,9 @@ function createMockContext(pageOverrides: Record<string, unknown> = {}) {
       delete: vi.fn().mockResolvedValue(undefined),
     },
     waitForHuman: vi.fn().mockResolvedValue({ solved: true }),
+    // 生产环境它不会 resolve：抛 HumanWaitRequiredError（NEEDS_HUMAN，fail-closed）。
+    // 测 fail-closed 路径用 mockRejectedValue(new HumanWaitRequiredError(...))，
+    // 断言 handler 把错误抛出（或返回带 code: "NEEDS_HUMAN" 的 fail），不吞掉。
     options: {},
     output: { format: 'text', verbose: false },
     logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },

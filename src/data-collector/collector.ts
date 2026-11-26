@@ -9,8 +9,9 @@ import {
   getEngineConfig,
   detectLoginStatus,
   detectInternetSearch,
+  navigateToChat,
 } from '../commands/ai-search-engines.js';
-import type { AIEngineKey, EngineConfig } from '../commands/ai-search-engines.js';
+import type { AIEngineKey } from '../commands/ai-search-engines.js';
 import type { Page, BrowserContext } from '../browser-shim.js';
 import type { SearchResult, CollectResult, BatchCollectResult, CollectorConfig } from './types.js';
 import { DataStorage } from './storage.js';
@@ -46,33 +47,6 @@ function parseSearchFirstResults(rawText: string): AISearchResultItem[] {
   }
 
   return items;
-}
-
-async function navigateToChat(page: Page, config: EngineConfig): Promise<void> {
-  if (!config.needsChatNav) return;
-
-  if (config.key === 'kimi') {
-    await page.waitForTimeout(2000);
-    const chatLink = page.locator('a[href*="/chat"], a[href*="/dialog"]').first();
-    if ((await chatLink.count()) > 0) {
-      await chatLink.click();
-      await page.waitForTimeout(2000);
-    }
-  } else if (config.key === 'tiangong') {
-    await page.waitForTimeout(2000);
-    const chatLink = page.locator('a[href*="/chat"], a[href*="/dialog"]').first();
-    if ((await chatLink.count()) > 0) {
-      await chatLink.click();
-      await page.waitForTimeout(2000);
-    }
-  } else if (config.key === 'xinghuo') {
-    await page.waitForTimeout(3000);
-    const startBtn = page.locator('text=开始对话').first();
-    if ((await startBtn.count()) > 0) {
-      await startBtn.click();
-      await page.waitForTimeout(2000);
-    }
-  }
 }
 
 async function extractSourcesFromPage(page: Page): Promise<{ total: number; domains: string[]; urls: Array<{ url: string; domain: string }> } | undefined> {

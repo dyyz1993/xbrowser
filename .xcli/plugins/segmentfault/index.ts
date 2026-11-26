@@ -1,19 +1,11 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page } from '../types.js';
 
 import { randomPause, humanFill } from '../shared/humanize.js';
-
-function resolvePage(ctx: CommandContext): { page: Page; tips: string[] } {
-  const page = ctx.page;
-  if (!page) throw new Error('需要浏览器页面');
-  const tips: string[] = [];
-  if (!ctx.cdpEndpoint) {
-    tips.push('建议使用 --cdp 9221 连接 Chrome 浏览器以获取登录态');
-  }
-  return { page, tips };
-}
+import { loginWithHandoff } from '../shared/login-handoff.js';
+import { resolvePage } from '../shared/resolve-page.js';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -47,12 +39,23 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (_params, ctx) => {
       const { page } = resolvePage(ctx);
-      await page.goto('https://segmentfault.com/user/login', { waitUntil: 'domcontentloaded', timeout: 15000 });
-      await randomPause(1200, 2400);
-      await ctx.waitForHuman?.({ reason: '完成 SegmentFault 登录（GitHub OAuth / 手机号）', timeout: 300 });
-      await page.goto('https://segmentfault.com/user', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-      const loggedIn = !(await page.url()).includes('/user/login');
-      return ok({ loggedIn, url: page.url() }, [loggedIn ? '思否登录成功' : '仍未登录，请检查']);
+
+      const { url, alreadyLoggedIn } = await loginWithHandoff({
+        page,
+        ctx,
+        checkUrl: 'https://segmentfault.com/user',
+        loginUrl: 'https://segmentfault.com/user/login',
+        reason: '完成 SegmentFault 登录（GitHub OAuth / 手机号）后，重新执行 xbrowser segmentfault login',
+        timeout: 300,
+        settleMs: 2000,
+        check: async (p) => !(await p.url()).includes('/user/login'),
+      });
+
+      await ctx.storage.set('segmentfault_login', { loggedIn: true, at: Date.now() });
+
+      return ok({ loggedIn: true, url }, [
+        alreadyLoggedIn ? '思否已是登录状态' : '思否登录成功',
+      ]);
     },
   });
 

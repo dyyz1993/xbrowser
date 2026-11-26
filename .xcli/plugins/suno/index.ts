@@ -7,6 +7,7 @@ import {
   mediaTaskResultSchema,
   type MediaTaskResult,
 } from '../shared/media-contract.js';
+import { sessionTips } from '../shared/page-context.js';
 
 type Page = import('../types').Page;
 type Response = import('../types').Response;
@@ -18,13 +19,7 @@ const API_HOST = 'studio-api-prod.suno.com';
 /* ───────── helpers ───────── */
 
 function buildTips(ctx: CommandContext): string[] {
-  const tips: string[] = [];
-  const ctxAny = ctx as unknown as Record<string, unknown>;
-  const options = ctxAny.options as Record<string, unknown> | undefined;
-  const cdp = ctxAny.cdpEndpoint || options?.cdp;
-  if (!cdp) tips.push('建议使用 --cdp 9221 连接到已登录 Suno 的浏览器');
-  tips.push(`Session: ${ctxAny.sessionId || 'default'}`);
-  return tips;
+  return sessionTips(ctx, '建议使用 --cdp 9221 连接到已登录 Suno 的浏览器');
 }
 
 /** Extract audio URL from a clip object */

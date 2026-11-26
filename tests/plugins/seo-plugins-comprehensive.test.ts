@@ -113,7 +113,8 @@ const seoPlugins: SEOPluginSpec[] = [
     name: 'quora',
     importPath: '../../.xcli/plugins/quora/index.ts',
     expectedUrl: 'https://www.quora.com',
-    expectedCommands: ['login', 'answer', 'publish-article', 'update-profile'],
+    // publish 是规范名；publish-article 是保留的弃用别名（AGENTS.md §10.0.3）
+    expectedCommands: ['login', 'answer', 'publish', 'publish-article', 'update-profile'],
     requiresLogin: true,
   },
   {
@@ -272,6 +273,7 @@ function getDefaultParams(pluginName: string, cmdName: string): Record<string, u
     quora: {
       login: {},
       answer: { questionUrl: 'https://quora.com/q/test', content: 'Answer' },
+      publish: { title: 'Test', content: 'Article' },
       'publish-article': { title: 'Test', content: 'Article' },
       'update-profile': { url: 'https://example.com', bio: 'Bio' },
     },

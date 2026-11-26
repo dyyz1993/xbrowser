@@ -29,7 +29,8 @@ xbrowser --cdp 9221 quora <command>
 | --- | --- |
 | `login` | 登录 Quora（Google / 邮箱） |
 | `answer` | 回答问题（含外链） |
-| `publish-article` | 创建 Quora 文章（Space 帖子） |
+| `publish` | 创建 Quora 文章（Space 帖子） |
+| `publish-article` | 已弃用别名，等价于 `publish` |
 | `update-profile` | 更新 Quora 个人资料（添加外链） |
 
 ## 使用示例
@@ -41,7 +42,7 @@ xbrowser --cdp 9221 quora login
 xbrowser --cdp 9221 quora answer
 ```
 ```bash
-xbrowser --cdp 9221 quora publish-article
+xbrowser --cdp 9221 quora publish
 ```
 ```bash
 xbrowser --cdp 9221 quora update-profile

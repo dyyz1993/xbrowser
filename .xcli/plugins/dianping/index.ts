@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page } from '../types.js';
+import { requirePage } from '../shared/page-context.js';
 
 const searchResult = z.array(z.object({
   rank: z.number(),
@@ -18,11 +18,6 @@ export default function (xcli: XCLIAPI): void {
     description: '大众点评 - 商户搜索和评价',
     requiresLogin: false,
   });
-function gp(ctx: CommandContext): Page {
-  const p = ctx.page;
-  if (!p) throw new Error('需要浏览器页面，请使用 --cdp 连接');
-  return p;
-}
 
   site.command('search', {
     description: '搜索大众点评商户',
@@ -35,7 +30,7 @@ function gp(ctx: CommandContext): Page {
             limit: z.coerce.number().optional().default(20).describe('返回数量')
     }),
     handler: async (p, ctx) => {
-      const page = gp(ctx);
+      const page = requirePage(ctx);
             const url = `https://www.dianping.com/search/keyword/${p.cityId || 10}/0_${encodeURIComponent(p.keyword)}`;
             await page.goto(url, { waitUntil: 'networkidle', timeout: 30000 });
             await page.waitForTimeout(2000);

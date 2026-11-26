@@ -1,6 +1,7 @@
 import { firstTip } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/blogger/index.ts';
+import { HumanWaitRequiredError } from '../../src/plugin/human-wait.js';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -112,54 +113,77 @@ describe('blogger plugin', () => {
       await expect(handler({}, ctx)).rejects.toThrow('需要浏览器页面上下文');
     });
 
-    it('should navigate to blogger about page', async () => {
-      const handler = getHandler('login');
+    function loggedInPage() {
       const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      expect(page.goto).toHaveBeenCalledWith(
-        'https://www.blogger.com/about/',
-        expect.objectContaining({ waitUntil: 'domcontentloaded' })
-      );
-    });
+      page.locator = vi.fn(() => {
+        const item: any = {
+          isVisible: vi.fn(() => Promise.resolve(true)),
+          click: vi.fn(() => Promise.resolve()),
+          fill: vi.fn(() => Promise.resolve()),
+        };
+        const first = vi.fn(() => item);
+        return { first, isVisible: item.isVisible, click: item.click, fill: item.fill };
+      });
+      return page;
+    }
 
-    it('should call waitForHuman', async () => {
+    it('resolves without handing off when Blogger is already logged in', async () => {
       const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalledWith(
-        expect.objectContaining({ reason: 'Google login required' })
-      );
-    });
-
-    it('should save login state to storage', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      expect(ctx.storage.set).toHaveBeenCalledWith(
-        'blogger_login',
-        expect.objectContaining({ loggedIn: false })
-      );
-    });
-
-    it('should return loggedIn false when selector not visible', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
+      const page = loggedInPage();
       const ctx = createMockCtx(page);
       const result = await handler({}, ctx);
-      expect(result.data.loggedIn).toBe(false);
+      expect(result.data).toEqual({ loggedIn: true, url: 'https://www.blogger.com/' });
+      expect(firstTip(result.tips)).toContain('已是登录状态');
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
+      expect(page.goto).toHaveBeenCalledTimes(1);
+      expect(page.goto).toHaveBeenCalledWith(
+        'https://www.blogger.com/',
+        expect.objectContaining({ waitUntil: 'domcontentloaded' })
+      );
+      expect(ctx.storage.set).toHaveBeenCalledWith(
+        'blogger_login',
+        expect.objectContaining({ loggedIn: true })
+      );
+    });
+
+    it('opens the login page and rejects with NEEDS_HUMAN when logged out', async () => {
+      const handler = getHandler('login');
+      const page = createMockPage();
+      const ctx = createMockCtx(page);
+      ctx.waitForHuman = vi.fn(() =>
+        Promise.reject(new HumanWaitRequiredError('需要人工协助', '完成 Blogger 登录')));
+      await expect(handler({}, ctx)).rejects.toBeInstanceOf(HumanWaitRequiredError);
+      expect(page.goto.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+        'https://www.blogger.com/',
+        'https://www.blogger.com/about/',
+      ]);
+      expect(ctx.waitForHuman).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: expect.stringContaining('Blogger') })
+      );
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+    });
+
+    it('refuses to store login state when a returned handoff still has no session', async () => {
+      const handler = getHandler('login');
+      const page = createMockPage();
+      const ctx = createMockCtx(page);
+      await expect(handler({}, ctx)).rejects.toThrow('仍未检测到登录态');
+      expect(page.goto.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+        'https://www.blogger.com/',
+        'https://www.blogger.com/about/',
+        'https://www.blogger.com/',
+      ]);
+      expect(ctx.storage.set).not.toHaveBeenCalled();
     });
 
     it('should return success tip when logged in', async () => {
       const handler = getHandler('login');
-      const page = createMockPage();
-      let callCount = 0;
+      const page = loggedInPage();
+      let checkCount = 0;
       page.locator = vi.fn(() => {
-        callCount++;
+        checkCount++;
         const item: any = {
-          isVisible: vi.fn(() => Promise.resolve(callCount >= 2)),
+          isVisible: vi.fn(() => Promise.resolve(checkCount >= 2)),
           click: vi.fn(() => Promise.resolve()),
           fill: vi.fn(() => Promise.resolve()),
         };
@@ -170,15 +194,6 @@ describe('blogger plugin', () => {
       const result = await handler({}, ctx);
       expect(result.data.loggedIn).toBe(true);
       expect(firstTip(result.tips)).toContain('Blogger 登录成功');
-    });
-
-    it('should navigate to blogger home after waitForHuman', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      const gotoCalls = page.goto.mock.calls.map((c: unknown[]) => c[0]);
-      expect(gotoCalls).toContain('https://www.blogger.com/');
     });
   });
 

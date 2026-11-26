@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import plugin from '../../.xcli/plugins/producthunt/index.ts';
+import { firstTip } from './_tips-helper.js';
+import { HumanWaitRequiredError } from '../../src/plugin/human-wait.js';
 
 const mockSite = {
   command: vi.fn(),
@@ -81,6 +83,56 @@ describe('producthunt plugin', () => {
     ]);
     expect(mockSite.login).toHaveBeenCalledTimes(1);
     expect(mockSite.logout).toHaveBeenCalledTimes(1);
+  });
+
+  describe('login command', () => {
+    function loggedInCtx() {
+      const harness = createPage();
+      const ctx = ctxFor(harness.page);
+      harness.page.locator = vi.fn(() => createLocator({ visible: true }));
+      return ctx;
+    }
+
+    it('resolves without handoff when already logged in', async () => {
+      const ctx = loggedInCtx();
+      const result = await handlerOf('login')({}, ctx);
+      expect(result.data).toEqual({ loggedIn: true, url: 'https://www.producthunt.com/posts/new' });
+      expect(firstTip(result.tips)).toContain('已是登录状态');
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
+      expect(ctx.page.goto).toHaveBeenCalledTimes(1);
+      expect(ctx.page.goto).toHaveBeenCalledWith(
+        'https://www.producthunt.com/',
+        expect.objectContaining({ waitUntil: 'domcontentloaded' })
+      );
+      expect(ctx.storage.set).toHaveBeenCalledWith(
+        'producthunt_login',
+        expect.objectContaining({ loggedIn: true })
+      );
+    });
+
+    it('opens the login page and fails closed when logged out', async () => {
+      const harness = createPage();
+      const ctx = ctxFor(harness.page);
+      ctx.waitForHuman = vi.fn(() =>
+        Promise.reject(new HumanWaitRequiredError('需要人工协助', '完成 Product Hunt 登录'))
+      );
+      await expect(handlerOf('login')({}, ctx)).rejects.toBeInstanceOf(HumanWaitRequiredError);
+      expect(harness.page.goto.mock.calls.map((call: unknown[]) => call[0])).toEqual([
+        'https://www.producthunt.com/',
+        'https://www.producthunt.com/login',
+      ]);
+      expect(ctx.waitForHuman).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: expect.stringContaining('Product Hunt') })
+      );
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+    });
+
+    it('refuses to store state when a returned handoff still has no session', async () => {
+      const harness = createPage();
+      const ctx = ctxFor(harness.page);
+      await expect(handlerOf('login')({}, ctx)).rejects.toThrow('仍未检测到登录态');
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+    });
   });
 
   it('fills and submits a new product', async () => {

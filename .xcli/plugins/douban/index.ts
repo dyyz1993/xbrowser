@@ -1,7 +1,7 @@
 import { z } from 'zod/v4';
-import type { XCLIAPI, CommandContext } from '@dyyz1993/xcli-core';
+import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
-import type { Page } from '../types.js';
+import { requirePage } from '../shared/page-context.js';
 
 const searchResult = z.array(z.object({
   rank: z.number(),
@@ -18,11 +18,6 @@ export default function (xcli: XCLIAPI): void {
     description: '豆瓣 - 电影、图书、音乐搜索',
     requiresLogin: false,
   });
-function gp(ctx: CommandContext): Page {
-  const p = ctx.page;
-  if (!p) throw new Error('需要浏览器页面，请使用 --cdp 连接');
-  return p;
-}
 
   site.command('search', {
     result: searchResult,
@@ -35,7 +30,7 @@ function gp(ctx: CommandContext): Page {
             limit: z.coerce.number().optional().default(20).describe('返回结果数量')
     }),
     handler: async (p, ctx) => {
-      const page = gp(ctx);
+      const page = requirePage(ctx);
             const searchUrl = p.type === 'book' ? 'https://search.douban.com/book/subject_search?search_text=' + encodeURIComponent(p.keyword)
               : p.type === 'music' ? 'https://music.douban.com/search?q=' + encodeURIComponent(p.keyword)
               : 'https://movie.douban.com/subject_search?search_text=' + encodeURIComponent(p.keyword);

@@ -5,15 +5,15 @@ Automate backlink building across 10+ high-DA platforms with xbrowser's SEO plug
 ## Quick Start
 
 ```bash
-# Install an SEO plugin
-xbrowser plugin install blogger-seo
-xbrowser plugin install wordpress-seo
+# 插件按站点命名（随仓库自带；从 marketplace 安装时同样用站点名）
+xbrowser plugin install blogger
+xbrowser plugin install wordpress
 
 # Login to platform
-xbrowser blogger-seo login
+xbrowser blogger login
 
 # Publish an article with backlinks
-xbrowser blogger-seo publish --title "My Article" --content article.md
+xbrowser blogger publish --title "My Article" --content article.md
 ```
 
 ## Supported Platforms
@@ -36,76 +36,75 @@ xbrowser blogger-seo publish --title "My Article" --content article.md
 ### WordPress.com (DA 93, Dofollow)
 
 ```bash
-xbrowser wordpress-seo login
-xbrowser wordpress-seo publish --title "Guide to Node.js" --content article.md --tags "nodejs,tutorial"
-xbrowser wordpress-seo draft --title "Draft Post" --content draft.md
+xbrowser wordpress login
+xbrowser wordpress publish --title "Guide to Node.js" --content article.md --tags "nodejs,tutorial"
+xbrowser wordpress draft --title "Draft Post" --content draft.md
 ```
 
 ### Blogger (DA 89, Dofollow)
 
 ```bash
-xbrowser blogger-seo login
-xbrowser blogger-seo create-blog --title "My SEO Blog" --url my-seo-blog
-xbrowser blogger-seo publish --title "Article Title" --content article.html
+xbrowser blogger login
+xbrowser blogger create-blog --title "My SEO Blog" --url my-seo-blog
+xbrowser blogger publish --title "Article Title" --content article.html
 ```
 
 ### Medium (DA 96, Nofollow)
 
 ```bash
-xbrowser medium-seo login
-xbrowser medium-seo publish --title "Thought Leadership Post" --content post.md
-xbrowser medium-seo import --url https://my-site.com/article
+xbrowser medium login
+xbrowser medium publish --title "Thought Leadership Post" --content post.md
+xbrowser medium import --url https://my-site.com/article
 ```
 
 ### Quora (DA 92, Nofollow)
 
 ```bash
-xbrowser quora-seo login
-xbrowser quora-seo answer --question "How to build backlinks?" --content answer.md
-xbrowser quora-seo publish-article --title "SEO Guide" --content guide.md
+xbrowser quora login
+xbrowser quora answer --question "How to build backlinks?" --content answer.md
+xbrowser quora publish --title "SEO Guide" --content guide.md
 ```
 
 ### Product Hunt (DA 91, Dofollow)
 
 ```bash
-xbrowser producthunt-seo login
-xbrowser producthunt-seo submit-product --name "My Tool" --url https://mytool.com --description "Product description"
+xbrowser producthunt login
+xbrowser producthunt submit-product --name "My Tool" --url https://mytool.com --description "Product description"
 ```
 
 ### Dev.to (DA 51, UGC)
 
 ```bash
-xbrowser devto-seo login
-xbrowser devto-seo publish --title "Technical Deep Dive" --content article.md --tags "javascript,webdev"
+xbrowser devto login
+xbrowser devto publish --title "Technical Deep Dive" --content article.md --tags "javascript,webdev"
 ```
 
 ### Hashnode (DA 80+, Dofollow with custom domain)
 
 ```bash
-xbrowser hashnode-seo login
-xbrowser hashnode-seo publish --title "Blog Post" --content post.md
+xbrowser hashnode login
+xbrowser hashnode publish --title "Blog Post" --content post.md
 ```
 
 ### Tumblr (DA 86, Dofollow)
 
 ```bash
-xbrowser tumblr-seo login
-xbrowser tumblr-seo publish --title "Post Title" --content post.html --tags "seo,marketing"
-xbrowser tumblr-seo reblog --post-id 12345 --comment "Great insights!"
+# tumblr 插件目前只有图片搜索；登录 / 发布 / 转发尚未实现（不要照抄别站的命令）
+xbrowser tumblr search-image --keyword "web design"
 ```
 
 ### CSDN (DA 80+, Chinese market)
 
 ```bash
-xbrowser csdn-seo login
-xbrowser csdn-seo publish --title "技术文章标题" --content article.md
+xbrowser csdn login
+xbrowser csdn publish --title "技术文章标题" --content article.md
 ```
 
 ### 掘金 (DA 70+, Chinese developers)
 
 ```bash
-xbrowser juejin-seo login
-xbrowser juejin-seo publish --title "前端开发指南" --content guide.md
+xbrowser juejin login
+xbrowser juejin publish --title "前端开发指南" --content guide.md
 ```
 
 ## CAPTCHA Handling
@@ -114,13 +113,16 @@ When a platform shows CAPTCHA during login or publishing, xbrowser pauses and no
 
 ```bash
 # CAPTCHA detected - xbrowser opens interactive preview
-xbrowser blogger-seo login
+xbrowser blogger login
 # > CAPTCHA detected! Opening interactive preview...
 # > Solve the CAPTCHA in the preview window
 # > Press Enter when done...
 ```
 
 ### CAPTCHA Workflow
+
+> 插件命令里的 `waitForHuman()` 目前是 fail-closed（抛 `NEEDS_HUMAN`，命令结束），不会阻塞等验证码；
+> 下面的「等待 → 继续」描述的是框架层恢复流程。实际使用：命令返回 `NEEDS_HUMAN` → 手动过验证码 → 重跑命令。
 
 1. xbrowser detects CAPTCHA via `waitForHuman()` command
 2. Interactive browser preview opens automatically
@@ -176,7 +178,7 @@ export XCAPTCHA_WEBHOOK=https://your-server.com/captcha-callback
 
 ```bash
 # Install all SEO plugins
-for plugin in blogger-seo tumblr-seo wordpress-seo devto-seo hashnode-seo medium-seo producthunt-seo quora-seo juejin-seo csdn-seo; do
+for plugin in blogger wordpress devto hashnode medium producthunt quora juejin csdn; do
   xbrowser plugin install $plugin
 done
 
@@ -184,7 +186,7 @@ done
 xbrowser plugin list
 
 # Update a plugin
-xbrowser plugin update blogger-seo
+xbrowser plugin update blogger
 ```
 
 ## Marketplace
@@ -196,5 +198,5 @@ Browse and install plugins from the [xbrowser marketplace](https://marketplace.x
 xbrowser plugin search seo
 
 # Get plugin details
-xbrowser plugin info wordpress-seo
+xbrowser plugin info wordpress
 ```

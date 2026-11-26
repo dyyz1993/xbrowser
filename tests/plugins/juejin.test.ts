@@ -1,6 +1,7 @@
 import { tipsMessages } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import plugin from '../../.xcli/plugins/juejin/index.ts';
+import { HumanWaitRequiredError } from '../../src/plugin/human-wait.js';
 
 import { __setHumanizeSleeperForTests } from '../../.xcli/plugins/shared/humanize.js';
 
@@ -223,53 +224,76 @@ describe('juejin plugin', () => {
       await expect(handler({}, { storage: { set: vi.fn() } })).rejects.toThrow('需要浏览器页面');
     });
 
-    it('should navigate to juejin login page', async () => {
-      const handler = getHandler('login');
+    function loggedInPage() {
       const page = createMockPage();
+      page.state.url = 'https://juejin.cn/';
+      page.locator = vi.fn(() => ({
+        first: vi.fn(() => ({
+          isVisible: vi.fn(() => Promise.resolve(true)),
+          click: vi.fn(() => Promise.resolve()),
+          fill: vi.fn(() => Promise.resolve()),
+        })),
+        filter: vi.fn(() => ({ count: vi.fn(async () => 0) })),
+      }));
+      return page;
+    }
+
+    it('resolves without handing off when Juejin is already logged in', async () => {
+      const handler = getHandler('login');
+      const page = loggedInPage();
       const ctx = createMockCtx(page);
-      await handler({}, ctx);
+      const result = await handler({}, ctx);
+      expect(result.data).toEqual({ loggedIn: true, url: 'https://juejin.cn/' });
+      expect(tipsMessages(result.tips).some((t: string) => t.includes('已是登录状态'))).toBe(true);
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
+      expect(page.goto).toHaveBeenCalledTimes(1);
       expect(page.goto).toHaveBeenCalledWith(
-        'https://juejin.cn/login',
+        'https://juejin.cn/',
         expect.objectContaining({ waitUntil: 'domcontentloaded' })
+      );
+      expect(ctx.storage.set).toHaveBeenCalledWith(
+        'juejin_login',
+        expect.objectContaining({ loggedIn: true })
       );
     });
 
-    it('should call waitForHuman', async () => {
+    it('opens the login page and rejects with NEEDS_HUMAN when logged out', async () => {
       const handler = getHandler('login');
       const page = createMockPage();
       const ctx = createMockCtx(page);
-      await handler({}, ctx);
+      ctx.waitForHuman = vi.fn(() =>
+        Promise.reject(new HumanWaitRequiredError('需要人工协助', '完成掘金登录')));
+      await expect(handler({}, ctx)).rejects.toBeInstanceOf(HumanWaitRequiredError);
+      expect(page.goto.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+        'https://juejin.cn/',
+        'https://juejin.cn/login',
+      ]);
       expect(ctx.waitForHuman).toHaveBeenCalledWith(
         expect.objectContaining({ reason: expect.stringContaining('掘金') })
       );
+      expect(ctx.storage.set).not.toHaveBeenCalled();
     });
 
-    it('should save login state to storage', async () => {
+    it('refuses to store login state when a returned handoff still has no session', async () => {
       const handler = getHandler('login');
       const page = createMockPage();
       const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      expect(ctx.storage.set).toHaveBeenCalledWith(
-        'juejin_login',
-        expect.objectContaining({ loggedIn: false })
-      );
-    });
-
-    it('should return not-logged-in tip when avatar not visible', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      const result = await handler({}, ctx);
-      expect(result.data.loggedIn).toBe(false);
-      expect(tipsMessages(result.tips).some((t: string) => t.includes('登录可能未完成'))).toBe(true);
+      await expect(handler({}, ctx)).rejects.toThrow('仍未检测到登录态');
+      expect(page.goto.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+        'https://juejin.cn/',
+        'https://juejin.cn/login',
+        'https://juejin.cn/',
+      ]);
+      expect(ctx.storage.set).not.toHaveBeenCalled();
     });
 
     it('should return success tip when logged in', async () => {
       const handler = getHandler('login');
-      const page = createMockPage();
-      page.locator = vi.fn((_sel: string) => ({
+      const page = loggedInPage();
+      let checkCount = 0;
+      page.locator = vi.fn(() => ({
         first: vi.fn(() => ({
-          isVisible: vi.fn(() => Promise.resolve(true)),
+          isVisible: vi.fn(() => Promise.resolve(++checkCount >= 2)),
           click: vi.fn(() => Promise.resolve()),
           fill: vi.fn(() => Promise.resolve()),
         })),
@@ -280,15 +304,6 @@ describe('juejin plugin', () => {
       expect(result.data.loggedIn).toBe(true);
       const tips = tipsMessages(result.tips);
       expect(tips.some((t: string) => t.includes('掘金登录成功'))).toBe(true);
-    });
-
-    it('should navigate to juejin home after login attempt', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      const gotoCalls = page.goto.mock.calls.map((c: unknown[]) => c[0]);
-      expect(gotoCalls).toContain('https://juejin.cn/');
     });
   });
 
@@ -628,6 +643,15 @@ describe('juejin plugin', () => {
       const result = await handler({}, ctx);
       expect(tipsMessages(result.tips).some((t: string) => t.includes('1 篇'))).toBe(true);
     }, 15000);
+  });
+
+  it('upload-image takes --path as the canonical argument and keeps --image as a deprecated alias', () => {
+    const cfg = mockSite.command.mock.calls.find((c: unknown[]) => c[0] === 'upload-image')![1] as {
+      parameters: { safeParse: (v: unknown) => { success: boolean } };
+    };
+    expect(cfg.parameters.safeParse({ path: '/abs/cover.png' }).success).toBe(true);
+    expect(cfg.parameters.safeParse({ image: '/abs/cover.png' }).success).toBe(true);
+    expect(cfg.parameters.safeParse({}).success).toBe(false);
   });
 
   it('login hook should set storage', async () => {

@@ -68,7 +68,7 @@ describe('plugin human-wait (ctx.waitForHuman on plugin paths)', () => {
 
     expect(calls.map((call) => [call.args.status, call.args.state])).toEqual([
       ['需要协助：登录', 'needs-human'],
-      ['已完成（未经人工确认）', 'done'],
+      ['已完成', 'done'],
       ['失败：Selector #x not found', 'failed'],
     ]);
   });

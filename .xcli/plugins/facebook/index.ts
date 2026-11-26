@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import { sessionTips } from '../shared/page-context.js';
 
 export default function (xcli: XCLIAPI): void {
   const facebook = xcli.createSite({
@@ -30,13 +31,6 @@ export default function (xcli: XCLIAPI): void {
   const BASE = 'https://www.facebook.com';
 
   // ─── 工具 ──────────────────────────────────────
-
-  function buildTips(ctx: Record<string, unknown>): string[] {
-    const tips: string[] = [];
-    if (!ctx.cdpEndpoint) tips.push('建议使用 --cdp 9221 连接到已登录的浏览器');
-    tips.push(`Session: ${ctx.sessionId || 'default'}`);
-    return tips;
-  }
 
   // ─── 1. search-image ───────────────────────────
 
@@ -140,7 +134,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
-      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+      const tips = sessionTips(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto(`${BASE}/`, { waitUntil: 'domcontentloaded' });
@@ -184,7 +178,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
-      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+      const tips = sessionTips(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto(params.postUrl, { waitUntil: 'domcontentloaded' });
@@ -218,7 +212,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
-      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+      const tips = sessionTips(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto(params.postUrl, { waitUntil: 'domcontentloaded' });
@@ -265,7 +259,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = (ctx as unknown as Record<string, unknown>).page as import('../types').Page;
       if (!page) throw new Error('需要浏览器页面');
-      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+      const tips = sessionTips(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto(params.postUrl, { waitUntil: 'domcontentloaded' });

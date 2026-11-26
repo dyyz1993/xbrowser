@@ -1,5 +1,13 @@
 # GEO 数据采集和分析系统使用指南
 
+> **历史文档（2026-05 的实现记录）**：文中提到的 `scripts/collect-*.mjs`、`scripts/analyze-companies.mjs`、
+> `scripts/export-report.mjs`、`scripts/demo-data-collection.mjs` 等一次性脚本**不在仓库里**（已被 `.gitignore`
+> 整体忽略，见 AGENTS.md §1「所有自动化脚本 → 插件」）。现行入口是 `geo-analysis` 插件：
+> `xbrowser geo-analysis collect | batch | rank | all | company | trend | report | history | status`。
+> `src/data-collector/` 仍作为 SDK 导出（`DataCollector` / `DataStorage` / `ResultAnalyzer`），引擎导航逻辑
+> 以内置 `ai-search` 命令（`src/commands/ai-search-engines.ts`）为事实源。
+
+
 ## 概述
 
 GEO（Generative Engine Optimization）数据采集和分析系统是一个强大的工具，用于：

@@ -13,6 +13,9 @@ dist/
 # ── Runtime & Cache ─────────────────────────────────────
 .xcli/storage/
 recordings/
+# 测试夹具里的录制文件必须入库（上面的目录级忽略会误伤 tests/**/fixtures）
+!/tests/**/fixtures/**/recordings/
+!/tests/**/fixtures/**/recordings/**
 coverage/
 output/
 
@@ -74,17 +77,14 @@ docs/plans/*
 # 例外：长期追踪的 SPEC 文档必须入库
 !docs/plans/*-spec.md
 
-# ── scripts/ 下的历史/一次性脚本（保留 publish 相关） ─
-/scripts/debug-*
-/scripts/serper-*
-/scripts/seo-*
-/scripts/geo-*
-/scripts/analyze-*.mjs
-/scripts/collect-*.mjs
-/scripts/gen_*music*.mjs
-/scripts/image-server.mjs
-/scripts/test-*.mjs
-/scripts/demo-*
-/scripts/export-report.mjs
-/scripts/gsc-bing-submit.mjs
+# ── scripts/：只保留 release/ 与白名单里的工具，其余一次性脚本一律不入库 ──
+# AGENTS.md §1：自动化脚本 → 插件（.xcli/plugins/<site>/），不是 scripts/。
+# lint-scripts/check-architecture.mjs 对「已跟踪的 scripts/ 文件」做同一份白名单校验。
+/scripts/*
+!/scripts/release/
+!/scripts/arena-round.sh
+!/scripts/check-editors.ts
+!/scripts/check-logins.ts
+!/scripts/inline-stealth.mjs
+!/scripts/mcp-smoke.mjs
 .learnings/

@@ -35,7 +35,7 @@ xbrowser npm delete-token --session npm-ci --bridge --username myuser --name ci-
 3. **Sign in** 用真实鼠标点击（evaluate 读 rect → `page.mouse.click`，isTrusted=true）
 4. npm 向账号邮箱发 **OTP 一次性验证码**：
    - 传了 `--otp` → 直接填入
-   - 没传 → `waitForHuman` 暂停，在 viewer（`http://localhost:9224/preview/<session>`）里人工输入
+   - 没传 → 命令以 `NEEDS_HUMAN` 结束（fail-closed，不会挂着等）：在 viewer（`http://localhost:9224/preview/<session>`）或浏览器里输入验证码后，带 `--otp <code>` 重跑
 5. 打开 `/settings/<username>/tokens/granular-access-tokens/new`，填令牌名/有效期/Packages scope
 6. 提交后提取**仅展示一次**的令牌值（`npm_` 前缀），随结果返回
 
