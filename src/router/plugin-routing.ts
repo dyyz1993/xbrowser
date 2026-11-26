@@ -15,7 +15,13 @@ import { CHAIN_OPERATOR_TOKENS, quoteChainToken } from '../chain-parser.js';
 import { getCommand } from '../commands/command-registry.js';
 import { getPluginLoader } from '../utils/plugin-singleton.js';
 import { checkPluginLoginRequired } from '../plugin/login-guard.js';
-import { requestHumanWait, finishHumanWait, markTaskNeedsHuman } from '../plugin/human-wait.js';
+import {
+  requestHumanWait,
+  finishHumanWait,
+  markTaskNeedsHuman,
+  isHumanWaitRequiredError,
+  buildNeedsHumanResult,
+} from '../plugin/human-wait.js';
 import {
   createSession,
   findOrRestoreSession,
@@ -303,6 +309,30 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
               outputLoginRequired(result, mode);
               return true;
             }
+            if (result && result.success === false && resultData?.code === 'NEEDS_HUMAN') {
+              // daemon 已 fail-closed：本地不要再跑一遍，避免重复副作用
+              process.exitCode = 1;
+              if (mode === 'json' || mode === 'yaml') {
+                outputEnvelope(
+                  {
+                    success: false,
+                    data: result.data,
+                    message: result.message,
+                    tips: result.tips,
+                    duration: Date.now() - forwardStart,
+                  },
+                  { command: `${command} ${subCommand}` },
+                  mode,
+                );
+              } else {
+                outputError(result.message || '需要人工协助');
+                for (const tip of result.tips ?? []) {
+                  const text = typeof tip === 'string' ? tip : (tip as { message?: string }).message;
+                  if (text) console.error(`  \u{1F4A1} ${text}`);
+                }
+              }
+              return true;
+            }
             if (result && result.success !== false) {
               // 与本地执行路径同一个信封：以前这里在 --json / --yaml 下直接打印 data，
               // 失败时却打印信封，同一个命令成功和失败的输出形状不一样。
@@ -359,6 +389,7 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
           }
 
           let humanWaitRequested = false;
+          let humanWaitReason = '';
           const ctx = {
             args: cmdArgsForPlugin,
             options,
@@ -374,9 +405,10 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
             config: {},
             site,
             cliName: 'xbrowser',
-            // 不等待，但如实返回并把 bridge 任务组标成「需要协助」（见 plugin/human-wait.ts）
+            // 不等待：标记 bridge 任务组后抛 HumanWaitRequiredError，命令 fail-closed
             waitForHuman: async (opts?: Record<string, unknown>) => {
               humanWaitRequested = true;
+              humanWaitReason = String(opts?.reason || '').trim();
               return requestHumanWait(opts, session);
             },
             tips: new TipCollector(),
@@ -421,7 +453,33 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
             }
 
             const result = await cmdEntry.handler(params, ctx as unknown as CommandContext) as CommandResult;
-            if (humanWaitRequested) await finishHumanWait(session, result.success !== false, result.message);
+            if (humanWaitRequested) {
+              const reason = humanWaitReason || '需要人工协助';
+              await markTaskNeedsHuman(session, reason);
+              // 插件把 HumanWaitRequiredError 吞掉后继续执行：不能报成功
+              if (!result || typeof result !== 'object' || (result as { success?: boolean }).success !== false) {
+                process.exitCode = 1;
+                outputEnvelope(
+                  buildNeedsHumanResult(reason, {
+                    taskName: session?.bridge?.taskName,
+                    tips: (result as { tips?: Array<string | import('@dyyz1993/xcli-core').Tip> } | null)?.tips,
+                  }),
+                  { command: `${command} ${subCommand}` },
+                  mode,
+                );
+                return true;
+              }
+              const record = result as { data?: unknown; tips?: Array<string | import('@dyyz1993/xcli-core').Tip> };
+              record.data = {
+                ...(record.data && typeof record.data === 'object' ? record.data as Record<string, unknown> : {}),
+                code: 'NEEDS_HUMAN',
+                reason,
+              };
+              record.tips = normalizeTips([
+                ...(Array.isArray(record.tips) ? record.tips : []),
+                makeTipSafe.warn(`需要人工协助：${reason}`),
+              ]);
+            }
 
             const hookOutputs: Array<Record<string, unknown>> = [];
             if (cmdHooks.length > 0 && session?.page) {
@@ -479,6 +537,18 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
               }
             }
           } catch (e: unknown) {
+            if (isHumanWaitRequiredError(e)) {
+              await markTaskNeedsHuman(session, e.reason);
+              process.exitCode = 1;
+              outputEnvelope(
+                buildNeedsHumanResult(e.reason, {
+                  taskName: e.taskName ?? session?.bridge?.taskName,
+                }),
+                { command: `${command} ${subCommand}` },
+                mode,
+              );
+              return true;
+            }
             if (humanWaitRequested) await finishHumanWait(session, false, e instanceof Error ? e.message : String(e));
             outputError(e instanceof Error ? e.message : String(e));
           } finally {

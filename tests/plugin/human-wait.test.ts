@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { finishHumanWait, markTaskNeedsHuman, requestHumanWait } from '../../src/plugin/human-wait.js';
+import {
+  HumanWaitRequiredError,
+  buildNeedsHumanResult,
+  finishHumanWait,
+  markTaskNeedsHuman,
+  requestHumanWait,
+} from '../../src/plugin/human-wait.js';
 
 /**
  * 插件执行路径上的 ctx.waitForHuman 不等待（自 2026-05 起如此），但必须：
@@ -25,13 +31,14 @@ afterEach(() => {
 });
 
 describe('plugin human-wait (ctx.waitForHuman on plugin paths)', () => {
-  it('reports honestly that nothing waited and marks the bridge task group needs-human', async () => {
+  it('fails closed and marks the bridge task group needs-human', async () => {
     const calls = captureBridge();
     const warn = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    const result = await requestHumanWait({ reason: '完成 CSDN 登录' }, target);
+    const error = await requestHumanWait({ reason: '完成 CSDN 登录' }, target).catch((e: unknown) => e);
 
-    expect(result).toEqual({ solved: false, timedOut: false, method: 'marked' });
+    expect(error).toBeInstanceOf(HumanWaitRequiredError);
+    expect((error as HumanWaitRequiredError).reason).toBe('完成 CSDN 登录');
     expect(calls).toEqual([{
       url: 'http://127.0.0.1:19601/exec',
       cmd: 'task-status',
@@ -45,7 +52,7 @@ describe('plugin human-wait (ctx.waitForHuman on plugin paths)', () => {
     const calls = captureBridge();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    expect(await requestHumanWait({ reason: 'x' }, undefined)).toEqual({ solved: false, timedOut: false, method: 'not-awaited' });
+    await expect(requestHumanWait({ reason: 'x' }, undefined)).rejects.toBeInstanceOf(HumanWaitRequiredError);
     await expect(finishHumanWait(undefined, true)).resolves.toBeUndefined();
     expect(await markTaskNeedsHuman(undefined, '需要登录')).toBe(false);
     expect(calls).toEqual([]);
@@ -55,7 +62,7 @@ describe('plugin human-wait (ctx.waitForHuman on plugin paths)', () => {
     const calls = captureBridge();
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    await requestHumanWait({ reason: '登录' }, target);
+    await expect(requestHumanWait({ reason: '登录' }, target)).rejects.toBeInstanceOf(HumanWaitRequiredError);
     await finishHumanWait(target, true);
     await finishHumanWait(target, false, 'Selector #x not found');
 
@@ -78,7 +85,16 @@ describe('plugin human-wait (ctx.waitForHuman on plugin paths)', () => {
     vi.stubGlobal('fetch', async () => { throw new Error('ECONNREFUSED'); });
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-    expect(await requestHumanWait({ reason: 'x' }, target)).toEqual({ solved: false, timedOut: false, method: 'not-awaited' });
+    await expect(requestHumanWait({ reason: 'x' }, target)).rejects.toBeInstanceOf(HumanWaitRequiredError);
     await expect(finishHumanWait(target, false, 'boom')).resolves.toBeUndefined();
+  });
+
+  it('builds a structured NEEDS_HUMAN result', () => {
+    const result = buildNeedsHumanResult('完成登录', { taskName: 'pub-csdn' });
+
+    expect(result.success).toBe(false);
+    expect(result.data).toEqual({ code: 'NEEDS_HUMAN', reason: '完成登录', taskName: 'pub-csdn' });
+    expect(result.message).toContain('完成登录');
+    expect(result.tips.map((t) => t.message).join(' ')).toContain('完成登录');
   });
 });

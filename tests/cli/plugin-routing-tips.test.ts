@@ -228,6 +228,50 @@ describe('plugin-routing tips rendering (#439)', () => {
     expect(mockExecuteChain).toHaveBeenCalledWith('goto https://a.example && title', { cdpEndpoint: undefined, sessionName: 'default' });
   });
 
+  it('fails closed with NEEDS_HUMAN when a local plugin calls waitForHuman', async () => {
+    setupLoaderWithSites([createMockSite()]);
+    mockCommandHandler.mockImplementation(async (_params: unknown, ctx: { waitForHuman: (o: unknown) => Promise<unknown> }) => {
+      await ctx.waitForHuman({ reason: '完成登录' });
+      return { success: true, data: { shouldNot: 'happen' }, tips: [] };
+    });
+
+    const handled = await handlePluginOrChainRoute(buildRequest({ mode: 'json' }));
+
+    expect(handled).toBe(true);
+    expect(mockOutputEnvelope).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        data: { code: 'NEEDS_HUMAN', reason: '完成登录' },
+      }),
+      { command: 'mysite mycmd' },
+      'json',
+    );
+  });
+
+  it('does not re-run a daemon-forwarded NEEDS_HUMAN locally', async () => {
+    setupLoaderWithSites([createMockSite()]);
+    mockForwardPluginExec.mockResolvedValue({
+      success: false,
+      data: { code: 'NEEDS_HUMAN', reason: '完成登录' },
+      message: '需要人工协助，但此命令不会等待：完成登录',
+      tips: [],
+      duration: 1,
+    });
+
+    const handled = await handlePluginOrChainRoute(buildRequest({ mode: 'json' }));
+
+    expect(handled).toBe(true);
+    expect(mockOutputEnvelope).toHaveBeenCalledWith(
+      expect.objectContaining({
+        success: false,
+        data: { code: 'NEEDS_HUMAN', reason: '完成登录' },
+      }),
+      { command: 'mysite mycmd' },
+      'json',
+    );
+    expect(mockCommandHandler).not.toHaveBeenCalled();
+  });
+
   it('renders Tip objects as .message for daemon-forwarded results in json mode', async () => {
     setupLoaderWithSites([createMockSite()]);
     mockForwardPluginExec.mockResolvedValue({

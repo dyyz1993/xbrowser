@@ -1,3 +1,5 @@
+import { normalizeTips, tip, type Tip } from '@dyyz1993/xcli-core';
+
 /**
  * 插件执行路径上的 ctx.waitForHuman（daemon 的 handlePluginExec 与本地 plugin-routing 共用）。
  *
@@ -16,6 +18,43 @@ export interface HumanWaitTarget {
 }
 
 const REASON_FALLBACK = '需要人工协助';
+
+/** 请求了人工协助，但当前执行路径不会真的等待：fail-closed，命令必须停下。 */
+export class HumanWaitRequiredError extends Error {
+  readonly code = 'NEEDS_HUMAN' as const;
+
+  constructor(
+    message: string,
+    readonly reason: string,
+    readonly taskName?: string,
+  ) {
+    super(message);
+    this.name = 'HumanWaitRequiredError';
+  }
+}
+
+export function isHumanWaitRequiredError(error: unknown): error is HumanWaitRequiredError {
+  return error instanceof HumanWaitRequiredError
+    || (typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'NEEDS_HUMAN');
+}
+
+/** 统一的 NEEDS_HUMAN 结果：调用方据此提示人工处理，不会把它当普通失败吞掉。 */
+export function buildNeedsHumanResult(
+  reason: string,
+  options: { taskName?: string; tips?: Array<string | Tip> } = {},
+): { success: false; data: { code: 'NEEDS_HUMAN'; reason: string; taskName?: string }; message: string; tips: Tip[] } {
+  const message = `需要人工协助，但此命令不会等待：${reason}`;
+  return {
+    success: false,
+    data: {
+      code: 'NEEDS_HUMAN',
+      reason,
+      ...(options.taskName ? { taskName: options.taskName } : {}),
+    },
+    message,
+    tips: normalizeTips([...(options.tips ?? []), tip.warn(message)]),
+  };
+}
 
 /** 把 chrome-bridge 任务组标成红色「需要协助：<status>」（粘性，直到显式状态或关组）。 */
 export async function markTaskNeedsHuman(target: HumanWaitTarget | undefined, status: string): Promise<boolean> {
@@ -40,17 +79,21 @@ async function postTaskStatus(target: HumanWaitTarget, status: string, state: st
   }
 }
 
-/** 插件调用 ctx.waitForHuman 时进入这里：标记任务组并如实返回「没有等」。 */
+/** 插件调用 ctx.waitForHuman 时进入这里：标记任务组并 fail-closed（抛错让命令停下）。 */
 export async function requestHumanWait(
   options: { reason?: string } | undefined,
   target: HumanWaitTarget | undefined,
-): Promise<HumanWaitResult> {
+): Promise<never> {
   const reason = String(options?.reason || '').trim().slice(0, 80) || REASON_FALLBACK;
   console.error(
     `⚠️  需要人工协助，但此命令不会等待（插件执行路径的 waitForHuman 尚未接入 viewer）：${reason}`,
   );
-  const marked = await postTaskStatus(target ?? {}, `需要协助：${reason}`, 'needs-human');
-  return { solved: false, timedOut: false, method: marked ? 'marked' : 'not-awaited' };
+  await postTaskStatus(target ?? {}, `需要协助：${reason}`, 'needs-human');
+  throw new HumanWaitRequiredError(
+    `需要人工协助，但此命令不会等待：${reason}`,
+    reason,
+    target?.bridge?.taskName,
+  );
 }
 
 /** 请求过人工协助的命令返回后收尾：组标题回到 完成 / 失败。 */
