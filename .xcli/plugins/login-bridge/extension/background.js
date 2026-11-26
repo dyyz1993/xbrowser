@@ -373,6 +373,9 @@ async function importCookies(items) {
 // 刷新心跳（storage.session），空闲超时由 task-idle-sweep 自动回收。
 const TASK_IDLE_MS = 10 * 60 * 1000;
 let currentTaskName = '';
+// 当前这条命令（cmd + args）：getTaskTabId 解析出目标 tab 后据此写动作级状态。
+// 与 currentTaskName 一样，必须在首个 await 前同步捕获。
+let currentAction = null;
 // Stable per-task color so concurrent task groups are visually distinct.
 // Chrome tabGroups supports: grey/blue/red/yellow/green/pink/purple/cyan/orange.
 const TASK_COLORS = ['blue', 'purple', 'cyan', 'green', 'yellow', 'red', 'pink', 'orange'];
@@ -463,6 +466,168 @@ function taskColorFor(name) {
 
 function isTaskGroupTitle(title) {
   return typeof title === 'string' && (title.startsWith('🤖') || title.startsWith('xb-task-'));
+}
+
+// ── 任务组标题语法与状态 ──────────────────────────────────────
+// 标题 = 前缀 + 任务名 + [ · 状态]。前缀区分两类组：'xb-task-' 显式组（task-open
+// 创建，不参与空闲回收）；'🤖 ' 自动组（空闲 10 分钟回收）。状态是给人看的
+// 「现在在做什么」：动作级状态由扩展按每条命令自动刷新（noteAction），插件用
+// task-status 显式写阶段 / 终态 / 需要协助。任务名与状态里都不允许出现分隔符。
+const TASK_STATUS_SEP = ' · ';
+const EXPLICIT_PREFIX = 'xb-task-';
+const AUTO_PREFIX = '\u{1F916} ';
+const TASK_STATES = ['running', 'needs-human', 'awaiting-user', 'done', 'failed'];
+const TASK_STATE_COLORS = { 'needs-human': 'red', 'awaiting-user': 'yellow', done: 'green', failed: 'red' };
+const TASK_STATES_KEY = 'taskStates';
+
+function squashSeparator(text) {
+  return String(text ?? '').split(TASK_STATUS_SEP.trim()).join(' ');
+}
+
+function sanitizeTaskName(name) {
+  return squashSeparator(name).replace(/\s+/g, ' ').trim().slice(0, 60);
+}
+
+function sanitizeStatus(status) {
+  return squashSeparator(status).replace(/\s+/g, ' ').trim().slice(0, 80);
+}
+
+function parseTaskTitle(title) {
+  if (typeof title !== 'string') return null;
+  let kind;
+  let body;
+  if (title.startsWith(EXPLICIT_PREFIX)) {
+    kind = 'explicit';
+    body = title.slice(EXPLICIT_PREFIX.length);
+  } else if (title.startsWith(AUTO_PREFIX)) {
+    kind = 'auto';
+    body = title.slice(AUTO_PREFIX.length);
+  } else {
+    return null;
+  }
+  const sep = body.indexOf(TASK_STATUS_SEP);
+  return {
+    kind,
+    name: sep >= 0 ? body.slice(0, sep) : body,
+    status: sep >= 0 ? body.slice(sep + TASK_STATUS_SEP.length) : '',
+  };
+}
+
+function taskStateKey(parsed) {
+  return parsed.kind + ':' + parsed.name;
+}
+
+async function readTaskStates() {
+  try {
+    return (await chrome.storage.session.get(TASK_STATES_KEY))[TASK_STATES_KEY] || {};
+  } catch {
+    return {};
+  }
+}
+
+async function writeTaskStates(states) {
+  try { await chrome.storage.session.set({ [TASK_STATES_KEY]: states }); } catch {}
+}
+
+async function clearTaskState(title) {
+  const parsed = parseTaskTitle(title);
+  if (!parsed) return;
+  const states = await readTaskStates();
+  const key = taskStateKey(parsed);
+  if (states[key]) {
+    delete states[key];
+    await writeTaskStates(states);
+  }
+}
+
+// 所有标题更新排成一条队：并发的自动状态不会乱序落到组上
+let statusTail = Promise.resolve();
+function enqueueStatus(operation) {
+  const run = statusTail.then(operation, operation);
+  statusTail = run.catch(() => {});
+  return run;
+}
+
+async function applyTaskStatus(group, status, state) {
+  const parsed = parseTaskTitle(group.title);
+  if (!parsed) return { ok: false, error: `group ${group.id} is not a task group` };
+  const key = taskStateKey(parsed);
+  const states = await readTaskStates();
+  const previous = states[key] || {};
+  // 「需要协助」是粘性状态：自动的动作级状态不许盖掉它，只有显式状态（插件 /
+  // 框架写入的 phase、终态）可以。否则插件继续往下点「发布」时，提示一闪就没。
+  if (state === 'automatic' && previous.state === 'needs-human') {
+    return { ok: true, skipped: 'needs-human', title: group.title };
+  }
+  // 自动动作 = 任务又动起来了：上一次的终态 / 待确认不再成立，回到任务色
+  const nextState = state === 'automatic' ? 'running' : state;
+  const prefix = parsed.kind === 'explicit' ? EXPLICIT_PREFIX : AUTO_PREFIX;
+  const title = prefix + parsed.name + TASK_STATUS_SEP + sanitizeStatus(status);
+  const patch = { title };
+  if (nextState === 'running' && (previous.state || 'running') !== 'running') {
+    patch.color = taskColorFor(parsed.name);
+  } else if (nextState !== 'running') {
+    patch.color = TASK_STATE_COLORS[nextState];
+  }
+  try { await chrome.tabGroups.update(group.id, patch); } catch (e) { return { ok: false, error: String(e) }; }
+  states[key] = { state: nextState, at: Date.now() };
+  await writeTaskStates(states);
+  return { ok: true, groupId: group.id, title, state: nextState };
+}
+
+// 动作级状态：把一条桥命令翻译成一句话。读类 / 过于底层的命令返回 ''（保留上一个
+// 有意义的状态），所以轮询 evaluate 不会把「填写正文」刷成「求值」。
+function describeAction(cmd, args) {
+  const a = args || {};
+  const short = (selector) => {
+    const s = String(selector ?? '').replace(/\s+/g, ' ');
+    return s.length > 28 ? s.slice(0, 27) + '…' : s;
+  };
+  const hostOf = (url) => {
+    try { const u = new URL(String(url)); return u.host + (u.pathname && u.pathname !== '/' ? u.pathname.slice(0, 24) : ''); } catch { return ''; }
+  };
+  switch (cmd) {
+    case 'navigate': { const h = hostOf(a.url); return h ? '打开 ' + h : '打开页面'; }
+    case 'fill': return '填写 ' + short(a.selector);
+    case 'type':
+    case 'trusted-type': return '输入文字';
+    case 'trusted-enter': return '按回车';
+    case 'click': return '点击 ' + short(a.selector);
+    case 'trustedClick': return '点击页面';
+    case 'trustedDrag': return '拖拽';
+    case 'screenshot': return '截图';
+    case 'get-site-cookies': return '读取 Cookie';
+    case 'tab-reload': return '刷新页面';
+    case 'cdp': {
+      const method = String(a.method || '');
+      const type = String((a.params || {}).type || '');
+      if (method === 'Input.dispatchMouseEvent') {
+        if (/mousePressed|mouseReleased/.test(type)) return '点击页面';
+        if (type === 'mouseWheel') return '滚动';
+        return '';
+      }
+      if (method === 'Input.insertText') return '输入文字';
+      if (method === 'Input.dispatchKeyEvent') return '按键输入';
+      if (method === 'DOM.setFileInputFiles') return '上传文件';
+      if (method === 'Page.captureScreenshot') return '截图';
+      if (method === 'Page.navigate') return '打开页面';
+      if (method === 'Page.reload') return '刷新页面';
+      return '';
+    }
+    default: return '';
+  }
+}
+
+function noteAction(tabId, described) {
+  if (tabId == null || !described) return;
+  void enqueueStatus(async () => {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      if (tab.groupId == null || tab.groupId === -1) return;
+      const group = await chrome.tabGroups.get(tab.groupId);
+      if (isTaskGroupTitle(group.title)) await applyTaskStatus(group, described, 'automatic');
+    } catch { /* tab / group 已消失：无事可做 */ }
+  });
 }
 
 async function touchTaskActivity() {
@@ -627,27 +792,33 @@ async function getTaskTabId() {
   // an await lets the other message's assignment slip in. Single-threaded JS
   // guarantees no interleaving before the first await.
   const taskName = currentTaskName || 'xbrowser';
+  const described = describeAction(currentAction?.cmd, currentAction?.args);
+  const tabId = await resolveTaskTab(taskName);
+  if (tabId != null) noteAction(tabId, described);
+  return tabId;
+}
+
+async function resolveTaskTab(taskName) {
   const groups = await chrome.tabGroups.query({});
-  // 显式任务组（用户经 task-open 创建）：只复用，不改名
-  const explicit = groups.filter((g) => typeof g.title === 'string' && g.title.startsWith('xb-task-'));
+  const parsed = groups.map((g) => ({ group: g, task: parseTaskTitle(g.title) }));
+  // 显式任务组（用户经 task-open 创建）：只复用，不改名。
+  // 带任务名的命令只认同名的显式组——别的任务的显式组不得截胡（多客户端并发时，
+  // B 的命令会落进 A 刚开的组）；没带任务名时沿用旧行为：落在最近一个显式组里。
+  const explicit = parsed.filter((x) => x.task?.kind === 'explicit'
+    && (taskName === 'xbrowser' || x.task.name === taskName));
   if (explicit.length > 0) {
-    const tabs = await chrome.tabs.query({ groupId: explicit[explicit.length - 1].id });
+    const tabs = await chrome.tabs.query({ groupId: explicit[explicit.length - 1].group.id });
     if (tabs.length > 0) { await touchTaskActivity(); return tabs[tabs.length - 1].id; }
   }
-  // 自动任务组（🤖 前缀）：复用并把组标题刷新为当前任务名
-  const auto = groups.filter((g) => typeof g.title === 'string' && g.title.startsWith('🤖'));
-  const wantedAutoTitle = '🤖 ' + taskName;
-  const sameTask = auto.find((g) => g.title === wantedAutoTitle);
+  // 自动任务组（🤖 前缀）：按任务名复用（标题可能已带「 · 状态」后缀）
+  const auto = parsed.filter((x) => x.task?.kind === 'auto');
+  const sameTask = auto.find((x) => x.task.name === taskName);
   if (sameTask) {
-    const g = sameTask;
-    const wanted = '🤖 ' + taskName;
-    if (g.title !== wanted) { try { await chrome.tabGroups.update(g.id, { title: wanted }); } catch {} }
-    const tabs = await chrome.tabs.query({ groupId: g.id });
+    const tabs = await chrome.tabs.query({ groupId: sameTask.group.id });
     if (tabs.length > 0) { await touchTaskActivity(); return tabs[tabs.length - 1].id; }
   }
   if (auto.length > 0 && taskName === 'xbrowser') {
-    const g = auto[auto.length - 1];
-    const tabs = await chrome.tabs.query({ groupId: g.id });
+    const tabs = await chrome.tabs.query({ groupId: auto[auto.length - 1].group.id });
     if (tabs.length > 0) { await touchTaskActivity(); return tabs[tabs.length - 1].id; }
   }
   // 都没有：新建后台任务 tab（about:blank 起步，navigate 会再定位）
@@ -656,7 +827,7 @@ async function getTaskTabId() {
   try {
     const gid = await chrome.tabs.group({ tabIds: tab.id });
     await chrome.tabGroups.update(gid, {
-      title: wantedAutoTitle,
+      title: AUTO_PREFIX + taskName,
       color: taskColorFor(taskName),
     });
   } catch { /* tabGroups API 不可用时裸后台 tab 亦可 */ }
@@ -756,16 +927,29 @@ const executors = {
   },
 
   // ── S121: tab group 生命周期（任务分组） ──
-  'task-open': ({ name, url }) => enqueueLifecycle(async () => {
-    const taskName = name || 'default';
-    const existing = (await chrome.tabGroups.query({})).find((g) => g.title === 'xb-task-' + taskName);
+  'task-open': ({ name, url, status }) => enqueueLifecycle(async () => {
+    const taskName = sanitizeTaskName(name) || 'default';
+    const existing = (await chrome.tabGroups.query({})).find((g) => {
+      const t = parseTaskTitle(g.title);
+      return t?.kind === 'explicit' && t.name === taskName;
+    });
     if (existing) {
       const tabs = await chrome.tabs.query({ groupId: existing.id });
       // 2026-11-24 zombie-tab 修复：注册表/组里的死 tab（已关/discarded）不能复用——
       // 探活失败即清账（出组 + 剔出 taskTabs 注册表），全部死掉就走新建路径。
       for (let i = tabs.length - 1; i >= 0; i--) {
         const probe = await probeTaskTab(tabs[i].id);
-        if (probe.ok) return { tabId: tabs[i].id, groupId: existing.id, reused: true };
+        if (probe.ok) {
+          // 复用 = 任务重新开跑：上一次的终态 / 需要协助 / 待确认不再成立，回到进行中。
+          // 上次还在 running（或从没写过状态）就不动标题——桥会话每条命令都会复用一次，
+          // 无条件改写会把上一个动作状态刷掉。
+          const states = await readTaskStates();
+          const previous = (states[taskStateKey(parseTaskTitle(existing.title))] || {}).state || 'running';
+          if (status || previous !== 'running') {
+            await enqueueStatus(() => applyTaskStatus(existing, sanitizeStatus(status) || '进行中', 'running'));
+          }
+          return { tabId: tabs[i].id, groupId: existing.id, reused: true };
+        }
         await dropDeadTaskTab(tabs[i].id);
       }
     }
@@ -789,7 +973,7 @@ const executors = {
     }
     if (group != null) {
       await chrome.tabGroups.update(group, {
-        title: 'xb-task-' + taskName,
+        title: EXPLICIT_PREFIX + taskName + (status ? TASK_STATUS_SEP + sanitizeStatus(status) : ''),
         color: taskColorFor(taskName),
       });
     }
@@ -802,16 +986,19 @@ const executors = {
   }),
   'task-close': ({ name }) => enqueueLifecycle(async () => {
     const groups = await chrome.tabGroups.query({});
-    const targets = name
-      ? groups.filter((g) => g.title === 'xb-task-' + name || g.title === '🤖 ' + name)
-      : groups.filter((g) => isTaskGroupTitle(g.title));
+    const wanted = name ? sanitizeTaskName(name) : '';
+    const targets = groups.filter((g) => {
+      if (!isTaskGroupTitle(g.title)) return false;
+      const t = parseTaskTitle(g.title);
+      return !wanted || t.name === wanted;
+    });
     let closed = 0, ungrouped = 0;
     for (const g of targets) {
       const mine = new Set((await chrome.storage.local.get('taskTabs')).taskTabs || []);
       const tabs = await chrome.tabs.query({ groupId: g.id });
       for (const t of tabs) {
         // S209：🤖 组里的用户 tab（attach 入组的）只脱组保留；自建的关闭。
-        if (g.title && g.title.startsWith('🤖') && !mine.has(t.id)) {
+        if (g.title && g.title.startsWith('\u{1F916}') && !mine.has(t.id)) {
           await chrome.tabs.ungroup(t.id).catch(() => {});
           ungrouped++;
           continue;
@@ -820,11 +1007,35 @@ const executors = {
         stealthTabs.delete(t.id);
         closed++;
       }
+      await clearTaskState(g.title);
     }
     if (targets.some((g) => g.title && g.title.startsWith('🤖'))) {
       await chrome.storage.local.set({ taskTabs: [], taskUsedAt: 0 }).catch(() => {});
     }
     return { closed, ungrouped };
+  }),
+  // 显式写状态：插件 / 框架用它报告阶段、终态和「需要协助」。
+  // state: running（任务色）| needs-human（红，粘性）| awaiting-user（黄）| done（绿）| failed（红）
+  'task-status': ({ name, tabId, status, state = 'running' }) => enqueueStatus(async () => {
+    const nextState = TASK_STATES.includes(state) ? state : 'running';
+    const groups = await chrome.tabGroups.query({});
+    let target = null;
+    if (tabId != null) {
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        target = groups.find((g) => g.id === tab.groupId) || null;
+      } catch { /* tab 已关闭，退回按任务名找 */ }
+    }
+    if (!target && name) {
+      const wanted = sanitizeTaskName(name);
+      const match = (kind) => groups.find((g) => {
+        const t = parseTaskTitle(g.title);
+        return t?.kind === kind && t.name === wanted;
+      });
+      target = match('explicit') || match('auto') || null;
+    }
+    if (!target) return { ok: false, error: `no task group for ${name || 'tab ' + tabId}` };
+    return await applyTaskStatus(target, status ?? '', nextState);
   }),
   // S166: 可见小窗口模式（L0 真渲染）——hidden tab 有两个进程级残留：
   // rAF 帧距 ~1000ms（节流）+ trusted mousemove 大量丢弃（输入路由）。
@@ -897,10 +1108,16 @@ const executors = {
   'task-list': async () => {
     const groups = await chrome.tabGroups.query({});
     const out = [];
+    const states = await readTaskStates();
     for (const g of groups.filter((g) => isTaskGroupTitle(g.title))) {
+      const parsed = parseTaskTitle(g.title);
       const tabs = await chrome.tabs.query({ groupId: g.id });
       out.push({
-        name: g.title.replace(/^🤖\s*|^xb-task-/, ''),
+        name: parsed.name,
+        kind: parsed.kind,
+        title: g.title,
+        status: parsed.status,
+        state: (states[taskStateKey(parsed)] || {}).state || 'running',
         groupId: g.id,
         tabs: tabs.map((t) => ({ id: t.id, url: (t.url || '').slice(0, 60), title: (t.title || '').slice(0, 30) })),
       });
@@ -946,15 +1163,17 @@ const executors = {
   'attach': ({ task }) => enqueueLifecycle(async () => {
     const [t] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!t) return { ok: false, error: 'no active tab' };
-    const name = '🤖 ' + (task || 'xbrowser');
+    const taskName = sanitizeTaskName(task) || 'xbrowser';
+    const name = AUTO_PREFIX + taskName;
     const groups = await chrome.tabGroups.query({});
     let gid = null;
     for (const g of groups) {
-      if (g.title === name) { gid = g.id; break; }
+      const parsed = parseTaskTitle(g.title);
+      if (parsed?.kind === 'auto' && parsed.name === taskName) { gid = g.id; break; }
     }
     if (gid == null) gid = await chrome.tabs.group({ tabIds: t.id });
     else await chrome.tabs.group({ tabIds: t.id, groupId: gid }).catch(() => {});
-    await chrome.tabGroups.update(gid, { title: name, color: taskColorFor(task || 'xbrowser') }).catch(() => {});
+    await chrome.tabGroups.update(gid, { title: name, color: taskColorFor(taskName) }).catch(() => {});
     await touchTaskActivity();
     return { ok: true, tabId: t.id, groupId: gid, url: t.url, title: t.title };
   }),
@@ -1191,7 +1410,10 @@ const executors = {
       args: [selector],
     });
     const got = verify[0]?.result || '';
-    if (got === '' || got.length < value.length * 0.5) {
+    // 清空（value 为 ''）时回读为空就是期望结果，不能当成「被回流清空」——
+    // 否则 CLI 的 fill（默认先清空）在后台 tab 上会在这一步就失败。
+    const retained = value === '' ? got === '' : got !== '' && got.length >= value.length * 0.5;
+    if (!retained) {
       return { ok: false, error: 'input not retained（合成注入被页面回流清空）', upgrade: 'cdp-keyboard', got: got.length };
     }
     return result;
@@ -1515,8 +1737,11 @@ function connectWS() {
     const { id, cmd, args } = msg || {};
     // S206：任务名注入（executors 内 getTaskTabId 读取），并刷新空闲心跳。
     // S209：只读查询不续命——status/ping/task-list 等不应把空闲任务一直吊着。
-    currentTaskName = args && typeof args.task === 'string' ? args.task.trim().slice(0, 30) : '';
+    currentTaskName = args && typeof args.task === 'string' ? sanitizeTaskName(args.task).slice(0, 30) : '';
+    currentAction = { cmd, args: args || {} };
     if (!READ_ONLY_CMDS.has(cmd)) touchTaskActivity();
+    // 显式 tabId 的命令不经过 getTaskTabId：在这里写动作级状态
+    if (args && args.tabId != null) noteAction(args.tabId, describeAction(cmd, args));
     const reply = (payload) => { try { ws?.send(JSON.stringify({ id, ...payload })); } catch {} };
     const exec = executors[cmd];
     if (!exec) { reply({ ok: false, error: `unknown cmd: ${cmd}` }); return; }

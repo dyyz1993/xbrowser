@@ -180,14 +180,12 @@ describe('medium plugin', () => {
       );
     });
 
-    it('should call waitForHuman for CAPTCHA review', async () => {
+    it('publishes directly without waitForHuman', async () => {
       const handler = getHandler('publish');
       const page = createMockPage();
       const ctx = createMockCtx(page);
       await handler({ title: 'T', content: 'C' }, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalledWith(
-        expect.objectContaining({ reason: expect.stringContaining('CAPTCHA') })
-      );
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
     });
 
     it('should return title and url in data', async () => {
@@ -277,14 +275,12 @@ describe('medium plugin', () => {
       );
     });
 
-    it('should call waitForHuman for review', async () => {
+    it('imports directly without waitForHuman', async () => {
       const handler = getHandler('import');
       const page = createMockPage();
       const ctx = createMockCtx(page);
       await handler({ url: 'https://example.com/article' }, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalledWith(
-        expect.objectContaining({ reason: expect.stringContaining('imported') })
-      );
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
     });
 
     it('should return imported data', async () => {

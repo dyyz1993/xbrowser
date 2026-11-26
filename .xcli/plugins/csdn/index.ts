@@ -177,12 +177,6 @@ export default function (xcli: XCLIAPI): void {
           }
         }
 
-        await ctx.waitForHuman?.({
-          reason: '检查文章内容，解决验证码后点击"发布文章"',
-          timeout: 120,
-          autoDetect: true,
-        });
-
         const publishBtn = page.locator(
           'button:has-text("发布文章"), button:has-text("发布"), button[class*="publish"], button[id*="publish"], [class*="btn-publish"]'
         ).first();

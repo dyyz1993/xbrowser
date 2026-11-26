@@ -112,12 +112,6 @@ export default function (xcli: XCLIAPI): void {
 
       await page.keyboard.insertText(params.content);
 
-      await ctx.waitForHuman?.({
-        reason: 'Review and publish article (resolve CAPTCHA if present)',
-        timeout: 120,
-        autoDetect: true,
-      });
-
       const publishBtn = page.locator(
         'button:has-text("Publish"), button[data-testid="publish-button"], button[aria-label="Publish"]'
       ).first();
@@ -241,12 +235,6 @@ export default function (xcli: XCLIAPI): void {
         await page.keyboard.press('Enter');
         await page.waitForTimeout(5000);
       }
-
-      await ctx.waitForHuman?.({
-        reason: 'Review imported article and publish',
-        timeout: 120,
-        autoDetect: true,
-      });
 
       const publishBtn = page.locator(
         'button:has-text("Publish"), button:has-text("Publish now")'

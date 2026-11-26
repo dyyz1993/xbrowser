@@ -26,6 +26,9 @@ npx vitest run tests/cli/session-routes.test.ts  # 快速跑单个测试
 - `apply_patch` 修改多文件或同一文件多处时，先读取当前内容并按目标拆成最小上下文块；任何一块上下文失配都停止重试，重新读取目标文件。
 - Commit subject 是类型前缀后的文本，最长 80 字符（不是整行 100 字符）；提交前用 CI 正则或等价脚本自检。**长度按字节算**：本地 commit-msg 钩子与 master 上的 CI 检查都用 `wc -c` 计首行，超过 100 字节即失败（中文每字 3 字节）。squash 合并后的首行 = PR 标题（PR 只有一个非合并提交时取该提交的首行）+ GitHub 追加的 ` (#N)` 这 7 字节，所以 PR 标题和提交首行都要连同这 7 字节控制在 100 字节以内，否则本地钩子放行、master 的 CI 变红。自检：`printf '%s' "docs: 标题 (#000)" | wc -c`。
 - 「可信点击后无反应」先依次验证 unhandledrejection、实际网络请求、`elementFromPoint` 命中目标，再考虑反自动化；滚动列表必须重新 `scrollIntoView` 并取最新 rect。
+- zsh 不对未加引号的变量做分词，未匹配的通配符会中止整条命令：给工具传含 `*`/`?`/`[` 的参数一律加单引号；要分词的列表用数组或 `${=var}`，不要 `$var`；被 `| sed | cut` 吞掉的报错先看完整输出；涉及产品行为的结论用内联写下的命令复测后再报。
+- 起 CLI 子进程做验收时 stdin 用 `'ignore'` 或立即关闭（`stdio: ['ignore', 'pipe', 'pipe']`；`execFile` 默认留着空管道）：CLI 启动会 `readStdin()` 到 EOF，空管道不关就是假死，表现像「浏览器启动卡住」。
+- 现网 daemon 正从仓库的 `dist/` 运行时，**不要在主检出里 `npm run build`**：它会清空重写 daemon 正在用的文件，而且 buildId 是构建时间戳，下一条 `xbrowser` 命令就会因构建不一致重启 daemon、打断活跃会话。改用 `npx tsup --out-dir output/.scripts/<name>/dist`（旁边放一份 package.json，chunk 里 `require('../package.json')`），并给**所有**子进程（CLI / daemon / bridge server）设临时 `HOME`——`server.mjs` 收到扩展 hello 会覆盖 `~/.xbrowser/chrome-bridge-ext.json`。隔离证明要无条件先跑，不随「选哪些阶段」跳过。
 - **`XBROWSER_BRIDGE_HTTP` 是 bridge 的唯一隔离开关**——驱动、daemon、插件命令、发布层、控制台面板全部跟随，不设就是现网 9347。隔离测试必须显式设置它，并且**先证明路由再跑有副作用的命令**：拿只读的 `xbrowser chrome-bridge status --json` 指向一个无人监听的端口，必须报「bridge 未启动」；CLI 的工作目录要是加载了目标插件副本的那个仓库（cwd 在别处会加载到全局副本）。跑完比对现网 `/status` 的连接时间戳未变。只靠事后断言拦不住事故：2026-11-24 插件端口写死，「隔离」验收打进现网，把用户浏览器里的扩展 reload 了三次。
 
 ## 1. 项目原则
@@ -217,6 +220,8 @@ XBROWSER_PREVIEW_PORT=9224
 ```
 
 ---
+
+> ⚠️ **插件命令里的 `ctx.waitForHuman` 目前不等待**（自 2026-05 起是立即返回的桩，真正的等待只接在命令失败恢复和 managed-run 手动交接上）。它现在做三件事：立即返回 `{ solved: false, timedOut: false }`、在 stderr 打一行「需要人工协助，但此命令不会等待」、把 chrome-bridge 任务组标红成「需要协助：<原因>」。所以 `<site> login` 会在几秒内返回「登录可能未完成」——把「需要用户做什么」讲清楚后重跑，不要以为它等了 300 秒。把真正的等待接进来（viewer 接管 / 登录态轮询）会让命令阻塞数分钟，属于交互语义变更，动手前先和用户确认。
 
 ## 7. 登录处理
 
@@ -1253,6 +1258,16 @@ kind=bridge 粘性）把**任意内置命令**路由进用户浏览器——实�
 executor 在浏览器会话解析前拦截。多客户端并发 = 多 session 天然隔离。
 事件类能力（网络捕获/waitForEvent）显式 NotImplemented——需扩展侧 CDP 事件
 上行（瘦扩展重构项）。插件命令里 `--session` ≡ `--task`（同义词）。
+**插件命令走同一条粘性路由**（2026-11-26）：首次 `<site> <cmd> --session foo --bridge`
+也建在用户浏览器里，daemon 重启后按落盘 meta 回到同一个浏览器；`session close`
+对不在内存里的 bridge 会话也会收掉浏览器里的任务组。
+
+**任务分组标题 = `任务名 · 状态`**（用户在标签栏一眼看到 agent 此刻在做什么）：
+
+- 扩展按每条命令自动刷新动作级状态（`打开 页面` / `填写 #title` / `点击页面` / `上传文件`…）；读类命令不改标题。
+- 多步流程用 `xbrowser chrome-bridge task --action status --name <任务> --status "<阶段>" [--state running|needs-human|awaiting-user|done|failed]` 显式上报。发布层已上报：草稿结束 = 黄色「待你确认」并保留 tab；发布结束 = 绿色「已发布」/ 红色「失败」。
+- `needs-human` 是粘性状态：自动动作不会把它冲掉，只有显式状态或关组才解除。
+- 收尾语义：纯读取类流程在 `finally` 里 `task-close`；要留给用户确认的成果保留 tab 并写明状态；显式组不参与空闲回收；`xbrowser chrome-bridge finish` 会关掉所有任务组（包括别的会话的）。
 
 **扩展 reload 验收以版本号为判据（用户定 2026-11-19）**：改 `login-bridge/
 extension/` 任何代码**必须同步 bump manifest.json 版本**（含 package.json 两处

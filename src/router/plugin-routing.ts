@@ -15,6 +15,7 @@ import { CHAIN_OPERATOR_TOKENS, quoteChainToken } from '../chain-parser.js';
 import { getCommand } from '../commands/command-registry.js';
 import { getPluginLoader } from '../utils/plugin-singleton.js';
 import { checkPluginLoginRequired } from '../plugin/login-guard.js';
+import { requestHumanWait, finishHumanWait, markTaskNeedsHuman } from '../plugin/human-wait.js';
 import {
   createSession,
   findOrRestoreSession,
@@ -44,6 +45,8 @@ export interface PluginRouteRequest {
 export const KNOWN_GLOBAL_OPTIONS = new Set([
   'json', 'yaml', 'session', 'cdp', 'cdp-endpoint', 'version', 'v',
   'help', 'h', 'target', 'port', 'token', 'timeout', 'headless', 'tab',
+  // --bridge（2026-11-18 起的全局 flag）：插件命令首次把会话建在用户浏览器里也要用它
+  'bridge',
 ]);
 
 /**
@@ -289,9 +292,11 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
           if (needsBrowser && !process.env.XBROWSER_DAEMON_WORKER) {
             const { forwardPluginExec } = await import('../client/daemon-client.js');
             const userTimeout = typeof params.timeout === 'number' && params.timeout > 0 ? params.timeout * 1000 + 30000 : undefined;
+            // --bridge / XBROWSER_BRIDGE=1：首次把会话建在用户浏览器里（与内置命令同一个开关）
+            const bridgeFlag = options.bridge === true || String(options.bridge) === 'true' || process.env.XBROWSER_BRIDGE === '1';
             // daemon 原样返回插件的结果，不带耗时；用这次转发的往返时间兜底
             const forwardStart = Date.now();
-            const result = await forwardPluginExec(`${command}.${subCommand}`, params, sessionName, cdpEndpoint, userTimeout);
+            const result = await forwardPluginExec(`${command}.${subCommand}`, params, sessionName, cdpEndpoint, userTimeout, bridgeFlag);
             const resultData = result && typeof result === 'object' && 'data' in result ? (result.data as Record<string, unknown> | undefined) : undefined;
             if (result && result.success === false && resultData?.code === 'LOGIN_REQUIRED') {
               process.exitCode = 1;
@@ -328,7 +333,14 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
 
           let session: ManagedSession | undefined = undefined;
           if (needsBrowser) {
-            session = await findOrRestoreSession(sessionName, cdpEndpoint);
+            // 粘性路由：会话首次用 --bridge 建在用户浏览器里，之后的插件命令也必须落在同一个
+            // 浏览器——否则同一条 --session，内置命令走真浏览器、插件命令走无头
+            // 动态 import：与下方 setActivePage 同理，不在模块加载期把 browser 模块图拉进来
+            const { findOrCreateBridgeSession } = await import('../browser/bridge-session.js');
+            const bridgeSession = await findOrCreateBridgeSession(sessionName, {
+              preferBridge: options.bridge === true || String(options.bridge) === 'true' || process.env.XBROWSER_BRIDGE === '1',
+            }).catch(() => null);
+            session = bridgeSession ?? await findOrRestoreSession(sessionName, cdpEndpoint);
             if (!session) {
               session = await createSession(sessionName, undefined, cdpEndpoint ? { cdpEndpoint } : {});
             }
@@ -346,6 +358,7 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
             }
           }
 
+          let humanWaitRequested = false;
           const ctx = {
             args: cmdArgsForPlugin,
             options,
@@ -361,8 +374,10 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
             config: {},
             site,
             cliName: 'xbrowser',
-            waitForHuman: async (_opts: Record<string, unknown>) => {
-              return { solved: false, timedOut: true };
+            // 不等待，但如实返回并把 bridge 任务组标成「需要协助」（见 plugin/human-wait.ts）
+            waitForHuman: async (opts?: Record<string, unknown>) => {
+              humanWaitRequested = true;
+              return requestHumanWait(opts, session);
             },
             tips: new TipCollector(),
           };
@@ -383,6 +398,8 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
               sessionName,
             });
             if (!loginGuard.ok) {
+              // 命令在这里停下（LOGIN_REQUIRED）：bridge 任务组标题要让人看得出是在等登录
+              if (session?.bridge) await markTaskNeedsHuman(session, `需要登录后才能执行 ${command}.${subCommand}`);
               process.exitCode = 1;
               const result = {
                 success: false,
@@ -404,6 +421,7 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
             }
 
             const result = await cmdEntry.handler(params, ctx as unknown as CommandContext) as CommandResult;
+            if (humanWaitRequested) await finishHumanWait(session, result.success !== false, result.message);
 
             const hookOutputs: Array<Record<string, unknown>> = [];
             if (cmdHooks.length > 0 && session?.page) {
@@ -461,6 +479,7 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
               }
             }
           } catch (e: unknown) {
+            if (humanWaitRequested) await finishHumanWait(session, false, e instanceof Error ? e.message : String(e));
             outputError(e instanceof Error ? e.message : String(e));
           } finally {
             // Session lifecycle is managed by:

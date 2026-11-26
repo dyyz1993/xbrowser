@@ -1,3 +1,22 @@
+## [1.5.6] - 2026-11-26
+
+### Added
+- **任务分组标题显示状态**：标题 = `任务名 · 状态`。扩展按每条命令自动刷新动作级状态
+  （打开页面 / 填写 #title / 点击页面 / 上传文件 / 截图…），读类命令（evaluate 等）不改标题。
+  新增 `task-status` 执行器供插件 / 框架显式上报阶段与终态，`state` 决定组颜色：
+  `running` 任务色 / `needs-human` 红（粘性，自动动作不冲掉）/ `awaiting-user` 黄 /
+  `done` 绿 / `failed` 红。`task-open` 可带初始 `status`，`task-list` 返回
+  `title` / `status` / `state` / `kind`
+- **`getTaskTabId` 防跨任务串台**：带任务名的命令只认同名的显式组。此前只要有任意
+  `xb-task-*` 组存在，别的任务的 `--task` 命令（不带 tabId）就会落进那个组的 tab
+  （隔离 Chromium 实测：B 的命令读到了 A 的 URL）；没带任务名时沿用旧行为
+
+### Fixed
+- **清空输入框被误判**：`fill` 的 `value` 为 `''` 时回读为空是期望结果，不再当成
+  「input not retained」并要求升级键盘流。CLI 的 `fill` 默认先清空，旧版在后台任务 tab 上
+  每次都在这一步失败
+- 自动组带状态后缀后仍按任务名复用；`attach` 同理
+
 ## [1.5.5] - 2026-11-24
 
 ### Fixed

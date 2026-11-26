@@ -339,3 +339,70 @@ describe('chrome-bridge plugin', () => {
     }, 15_000);
   });
 });
+
+describe('chrome-bridge --args / --params JSON validation (ERR-20261125-003)', () => {
+  function setup() {
+    const fetchMock = vi.fn((_url: unknown, _init?: unknown): Promise<{ json(): Promise<unknown> }> => Promise.resolve({
+      json: () => Promise.resolve({ ok: true, data: { ok: true, value: 3 } }),
+    }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { site, xcli } = makeMock();
+    chromeBridge(xcli as never);
+    const bodies = () => fetchMock.mock.calls.map((call) => JSON.parse((call[1] as { body: string }).body) as { cmd: string; args: Record<string, unknown> });
+    return { site, fetchMock, bodies };
+  }
+
+  it('exec rejects JSON that a shell split at spaces instead of silently sending {}', async () => {
+    // 旧行为：解析失败 → obj = {} → 只带着 task 发出去，扩展回一句难懂的
+    // 「Failed to deserialize params.expression - BINDINGS: mandatory field missing」
+    const { site, fetchMock } = setup();
+
+    const r = await getCmd(site, 'exec')({ cmd: 'evaluate', args: '{"expression":', task: 't1' }, {}) as { success: boolean; message?: string };
+
+    expect(r.success).toBe(false);
+    expect(r.message).toContain('--args 不是合法的 JSON 对象');
+    expect(r.message).toContain('加单引号');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('cdp rejects an invalid --params the same way', async () => {
+    const { site, fetchMock } = setup();
+
+    const r = await getCmd(site, 'cdp')({ method: 'Runtime.evaluate', params: '{"expression":' }, {}) as { success: boolean; message?: string };
+
+    expect(r.success).toBe(false);
+    expect(r.message).toContain('--params 不是合法的 JSON 对象');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('non-object JSON is rejected too', async () => {
+    const { site, fetchMock } = setup();
+
+    for (const bad of ['[1, 2]', '"text"', 'nul']) {
+      const r = await getCmd(site, 'exec')({ cmd: 'evaluate', args: bad, task: 't1' }, {}) as { success: boolean };
+      expect(r.success).toBe(false);
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('JSON with spaces that arrives intact is forwarded as the parsed object', async () => {
+    const { site, bodies } = setup();
+
+    await getCmd(site, 'exec')({ cmd: 'evaluate', args: '{"expression": "document.title"}', task: 't1' }, {});
+    await getCmd(site, 'cdp')({ method: 'Runtime.evaluate', params: '{"expression": "1 + 2"}', task: 't1' }, {});
+
+    expect(bodies().map((b) => b.args)).toEqual([
+      { expression: 'document.title', task: 't1' },
+      { method: 'Runtime.evaluate', params: { expression: '1 + 2' }, task: 't1' },
+    ]);
+  });
+
+  it('an omitted or blank --args still means "no arguments"', async () => {
+    const { site, bodies } = setup();
+
+    await getCmd(site, 'exec')({ cmd: 'ping', args: '', task: 't1' }, {});
+    await getCmd(site, 'exec')({ cmd: 'ping' }, {});
+
+    expect(bodies().map((b) => b.args)).toEqual([{ task: 't1' }, {}]);
+  });
+});

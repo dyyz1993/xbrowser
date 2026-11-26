@@ -173,6 +173,13 @@ xbrowser chrome-bridge exec --cmd evaluate --args '{...}' --tab-id <id>  # 在�
 xbrowser chrome-bridge finish                               # 收尾：自建 tab 关闭，用户 tab 脱组保留
 ```
 
+任务分组的标题是 `任务名 · 状态`，用户在浏览器标签栏一眼能看到 agent 此刻在做什么：
+
+- 扩展按每条命令**自动刷新动作级状态**（打开页面 / 填写 #title / 点击 / 上传文件…）；读类命令（evaluate 等）不改标题。
+- 多步流程用 `xbrowser chrome-bridge task --action status --name <task> --status "上传配图 2/3"` 写阶段。
+- 需要用户介入时加 `--state needs-human`（组变红，且不会被后续自动状态冲掉）；收尾用 `--state done`（绿）/ `failed`（红）/ `awaiting-user`（黄，草稿等确认）。
+- `xbrowser chrome-bridge task --action list` 返回每个组的 `title` / `status` / `state`。
+
 **用户没提「现有浏览器」时**，再按登录态决策——大多数站需要登录态，headless 新起必败：
 
 ```bash

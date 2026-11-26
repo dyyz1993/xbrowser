@@ -15,12 +15,13 @@ import { z } from 'zod/v4';
 import { ok, fail } from '@dyyz1993/xcli-core';
 import type { CommandContext } from '@dyyz1993/xcli-core';
 import type { PageAdapter, SitePublisher } from './channel.js';
+import type { TaskState } from './bridge.js';
 import {
   extractLocalImagePaths,
   replaceImagePaths,
   uploadImagesForSite,
 } from './image-upload.js';
-import { createHttpBridge } from './bridge.js';
+import { createHttpBridge, setTaskStatus } from './bridge.js';
 import { resolveChannel, readMarkdownFile } from './channel.js';
 
 export interface SiteRegistrar {
@@ -53,6 +54,9 @@ export interface RegisterPublishingOptions {
   /** 命令名覆盖（缺省就是 draft / publish） */
   commandNames?: Partial<Record<'draft' | 'publish', string>>;
 }
+
+/** 向任务组标题上报「现在在做什么」；本地通道（没有任务组）下是空操作。 */
+type ReportStatus = (status: string, state?: TaskState) => Promise<void>;
 
 /** 横版裁剪（16:9）——图片一律横版 */
 async function landscapeCrop(path: string): Promise<void> {
@@ -168,7 +172,7 @@ export function registerPublishingCommands(
    */
   const withChannel = async <T>(
     ctx: CommandContext,
-    fn: (adapter: PageAdapter, channel: string) => Promise<T>,
+    fn: (adapter: PageAdapter, channel: string, status: ReportStatus) => Promise<T>,
   ): Promise<T> => {
     const page = ctx.page as never;
     const resolution = await resolveChannel({
@@ -176,7 +180,12 @@ export function registerPublishingCommands(
       taskName: `pub-${publisher.site}`,
       localUrl: editorUrl,
     });
-    return fn(resolution.adapter, resolution.channel);
+    // bridge 通道：把「现在在做什么」写进任务组标题（标题 = 任务名 · 状态）
+    const status: ReportStatus = async (text, state = 'running') => {
+      if (resolution.channel !== 'bridge' || !resolution.taskName) return;
+      await setTaskStatus(createHttpBridge(), resolution.taskName, text, state);
+    };
+    return fn(resolution.adapter, resolution.channel, status);
   };
 
   const draftName = options.commandNames?.draft ?? 'draft';
@@ -211,19 +220,30 @@ export function registerPublishingCommands(
         const imagePaths = parseList(params.images);
         for (const p of imagePaths) await landscapeCrop(p);
 
-        return withChannel(ctx, async (adapter, channel) => {
+        return withChannel(ctx, async (adapter, channel, report) => {
+          // 「草稿：xxx」只用于进行中的步骤；终态（待确认 / 出错）直接上报，免得「草稿：草稿已就绪」
+          const status = (step: string) => report(`草稿：${step}`);
           try {
+            await status('打开编辑器');
             await publisher.open(adapter, { uid: params.uid });
             // 本地配图先上传换 CDN URL（51CTO 走本站 paste，其余走 CSDN 图床）
-            const { markdown: withCdn } = await uploadAndInlineImages(markdown, publisher.site, adapter);
+            const uploadedImages: { markdown: string; uploaded: string[] } = extractLocalImagePaths(markdown).length > 0
+              ? await (async () => { await status('上传配图'); return uploadAndInlineImages(markdown, publisher.site, adapter); })()
+              : { markdown, uploaded: [] };
+            const { markdown: withCdn } = uploadedImages;
+            await status('填写标题');
             await publisher.setTitle(adapter, params.title);
+            await status('填写正文');
             await publisher.setBody(adapter, withCdn);
             const url = await adapter.url();
+            // 草稿留在编辑器里等用户确认：组不关，标题明说「等你」
+            await report('草稿已就绪，待你确认后发布', 'awaiting-user');
             return ok(
               { title: params.title, channel, url, chars: withCdn.length },
               [`已填入 ${publisher.site} 编辑器（通道：${channel}），请确认后发布`],
             );
           } catch (e) {
+            await report(`草稿出错：${e instanceof Error ? e.message : e}`, 'failed');
             return fail(String(e instanceof Error ? e.message : e));
           }
         });
@@ -268,13 +288,21 @@ export function registerPublishingCommands(
         const summary =
           params.summary || (options.deriveSummary ? options.deriveSummary(markdown) : '');
 
-        return withChannel(ctx, async (adapter, channel) => {
+        return withChannel(ctx, async (adapter, channel, report) => {
+          const status = (step: string) => report(`发布：${step}`);
           try {
+            await status('打开编辑器');
             await publisher.open(adapter, { uid: params.uid });
             // 本地配图先上传换 CDN URL（51CTO 走本站 paste，其余走 CSDN 图床）
-            const { markdown: withCdn } = await uploadAndInlineImages(markdown, publisher.site, adapter);
+            const uploadedImages: { markdown: string; uploaded: string[] } = extractLocalImagePaths(markdown).length > 0
+              ? await (async () => { await status('上传配图'); return uploadAndInlineImages(markdown, publisher.site, adapter); })()
+              : { markdown, uploaded: [] };
+            const { markdown: withCdn } = uploadedImages;
+            await status('填写标题');
             await publisher.setTitle(adapter, params.title);
+            await status('填写正文');
             await publisher.setBody(adapter, withCdn);
+            await status('提交发布');
             const result = await publisher.publish(adapter, {
               category: params.category,
               summary,
@@ -282,7 +310,11 @@ export function registerPublishingCommands(
               source: params.source,
               uid: params.uid,
             });
-            if (!result.published) return fail(result.note || '发布未完成');
+            if (!result.published) {
+              await report(`发布未完成：${result.note || ''}`, 'failed');
+              return fail(result.note || '发布未完成');
+            }
+            await report(`已发布${result.url ? '：' + result.url.slice(0, 60) : ''}`, 'done');
             return ok(
               {
                 title: params.title,
@@ -295,6 +327,7 @@ export function registerPublishingCommands(
             );
           } catch (e) {
             // 协议层抛错 = 操作失败，转 fail 而非抛异常（链式命令才能 fallback）
+            await report(`发布出错：${e instanceof Error ? e.message : e}`, 'failed');
             return fail(String(e instanceof Error ? e.message : e));
           }
         });

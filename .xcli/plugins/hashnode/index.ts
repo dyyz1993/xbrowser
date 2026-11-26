@@ -128,12 +128,6 @@ export default function (xcli: XCLIAPI): void {
         }
       }
 
-      await ctx.waitForHuman?.({
-        reason: 'Review and publish article (resolve CAPTCHA if present)',
-        timeout: 120,
-        autoDetect: true,
-      });
-
       const publishBtn = page.locator(
         'button:has-text("Publish"), button:has-text("发布"), button[data-testid="publish-button"]'
       ).first();

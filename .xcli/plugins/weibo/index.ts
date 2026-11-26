@@ -69,13 +69,6 @@ export default function (xcli: XCLIAPI): void {
 
         await page.waitForTimeout(500);
 
-        // 等待用户检查
-        await ctx.waitForHuman?.({
-          reason: '请在 viewer 中检查微博内容后确认发布',
-          timeout: 120,
-          autoDetect: true,
-        });
-
         // 点击发送按钮
         const sendBtn = page.locator(
           'button[class*="submit"], a[class*="submit"], button:has-text("发博"), button:has-text("发送"), button:has-text("发布")'
@@ -153,13 +146,6 @@ export default function (xcli: XCLIAPI): void {
         }
 
         await page.waitForTimeout(500);
-
-        // 等待用户检查
-        await ctx.waitForHuman?.({
-          reason: '请在 viewer 中检查转发内容后确认',
-          timeout: 120,
-          autoDetect: true,
-        });
 
         // 点击确认转发按钮
         const confirmBtn = page.locator(

@@ -865,12 +865,6 @@ export default function (xcli: XCLIAPI): void {
           return fail('未找到回答编辑器，可能需要手动展开', tips);
         }
 
-        await ctx.waitForHuman?.({
-          reason: '检查回答内容后点击"发布回答"',
-          timeout: 120,
-          autoDetect: true,
-        });
-
         // 点击"发布回答"按钮
         const submitBtn = page.locator(
           'button:has-text("发布回答"), button:has-text("提交回答"), button:has-text("发布"), button[class*="submit"]'
@@ -1133,13 +1127,6 @@ export default function (xcli: XCLIAPI): void {
         tips.push(`标题已填写: ${params.title}`);
         tips.push(`正文存活: ${bodyLen}/${content.length} 字符`);
 
-        // 等待用户检查后发布
-        await ctx.waitForHuman?.({
-          reason: '请在 viewer 中检查文章内容后点击"发布"按钮（或继续等待自动发布）',
-          timeout: 120,
-          autoDetect: true,
-        });
-
         // 点击发布按钮
         const publishBtn = page.locator(
           'button:has-text("发布"), button[class*="publish"], button:has-text("发表")'
@@ -1225,12 +1212,6 @@ export default function (xcli: XCLIAPI): void {
             }
           }
         }
-
-        await ctx.waitForHuman?.({
-          reason: '检查文章内容后点击发布',
-          timeout: 120,
-          autoDetect: true,
-        });
 
         const publishBtn = page.locator(
           'button:has-text("发布"), button[class*="publish"], button:has-text("发表")'

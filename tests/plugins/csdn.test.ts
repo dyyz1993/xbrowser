@@ -230,14 +230,12 @@ describe('csdn plugin', () => {
       expect(page.close).not.toHaveBeenCalled();
     });
 
-    it('should call waitForHuman for CAPTCHA review', async () => {
+    it('publishes directly without waitForHuman', async () => {
       const handler = getHandler('publish');
       const page = createMockPage();
       const ctx = createMockCtx(page);
       await handler({ title: 'T', content: 'C' }, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalledWith(
-        expect.objectContaining({ reason: expect.stringContaining('验证码') })
-      );
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
     });
   });
 

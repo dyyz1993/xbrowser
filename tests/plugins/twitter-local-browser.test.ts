@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import sharp from 'sharp';
 import plugin from '../../.xcli/plugins/twitter/index.ts';
 import { launch, type XBBrowser, type XBContext, type XBPage } from '../../src/cdp-driver/index.js';
@@ -104,6 +104,11 @@ describe('twitter image upload local browser fixture', { timeout: 90_000 }, () =
     const launched = await launch({ headless: true });
     browser = launched.browser;
   }, 60_000);
+
+  afterAll(async () => {
+    // 不关会留下一个 130MB 的 /tmp/xbrowser-chrome-* profile（ERR-20261125-004）
+    await browser?.close();
+  });
 
   beforeEach(async () => {
     vi.clearAllMocks();

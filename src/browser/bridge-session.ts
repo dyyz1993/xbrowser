@@ -36,7 +36,7 @@ import type {
   XBFilePayload,
   WaitUntilState,
 } from '../cdp-driver/types.js';
-import { newSessionId, readSessionDiskMeta, saveSessionDiskMeta, sessions } from './state.js';
+import { deleteSessionDiskMeta, newSessionId, readSessionDiskMeta, saveSessionDiskMeta, sessions } from './state.js';
 import type { ManagedSession } from './state.js';
 import { registerSession } from './lifecycle.js';
 
@@ -317,6 +317,24 @@ export class BridgePage implements XBPage {
   async fill(selector: string, value: string, _opts?: XBFillOptions): Promise<void> {
     const direct = await this.exec('fill', { selector, value });
     if (direct.ok === true) return;
+    // 清空（value 为 ''）不走键盘流：键盘流要求页面可见，后台任务 tab 不满足，
+    // 回退只会把「清空」变成整条 fill 失败。改用页面脚本清空。
+    if (value === '') {
+      const cleared = await this.evalExpr<boolean>(`(function(){
+        var el = document.querySelector(${JSON.stringify(selector)});
+        if (!el) return false;
+        if (el.isContentEditable) { el.textContent = ''; }
+        else {
+          var proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, '');
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      })()`);
+      if (cleared !== true) throw new Error(`[bridge-session] fill 失败: ${String(direct.error ?? 'element not found')}`);
+      return;
+    }
     // 受控编辑器被拒（input-not-retained / upgrade 提示）→ 升级键盘流
     const typed = await this.exec('type', { selector, text: value });
     if (typed.ok !== true) throw new Error(`[bridge-session] fill 失败: ${String(direct.error ?? typed.error ?? 'unknown')}`);
@@ -745,11 +763,14 @@ interface BridgeMetaRecord {
 export interface BridgeMetaStore {
   read(name: string): BridgeMetaRecord | null;
   save(name: string, data: Record<string, unknown>): void;
+  /** 删除落盘 meta（清掉粘性路由标记）；真实存储总是提供。 */
+  delete?(name: string): void;
 }
 
 const realMetaStore: BridgeMetaStore = {
   read: (name) => readSessionDiskMeta(name),
   save: (name, data) => { saveSessionDiskMeta(name, data); },
+  delete: (name) => { deleteSessionDiskMeta(name); },
 };
 
 /** 测试注入：避免单元测试写真实 ~/.xbrowser/sessions */
@@ -757,6 +778,20 @@ let metaStore: BridgeMetaStore | null = realMetaStore;
 
 export function __setBridgeMetaStoreForTests(store: BridgeMetaStore | null): void {
   metaStore = store ?? realMetaStore;
+}
+
+/**
+ * 收掉「不在内存里」的 bridge 会话——典型是 daemon 重启之后：任务组还在用户浏览器里，
+ * 按 meta 里记的任务名关组，并清掉粘性路由标记（否则同名会话下次仍粘回旧 tab）。
+ * 不是 bridge 会话时返回 false。
+ */
+export async function closeDetachedBridgeSession(name: string): Promise<boolean> {
+  const store = metaStore ?? realMetaStore;
+  const meta = store.read(name);
+  if (meta?.kind !== 'bridge') return false;
+  await bridgeExec('task-close', { name: meta.taskName ?? name }).catch(() => undefined);
+  store.delete?.(name);
+  return true;
 }
 
 /**

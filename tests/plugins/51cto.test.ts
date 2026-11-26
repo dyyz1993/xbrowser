@@ -97,6 +97,21 @@ describe('51cto plugin', () => {
     );
   });
 
+  it('login opens the working login entry, not the 404 /index/login', async () => {
+    const { page } = createMockPage({ url: 'https://home.51cto.com/index?from_service=blog&scene=login1' });
+    const res = await getHandler('login')({}, ctxWith(page)) as { success: boolean };
+
+    expect(res.success).toBe(true);
+    expect(page.goto).toHaveBeenCalledWith(
+      'https://home.51cto.com/index?from_service=blog&scene=login1',
+      expect.objectContaining({ waitUntil: 'domcontentloaded' }),
+    );
+    expect(page.goto).not.toHaveBeenCalledWith(
+      'https://home.51cto.com/index/login',
+      expect.anything(),
+    );
+  });
+
   // ——— 通用守卫 ———
   it('draft should fail when neither content nor file provided', async () => {
     const { page } = createMockPage();

@@ -165,11 +165,11 @@ describe('quora plugin', () => {
       expect(firstTip(result.tips)).toContain('https://www.quora.com/What-is-X');
     });
 
-    it('should call waitForHuman for review', async () => {
+    it('submits answers directly without waitForHuman', async () => {
       const handler = getHandler('answer');
       const ctx = makeCtx();
       await handler({ questionUrl: 'https://quora.com/q', content: 'test' }, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalled();
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
     });
   });
 
@@ -204,13 +204,11 @@ describe('quora plugin', () => {
       expect(firstTip(result.tips)).toContain('Test Article');
     });
 
-    it('should call waitForHuman for review', async () => {
+    it('publishes articles directly without waitForHuman', async () => {
       const handler = getHandler('publish-article');
       const ctx = makeCtx();
       await handler({ title: 't', content: 'c' }, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalledWith(
-        expect.objectContaining({ reason: expect.stringContaining('article') })
-      );
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
     });
   });
 

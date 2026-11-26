@@ -171,11 +171,11 @@ describe('wordpress plugin', () => {
       expect(firstTip(result.tips)).toContain('Test Post');
     });
 
-    it('should call waitForHuman for review', async () => {
+    it('publishes directly without waitForHuman', async () => {
       const handler = getHandler('publish');
       const ctx = makeCtx();
       await handler({ title: 't', content: 'c' }, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalled();
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
     });
   });
 
@@ -285,13 +285,11 @@ describe('wordpress plugin', () => {
       expect(firstTip(result.tips)).toContain('页面');
     });
 
-    it('should call waitForHuman for review', async () => {
+    it('creates pages directly without waitForHuman', async () => {
       const handler = getHandler('create-page');
       const ctx = makeCtx();
       await handler({ title: 't', content: 'c' }, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalledWith(
-        expect.objectContaining({ reason: expect.stringContaining('page') })
-      );
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
     });
 
     it('should call waitForLoadState', async () => {

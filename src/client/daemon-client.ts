@@ -6,7 +6,9 @@ import { request as httpRequest } from 'http';
 
 // 与 daemon-main 的 XBROWSER_DAEMON_PORT 对齐（测试/多实例隔离用；缺省 9224）
 const DAEMON_PORT = parseInt(process.env.XBROWSER_DAEMON_PORT || '9224', 10);
-const DAEMON_BASE = `http://localhost:${DAEMON_PORT}`;
+// 与 rpcCall 的 127.0.0.1 走同一个 loopback：localhost 可能解析到 IPv6，
+// 当别的进程占着 127.0.0.1:port 时，/health 会命中它而 RPC 命中我们的 daemon（ERR-20261124-001）。
+const DAEMON_BASE = `http://127.0.0.1:${DAEMON_PORT}`;
 
 let _ensurePromise: Promise<void> | null = null;
 
@@ -287,9 +289,11 @@ export async function forwardPluginExec(
   session: string = 'default',
   cdpEndpoint?: string,
   timeoutMs: number = 120000,
+  bridge?: boolean,
 ): Promise<ExecutionResult> {
   const rpcParams: Record<string, unknown> = { command, params, session };
   if (cdpEndpoint) rpcParams.cdpEndpoint = cdpEndpoint;
+  if (bridge) rpcParams.bridge = true;
   try {
     return await rpcCall<ExecutionResult>('plugin:exec', rpcParams, timeoutMs);
   } catch (e) {

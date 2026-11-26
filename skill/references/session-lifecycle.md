@@ -13,6 +13,9 @@ Session management patterns for xbrowser — create, use, and close browser sess
 - [Human-in-the-Loop Viewer](#human-in-the-loop-viewer)
 - [kill vs close](#kill-vs-close)
 - [Code Changes Require Rebuild](#code-changes-require-rebuild)
+- [Bridge Sessions](#bridge-sessions)
+- [Login State into a Headless Session](#login-state-into-a-headless-session)
+- [Isolated Verification](#isolated-verification)
 - [Session Commands Reference](#session-commands-reference)
 - [Common Patterns](#common-patterns)
 
@@ -222,6 +225,56 @@ xbrowser goto ...  # May use cached daemon with old code
 Without `kill`, the daemon continues running old code.
 
 ---
+
+## Bridge Sessions
+
+A session can live in the **user's real Chrome** (logged-in tabs) instead of a self-launched browser.
+The first command carries `--bridge`; the choice is saved per session name, so later commands are sticky.
+
+```bash
+xbrowser goto https://example.com --session work --bridge      # opens tab group "xb-task-work" in the user's Chrome
+xbrowser eval document.title --session work                   # sticky: no flag needed
+xbrowser myplugin mycmd --session work                       # plugin commands follow the same sticky session
+xbrowser session close --session work                        # closes the tab group
+```
+
+Notes:
+
+- Every tab group title is `任务名 · 状态` and is refreshed automatically (see SKILL.md). Use
+  `xbrowser chrome-bridge task --action status --name work --status "…" [--state …]` for phases / hand-off.
+- Trusted input (clicks, raw key events) needs a visible page; `fill` works in background tabs.
+  Check with `xbrowser chrome-bridge input-health`.
+- `ctx.waitForHuman` inside plugin commands does **not** wait today: it returns at once, prints a warning on stderr and
+  marks the tab group red (`需要协助`). Plan for it — tell the user what to do and re-run.
+
+## Login State into a Headless Session
+
+To run a logged-in flow in a separate headless browser (decoupled from the user's Chrome):
+
+```bash
+xbrowser login-state export --domains github.com                  # offline: snapshot the local Chrome cookie DB + Keychain decrypt -> Playwright storageState (0600)
+xbrowser login-state run --domains github.com --session mysite    # inject into the headless session "mysite" (first run may prompt Keychain)
+xbrowser --session mysite "goto https://github.com/settings/profile && text"
+```
+
+Cookies exported from the live browser over the bridge (`xbrowser chrome-bridge exec --cmd get-site-cookies --args '{"domain":"example.com"}'`)
+use Chrome's field names: map `expirationDate` → `expires` and `no_restriction|lax|strict` → `None|Lax|Strict` before
+calling `addCookies`, otherwise expiry / SameSite are silently dropped. `login-state` does not carry localStorage yet.
+Running the same account in two browsers at once can get the session revoked by some sites.
+
+## Isolated Verification
+
+On a machine where a daemon / bridge / the user's Chrome are live, never use `xbrowser kill` and never rebuild the
+checkout's `dist/` (the live daemon runs from it; a new build id restarts it). Instead:
+
+```bash
+npx tsup --out-dir output/.scripts/<name>/dist                 # private build
+HOME=$(mktemp -d) XBROWSER_DAEMON_PORT=19224 XBROWSER_BRIDGE_HTTP=http://127.0.0.1:19447 \
+  node output/.scripts/<name>/dist/cli.js …                    # private HOME + private daemon + private bridge
+```
+
+Prove the route first: `xbrowser chrome-bridge status --json` against an unused port must report “bridge 未启动”.
+The extension's WS port is compiled into `background.js` (`WS_BRIDGE`); point a copy at the private bridge before loading it.
 
 ## Session Commands Reference
 

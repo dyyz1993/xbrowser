@@ -919,4 +919,90 @@ describe('seo plugin', () => {
       expect(page.goto).toHaveBeenCalled();
     });
   });
+
+  describe('login command', () => {
+    function createLoginPage(loginVisible: boolean) {
+      const first = () => ({ isVisible: vi.fn(() => Promise.resolve(loginVisible)) });
+      return {
+        goto: vi.fn(),
+        waitForTimeout: vi.fn(),
+        url: vi.fn(() => 'https://github.com/login'),
+        locator: vi.fn(() => ({ first, isVisible: vi.fn(() => Promise.resolve(loginVisible)) })),
+      };
+    }
+
+    function createLoginContext(page: unknown) {
+      return {
+        page,
+        storage: {
+          set: vi.fn(() => Promise.resolve()),
+          get: vi.fn(() => Promise.resolve(null)),
+          delete: vi.fn(() => Promise.resolve()),
+        },
+      };
+    }
+
+    it('does not store loggedIn:true when the page still shows a login form', async () => {
+      const handler = getHandler('login');
+      const ctx = createLoginContext(createLoginPage(true));
+
+      const result = await handler({ platform: 'github' }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('登录未完成');
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+      expect(ctx.storage.delete).toHaveBeenCalledWith('seo_login_github');
+    });
+
+    it('stores the login state only after the login form is gone', async () => {
+      const handler = getHandler('login');
+      const ctx = createLoginContext(createLoginPage(false));
+
+      const result = await handler({ platform: 'github' }, ctx);
+
+      expect(result.success).toBe(true);
+      expect(result.data.loggedIn).toBe(true);
+      expect(ctx.storage.set).toHaveBeenCalledWith(
+        'seo_login_github',
+        expect.objectContaining({ loggedIn: true }),
+      );
+    });
+  });
+
+  describe('register command', () => {
+    it('does not store loggedIn:true when the submit button is missing', async () => {
+      const handler = getHandler('register');
+      globalThis.fetch = vi.fn(() => Promise.reject(new Error('offline')));
+      const first = () => ({
+        isVisible: vi.fn(() => Promise.resolve(false)),
+        fill: vi.fn(),
+        click: vi.fn(),
+      });
+      const page = {
+        goto: vi.fn(),
+        waitForTimeout: vi.fn(),
+        url: vi.fn(() => 'https://github.com/signup'),
+        locator: vi.fn(() => ({ first })),
+      };
+      const ctx = {
+        page,
+        storage: {
+          set: vi.fn(() => Promise.resolve()),
+          get: vi.fn(() => Promise.resolve(null)),
+          delete: vi.fn(() => Promise.resolve()),
+        },
+      };
+
+      const result = await handler(
+        { platform: 'github', email: 'user@example.com', password: 'Secret123!' },
+        ctx,
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.data.submitted).toBe(false);
+      expect(result.data.loggedIn).toBe(false);
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+      expect(ctx.storage.delete).toHaveBeenCalledWith('seo_login_github');
+    });
+  });
 });

@@ -140,7 +140,9 @@ export async function handleEvalScript(parts: string[], argv: string[]): Promise
       i++;
       continue;
     }
-    if (part === '--json' || part === '--yaml' || part === '-j') continue;
+    // --bridge 是无值布尔 flag：不跳过就会被当成脚本的第 2 行（`document.title\n--bridge`
+    // 解析成 `document.title-- bridge` → ReferenceError: bridge is not defined）
+    if (part === '--json' || part === '--yaml' || part === '-j' || part === '--bridge') continue;
     scriptLines.push(part);
   }
   const script = scriptLines.join('\n');

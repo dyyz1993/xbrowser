@@ -309,6 +309,24 @@ export async function closeTaskTab(bridge: BridgeTransport, name: string): Promi
   await bridge.call('task-close', { name }).catch(() => undefined);
 }
 
+export type TaskState = 'running' | 'needs-human' | 'awaiting-user' | 'done' | 'failed';
+
+/**
+ * 更新任务分组标题里的状态（标题 = 任务名 · 状态），让用户在浏览器标签栏一眼看到
+ * agent 此刻在做什么、是不是在等自己。扩展不认识 task-status（旧版本）或 bridge 不可达
+ * 时静默跳过——状态只是展示，绝不能让发布流程因它失败。
+ */
+export async function setTaskStatus(
+  bridge: BridgeTransport,
+  name: string,
+  status: string,
+  state: TaskState = 'running',
+): Promise<void> {
+  await bridge
+    .call('task-status', { name, status: status.slice(0, 80), state })
+    .catch(() => undefined);
+}
+
 /** 轮询等待条件成立 */
 export async function waitFor<T>(
   fn: () => Promise<T | null | undefined | false>,

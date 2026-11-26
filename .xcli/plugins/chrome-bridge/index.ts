@@ -131,6 +131,25 @@ export default function (xcli: XCLIAPI): void {
     requiresLogin: false,
   });
 
+  /** --args / --params 的 JSON：CLI 可能给字符串也可能给已解析对象。解析失败必须报错——
+   *  以前静默当成 {} 发出去，扩展端只回一句难懂的「mandatory field missing」。 */
+  function parseJsonObjectArg(flag: string, raw: unknown): { ok: true; value: Record<string, unknown> } | { ok: false; error: string } {
+    if (raw == null || raw === '') return { ok: true, value: {} };
+    if (typeof raw === 'object' && !Array.isArray(raw)) return { ok: true, value: raw as Record<string, unknown> };
+    const text = typeof raw === 'string' ? raw.trim() : '';
+    let parsed: unknown;
+    try { parsed = JSON.parse(text); } catch { parsed = undefined; }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {
+        ok: false,
+        error: `${flag} 不是合法的 JSON 对象：${String(raw).slice(0, 80)}` +
+          '。多半是被 shell 按空格拆开了——请整体加单引号，如 ' +
+          `${flag} '{"expression": "document.title"}'`,
+      };
+    }
+    return { ok: true, value: parsed as Record<string, unknown> };
+  }
+
   async function postBridge(body: Record<string, unknown>): Promise<{ ok?: boolean; data?: unknown; error?: string } | null> {
     return fetch(`${BRIDGE_HTTP}/exec`, {
       method: 'POST',
@@ -365,17 +384,18 @@ export default function (xcli: XCLIAPI): void {
       let argsStr: string;
       if (taskName != null || params.tabId != null) {
         // 注入 task（分组标题/回收记账）与 tabId（显式接管路由）
-        let obj: Record<string, unknown> = {};
-        if (typeof argsRaw === 'string') {
-          try { const p = JSON.parse(argsRaw) as unknown; if (p && typeof p === 'object' && !Array.isArray(p)) obj = p as Record<string, unknown>; } catch { /* 非对象字符串丢弃 */ }
-        } else if (argsRaw && typeof argsRaw === 'object') {
-          obj = argsRaw as Record<string, unknown>;
-        }
+        const parsed = parseJsonObjectArg('--args', argsRaw);
+        if (!parsed.ok) return fail(parsed.error);
+        const obj = parsed.value;
         if (taskName) obj.task = taskName;
         if (params.tabId != null) obj.tabId = params.tabId;
         argsStr = JSON.stringify(obj);
+      } else if (typeof argsRaw === 'string') {
+        const parsed = parseJsonObjectArg('--args', argsRaw);
+        if (!parsed.ok) return fail(parsed.error);
+        argsStr = JSON.stringify(parsed.value);
       } else {
-        argsStr = typeof argsRaw === 'string' ? argsRaw : JSON.stringify(argsRaw ?? {});
+        argsStr = JSON.stringify(argsRaw ?? {});
       }
       // S212：大参数（base64 图片等）必须走 POST body——GET query 在 URL 超长时
       // 直接连接失败，症状是「bridge 未启动」（实为 URL 上限，与 attach/cdp 同修）
@@ -687,10 +707,9 @@ export default function (xcli: XCLIAPI): void {
       // CLI 层可能已把 --params 的 JSON 解析成对象；扩展端要求 CDP 参数
       // 保持嵌套 params，不能展开到 args 顶层。
       const paramsRaw: unknown = params.params;
-      const parsedParams = typeof paramsRaw === 'string'
-        ? (()=>{try{return JSON.parse(paramsRaw)}catch{return {}}})()
-        : (paramsRaw ?? {});
-      const cdpParams = parsedParams as Record<string, unknown>;
+      const parsedParams = parseJsonObjectArg('--params', paramsRaw);
+      if (!parsedParams.ok) return fail(parsedParams.error);
+      const cdpParams = parsedParams.value;
       const args: Record<string, unknown> = {
         method: params.method,
         params: cdpParams,
@@ -706,23 +725,30 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.command('task', {
-    description: 'tab group 任务管理：open（开任务组）/ close（删组）/ list（列组）',
+    description: 'tab group 任务管理：open（开任务组）/ status（更新组标题里的状态）/ close（删组）/ list（列组）。组标题 = 任务名 · 状态，状态说明 agent 此刻在做什么',
     result: taskResult,
     scope: 'project',
     parameters: z.object({
-      action: z.enum(['open', 'close', 'list']),
+      action: z.enum(['open', 'status', 'close', 'list']),
       name: z.string().optional(),
       url: z.string().optional(),
+      status: z.string().optional().describe('状态文字：open 时作为初始状态；status 时写入组标题（如「上传配图 2/3」「草稿已就绪，待你确认」）'),
+      state: z.enum(['running', 'needs-human', 'awaiting-user', 'done', 'failed']).optional().describe('状态类别（决定组颜色）：running 任务色 / needs-human 红 / awaiting-user 黄 / done 绿 / failed 红'),
+      tabId: z.number().optional().describe('status 时可直接指定 tab（按所在分组定位）'),
     }),
     examples: [
       { cmd: 'xbrowser chrome-bridge task --action open --name demo --url https://example.com', description: '开任务组' },
+      { cmd: 'xbrowser chrome-bridge task --action status --name demo --status "草稿已就绪，待你确认" --state awaiting-user', description: '把组标题更新为「demo · 草稿已就绪，待你确认」（黄色）' },
       { cmd: 'xbrowser chrome-bridge task --action close --name demo', description: '删任务组' },
     ],
     handler: async (params) => {
-      const cmdMap = { open: 'task-open', close: 'task-close', list: 'task-list' };
+      const cmdMap = { open: 'task-open', status: 'task-status', close: 'task-close', list: 'task-list' };
       const body = { cmd: cmdMap[params.action], args: {
         ...(params.name ? { name: params.name } : {}),
         ...(params.url ? { url: params.url } : {}),
+        ...(params.status ? { status: params.status } : {}),
+        ...(params.state ? { state: params.state } : {}),
+        ...(params.tabId != null ? { tabId: params.tabId } : {}),
       }};
       const r = await postBridge(body);
       if (!r) return fail('bridge 未启动或无扩展连接');

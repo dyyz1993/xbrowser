@@ -213,14 +213,12 @@ describe('hashnode plugin', () => {
       expect(firstTip(result.tips)).toContain('Hashnode');
     });
 
-    it('should call waitForHuman before publish', async () => {
+    it('publishes directly without waitForHuman', async () => {
       const handler = getHandler('publish');
       const page = createMockPage();
       const ctx = createMockCtx(page);
       await handler({ title: 'T', content: 'C' }, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalledWith(
-        expect.objectContaining({ autoDetect: true })
-      );
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
     });
 
     it('should handle tags by splitting and pressing enter for each', async () => {

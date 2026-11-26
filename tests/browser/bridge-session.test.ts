@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   __setBridgeMetaStoreForTests,
+  closeDetachedBridgeSession,
   findOrCreateBridgeSession,
 } from '../../src/browser/bridge-session.js';
 import { sessions } from '../../src/browser/state.js';
@@ -118,6 +119,25 @@ describe('findOrCreateBridgeSession routing', () => {
   });
 });
 
+describe('closeDetachedBridgeSession', () => {
+  it('closes the browser-side group of a session that is not in memory (daemon restarted) and clears the sticky meta', async () => {
+    metaFiles['ghost'] = { id: 's-ghost', kind: 'bridge', taskName: 'ghost', tabId: 4242 };
+
+    await expect(closeDetachedBridgeSession('ghost')).resolves.toBe(true);
+
+    expect(calls.find((c) => c.cmd === 'task-close')?.args).toEqual({ name: 'ghost' });
+    expect(metaFiles['ghost']).toBeUndefined();
+  });
+
+  it('leaves non-bridge and unknown sessions alone', async () => {
+    metaFiles['plain'] = { id: 's-plain', kind: 'managed' };
+
+    await expect(closeDetachedBridgeSession('plain')).resolves.toBe(false);
+    await expect(closeDetachedBridgeSession('missing')).resolves.toBe(false);
+    expect(calls).toEqual([]);
+  });
+});
+
 describe('BridgePage over /exec', () => {
   async function open(name = 'alpha'): Promise<ManagedSession> {
     const s = await findOrCreateBridgeSession(name, { preferBridge: true });
@@ -152,6 +172,26 @@ describe('BridgePage over /exec', () => {
     const { x, y } = click!.args as { x: number; y: number };
     expect(x).toBe(60); // 10 + 100/2
     expect(y).toBe(40); // 20 + 40/2
+  });
+
+  it('fill("") falls back to a page-script clear, not the visibility-gated keyboard flow', async () => {
+    const s = await open();
+    // 旧扩展把「清空后回读为空」误判成 input-not-retained 并要求升级键盘流
+    const base = globalThis.fetch;
+    vi.stubGlobal('fetch', async (url: unknown, init?: { body?: unknown }) => {
+      const body = JSON.parse(String(init?.body ?? '{}')) as { cmd?: string; args?: Record<string, unknown> };
+      if (body.cmd === 'fill') {
+        calls.push({ cmd: 'fill', args: body.args ?? {} });
+        return { ok: true, json: async () => ({ ok: true, data: { ok: false, error: 'input not retained', upgrade: 'cdp-keyboard' } }) };
+      }
+      return base(url as string, init as RequestInit);
+    });
+
+    // 后台任务 tab：键盘流会被输入健康门拒绝（outerWidth=0），所以不能走 type
+    await expect(s.page.fill('#title', '')).resolves.toBeUndefined();
+    expect(calls.some((c) => c.cmd === 'type')).toBe(false);
+    const clear = calls.find((c) => c.cmd === 'evaluate' && String(c.args.expression).includes("value').set.call(el, '')"));
+    expect(clear?.args.tabId).toBe(4242);
   });
 
   it('screenshot returns a Buffer from the bridge base64 payload', async () => {

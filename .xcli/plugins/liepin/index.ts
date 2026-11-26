@@ -20,7 +20,9 @@ async function bridgeCall(cmd: string, args?: Record<string, unknown>): Promise<
   return fetch(`${bridgeHttpBase()}/exec`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cmd, args, task: TASK }),
+    // 扩展从 args.task 读任务名（决定落到哪个分组、组标题显示什么）；放在外层会被忽略，
+    // 用户的浏览器里只会看到一个泛泛的「🤖 xbrowser」组
+    body: JSON.stringify({ cmd, args: { ...(args ?? {}), task: TASK } }),
   }).then(r => r.json()).catch(() => null);
 }
 
