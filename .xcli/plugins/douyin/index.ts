@@ -289,8 +289,11 @@ async function checkCaptcha(
 
       return true;
     }
-  } catch {
-    // ignore
+  } catch (error) {
+    // waitForHuman 的 fail-closed 错误必须继续抛出，不能在这里吞掉
+    if (error && typeof error === 'object' && (error as { code?: unknown }).code === 'NEEDS_HUMAN') {
+      throw error;
+    }
   }
   return false;
 }

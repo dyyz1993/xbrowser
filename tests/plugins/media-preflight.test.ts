@@ -233,4 +233,37 @@ describe('runMediaPreflight', () => {
     });
     expect(problems.some(p => p.includes('超过单次上限'))).toBe(true);
   });
+
+  it('reports the local-only boundary and never claims a submit', () => {
+    const { report, problems } = runMediaPreflight({
+      provider: 'test',
+      command: 'generate-image',
+      mode: 'image',
+      prompt: 'a cat',
+    });
+
+    expect(problems).toEqual([]);
+    expect(report.ok).toBe(true);
+    expect(report.promptSubmitted).toBe(false);
+    expect(report.siteChecks).toEqual({
+      browser: 'skipped',
+      editor: 'skipped',
+      generationMode: 'skipped',
+      upload: 'skipped',
+      quota: 'skipped',
+    });
+    expect(report.notes.join('\n')).toContain('真实站点项');
+  });
+
+  it('rejects a whitespace-only prompt', () => {
+    const { report, problems } = runMediaPreflight({
+      provider: 'test',
+      command: 'generate-video',
+      mode: 'video',
+      prompt: '   ',
+    });
+
+    expect(report.ok).toBe(false);
+    expect(problems.join('\n')).toContain('缺少提示词');
+  });
 });

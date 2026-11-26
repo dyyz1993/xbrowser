@@ -38,10 +38,18 @@ export const mediaPreflightReportSchema = z.object({
   command: z.string().describe('命令名'),
   mode: z.string().describe('将提交的生成模式（image/video/audio + 模型等）'),
   promptLength: z.number().int().nonnegative().describe('提示词字符数'),
+  promptSubmitted: z.literal(false).describe('preflight 永远不提交提示词'),
   attachments: z.array(mediaPreflightAttachmentSchema).describe('将随任务提交的附件清单'),
   checks: z.array(z.string()).describe('已执行的检查项'),
   notes: z.array(z.string()).describe('注意事项（未覆盖的检查等）'),
   problems: z.array(z.string()).describe('未通过的检查及原因'),
+  siteChecks: z.object({
+    browser: z.literal('skipped'),
+    editor: z.literal('skipped'),
+    generationMode: z.literal('skipped'),
+    upload: z.literal('skipped'),
+    quota: z.literal('skipped'),
+  }).describe('需要真实站点/账号才能验证的项；本地 preflight 一律 skipped'),
 });
 
 export type MediaPreflightAttachment = z.infer<typeof mediaPreflightAttachmentSchema>;
@@ -264,9 +272,10 @@ export function runMediaPreflight(input: {
   const problems: string[] = [];
   const checks: string[] = [];
   const promptLength = input.prompt?.length ?? 0;
+  const promptTrimmed = input.prompt?.trim() ?? '';
   const promptRequired = input.promptRequired ?? true;
   checks.push(promptRequired ? '提示词存在且非空' : '提示词长度（可选）');
-  if (promptRequired && (!input.prompt || promptLength === 0)) {
+  if (promptRequired && promptTrimmed.length === 0) {
     problems.push(`缺少提示词（${input.promptLabel ?? '--prompt'} 为空）`);
   }
 
@@ -292,13 +301,22 @@ export function runMediaPreflight(input: {
     command: input.command,
     mode: input.mode,
     promptLength,
+    promptSubmitted: false,
     attachments,
     checks,
     notes: [
       ...(input.notes ?? []),
       'preflight-only：未打开浏览器、未上传、未提交任务，未消耗任何生成额度',
+      '真实站点项（browser/editor/generationMode/upload/quota）未验证：需带账号跑真实 preflight',
     ],
     problems,
+    siteChecks: {
+      browser: 'skipped',
+      editor: 'skipped',
+      generationMode: 'skipped',
+      upload: 'skipped',
+      quota: 'skipped',
+    },
   });
   return { report, problems };
 }

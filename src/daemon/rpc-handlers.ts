@@ -44,7 +44,13 @@ import { getPluginStorage } from '../executor.js';
 import { attachDetectAntiBot } from '../context.js';
 import { HumanInteractionManager } from '../human-interaction.js';
 import { sanitizeSessionName, saveLoginSessionByName, restoreLoginSessionByName } from '../browser/session-persistence.js';
-import { requestHumanWait, finishHumanWait, markTaskNeedsHuman } from '../plugin/human-wait.js';
+import {
+  requestHumanWait,
+  finishHumanWait,
+  markTaskNeedsHuman,
+  isHumanWaitRequiredError,
+  buildNeedsHumanResult,
+} from '../plugin/human-wait.js';
 import { findOrCreateBridgeSession, closeDetachedBridgeSession } from '../browser/bridge-session.js';
 import { readSessionDiskMeta } from '../browser/state.js';
 import { checkPluginLoginRequired } from '../plugin/login-guard.js';
@@ -308,19 +314,36 @@ export function createRPCHandler(): RPCHandler & {
     try {
       const result = await cmdEntry.handler(cmdParams, ctx as unknown as CommandContext);
       if (humanWaitRequested) {
-        const ok = !!result && typeof result === 'object' && (result as { success?: boolean }).success !== false;
-        await finishHumanWait(session, ok, (result as { message?: string } | null)?.message);
-        // 插件在 daemon 里跑：stderr 的告警到不了调用方——放进结果的 tips，CLI 才看得到
-        if (result && typeof result === 'object' && 'success' in result) {
-          const record = result as { tips?: Array<string | Tip> };
-          record.tips = normalizeTips([
-            ...(Array.isArray(record.tips) ? record.tips : []),
-            tip.warn(`需要人工协助，但此命令没有等待：${humanWaitReason || '（插件未说明原因）'}`),
-          ]);
+        const reason = humanWaitReason || '需要人工协助';
+        // 插件把 HumanWaitRequiredError 吞掉后继续执行：不能报成功
+        if (!result || typeof result !== 'object' || (result as { success?: boolean }).success !== false) {
+          await markTaskNeedsHuman(session, reason);
+          return buildNeedsHumanResult(reason, {
+            taskName: session?.bridge?.taskName,
+            tips: (result as { tips?: Array<string | Tip> } | null)?.tips,
+          });
         }
+        // 插件返回 fail：补上结构化 NEEDS_HUMAN，CLI/调用方才能识别
+        const record = result as { data?: unknown; tips?: Array<string | Tip> };
+        record.data = {
+          ...(record.data && typeof record.data === 'object' ? record.data as Record<string, unknown> : {}),
+          code: 'NEEDS_HUMAN',
+          reason,
+        };
+        record.tips = normalizeTips([
+          ...(Array.isArray(record.tips) ? record.tips : []),
+          tip.warn(`需要人工协助：${reason}`),
+        ]);
+        await markTaskNeedsHuman(session, reason);
       }
       return result;
     } catch (err) {
+      if (isHumanWaitRequiredError(err)) {
+        await markTaskNeedsHuman(session, err.reason);
+        return buildNeedsHumanResult(err.reason, {
+          taskName: err.taskName ?? session?.bridge?.taskName,
+        });
+      }
       const errorMessage = errMsg(err);
       if (humanWaitRequested) await finishHumanWait(session, false, errorMessage);
       const { attemptRecovery } = await import('../recovery.js');
