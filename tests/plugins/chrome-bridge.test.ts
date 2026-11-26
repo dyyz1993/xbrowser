@@ -5,6 +5,9 @@
  * by their fail-path (bridge down) here.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import chromeBridge from '../../.xcli/plugins/chrome-bridge/index.js';
 
 type Site = { command: ReturnType<typeof vi.fn>; login: ReturnType<typeof vi.fn>; logout: ReturnType<typeof vi.fn> };
@@ -45,13 +48,17 @@ vi.mock('node:child_process', () => ({
     (globalThis as unknown as { __execFileSpy: typeof execFileSpy }).__execFileSpy(cmd, a2, o, cb);
   },
 }));
-vi.mock('node:fs', () => ({
-  readFileSync: () => {
-    const mode = (globalThis as unknown as { __fsRead: string }).__fsRead;
-    if (mode === 'THROW') throw new Error('ENOENT');
-    return mode;
-  },
-}));
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    readFileSync: () => {
+      const mode = (globalThis as unknown as { __fsRead: string }).__fsRead;
+      if (mode === 'THROW') throw new Error('ENOENT');
+      return mode;
+    },
+  };
+});
 
 describe('chrome-bridge plugin', () => {
 
@@ -184,6 +191,27 @@ describe('chrome-bridge plugin', () => {
     };
     expect(body.args.params?.expression).toBe('document.title');
     expect(body.args.tabId).toBe(885234300);
+  });
+
+  it('cdp writes Page.captureScreenshot to --output instead of returning base64', async () => {
+    const fetchMock = vi.fn((): Promise<{ json(): Promise<unknown> }> =>
+      Promise.resolve({ json: () => Promise.resolve({ ok: true, data: { data: Buffer.from('png').toString('base64') } }) }));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { site, xcli } = makeMock();
+    chromeBridge(xcli as never);
+    const handler = getCmd(site, 'cdp');
+    const output = path.join(os.tmpdir(), `xb-shot-${process.pid}.png`);
+
+    const result = await handler({ method: 'Page.captureScreenshot', output }, {}) as {
+      success: boolean;
+      data: { output: { path: string; bytes: number } };
+    };
+
+    expect(result.success).toBe(true);
+    expect(result.data.output).toEqual({ path: output, bytes: 3 });
+    const { readFile } = await import('node:fs/promises');
+    expect(await readFile(output, 'utf8')).toBe('png');
+    fs.rmSync(output, { force: true });
   });
 
   it('exec still accepts string args (legacy direct-HTTP style)', async () => {

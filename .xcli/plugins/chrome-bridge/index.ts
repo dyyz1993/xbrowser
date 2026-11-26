@@ -10,6 +10,8 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { bridgeHttpBase, bridgeHttpPort } from '../shared/bridge-endpoint.js';
 
 // 端点来自所有 bridge 相关代码共用的 bridge-endpoint（XBROWSER_BRIDGE_HTTP 开关）。
@@ -698,6 +700,7 @@ export default function (xcli: XCLIAPI): void {
       tabId: z.number().optional(),
       task: z.string().optional().describe('任务名：显示在浏览器 tab 分组标题（🤖 <任务名>）'),
       session: z.string().optional().describe('--session 同义词：映射到任务名'),
+      output: z.string().optional().describe('截图写入文件（仅 Page.captureScreenshot；避免 base64 经 CLI 文本截断）'),
     }),
     examples: [
       { cmd: 'xbrowser chrome-bridge cdp --method Runtime.evaluate --params \'{"expression":"1+1"}\'', description: '执行 JS' },
@@ -720,7 +723,23 @@ export default function (xcli: XCLIAPI): void {
       const body = { cmd: 'cdp', args };
       const r = await postBridge(body);
       if (!r) return fail('bridge 未启动或无扩展连接');
-      return r.ok === true ? ok({ method: params.method, result: r.data }) : fail(r.error || 'extension error');
+      if (r.ok !== true) return fail(r.error || 'extension error');
+      if (params.output) {
+        if (params.method !== 'Page.captureScreenshot') {
+          return fail('--output 仅支持 Page.captureScreenshot');
+        }
+        const data = (r.data as { data?: unknown } | undefined)?.data;
+        if (typeof data !== 'string') return fail('截图结果缺少 base64 data');
+        const buffer = Buffer.from(data, 'base64');
+        const output = path.resolve(params.output);
+        mkdirSync(path.dirname(output), { recursive: true });
+        writeFileSync(output, buffer);
+        return ok(
+          { method: params.method, output: { path: output, bytes: buffer.length } },
+          [`截图已写入 ${output}`],
+        );
+      }
+      return ok({ method: params.method, result: r.data });
     },
   });
 

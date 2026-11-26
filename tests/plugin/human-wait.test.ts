@@ -97,4 +97,13 @@ describe('plugin human-wait (ctx.waitForHuman on plugin paths)', () => {
     expect(result.message).toContain('完成登录');
     expect(result.tips.map((t) => t.message).join(' ')).toContain('完成登录');
   });
+
+  it('includes the viewer URL for managed sessions', () => {
+    const result = buildNeedsHumanResult('完成登录', {
+      viewerUrl: 'http://localhost:9224/preview/default',
+    });
+
+    expect(result.data.viewerUrl).toBe('http://localhost:9224/preview/default');
+    expect(result.tips.map((t) => t.message).join(' ')).toContain('viewer');
+  });
 });

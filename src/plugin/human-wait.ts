@@ -41,8 +41,8 @@ export function isHumanWaitRequiredError(error: unknown): error is HumanWaitRequ
 /** 统一的 NEEDS_HUMAN 结果：调用方据此提示人工处理，不会把它当普通失败吞掉。 */
 export function buildNeedsHumanResult(
   reason: string,
-  options: { taskName?: string; tips?: Array<string | Tip> } = {},
-): { success: false; data: { code: 'NEEDS_HUMAN'; reason: string; taskName?: string }; message: string; tips: Tip[] } {
+  options: { taskName?: string; viewerUrl?: string; tips?: Array<string | Tip> } = {},
+): { success: false; data: { code: 'NEEDS_HUMAN'; reason: string; taskName?: string; viewerUrl?: string }; message: string; tips: Tip[] } {
   const message = `需要人工协助，但此命令不会等待：${reason}`;
   return {
     success: false,
@@ -50,9 +50,14 @@ export function buildNeedsHumanResult(
       code: 'NEEDS_HUMAN',
       reason,
       ...(options.taskName ? { taskName: options.taskName } : {}),
+      ...(options.viewerUrl ? { viewerUrl: options.viewerUrl } : {}),
     },
     message,
-    tips: normalizeTips([...(options.tips ?? []), tip.warn(message)]),
+    tips: normalizeTips([
+      ...(options.tips ?? []),
+      tip.warn(message),
+      ...(options.viewerUrl ? [tip.info(`请在 viewer 中处理：${options.viewerUrl}`)] : []),
+    ]),
   };
 }
 
