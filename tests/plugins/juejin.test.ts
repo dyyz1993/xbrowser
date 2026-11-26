@@ -31,6 +31,7 @@ function createMockPage(options: Partial<{
   failBodyWrite: boolean;
   keystrokesDropped: boolean;
   pressError: string | null;
+  publishVisible: boolean;
 }> = {}) {
   // 有状态 mock（oschina.test.ts 同款思路）：标题/正文是可读写的存储，
   // pressSequentially/insertText 按真实驱动的「追加」语义写入——
@@ -47,6 +48,7 @@ function createMockPage(options: Partial<{
     failBodyWrite: false,
     keystrokesDropped: false,
     pressError: null as string | null,
+    publishVisible: false,
     ...options,
   };
   const titlePresses: string[] = [];
@@ -110,6 +112,7 @@ function createMockPage(options: Partial<{
         isVisible: vi.fn((): Promise<boolean> => {
           if (sel.includes('输入文章标题') || sel.includes('title')) return Promise.resolve(s.titleVisible);
           if (sel.includes('CodeMirror') || sel.includes('editor')) return Promise.resolve(s.editorVisible);
+          if (s.publishVisible && sel.includes('发布')) return Promise.resolve(true);
           return Promise.resolve(false);
         }),
         click: vi.fn(async () => undefined),
@@ -516,9 +519,9 @@ describe('juejin plugin', () => {
       const page = createMockPage({
         titleVisible: true,
         url: 'https://juejin.cn/editor/drafts/7699014849130004531',
+        publishVisible: true,
       });
       const ctx = createMockCtx(page);
-      ctx.waitForHuman = vi.fn(() => Promise.reject(new Error('viewer 超时')));
       const result = await handler({ title: 'T', content: 'C' }, ctx);
       expect(result.success).toBe(false);
       expect(tipsMessages(result.tips).join('\n')).toContain('7699014849130004531');

@@ -44,9 +44,11 @@ import { getPluginStorage } from '../executor.js';
 import { attachDetectAntiBot } from '../context.js';
 import { HumanInteractionManager } from '../human-interaction.js';
 import { sanitizeSessionName, saveLoginSessionByName, restoreLoginSessionByName } from '../browser/session-persistence.js';
+import { requestHumanWait, finishHumanWait, markTaskNeedsHuman } from '../plugin/human-wait.js';
+import { findOrCreateBridgeSession, closeDetachedBridgeSession } from '../browser/bridge-session.js';
 import { readSessionDiskMeta } from '../browser/state.js';
 import { checkPluginLoginRequired } from '../plugin/login-guard.js';
-import { TipCollector } from '@dyyz1993/xcli-core';
+import { TipCollector, normalizeTips, tip, type Tip } from '@dyyz1993/xcli-core';
 import { getPluginLoader as getPluginLoaderSingleton } from '../utils/plugin-singleton.js';
 
 const activeRecorders = new Map<string, SessionRecorder>();
@@ -242,6 +244,11 @@ export function createRPCHandler(): RPCHandler & {
     if (needsBrowser) {
       session = findSession(sessionName);
       if (!session) {
+        // 粘性路由：会话首次用 --bridge 建在用户浏览器里，之后的插件命令也必须落在同一个
+        // 浏览器——否则 daemon 重启后，同一条 --session 的内置命令走真浏览器、插件命令走无头
+        session = (await findOrCreateBridgeSession(sessionName, { preferBridge: params.bridge === true }).catch(() => null)) ?? undefined;
+      }
+      if (!session) {
         let endpoint: string | undefined;
         if (cdp) {
           try { endpoint = await resolveCDPEndpoint(cdp); } catch { endpoint = cdp; }
@@ -254,6 +261,8 @@ export function createRPCHandler(): RPCHandler & {
     }
 
     // Build plugin context (mirrors router.ts plugin context construction)
+    let humanWaitRequested = false;
+    let humanWaitReason = '';
     const ctx = {
       args: [],
       options: {},
@@ -269,7 +278,12 @@ export function createRPCHandler(): RPCHandler & {
       config: {},
       site,
       cliName: 'xbrowser',
-      waitForHuman: async () => { return { solved: false, timedOut: true }; },
+      // 不等待，但如实返回并把 bridge 任务组标成「需要协助」（见 plugin/human-wait.ts）
+      waitForHuman: async (options?: Record<string, unknown>) => {
+        humanWaitRequested = true;
+        humanWaitReason = String(options?.reason || '').trim();
+        return requestHumanWait(options, session);
+      },
       tips: new TipCollector(),
     };
 
@@ -285,15 +299,30 @@ export function createRPCHandler(): RPCHandler & {
       sessionName,
     });
     if (!loginGuard.ok) {
+      // 命令在这里停下（LOGIN_REQUIRED）：任务组标题要让人看得出是在等登录
+      if (session?.bridge) await markTaskNeedsHuman(session, `需要登录后才能执行 ${pluginName}.${subCommand}`);
       return { success: false, data: loginGuard.data ?? null, message: loginGuard.message };
     }
 
     // Execute plugin handler
     try {
       const result = await cmdEntry.handler(cmdParams, ctx as unknown as CommandContext);
+      if (humanWaitRequested) {
+        const ok = !!result && typeof result === 'object' && (result as { success?: boolean }).success !== false;
+        await finishHumanWait(session, ok, (result as { message?: string } | null)?.message);
+        // 插件在 daemon 里跑：stderr 的告警到不了调用方——放进结果的 tips，CLI 才看得到
+        if (result && typeof result === 'object' && 'success' in result) {
+          const record = result as { tips?: Array<string | Tip> };
+          record.tips = normalizeTips([
+            ...(Array.isArray(record.tips) ? record.tips : []),
+            tip.warn(`需要人工协助，但此命令没有等待：${humanWaitReason || '（插件未说明原因）'}`),
+          ]);
+        }
+      }
       return result;
     } catch (err) {
       const errorMessage = errMsg(err);
+      if (humanWaitRequested) await finishHumanWait(session, false, errorMessage);
       const { attemptRecovery } = await import('../recovery.js');
       const recovery = await attemptRecovery(
         session?.page,
@@ -396,6 +425,11 @@ export function createRPCHandler(): RPCHandler & {
     const name = params.name as string;
     if (managedRuns.has(name)) throw new Error(`Session "${name}" is busy`);
     if (previewWS) previewWS.unregisterSession(name);
+    const inMemory = !!findSession(name);
+    // daemon 重启后 bridge 会话不在内存里：任务组还在用户浏览器里。不收的话 session close
+    // 报成功却留下分组，而且同名会话下次仍粘回那个旧 tab。必须排在 closeSessionByName
+    // 前面——它对不在内存的会话会直接删 meta，之后就无从得知任务组名了。
+    if (!inMemory) await closeDetachedBridgeSession(name);
     await closeSessionByName(name);
     removeSession(name);
     return { ok: true };

@@ -9,7 +9,7 @@
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { errMsg } from '../utils/error.js';
-import { existsSync as fsExistsSync } from 'node:fs';
+import { existsSync as fsExistsSync, rmSync } from 'node:fs';
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -207,7 +207,11 @@ export async function launchChrome(options: ChromeLaunchOptions = {}): Promise<L
     if (a.includes(' ')) return `"${a}"`;
     return a;
   }).join(' ');
-  const fullCmd = `${quotedPath} ${quotedArgs}`;
+  // exec makes Chromium replace the shell, so child.pid and child.kill() refer
+  // to the browser itself instead of a macOS /bin/sh wrapper that ignores TERM.
+  const fullCmd = process.platform === 'darwin'
+    ? `exec ${quotedPath} ${quotedArgs}`
+    : `${quotedPath} ${quotedArgs}`;
 
   // macOS: Chrome fails to initialize networking when spawned directly
   // by Node.js. Launching via /bin/sh -c ensures proper process setup.
@@ -245,9 +249,15 @@ export async function launchChrome(options: ChromeLaunchOptions = {}): Promise<L
     const wsEndpoint = await waitForCDPReady(port, timeout, child);
     return { process: child, wsEndpoint, port, tmpDir };
   } catch (err) {
+    // The caller never receives this process, so nothing else would kill it:
+    // without this cleanup a startup timeout leaves an orphan Chromium and
+    // its profile directory behind (ERR-20261125-004).
+    await killChrome(child, tmpDir);
     // Include stderr in error for debugging
     const stderr = stderrLines.slice(-20).join('\n');
-    const exitInfo = child.exitCode !== null ? ` (exit code: ${child.exitCode})` : ' (still running)';
+    const exitInfo = child.exitCode !== null
+      ? ` (exit code: ${child.exitCode})`
+      : ` (was still running; terminated by ${child.signalCode ?? 'signal'}, profile removed)`;
     throw new Error(`${errMsg(err)}${exitInfo}\nChrome stderr:\n${stderr || '(empty)'}`);
   }
 }
@@ -369,42 +379,59 @@ export interface CDPTargetInfo {
  */
 export async function killChrome(child: ChildProcess, tmpDir?: string): Promise<void> {
   if (child.exitCode !== null) {
-    // Already exited — just clean up temp dir if any
-    if (tmpDir) cleanupTmpDir(tmpDir);
+    // Already exited — just clean up temp dir if any. Chromium's helper
+    // processes may still be flushing files for a moment, so retry instead of
+    // silently leaving the profile behind (the old path swallowed EBUSY/ENOTEMPTY).
+    if (tmpDir) await cleanupTmpDirWithRetry(tmpDir);
     return;
   }
 
   return new Promise((resolve) => {
+    const finish = async () => {
+      if (tmpDir) await cleanupTmpDirWithRetry(tmpDir);
+      resolve();
+    };
     const timer = setTimeout(() => {
       // SIGKILL after 5s if SIGTERM doesn't work
       try {
         child.kill('SIGKILL');
       } catch { /* best-effort SIGKILL */ }
-      if (tmpDir) cleanupTmpDir(tmpDir);
-      resolve();
+      void finish();
     }, 5000);
 
     child.once('exit', () => {
       clearTimeout(timer);
-      if (tmpDir) cleanupTmpDir(tmpDir);
-      resolve();
+      void finish();
     });
 
     try {
       child.kill('SIGTERM');
     } catch {
       clearTimeout(timer);
-      if (tmpDir) cleanupTmpDir(tmpDir);
-      resolve();
+      void finish();
     }
   });
 }
 
-function cleanupTmpDir(dir: string): void {
-  try {
-    const { rmSync } = require('node:fs');
-    rmSync(dir, { recursive: true, force: true });
-  } catch { /* best-effort cleanup */ }
+/**
+ * Remove a temporary profile, retrying while Chromium's helper processes are
+ * still shutting down. `rmSync` can fail with EBUSY/ENOTEMPTY on macOS right
+ * after the browser process exits; without a retry the directory silently
+ * accumulates (ERR-20261125-004).
+ */
+async function cleanupTmpDirWithRetry(dir: string, attempts = 6): Promise<void> {
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      rmSync(dir, { recursive: true, force: true });
+      return;
+    } catch (err) {
+      if (attempt === attempts - 1) {
+        console.error(`[launcher] failed to remove Chrome profile ${dir}: ${errMsg(err)}`);
+        return;
+      }
+      await sleep(100 * (attempt + 1));
+    }
+  }
 }
 
 function sleep(ms: number): Promise<void> {

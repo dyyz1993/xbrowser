@@ -12,7 +12,7 @@
  */
 
 import { EventEmitter } from 'node:events';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { CDPConnection } from './connection.js';
@@ -68,7 +68,6 @@ export class XBBrowserImpl implements XBBrowser {
         } catch { /* best-effort kill on exit */ }
         if (this.tmpDir) {
           try {
-            const { rmSync } = require('node:fs');
             rmSync(this.tmpDir, { recursive: true, force: true });
           } catch { /* best-effort cleanup */ }
         }
@@ -87,7 +86,17 @@ export class XBBrowserImpl implements XBBrowser {
   }
 
   async close(): Promise<void> {
-    if (this._disconnected) return;
+    if (this._disconnected) {
+      // The CDP connection can drop when the last page closes and Chrome exits.
+      // That must not skip removing the temp profile: the old early return left
+      // one /tmp/xbrowser-chrome-* directory behind per closed session
+      // (ERR-20261125-004). killChrome handles an already-exited child.
+      if (this.childProcess) {
+        const { killChrome } = await import('./launcher.js');
+        await killChrome(this.childProcess, this.tmpDir);
+      }
+      return;
+    }
     this._disconnected = true;
 
     // Close all contexts (this does NOT close the browser; contexts are

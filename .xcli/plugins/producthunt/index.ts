@@ -140,12 +140,6 @@ export default function (xcli: XCLIAPI): void {
         }
       }
 
-      await ctx.waitForHuman?.({
-        reason: 'Review product submission (add gallery images, resolve CAPTCHA if present)',
-        timeout: 120,
-        autoDetect: true,
-      });
-
       const submitBtn = page.locator(
         'button:has-text("Submit"), button:has-text("Create"), button[type="submit"], button[data-testid="submit"]'
       ).first();
@@ -195,12 +189,6 @@ export default function (xcli: XCLIAPI): void {
         await commentArea.click();
         await page.keyboard.insertText(params.content);
       }
-
-      await ctx.waitForHuman?.({
-        reason: 'Review comment and submit',
-        timeout: 60,
-        autoDetect: true,
-      });
 
       const submitBtn = page.locator(
         'button:has-text("Post"), button:has-text("Submit"), button:has-text("Comment")'

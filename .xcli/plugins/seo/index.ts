@@ -605,6 +605,17 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForTimeout(2000);
 
         const storageKey = `seo_login_${match.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+        // waitForHuman 在插件路径上不会真的等待（LRN-20261126-001）：必须按页面标记判定，
+        // 否则用户还没登录也会被写成 loggedIn:true，后续命令拿着假登录态直接提交。
+        const stillNeedsLogin = await needsLogin(page);
+        if (stillNeedsLogin) {
+          await ctx.storage.delete(storageKey).catch(() => {});
+          return fail(`${match.name} 登录未完成`, [
+            `页面仍显示登录入口：${page.url()}`,
+            '请在浏览器中完成登录后重新执行 seo login；此命令不会等待人工操作',
+          ]);
+        }
+
         await ctx.storage.set(storageKey, { loggedIn: true, at: Date.now() });
 
         return ok({ platform: match.name, loggedIn: true }, [
@@ -1255,7 +1266,7 @@ export default function (xcli: XCLIAPI): void {
     description: '在浏览器中自动注册外链平台账号',
     requiresLogin: false,
     scope: 'browser',
-    result: z.object({ platform: z.string(), email: z.string(), password: z.string(), signupUrl: z.string(), submitted: z.boolean() }).passthrough(),
+    result: z.object({ platform: z.string(), email: z.string(), password: z.string(), signupUrl: z.string(), submitted: z.boolean(), loggedIn: z.boolean() }).passthrough(),
     parameters: z.object({
       platform: z.string().describe('平台名称（模糊匹配）'),
       email: z.string().describe('注册邮箱'),
@@ -1376,7 +1387,13 @@ export default function (xcli: XCLIAPI): void {
         }
 
         const storageKey = `seo_login_${match.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-        await ctx.storage.set(storageKey, { loggedIn: true, at: Date.now(), email: params.email });
+        // 注册提交后页面仍可能停在登录入口（或根本没找到提交按钮）：不要写假登录态
+        const loggedIn = submitted && !(await needsLogin(page));
+        if (loggedIn) {
+          await ctx.storage.set(storageKey, { loggedIn: true, at: Date.now(), email: params.email });
+        } else {
+          await ctx.storage.delete(storageKey).catch(() => {});
+        }
 
         return ok({
             platform: match.name,
@@ -1384,6 +1401,7 @@ export default function (xcli: XCLIAPI): void {
             password,
             signupUrl: page.url(),
             submitted,
+            loggedIn,
           }, [
             `✅ ${match.name} 注册流程已完成`,
             `邮箱: ${params.email}`,
@@ -1391,7 +1409,9 @@ export default function (xcli: XCLIAPI): void {
             `注册页面: ${signupUrl}`,
             '',
             submitted ? '已点击提交按钮' : '⚠️ 未找到提交按钮，请手动检查',
-            '登录状态已自动保存',
+            loggedIn
+              ? '登录状态已自动保存'
+              : '⚠️ 页面仍显示登录入口，未保存登录状态；请手动完成登录后运行 seo login',
             '如果需要邮箱验证，请检查收件箱或运行 seo verify-email',
           ]);
       } catch (e) {

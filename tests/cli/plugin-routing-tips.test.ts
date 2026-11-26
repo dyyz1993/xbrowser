@@ -243,7 +243,8 @@ describe('plugin-routing tips rendering (#439)', () => {
     const handled = await handlePluginOrChainRoute(buildRequest({ mode: 'json' }));
 
     expect(handled).toBe(true);
-    expect(mockForwardPluginExec).toHaveBeenCalledWith('mysite.mycmd', {}, 'default', undefined, undefined);
+    // 第 6 个参数是 --bridge 开关（未传 = false）
+    expect(mockForwardPluginExec).toHaveBeenCalledWith('mysite.mycmd', {}, 'default', undefined, undefined, false);
     const output = joinedConsoleOutput(errSpy);
     expect(output).toContain('tip-from-tip-object');
     expect(output).toContain('tip-from-plain-string');
@@ -578,5 +579,59 @@ describe('plugin-routing chain reassembly', () => {
         { cdpEndpoint: undefined, sessionName: 's' },
       );
     });
+  });
+});
+
+describe('plugin commands follow the --bridge session switch', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockIsChainInput.mockReturnValue(false);
+    mockGetPluginStorage.mockReturnValue({});
+    mockAttachDetectAntiBot.mockImplementation(() => {});
+    mockBuildViewerUrl.mockReturnValue(undefined);
+    mockCheckPluginLoginRequired.mockResolvedValue({ ok: true });
+    mockLoadHooks.mockResolvedValue([]);
+  });
+
+  it('accepts --bridge and forwards the switch so the session is created in the user’s browser', async () => {
+    // 此前 --bridge 不在全局 flag 白名单里：插件命令一带它就被判 Unknown parameter，
+    // 只有内置命令能把会话建到 bridge 通道
+    setupLoaderWithSites([createMockSite()]);
+    mockForwardPluginExec.mockResolvedValue({ success: true, data: { ok: 1 }, duration: 2 });
+
+    const handled = await handlePluginOrChainRoute(buildRequest({
+      command: 'mysite',
+      cmdArgs: ['mycmd', '--session', 'work', '--bridge'],
+      argv: ['mysite', 'mycmd', '--session', 'work', '--bridge'],
+      options: { session: 'work', bridge: true },
+      sessionName: 'work',
+    }));
+
+    expect(handled).toBe(true);
+    expect(mockOutputError).not.toHaveBeenCalled();
+    const call = mockForwardPluginExec.mock.calls[0] as unknown[];
+    expect(call.slice(0, 4)).toEqual(['mysite.mycmd', expect.any(Object), 'work', undefined]);
+    expect(call[5]).toBe(true);
+  });
+
+  it('without --bridge the switch is forwarded as false', async () => {
+    setupLoaderWithSites([createMockSite()]);
+    mockForwardPluginExec.mockResolvedValue({ success: true, data: { ok: 1 }, duration: 2 });
+
+    await handlePluginOrChainRoute(buildRequest({ command: 'mysite', cmdArgs: ['mycmd'], argv: ['mysite', 'mycmd'] }));
+
+    expect((mockForwardPluginExec.mock.calls[0] as unknown[])[5]).toBe(false);
+  });
+
+  it('still rejects flags that are neither parameters nor global options', async () => {
+    setupLoaderWithSites([createMockSite()]);
+
+    const handled = await handlePluginOrChainRoute(buildRequest({
+      command: 'mysite', cmdArgs: ['mycmd', '--nope'], argv: ['mysite', 'mycmd', '--nope'],
+    }));
+
+    expect(handled).toBe(true);
+    expect(mockForwardPluginExec).not.toHaveBeenCalled();
+    expect(mockOutputError).toHaveBeenCalledWith(expect.stringContaining('Unknown parameter: --nope'));
   });
 });

@@ -57,6 +57,21 @@ describe('liepin plugin', () => {
     }
   });
 
+  it('sends the task name inside args so the bridge group is named「🤖 liepin」', async () => {
+    // 扩展只读 args.task；放在请求体顶层会被忽略，用户的浏览器里只看到泛泛的「🤖 xbrowser」
+    const { execBodies } = mockFetch({
+      execQueue: [
+        { ok: true, data: { tabId: 9 } },
+        { ok: true, data: { value: JSON.stringify({ url: 'https://c.liepin.com/resume/edit', pageText: 'x' }) } },
+      ],
+    });
+    await getHandler('resume-open')({});
+
+    const navigate = execBodies.find((body) => body.cmd === 'navigate') as { args: Record<string, unknown> };
+    expect(navigate.args.task).toBe('liepin');
+    expect(navigate).not.toHaveProperty('task');
+  });
+
   describe('status', () => {
     it('fails when bridge has no connected extension', async () => {
       mockFetch({ status: { running: true, clients: [] } });

@@ -113,12 +113,6 @@ export default function (xcli: XCLIAPI): void {
         await page.keyboard.insertText(params.content);
       }
 
-      await ctx.waitForHuman?.({
-        reason: 'Review answer and submit (resolve CAPTCHA if present)',
-        timeout: 120,
-        autoDetect: true,
-      });
-
       const submitBtn = page.locator(
         'button:has-text("Submit"), button:has-text("Post"), button:has-text("提交"), button[type="submit"]'
       ).first();
@@ -190,12 +184,6 @@ export default function (xcli: XCLIAPI): void {
         await editor.click();
         await page.keyboard.insertText(params.content);
       }
-
-      await ctx.waitForHuman?.({
-        reason: 'Review article and publish (resolve CAPTCHA if present)',
-        timeout: 120,
-        autoDetect: true,
-      });
 
       const publishBtn = page.locator(
         'button:has-text("Publish"), button:has-text("Post"), button:has-text("发布"), button[type="submit"]'

@@ -151,13 +151,6 @@ export default function (xcli: XCLIAPI): void {
 
         await page.waitForTimeout(500);
 
-        // 等待用户检查
-        await ctx.waitForHuman?.({
-          reason: '请在 viewer 中检查动态内容后确认发布',
-          timeout: 120,
-          autoDetect: true,
-        });
-
         // 点击发布按钮
         const publishBtn = page.locator(
           'button:has-text("发布"), button[class*="publish"], button[class*="submit"], .bili-dyn-publishing__btn'
@@ -221,13 +214,6 @@ export default function (xcli: XCLIAPI): void {
         }
 
         await page.waitForTimeout(500);
-
-        // 等待用户检查
-        await ctx.waitForHuman?.({
-          reason: '请在 viewer 中检查评论内容后确认发送',
-          timeout: 120,
-          autoDetect: true,
-        });
 
         // 点击发送评论按钮
         const sendBtn = page.locator(

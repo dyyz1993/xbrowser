@@ -94,7 +94,7 @@ describe('producthunt plugin', () => {
       topics: 'saas',
     }, ctx);
 
-    expect(ctx.waitForHuman).toHaveBeenCalled();
+    expect(ctx.waitForHuman).not.toHaveBeenCalled();
     expect(harness.locators.get('name')!.fill).toHaveBeenCalledWith('MyApp');
     expect(harness.locators.get('tagline')!.fill).toHaveBeenCalledWith('Best tool');
     expect(harness.locators.get('url')!.fill).toHaveBeenCalledWith('https://example.com');

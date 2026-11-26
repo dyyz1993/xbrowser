@@ -16,6 +16,17 @@ vi.mock('../../src/browser.js', () => ({
   saveSessionDiskMeta: vi.fn(),
 }));
 
+// bridge 会话：只桩掉两个入口，其余保持真实
+const bridgeMocks = vi.hoisted(() => ({
+  findOrCreateBridgeSession: vi.fn().mockResolvedValue(null),
+  closeDetachedBridgeSession: vi.fn().mockResolvedValue(false),
+}));
+vi.mock('../../src/browser/bridge-session.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/browser/bridge-session.js')>()),
+  findOrCreateBridgeSession: bridgeMocks.findOrCreateBridgeSession,
+  closeDetachedBridgeSession: bridgeMocks.closeDetachedBridgeSession,
+}));
+
 // Mock executor.ts
 vi.mock('../../src/executor.js', () => ({
   executeCommand: vi.fn().mockResolvedValue({ success: true, data: null, tips: [], duration: 0 }),
@@ -123,6 +134,32 @@ describe('createRPCHandler', () => {
     it('should close a session by name', async () => {
       const result = await handler('session:close', { name: 'test-sess' });
       expect(result).toEqual({ ok: true });
+    });
+
+    it('closes the browser-side tab group of a bridge session that is not in memory (daemon restarted)', async () => {
+      // closeSessionByName 对不在内存的会话会直接删 meta：收组必须排在它前面，
+      // 否则 session close 报成功，用户浏览器里的任务组却留着
+      const { closeSessionByName, findSession } = await import('../../src/browser.js');
+      vi.mocked(findSession).mockReturnValue(undefined);
+      bridgeMocks.closeDetachedBridgeSession.mockResolvedValue(true);
+
+      const result = await handler('session:close', { name: 'ghost' });
+
+      expect(result).toEqual({ ok: true });
+      expect(bridgeMocks.closeDetachedBridgeSession).toHaveBeenCalledWith('ghost');
+      expect(bridgeMocks.closeDetachedBridgeSession.mock.invocationCallOrder[0])
+        .toBeLessThan(vi.mocked(closeSessionByName).mock.invocationCallOrder.at(-1) as number);
+    });
+
+    it('does not touch the bridge for a session that is in memory', async () => {
+      const { findSession } = await import('../../src/browser.js');
+      vi.mocked(findSession).mockReturnValue({ id: 's1', name: 'live' } as never);
+      bridgeMocks.closeDetachedBridgeSession.mockClear();
+
+      await handler('session:close', { name: 'live' });
+
+      expect(bridgeMocks.closeDetachedBridgeSession).not.toHaveBeenCalled();
+      vi.mocked(findSession).mockReturnValue(undefined);
     });
   });
 

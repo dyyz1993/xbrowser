@@ -51,6 +51,17 @@ describe('eval 守卫提示透传（daemon 转发路径）', () => {
     expect(steps[0].message).toBe(GUARD_MSG); // 关键回归点：text 分支 step.message
   });
 
+  it('--bridge 是无值 flag：不得拼进脚本（曾变成 document.title-- bridge → ReferenceError: bridge is not defined）', async () => {
+    forwardExecMock.mockResolvedValue({ success: true, data: { result: 'Title' }, duration: 0 });
+    const { handleEvalScript } = await import('../../src/router/input-modes.js');
+    const argv = ['eval', 'document.title', '--session', 'mc-alpha', '--bridge', '--json'];
+    await handleEvalScript(argv.slice(1), argv);
+    const [command, params, session] = forwardExecMock.mock.calls[0] as [string, { 'script-b64': string }, string];
+    expect(command).toBe('eval');
+    expect(Buffer.from(params['script-b64'], 'base64url').toString('utf8')).toBe('document.title');
+    expect(session).toBe('mc-alpha');
+  });
+
   it('成功结果不受影响（message 为空）', async () => {
     forwardExecMock.mockResolvedValue({ success: true, data: { result: 2 }, duration: 3 });
     const { handleEvalScript } = await import('../../src/router/input-modes.js');

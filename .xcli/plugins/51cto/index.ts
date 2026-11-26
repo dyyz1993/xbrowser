@@ -68,7 +68,7 @@ export default function (xcli: XCLIAPI): void {
       return checkLoggedIn('51cto', PUBLISH_URL, async () => {
         if (!page) return true;
         // 文字启发式不可靠（未登录入口"登录注册"藏在页脚，已登录页也含该串）——
-        // 确定性探测：发布页未登录时硬重定向 home.51cto.com/login
+        // 确定性探测：发布页未登录时硬重定向到 51CTO 登录入口
         try {
           await page.goto(PUBLISH_URL, { waitUntil: 'domcontentloaded', timeout: 20000 });
           await page.waitForTimeout(1200);
@@ -89,7 +89,8 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (_params, ctx) => {
       const { page } = resolvePage(ctx);
-      await page.goto('https://home.51cto.com/index/login', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      // /index/login 是 404（2026-11-26 实测）；博客首页右上「登录注册」指向这个入口
+      await page.goto('https://home.51cto.com/index?from_service=blog&scene=login1', { waitUntil: 'domcontentloaded', timeout: 20000 });
       await randomPause(1200, 2400);
       await ctx.waitForHuman?.({ reason: '完成 51CTO 登录（手机号验证码/微信扫码）', timeout: 300 });
       await page.goto('https://blog.51cto.com', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
