@@ -56,6 +56,7 @@ import { readSessionDiskMeta } from '../browser/state.js';
 import { checkPluginLoginRequired } from '../plugin/login-guard.js';
 import { TipCollector, normalizeTips, tip, type Tip } from '@dyyz1993/xcli-core';
 import { getPluginLoader as getPluginLoaderSingleton } from '../utils/plugin-singleton.js';
+import { buildViewerUrl } from '../utils/viewer-url.js';
 
 const activeRecorders = new Map<string, SessionRecorder>();
 const replayResumeResolvers = new Map<string, () => void>();
@@ -320,6 +321,7 @@ export function createRPCHandler(): RPCHandler & {
           await markTaskNeedsHuman(session, reason);
           return buildNeedsHumanResult(reason, {
             taskName: session?.bridge?.taskName,
+            viewerUrl: session?.bridge ? undefined : buildViewerUrl(sessionName),
             tips: (result as { tips?: Array<string | Tip> } | null)?.tips,
           });
         }
@@ -342,6 +344,7 @@ export function createRPCHandler(): RPCHandler & {
         await markTaskNeedsHuman(session, err.reason);
         return buildNeedsHumanResult(err.reason, {
           taskName: err.taskName ?? session?.bridge?.taskName,
+          viewerUrl: session?.bridge ? undefined : buildViewerUrl(sessionName),
         });
       }
       const errorMessage = errMsg(err);

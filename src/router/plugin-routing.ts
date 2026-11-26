@@ -462,6 +462,7 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
                 outputEnvelope(
                   buildNeedsHumanResult(reason, {
                     taskName: session?.bridge?.taskName,
+                    viewerUrl: session?.bridge ? undefined : buildViewerUrl(sessionName),
                     tips: (result as { tips?: Array<string | import('@dyyz1993/xcli-core').Tip> } | null)?.tips,
                   }),
                   { command: `${command} ${subCommand}` },
@@ -543,6 +544,7 @@ export async function handlePluginOrChainRoute(request: PluginRouteRequest): Pro
               outputEnvelope(
                 buildNeedsHumanResult(e.reason, {
                   taskName: e.taskName ?? session?.bridge?.taskName,
+                  viewerUrl: session?.bridge ? undefined : buildViewerUrl(sessionName),
                 }),
                 { command: `${command} ${subCommand}` },
                 mode,

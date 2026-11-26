@@ -14,6 +14,7 @@ import { extractAllHDImages } from '../shared/image-lightbox.js';
 import { clickButtonByText } from '../shared/file-upload.js';
 import { checkRefusal } from '../shared/refusal-detect.js';
 import { runMediaPreflight, mediaPreflightReportSchema, type MediaPreflightAttachmentInput } from '../shared/media-preflight.js';
+import { serializeProviderSubmit } from '../shared/media-quota-guard.js';
 import path from 'path';
 import fs from 'fs';
 import type { PluginPage, PluginElementHandle, PluginRoute } from '../types.js';
@@ -1568,6 +1569,7 @@ export default function (xcli: XCLIAPI): void {
       firstFrame: z.string().optional().describe('首帧图片路径'),
       lastFrame: z.string().optional().describe('尾帧图片路径'),
       preflightOnly: z.boolean().optional().describe('只跑本地预检（参数/附件校验），不打开浏览器、不提交任务、不消耗额度'),
+      allowParallelQuota: z.boolean().optional().describe('允许同一 provider 并行提交视频任务（默认串行，避免同时消耗多份额度）'),
     }),
     examples: [
       { cmd: 'xbrowser doubao video --prompt "一只猫在草地上奔跑"', description: '提交视频生成' },
@@ -1580,243 +1582,248 @@ export default function (xcli: XCLIAPI): void {
     ],
     result: mediaTaskResultSchema.extend({ preflight: mediaPreflightReportSchema.optional() }),
     handler: async (params, ctx) => {
-      try {
-        const attachmentList = buildVideoAttachmentList(params);
+      const run = async () => {
+        try {
+          const attachmentList = buildVideoAttachmentList(params);
 
-        if (params.preflightOnly) {
+          if (params.preflightOnly) {
+            if (params.path && params.paths) {
+              return fail('参数错误', ['--path 与 --paths 不能同时使用']);
+            }
+            return preflightDoubaoTask({
+              command: 'video',
+              kind: 'video',
+              mode: params.model ? `video:${params.model}` : 'video',
+              prompt: params.prompt,
+              attachments: attachmentList.map((item) => ({
+                path: item.path,
+                semantic: item.semantic,
+                expected: 'image' as const,
+              })),
+            });
+          }
+
+          const page = ctx.page;
+          if (!page) throw new Error("需要浏览器页面");
+          await ensurePage(page, ctx);
+          await page.waitForTimeout(2000);
+          const tips = buildTips(ctx);
+
           if (params.path && params.paths) {
             return fail('参数错误', ['--path 与 --paths 不能同时使用']);
           }
-          return preflightDoubaoTask({
-            command: 'video',
-            kind: 'video',
-            mode: params.model ? `video:${params.model}` : 'video',
-            prompt: params.prompt,
-            attachments: attachmentList.map((item) => ({
-              path: item.path,
-              semantic: item.semantic,
-              expected: 'image' as const,
-            })),
-          });
-        }
-
-        const page = ctx.page;
-        if (!page) throw new Error("需要浏览器页面");
-        await ensurePage(page, ctx);
-        await page.waitForTimeout(2000);
-        const tips = buildTips(ctx);
-
-        if (params.path && params.paths) {
-          return fail('参数错误', ['--path 与 --paths 不能同时使用']);
-        }
-        for (const item of attachmentList) {
-          const absPath = path.resolve(item.path);
-          if (!fs.existsSync(absPath)) {
-            return fail(`附件文件不存在: ${item.path}`, [...tips, `缺少${item.semantic}: ${absPath}`]);
+          for (const item of attachmentList) {
+            const absPath = path.resolve(item.path);
+            if (!fs.existsSync(absPath)) {
+              return fail(`附件文件不存在: ${item.path}`, [...tips, `缺少${item.semantic}: ${absPath}`]);
+            }
           }
-        }
 
-        const uploadPage = page;
+          const uploadPage = page;
 
-        async function countVideoAttachments(): Promise<number> {
-          return uploadPage.evaluate(() => {
-            const candidates = document.querySelectorAll<HTMLElement>(
-              '[data-testid*="attachment"] img, [class*="upload-preview"] img, [class*="image-preview"] img, img[class*="image-"]'
-            );
-            return Array.from(candidates).filter((el) => {
-              const rect = el.getBoundingClientRect();
-              return rect.width > 0 && rect.height > 0;
-            }).length;
-          });
-        }
-
-        async function waitForVideoAttachments(expected: number, timeoutMs = 12000): Promise<number> {
-          const deadline = Date.now() + timeoutMs;
-          let current = -1;
-          while (Date.now() < deadline) {
-            current = await countVideoAttachments().catch(() => 0);
-            if (current >= expected) return current;
-            await uploadPage.waitForTimeout(250);
-          }
-          throw new Error(`等待附件预览超时：当前 ${current}，期望 ${expected}`);
-        }
-
-        async function clickUploadControl(): Promise<boolean> {
-          const box = await uploadPage.evaluate(() => {
-            const input = document.querySelector('input[type="file"]');
-            const button = input?.parentElement?.querySelector('button') ??
-              [...document.querySelectorAll('button svg path')]
-                .find(path => (path.getAttribute('d') || '').startsWith('M12.0005 2.'))
-                ?.closest('button');
-            if (!button) return null;
-            const rect = button.getBoundingClientRect();
-            return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-          }) as { x: number; y: number; width: number; height: number } | null;
-          if (!box) return false;
-          await uploadPage.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
-          return true;
-        }
-
-        if (attachmentList.length > 0) {
-          const filePaths = attachmentList.map((item) => path.resolve(item.path));
-          const canPaste = process.env.XBROWSER_DISABLE_CLIPBOARD_PASTE !== '1';
-          const initialCount = await countVideoAttachments().catch(() => 0);
-          let pasted = 0;
-          let pasteReason: string | undefined;
-          if (canPaste) {
-            const result = await pasteImagesFromClipboard(uploadPage, filePaths, {
-              editorSelector: 'textarea, [contenteditable="true"], [role="textbox"]',
-              browserName: 'Chromium',
-              exec: process.env.XBROWSER_TEST_CLIPBOARD === '1' ? async () => undefined : undefined,
-              verifyPaste: process.env.XBROWSER_TEST_CLIPBOARD === '1' ? async () => undefined : undefined,
-              initialCount,
-              waitForAttachmentCount: expected => waitForVideoAttachments(expected),
+          async function countVideoAttachments(): Promise<number> {
+            return uploadPage.evaluate(() => {
+              const candidates = document.querySelectorAll<HTMLElement>(
+                '[data-testid*="attachment"] img, [class*="upload-preview"] img, [class*="image-preview"] img, img[class*="image-"]'
+              );
+              return Array.from(candidates).filter((el) => {
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+              }).length;
             });
-            pasted = result.ok ? filePaths.length : result.pasted;
-            pasteReason = result.reason;
-            if (result.ok) tips.push('✓ 已通过剪贴板粘贴上传附件');
           }
-          const remaining = filePaths.slice(pasted);
-          if (remaining.length > 0) {
-            try {
-              await (uploadPage as PluginPage).setFileDialogInterception?.(true).catch(() => {});
-              const uploadClicked = await clickUploadControl();
-              if (!uploadClicked) throw new Error('找不到上传按钮');
-              await uploadPage.waitForTimeout(500);
-              const inputAvailable = await setImagesOnFileInput(uploadPage, remaining);
-              if (!inputAvailable) throw new Error('找不到上传入口');
-              await waitForVideoAttachments(initialCount + filePaths.length);
-              tips.push('⚠ 剪贴板不可用，已改用 file input 兜底');
-            } catch (error) {
-              const reason = error instanceof Error ? error.message : String(error);
-              return fail('附件上传失败', [
-                ...tips,
-                `剪贴板结果: ${pasted}/${filePaths.length}${pasteReason ? `，${pasteReason}` : ''}`,
-                `file input 兜底失败: ${reason}`,
-              ]);
+
+          async function waitForVideoAttachments(expected: number, timeoutMs = 12000): Promise<number> {
+            const deadline = Date.now() + timeoutMs;
+            let current = -1;
+            while (Date.now() < deadline) {
+              current = await countVideoAttachments().catch(() => 0);
+              if (current >= expected) return current;
+              await uploadPage.waitForTimeout(250);
             }
+            throw new Error(`等待附件预览超时：当前 ${current}，期望 ${expected}`);
           }
-          tips.push(`✓ 已上传 ${attachmentList.length} 个${attachmentList.length === 1 ? attachmentList[0]!.semantic : '附件'}`);
-        }
 
-        const attachmentNotes = attachmentList
-          .map((item) => `- ${item.semantic}: ${path.basename(item.path)}`)
-          .join('\n');
-        const message = `生成视频: ${params.prompt}${attachmentNotes ? `\n${attachmentNotes}` : ''}`;
+          async function clickUploadControl(): Promise<boolean> {
+            const box = await uploadPage.evaluate(() => {
+              const input = document.querySelector('input[type="file"]');
+              const button = input?.parentElement?.querySelector('button') ??
+                [...document.querySelectorAll('button svg path')]
+                  .find(path => (path.getAttribute('d') || '').startsWith('M12.0005 2.'))
+                  ?.closest('button');
+              if (!button) return null;
+              const rect = button.getBoundingClientRect();
+              return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+            }) as { x: number; y: number; width: number; height: number } | null;
+            if (!box) return false;
+            await uploadPage.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+            return true;
+          }
 
-        // 顺序铁律：先切视频模式再打字——模式切换会重渲染编辑器，
-        // 先打字的内容会被 reconciliation 回流清空（实测踩坑）。
-        await ensureVideoMode(page);
-        await page.waitForTimeout(800);
-
-        // ProseMirror 受控编辑器：合成 value/textContent 注入会被即时清空
-        //（AGENTS.md §14 受控编辑器决策树），唯一存活通道是完整键盘事件流
-        // ——与图生图命令同款（click 聚焦 + keyboard.type 逐键）。
-        const inputLocators = [
-          'textarea[class*="input"]',
-          '[contenteditable="true"]',
-          '[role="textbox"]',
-        ];
-        // 聚焦用 evaluate 直选 .tiptap.ProseMirror（实测 locator.click 聚焦后
-        // 打字不落地，el.focus() + 键盘流 100% 存活），失败再退回 locator.click
-        const focusEditor = async (): Promise<boolean> => {
-          const ok = await page.evaluate(() => {
-            const e = document.querySelector<HTMLElement>('.tiptap.ProseMirror')
-              || document.querySelector<HTMLElement>('[contenteditable="true"]');
-            if (!e) return false;
-            e.focus();
-            return document.activeElement === e;
-          }).catch(() => false);
-          if (ok) return true;
-          for (const sel of inputLocators) {
-            const loc = page.locator(sel).first();
-            if (await loc.isVisible().catch(() => false)) {
-              await loc.click().catch(() => {});
-              return true;
+          if (attachmentList.length > 0) {
+            const filePaths = attachmentList.map((item) => path.resolve(item.path));
+            const canPaste = process.env.XBROWSER_DISABLE_CLIPBOARD_PASTE !== '1';
+            const initialCount = await countVideoAttachments().catch(() => 0);
+            let pasted = 0;
+            let pasteReason: string | undefined;
+            if (canPaste) {
+              const result = await pasteImagesFromClipboard(uploadPage, filePaths, {
+                editorSelector: 'textarea, [contenteditable="true"], [role="textbox"]',
+                browserName: 'Chromium',
+                exec: process.env.XBROWSER_TEST_CLIPBOARD === '1' ? async () => undefined : undefined,
+                verifyPaste: process.env.XBROWSER_TEST_CLIPBOARD === '1' ? async () => undefined : undefined,
+                initialCount,
+                waitForAttachmentCount: expected => waitForVideoAttachments(expected),
+              });
+              pasted = result.ok ? filePaths.length : result.pasted;
+              pasteReason = result.reason;
+              if (result.ok) tips.push('✓ 已通过剪贴板粘贴上传附件');
             }
+            const remaining = filePaths.slice(pasted);
+            if (remaining.length > 0) {
+              try {
+                await (uploadPage as PluginPage).setFileDialogInterception?.(true).catch(() => {});
+                const uploadClicked = await clickUploadControl();
+                if (!uploadClicked) throw new Error('找不到上传按钮');
+                await uploadPage.waitForTimeout(500);
+                const inputAvailable = await setImagesOnFileInput(uploadPage, remaining);
+                if (!inputAvailable) throw new Error('找不到上传入口');
+                await waitForVideoAttachments(initialCount + filePaths.length);
+                tips.push('⚠ 剪贴板不可用，已改用 file input 兜底');
+              } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error);
+                return fail('附件上传失败', [
+                  ...tips,
+                  `剪贴板结果: ${pasted}/${filePaths.length}${pasteReason ? `，${pasteReason}` : ''}`,
+                  `file input 兜底失败: ${reason}`,
+                ]);
+              }
+            }
+            tips.push(`✓ 已上传 ${attachmentList.length} 个${attachmentList.length === 1 ? attachmentList[0]!.semantic : '附件'}`);
           }
-          return false;
-        };
 
-        if (!(await focusEditor())) throw new Error('找不到视频输入框');
-        await page.waitForTimeout(300);
+          const attachmentNotes = attachmentList
+            .map((item) => `- ${item.semantic}: ${path.basename(item.path)}`)
+            .join('\n');
+          const message = `生成视频: ${params.prompt}${attachmentNotes ? `\n${attachmentNotes}` : ''}`;
 
-        // 打字 + 存活校验 + 一次重试（受控编辑器可能清空首轮）
-        let typed = 0;
-        for (let attempt = 1; attempt <= 2; attempt++) {
-          await page.keyboard.type(message, { delay: 25, stealth: false });
-          await page.waitForTimeout(500);
-          typed = await page.evaluate(() => {
-            const el = document.querySelector<HTMLElement>('.tiptap.ProseMirror')
-              || document.querySelector<HTMLElement>('[contenteditable="true"], textarea');
-            return el ? (el.textContent || (el as HTMLTextAreaElement).value || '').length : 0;
-          }).catch(() => 0);
-          if (typed >= Math.min(10, message.length)) break;
-          tips.push(`第 ${attempt} 次输入未存活（${typed} 字符），重试`);
-          if (!(await focusEditor())) break;
-        }
-        if (typed < Math.min(10, message.length)) {
-          throw new Error(`输入内容未存活（编辑器内仅 ${typed} 字符）——受控编辑器清空了注入`);
-        }
+          // 顺序铁律：先切视频模式再打字——模式切换会重渲染编辑器，
+          // 先打字的内容会被 reconciliation 回流清空（实测踩坑）。
+          await ensureVideoMode(page);
+          await page.waitForTimeout(800);
 
-        await submitMessage(page);
-        // 会话 ID 上 URL 才算真的发出去了；拿不到就早退，别带着假状态往下走
-        const earlyConversationId = await waitForConversationUrl(page, 15000);
-        if (!earlyConversationId) {
-          return fail('视频任务提交失败：消息未发出（URL 未出现会话 ID）', [
-            ...tips,
-            '可能原因：发送按钮不可信点击被忽略 / 输入框未聚焦',
-            '请在 viewer 中手动检查豆包页面状态',
-          ]);
-        }
-        tips.push('视频生成任务已提交');
-        await confirmGeneration(page);
+          // ProseMirror 受控编辑器：合成 value/textContent 注入会被即时清空
+          //（AGENTS.md §14 受控编辑器决策树），唯一存活通道是完整键盘事件流
+          // ——与图生图命令同款（click 聚焦 + keyboard.type 逐键）。
+          const inputLocators = [
+            'textarea[class*="input"]',
+            '[contenteditable="true"]',
+            '[role="textbox"]',
+          ];
+          // 聚焦用 evaluate 直选 .tiptap.ProseMirror（实测 locator.click 聚焦后
+          // 打字不落地，el.focus() + 键盘流 100% 存活），失败再退回 locator.click
+          const focusEditor = async (): Promise<boolean> => {
+            const ok = await page.evaluate(() => {
+              const e = document.querySelector<HTMLElement>('.tiptap.ProseMirror')
+                || document.querySelector<HTMLElement>('[contenteditable="true"]');
+              if (!e) return false;
+              e.focus();
+              return document.activeElement === e;
+            }).catch(() => false);
+            if (ok) return true;
+            for (const sel of inputLocators) {
+              const loc = page.locator(sel).first();
+              if (await loc.isVisible().catch(() => false)) {
+                await loc.click().catch(() => {});
+                return true;
+              }
+            }
+            return false;
+          };
 
-        const conversationUrl = typeof earlyConversationId === 'string'
-          ? String(await page.evaluate(() => location.href).catch(() => page.url()))
-          : page.url();
-        const conversationId = earlyConversationId || conversationIdFromUrl(conversationUrl);
-        if (!conversationId) throw new Error('无法获取豆包会话 ID，不能创建可恢复任务');
+          if (!(await focusEditor())) throw new Error('找不到视频输入框');
+          await page.waitForTimeout(300);
 
-        const taskId = await page.evaluate(() => {
-          const idEls = document.querySelectorAll('[class*="task-id"], [class*="job-id"], [data-task-id]');
-          for (const el of idEls) {
-            const id = el.getAttribute('data-task-id') || el.textContent?.trim() || '';
-            if (id) return id;
+          // 打字 + 存活校验 + 一次重试（受控编辑器可能清空首轮）
+          let typed = 0;
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            await page.keyboard.type(message, { delay: 25, stealth: false });
+            await page.waitForTimeout(500);
+            typed = await page.evaluate(() => {
+              const el = document.querySelector<HTMLElement>('.tiptap.ProseMirror')
+                || document.querySelector<HTMLElement>('[contenteditable="true"], textarea');
+              return el ? (el.textContent || (el as HTMLTextAreaElement).value || '').length : 0;
+            }).catch(() => 0);
+            if (typed >= Math.min(10, message.length)) break;
+            tips.push(`第 ${attempt} 次输入未存活（${typed} 字符），重试`);
+            if (!(await focusEditor())) break;
           }
-          const urlParts = window.location.href.match(/task[=/](\w+)/);
-          return urlParts ? urlParts[1] : '';
-        });
+          if (typed < Math.min(10, message.length)) {
+            throw new Error(`输入内容未存活（编辑器内仅 ${typed} 字符）——受控编辑器清空了注入`);
+          }
 
-        const providerTaskId = typeof taskId === 'string' ? taskId : '';
-        const stableTaskId = `doubao-video:${conversationId}:${Buffer.from(params.prompt).toString('base64url')}`;
-        const attachmentsResult = attachmentList.map((item) => ({
-          semantic: item.semantic,
-          path: path.resolve(item.path),
-        }));
-        const taskResult = toDoubaoTaskResult({
-          taskId: stableTaskId,
-          kind: 'video',
-          status: 'submitted',
-          conversationUrl,
-        });
-        return ok({
-          ...taskResult,
-          prompt: params.prompt,
-          attachments: attachmentsResult,
-          provider: {
-            providerTaskId: providerTaskId || null,
+          await submitMessage(page);
+          // 会话 ID 上 URL 才算真的发出去了；拿不到就早退，别带着假状态往下走
+          const earlyConversationId = await waitForConversationUrl(page, 15000);
+          if (!earlyConversationId) {
+            return fail('视频任务提交失败：消息未发出（URL 未出现会话 ID）', [
+              ...tips,
+              '可能原因：发送按钮不可信点击被忽略 / 输入框未聚焦',
+              '请在 viewer 中手动检查豆包页面状态',
+            ]);
+          }
+          tips.push('视频生成任务已提交');
+          await confirmGeneration(page);
+
+          const conversationUrl = typeof earlyConversationId === 'string'
+            ? String(await page.evaluate(() => location.href).catch(() => page.url()))
+            : page.url();
+          const conversationId = earlyConversationId || conversationIdFromUrl(conversationUrl);
+          if (!conversationId) throw new Error('无法获取豆包会话 ID，不能创建可恢复任务');
+
+          const taskId = await page.evaluate(() => {
+            const idEls = document.querySelectorAll('[class*="task-id"], [class*="job-id"], [data-task-id]');
+            for (const el of idEls) {
+              const id = el.getAttribute('data-task-id') || el.textContent?.trim() || '';
+              if (id) return id;
+            }
+            const urlParts = window.location.href.match(/task[=/](\w+)/);
+            return urlParts ? urlParts[1] : '';
+          });
+
+          const providerTaskId = typeof taskId === 'string' ? taskId : '';
+          const stableTaskId = `doubao-video:${conversationId}:${Buffer.from(params.prompt).toString('base64url')}`;
+          const attachmentsResult = attachmentList.map((item) => ({
+            semantic: item.semantic,
+            path: path.resolve(item.path),
+          }));
+          const taskResult = toDoubaoTaskResult({
+            taskId: stableTaskId,
+            kind: 'video',
+            status: 'submitted',
+            conversationUrl,
+          });
+          return ok({
+            ...taskResult,
+            prompt: params.prompt,
             attachments: attachmentsResult,
-            conversationId,
-          },
-        }, [
-          ...tips,
-          `taskId: ${stableTaskId}`,
-          `会话URL: ${conversationUrl}`,
-        ]);
-      } catch (error) {
-        return fail('未知错误', ['提交视频生成失败', `原因: ${error instanceof Error ? error.message : String(error)}`]);
-      }
+            provider: {
+              providerTaskId: providerTaskId || null,
+              attachments: attachmentsResult,
+              conversationId,
+            },
+          }, [
+            ...tips,
+            `taskId: ${stableTaskId}`,
+            `会话URL: ${conversationUrl}`,
+          ]);
+        } catch (error) {
+          return fail('未知错误', ['提交视频生成失败', `原因: ${error instanceof Error ? error.message : String(error)}`]);
+        }
+      };
+      return params.preflightOnly
+        ? run()
+        : serializeProviderSubmit('doubao', params.allowParallelQuota ?? false, run);
     },
   });
 

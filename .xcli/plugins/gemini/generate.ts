@@ -13,6 +13,7 @@ import {
   type MediaTaskResult,
 } from '../shared/media-contract.js';
 import { runMediaPreflight, mediaPreflightReportSchema } from '../shared/media-preflight.js';
+import { serializeProviderSubmit } from '../shared/media-quota-guard.js';
 import { buildMediaTask } from '../shared/media-plugin-template.js';
 import { checkRefusal } from '../shared/refusal-detect.js';
 
@@ -50,6 +51,7 @@ type GenerateParams = {
   firstFrame?: string;
   lastFrame?: string;
   preflightOnly?: boolean;
+  allowParallelQuota?: boolean;
 };
 
 function parsePathsCsv(value: string): string[] {
@@ -564,6 +566,7 @@ export function registerGenerateCommands(site: CommandRegistrar): void {
       firstFrame: z.string().optional().describe('首帧图片路径（作为通用附件并在提示词标注顺序；非站点专用首尾帧接口）'),
       lastFrame: z.string().optional().describe('尾帧图片路径（作为通用附件并在提示词标注顺序；非站点专用首尾帧接口）'),
       preflightOnly: z.boolean().optional().describe('只跑本地预检（参数/附件校验），不打开浏览器、不提交任务、不消耗额度'),
+      allowParallelQuota: z.boolean().optional().describe('允许同一 provider 并行提交视频任务（默认串行，避免同时消耗多份额度）'),
     }),
     result: generateResult,
     examples: [
@@ -571,7 +574,9 @@ export function registerGenerateCommands(site: CommandRegistrar): void {
       { cmd: 'xbrowser gemini generate-video --prompt "从首帧平滑运镜到尾帧" --firstFrame /abs/start.png --lastFrame /abs/end.png', description: '上传两张图片作为通用附件并标注语义顺序' },
       { cmd: 'xbrowser gemini generate-video --prompt "品牌宣传片" --firstFrame /abs/start.png --preflight-only', description: '仅预检附件与参数，不提交任务' },
     ],
-    handler: async (params: GenerateParams) => generate('video', params),
+    handler: async (params: GenerateParams) => params.preflightOnly
+      ? generate('video', params)
+      : serializeProviderSubmit('gemini', params.allowParallelQuota ?? false, () => generate('video', params)),
   };
 
   site.command('generate-image', imageConfig);
