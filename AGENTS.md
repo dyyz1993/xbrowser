@@ -1502,6 +1502,13 @@ await page.setInputFiles('input[type="file"]', {
 
 完整决策树（5 种 pattern）见 `skill/file-upload/SKILL.md`。
 
+**chrome-bridge 通道**：用一等命令 `setFiles`（内部编排 `Runtime.evaluate(returnByValue:false)` 拿 objectId → `DOM.setFileInputFiles` → 回读 fileCount；objectId 失效自动重取）。evaluate 里对 `input[type=file]` 的合成点击会被 file-input 守卫规则拦截（403 指引 `setFileInputFiles`）——那才是正解，真实点击只会弹系统文件对话框。
+
+```bash
+xbrowser chrome-bridge exec --cmd setFiles \
+  --args '{"tabId":123,"selector":"input[type=file]","files":["/abs/a.jpg"]}'
+```
+
 ### page.waitForEvent vs page.context().waitForEvent
 
 - ✅ `page.waitForEvent('filechooser', { timeout: 5000 })` — 监听 page 事件

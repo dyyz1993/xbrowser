@@ -1,17 +1,20 @@
 ---
 name: file-upload
 description: >
-  文件上传自动化决策树与实战经验。CDP 模式下 Playwright 的 setInputFiles 受限，
-  而且生产站点（豆包等）有 CDP Firewall 检测合成事件，el.click() 会被拦截。
-  核心经验：用 page.mouse.click 真实鼠标事件 + setInputFiles + DataTransfer 注入，
-  完全绕过系统文件选择框。
+  文件上传自动化决策树与实战经验。「setInputFiles 受限」是**指 xbrowser 自研 CDP
+  driver 的 Locator.setInputFiles 可能未实现（"not a function"）**，不是所有通道：
+  chrome-bridge 桥接通道下用一等命令 setFiles（内部走 DOM.setFileInputFiles + objectId，
+  2026-11-27 实测可用）；Playwright driver 下 setInputFiles 一直可用。
+  另外生产站点（豆包等）有 CDP Firewall 检测合成事件，el.click() 会被拦截。
+  核心经验：永远不要点 file input；Playwright/驱动通道用 page.mouse.click 真实鼠标
+  事件 + setInputFiles + DataTransfer 注入，桥接通道直接 setFiles。
   Use when: 写插件 handler 涉及"上传文件"（图片、附件、参考图、头像、媒体等）；
-  录制器抓到 file input 但 playback 失败；CDP 模式 setInputFiles 报
-  "not a function" 或 querySelector 错误；上传后页面跳转到 about:blank。
-  Triggers: "upload file", "上传文件", "set input files", "file chooser",
+  录制器抓到 file input 但 playback 失败；setInputFiles 报 "not a function" 或
+  querySelector 错误；上传后页面跳转到 about:blank；走 chrome-bridge 通道上传。
+  Triggers: "upload file", "上传文件", "set input files", "setFiles", "file chooser",
   "drag drop", "参考图", "附件", "avatar upload", "image attachment",
   "Input.dispatchDragEvent", "DataTransfer", "file input hidden",
-  "CDP Firewall", "isTrusted", "el.click 失败".
+  "CDP Firewall", "isTrusted", "el.click 失败", "DOM.setFileInputFiles".
 ---
 
 # File Upload Skill (CDP 模式)
@@ -112,7 +115,28 @@ const hasThumb = await page.evaluate(() => {
 3. React 监听 `onChange` 事件处理文件上传
 4. **完全绕过系统文件选择框**
 
-### 0.3 page.waitForEvent 必须存在
+### 0.3 桥接通道（chrome-bridge）上传：setFiles 一等命令（2026-11-27 实测可用）
+
+**通道判断**：xbrowser 自研 CDP driver 的 `Locator.setInputFiles` 可能未实现；
+**chrome-bridge 桥接通道没有这个 API**——但 `DOM.setFileInputFiles` 经桥接是通的
+（京东云备案页图标上传实测）。守卫对这个方向给的是正解：合成 click file input 会被
+file-input 规则拦截，403 正文直接指向 `setFileInputFiles`。
+
+**一条命令**（server 侧编排：Runtime.evaluate(returnByValue:false) 拿 objectId →
+DOM.setFileInputFiles → 回读 input.files.length 自证；objectId 失效自动重取一次）：
+
+```bash
+xbrowser chrome-bridge exec --cmd setFiles \
+  --args '{"tabId":123,"selector":"input[type=file]","files":["/abs/a.jpg","/abs/b.jpg"]}'
+# → { ok: true, data: { selector, files, tabId, fileCount: 1 } }
+```
+
+- `files` 必须是本机绝对路径（浏览器自己读文件）；`fileCount` = 输入框实际持有的文件数
+- 手写 CDP 版（等价三步，便于移植到别的封装）：先 `Runtime.evaluate{expression:"document.querySelector(sel)", returnByValue:false}` 拿 `result.objectId`，再 `DOM.setFileInputFiles{files, objectId}`；偶发 `Object id doesn't reference a Node` 重取一次即可。参考实现：`~/ZCodeProject/nearo/keystore/jd_beian_helper.py`
+- 上传前先探站点规则（可选）：对 uploader 组件用假 File 调 `uploader.$props.beforeUpload(f)`——京东云上传口只收 JPG，PNG 被**静默移除、不发请求**，先探规则省得白传
+- 上传入口常要真实点击触发按钮打开弹窗——那一步仍受「页面可见」约束；`setFiles` 本身不受
+
+### 0.4 page.waitForEvent 必须存在
 
 **Bug**：自研 CDP 驱动之前没有 `page.waitForEvent` 方法，导致 filechooser 模式无法使用。
 
@@ -172,7 +196,8 @@ await page.setInputFiles('input[type="file"]:visible', absPath);
 ```
 
 **优点**：一行搞定
-**缺点**：CDP 模式下 `Locator.setInputFiles` 可能未实现（"not a function"）
+**缺点**：xbrowser 自研 CDP driver 下 `Locator.setInputFiles` 可能未实现（"not a function"）；
+Playwright driver 不受此限。chrome-bridge 通道没有这个 API——直接用 setFiles（见 §0.3）。
 
 **检测**：
 ```typescript
@@ -465,7 +490,7 @@ function generateSelector(el: HTMLElement): string {
 |------|------|---------|
 | `await page.mouse.click(fileInput.x, fileInput.y)` | 弹系统文件选择框 | `page.setInputFiles(selector, file)` |
 | `btn.click()` / `el.click()` | isTrusted=false → CDP Firewall 拦截 → 页面跳 | `page.mouse.click(x, y)` |
-| `await locator.setInputFiles(path)` | CDP 模式下可能 "not a function" | 先检测，失败走 fallback |
+| `await locator.setInputFiles(path)` | 自研 CDP driver 下可能 "not a function"（Playwright driver 不受限）；bridge 通道没有这个 API | 先检测，失败走 fallback；bridge 通道用 `setFiles`（§0.3） |
 | `page.context().waitForEvent` | context 没有这个方法 | `page.waitForEvent` |
 | 硬编码 hash class `.input-I22ghh` | 每次构建 hash 变 | 用 `input[type="file"]` |
 | 上传后不 await，不 verify | 看似成功实际未上传 | 等缩略图/进度条出现 |
