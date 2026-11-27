@@ -133,6 +133,25 @@ function getBaseAdvice(decision: DecisionResult, method: string): { title: strin
         ].join('\n'),
       };
 
+    case 'file-input-synthesis':
+      return {
+        title: 'File input click blocked — upload through DOM.setFileInputFiles',
+        detail: `Your ${method} call clicked or dispatched a synthetic event on <input type=file>. A synthetic click fires isTrusted=false events (detectable), and even a trusted click would only open the system file picker dialog. Neither delivers a file to the page.`,
+        codeExample: [
+          '# ❌ BLOCKED — never click a file input:',
+          "document.querySelector('input[type=file]').click()",
+          '',
+          '# ✅ USE INSTEAD — hand the file to the input via CDP:',
+          '# 1) objectId = Runtime.evaluate { expression: "document.querySelector(sel)",',
+          '#                                  returnByValue: false }.result.objectId',
+          '# 2) DOM.setFileInputFiles { files: ["/abs/a.jpg"], objectId }',
+          '',
+          '# Over the chrome-bridge channel this is one command:',
+          '# POST /exec {"cmd":"setFiles","args":{"tabId":1,"selector":"input[type=file]",',
+          '#              "files":["/abs/a.jpg"]}}',
+        ].join('\n'),
+      };
+
     case 'event-simulation':
       return {
         title: 'Synthetic event simulation blocked',

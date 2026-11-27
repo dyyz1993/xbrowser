@@ -1,7 +1,7 @@
 # 插件完成度看板
 
 > **自动生成，请勿手改** · 由 `lint-scripts/check-plugin-status.mjs` 生成
-> 生成时间：2026-11-24 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
+> 生成时间：2026-11-27 · 规范见 `docs/plans/2026-06-27-plugin-completion-spec.md`
 
 ## 汇总
 
@@ -117,7 +117,7 @@
 | pypi | 3 | `project` |
 | qianwen | 5 | `browser`, `page` |
 | quanjing | 1 | `browser` |
-| quora | 4 | `browser`, `page` |
+| quora | 5 | `browser`, `page` |
 | qwen | 4 | `browser` |
 | reddit | 5 | `browser` |
 | reuters | 1 | `browser` |

@@ -16,7 +16,7 @@
 import { WebSocketServer } from 'ws';
 import { appendFileSync, mkdirSync, statSync, writeFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { checkBridgeCommand } from './guard.mjs';
 
 const PORT = parseInt(process.argv[2] || '9346', 10);
@@ -203,6 +203,7 @@ function handleExecInner(req, res, cmd, args, clientSel) {
     if (!entry) { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'no extension connected' })); return; }
     const clientId = entry[0];
     const client = entry[1];
+    if (cmd === 'setFiles') { handleSetFiles(res, args || {}, clientId, client); return; }
     const id = nextId++;
     const t0 = Date.now();
     const t = setTimeout(() => {
@@ -217,6 +218,96 @@ function handleExecInner(req, res, cmd, args, clientSel) {
       timer: t,
     });
     client.ws.send(JSON.stringify({ id, cmd, args: args || {} }));
+  }
+}
+
+// ── setFiles：文件上传的一等命令（file-input 守卫规则的「替代」所指）──
+// 内部编排两次 cdp 透传：① Runtime.evaluate(returnByValue:false) 拿 input 的
+// objectId；② DOM.setFileInputFiles{files, objectId}——浏览器原生写 files 并
+// 触发 change，无合成事件。objectId 偶发失效（"Object id doesn't reference a
+// Node"）→ 重取一次再试。最后回读 input.files.length 作为结果自证。
+const OBJECT_STALE_RE = /Object id doesn't reference a Node|no node with given id/i;
+
+function bridgeCall(client, clientId, cdpArgs, timeoutMs = 20000) {
+  const id = nextId++;
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => {
+      pending.delete(id);
+      log('exec-timeout', `#${clientId} cmd=cdp (setFiles inner)`);
+      reject(new Error('timeout'));
+    }, timeoutMs);
+    pending.set(id, {
+      clientId,
+      resolve: (v) => { clearTimeout(t); resolve(v); },
+      reject: (e) => { clearTimeout(t); reject(e); },
+      timer: t,
+    });
+    client.ws.send(JSON.stringify({ id, cmd: 'cdp', args: cdpArgs || {} }));
+  });
+}
+
+async function handleSetFiles(res, args, clientId, client) {
+  const t0 = Date.now();
+  try {
+    const selector = typeof args.selector === 'string' && args.selector.trim() !== '' ? args.selector.trim() : null;
+    const rawFiles = Array.isArray(args.files) ? args.files : (typeof args.files === 'string' ? [args.files] : []);
+    const files = [...new Set(rawFiles.map((f) => resolve(String(f))))];
+    const tabId = args.tabId != null && !Number.isNaN(Number(args.tabId)) ? Number(args.tabId) : null;
+    if (!selector || files.length === 0 || files.some((f) => !existsSync(f))) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        ok: false,
+        error: 'setFiles requires selector and files[] — absolute paths that exist on this machine (the browser reads the files itself)',
+      }));
+      return;
+    }
+    const tabArg = tabId != null ? { tabId } : {};
+    const takeObjectId = () => bridgeCall(client, clientId, {
+      ...tabArg,
+      method: 'Runtime.evaluate',
+      params: { expression: `document.querySelector(${JSON.stringify(selector)})`, returnByValue: false },
+    });
+    const pushFiles = (objectId) => bridgeCall(client, clientId, {
+      ...tabArg,
+      method: 'DOM.setFileInputFiles',
+      params: { files, objectId },
+    });
+    let lastError = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const ev = await takeObjectId();
+      const cdp = ev?.data ?? {};
+      if (cdp.exceptionDetails) {
+        throw new Error('evaluate failed: ' + String(cdp.exceptionDetails.text || cdp.exceptionDetails.exception?.description || 'exception'));
+      }
+      const objectId = cdp?.result?.objectId;
+      if (!objectId) throw new Error(`not found: ${selector} (selector matched no element)`);
+      try {
+        await pushFiles(objectId);
+        lastError = null;
+        break;
+      } catch (e) {
+        lastError = e;
+        if (attempt === 1 && OBJECT_STALE_RE.test(String(e.message))) {
+          log('exec-setfiles', `#${clientId} stale objectId, re-taking once`);
+          continue;
+        }
+        throw e;
+      }
+    }
+    if (lastError) throw lastError;
+    const check = await bridgeCall(client, clientId, {
+      ...tabArg,
+      method: 'Runtime.evaluate',
+      params: { expression: `document.querySelector(${JSON.stringify(selector)})?.files?.length ?? -1`, returnByValue: true },
+    });
+    const fileCount = typeof check?.data?.result?.value === 'number' ? check.data.result.value : null;
+    log('exec-ok', `#${clientId} cmd=setFiles ${Date.now() - t0}ms`);
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, data: { selector, files, tabId, fileCount } }));
+  } catch (e) {
+    log('exec-fail', `#${clientId} cmd=setFiles ${String(e && e.message || e).slice(0, 140)}`);
+    res.writeHead(502, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: false, error: String(e && e.message || e) }));
   }
 }
 httpSrv.listen(PORT + 1);

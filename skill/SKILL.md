@@ -11,7 +11,9 @@ description: >
   "xbrowser dev", "xbrowser development", "xbrowser build/test", "plugin contract",
   "result schema", "loginConfig", "requiresLogin", "CDP driver",
   "xbrowser viewer", "preview", "captcha", "recording", "replay", "plugin test",
-  "open url", "XBROWSER_CDP", "XBROWSER_SESSION".
+  "open url", "XBROWSER_CDP", "XBROWSER_SESSION",
+  "upload file", "文件上传", "file chooser", "file input", "setInputFiles",
+  "setFiles", "附件上传", "上传图片", "参考图".
 ---
 
 # xbrowser Development Guide
@@ -198,6 +200,20 @@ curl -s -m 3 http://localhost:9221/json/version   # 用户日常浏览器（开�
 
 注意：trusted 输入（点击、原始按键）要求目标页面**可见**——tab 在后台、窗口最小化或被完全遮挡时会被 Chrome 静默丢弃（`mousemove`、`insertText`、页面脚本不受影响）。判据是页面里 `window.outerWidth > 0`；`document.visibilityState` 在开了反检测的浏览器里会被伪装成 `visible`，不可靠。操作前先查：bridge 通道用 `xbrowser chrome-bridge input-health`。页面不可见时先把 tab 带到前台（`exec --cmd tab-activate` / `bringToFront`），或用 `win-open` 开独立小窗；bridge 扩展 ≥1.5.5 起这类输入直接报 `[bridge-input]` 错误，不再静默无效。
 
+### 文件上传（bridge 通道 = `DOM.setFileInputFiles`，绝不点 file input）
+
+```bash
+xbrowser chrome-bridge exec --cmd setFiles --args '{"tabId":123,"selector":"input[type=file]","files":["/abs/a.jpg"]}'
+```
+
+- **永远不要 click `<input type=file>`**：合成 click 被 file-input 守卫规则拦截（403 会指引 `setFileInputFiles`）；真实点击只会弹系统文件对话框——两条路都传不了文件。完整决策树见 [file-upload/SKILL.md](file-upload/SKILL.md)。
+- `setFiles` 内部做三步：`Runtime.evaluate(returnByValue:false)` 拿 objectId → `DOM.setFileInputFiles{files, objectId}`（浏览器原生写 files 并触发 change）→ 回读 `input.files.length` 自证。objectId 偶发失效（`Object id doesn't reference a Node`）自动重取一次。
+- `files` 是本机绝对路径（浏览器自己读文件）；返回 `fileCount` 即输入框实际持有的文件数。
+- 上传前先探站点规则（可选）：对uploader组件用假 File 调 `uploader.$props.beforeUpload(f)`——例如京东云上传口只收 JPG，PNG 被**静默移除、不发请求**，先探规则省得白传。
+- 上传入口常要真实点击触发按钮打开弹窗——那一步仍受「页面可见」约束（见上），`setFiles` 本身不受。
+
+守卫与改写的边界：bridge 通道对危险命令**只有「拒绝 + 替代指引」，没有改写**（HTTP→扩展→chrome.debugger 之间没有 CDP 流代理）；把 `insertText` 展开成带节奏键盘事件流等 transform 能力需要 `XBROWSER_HUMANIZE_CDP=on`（主通道选装，bridge 不受它影响）。
+
 ### Environment Variables
 
 | Variable | Purpose | Example |
@@ -261,7 +277,7 @@ See [references/command-reference.md](references/command-reference.md) for full 
 | Clicking elements | `locator().click()` | `evaluateHandle` + `mouse.click(x,y)` |
 | Closing browser | `browser.close()` | Handler auto-disconnects |
 | Selectors | `:has-text("xxx")` | class / id / data-testid |
-| File upload (CDP mode) | `el.click()` / click file input | `page.mouse.click(trigger)` + `page.setInputFiles` |
+| File upload (CDP mode) | `el.click()` / click file input | `page.mouse.click(trigger)` + `page.setInputFiles`；bridge 通道用 `setFiles`（`DOM.setFileInputFiles`） |
 | Synthetic events (CDP Firewall) | `el.click()` in `page.evaluate` | `page.mouse.click(x, y)` (`isTrusted=true`) |
 
 See [references/cdp-pitfalls.md](references/cdp-pitfalls.md) for detailed explanations, and **[file-upload/SKILL.md](file-upload/SKILL.md)** for the full file-upload decision tree (5 patterns, 豆包 reference-image 实战, helper function, recorder integration, debugger checklist).

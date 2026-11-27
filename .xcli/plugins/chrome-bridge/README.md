@@ -51,10 +51,45 @@ xbrowser chrome-bridge exec --cmd screenshot                    # 可视区截�
 | tabs | - | 所有 tab 列表 |
 | navigate / open | url, tabId? | 导航（默认激活 tab） |
 | evaluate | expression, tabId? | 页面内执行 JS |
-| click | selector | 合成点击（query + el.click） |
+| click | selector | 合成点击（query + el.click）——file input 会被守卫拦，见下「文件上传」 |
 | fill | selector, value | 原型 setter + input/change 事件（React 兼容） |
 | screenshot | - | 可视区 PNG base64 |
 | url | tabId? | 当前 tab URL/title |
+| setFiles | tabId?, selector, files[] | **文件上传**：`DOM.setFileInputFiles` 一等命令，见下「文件上传」 |
+
+## 文件上传（setFiles = `DOM.setFileInputFiles`）
+
+**永远不要 click `<input type=file>`**：合成 click 会被守卫的 file-input 规则拦
+（403 指引 `setFileInputFiles`），真实点击只会弹系统文件对话框——两条路都传不了文件。
+
+```bash
+# 一条命令完成上传（server 侧编排：拿 objectId → DOM.setFileInputFiles → 回读 fileCount）
+xbrowser chrome-bridge exec --cmd setFiles \
+  --args '{"tabId":123,"selector":"input[type=file]","files":["/abs/a.jpg","/abs/b.jpg"]}'
+# → { ok: true, data: { selector, files, tabId, fileCount: 1 } }
+```
+
+- `files[]` 必须是**本机绝对路径**且真实存在（浏览器自己读文件；相对路径按 server cwd 展开后校验，不存在返回 400）
+- 内部三步：`Runtime.evaluate(returnByValue:false)` 拿 objectId → `DOM.setFileInputFiles{files, objectId}`（浏览器原生写 files 并触发 change，无合成事件）→ 回读 `input.files.length` 作为 `fileCount` 自证
+- objectId 偶发失效（`Object id doesn't reference a Node`）→ 自动重取一次再试；仍失败返回 502 原文
+- `tabId` 建议显式传；不传时三步各自落到当前任务组 tab
+- 上传入口常要真实点击触发按钮打开弹窗——那一步受「页面可见」约束（`input-health`）；`setFiles` 本身不受
+- 守卫对该命令设计上放行（不派发任何合成事件，正是 file-input 规则给出的替代路径）
+- 上传前探站点规则（可选）：对 uploader 组件用假 File 调 `uploader.$props.beforeUpload(f)`——例如京东云上传口只收 JPG，PNG 被**静默移除、不发请求**，先探规则省得白传
+
+## Guard 403：body 必须读再抛
+
+守卫拒绝命令时返回 **HTTP 403 + JSON body**，`error` 字段是写给 LLM 的纠错说明
+（`[CDP-Guard] 原因 | 替代: 正确用法 [ruleId]`）。封装这个通道的代码**必须先把 body
+读出来再抛错**——只抛 HTTP 状态码会让调用方（LLM）一次都看不到替代用法，等于守卫
+白拦。反例（2026-11-27 实录）：某封装 `res.ok` 不成立直接 `throw new Error('HTTP 403')`，
+8 轮试错全靠猜。
+
+```js
+const r = await fetch(url, opts);
+const body = await r.json();                       // 先读 body
+if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);  // 把 [CDP-Guard] 文案带上去
+```
 
 ## 登录态同步（原有 login-bridge 能力保留）
 
