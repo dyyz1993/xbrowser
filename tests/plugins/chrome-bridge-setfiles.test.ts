@@ -72,8 +72,9 @@ function connectExtension(): Promise<WebSocket> {
       const params = frame.args?.params ?? {};
       calls.push({ method, params, tabId: frame.args?.tabId } as { method: string; params: Record<string, unknown>; tabId?: number });
       const out = handler(method, params);
+      // 真实扩展 cdp 执行器返回 {ok, data:<CDP result>}，WS 帧为 {id, ok, data:<executor 返回>}
       const reply = out.ok
-        ? { id: frame.id, ok: true, data: out.data ?? {} }
+        ? { id: frame.id, ok: true, data: { ok: true, data: out.data ?? {} } }
         : { id: frame.id, ok: false, error: out.error ?? 'extension error' };
       ws.send(JSON.stringify(reply));
     });
