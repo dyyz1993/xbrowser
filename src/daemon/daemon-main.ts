@@ -14,6 +14,7 @@ import { homedir } from 'os';
 import type { IncomingMessage, ServerResponse } from 'http';
 
 import { startHttpServer } from '@dyyz1993/xcli-core';
+import { registerTmpStorageCleanup, sweepStaleTmpStorageDirsAsync } from '../plugin/tmp-storage-cleanup.js';
 
 import { createRPCHandler } from './rpc-handlers.js';
 import { buildHealthPayload } from './health.js';
@@ -45,6 +46,9 @@ async function main() {
   const startedAt = new Date().toISOString();
 
   log(`Daemon main starting (pid=${process.pid} version=${version} build=${buildId})`);
+
+  // 插件临时目录（os.tmpdir()/xbrowser-<pid>/）：自己退出时删自己那份
+  registerTmpStorageCleanup();
 
   // ── Create RPC handler and set up HTTP server ──
   const rpcHandler = createRPCHandler();
@@ -163,6 +167,9 @@ async function main() {
     const names = sites.map(s => s.name || 'unknown').join(', ');
     log(`Plugins: ${names}`);
   }
+
+  // 之前崩溃 / 被杀的进程留下的临时目录（pid 已不存在才删）在后台分批清，不阻塞启动
+  void sweepStaleTmpStorageDirsAsync({ log }).catch(() => { /* 清理失败不影响 daemon */ });
 
   // ── Signal handling ──
   const shutdown = () => {

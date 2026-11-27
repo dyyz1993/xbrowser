@@ -369,11 +369,33 @@ if (detected) {
 | HTML 报告 | `output/<plugin>/<name>.html` | 报表、导出 |
 | 录制文件 | `recordings/<flow>.yaml` | 可入 git |
 | 录制临时草稿 | `recordings/.tmp/` | 录制中，**不入 git** |
-| 登录态 / 持久化 | `.xcli/storage/<plugin>/` | 框架托管，**不要**手动写 |
+| 插件登录态 / 持久化 | `~/.xbrowser/storage/<plugin>.json` | `ctx.storage` 托管（`CompositeStorage`，全局目录，不在仓库里），**不要**手动写 |
 | skill 调试输出 | `output/skills/<skill>/` | 例 `output/skills/cdp-test/` |
 | 一次性脚本（开发期） | `output/.scripts/` | **不入 git** |
 
 > **重要**：不要在仓库根目录或 `scripts/` 创建临时文件。一次性脚本放 `output/.scripts/`（不入 git）；`scripts/` 只允许 `release/` 与白名单工具（见 §1），新增的已跟踪文件会被 `lint:architecture` 拒绝。
+
+### 9.1 运行时产物在哪（代码自动写的，都不在仓库里）
+
+问「agent 跑完东西存哪了」看这张表（2026-11-27 按源码核对；除标注「自动清理」的以外都不会自己消失，要清先列路径和大小）：
+
+| 产物 | 位置 | 谁写 / 何时 | 清理 |
+|------|------|------------|------|
+| 截图（没给 `--output`） | 系统临时目录 `<tmpdir>/xbrowser/screenshots/`；配置 `screenshots.dir` 可改 | `xbrowser screenshot` | 不自动清理（本机 `~/.xbrowser/screenshots/` 里是旧版本留下的） |
+| 媒体下载（图片 / 视频 / 音乐） | `~/.xbrowser/downloads/` | gemini / doubao / mureka / udio / yuanbao / image-lightbox 的下载命令 | 不自动清理 |
+| 命令归档（每个会话一份 JSON，含命令与结果，单个可达 12MB） | `~/.xbrowser/archives/<会话id>.json` | 每条命令执行后（xcli-core 的 archive store） | 不自动清理 |
+| 会话元数据 + 自动录制 | `~/.xbrowser/sessions/<会话>/`（`*.json`、`recordings/*.jsonl|png|summary.md`） | 会话创建 / 命令执行 / `record` | `session close` 只删元数据，录制保留 |
+| 手动录制 | `recordings/<flow>.yaml`（仓库目录，可入库）；快照 `recordings/.tmp/snapshots/` | `record stop` / 录制中 | `.tmp` 不入 git |
+| 日志 | `~/.xbrowser/daemon.log`；`~/.xbrowser/logs/chrome-bridge.log`、`chromium-collect-<端口>.log` | daemon / bridge server / 登录桥采集器 | 不自动清理 |
+| 采集器 pid 文件 | `~/.xbrowser/chromium-collect-<端口>.pid` | `collect-profile.sh` 每次启动 | 下次启动时清掉 pid 已失效的 |
+| 调试转储 | `~/.xbrowser/debug/*.jsonl` | `doubao … --debug` | 不自动清理 |
+| 封面图 | `~/.xbrowser/output/content/cover-*.png` | `content cover` | 不自动清理 |
+| 知识库 | `~/.xbrowser/knowledge/`（自愈知识、运行时错题本 `mistakes.md`）、`~/.xbrowser/site-knowledge/*.json`、`~/.xbrowser/site-memory/site-memory.sqlite` | 回放 / `site-memory` | 长期保留 |
+| 插件登录态 | `~/.xbrowser/storage/<plugin>.json` | 插件 `ctx.storage` | 长期保留 |
+| 插件临时目录 | `<tmpdir>/xbrowser-<pid>/<plugin>/` | xcli-core 每个进程、每个插件建一个 | **自动清理**：进程退出删自己那份；daemon 启动时分批清 pid 已失效的残留（`src/plugin/tmp-storage-cleanup.ts`） |
+| 浏览器 profile | 托管会话：`/tmp/xbrowser-chrome-<pid>-<ts>/`；登录桥固定 profile：`~/.xbrowser/chrome-profile*`、`chrome-collect-profile/` | 启动器 / login-bridge | 托管会话 `session close` 即删；固定 profile 长期保留 |
+| 插件 / 验收输出 | `<cwd>/output/<plugin>/…`（如 `output/chrome-bridge/acceptance-*.json`） | 插件命令、验收脚本 | 不入 git，手动清 |
+| 学习账本 | `~/.agents/projects/xbrowser/`（ERRORS / LEARNINGS / FEATURE_REQUESTS） | self-improvement | 长期保留 |
 
 ---
 
