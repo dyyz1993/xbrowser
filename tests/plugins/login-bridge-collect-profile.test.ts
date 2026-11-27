@@ -4,6 +4,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -311,4 +312,52 @@ describe("login-bridge collector launcher", () => {
       expect(Number(second.match(/pid=(\d+)/)?.[1])).toBe(pid);
     },
   );
+});
+
+describe("login-bridge collector launcher: stale pid files", () => {
+  it("drops pid files whose recorded PID is dead and keeps live ones", async () => {
+    const home = mkdtempSync(join(tmpdir(), "xb-collect-home-"));
+    try {
+      mkdirSync(join(home, ".xbrowser"), { recursive: true });
+      // A child that already exited gives us a PID that is guaranteed dead.
+      const dead = spawn("/bin/sh", ["-c", "exit 0"], { stdio: "ignore" });
+      await new Promise((resolve) => dead.on("exit", resolve));
+      writeFileSync(join(home, ".xbrowser", `chromium-collect-1.pid`), String(dead.pid));
+      writeFileSync(join(home, ".xbrowser", "chromium-collect-2.pid"), String(process.pid));
+
+      const freePort = await new Promise<number>((resolve) => {
+        import("node:net").then((net) => {
+          const srv = net.createServer();
+          srv.listen(0, "127.0.0.1", () => {
+            const { port } = srv.address() as { port: number };
+            srv.close(() => resolve(port));
+          });
+        });
+      });
+
+      // The launch itself fails (no Chromium binary) — the pruning already ran before it.
+      await new Promise<void>((resolve) => {
+        execFile(
+          "/bin/sh",
+          [script, String(freePort)],
+          {
+            timeout: 20_000,
+            env: {
+              ...process.env,
+              HOME: home,
+              XBROWSER_CHROMIUM_BIN: "/nonexistent/Chromium",
+              XBROWSER_COLLECT_PROFILE: join(home, "collect-profile"),
+              XBROWSER_COLLECT_SOURCE: join(home, "source"),
+            },
+          },
+          () => resolve(),
+        );
+      });
+
+      expect(existsSync(join(home, ".xbrowser", "chromium-collect-1.pid"))).toBe(false);
+      expect(existsSync(join(home, ".xbrowser", "chromium-collect-2.pid"))).toBe(true);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 30_000);
 });

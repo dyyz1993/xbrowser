@@ -78,6 +78,20 @@ fi
 # Rebuild only after the old collector is gone. Missing source items are
 # expected on first run; a failed copy fails the launch instead of being hidden.
 mkdir -p "$PROFILE/Default" "$(dirname "$LOG")"
+
+# Every launch uses a fresh port, so each run leaves its own
+# chromium-collect-<port>.pid behind. Drop the ones whose recorded PID is gone;
+# a live PID (or this launch's own file) is never touched.
+for stale_pidfile in "$HOME"/.xbrowser/chromium-collect-*.pid; do
+  [ -e "$stale_pidfile" ] || continue
+  [ "$stale_pidfile" = "$PIDFILE" ] && continue
+  stale_pid=$(cat "$stale_pidfile" 2>/dev/null || true)
+  case "$stale_pid" in
+    '' | *[!0-9]*) continue ;;
+  esac
+  kill -0 "$stale_pid" 2>/dev/null && continue
+  rm -f "$stale_pidfile"
+done
 for item in Cookies Cookies-journal "Local Storage" "Session Storage" Network; do
   if [ -e "$SRC/$item" ]; then
     cp -R "$SRC/$item" "$PROFILE/Default/$item"

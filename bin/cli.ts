@@ -2,10 +2,13 @@
 import { routeCommand } from '../src/router.js';
 import { readStdin } from '../src/stdin.js';
 import { ensureProxyFetch } from '../src/utils/proxy-fetch.js';
+import { registerTmpStorageCleanup } from '../src/plugin/tmp-storage-cleanup.js';
 
 async function main() {
   let exitCode = 0;
   try {
+    // 进程退出时删掉本进程的插件临时目录（os.tmpdir()/xbrowser-<pid>/，xcli-core 建了不删）
+    registerTmpStorageCleanup();
     await ensureProxyFetch();
     // `mcp` 的 stdin 是 JSON-RPC 协议通道，绝不能当命令输入吃掉。
     // `site-memory mcp` 同理（嵌套子命令同样走 stdio MCP）。

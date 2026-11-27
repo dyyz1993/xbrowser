@@ -97,7 +97,7 @@ export const screenshotCommand = registerCommand({
       });
     }
 
-    // Default: save to ~/.xbrowser/screenshots/ and return file path
+    // Default: resolveScreenshotsDir()（系统临时目录下的 xbrowser/screenshots，或 screenshots.dir 配置）
     ensureScreenshotsDir();
     const screenshotPath = generateScreenshotPath(format);
     writeFileSync(screenshotPath, buffer, 'binary');
