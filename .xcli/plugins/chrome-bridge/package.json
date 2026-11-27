@@ -1,6 +1,6 @@
 {
   "name": "xbrowser-plugin-chrome-bridge",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "main": "index.ts",
   "type": "module",
   "dependencies": {
@@ -12,7 +12,7 @@
   "xbrowser": {
     "name": "chrome-bridge",
     "slug": "chrome-bridge",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "author": "dyyz1993",
     "description": "Chrome 扩展控制通道：插件装进用户浏览器，xbrowser 经 WS 直接控制（无需调试端口）",
     "site": "https://127.0.0.1",

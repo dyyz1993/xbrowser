@@ -18,6 +18,10 @@ let engineOverride = false;
 
 const DANGER_CMDS = new Set(['cdp', 'click', 'evaluate']);
 
+// setFiles（文件上传，server.mjs 编排 Runtime.evaluate → DOM.setFileInputFiles）
+// 设计上放行：它不派发任何合成事件，走的正是 file-input 守卫规则给出的替代
+// 路径——toCdpShape 不认识它，checkBridgeCommand 在展开前即返回放行。
+
 /**
  * 动态加载规则引擎（dist/index.js 的 createRuleEngine）。
  * @returns {Promise<RuleEngine | null>}
