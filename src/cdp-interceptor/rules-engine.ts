@@ -16,6 +16,7 @@ import { humanizeTransformRule } from './rules/humanize-transform.js';
 import { automationSignalsRule } from './rules/automation-signals.js';
 import { fingerprintingRule } from './rules/fingerprinting.js';
 import { eventSimulationRule } from './rules/event-simulation.js';
+import { fileInputRule } from './rules/file-input.js';
 import { emulationOverrideRule } from './rules/emulation-override.js';
 import { networkAnomalyRule } from './rules/network-anomaly.js';
 import { pageLifecycleRule } from './rules/page-lifecycle.js';
@@ -26,6 +27,7 @@ import { pageLifecycleRule } from './rules/page-lifecycle.js';
  *    10  DOM property mutation (value=, checked=, innerHTML=, 50+)
  *    20  Automation signals (Playwright/Puppeteer/Selenium markers, 35+)
  *    30  Fingerprinting APIs (canvas, WebGL, AudioContext, navigator, 35+)
+ *    35  File input synthesis (click/dispatchEvent on input[type=file])
  *    40  Event simulation (dispatchEvent, click/focus/blur, 30+)
  *    45  Humanize transform (trusted mouse/keyboard sequence expansion)
  *    50  Mouse trajectory analysis (stateful)
@@ -38,6 +40,7 @@ const BUILTIN_RULES: CDPInterceptorRule[] = [
   domMutationRule,
   automationSignalsRule,
   fingerprintingRule,
+  fileInputRule,
   eventSimulationRule,
   mouseTrajectoryRule,
   inputKeystrokeRule,
