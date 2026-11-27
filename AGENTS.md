@@ -1127,6 +1127,17 @@ git push origin v<X.Y.Z>
 
 **回滚 tag**：`git tag -d v<X.Y.Z> && git push origin :refs/tags/v<X.Y.Z>`（npm 已发的版本无法撤回，只能发新版本）。
 
+### 审批门演练（不发版）
+
+改了审批门、`release.yml` 的签票据逻辑或 Drel 通知时，不用真发版验证：
+
+```bash
+# 从标签发起（OIDC 的 workflow 引用跟着触发它的 ref 走，从 master 发起验不到标签路径）
+gh workflow run release.yml --ref v<X.Y.Z> -f gate_only=true
+```
+
+只跑校验、测试、签票据、推送，停在真实的 production 审批门；npm 与插件上架整段跳过。标签路径和分支路径各验一次。
+
 ### 验证发布
 
 ```bash
@@ -1207,8 +1218,8 @@ npm publish --access public
 ### 注意事项
 
 - **npm 不允许重复发布同一版本号**——如果该版本已发布（E403 "cannot publish over"），需要 bump 到下一个版本
-- **E2E workflow 失败不阻塞发版**——e2e 有既存的断言过期问题（plugin-lifecycle help 文本），与发版无关，主 CI 全绿即可合并
-- **不要用 git tag 发版**——xbrowser 的 publish.yml 不监听 tag，只监听 package.json 变化
+- **e2e 是发版硬门禁**——`release.yml` 的 test job 会跑 `npm run test:e2e`（首败 10 秒后重试一次消化 flaky），再失败就不发；平时的 e2e 结果以 `e2e.yml` 为准，不要带着红的 e2e 去打 tag
+- **只认 tag 触发**——仓库里没有 `publish.yml`；发版唯一入口是 `git push origin v<X.Y.Z>` 触发 `release.yml`
 - **ESM 包禁止 `require()`**——xbrowser 是 `"type": "module"`，任何 `require()` 在打包后都会崩溃。新增代码必须用 `import`
 
 ---
@@ -1640,11 +1651,23 @@ git branch -D feat/x
 
 合并 worktree 改动时先 `git status` 看清 staged/unstaged 差异，分别决定。
 
-**新 worktree 里提交前必须先装钩子**：`.husky/_` 由 `npm install`（`prepare: husky`）生成、不进 git，新建的 worktree 里没有它——git 找不到钩子会**静默跳过** pre-commit / commit-msg / pre-push，提交等于绕过了本地门禁（用软链 `node_modules` 代替安装时同样如此）。在 worktree 里执行一次 `npm install` 或 `npx husky`，并用 `ls .husky/_/pre-commit` 确认存在后再提交。
+**开新任务前先对齐主干**：`git fetch && git log origin/master --oneline -10` 过一遍最近合了什么，再从 `origin/master` 开分支；旧 worktree 只做收尾、不做新开发——基座落后主干会让 PR 冲突、commit-lint 变红（2026-11-27 又踩一次：基于过期 master 开的分支与主干 CONFLICTING，只能重放）。
+
+**新 worktree 里提交前必须先装钩子**：`.husky/_` 由 `npm install`（`prepare: husky`）生成、不进 git，新建的 worktree 里没有它——git 找不到钩子会**静默跳过** pre-commit / commit-msg / pre-push，提交等于绕过了本地门禁（用软链 `node_modules` 代替安装时同样如此）。在 worktree 里执行一次 `npm install` 或 `npx husky`，并用 `ls .husky/_/pre-commit` 确认存在后再提交。 `npm run validate` 的第一步（`prevalidate` → `lint-scripts/check-hooks-installed.mjs`）也会检查这件事，没装钩子直接失败。
 
 **在 worktree 里运行 `dist/cli.js` 必须带独立的 daemon 端口**：`XBROWSER_DAEMON_PORT=<未占用的端口> node dist/cli.js …`。缺省端口 9224 上跑的是主检出的 daemon，构建指纹不同的 CLI 连上去会触发「Daemon build mismatch」：daemon 上有会话时报错拒绝执行，没有会话时则被重启成这个 CLI 的构建——两边交替使用就会互相重启。用 `lsof -nP -iTCP:<端口> -sTCP:LISTEN` 取 PID，按 PID 结束自己起的 daemon，不要按进程名清理。
 
 **端口也是 daemon 登记的单位**：`daemon.json` 只记一个 daemon，所以每个端口各记一份——缺省端口仍在 `~/.xbrowser/daemon.json`，其他端口在 `~/.xbrowser/daemons/<端口>/daemon.json`。查状态、启动、停止、构建不一致重启都只看当前端口（`XBROWSER_DAEMON_PORT`，缺省 9224）这一份，不会碰到别的端口上的 daemon。
+
+### 子任务派发与验收（学习账本里反复踩到的流程坑）
+
+- 派发涉及 xbrowser 的子任务时，brief 固定写三句：①所有命令显式 `--session <name>`，不得落到 default；②禁止用 `eval` / `click` 等有副作用的命令做探测，只允许 `--help`（eval 除外）与 `plugin schema`；③结束时关自己的会话，回报里列出执行过的非只读命令。
+- 子任务交付的修复，先用真实数据 / 真实环境证伪它的核心前提，再读 diff；单测全绿不算验证（mock 会把错的前提一起 mock 掉）。
+- 改文档示例后按文档里的原样命令实跑一遍（含全局参数的位置）；help / schema / 源码推断都给出过错误结论。`lint:docs` 只能拦住「命令不存在」，拦不住参数写错。
+- 并发 / 竞态类修复的验收走真实浏览器红绿：先用真 Chrome 加载未修复版本复现，再验证修复后变好；mock 层的红绿只算快速回归。
+- 问题落在别的仓库或服务时，先 `grep -rn <关键词> ~/.agents/projects/<那个仓库>/` 读对方账本，再查外部资料。
+- 需要某站登录态、而登录在用户主浏览器时：先 `xbrowser chrome-bridge status` 确认扩展已连，再用 `--bridge` 走桥；没桥才考虑 9333 profile / viewer 登录。
+- 多平台分发一律「一站一稿」（不同话术 / 角度 / 配图，配图重新生成）；同稿多发 + 文中 URL 容易被平台判定营销内容而限流。
 
 ---
 

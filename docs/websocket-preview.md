@@ -2,45 +2,40 @@
 
 xbrowser provides a WebSocket-based real-time browser preview feature that streams screenshots and command events to connected clients.
 
-## Starting the Preview Server
+## Opening the Viewer
 
-Start the preview server using the `xbrowser preview` command:
+The viewer is served by the daemon itself (default port `9224`, override with `XBROWSER_DAEMON_PORT`).
+`xbrowser preview` starts the daemon when it is not running and prints the viewer URL; the page and its
+WebSocket share the daemon port.
 
 ```bash
-# Default settings (port 9223, 1s interval, JPEG quality 80)
+# Default session ("default")
 xbrowser preview
 
-# Custom port
-xbrowser preview --port 8080
+# A named session
+xbrowser preview --session my-sess
 
-# Faster refresh rate
-xbrowser preview --interval 500
+# Daemon on another port (used only when the daemon has to be started)
+xbrowser preview --session my-sess --port 19224
 
-# Higher quality
-xbrowser preview --quality 90
-
-# Use PNG format
-xbrowser preview --type png
+# Focus one element in the viewer
+xbrowser preview --session my-sess --selector "#submit"
 ```
 
 ### Options
 
-- `--port <number>` - WebSocket server port (default: 9223)
-- `--interval <ms>` - Screenshot capture interval in milliseconds (default: 1000)
-- `--quality <0-100>` - JPEG quality level (default: 80)
-- `--type <jpeg|png>` - Image format (default: jpeg)
+- `--session <name>` - session to watch (default: `XBROWSER_SESSION`, then `default`)
+- `--port <number>` - daemon port, only used when the daemon is not running yet
+- `--selector <css>` - appends `#focus=<selector>` to the URL when the element exists
 
-## Using the HTML Viewer
-
-The preview command will display a path to a local HTML viewer file:
+### URL
 
 ```
-Open the viewer to see real-time browser preview:
-  HTML viewer: file:///Users/user/project/preview.html
-  WebSocket: ws://localhost:9223
+http://localhost:9224/preview/<session>
 ```
 
-Simply open the `preview.html` file in your browser to see live screenshots and command history.
+Open it in a browser to see the live screencast and the command history, and to take over mouse and
+keyboard (human hand-off for CAPTCHA / login).
 
 ## WebSocket Protocol
 
@@ -49,12 +44,13 @@ Simply open the `preview.html` file in your browser to see live screenshots and 
 Connect to the WebSocket server:
 
 ```javascript
-const ws = new WebSocket('ws://localhost:9223');
+const ws = new WebSocket('ws://localhost:9224/preview/<session-id>');
 ```
 
 ### Binding to a Session
 
-To receive events for a specific browser session, send a bind message:
+Connecting to `/preview/<session-id>` binds that session automatically. A client connected to
+`/preview` (no id) can bind later by sending a bind message:
 
 ```javascript
 ws.send(JSON.stringify({
@@ -124,7 +120,7 @@ Sent when a browser command is executed:
 ### Example Client Implementation
 
 ```javascript
-const ws = new WebSocket('ws://localhost:9223');
+const ws = new WebSocket('ws://localhost:9224/preview/<session-id>');
 
 ws.onopen = () => {
   console.log('Connected to preview server');
@@ -172,7 +168,6 @@ ws.onclose = () => {
 
 ## Performance Considerations
 
-- Higher screenshot quality increases bandwidth usage
-- Lower intervals increase CPU usage on both server and client
-- Use PNG for lossless compression when quality is critical
-- Use JPEG for better bandwidth efficiency at the cost of some quality
+- The screencast only runs while at least one viewer is bound: it starts on bind and stops when the last viewer leaves
+- Frame interval, JPEG quality and frame size are the daemon's screencast defaults (100 ms, JPEG quality 40, 1024x576);
+  there are no CLI flags or config keys for them today
