@@ -2,6 +2,36 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)；由 `npm run lint:changelog` 约束（版本条目齐全、格式、去重、降序）。
 
+## [1.38.0] - 2026-11-27
+
+### Added
+- **chrome-bridge `setFiles` 上传命令**：文件上传一等命令——`Runtime.evaluate(returnByValue:false)` 拿 objectId → `DOM.setFileInputFiles` → 回读 `fileCount` 自证；objectId 失效自动重取一次；`files[]` 为本机绝对路径，参数不合法返回 400；守卫对该命令设计上放行（chrome-bridge 插件 1.1.2）（#499、#500）。
+- **守卫 file-input 规则**：evaluate 里对 `input[type=file]` 的合成点击直接拦截，替代指引从「真实鼠标点击」（对 file input 只会弹系统文件对话框）改为 `DOM.setFileInputFiles` 上传配方；普通元素的点击指引不变（#499）。
+- **`waitForHuman` fail-closed**：插件等待人工协助不再阻塞——命令立即以结构化 `NEEDS_HUMAN` 结束，托管会话带 `viewerUrl`、桥接会话带 `taskName`（任务组标红「需要协助」，粘性）；插件把该错误吞掉后报成功会被运行时强制转回 `NEEDS_HUMAN`；CLI 收到 `NEEDS_HUMAN` 后不再在本地重复执行一遍插件（#494、#495）。
+- **登录命令统一「先检查、再交还」**：新增 `shared/login-handoff.ts`（已登录直接成功；未登录才打开登录页并以 `NEEDS_HUMAN` 结束、不写登录态），15 个站点迁移；写法规范见 AGENTS §7.5（#496）。
+- **媒体配额守卫**：同 provider 的视频提交默认串行（`--allow-parallel-quota` 显式放行），避免并发提交同时消耗多份额度；媒体 preflight 报告显式 `promptSubmitted:false` 与 `siteChecks:"skipped"`，拒绝纯空白提示词（#494、#495）。
+- **大截图直接写盘**：`chrome-bridge cdp --method Page.captureScreenshot --output <file>` 返回 `{path, bytes}`，不再被 CLI 文本输出截断（#495）。
+- **任务分组状态机**：分组标题按动作实时刷新（`任务名 · 状态`），新增 `chrome-bridge task --action status`；`needs-human` 为粘性状态，自动动作不冲掉（#492）。
+
+### Changed
+- **`--json` / `--yaml`（破坏性）**：浏览器类插件命令的**成功**结果也走统一信封 `{success, command, data, error, meta}`——此前成功时直接打印裸 data、失败才打印信封；直接读最外层字段的脚本改为读 `data` 字段。文本模式不变（#489）。
+
+### Fixed
+- **daemon 独立端口互踢**：带 `XBROWSER_DAEMON_PORT` 启动独立 daemon 会把 9224 上的主 daemon 关掉——登记文件全局只有一份，任何端口的启动都把别人当成「端口不一致」；现在每个端口各记一份登记（缺省端口位置不变），查状态、启停、构建不一致重启都只看当前端口那份（#490）。
+- **juejin `draft` / `publish` 后台输入**：页面收不到按键（tab 在后台、窗口被遮挡）时标题自动改走 fill 通道写入，不再直接失败；页面可见时仍逐键输入（juejin 插件 4.0.2）（#491）。
+- **oschina bridge 登录探测**：登出标记（如 `a[href*="/home/login"]`）命中即判未登录——登出时停在公开首页不再被误判成已登录（#493）。
+- **xiaohongshu 采集假成功**：等过人工协助仍 0 条时返回 fail（含 `blocked`），不再 `ok({total:0})`（#493）。
+- **doubao 视频模式判定**：只认输入框 placeholder 或模式按钮文本，不再被底部菜单的「视频生成」入口骗过（#493）。
+- **任务组泄漏**：`gemini music`、`csdn draft` 失败路径与 `article-pipeline` 封面超时补收尾（#493）。
+- **bridge 会话**：`eval --bridge`、后台 tab `fill('')`、插件命令 `--bridge` 路由、daemon 重启后 `session close` 收组、跨任务组劫持（#492）。
+- **profile 清理静默失败**：ESM bundle 里 `require('node:fs')` 让清理空跑；`killChrome` 清理加重试；daemon health/RPC 统一 `127.0.0.1`；51CTO 登录 URL 修正（#492）。
+- **运行时临时目录泄漏**：每进程每插件一份的 `xbrowser-<pid>/` 临时目录改为进程退出自清、daemon 分批清理 pid 已失效的残留；采集器 `chromium-collect-<端口>.pid` 启动时清失效条目（#498）。
+- **发布类命令**：移除 18 个发布命令里无效的 `waitForHuman`，按用户决策直接发布；`seo login` / `seo register` 按页面标记判定登录态，不再写假 `loggedIn:true`（#492）。
+- **仓库/文档门禁**：`lint:docs` 按插件注册表核对文档命令（修掉 28 条不存在的命令）；`npm run validate` 先自检 husky 钩子是否安装；`lint:architecture` 全仓拒绝「已跟踪却被忽略」的文件（#496、#497）。
+
+### Removed
+- **不再跟踪已忽略的数据/报告**：85 个文件退出 git（本地文件原样保留；恢复用 `git checkout 33c21d7 -- <path>`）；`scripts/` 只保留 `release/` 与 5 个白名单工具（#496、#497）。
+
 ## [1.37.0] - 2026-11-24
 
 ### Added
