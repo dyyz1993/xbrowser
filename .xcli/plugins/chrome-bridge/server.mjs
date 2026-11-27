@@ -275,7 +275,9 @@ async function handleSetFiles(res, args, clientId, client) {
     let lastError = null;
     for (let attempt = 1; attempt <= 2; attempt++) {
       const ev = await takeObjectId();
-      const cdp = ev?.data ?? {};
+      // 扩展 cdp 执行器返回 {ok, data:<CDP result>}，WS 帧再包一层 → HTTP body 是
+      // {ok, data:{ok, data:<CDP result>}}——CDP 结果在 data.data（2026-11-27 线上实证）
+      const cdp = ev?.data?.data ?? {};
       if (cdp.exceptionDetails) {
         throw new Error('evaluate failed: ' + String(cdp.exceptionDetails.text || cdp.exceptionDetails.exception?.description || 'exception'));
       }
@@ -300,7 +302,7 @@ async function handleSetFiles(res, args, clientId, client) {
       method: 'Runtime.evaluate',
       params: { expression: `document.querySelector(${JSON.stringify(selector)})?.files?.length ?? -1`, returnByValue: true },
     });
-    const fileCount = typeof check?.data?.result?.value === 'number' ? check.data.result.value : null;
+    const fileCount = typeof check?.data?.data?.result?.value === 'number' ? check.data.data.result.value : null;
     log('exec-ok', `#${clientId} cmd=setFiles ${Date.now() - t0}ms`);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, data: { selector, files, tabId, fileCount } }));
