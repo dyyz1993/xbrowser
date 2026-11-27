@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { execFileSync } from 'node:child_process';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 
@@ -15,7 +16,61 @@ const FORBIDDEN_IMPORTS = [
   { directory: 'src/recorder', pattern: /from\s+['"]\.\.\/(cli|daemon|router)\// },
 ];
 
+// ── 仓库布局：AGENTS.md §1「所有自动化脚本 → 插件」 ─────────────────────────────
+// scripts/ 只允许 release/ 与下面明确保留的工具；一次性脚本留在本地（.gitignore 已全量忽略）。
+// 要新增必须同时改这里和 .gitignore——两处都在，说明是有意为之。
+const SCRIPTS_ALLOWLIST = new Set([
+  'scripts/arena-round.sh',
+  'scripts/check-editors.ts',
+  'scripts/check-logins.ts',
+  'scripts/inline-stealth.mjs',
+  'scripts/mcp-smoke.mjs',
+]);
+// src/ 是 TS 框架代码；.mjs/.cjs/.js 形式的站点自动化只属于插件
+const FORBIDDEN_SRC_SCRIPT_EXT = /\.(mjs|cjs|js)$/;
+
 const errors = [];
+
+function gitLines(args) {
+  return execFileSync('git', args, { cwd: ROOT, encoding: 'utf8' })
+    .split('\n').filter(Boolean);
+}
+
+function checkRepoLayout() {
+  let trackedScripts;
+  let ignoredTracked;
+  try {
+    trackedScripts = gitLines(['ls-files', '--', 'scripts']);
+    ignoredTracked = gitLines(['ls-files', '-i', '-c', '--exclude-standard', '--', 'scripts', 'src']);
+  } catch (error) {
+    console.warn(`  (skipped repo-layout checks: git unavailable — ${error.message})`);
+    return;
+  }
+
+  for (const file of trackedScripts) {
+    if (file.startsWith('scripts/release/') || SCRIPTS_ALLOWLIST.has(file)) continue;
+    errors.push(
+      `${file}: tracked file under scripts/ is not allowlisted — put the capability into a plugin `
+      + '(.xcli/plugins/<site>/), or add it to SCRIPTS_ALLOWLIST here AND .gitignore on purpose',
+    );
+  }
+
+  // 已跟踪却被 .gitignore 判为忽略：要么不该入库（git rm --cached），要么 ignore 规则写错了
+  for (const file of ignoredTracked) {
+    errors.push(`${file}: tracked but ignored by .gitignore — untrack it (git rm --cached) or fix the ignore rule`);
+  }
+
+  const visitSource = (directory) => {
+    for (const entry of readdirSync(directory)) {
+      const fullPath = join(directory, entry);
+      if (statSync(fullPath).isDirectory()) visitSource(fullPath);
+      else if (FORBIDDEN_SRC_SCRIPT_EXT.test(entry)) {
+        errors.push(`${relative(ROOT, fullPath)}: script file under src/ — site automation belongs in a plugin`);
+      }
+    }
+  };
+  visitSource(join(ROOT, 'src'));
+}
 
 function walk(directory) {
   for (const entry of readdirSync(directory)) {
@@ -44,6 +99,8 @@ function visit(fullPath) {
 for (const directory of ['src/cdp-driver', 'src/commands', 'src/recorder']) {
   walk(join(ROOT, directory));
 }
+
+checkRepoLayout();
 
 if (errors.length > 0) {
   console.error('Architecture check failed:');

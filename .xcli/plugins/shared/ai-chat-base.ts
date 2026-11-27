@@ -12,6 +12,7 @@ import type { Page } from '../types.js';
 import path from 'path';
 import fs from 'fs';
 import { uploadImagesPreferClipboard, type GeneralUploadOptions } from './clipboard-upload.js';
+import { sessionTips } from './page-context.js';
 
 /**
  * Build standard tips array for AI plugin commands.
@@ -19,13 +20,7 @@ import { uploadImagesPreferClipboard, type GeneralUploadOptions } from './clipbo
  * Adds a --cdp recommendation (if not using CDP) and the current session ID.
  */
 export function buildTips(ctx: CommandContext): string[] {
-  const tips: string[] = [];
-  const ctxAny = ctx as unknown as Record<string, unknown>;
-  const options = ctxAny.options as Record<string, unknown> | undefined;
-  const cdp = ctxAny.cdpEndpoint || options?.cdp;
-  if (!cdp) tips.push('建议使用 --cdp 9221 连接到已登录的浏览器');
-  tips.push(`Session: ${ctxAny.sessionId || 'default'}`);
-  return tips;
+  return sessionTips(ctx);
 }
 
 /**

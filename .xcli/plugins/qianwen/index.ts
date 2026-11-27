@@ -362,15 +362,16 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({
       path: z.string().optional().describe('单文件路径'),
-      paths: z.string().optional().describe('多文件路径（CSV，如 a.jpg,b.pdf）'),
+      paths: z.string().optional().describe('多文件路径（CSV，绝对路径；同一批必须是同类型文件，如 /abs/a.jpg,/abs/b.png）'),
     }).refine((d) => Boolean(d.path) || Boolean(d.paths), {
       message: '必须提供 --path 或 --paths 至少一个',
     }),
     result: z.object({ files: z.array(z.string()), uploaded: z.number() }).passthrough(),
     examples: [
-      { cmd: 'xbrowser qianwen attach --path /path/to/img.jpg', description: '上传单张图片' },
-      { cmd: 'xbrowser qianwen attach --path /path/to/doc.pdf', description: '上传单个文件' },
-      { cmd: 'xbrowser qianwen attach --paths "/a.jpg,/b.pdf,/c.png"', description: '批量上传多个附件' },
+      { cmd: 'xbrowser qianwen attach --path /abs/img.jpg', description: '上传单张图片' },
+      { cmd: 'xbrowser qianwen attach --path /abs/doc.pdf', description: '上传单个文件' },
+      { cmd: 'xbrowser qianwen attach --paths "/abs/a.jpg,/abs/b.png"', description: '批量上传多张图片（同类型）' },
+      { cmd: 'xbrowser qianwen attach --paths "/abs/a.pdf,/abs/b.pdf"', description: '批量上传多个文件（同类型）' },
     ],
     handler: async (params, ctx) => {
       const list = [

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import plugin from '../../.xcli/plugins/51cto/index.ts';
+import { HumanWaitRequiredError } from '../../src/plugin/human-wait.js';
 import { __setHumanizeSleeperForTests } from '../../.xcli/plugins/shared/humanize.js';
 
 beforeEach(() => { __setHumanizeSleeperForTests(async () => {}); });
@@ -97,18 +98,40 @@ describe('51cto plugin', () => {
     );
   });
 
-  it('login opens the working login entry, not the 404 /index/login', async () => {
-    const { page } = createMockPage({ url: 'https://home.51cto.com/index?from_service=blog&scene=login1' });
-    const res = await getHandler('login')({}, ctxWith(page)) as { success: boolean };
+  it('login succeeds without handing off when the blog page does not redirect to the login host', async () => {
+    const { page } = createMockPage({ url: 'https://blog.51cto.com/' });
+    const ctx = { ...ctxWith(page), waitForHuman: vi.fn() };
+    const res = await getHandler('login')({}, ctx) as { success: boolean; data: { loggedIn: boolean } };
 
     expect(res.success).toBe(true);
-    expect(page.goto).toHaveBeenCalledWith(
-      'https://home.51cto.com/index?from_service=blog&scene=login1',
-      expect.objectContaining({ waitUntil: 'domcontentloaded' }),
-    );
+    expect(res.data.loggedIn).toBe(true);
+    expect(ctx.waitForHuman).not.toHaveBeenCalled();
+    expect(page.goto).toHaveBeenCalledTimes(1);
     expect(page.goto).not.toHaveBeenCalledWith(
       'https://home.51cto.com/index/login',
       expect.anything(),
+    );
+  });
+
+  it('login opens the working entry and fails closed with NEEDS_HUMAN while logged out', async () => {
+    const { page } = createMockPage({ url: 'https://home.51cto.com/index?from_service=blog&scene=login1' });
+    const ctx = {
+      ...ctxWith(page),
+      waitForHuman: vi.fn(() => Promise.reject(new HumanWaitRequiredError('需要人工协助', '完成 51CTO 登录'))),
+    };
+
+    await expect(getHandler('login')({}, ctx)).rejects.toBeInstanceOf(HumanWaitRequiredError);
+    // 先检查博客首页，未登录（被重定向到 home.51cto.com）才打开登录入口
+    expect(page.goto.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+      'https://blog.51cto.com',
+      'https://home.51cto.com/index?from_service=blog&scene=login1',
+    ]);
+    expect(page.goto).not.toHaveBeenCalledWith(
+      'https://home.51cto.com/index/login',
+      expect.anything(),
+    );
+    expect(ctx.waitForHuman).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: expect.stringContaining('重新执行 xbrowser 51cto login') }),
     );
   });
 

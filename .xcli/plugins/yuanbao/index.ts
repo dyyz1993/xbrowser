@@ -398,15 +398,15 @@ export default function (xcli: XCLIAPI): void {
     scope: 'browser',
     parameters: z.object({
       path: z.string().optional().describe('单文件路径'),
-      paths: z.string().optional().describe('多文件路径（CSV，如 a.jpg,b.pdf）'),
+      paths: z.string().optional().describe('多文件路径（CSV，绝对路径；同一批必须是同类型文件，如 /abs/a.pdf,/abs/b.pdf）'),
     }).refine((d) => Boolean(d.path) || Boolean(d.paths), {
       message: '必须提供 --path 或 --paths 至少一个',
     }),
     result: z.object({ files: z.array(z.string()), uploaded: z.number() }).passthrough(),
     examples: [
-      { cmd: 'xbrowser yuanbao attach --path /path/to/file.pdf', description: '上传单个文件' },
-      { cmd: 'xbrowser yuanbao attach --path /path/to/image.png', description: '上传单张图片' },
-      { cmd: 'xbrowser yuanbao attach --paths "/a.pdf,/b.png"', description: '批量上传' },
+      { cmd: 'xbrowser yuanbao attach --path /abs/file.pdf', description: '上传单个文件' },
+      { cmd: 'xbrowser yuanbao attach --path /abs/image.png', description: '上传单张图片' },
+      { cmd: 'xbrowser yuanbao attach --paths "/abs/a.pdf,/abs/b.pdf"', description: '批量上传（同类型）' },
     ],
     handler: async (params, ctx) => {
       const list = [

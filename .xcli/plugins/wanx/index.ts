@@ -6,6 +6,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { createMediaTask, mediaTaskResultSchema } from '../shared/media-contract.js';
 import { checkLoggedIn } from '../shared/publishing/login-probe.js';
+import { sessionTips } from '../shared/page-context.js';
 
 type Page = import('../types').Page;
 
@@ -44,12 +45,7 @@ async function ensurePage(page: Page, region: WanxRegion = 'auto'): Promise<Excl
 /* ───────── helpers ───────── */
 
 function buildTips(ctx: CommandContext): string[] {
-  const tips: string[] = [];
-  const ctxAny = ctx as unknown as Record<string, unknown>;
-  const cdp = ctxAny.cdpEndpoint || (ctxAny.options as Record<string, unknown> | undefined)?.cdp;
-  if (!cdp) tips.push('建议使用 --cdp 9221 连接到已登录万相的浏览器');
-  tips.push(`Session: ${ctxAny.sessionId || 'default'}`);
-  return tips;
+  return sessionTips(ctx, '建议使用 --cdp 9221 连接到已登录万相的浏览器');
 }
 
 function getPage(ctx: CommandContext): Page {

@@ -6,6 +6,7 @@ import type { Page } from '../types.js';
 import { randomPause, humanClick, humanBrowse, humanFill } from '../shared/humanize.js';
 import { registerCsdnDraft } from './draft.js';
 import { checkLoggedIn } from '../shared/publishing/login-probe.js';
+import { loginWithHandoff } from '../shared/login-handoff.js';
 
 
 function resolvePage(ctx: CommandContext): { page: Page; tips: string[] } {
@@ -57,38 +58,29 @@ export default function (xcli: XCLIAPI): void {
     handler: async (_params, ctx) => {
       const { page, tips } = resolvePage(ctx);
 
-      try {
-        await page.goto('https://passport.csdn.net/login', {
-          waitUntil: 'domcontentloaded',
-          timeout: 15000,
-        });
-        await randomPause(1400, 2600);
-
-        await ctx.waitForHuman?.({
-          reason: '完成 CSDN 登录（GitHub OAuth / 邮箱 / 手机验证码）',
-          timeout: 300,
-        });
-
-        await page.goto('https://www.csdn.net/', {
-          waitUntil: 'domcontentloaded',
-          timeout: 15000,
-        });
-        await randomPause(1400, 2600);
-
-        const loggedIn = await page
+      const { url, alreadyLoggedIn } = await loginWithHandoff({
+        page,
+        ctx,
+        checkUrl: 'https://www.csdn.net/',
+        loginUrl: 'https://passport.csdn.net/login',
+        reason: '完成 CSDN 登录（GitHub OAuth / 邮箱 / 手机验证码）后，重新执行 xbrowser csdn login',
+        timeout: 300,
+        settleMs: 2000,
+        check: async (p) => p
           .locator(
             '.avatar, [class*="avatar"], img[class*="avatar"], a[href*="/loginout"], [class*="user-info"]'
           )
           .first()
           .isVisible()
-          .catch(() => false);
+          .catch(() => false),
+      });
 
-        await ctx.storage.set('csdn_login', { loggedIn, at: Date.now() });
+      await ctx.storage.set('csdn_login', { loggedIn: true, at: Date.now() });
 
-        return ok({ loggedIn, url: page.url() }, [...tips, loggedIn ? 'CSDN 登录成功' : '登录可能未完成，请检查页面']);
-      } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误', tips);
-      }
+      return ok({ loggedIn: true, url }, [
+        ...tips,
+        alreadyLoggedIn ? 'CSDN 已是登录状态' : 'CSDN 登录成功',
+      ]);
     },
   });
 

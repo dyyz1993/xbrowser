@@ -4,6 +4,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import { bloggerPublisher } from '../shared/publishing/sites/blogger.js';
 import { registerPublishingCommands } from '../shared/publishing/commands.js';
 import { checkLoggedIn } from '../shared/publishing/login-probe.js';
+import { loginWithHandoff } from '../shared/login-handoff.js';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -41,33 +42,30 @@ export default function (xcli: XCLIAPI): void {
       const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
-      await page.goto('https://www.blogger.com/about/', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000,
-      });
-      await page.locator('a[href*="sign-in"]').first().click().catch(() => {});
-      await page.waitForLoadState('domcontentloaded');
-
-      await ctx.waitForHuman?.({
-        reason: 'Google login required',
+      const { url, alreadyLoggedIn } = await loginWithHandoff({
+        page,
+        ctx,
+        checkUrl: 'https://www.blogger.com/',
+        loginUrl: 'https://www.blogger.com/about/',
+        reason: '完成 Blogger 登录（Google 账号）后，重新执行 xbrowser blogger login',
         timeout: 300,
+        settleMs: 2000,
+        beforeHandoff: async (p) => {
+          await p.locator('a[href*="sign-in"]').first().click().catch(() => {});
+          await p.waitForLoadState('domcontentloaded');
+        },
+        check: async (p) => p
+          .locator('[aria-label="Create blog"], [data-action="createBlog"], a[href*="blog/create"]')
+          .first()
+          .isVisible()
+          .catch(() => false),
       });
 
-      await page.goto('https://www.blogger.com/', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000,
-      });
-      await page.waitForTimeout(2000);
+      await ctx.storage.set('blogger_login', { loggedIn: true, at: Date.now() });
 
-      const loggedIn = await page
-        .locator('[aria-label="Create blog"], [data-action="createBlog"], a[href*="blog/create"]')
-        .first()
-        .isVisible()
-        .catch(() => false);
-
-      await ctx.storage.set('blogger_login', { loggedIn, at: Date.now() });
-
-      return ok({ loggedIn, url: page.url() }, [loggedIn ? 'Blogger 登录成功' : '登录可能未完成，请检查页面']);
+      return ok({ loggedIn: true, url }, [
+        alreadyLoggedIn ? 'Blogger 已是登录状态' : 'Blogger 登录成功',
+      ]);
     },
   });
 

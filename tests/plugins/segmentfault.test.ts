@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/segmentfault/index.ts';
+import { HumanWaitRequiredError } from '../../src/plugin/human-wait.js';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -68,5 +69,72 @@ describe('segmentfault plugin', () => {
       expect(def.parameters).toBeDefined();
       expect(typeof def.handler).toBe('function');
     }
+  });
+
+  describe('login command', () => {
+    function createLoginPage(initialUrl = 'https://segmentfault.com/user') {
+      let currentUrl = initialUrl;
+      const nextUrlOverrides = new Map<string, string>([
+        ['https://segmentfault.com/user', 'https://segmentfault.com/user/login'],
+      ]);
+      return {
+        goto: vi.fn(async (url: string) => {
+          currentUrl = nextUrlOverrides.get(url) ?? url;
+        }),
+        waitForTimeout: vi.fn(async () => undefined),
+        url: vi.fn(() => currentUrl),
+      };
+    }
+
+    function createLoginCtx(
+      page: ReturnType<typeof createLoginPage>,
+      waitForHuman = vi.fn(async () => ({ solved: true })),
+    ) {
+      return { page, cdpEndpoint: 'x', waitForHuman, storage: { set: vi.fn() } };
+    }
+
+    it('resolves without handing off when already logged in', async () => {
+      const page = createLoginPage();
+      page.goto.mockImplementation(async () => undefined);
+      const ctx = createLoginCtx(page);
+      const result = await getHandler('login')({}, ctx) as {
+        data: { loggedIn: boolean; url: string };
+      };
+      expect(result.data).toEqual({ loggedIn: true, url: 'https://segmentfault.com/user' });
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
+      expect(page.goto).toHaveBeenCalledTimes(1);
+      expect(page.goto).toHaveBeenCalledWith('https://segmentfault.com/user', expect.anything());
+      expect(ctx.storage.set).toHaveBeenCalledWith(
+        'segmentfault_login',
+        expect.objectContaining({ loggedIn: true })
+      );
+    });
+
+    it('opens login and rejects with NEEDS_HUMAN when logged out', async () => {
+      const page = createLoginPage();
+      const ctx = createLoginCtx(page, vi.fn(() =>
+        Promise.reject(new HumanWaitRequiredError('需要人工协助', '完成 SegmentFault 登录'))));
+      await expect(getHandler('login')({}, ctx)).rejects.toBeInstanceOf(HumanWaitRequiredError);
+      expect(page.goto.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+        'https://segmentfault.com/user',
+        'https://segmentfault.com/user/login',
+      ]);
+      expect(ctx.waitForHuman).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: expect.stringContaining('SegmentFault') })
+      );
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+    });
+
+    it('refuses login state when a returned handoff still shows login', async () => {
+      const page = createLoginPage();
+      const ctx = createLoginCtx(page);
+      await expect(getHandler('login')({}, ctx)).rejects.toThrow('仍未检测到登录态');
+      expect(page.goto.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+        'https://segmentfault.com/user',
+        'https://segmentfault.com/user/login',
+        'https://segmentfault.com/user',
+      ]);
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+    });
   });
 });

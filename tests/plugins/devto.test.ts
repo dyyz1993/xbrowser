@@ -1,6 +1,7 @@
 import { firstTip } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import plugin from '../../.xcli/plugins/devto/index.ts';
+import { HumanWaitRequiredError } from '../../src/plugin/human-wait.js';
 
 import { __setHumanizeSleeperForTests } from '../../.xcli/plugins/shared/humanize.js';
 
@@ -113,60 +114,9 @@ describe('devto plugin', () => {
   });
 
   describe('login command', () => {
-    it('should throw when no page in context', async () => {
-      const handler = getHandler('login');
-      const ctx = createMockCtx();
-      await expect(handler({}, ctx)).rejects.toThrow('需要浏览器页面上下文');
-    });
-
-    it('should navigate to dev.to login page', async () => {
-      const handler = getHandler('login');
+    function loggedInPage() {
       const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      expect(page.goto).toHaveBeenCalledWith(
-        'https://dev.to/enter',
-        expect.objectContaining({ waitUntil: 'domcontentloaded' })
-      );
-    });
-
-    it('should call waitForHuman', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalledWith(
-        expect.objectContaining({ reason: expect.stringContaining('Dev.to') })
-      );
-    });
-
-    it('should save login state to storage', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      expect(ctx.storage.set).toHaveBeenCalledWith(
-        'devto_login',
-        expect.objectContaining({ loggedIn: false })
-      );
-    });
-
-    it('should return not-logged-in tip when selector not visible', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      const result = await handler({}, ctx);
-      expect(result.data.loggedIn).toBe(false);
-      expect(firstTip(result.tips)).toContain('登录可能未完成');
-    });
-
-    it('should return success tip when logged in', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 闭包计数器，最终值未读但计数副作用被 mock 依赖
-      let callCount = 0;
       page.locator = vi.fn(() => {
-        callCount++;
         const item: any = {
           isVisible: vi.fn(() => Promise.resolve(true)),
           click: vi.fn(() => Promise.resolve()),
@@ -175,19 +125,59 @@ describe('devto plugin', () => {
         const first = vi.fn(() => item);
         return { first, isVisible: item.isVisible, click: item.click, fill: item.fill };
       });
-      const ctx = createMockCtx(page);
-      const result = await handler({}, ctx);
-      expect(result.data.loggedIn).toBe(true);
-      expect(firstTip(result.tips)).toContain('Dev.to 登录成功');
+      return page;
+    }
+
+    it('should throw when no page in context', async () => {
+      const handler = getHandler('login');
+      const ctx = createMockCtx();
+      await expect(handler({}, ctx)).rejects.toThrow('需要浏览器页面上下文');
     });
 
-    it('should navigate to dev.to home after login attempt', async () => {
+    it('succeeds without handing off when the session is already logged in', async () => {
+      const handler = getHandler('login');
+      const page = loggedInPage();
+      const ctx = createMockCtx(page);
+      const result = await handler({}, ctx);
+      expect(result.data).toEqual({ loggedIn: true, url: 'https://dev.to/' });
+      expect(firstTip(result.tips)).toContain('已是登录状态');
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
+      // 只访问了检查页，没有再打开登录页
+      expect(page.goto).toHaveBeenCalledTimes(1);
+      expect(page.goto).toHaveBeenCalledWith(
+        'https://dev.to/',
+        expect.objectContaining({ waitUntil: 'domcontentloaded' })
+      );
+      expect(ctx.storage.set).toHaveBeenCalledWith(
+        'devto_login',
+        expect.objectContaining({ loggedIn: true })
+      );
+    });
+
+    it('opens the login page and fails closed with NEEDS_HUMAN when logged out', async () => {
       const handler = getHandler('login');
       const page = createMockPage();
       const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      const gotoCalls = page.goto.mock.calls.map((c: unknown[]) => c[0]);
-      expect(gotoCalls).toContain('https://dev.to/');
+      ctx.waitForHuman = vi.fn(() =>
+        Promise.reject(new HumanWaitRequiredError('需要人工协助', '完成 Dev.to 登录')));
+      await expect(handler({}, ctx)).rejects.toBeInstanceOf(HumanWaitRequiredError);
+      expect(page.goto.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+        'https://dev.to/',
+        'https://dev.to/enter',
+      ]);
+      expect(ctx.waitForHuman).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: expect.stringContaining('Dev.to') })
+      );
+      // 没登录就不能写登录态
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+    });
+
+    it('refuses to store a login state when the handoff returns without a session', async () => {
+      const handler = getHandler('login');
+      const ctx = createMockCtx(createMockPage());
+      // mock 的 waitForHuman 会返回（真实运行时抛 NEEDS_HUMAN）：复核仍未登录 → 不能报成功
+      await expect(handler({}, ctx)).rejects.toThrow('仍未检测到登录态');
+      expect(ctx.storage.set).not.toHaveBeenCalled();
     });
   });
 

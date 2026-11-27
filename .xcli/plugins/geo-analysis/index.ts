@@ -18,6 +18,14 @@ const NOISE_DOMAIN_PATTERNS = [
   /doubleclick/i, /adservice/i, /adnxs/i, /amazonaws\.com\/sdk/i,
 ];
 
+/**
+ * 进入对话页的步骤——与内置 ai-search 命令（src/commands/ai-engine-configs.ts 的 ChatNav）同构：
+ * 数据驱动，不在代码里按引擎写分支。插件层不能 import src/，所以保留这份同构副本；改一处要同步另一处。
+ */
+type ChatNav =
+  | { kind: 'click'; settleMs: number; selector: string; afterMs: number }
+  | { kind: 'link-or-fallback'; settleMs: number; linkHrefParts: string[]; afterMs: number; fallbackSelector: string; fallbackAfterMs: number };
+
 interface EngineConfig {
   key: string;
   name: string;
@@ -32,6 +40,7 @@ interface EngineConfig {
   skipResponseWait?: boolean;
   extraWait?: number;
   needsChatNav?: boolean;
+  chatNav?: ChatNav;
   isSearchFirst?: boolean;
 }
 
@@ -40,14 +49,14 @@ const ENGINE_CONFIGS: Record<string, EngineConfig> = {
   doubao: { key: 'doubao', name: '豆包', url: 'https://www.doubao.com/chat/', input: { selectors: ['textarea.semi-input-textarea', 'textarea'], type: 'textarea' }, sendMethod: 'metaEnter', extraWait: 8000 },
   chatgpt: { key: 'chatgpt', name: 'ChatGPT', url: 'https://chat.openai.com', input: { selectors: ['#prompt-textarea', 'textarea', '[contenteditable="true"]'], type: 'textarea' }, sendMethod: 'enter' },
   claude: { key: 'claude', name: 'Claude', url: 'https://claude.ai', input: { selectors: ['[contenteditable="true"]', 'div[contenteditable]', 'textarea'], type: 'contenteditable' }, sendMethod: 'enter' },
-  kimi: { key: 'kimi', name: 'Kimi', url: 'https://kimi.moonshot.cn', input: { selectors: ['.chat-input-editor', '[contenteditable="true"]', '[role="textbox"]'], type: 'contenteditable' }, sendMethod: 'enter', needsChatNav: true },
+  kimi: { key: 'kimi', name: 'Kimi', url: 'https://kimi.moonshot.cn', input: { selectors: ['.chat-input-editor', '[contenteditable="true"]', '[role="textbox"]'], type: 'contenteditable' }, sendMethod: 'enter', needsChatNav: true, chatNav: { kind: 'click', settleMs: 2000, selector: 'a[href*="/chat"], a[href*="/dialog"]', afterMs: 2000 } },
   qianwen: { key: 'qianwen', name: '通义千问', url: 'https://tongyi.aliyun.com/qianwen', input: { selectors: ['[contenteditable="true"]', '[role="textbox"]'], type: 'contenteditable' }, sendMethod: 'enter', extraWait: 8000 },
   yuanbao: { key: 'yuanbao', name: '腾讯元宝', url: 'https://yuanbao.tencent.com/chat/', input: { selectors: ['[contenteditable="true"]'], type: 'contenteditable' }, sendMethod: 'enter' },
   chatglm: { key: 'chatglm', name: '智谱清言', url: 'https://chatglm.cn', input: { selectors: ['textarea.scroll-display-none', 'textarea'], type: 'textarea' }, sendMethod: 'enter', apiPattern: '/chat/completion', sourceButtonSelector: '[class*="sources-tab"]' },
   yiyan: { key: 'yiyan', name: '文心一言', url: 'https://yiyan.baidu.com', input: { selectors: ['[contenteditable="true"]', '[role="textbox"]'], type: 'contenteditable' }, sendMethod: 'enter', extraWait: 10000 },
   metaso: { key: 'metaso', name: '秘塔AI搜索', url: 'https://metaso.cn', input: { selectors: ['textarea.search-consult-textarea', 'textarea'], type: 'textarea' }, sendMethod: 'enter', isSearchFirst: true, navigateOnSend: true },
-  tiangong: { key: 'tiangong', name: '天工AI', url: 'https://www.tiangong.cn', input: { selectors: ['[contenteditable="true"]', '[role="textbox"]'], type: 'contenteditable' }, sendMethod: 'enter', skipResponseWait: true, extraWait: 8000, needsChatNav: true },
-  xinghuo: { key: 'xinghuo', name: '讯飞星火', url: 'https://xinghuo.xfyun.cn', input: { selectors: ['textarea', '[contenteditable="true"]', '[role="textbox"]'], type: 'contenteditable' }, sendMethod: 'enter', extraWait: 8000, needsChatNav: true },
+  tiangong: { key: 'tiangong', name: '天工AI', url: 'https://www.tiangong.cn', input: { selectors: ['[contenteditable="true"]', '[role="textbox"]'], type: 'contenteditable' }, sendMethod: 'enter', skipResponseWait: true, extraWait: 8000, needsChatNav: true, chatNav: { kind: 'link-or-fallback', settleMs: 3000, linkHrefParts: ['/chat', '/project'], afterMs: 3000, fallbackSelector: 'text=新建项目', fallbackAfterMs: 3000 } },
+  xinghuo: { key: 'xinghuo', name: '讯飞星火', url: 'https://xinghuo.xfyun.cn', input: { selectors: ['textarea', '[contenteditable="true"]', '[role="textbox"]'], type: 'contenteditable' }, sendMethod: 'enter', extraWait: 8000, needsChatNav: true, chatNav: { kind: 'click', settleMs: 3000, selector: 'text=开始对话', afterMs: 2000 } },
   hailuo: { key: 'hailuo', name: '海螺AI', url: 'https://hailuoai.com', input: { selectors: ['[contenteditable]#video-create-textarea', '[contenteditable="true"]'], type: 'contenteditable' }, sendMethod: 'enter' },
   '360ai': { key: '360ai', name: '纳米AI', url: 'https://www.n.cn', input: { selectors: ['[contenteditable="true"]', '[role="textbox"]'], type: 'contenteditable' }, sendMethod: 'button', sendButtonSelector: 'button.send-btn', isSearchFirst: true },
 };
@@ -133,30 +142,34 @@ async function findAndFillInput(page: Page, config: EngineConfig, text: string):
 }
 
 async function navigateToChat(page: Page, config: EngineConfig): Promise<void> {
-  if (!config.needsChatNav) return;
-  await page.waitForTimeout(2000);
-  if (config.key === 'kimi') {
-    const chatLink = page.locator('a[href*="/chat"], a[href*="/dialog"]').first();
-    if ((await chatLink.count()) > 0) {
-      await chatLink.click();
-      await page.waitForTimeout(2000);
+  const nav = config.chatNav;
+  // 两个开关都在才导航：needsChatNav 是旧布尔开关，chatNav 是具体步骤
+  if (!config.needsChatNav || !nav) return;
+
+  await page.waitForTimeout(nav.settleMs);
+  if (nav.kind === 'click') {
+    const target = page.locator(nav.selector).first();
+    if ((await target.count()) > 0) {
+      await target.click();
+      await page.waitForTimeout(nav.afterMs);
     }
-  } else if (config.key === 'tiangong') {
-    const chatLinks = await page.evaluate(() =>
-      Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'))
-        .filter(a => a.href.includes('/chat') || a.href.includes('/project'))
-        .map(a => ({ href: a.href }))
-    ) as Array<{ href: string }>;
-    if (chatLinks.length > 0) {
-      await page.goto(chatLinks[0].href, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await page.waitForTimeout(3000);
-    }
-  } else if (config.key === 'xinghuo') {
-    const startBtn = page.locator('text=开始对话').first();
-    if ((await startBtn.count()) > 0) {
-      await startBtn.click();
-      await page.waitForTimeout(2000);
-    }
+    return;
+  }
+
+  const chatLinks = await page.evaluate((hrefParts: string[]) =>
+    Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'))
+      .filter(a => hrefParts.some(part => a.href.includes(part)))
+      .map(a => ({ href: a.href }))
+  , nav.linkHrefParts) as Array<{ href: string }>;
+  if (chatLinks.length > 0) {
+    await page.goto(chatLinks[0].href, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(nav.afterMs);
+    return;
+  }
+  const fallback = page.locator(nav.fallbackSelector).first();
+  if ((await fallback.count()) > 0) {
+    await fallback.click();
+    await page.waitForTimeout(nav.fallbackAfterMs);
   }
 }
 

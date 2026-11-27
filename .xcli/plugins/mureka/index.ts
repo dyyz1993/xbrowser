@@ -8,6 +8,8 @@ import {
   mediaTaskResultSchema,
   type MediaTaskResult,
 } from '../shared/media-contract.js';
+import { buildMediaDownload } from '../shared/media-plugin-template.js';
+import { sessionTips } from '../shared/page-context.js';
 
 type Page = import('../types').Page;
 type Response = import('../types').Response;
@@ -24,13 +26,7 @@ function getPage(ctx: CommandContext): Page {
 }
 
 function buildTips(ctx: CommandContext): string[] {
-  const tips: string[] = [];
-  const ctxAny = ctx as unknown as Record<string, unknown>;
-  const options = ctxAny.options as Record<string, unknown> | undefined;
-  const cdp = ctxAny.cdpEndpoint || options?.cdp;
-  if (!cdp) tips.push('建议使用 --cdp 9221 连接到已登录 Mureka 的浏览器');
-  tips.push(`Session: ${ctxAny.sessionId || 'default'}`);
-  return tips;
+  return sessionTips(ctx, '建议使用 --cdp 9221 连接到已登录 Mureka 的浏览器');
 }
 
 async function safeClickSelector(page: Page, selector: string): Promise<boolean> {
@@ -149,14 +145,20 @@ function toMurekaTaskResult(input: {
   };
 }
 
-function toMurekaDownloadResult(input: { taskId: string; mediaUrl: string; localPath?: string; size?: number; error?: string }) {
-  return mediaDownloadResultSchema.parse({
-    ok: Boolean(input.localPath),
+function toMurekaDownloadResult(input: {
+  taskId: string;
+  mediaUrl: string;
+  localPath?: string | null;
+  size?: number;
+  error?: string;
+}) {
+  // 统一下载结果契约只有一份（shared/media-plugin-template.ts）；这里只是把站点侧的 size 映射成 sizeBytes
+  return buildMediaDownload({
     taskId: input.taskId,
     mediaUrl: input.mediaUrl,
     localPath: input.localPath,
     sizeBytes: input.size,
-    error: input.error ?? null,
+    error: input.error,
   });
 }
 

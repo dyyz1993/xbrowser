@@ -263,6 +263,12 @@ async function detectCaptcha(page: Page): Promise<{ detected: boolean; type?: st
 
 ## API
 
+> **现状（2026-11-27）**：下面描述的「真等待」由 `HumanInteractionManager` 提供，目前只接在
+> **命令失败恢复**和 **managed-run 手动交接**两条路径上。**插件命令里的 `ctx.waitForHuman` 不走这条等待**，
+> 而是 fail-closed：标记 chrome-bridge 任务组「需要协助」后抛 `HumanWaitRequiredError`，命令立即以
+> `{ success: false, data: { code: "NEEDS_HUMAN", reason, taskName?, viewerUrl? } }` 结束；用户处理完后重跑命令。
+> 把真等待接进插件路径属于交互语义变更，见 AGENTS.md §6.2。
+
 ### ctx.waitForHuman()
 
 ```typescript

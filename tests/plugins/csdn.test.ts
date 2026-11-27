@@ -1,6 +1,7 @@
 import { tipsMessages } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import plugin from '../../.xcli/plugins/csdn/index.ts';
+import { HumanWaitRequiredError } from '../../src/plugin/human-wait.js';
 
 import { __setHumanizeSleeperForTests } from '../../.xcli/plugins/shared/humanize.js';
 
@@ -101,54 +102,74 @@ describe('csdn plugin', () => {
       await expect(handler({}, { storage: { set: vi.fn() } })).rejects.toThrow('需要浏览器页面');
     });
 
-    it('should navigate to CSDN login page', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      expect(page.goto).toHaveBeenCalledWith(
-        'https://passport.csdn.net/login',
-        expect.objectContaining({ waitUntil: 'domcontentloaded' })
-      );
-    });
-
-    it('should call waitForHuman', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      expect(ctx.waitForHuman).toHaveBeenCalledWith(
-        expect.objectContaining({ reason: expect.stringContaining('CSDN') })
-      );
-    });
-
-    it('should save login state to storage', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      expect(ctx.storage.set).toHaveBeenCalledWith(
-        'csdn_login',
-        expect.objectContaining({ loggedIn: false })
-      );
-    });
-
-    it('should return not-logged-in tip when avatar not visible', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      const result = await handler({}, ctx);
-      expect(result.data.loggedIn).toBe(false);
-      const tips = tipsMessages(result.tips);
-      expect(tips.some((t: string) => t.includes('登录可能未完成'))).toBe(true);
-    });
-
-    it('should return success tip when logged in', async () => {
-      const handler = getHandler('login');
+    function loggedInPage() {
       const page = createMockPage();
       page.locator = vi.fn(() => ({
         first: vi.fn(() => ({
           isVisible: vi.fn(() => Promise.resolve(true)),
+          click: vi.fn(() => Promise.resolve()),
+          fill: vi.fn(() => Promise.resolve()),
+        })),
+      }));
+      return page;
+    }
+
+    it('resolves without handing off when CSDN is already logged in', async () => {
+      const handler = getHandler('login');
+      const page = loggedInPage();
+      const ctx = createMockCtx(page);
+      const result = await handler({}, ctx);
+      expect(result.data).toEqual({ loggedIn: true, url: 'https://www.csdn.net/' });
+      expect(tipsMessages(result.tips).some((t: string) => t.includes('已是登录状态'))).toBe(true);
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
+      expect(page.goto).toHaveBeenCalledTimes(1);
+      expect(page.goto).toHaveBeenCalledWith(
+        'https://www.csdn.net/',
+        expect.objectContaining({ waitUntil: 'domcontentloaded' })
+      );
+      expect(ctx.storage.set).toHaveBeenCalledWith(
+        'csdn_login',
+        expect.objectContaining({ loggedIn: true })
+      );
+    });
+
+    it('opens the login page and rejects with NEEDS_HUMAN when logged out', async () => {
+      const handler = getHandler('login');
+      const page = createMockPage();
+      const ctx = createMockCtx(page);
+      ctx.waitForHuman = vi.fn(() =>
+        Promise.reject(new HumanWaitRequiredError('需要人工协助', '完成 CSDN 登录')));
+      await expect(handler({}, ctx)).rejects.toBeInstanceOf(HumanWaitRequiredError);
+      expect(page.goto.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+        'https://www.csdn.net/',
+        'https://passport.csdn.net/login',
+      ]);
+      expect(ctx.waitForHuman).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: expect.stringContaining('CSDN') })
+      );
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+    });
+
+    it('refuses to store login state when a returned handoff still has no session', async () => {
+      const handler = getHandler('login');
+      const page = createMockPage();
+      const ctx = createMockCtx(page);
+      await expect(handler({}, ctx)).rejects.toThrow('仍未检测到登录态');
+      expect(page.goto.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+        'https://www.csdn.net/',
+        'https://passport.csdn.net/login',
+        'https://www.csdn.net/',
+      ]);
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+    });
+
+    it('should return success tip when logged in', async () => {
+      const handler = getHandler('login');
+      const page = loggedInPage();
+      let checkCount = 0;
+      page.locator = vi.fn(() => ({
+        first: vi.fn(() => ({
+          isVisible: vi.fn(() => Promise.resolve(++checkCount >= 2)),
           click: vi.fn(() => Promise.resolve()),
           fill: vi.fn(() => Promise.resolve()),
         })),
@@ -158,15 +179,6 @@ describe('csdn plugin', () => {
       expect(result.data.loggedIn).toBe(true);
       const tips = tipsMessages(result.tips);
       expect(tips.some((t: string) => t.includes('CSDN 登录成功'))).toBe(true);
-    });
-
-    it('should navigate to csdn home after login attempt', async () => {
-      const handler = getHandler('login');
-      const page = createMockPage();
-      const ctx = createMockCtx(page);
-      await handler({}, ctx);
-      const gotoCalls = page.goto.mock.calls.map((c: unknown[]) => c[0]);
-      expect(gotoCalls).toContain('https://www.csdn.net/');
     });
   });
 

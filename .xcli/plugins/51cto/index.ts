@@ -5,6 +5,7 @@ import type { Page } from '../types.js';
 import { randomPause } from '../shared/humanize.js';
 import { register51ctoPublishing } from './publishing.js';
 import { checkLoggedIn } from '../shared/publishing/login-probe.js';
+import { loginWithHandoff } from '../shared/login-handoff.js';
 
 /**
  * 51CTO 博客插件。
@@ -89,13 +90,20 @@ export default function (xcli: XCLIAPI): void {
     result: z.object({ loggedIn: z.boolean(), url: z.string() }).passthrough(),
     handler: async (_params, ctx) => {
       const { page } = resolvePage(ctx);
-      // /index/login 是 404（2026-11-26 实测）；博客首页右上「登录注册」指向这个入口
-      await page.goto('https://home.51cto.com/index?from_service=blog&scene=login1', { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await randomPause(1200, 2400);
-      await ctx.waitForHuman?.({ reason: '完成 51CTO 登录（手机号验证码/微信扫码）', timeout: 300 });
-      await page.goto('https://blog.51cto.com', { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-      const loggedIn = !(await page.url()).includes('home.51cto.com');
-      return ok({ loggedIn, url: page.url() }, [loggedIn ? '51CTO 登录成功' : '仍未登录']);
+      // fail-closed 语义下必须「先检查、再交还」：博客首页未登录会被重定向到 home.51cto.com，
+      // 已登录直接成功；未登录才打开登录入口并交还控制权（ctx.waitForHuman 抛 NEEDS_HUMAN）。
+      // /index/login 是 404（2026-11-26 实测）；博客首页右上「登录注册」指向下面的入口。
+      const { url, alreadyLoggedIn } = await loginWithHandoff({
+        page,
+        ctx,
+        checkUrl: 'https://blog.51cto.com',
+        loginUrl: 'https://home.51cto.com/index?from_service=blog&scene=login1',
+        reason: '完成 51CTO 登录（手机号验证码/微信扫码）后，重新执行 xbrowser 51cto login',
+        timeout: 300,
+        settleMs: 2000,
+        check: async (p) => !p.url().includes('home.51cto.com'),
+      });
+      return ok({ loggedIn: true, url }, [alreadyLoggedIn ? '51CTO 已是登录状态' : '51CTO 登录成功']);
     },
   });
 

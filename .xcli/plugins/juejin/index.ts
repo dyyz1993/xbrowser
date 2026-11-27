@@ -4,6 +4,7 @@ import { ok, fail } from '@dyyz1993/xcli-core';
 import type { Page, Locator } from '../types.js';
 
 import { randomPause, humanClick, humanBrowse, humanFill } from '../shared/humanize.js';
+import { loginWithHandoff } from '../shared/login-handoff.js';
 
 
 function buildCdpTips(ctx: Record<string, unknown>): string[] {
@@ -341,38 +342,29 @@ export default function (xcli: XCLIAPI): void {
       if (!page) throw new Error('需要浏览器页面');
       const cdpTips = buildCdpTips(ctx as unknown as Record<string, unknown>);
 
-      try {
-        await page.goto('https://juejin.cn/login', {
-          waitUntil: 'domcontentloaded',
-          timeout: 15000,
-        });
-        await randomPause(1400, 2600);
-
-        await ctx.waitForHuman?.({
-          reason: '完成掘金登录（GitHub OAuth 或手机验证码）',
-          timeout: 300,
-        });
-
-        await page.goto('https://juejin.cn/', {
-          waitUntil: 'domcontentloaded',
-          timeout: 15000,
-        });
-        await randomPause(1400, 2600);
-
-        const loggedIn = await page
+      const { url, alreadyLoggedIn } = await loginWithHandoff({
+        page,
+        ctx,
+        checkUrl: 'https://juejin.cn/',
+        loginUrl: 'https://juejin.cn/login',
+        reason: '完成掘金登录（GitHub OAuth 或手机验证码）后，重新执行 xbrowser juejin login',
+        timeout: 300,
+        settleMs: 2000,
+        check: async (p) => p
           .locator(
             '.avatar, [class*="avatar"], img[class*="avatar"], .login-btn, a[href*="/user/"]'
           )
           .first()
           .isVisible()
-          .catch(() => false);
+          .catch(() => false),
+      });
 
-        await ctx.storage.set('juejin_login', { loggedIn, at: Date.now() });
+      await ctx.storage.set('juejin_login', { loggedIn: true, at: Date.now() });
 
-        return ok({ loggedIn, url: page.url() }, [...cdpTips, loggedIn ? '掘金登录成功' : '登录可能未完成，请检查页面']);
-      } catch (error) {
-        return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
-      }
+      return ok({ loggedIn: true, url }, [
+        ...cdpTips,
+        alreadyLoggedIn ? '掘金已是登录状态' : '掘金登录成功',
+      ]);
     },
   });
 
@@ -666,15 +658,18 @@ export default function (xcli: XCLIAPI): void {
   });
 
   site.command('upload-image', {
-    description: '上传图片到掘金 CDN（返回 CDN URL）',
+    description: '上传图片到掘金 CDN（返回 CDN URL；一次一张，暂不支持多张）',
     loginRequired: 'required',
     scope: 'page',
     parameters: z.object({
-      image: z.string().describe('图片文件路径'),
+      path: z.string().optional().describe('图片文件路径（绝对路径）'),
+      image: z.string().optional().describe('（已弃用别名，请用 --path）图片文件路径'),
+    }).refine((d) => Boolean(d.path) || Boolean(d.image), {
+      message: '必须提供 --path（或旧名 --image）',
     }),
     examples: [
       {
-        cmd: 'xbrowser juejin upload-image --image ./screenshot.png',
+        cmd: 'xbrowser juejin upload-image --path /abs/screenshot.png',
         description: '上传图片并获取 CDN URL',
       },
     ],
@@ -692,7 +687,7 @@ export default function (xcli: XCLIAPI): void {
         await page.waitForLoadState('domcontentloaded');
         await randomPause(2800, 5200);
 
-        const cdnUrl = await uploadImageToJuejin(page, params.image);
+        const cdnUrl = await uploadImageToJuejin(page, (params.path ?? params.image)!);
 
         try {
           await page.close();
@@ -700,7 +695,7 @@ export default function (xcli: XCLIAPI): void {
           // page.close() failure is non-fatal
         }
 
-        return ok({ file: params.image, cdnUrl }, [...cdpTips, `图片已上传到掘金 CDN: ${cdnUrl}`]);
+        return ok({ file: params.path ?? params.image, cdnUrl }, [...cdpTips, `图片已上传到掘金 CDN: ${cdnUrl}`]);
       } catch (error) {
         return fail(error instanceof Error ? error.message : '未知错误', cdpTips);
       }

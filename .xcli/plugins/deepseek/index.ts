@@ -692,9 +692,9 @@ export default function (xcli: XCLIAPI): void {
     }),
     result: attachResultSchema,
     examples: [
-      { cmd: 'xbrowser deepseek attach --type image --path ~/photo.jpg', description: '上传单张图片' },
+      { cmd: 'xbrowser deepseek attach --type image --path /abs/photo.jpg', description: '上传单张图片' },
       { cmd: 'xbrowser deepseek attach --type url "https://example.com"', description: '发送 URL 链接' },
-      { cmd: 'xbrowser deepseek attach --type file --paths "~/a.pdf,~/b.docx"', description: '批量上传多文件' },
+      { cmd: 'xbrowser deepseek attach --type file --paths "/abs/a.pdf,/abs/b.docx"', description: '批量上传多文件' },
     ],
     handler: async (params, ctx) => {
       const page = ctx.page;

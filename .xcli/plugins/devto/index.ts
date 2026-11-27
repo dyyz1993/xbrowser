@@ -3,6 +3,7 @@ import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok, fail } from '@dyyz1993/xcli-core';
 
 import { randomPause, humanClick, humanBrowse, humanFill } from '../shared/humanize.js';
+import { loginWithHandoff } from '../shared/login-handoff.js';
 
 
 export default function (xcli: XCLIAPI): void {
@@ -38,34 +39,27 @@ export default function (xcli: XCLIAPI): void {
       const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
-      await page.goto('https://dev.to/enter', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000,
-      });
-      await page.waitForTimeout(2000);
-
-      await ctx.waitForHuman?.({
-        reason: 'Complete Dev.to login (GitHub OAuth or email)',
+      // fail-closed 语义下必须「先检查、再交还」：已登录直接成功；未登录才打开登录页并交还
+      // 控制权（ctx.waitForHuman 抛 NEEDS_HUMAN，命令到此结束）。用户登录后重跑本命令即可收敛。
+      const { url, alreadyLoggedIn } = await loginWithHandoff({
+        page,
+        ctx,
+        checkUrl: 'https://dev.to/',
+        loginUrl: 'https://dev.to/enter',
+        reason: '完成 Dev.to 登录（GitHub OAuth 或邮箱）后，重新执行 xbrowser devto login',
         timeout: 300,
+        check: async (p) => p
+          .locator(
+            'a[href*="/signout"], button[aria-label*="Sign Out"], [data-testid="user-menu"], .crayons-header--user-navigation'
+          )
+          .first()
+          .isVisible()
+          .catch(() => false),
       });
 
-      await page.goto('https://dev.to/', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000,
-      });
-      await page.waitForTimeout(2000);
+      await ctx.storage.set('devto_login', { loggedIn: true, at: Date.now() });
 
-      const loggedIn = await page
-        .locator(
-          'a[href*="/signout"], button[aria-label*="Sign Out"], [data-testid="user-menu"], .crayons-header--user-navigation'
-        )
-        .first()
-        .isVisible()
-        .catch(() => false);
-
-      await ctx.storage.set('devto_login', { loggedIn, at: Date.now() });
-
-      return ok({ loggedIn, url: page.url() }, [loggedIn ? 'Dev.to 登录成功' : '登录可能未完成，请检查页面']);
+      return ok({ loggedIn: true, url }, [alreadyLoggedIn ? 'Dev.to 已是登录状态' : 'Dev.to 登录成功']);
     },
   });
 

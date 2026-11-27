@@ -222,7 +222,7 @@ export default function (xcli: XCLIAPI): void {
       }
 
       await ctx.waitForHuman?.({
-        reason: `完成淘宝${params.method === 'qrcode' ? '扫码' : '账号密码'}登录`,
+        reason: `完成淘宝${params.method === 'qrcode' ? '扫码' : '账号密码'}登录后，重新执行 xbrowser taobao login`,
         timeout: 300,
       });
 

@@ -177,7 +177,16 @@ declare module '@dyyz1993/xcli-core' {
   }
   interface CommandContext {
     page?: Page;
-    waitForHuman?(options: { reason: string; timeout?: number } & Record<string, unknown>): Promise<{ solved: boolean }>;
+    /**
+     * Hand control back to a human and STOP the command (fail-closed since 2026-11-27).
+     *
+     * It never resolves: the runtime marks the chrome-bridge task group red and
+     * throws `HumanWaitRequiredError` (`code: 'NEEDS_HUMAN'`), so the command
+     * ends with `{ success: false, data: { code: 'NEEDS_HUMAN', reason, ... } }`.
+     * Never read a result from it and never swallow the error — put any step
+     * that must not run unattended (publish / send / submit) AFTER this call.
+     */
+    waitForHuman?(options: { reason: string; timeout?: number } & Record<string, unknown>): Promise<never>;
     detectAntiBot?(page?: Page): Promise<{ detected: boolean; type?: string } & Record<string, unknown>>;
   }
 }

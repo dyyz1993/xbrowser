@@ -16,7 +16,7 @@
  */
 
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -168,7 +168,63 @@ function checkReadmeNumbers() {
   return errors;
 }
 
+// ── 文档里的 `xbrowser <site> <command>`：site 是已知插件时，command 必须真实存在 ──────
+// 2026-11-27 实录：docs/seo-plugins.md 把 28 条命令写成了不存在的 `<site>-seo` 插件名，
+// 还写着 tumblr publish / quora publish-article 这类从未注册过的命令——读者照抄必然报错。
+// 共享发布层（shared/publishing）按 options 动态注册命令名，静态扫描看不到，先放进白名单。
+const ALWAYS_VALID_COMMANDS = new Set(['draft', 'publish']);
+
+function pluginCommands() {
+  const root = resolve(ROOT, '.xcli/plugins');
+  const map = new Map();
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    if (!entry.isDirectory() || ['shared', 'testsuite', 'node_modules'].includes(entry.name)) continue;
+    const names = new Set(ALWAYS_VALID_COMMANDS);
+    const visit = (dir) => {
+      for (const item of readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = join(dir, item.name);
+        if (item.isDirectory()) {
+          if (item.name !== 'node_modules') visit(fullPath);
+          continue;
+        }
+        if (!/\.(ts|js|mjs)$/.test(item.name) || item.name.endsWith('.d.ts')) continue;
+        for (const match of readFileSync(fullPath, 'utf-8').matchAll(/\.command\(\s*['"`]([a-z0-9-]+)['"`]/g)) {
+          names.add(match[1]);
+        }
+      }
+    };
+    visit(join(root, entry.name));
+    map.set(entry.name, names);
+  }
+  return map;
+}
+
+function checkDocumentedCommands() {
+  const errors = [];
+  const plugins = pluginCommands();
+  for (const relPath of DOC_FILES) {
+    const fullPath = resolve(ROOT, relPath);
+    if (!existsSync(fullPath)) continue;
+    const lines = readFileSync(fullPath, 'utf-8').split('\n');
+    for (let i = 0; i < lines.length; i++) {
+      // 带 ❌ 的行是文档刻意写的反例（如 `devto devto-publish`），不判
+      if (lines[i].includes('❌')) continue;
+      for (const match of lines[i].matchAll(/\bxbrowser\s+([a-z][a-z0-9-]*)\s+([a-z][a-z0-9-]*)/g)) {
+        const [, site, command] = match;
+        // 未知 site 可能是文档里的占位符 / 脚手架示例，不在这里判
+        if (!plugins.has(site)) continue;
+        if (!plugins.get(site).has(command)) {
+          const known = [...plugins.get(site)].sort().join(', ');
+          errors.push(`❌ ${relPath}:${i + 1} — \`xbrowser ${site} ${command}\`: plugin "${site}" has no command "${command}" (has: ${known})`);
+        }
+      }
+    }
+  }
+  return errors;
+}
+
 // ── Check Scope table for daemon ────────────────────────────────────────────
+
 function checkScopeTable() {
   const errors = [];
   const commandsPath = resolve(ROOT, 'docs/commands.md');
@@ -208,6 +264,8 @@ function main() {
 
   const scopeErrors = checkScopeTable();
   allErrors = allErrors.concat(scopeErrors);
+  const commandErrors = checkDocumentedCommands();
+  allErrors = allErrors.concat(commandErrors);
 
   if (allErrors.length > 0) {
     console.log(allErrors.join('\n'));
@@ -219,7 +277,8 @@ function main() {
   console.log('✅ No removed commands, fictional commands, or old project names found in docs.');
   console.log('✅ AGENTS.md numbers match reality.');
   console.log('✅ README.md numbers match reality.');
-  console.log('✅ Scope table is clean.\n');
+  console.log('✅ Scope table is clean.');
+  console.log('✅ Documented plugin commands exist.\n');
 }
 
 main();

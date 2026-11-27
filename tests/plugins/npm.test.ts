@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { z } from 'zod/v4';
 import plugin from '../../.xcli/plugins/npm/index.ts';
+import { HumanWaitRequiredError } from '../../src/plugin/human-wait.js';
 
 // —— mock XCLIAPI（参考 devto.test.ts 的三件套）——
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
@@ -90,11 +91,17 @@ function createMockPage(overrides: Partial<MockPageState> = {}) {
   return { page, state };
 }
 
-function createMockCtx(page: unknown, options: { waitForHumanResult?: { solved: boolean } } = {}) {
+/**
+ * 真实运行时 ctx.waitForHuman 抛 NEEDS_HUMAN（fail-closed）；单测里让它「返回」以走到复核分支，
+ * 用 onWaitForHuman 模拟用户在这期间做了什么（比如登进去了）。
+ */
+function createMockCtx(page: unknown, options: { onWaitForHuman?: () => void } = {}) {
   return {
     page,
     storage: { set: vi.fn(async () => {}), delete: vi.fn(async () => {}) },
-    waitForHuman: vi.fn(async () => options.waitForHumanResult ?? { solved: true }),
+    waitForHuman: vi.fn(async () => {
+      options.onWaitForHuman?.();
+    }),
   };
 }
 
@@ -326,11 +333,17 @@ describe('npm plugin', () => {
     });
 
     it('should pause via waitForHuman for email OTP when --otp is absent', async () => {
-      const { page } = createMockPage({
+      const { page, state } = createMockPage({
         visibleSelectors: ['#username', '#password', '#otp', '#tokenName'],
         tokenValue: 'npm_ZZZZZZZZZZZZZZZZZZZZ',
       });
-      const ctx = createMockCtx(page, { waitForHumanResult: { solved: true } });
+      const ctx = createMockCtx(page, {
+        onWaitForHuman: () => {
+          // 用户在 viewer 里输入 OTP 后已登录
+          state.loggedIn = true;
+          state.currentUrl = 'https://www.npmjs.com/';
+        },
+      });
       const result = await getHandler('create-token')(baseParams, ctx);
 
       expect(result.success).toBe(true);
@@ -339,15 +352,28 @@ describe('npm plugin', () => {
       );
     });
 
-    it('should fail when human does not solve OTP in time', async () => {
+    it('should fail when the session is still logged out after the OTP handoff', async () => {
       const { page } = createMockPage({
         visibleSelectors: ['#username', '#password', '#otp'],
       });
-      const ctx = createMockCtx(page, { waitForHumanResult: { solved: false } });
+      const ctx = createMockCtx(page);
       const result = await getHandler('create-token')(baseParams, ctx);
 
       expect(result.success).toBe(false);
       expect(result.message).toContain('OTP');
+    });
+
+    it('stops with NEEDS_HUMAN instead of faking success when the OTP handoff fails closed', async () => {
+      const { page } = createMockPage({
+        visibleSelectors: ['#username', '#password', '#otp'],
+      });
+      const ctx = createMockCtx(page);
+      ctx.waitForHuman = vi.fn(async () => {
+        throw new HumanWaitRequiredError('需要人工协助', 'npm 已向账号邮箱发送一次性验证码（OTP）');
+      });
+
+      await expect(getHandler('create-token')(baseParams, ctx)).rejects.toBeInstanceOf(HumanWaitRequiredError);
+      expect(ctx.storage.set).not.toHaveBeenCalled();
     });
 
     it('should fail with clear pointers when token-name input is not found', async () => {

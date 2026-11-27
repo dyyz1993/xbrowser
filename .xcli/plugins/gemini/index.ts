@@ -11,6 +11,7 @@ import { registerBridgeCommands } from './bridge.js';
 import { registerGenerateCommands } from './generate.js';
 import { registerHistoryCommands } from './history.js';
 import { registerMusicCommands } from './music.js';
+import { loginWithHandoff } from '../shared/login-handoff.js';
 
 const GEMINI_URL = 'https://gemini.google.com';
 type Page = import('../types').Page;
@@ -43,7 +44,7 @@ export default function (xcli: XCLIAPI): void {
     description: '登录 Gemini（Google 账号）',
     scope: 'browser',
     parameters: z.object({
-      timeout: z.number().min(30).max(600).default(300).describe('等待登录完成秒数'),
+      timeout: z.number().min(30).max(600).default(300).describe('打算等待登录完成的秒数（当前不阻塞：未登录即以 NEEDS_HUMAN 结束，登录后重跑）'),
     }),
     examples: [{ cmd: 'xbrowser gemini login', description: '打开 Gemini 并等待完成登录' }],
     result: z.object({ loggedIn: z.boolean(), url: z.string() }),
@@ -52,29 +53,38 @@ export default function (xcli: XCLIAPI): void {
       if (!page) throw new Error('需要浏览器页面');
 
       const tips = buildCdpTips(ctx);
+      // fail-closed 语义下必须「先检查、再交还」：已登录直接成功；未登录（被 Google 带到登录页）
+      // 才打开 Gemini 并交还控制权（ctx.waitForHuman 抛 NEEDS_HUMAN，命令到此结束）。
       try {
-        await page.goto(GEMINI_URL, {
-          waitUntil: 'domcontentloaded',
-          timeout: 15000,
+        const { url, alreadyLoggedIn } = await loginWithHandoff({
+          page,
+          ctx,
+          checkUrl: GEMINI_URL,
+          loginUrl: GEMINI_URL,
+          reason: '请在浏览器中完成 Google 登录，然后重新执行 xbrowser gemini login',
+          timeout: params.timeout,
+          check: async (p) => {
+            const current = p.url();
+            return current.includes('gemini.google.com') && !current.includes('/login') && !current.includes('/signin');
+          },
         });
-      } catch {
+
+        await ctx.storage.set('gemini_login', { loggedIn: true, at: Date.now() });
+
+        return ok({ loggedIn: true, url }, [
+          ...tips,
+          alreadyLoggedIn ? 'Gemini 已是登录状态' : 'Gemini 登录成功',
+        ]);
+      } catch (e) {
+        // 人工交还（NEEDS_HUMAN）不是网络错误：原样抛出，运行时转成结构化结果
+        const err = e as { code?: unknown; message?: unknown } | null;
+        if (err && typeof err === 'object' && err.code === 'NEEDS_HUMAN') throw e;
+        // 交还后复核仍停在登录页（只有 waitForHuman 真的返回才会发生）：如实报未完成
+        if (typeof err?.message === 'string' && err.message.includes('仍未检测到登录态')) {
+          return fail('Gemini 登录未完成（交还后仍停在登录页）', tips);
+        }
         return fail(`无法打开 ${GEMINI_URL}（网络不可达或被阻止）`, tips);
       }
-
-      await ctx.waitForHuman?.({
-        reason: '请在浏览器中完成 Google 登录',
-        timeout: params.timeout,
-      });
-
-      const url = page.url();
-      const loggedIn = url.includes('gemini.google.com') &&
-        !url.includes('/login') && !url.includes('/signin');
-      await ctx.storage.set('gemini_login', { loggedIn, at: Date.now() });
-
-      return ok({ loggedIn, url }, [
-        ...tips,
-        loggedIn ? 'Gemini 登录成功' : '登录可能未完成，请重跑或检查浏览器',
-      ]);
     },
   });
 

@@ -19,7 +19,9 @@ import type {
   ConsoleSession,
 } from './types.js';
 
-const DAEMON_PREVIEW_URL = 'http://127.0.0.1:9224';
+// 与 daemon-client 的 DAEMON_PORT 同源：多实例（XBROWSER_DAEMON_PORT）下控制台面板的
+// preview 链接也要指向同一个 daemon，否则点开的是别的实例。
+const DAEMON_PREVIEW_URL = `http://127.0.0.1:${parseInt(process.env.XBROWSER_DAEMON_PORT || '9224', 10)}`;
 const LOGIN_BRIDGE_STATUS_URL = 'http://127.0.0.1:9355/cookies';
 const CHROME_BRIDGE_META_PATH = join(homedir(), '.xbrowser', 'chrome-bridge-ext.json');
 

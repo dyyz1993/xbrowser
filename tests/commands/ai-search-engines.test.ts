@@ -1,10 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   ENGINE_CONFIGS,
   ALL_ENGINE_KEYS,
   getEngineConfig,
   buildSearchPrompt,
   parseMarkdownResults,
+  navigateToChat,
 } from '../../src/commands/ai-search-engines.js';
 
 describe('ai-search-engines', () => {
@@ -119,5 +120,57 @@ describe('ai-search-engines', () => {
       const googleEntries = results.filter(r => r.url === 'https://google.com');
       expect(googleEntries).toHaveLength(1);
     });
+  });
+});
+
+// navigateToChat 是数据驱动的：步骤来自 EngineConfig.chatNav，代码里不再按引擎写分支
+describe('navigateToChat (data-driven chatNav)', () => {
+  function mockPage(options: { chatLinks?: Array<{ href: string; text: string }>; primaryCount?: number; fallbackCount?: number } = {}) {
+    const waits: number[] = [];
+    const clicked: string[] = [];
+    const page = {
+      waitForTimeout: vi.fn(async (ms: number) => { waits.push(ms); }),
+      locator: vi.fn((selector: string) => ({
+        first: () => ({
+          count: vi.fn(async () => (selector.includes('新建项目') ? options.fallbackCount ?? 0 : options.primaryCount ?? 0)),
+          click: vi.fn(async () => { clicked.push(selector); }),
+        }),
+      })),
+      evaluate: vi.fn(async () => options.chatLinks ?? []),
+      goto: vi.fn(async () => ({})),
+    };
+    return { page: page as unknown as Parameters<typeof navigateToChat>[0], waits, clicked };
+  }
+
+  it('does nothing when the engine has no chatNav', async () => {
+    const { page, waits } = mockPage();
+    await navigateToChat(page, ENGINE_CONFIGS.kimi);
+    expect(waits).toEqual([]);
+    expect(page.goto).not.toHaveBeenCalled();
+  });
+
+  it('click: waits, clicks the configured selector, waits again (xinghuo)', async () => {
+    const { page, waits, clicked } = mockPage({ primaryCount: 1 });
+    await navigateToChat(page, ENGINE_CONFIGS.xinghuo);
+    expect(waits).toEqual([3000, 2000]);
+    expect(clicked).toEqual(['text=开始对话']);
+    expect(page.goto).not.toHaveBeenCalled();
+  });
+
+  it('link-or-fallback: jumps to the first chat/project link (tiangong)', async () => {
+    const { page, waits, clicked } = mockPage({ chatLinks: [{ href: 'https://www.tiangong.cn/chat/1', text: '' }] });
+    await navigateToChat(page, ENGINE_CONFIGS.tiangong);
+    expect(page.evaluate).toHaveBeenCalledWith(expect.any(Function), ['/chat', '/project']);
+    expect(page.goto).toHaveBeenCalledWith('https://www.tiangong.cn/chat/1', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    expect(waits).toEqual([3000, 3000]);
+    expect(clicked).toEqual([]);
+  });
+
+  it('link-or-fallback: clicks the fallback button when no link exists', async () => {
+    const { page, waits, clicked } = mockPage({ chatLinks: [], fallbackCount: 1 });
+    await navigateToChat(page, ENGINE_CONFIGS.tiangong);
+    expect(page.goto).not.toHaveBeenCalled();
+    expect(clicked).toEqual(['text=新建项目']);
+    expect(waits).toEqual([3000, 3000]);
   });
 });

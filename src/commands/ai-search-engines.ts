@@ -183,39 +183,34 @@ export async function findAndFillInput(page: Page, config: EngineConfig, text: s
 }
 
 export async function navigateToChat(page: Page, config: EngineConfig): Promise<void> {
-  if (!config.needsChatNav) return;
+  const nav = config.chatNav;
+  // 两个开关都在才导航：needsChatNav 是旧布尔开关（部分调用方只读它），chatNav 是具体步骤
+  if (!config.needsChatNav || !nav) return;
 
-  if (config.key === 'kimi') {
-    await page.waitForTimeout(2000);
-    const chatLink = page.locator('a[href*="/chat"], a[href*="/dialog"]').first();
-    if ((await chatLink.count()) > 0) {
-      await chatLink.click();
-      await page.waitForTimeout(2000);
+  await page.waitForTimeout(nav.settleMs);
+  if (nav.kind === 'click') {
+    const target = page.locator(nav.selector).first();
+    if ((await target.count()) > 0) {
+      await target.click();
+      await page.waitForTimeout(nav.afterMs);
     }
-  } else if (config.key === 'tiangong') {
-    await page.waitForTimeout(3000);
-    const chatLinks = await page.evaluate<Array<{ href: string; text: string }>>(() => {
-      return Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'))
-        .filter(a => a.href.includes('/chat') || a.href.includes('/project'))
-        .map(a => ({ href: a.href, text: a.textContent?.trim()?.slice(0, 30) || '' }));
-    });
-    if (chatLinks.length > 0) {
-      await page.goto(chatLinks[0].href, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await page.waitForTimeout(3000);
-    } else {
-      const newProjectBtn = page.locator('text=新建项目').first();
-      if ((await newProjectBtn.count()) > 0) {
-        await newProjectBtn.click();
-        await page.waitForTimeout(3000);
-      }
-    }
-  } else if (config.key === 'xinghuo') {
-    await page.waitForTimeout(3000);
-    const startBtn = page.locator('text=开始对话').first();
-    if ((await startBtn.count()) > 0) {
-      await startBtn.click();
-      await page.waitForTimeout(2000);
-    }
+    return;
+  }
+
+  const chatLinks = await page.evaluate<Array<{ href: string; text: string }>>((hrefParts: string[]) => {
+    return Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href]'))
+      .filter(a => hrefParts.some(part => a.href.includes(part)))
+      .map(a => ({ href: a.href, text: a.textContent?.trim()?.slice(0, 30) || '' }));
+  }, nav.linkHrefParts);
+  if (chatLinks.length > 0) {
+    await page.goto(chatLinks[0].href, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(nav.afterMs);
+    return;
+  }
+  const fallback = page.locator(nav.fallbackSelector).first();
+  if ((await fallback.count()) > 0) {
+    await fallback.click();
+    await page.waitForTimeout(nav.fallbackAfterMs);
   }
 }
 

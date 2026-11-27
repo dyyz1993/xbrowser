@@ -39,6 +39,8 @@ jobs:
       # 与 husky pre-commit 同源的文档一致性检查（防 --no-verify 绕过）
       - run: npm run lint:docs
       - run: npm run lint:changelog
+      # 与 husky pre-commit 同源的仓库布局检查：scripts/ 白名单 + 不允许「已跟踪却被忽略」的文件
+      - run: npm run lint:architecture
 
   commit-lint:
     # 与 husky commit-msg 同源的提交信息格式检查（防 --no-verify 绕过：

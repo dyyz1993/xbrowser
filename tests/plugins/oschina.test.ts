@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import plugin from '../../.xcli/plugins/oschina/index.ts';
+import { HumanWaitRequiredError } from '../../src/plugin/human-wait.js';
 import { __setHumanizeSleeperForTests } from '../../.xcli/plugins/shared/humanize.js';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
@@ -238,6 +239,42 @@ describe('oschina plugin', () => {
       // 没有去找标题输入框（那正是事故里的误导性报错）
       const exprs = harness.page.evaluate.mock.calls.map((c) => String(c[0])).join('\n');
       expect(exprs).not.toContain('标题');
+    });
+  });
+
+  // ── login：fail-closed 语义下必须「先检查、再交还」，用户登录后重跑才能收敛 ──
+  describe('login command (check-first under fail-closed)', () => {
+    function loginPage(url: string, loginLinkVisible: boolean) {
+      const harness = createPage({ url });
+      (harness.page as unknown as Record<string, unknown>).locator = vi.fn(() => ({
+        first: () => ({ isVisible: vi.fn(async () => loginLinkVisible) }),
+      }));
+      return harness;
+    }
+
+    it('succeeds without handing off when the page shows no login entry', async () => {
+      const harness = loginPage('https://my.oschina.net/', false);
+      const waitForHuman = vi.fn();
+      const result = await handlerOf('login')({}, { ...ctxFor(harness.page), waitForHuman }) as {
+        success: boolean; data: { loggedIn: boolean };
+      };
+      expect(result.success).toBe(true);
+      expect(result.data.loggedIn).toBe(true);
+      expect(waitForHuman).not.toHaveBeenCalled();
+      expect(harness.page.goto).toHaveBeenCalledTimes(1);
+    });
+
+    it('detects the logged-out home page by its login link and fails closed (ERR-20261125-002)', async () => {
+      // 登出时 my.oschina.net 停在公开首页，URL 不含 /login——只能靠顶栏「登录」入口判定
+      const harness = loginPage('https://my.oschina.net/', true);
+      const waitForHuman = vi.fn(() =>
+        Promise.reject(new HumanWaitRequiredError('需要人工协助', '完成 开源中国 登录')));
+      await expect(handlerOf('login')({}, { ...ctxFor(harness.page), waitForHuman }))
+        .rejects.toBeInstanceOf(HumanWaitRequiredError);
+      expect(harness.page.goto.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+        'https://my.oschina.net',
+        'https://www.oschina.net/home/login',
+      ]);
     });
   });
 });

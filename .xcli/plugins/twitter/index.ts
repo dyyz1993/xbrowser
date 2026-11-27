@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { promisify } from 'util';
 import type { Page } from '../types.js';
+import { sessionTips } from '../shared/page-context.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -394,13 +395,6 @@ export default function (xcli: XCLIAPI): void {
 
   // ─── 工具 ──────────────────────────────────────
 
-  function buildTips(ctx: Record<string, unknown>): string[] {
-    const tips: string[] = [];
-    if (!ctx.cdpEndpoint) tips.push('建议使用 --cdp 9221 连接到已登录的浏览器');
-    tips.push(`Session: ${ctx.sessionId || 'default'}`);
-    return tips;
-  }
-
   // ─── 1. search ─────────────────────────────────
 
   site.command('search', {
@@ -417,7 +411,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
-      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+      const tips = sessionTips(ctx as unknown as Record<string, unknown>);
 
       // 搜素 API 的 pattern 是 SearchTimeline
       // 直接用 DOM 方式，因为搜索页的 GraphQL 端点名复杂
@@ -468,7 +462,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
-      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+      const tips = sessionTips(ctx as unknown as Record<string, unknown>);
 
       // 拦截 UserByScreenName（用户信息）+ 其他端点
       let userData: Record<string, unknown> | null = null;
@@ -545,7 +539,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
-      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+      const tips = sessionTips(ctx as unknown as Record<string, unknown>);
       const capturedTweets: Array<Record<string, unknown>> = [];
 
       // 用 waitForResponse 等 UserTweets API 返回（可能在 SSR 后通过滚动触发）
@@ -631,7 +625,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
-      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+      const tips = sessionTips(ctx as unknown as Record<string, unknown>);
       const captured: Array<Record<string, unknown>> = [];
 
       page.on('response', async (resp) => {
@@ -689,7 +683,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
-      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+      const tips = sessionTips(ctx as unknown as Record<string, unknown>);
 
       await page.goto(`${BASE}/${params.username}/likes`, { waitUntil: 'domcontentloaded' });
       await page.waitForTimeout(5000);
@@ -780,7 +774,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
-      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+      const tips = sessionTips(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto(`${BASE}/home`, { waitUntil: 'domcontentloaded' });
@@ -930,7 +924,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
-      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+      const tips = sessionTips(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto(params.tweetUrl, { waitUntil: 'domcontentloaded' });
@@ -985,7 +979,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
-      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+      const tips = sessionTips(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto(params.tweetUrl, { waitUntil: 'domcontentloaded' });
@@ -1042,7 +1036,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error("需要浏览器页面");
-      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+      const tips = sessionTips(ctx as unknown as Record<string, unknown>);
 
       try {
         await page.goto(params.tweetUrl, { waitUntil: 'domcontentloaded' });
@@ -1077,7 +1071,7 @@ export default function (xcli: XCLIAPI): void {
     handler: async (params, ctx) => {
       const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面');
-      const tips = buildTips(ctx as unknown as Record<string, unknown>);
+      const tips = sessionTips(ctx as unknown as Record<string, unknown>);
 
       try {
         const tweetId = tweetIdOrUrl(params.tweet);

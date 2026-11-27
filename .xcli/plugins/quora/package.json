@@ -26,6 +26,7 @@
     "commands": [
       "login",
       "answer",
+      "publish",
       "publish-article",
       "update-profile"
     ],

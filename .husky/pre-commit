@@ -124,4 +124,13 @@ if [ $? -ne 0 ]; then
 fi
 echo "✅ Docs consistency check passed"
 
+echo "🔍 [pre-commit] Checking repository layout (scripts/ allowlist, no ignored-but-tracked files)..."
+node lint-scripts/check-architecture.mjs
+if [ $? -ne 0 ]; then
+  echo "❌ Architecture check failed. Automation belongs in .xcli/plugins/, not scripts/ or src/."
+  echo "   → See AGENTS.md §1 and SCRIPTS_ALLOWLIST in lint-scripts/check-architecture.mjs."
+  exit 1
+fi
+echo "✅ Architecture check passed"
+
 echo "✅ [pre-commit] All checks passed!"

@@ -1,6 +1,7 @@
 import { z } from 'zod/v4';
 import type { XCLIAPI } from '@dyyz1993/xcli-core';
 import { ok } from '@dyyz1993/xcli-core';
+import { loginWithHandoff } from '../shared/login-handoff.js';
 
 export default function (xcli: XCLIAPI): void {
   const site = xcli.createSite({
@@ -35,34 +36,25 @@ export default function (xcli: XCLIAPI): void {
       const page = ctx.page;
       if (!page) throw new Error('需要浏览器页面上下文');
 
-      await page.goto('https://www.producthunt.com/login', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000,
-      });
-      await page.waitForTimeout(2000);
-
-      await ctx.waitForHuman?.({
-        reason: 'Complete Product Hunt login (Google OAuth)',
+      const { url, alreadyLoggedIn } = await loginWithHandoff({
+        page,
+        ctx,
+        checkUrl: 'https://www.producthunt.com/',
+        loginUrl: 'https://www.producthunt.com/login',
+        reason: '完成 Product Hunt 登录（Google OAuth）后，重新执行 xbrowser producthunt login',
         timeout: 300,
+        check: async (p) => p
+          .locator(
+            'a[href*="/my"], button[data-testid="user-menu"], img[alt*="avatar"], [class*="user-menu"], a[href*="/logout"]'
+          )
+          .first()
+          .isVisible()
+          .catch(() => false),
       });
 
-      await page.goto('https://www.producthunt.com/', {
-        waitUntil: 'domcontentloaded',
-        timeout: 15000,
-      });
-      await page.waitForTimeout(2000);
+      await ctx.storage.set('producthunt_login', { loggedIn: true, at: Date.now() });
 
-      const loggedIn = await page
-        .locator(
-          'a[href*="/my"], button[data-testid="user-menu"], img[alt*="avatar"], [class*="user-menu"], a[href*="/logout"]'
-        )
-        .first()
-        .isVisible()
-        .catch(() => false);
-
-      await ctx.storage.set('producthunt_login', { loggedIn, at: Date.now() });
-
-      return ok({ loggedIn, url: page.url() }, [loggedIn ? 'Product Hunt 登录成功' : '登录可能未完成，请检查页面']);
+      return ok({ loggedIn: true, url }, [alreadyLoggedIn ? 'Product Hunt 已是登录状态' : 'Product Hunt 登录成功']);
     },
   });
 

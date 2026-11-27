@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import plugin from '../../.xcli/plugins/gemini/index.ts';
+import { HumanWaitRequiredError } from '../../src/plugin/human-wait.js';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -289,29 +290,45 @@ describe('gemini plugin', () => {
       expect(ctx.storage.set).not.toHaveBeenCalled();
     });
 
-    it('should wait for human, save login state, and report success', async () => {
+    it('succeeds without handing off when the Gemini page is already signed in', async () => {
       const handler = getHandler('login');
       const page = createMockPage();
-      const waitForHuman = vi.fn(() => Promise.resolve({ solved: true }));
+      const waitForHuman = vi.fn();
       const ctx = { ...createMockCtx(page), waitForHuman };
 
       const result = await handler({ timeout: 120 }, ctx) as Record<string, unknown>;
 
+      expect(page.goto).toHaveBeenCalledTimes(1);
       expect(page.goto).toHaveBeenCalledWith(
         'https://gemini.google.com',
         expect.objectContaining({ waitUntil: 'domcontentloaded', timeout: 15000 }),
       );
-      expect(waitForHuman).toHaveBeenCalledWith({
-        reason: '请在浏览器中完成 Google 登录',
-        timeout: 120,
-      });
+      expect(waitForHuman).not.toHaveBeenCalled();
       expect(ctx.storage.set).toHaveBeenCalledWith('gemini_login', expect.objectContaining({ loggedIn: true }));
       expect(result.success).toBe(true);
       expect(result.data).toEqual({ loggedIn: true, url: 'https://gemini.google.com/app' });
-      expect(tipMessages(result)).toContain('Gemini 登录成功');
+      expect(tipMessages(result)).toContain('已是登录状态');
     });
 
-    it('should report incomplete login when the browser stays on the login page', async () => {
+    it('hands off and fails closed with NEEDS_HUMAN when Google sends the page to the login page', async () => {
+      const handler = getHandler('login');
+      const page = createMockPage();
+      page.url = vi.fn(() => 'https://gemini.google.com/login');
+      const waitForHuman = vi.fn(() =>
+        Promise.reject(new HumanWaitRequiredError('需要人工协助', '请在浏览器中完成 Google 登录')));
+      const ctx = { ...createMockCtx(page), waitForHuman };
+
+      await expect(handler({ timeout: 60 }, ctx)).rejects.toBeInstanceOf(HumanWaitRequiredError);
+      // 先检查（被带到登录页）→ 再打开 Gemini 交还
+      expect(page.goto).toHaveBeenCalledTimes(2);
+      expect(waitForHuman).toHaveBeenCalledWith({
+        reason: '请在浏览器中完成 Google 登录，然后重新执行 xbrowser gemini login',
+        timeout: 60,
+      });
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+    });
+
+    it('refuses to store a login state when a returned handoff still shows the login page', async () => {
       const handler = getHandler('login');
       const page = createMockPage();
       page.url = vi.fn(() => 'https://gemini.google.com/login');
@@ -320,10 +337,9 @@ describe('gemini plugin', () => {
 
       const result = await handler({ timeout: 60 }, ctx) as Record<string, unknown>;
 
-      expect(result.success).toBe(true);
-      expect(result.data).toEqual({ loggedIn: false, url: 'https://gemini.google.com/login' });
-      expect(ctx.storage.set).toHaveBeenCalledWith('gemini_login', expect.objectContaining({ loggedIn: false }));
-      expect(tipMessages(result)).toContain('登录可能未完成');
+      expect(result.success).toBe(false);
+      expect(result.message).toContain('登录未完成');
+      expect(ctx.storage.set).not.toHaveBeenCalled();
     });
   });
 

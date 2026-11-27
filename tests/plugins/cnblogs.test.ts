@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import plugin from '../../.xcli/plugins/cnblogs/index.ts';
+import { HumanWaitRequiredError } from '../../src/plugin/human-wait.js';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -38,15 +39,71 @@ describe('cnblogs plugin', () => {
     expect(result.success).toBe(false);
   });
 
-  it('login navigates to signin and reports state', async () => {
-    const page = {
-      goto: vi.fn(async () => undefined),
-      url: vi.fn(() => 'https://i.cnblogs.com/posts'),
-    };
-    const ctx = { page, cdpEndpoint: 'x', waitForHuman: vi.fn(async () => ({ solved: true })) };
-    const result = await getHandler('login')({}, ctx) as { success: boolean; data: { loggedIn: boolean } };
-    expect(page.goto).toHaveBeenCalledWith('https://account.cnblogs.com/signin', expect.anything());
-    expect(result.data.loggedIn).toBe(true);
+  describe('login command', () => {
+    function createLoginPage(initialUrl = 'https://i.cnblogs.com/posts') {
+      let currentUrl = initialUrl;
+      const nextUrlOverrides = new Map<string, string>([
+        ['https://i.cnblogs.com/posts', 'https://account.cnblogs.com/signin'],
+      ]);
+      return {
+        goto: vi.fn(async (url: string) => {
+          currentUrl = nextUrlOverrides.get(url) ?? url;
+        }),
+        waitForTimeout: vi.fn(async () => undefined),
+        url: vi.fn(() => currentUrl),
+      };
+    }
+
+    function createLoginCtx(
+      page: ReturnType<typeof createLoginPage>,
+      waitForHuman = vi.fn(async () => ({ solved: true })),
+    ) {
+      return { page, cdpEndpoint: 'x', waitForHuman, storage: { set: vi.fn() } };
+    }
+
+    it('resolves without handing off when already logged in', async () => {
+      const page = createLoginPage();
+      page.goto.mockImplementation(async () => undefined);
+      const ctx = createLoginCtx(page);
+      const result = await getHandler('login')({}, ctx) as {
+        data: { loggedIn: boolean; url: string };
+      };
+      expect(result.data).toEqual({ loggedIn: true, url: 'https://i.cnblogs.com/posts' });
+      expect(ctx.waitForHuman).not.toHaveBeenCalled();
+      expect(page.goto).toHaveBeenCalledTimes(1);
+      expect(page.goto).toHaveBeenCalledWith('https://i.cnblogs.com/posts', expect.anything());
+      expect(ctx.storage.set).toHaveBeenCalledWith(
+        'cnblogs_login',
+        expect.objectContaining({ loggedIn: true })
+      );
+    });
+
+    it('opens signin and rejects with NEEDS_HUMAN when logged out', async () => {
+      const page = createLoginPage();
+      const ctx = createLoginCtx(page, vi.fn(() =>
+        Promise.reject(new HumanWaitRequiredError('需要人工协助', '完成博客园登录'))));
+      await expect(getHandler('login')({}, ctx)).rejects.toBeInstanceOf(HumanWaitRequiredError);
+      expect(page.goto.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+        'https://i.cnblogs.com/posts',
+        'https://account.cnblogs.com/signin',
+      ]);
+      expect(ctx.waitForHuman).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: expect.stringContaining('博客园') })
+      );
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+    });
+
+    it('refuses login state when a returned handoff still shows signin', async () => {
+      const page = createLoginPage();
+      const ctx = createLoginCtx(page);
+      await expect(getHandler('login')({}, ctx)).rejects.toThrow('仍未检测到登录态');
+      expect(page.goto.mock.calls.map((c: unknown[]) => c[0])).toEqual([
+        'https://i.cnblogs.com/posts',
+        'https://account.cnblogs.com/signin',
+        'https://i.cnblogs.com/posts',
+      ]);
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+    });
   });
 
   it('each command has description/parameters/handler', () => {

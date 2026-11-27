@@ -4,6 +4,24 @@ export type AIEngineKey =
   | 'yiyan' | 'metaso' | 'tiangong' | 'xinghuo'
   | 'hailuo' | '360ai';
 
+/**
+ * 进入对话页的步骤——数据驱动，不在代码里按引擎写 `if (key === 'kimi')` 分支
+ * （AGENTS.md §10.0.1：站点差异只写在配置数据里）。
+ * - click：等 settleMs → 点 selector → 等 afterMs
+ * - link-or-fallback：等 settleMs → 找 href 含任一 linkHrefParts 的链接并跳转（等 afterMs）；
+ *   找不到再点 fallbackSelector（等 fallbackAfterMs）
+ */
+export type ChatNav =
+  | { kind: 'click'; settleMs: number; selector: string; afterMs: number }
+  | {
+      kind: 'link-or-fallback';
+      settleMs: number;
+      linkHrefParts: string[];
+      afterMs: number;
+      fallbackSelector: string;
+      fallbackAfterMs: number;
+    };
+
 export interface EngineConfig {
   key: AIEngineKey;
   name: string;
@@ -28,7 +46,9 @@ export interface EngineConfig {
   };
   isSearchFirst?: boolean;
   extraWait?: number;
+  /** 需要先进入对话页（配合 chatNav）；旧的布尔开关保留给只读它的调用方 */
   needsChatNav?: boolean;
+  chatNav?: ChatNav;
   sendMethod: 'enter' | 'button' | 'metaEnter';
   sendButtonSelector?: string;
   apiPattern?: string;
@@ -233,6 +253,14 @@ export const ENGINE_CONFIGS: Record<AIEngineKey, EngineConfig> = {
     internetSearch: { type: 'builtin' },
     upload: { image: true, file: false },
     needsChatNav: true,
+    chatNav: {
+      kind: 'link-or-fallback',
+      settleMs: 3000,
+      linkHrefParts: ['/chat', '/project'],
+      afterMs: 3000,
+      fallbackSelector: 'text=新建项目',
+      fallbackAfterMs: 3000,
+    },
     extraWait: 8000,
     sendMethod: 'enter',
     skipResponseWait: true,
@@ -253,6 +281,7 @@ export const ENGINE_CONFIGS: Record<AIEngineKey, EngineConfig> = {
     upload: { image: false, file: false },
     extraWait: 8000,
     needsChatNav: true,
+    chatNav: { kind: 'click', settleMs: 3000, selector: 'text=开始对话', afterMs: 2000 },
     sendMethod: 'enter',
   },
   hailuo: {

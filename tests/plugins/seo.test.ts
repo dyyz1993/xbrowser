@@ -1,6 +1,7 @@
 import { firstTip, tipsText, tipsMessages } from './_tips-helper.js';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import plugin from '../../.xcli/plugins/seo/index.ts';
+import { HumanWaitRequiredError } from '../../src/plugin/human-wait.js';
 
 const mockSite = { command: vi.fn(), login: vi.fn(), logout: vi.fn() };
 const mockXCLI = { createSite: vi.fn(() => mockSite) };
@@ -931,9 +932,10 @@ describe('seo plugin', () => {
       };
     }
 
-    function createLoginContext(page: unknown) {
+    function createLoginContext(page: unknown, waitForHuman?: () => Promise<unknown>) {
       return {
         page,
+        ...(waitForHuman ? { waitForHuman: vi.fn(waitForHuman) } : {}),
         storage: {
           set: vi.fn(() => Promise.resolve()),
           get: vi.fn(() => Promise.resolve(null)),
@@ -942,30 +944,46 @@ describe('seo plugin', () => {
       };
     }
 
-    it('does not store loggedIn:true when the page still shows a login form', async () => {
+    it('succeeds without handing off when the platform session is already logged in', async () => {
       const handler = getHandler('login');
-      const ctx = createLoginContext(createLoginPage(true));
-
-      const result = await handler({ platform: 'github' }, ctx);
-
-      expect(result.success).toBe(false);
-      expect(result.message).toContain('登录未完成');
-      expect(ctx.storage.set).not.toHaveBeenCalled();
-      expect(ctx.storage.delete).toHaveBeenCalledWith('seo_login_github');
-    });
-
-    it('stores the login state only after the login form is gone', async () => {
-      const handler = getHandler('login');
-      const ctx = createLoginContext(createLoginPage(false));
+      const page = createLoginPage(false);
+      const ctx = createLoginContext(page);
 
       const result = await handler({ platform: 'github' }, ctx);
 
       expect(result.success).toBe(true);
       expect(result.data.loggedIn).toBe(true);
+      expect(page.goto).toHaveBeenCalledTimes(1);
       expect(ctx.storage.set).toHaveBeenCalledWith(
         'seo_login_github',
         expect.objectContaining({ loggedIn: true }),
       );
+    });
+
+    it('opens the login entry and fails closed with NEEDS_HUMAN while logged out', async () => {
+      const handler = getHandler('login');
+      const page = createLoginPage(true);
+      const ctx = createLoginContext(page, () =>
+        Promise.reject(new HumanWaitRequiredError('需要人工协助', '完成 GitHub 登录')));
+
+      await expect(handler({ platform: 'github' }, ctx)).rejects.toBeInstanceOf(HumanWaitRequiredError);
+      expect(page.goto).toHaveBeenCalledTimes(2);
+      expect(ctx.waitForHuman).toHaveBeenCalledWith(
+        expect.objectContaining({ reason: expect.stringContaining('重新执行 xbrowser seo login') }),
+      );
+      expect(ctx.storage.set).not.toHaveBeenCalled();
+    });
+
+    it('refuses to store loggedIn when a returned handoff still shows the login form', async () => {
+      const handler = getHandler('login');
+      const page = createLoginPage(true);
+      const ctx = createLoginContext(page, () => Promise.resolve({ solved: true }));
+
+      const result = await handler({ platform: 'github' }, ctx);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toBe('GitHub 登录失败');
+      expect(ctx.storage.set).not.toHaveBeenCalled();
     });
   });
 
