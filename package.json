@@ -91,6 +91,7 @@
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:arena": "vitest run --config vitest.arena.config.ts",
     "validate": "npm run typecheck && npm run typecheck:plugins && npm run lint && npm run lint:plugins && npm run lint:docs && npm run lint:plugin-contract && npm run lint:architecture && npm run lint:media-constraints && npm run lint:mistakes && npm run lint:changelog && npm run build && npm test",
+    "prevalidate": "node lint-scripts/check-hooks-installed.mjs",
     "prepare": "husky"
   },
   "dependencies": {

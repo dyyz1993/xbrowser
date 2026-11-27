@@ -41,7 +41,8 @@ function checkRepoLayout() {
   let ignoredTracked;
   try {
     trackedScripts = gitLines(['ls-files', '--', 'scripts']);
-    ignoredTracked = gitLines(['ls-files', '-i', '-c', '--exclude-standard', '--', 'scripts', 'src']);
+    // 全仓库范围：任何「已跟踪却被 .gitignore 忽略」的文件都不该存在（数据/报告误入库、ignore 规则写错）
+    ignoredTracked = gitLines(['ls-files', '-i', '-c', '--exclude-standard']);
   } catch (error) {
     console.warn(`  (skipped repo-layout checks: git unavailable — ${error.message})`);
     return;

@@ -148,6 +148,7 @@ export XCAPTCHA_WEBHOOK=https://your-server.com/captcha-callback
 
 - Write original, valuable content for each platform
 - Avoid duplicate content across platforms
+- One article per platform: different angle and wording, freshly generated images — the same draft with in-text URLs posted to five platforms reads as marketing and gets throttled
 - Aim for 1000+ words for long-form articles
 - Include relevant images and formatting
 

@@ -1,9 +1,0 @@
-{
-  "engine": "yiyan",
-  "url": "https://yiyan.baidu.com/",
-  "status": "fail",
-  "urls": [],
-  "domains": [],
-  "contentLength": 0,
-  "error": "page.screenshot: Target page, context or browser has been closed"
-}
